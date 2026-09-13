@@ -42,6 +42,12 @@ const keystore = require('../common/keystore');
 const helpers = require('../common/helpers');
 const stsCrypto = require('../common/crypto');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'pki_hierarchy',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const REALM_A = 'hier-a';
 const REALM_B = 'hier-b';
 
@@ -50,6 +56,7 @@ const REALM_B = 'hier-b';
 // `tests/pki.js`, and an assertion about a chain that used it would be the
 // implementation checking itself.
 function chainsTo(leafPem, chainPems, anchorPem) {
+  log.debug("Entering chainsTo().");
   const leaf = new nodeCrypto.X509Certificate(leafPem);
   let current = leaf;
   const rest = chainPems.map(function (pem) {
@@ -58,20 +65,24 @@ function chainsTo(leafPem, chainPems, anchorPem) {
   const anchor = new nodeCrypto.X509Certificate(anchorPem);
   for (let hop = 0; hop < 8; hop++) {
     if (current.issuer === anchor.subject) {
+      log.debug("Leaving chainsTo().");
       return current.verify(anchor.publicKey);
     }
     const next = rest.filter(function (one) {
       return one.subject === current.issuer;
     })[0];
     if (!next || !current.verify(next.publicKey)) {
+      log.debug("Leaving chainsTo().");
       return false;
     }
     current = next;
   }
+  log.debug("Leaving chainsTo().");
   return false;
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   await keystore.start();
 
   t.log.info('=== the shape: one Root, an Intermediate per scope, an ' +
@@ -87,8 +98,10 @@ async function run(t) {
   const process = tree.scopes.filter(function (one) {
     return one.kind === 'process';
   })[0];
-  const a = tree.scopes.filter(function (one) { return one.scope === REALM_A; })[0];
-  const b = tree.scopes.filter(function (one) { return one.scope === REALM_B; })[0];
+  const a =
+      tree.scopes.filter(function (one) { return one.scope === REALM_A; })[0];
+  const b =
+      tree.scopes.filter(function (one) { return one.scope === REALM_B; })[0];
 
   t.equal(a.issuing.map(function (one) { return one.id; }).join(','),
           'jose,xml,assertions,spiffe',
@@ -120,9 +133,9 @@ async function run(t) {
           'and the process branch has one that is neither realm\'s');
   // THE STORAGE HALF: one Root means one copy of its private key.
   t.check(!keystore.pkiFor(REALM_A).root && !keystore.pkiFor(REALM_B).root,
-          'a realm\'s row does NOT hold the Root — it is composed back on top ' +
-          'of the branch on the way out, so there is one copy of that private ' +
-          'key rather than one per realm');
+          'a realm\'s row does NOT hold the Root — it is composed back on ' +
+          'top of the branch on the way out, so there is one copy of that ' +
+          'private key rather than one per realm');
   t.check(String(keystore.pkiFor(pki.SERVICE_SCOPE).root.privateKeyPem)
             .indexOf('PRIVATE KEY') >= 0,
           'and the service row holds it, once, with its key');
@@ -170,8 +183,8 @@ async function run(t) {
   });
   t.equal(verified, underJose.length,
           'and EVERY ONE of them builds a path to the service Root — checked ' +
-          'with node\'s own verifier rather than this module\'s, so the thing ' +
-          'under test is not also the judge');
+          'with node\'s own verifier rather than this module\'s, so the ' +
+          'thing under test is not also the judge');
 
   t.log.info('=== the key set PUBLISHES the certified certificate ===');
   const published = new nodeCrypto.X509Certificate(keys.certPem);
@@ -187,8 +200,8 @@ async function run(t) {
           'certificate_list and what every x5c does');
   t.check(!!keys.selfSignedCertPem,
           'the self-signed certificate it was born with is still reachable, ' +
-          'because "this key is certified" is a claim a reader should be able ' +
-          'to check rather than take');
+          'because "this key is certified" is a claim a reader should be ' +
+          'able to check rather than take');
 
   t.log.info('=== the kid does NOT move, which is the whole reason it is not ' +
              'derived from the published certificate ===');
@@ -255,7 +268,9 @@ async function run(t) {
           'serial are indistinguishable to anything that revokes, caches or ' +
           'pins by (issuer, serial)');
   t.equal(pki.describeScope(REALM_A).issuing
-            .filter(function (one) { return one.id === 'jose'; })[0].ca.thumbprint,
+            .filter(function (one) {
+              return one.id === 'jose';
+            })[0].ca.thumbprint,
           caBeforeRenew,
           'and the AUTHORITY is untouched, which is what makes it a renewal');
   // The keys are untouched too, which is the claim a renewal rests on.
@@ -272,11 +287,16 @@ async function run(t) {
   t.check(reissuedXml.ok, 'a REISSUE replaces the authority',
           (reissuedXml.errors || []).join(' '));
   t.check(pki.describeScope(REALM_A).issuing
-            .filter(function (one) { return one.id === 'xml'; })[0].ca.thumbprint !==
+            .filter(function (one) {
+              return one.id === 'xml';
+            })[0].ca.thumbprint !==
           beforeReissue,
-          'with a new key pair, which is what a reissue is and a renewal is not');
+          'with a new key pair, which is what a reissue is and a renewal is ' +
+          'not');
   t.equal(pki.describeScope(REALM_A).issuing
-            .filter(function (one) { return one.id === 'jose'; })[0].ca.thumbprint,
+            .filter(function (one) {
+              return one.id === 'jose';
+            })[0].ca.thumbprint,
           caBeforeRenew,
           'and the OTHER use cases are untouched — which is the whole reason ' +
           'each has an authority of its own rather than sharing one');
@@ -296,8 +316,8 @@ async function run(t) {
   const half = await pki.importCa(REALM_A, 'jose',
                                   { certificatePem: 'x', privateKeyPem: '' });
   t.check(!half.ok && /private key/i.test(half.errors.join(' ')),
-          'a certificate with no key is refused — it is a trust anchor rather ' +
-          'than an authority, and this service cannot issue from it');
+          'a certificate with no key is refused — it is a trust anchor ' +
+          'rather than an authority, and this service cannot issue from it');
 
   // A REAL PAIR THAT DO NOT BELONG TOGETHER. This is the check that matters:
   // an authority whose key is somebody else's issues certificates that verify
@@ -343,11 +363,13 @@ async function run(t) {
   t.check(rebuilt.ok, 'rebuilding the branch succeeds');
   t.check(pki.describeScope(REALM_A).issuing
             .filter(function (one) { return one.id === 'xml'; })[0].ca.imported,
-          'AND LEAVES THE IMPORTED CA ALONE — somebody who pasted a corporate ' +
-          'authority in did not press Rebuild to have it thrown away');
+          'AND LEAVES THE IMPORTED CA ALONE — somebody who pasted a ' +
+          'corporate authority in did not press Rebuild to have it thrown ' +
+          'away');
 
   t.log.info('=== pinning a key pair of your own ===');
-  const pair = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const pair = nodeCrypto.generateKeyPairSync('ec',
+                                              { namedCurve: 'prime256v1' });
   const privatePem = pair.privateKey.export({ type: 'pkcs8', format: 'pem' });
   const pinned = await pki.pinKeyPair(REALM_A, 'jose', 'ES256:P-256',
                                       { privateKeyPem: privatePem });
@@ -359,9 +381,9 @@ async function run(t) {
           'put a key somebody supplied');
   const pinnedCert = pki.certificateFor(REALM_A, 'jose', 'ES256:P-256');
   t.check(chainsTo(pinnedCert.certificatePem, pinnedCert.chainPem, root),
-          'AND IT WAS CERTIFIED under this scope\'s own Issuing CA — which is ' +
-          'what somebody who wants THEIR key under THIS service\'s Root is ' +
-          'asking for');
+          'AND IT WAS CERTIFIED under this scope\'s own Issuing CA — which ' +
+          'is what somebody who wants THEIR key under THIS service\'s Root ' +
+          'is asking for');
   t.check(JSON.stringify(pki.describeScope(REALM_A)).indexOf('PRIVATE KEY') < 0,
           'and no private key appears anywhere in the public view of the ' +
           'scope, pinned ones included — this is the assertion that would ' +
@@ -376,8 +398,8 @@ async function run(t) {
   t.equal(pq.length, 0,
           'the post-quantum keys are NOT certified — they come from ' +
           'common/pq_jose.js, this service\'s own reading of those ' +
-          'constructions, and handing one to the vendored certificate encoder ' +
-          'is exactly the defect that independence exists to expose');
+          'constructions, and handing one to the vendored certificate ' +
+          'encoder is exactly the defect that independence exists to expose');
   // **THE SPIFFE AUTHORITY USED TO BE THE SECOND ENTRY ON THIS LIST AND IS
   // NOT ANY MORE (2026-09-11).** The assertions that stood here were:
   //
@@ -400,6 +422,7 @@ async function run(t) {
           'records nothing — an agent re-minting every half-lifetime would ' +
           'otherwise put hundreds of rows in a sealed keystore row that ' +
           'exists to hold certificate AUTHORITIES');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

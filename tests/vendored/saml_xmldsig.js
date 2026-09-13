@@ -63,6 +63,12 @@
 
 const nodeCrypto = require("crypto");
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'saml_xmldsig',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const SAML_NS = "urn:oasis:names:tc:SAML:2.0:assertion";
 const DS_NS = "http://www.w3.org/2000/09/xmldsig#";
 const EXC_C14N = "http://www.w3.org/2001/10/xml-exc-c14n#";
@@ -72,6 +78,8 @@ const RSA_SHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
 const BEARER = "urn:oasis:names:tc:SAML:2.0:cm:bearer";
 
 function esc(text) {
+  log.debug("Entering esc().");
+  log.debug("Leaving esc().");
   return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
@@ -81,6 +89,8 @@ function esc(text) {
 // otherwise normalise to a space — which would change the octets the verifier
 // reconstructs and produce a digest mismatch with nothing saying why.
 function escAttr(text) {
+  log.debug("Entering escAttr().");
+  log.debug("Leaving escAttr().");
   return esc(text).replace(/"/g, "&quot;").replace(/\r/g, "&#xD;")
     .replace(/\n/g, "&#xA;").replace(/\t/g, "&#x9;");
 }
@@ -90,6 +100,8 @@ function escAttr(text) {
 // the reason this file exists at all — an attribute in the wrong order is a
 // digest that does not match, and nothing anywhere says which attribute.
 function attrs(pairs) {
+  log.debug("Entering attrs().");
+  log.debug("Leaving attrs().");
   return Object.keys(pairs || {})
     .filter(function (k) {
       return pairs[k] !== undefined && pairs[k] !== null && pairs[k] !== "";
@@ -102,17 +114,23 @@ function attrs(pairs) {
 // Never self-closing. `<a/>` and `<a></a>` are the same infoset and are NOT the
 // same octets, and canonical form is the second.
 function el(name, pairs, inner) {
+  log.debug("Entering el().");
+  log.debug("Leaving el().");
   return "<" + name + attrs(pairs) + ">" + (inner || "") + "</" + name + ">";
 }
 
 // An xsd:dateTime with no fractional seconds, which is what every SAML
 // implementation emits and what this suite's refusal assertions quote back.
 function iso(offsetMs) {
+  log.debug("Entering iso().");
+  log.debug("Leaving iso().");
   return new Date(Date.now() + (offsetMs || 0)).toISOString()
     .replace(/\.\d{3}Z$/, "Z");
 }
 
 function id() {
+  log.debug("Entering id().");
+  log.debug("Leaving id().");
   // A SAML ID is an xsd:ID and may not start with a digit. The leading
   // underscore is what every implementation uses for that reason.
   return "_" + nodeCrypto.randomBytes(16).toString("hex");
@@ -133,6 +151,7 @@ function id() {
 //   id — a fixed one, so a replay can be built deliberately
 // ---------------------------------------------------------------------------
 function buildAssertion(o) {
+  log.debug("Entering buildAssertion().");
   const options = o || {};
   const assertionId = options.id || id();
   const scd = options.omitConfirmationData ? "" :
@@ -194,6 +213,7 @@ function buildAssertion(o) {
             IssueInstant: options.issueInstant || iso(0),
             Version: options.version || "2.0" }) + ">" + inner +
     "</saml:Assertion>";
+  log.debug("Leaving buildAssertion().");
   return { id: assertionId, xml: xml };
 }
 
@@ -210,6 +230,7 @@ function buildAssertion(o) {
 // the ordinary case for a party whose certificate is already registered.
 // ---------------------------------------------------------------------------
 function sign(built, privateKeyPem, certPem, opts) {
+  log.debug("Entering sign().");
   const options = opts || {};
   const digest = nodeCrypto.createHash("sha256")
     .update(Buffer.from(built.xml, "utf8")).digest("base64");
@@ -237,18 +258,23 @@ function sign(built, privateKeyPem, certPem, opts) {
     el("ds:SignatureValue", {}, value) + keyInfo + "</ds:Signature>";
   const marker = "</saml:Issuer>";
   const at = built.xml.indexOf(marker) + marker.length;
+  log.debug("Leaving sign().");
   return built.xml.slice(0, at) + signature + built.xml.slice(at);
 }
 
 // RFC 7522 section 2.1: "The SAML Assertion XML data MUST be encoded using
 // base64url ... and where the padding bits are set to zero."
 function b64u(text) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
   return Buffer.from(text, "utf8").toString("base64url");
 }
 
 // The encoding the specification does NOT ask for, so that a job can assert
 // what this service does with it. Several widely-deployed stacks send it.
 function b64(text) {
+  log.debug("Entering b64().");
+  log.debug("Leaving b64().");
   return Buffer.from(text, "utf8").toString("base64");
 }
 

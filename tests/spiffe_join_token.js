@@ -36,9 +36,17 @@
 const path = require('path');
 const childProcess = require('child_process');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'spiffe_join_token',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 
 function childScript() {
+  log.debug("Entering childScript().");
+  log.debug("Leaving childScript().");
   return [
     "delete process.env.CONFIG_FILE;",
     "const EventEmitter = require('events');",
@@ -46,9 +54,12 @@ function childScript() {
     "require(" + JSON.stringify(path.join(ROOT, 'common/app')) + ");",
     "require(" + JSON.stringify(path.join(ROOT, 'ldap/ldap_server')) + ");",
     "require(" + JSON.stringify(path.join(ROOT, 'spiffe/spiffe_server')) + ");",
-    "const api = require(" + JSON.stringify(path.join(ROOT, 'spiffe/spiffe_api')) + ");",
-    "const registry = require(" + JSON.stringify(path.join(ROOT, 'spiffe/spiffe_registry')) + ");",
-    "const x509 = require(" + JSON.stringify(path.join(ROOT, 'common/vendored/x509')) + ");",
+    "const api = require(" +
+    JSON.stringify(path.join(ROOT, 'spiffe/spiffe_api')) + ");",
+    "const registry = require(" +
+    JSON.stringify(path.join(ROOT, 'spiffe/spiffe_registry')) + ");",
+    "const x509 = require(" +
+    JSON.stringify(path.join(ROOT, 'common/vendored/x509')) + ");",
     "const agent = api.SERVICE_HANDLERS.filter(function (s) { return s.name === 'agent'; })[0].handlers;",
     "function storeHolds(token) {",
     "  let found = false;",
@@ -96,7 +107,9 @@ function childScript() {
     "  out.storeHoldsTokenAfterAttest = storeHolds(token);",
     "  out.storeSizeAfterAttest = api.joinTokens.size;",
     "  const found = registry.allAgents().filter(function (a) { return a.attestationType === 'join_token'; });",
-    "  out.tokenInAudit = JSON.stringify(require(" + JSON.stringify(path.join(ROOT, 'common/audit')) + ").list()).indexOf(token) >= 0;",
+    "  out.tokenInAudit = JSON.stringify(require(" +
+    JSON.stringify(path.join(ROOT, 'common/audit')) +
+    ").list()).indexOf(token) >= 0;",
     "  out.agentCount = found.length;",
     "  out.selectorsText = JSON.stringify(found.map(function (a) { return a.selectors; }));",
     "  out.anyAgentText = JSON.stringify(found);",
@@ -123,9 +136,12 @@ function childScript() {
 }
 
 function run(t) {
+  log.debug("Entering run().");
   const os = require('os');
   const fs = require('fs');
-  const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'join-token-')), 'out.json');
+  const outFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(),
+                                                     'join-token-')),
+                            'out.json');
   const env = Object.assign({}, process.env, {
     LOG_LEVEL: 'fatal', PROBE_OUT: outFile,
     // No socket is bound by requiring the server; these keep a stray bind off
@@ -140,12 +156,16 @@ function run(t) {
     out = JSON.parse(fs.readFileSync(outFile, 'utf8'));
     fs.rmSync(path.dirname(outFile), { recursive: true, force: true });
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     // No file is the child dying before it wrote one; the stderr says why.
-    t.bad('the child process reported nothing', (child.stderr || '').slice(-2000));
+    t.bad('the child process reported nothing',
+          (child.stderr || '').slice(-2000));
+    log.debug("Leaving run().");
     return;
   }
   if (out.threw) {
     t.bad('the child process threw', out.threw);
+    log.debug("Leaving run().");
     return;
   }
 
@@ -153,31 +173,38 @@ function run(t) {
   t.check(out.minted, 'CreateJoinToken minted a token', out.createError);
   t.equal(out.storeSize, 1, 'and the store holds one row for it');
   t.equal(out.storeHoldsTokenAfterCreate, false,
-          'and NO key and NO body in the store contains the token — a persisted ' +
-          'row\'s key is written unsealed, so a key that was the token was a ' +
-          'credential in the database');
+          'and NO key and NO body in the store contains the token — a ' +
+          'persisted row\'s key is written unsealed, so a key that was the ' +
+          'token was a credential in the database');
 
   t.log.info('=== 2. the token still attests, once ===');
-  t.check(out.attested, 'the token attests an agent — the digest-keyed store still finds it',
+  t.check(out.attested, 'the token attests an agent — the digest-keyed store ' +
+                        'still finds it',
           out.attestError);
   t.equal(out.storeSizeAfterAttest, 0, 'and attesting spends it');
-  t.equal(out.storeHoldsTokenAfterAttest, false, 'and nothing of it is left in the store');
+  t.equal(out.storeHoldsTokenAfterAttest, false, 'and nothing of it is left ' +
+                                                 'in the store');
   t.check(/already been spent|not issued by this server/.test(out.secondUse),
           'a second attestation with the same token is refused', out.secondUse);
 
   t.log.info('=== 3. the agent entry ===');
-  t.check(out.agentCount >= 1, 'the attested agent is in the registry', out.anyAgentText);
+  t.check(out.agentCount >= 1, 'the attested agent is in the registry',
+          out.anyAgentText);
   t.equal(out.tokenInAgent, false,
-          'and the token appears NOWHERE on its entry — not in a selector, not anywhere',
+          'and the token appears NOWHERE on its entry — not in a selector, ' +
+          'not anywhere',
           out.selectorsText);
   t.equal(out.tokenInAudit, false, 'nor in the audit log');
   t.check(out.selectorsText.indexOf('token-sha256:' + out.digest) >= 0,
-          'its selector carries a digest prefix instead, so somebody holding the ' +
-          'token can still recognise the agent it attested', out.selectorsText);
+          'its selector carries a digest prefix instead, so somebody holding ' +
+          'the token can still recognise the agent it ' +
+          'attested', out.selectorsText);
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'spiffe_join_token',
-  describe: 'a SPIFFE join token is never held in clear: not as a store key, a store body or a selector',
+  describe: 'a SPIFFE join token is never held in clear: not as a store key, ' +
+            'a store body or a selector',
   run: run
 };

@@ -60,14 +60,23 @@ const nodeCrypto = require('crypto');
 const tls = require('../tls/tls_server');
 const pki = require('../common/pki');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'pki_anchor_drift',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // Does `anchor` carry the signature over the top of `chain`? The whole check,
 // and it is the SIGNATURE because the names are identical on both sides of the
 // bug this pins.
 function anchorSignsChain(anchorPem, chainPem, leafPem) {
+  log.debug("Entering anchorSignsChain().");
   const topPem = chainPem.length ? chainPem[chainPem.length - 1] : leafPem;
   if (!anchorPem || !topPem) {
+    log.debug("Leaving anchorSignsChain().");
     return false;
   }
+  log.debug("Leaving anchorSignsChain().");
   return new nodeCrypto.X509Certificate(topPem)
     .verify(new nodeCrypto.X509Certificate(anchorPem).publicKey);
 }
@@ -75,17 +84,21 @@ function anchorSignsChain(anchorPem, chainPem, leafPem) {
 // Every link, leaf upwards — so a failure says WHICH one broke rather than
 // that the bundle is bad.
 function everyLinkVerifies(leafPem, chainPem, anchorPem) {
+  log.debug("Entering everyLinkVerifies().");
   const certs = [leafPem].concat(chainPem).concat(anchorPem ? [anchorPem] : [])
     .map(function (pem) { return new nodeCrypto.X509Certificate(pem); });
   for (let i = 0; i < certs.length - 1; i++) {
     if (!certs[i].verify(certs[i + 1].publicKey)) {
+      log.debug("Leaving everyLinkVerifies().");
       return i;
     }
   }
+  log.debug("Leaving everyLinkVerifies().");
   return -1;
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   await pki.start();
 
   t.log.info('=== the ordinary case ===');
@@ -99,7 +112,8 @@ async function run(t) {
           'THE PUBLISHED ANCHOR SIGNS THE PUBLISHED CHAIN. Checked by ' +
           'signature and not by name: the two Roots this exists to tell ' +
           'apart have identical subjects');
-  t.equal(everyLinkVerifies(good.certPem, good.chainPem, good.trustAnchorPem), -1,
+  t.equal(everyLinkVerifies(good.certPem, good.chainPem, good.trustAnchorPem),
+          -1,
           'and every link from the leaf up verifies');
 
   const rootBefore = pki.serviceRoot();
@@ -112,14 +126,15 @@ async function run(t) {
   // reaches this state, because the console's control rebuilds every branch in
   // the same act.
   const replaced = await pki.buildRoot({ organisation: 'sts' });
-  t.check(replaced.ok, 'a new Root is built', (replaced.errors || []).join(' '));
+  t.check(replaced.ok, 'a new Root is built',
+          (replaced.errors || []).join(' '));
   const rootAfter = pki.serviceRoot();
   t.check(rootAfter.certificatePem !== rootBefore.certificatePem,
           'and it really is a different Root');
   t.check(new nodeCrypto.X509Certificate(rootAfter.certificatePem).subject ===
           new nodeCrypto.X509Certificate(rootBefore.certificatePem).subject,
-          'WITH THE SAME SUBJECT as the one it replaced, which is why nothing ' +
-          'that compares names can see this state',
+          'WITH THE SAME SUBJECT as the one it replaced, which is why ' +
+          'nothing that compares names can see this state',
           new nodeCrypto.X509Certificate(rootAfter.certificatePem).subject
             .replace(/\n/g, ', '));
 
@@ -141,17 +156,18 @@ async function run(t) {
           'the listener has a new leaf');
   t.check(fixed.chainPem[fixed.chainPem.length - 1] !==
           stale.chainPem[stale.chainPem.length - 1],
-          '**AND A NEW CHAIN**, which is the assertion that matters. Re-issuing ' +
-          'the leaf alone was the bug: `certify()` would mint it from the ' +
-          'stale Issuing CA, so the leaf changed, the chain did not, and the ' +
-          'bundle went out with a Root that signs none of it');
+          '**AND A NEW CHAIN**, which is the assertion that matters. ' +
+          'Re-issuing the leaf alone was the bug: `certify()` would mint it ' +
+          'from the stale Issuing CA, so the leaf changed, the chain did ' +
+          'not, and the bundle went out with a Root that signs none of it');
   t.check(anchorSignsChain(fixed.trustAnchorPem, fixed.chainPem, fixed.certPem),
           'the published anchor signs the published chain again');
-  t.equal(everyLinkVerifies(fixed.certPem, fixed.chainPem, fixed.trustAnchorPem), -1,
+  t.equal(everyLinkVerifies(fixed.certPem, fixed.chainPem,
+                            fixed.trustAnchorPem), -1,
           'and every link verifies from the leaf to the anchor');
   t.check(fixed.trustAnchorPem === pki.serviceRoot().certificatePem,
-          'and the anchor is the CURRENT Root — the repair rebuilt the branch ' +
-          'under it rather than reaching back for the old Root');
+          'and the anchor is the CURRENT Root — the repair rebuilt the ' +
+          'branch under it rather than reaching back for the old Root');
 
   t.log.info('=== the net under the repair ===');
   // `tls_server.js` refuses to publish an anchor that does not sign the chain,
@@ -187,7 +203,8 @@ async function run(t) {
   // did; the realm scopes are rebuilt here so that anything hanging off them
   // chains to the Root this file installed.
   // ---------------------------------------------------------------------
-  t.log.info('=== and the anchor has to be PARSEABLE, not merely well signed ===');
+  t.log.info('=== and the anchor has to be PARSEABLE, not merely well signed ' +
+             '===');
   // ---------------------------------------------------------------------
   // **RFC 5280 SECTION 4.1.2.5.2: NO FRACTIONAL SECONDS IN A
   // GeneralizedTime.** `new Date()` carries milliseconds and the encoder
@@ -215,7 +232,8 @@ async function run(t) {
   // to this. Thirty years is asked for explicitly.
   // ---------------------------------------------------------------------
   const long = await pki.buildRoot({ organisation: 'sts', years: 30 });
-  t.check(long.ok, 'a thirty-year Root is built', (long.errors || []).join(' '));
+  t.check(long.ok, 'a thirty-year Root is built',
+          (long.errors || []).join(' '));
   const longPem = pki.serviceRoot().certificatePem;
   const longCert = new nodeCrypto.X509Certificate(longPem);
   t.check(new Date(longCert.validTo).getUTCFullYear() >= 2050,
@@ -255,6 +273,7 @@ async function run(t) {
   t.check(restored.every(function (one) { return /=ok$/.test(one); }),
           'and the hierarchy is left COHERENT for the files that run after ' +
           'this one in the same process', restored.join(' '));
+  log.debug("Leaving run().");
 }
 
 module.exports = {

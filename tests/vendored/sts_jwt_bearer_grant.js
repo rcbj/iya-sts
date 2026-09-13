@@ -57,17 +57,23 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_jwt_bearer_grant",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -88,7 +94,8 @@ var ISS = "https://issuer.example.test/jwtbearer";
 var OTHER_ISS = "https://other-issuer.example.test/jwtbearer";
 
 // ---------------------------------------------------------------------------
-// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT (2026-09-12).
+// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT
+// (2026-09-12).
 //
 // Product mode seeds no `alice`, invents no persona onto an entry, and holds
 // every OAuth application to a client secret. So both asserting applications
@@ -107,15 +114,20 @@ var ASSERTED_PERSON = usernameFor("asserted");
 var MAIL_DOMAIN = "jwt-bearer-grant.test";
 
 function personFields(who) {
+  log.debug("Entering personFields().");
+  log.debug("Leaving personFields().");
   return { cn: "Asserted Person " + who, givenName: "Asserted", sn: who,
-           displayName: "Asserted Person " + who, mail: who + "@" + MAIL_DOMAIN };
+           displayName: "Asserted Person " + who,
+           mail: who + "@" + MAIL_DOMAIN };
 }
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  ✓ " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
@@ -134,27 +146,37 @@ function check(what, fn) {
 // instead of a token request.
 // ---------------------------------------------------------------------------
 function b64u(buf) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
   return Buffer.from(buf).toString("base64url");
 }
 
 function signJws(header, payload, privateKeyPem) {
+  log.debug("Entering signJws().");
   const head = b64u(Buffer.from(JSON.stringify(header), "utf8"));
   const body = b64u(Buffer.from(JSON.stringify(payload), "utf8"));
   const signing = head + "." + body;
-  const digest = { RS256: "sha256", RS384: "sha384", RS512: "sha512" }[header.alg];
+  const digest = { RS256: "sha256", RS384: "sha384",
+                   RS512: "sha512" }[header.alg];
   if (!digest) {
-    throw new Error("this file signs RS256/RS384/RS512; asked for " + header.alg);
+    throw new Error("this file signs RS256/RS384/RS512; asked for " +
+                    header.alg);
   }
   const sig = nodeCrypto.sign(digest, Buffer.from(signing, "ascii"),
                               privateKeyPem);
+  log.debug("Leaving signJws().");
   return signing + "." + b64u(sig);
 }
 
 function now() {
+  log.debug("Entering now().");
+  log.debug("Leaving now().");
   return Math.floor(Date.now() / 1000);
 }
 
 function jti() {
+  log.debug("Entering jti().");
+  log.debug("Leaving jti().");
   return nodeCrypto.randomUUID();
 }
 
@@ -162,6 +184,7 @@ function jti() {
 // The two doors.
 // ---------------------------------------------------------------------------
 async function post(url, body) {
+  log.debug("Entering post().");
   const r = await fetch(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}) });
@@ -170,37 +193,45 @@ async function post(url, body) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in post(): " + ((e && e.message) || e));
     // Not JSON — an HTML error page. Quoting it whole says more than a parse
     // failure would.
     parsed = raw;
   }
+  log.debug("Leaving post().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 async function get(url) {
+  log.debug("Entering get().");
   const r = await fetch(url);
   const raw = await r.text();
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in get(): " + ((e && e.message) || e));
     parsed = raw;
   }
+  log.debug("Leaving get().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 async function ok(url, body, what) {
+  log.debug("Entering ok().");
   const r = await post(url, body);
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "POST " + url + " should have " + what + "; it answered " + r.status + " " +
     JSON.stringify((r.body && (r.body.errors || r.body.why)) || r.body)
       .slice(0, 400));
+  log.debug("Leaving ok().");
   return r.body;
 }
 
 // A form POST to the token endpoint. The grant takes form encoding, which is
 // what RFC 6749 section 4 says and what every OAuth client sends.
 async function tokenRequest(fields) {
+  log.debug("Entering tokenRequest().");
   const r = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -210,12 +241,16 @@ async function tokenRequest(fields) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in tokenRequest(): " + ((e && e.message) || e));
     parsed = raw;
   }
+  log.debug("Leaving tokenRequest().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 function claimsOf(token) {
+  log.debug("Entering claimsOf().");
+  log.debug("Leaving claimsOf().");
   return JSON.parse(Buffer.from(String(token).split(".")[1], "base64url")
     .toString("utf8"));
 }
@@ -224,6 +259,7 @@ function claimsOf(token) {
 // `sts_roles.js` records why: a gate that works and a handler that has fallen
 // over both produce a 400, and only the code tells them apart.
 function refused(r, code, what) {
+  log.debug("Entering refused().");
   assert.ok(r.status === 400 && r.body && r.body.error === code,
     what + " should be refused " + code + "; it answered " + r.status + " " +
     JSON.stringify(r.body).slice(0, 300));
@@ -231,6 +267,7 @@ function refused(r, code, what) {
     "RFC 7521 section 4.2: a refusal carries an error_description a client " +
     "author can act on; " + what + " came back with " +
     JSON.stringify(r.body.error_description));
+  log.debug("Leaving refused().");
   return r.body.error_description;
 }
 
@@ -315,7 +352,8 @@ async function test() {
         "because a key pair an operator cannot collect is one nobody can use",
         function () {
     assert.ok(privateKeyPem && /BEGIN PRIVATE KEY/.test(privateKeyPem),
-      "oauthAssertionPrivateKey is " + JSON.stringify(privateKeyPem).slice(0, 60));
+      "oauthAssertionPrivateKey is " +
+      JSON.stringify(privateKeyPem).slice(0, 60));
   });
   check("beside the certificate, the chain, the kid and the expiry — six " +
         "attributes, because this service keeps NO second copy of any of them",
@@ -448,7 +486,8 @@ async function test() {
   // 5. THE REPLAY, AND EVERY OTHER REFUSAL.
   // -------------------------------------------------------------------------
   log.info("=== 5. the refusals ===");
-  const replay = await tokenRequest({ grant_type: GRANT, assertion: assertion });
+  const replay = await tokenRequest({ grant_type: GRANT,
+                                      assertion: assertion });
   check("THE SAME ASSERTION A SECOND TIME IS REFUSED. A signed assertion " +
         "captured off the wire is a credential until it expires, so its jti " +
         "is remembered until then", function () {
@@ -508,7 +547,8 @@ async function test() {
   check("an assertion with NO jti is refused, which is RFC 7523 section 3's " +
         "last paragraph read literally: one that cannot be remembered is a " +
         "bearer credential this service has no way to spend", function () {
-          const said = refused(noJti, "invalid_grant", "an assertion with no jti");
+          const said = refused(noJti, "invalid_grant", "an assertion with no " +
+                                                       "jti");
           assert.ok(/jti/.test(said), said.slice(0, 200));
         });
 
@@ -534,7 +574,8 @@ async function test() {
     b64u(Buffer.from(JSON.stringify(
       { iss: ISS, sub: person, aud: TOKEN_ENDPOINT, iat: now(),
         exp: now() + 120, jti: jti() }), "utf8")) + ".";
-  const noneAlg = await tokenRequest({ grant_type: GRANT, assertion: unsigned });
+  const noneAlg = await tokenRequest({ grant_type: GRANT,
+                                       assertion: unsigned });
   check("`alg: \"none\"` is refused BY NAME, citing section 3 claim 9 — it " +
         "is the forgery every JWT implementation has had at some point, and " +
         "a caller sending one deserves to be told which rule it broke rather " +
@@ -551,7 +592,8 @@ async function test() {
   check("an assertion valid for over an hour is refused — RFC 7521 section " +
         "5.2 leaves the ceiling to the server, and an assertion is meant to " +
         "be spent within seconds of being minted", function () {
-          const said = refused(tooLong, "invalid_grant", "a long-lived assertion");
+          const said = refused(tooLong, "invalid_grant", "a long-lived " +
+              "assertion");
           assert.ok(/jwtBearerMaxLifetimeS/.test(said), said.slice(0, 250));
         });
 
@@ -671,7 +713,8 @@ async function test() {
     scope: "openid email admin",
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: kid },
       { iss: ISS, sub: person, aud: TOKEN_ENDPOINT, iat: now(),
-        exp: now() + 120, jti: jti(), scope: "openid email" }, privateKeyPem) });
+        exp: now() + 120, jti: jti(), scope: "openid email" },
+      privateKeyPem) });
   check("a request asking for MORE than the assertion carries gets the " +
         "intersection — the issuer said what this grant is for, and a " +
         "request cannot ask the assertion to authorize something it did not",
@@ -796,7 +839,8 @@ async function test() {
           register.authorities.forEach(function (one) {
             assert.ok(/^http/.test(one.crl.http), one.ca + " has no HTTP CRL");
             assert.ok(/^ldap:/.test(one.crl.ldap), one.ca + " has no LDAP CRL");
-            assert.ok(/^ldaps:/.test(one.crl.ldaps), one.ca + " has no LDAPS CRL");
+            assert.ok(/^ldaps:/.test(one.crl.ldaps), one.ca + " has no LDAPS " +
+                "CRL");
             assert.ok(/^http/.test(one.ocsp), one.ca + " has no responder");
           });
         });
@@ -854,17 +898,18 @@ async function test() {
   // /admin/pki can obtain a token as anybody in the realm, and nothing about
   // the service looks wrong while they do it.
   //
-  // What this section adds over `tests/rfc7523_person_issuer.js` in process is the
-  // DOORS: that /admin-api/pki issues to a person at all, that the private key
-  // comes back from that call and from no other, that the attributes land on
-  // the ou=users entry, and that the token endpoint — not just the library —
+  // What this section adds over `tests/rfc7523_person_issuer.js` in process is
+  // the DOORS: that /admin-api/pki issues to a person at all, that the private
+  // key comes back from that call and from no other, that the attributes land
+  // on the ou=users entry, and that the token endpoint — not just the library —
   // refuses the assertion about somebody else.
   // -------------------------------------------------------------------------
   log.info("=== 13. a person as the issuer ===");
   const SIGNER = usernameFor("selfassert");
   const SOMEBODY = usernameFor("elseentirely");
   await ok(realmApi + "/users/create",
-           { username: SIGNER, invent: false, attributes: personFields(SIGNER) },
+           { username: SIGNER, invent: false,
+             attributes: personFields(SIGNER) },
            "created the person who will sign");
   await ok(realmApi + "/users/create",
            { username: SOMEBODY, invent: false,
@@ -914,9 +959,9 @@ async function test() {
                                          assertion: selfAssertion,
                                          scope: "openid" });
   check("A PERSON'S ASSERTION ABOUT THEMSELVES IS ACCEPTED at the token " +
-        "endpoint — no browser, no password, a signature and an access token, " +
-        "which is the shape of this grant a client author most often wants to " +
-        "run", function () {
+        "endpoint — no browser, no password, a signature and an access " +
+        "token, which is the shape of this grant a client author most often " +
+        "wants to run", function () {
           assert.strictEqual(selfGrant.status, 200,
             JSON.stringify(selfGrant.body).slice(0, 400));
           assert.ok(selfGrant.body.access_token, "no access token came back");
@@ -929,11 +974,11 @@ async function test() {
     assertion: signJws({ alg: mine.jwsAlg, typ: "JWT", kid: mine.kid },
       { iss: SIGNER, sub: SOMEBODY, aud: TOKEN_ENDPOINT, iat: now(),
         exp: now() + 120, jti: jti() }, mine.privateKeyPem) });
-  check("**AND THE SAME PERSON ASSERTING ABOUT SOMEBODY ELSE IS REFUSED.** " +
-        "A key issued to one resource owner is that person's credential " +
-        "rather than permission to speak for the others; a party that may " +
-        "assert about other people is an APPLICATION with the issuer declared " +
-        "on it, which is a decision an operator made", function () {
+  check("**AND THE SAME PERSON ASSERTING ABOUT SOMEBODY ELSE IS REFUSED.** A " +
+        "key issued to one resource owner is that person's credential rather " +
+        "than permission to speak for the others; a party that may assert " +
+        "about other people is an APPLICATION with the issuer declared on " +
+        "it, which is a decision an operator made", function () {
           const why = refused(aboutOther, "invalid_grant",
                               "a person asserting about somebody else");
           assert.ok(/only be about themselves/.test(why),
@@ -973,12 +1018,12 @@ async function test() {
     assertion: signJws({ alg: mine.jwsAlg, typ: "JWT", x5c: x5c },
       { iss: SIGNER, sub: SOMEBODY, aud: TOKEN_ENDPOINT, iat: now(),
         exp: now() + 120, jti: jti() }, mine.privateKeyPem) });
-  check("**AND THE RULE HOLDS ON THE CERTIFICATE ALONE**, with nothing in the " +
-        "registry to consult. Before a person could hold a key pair, \"it " +
-        "chains here\" and \"it may assert about somebody\" were one " +
-        "sentence; the URI subjectAltName is what keeps them apart now, and a " +
-        "check written only against the entry would have passed while leaving " +
-        "this open", function () {
+  check("**AND THE RULE HOLDS ON THE CERTIFICATE ALONE**, with nothing in " +
+        "the registry to consult. Before a person could hold a key pair, " +
+        "\"it chains here\" and \"it may assert about somebody\" were one " +
+        "sentence; the URI subjectAltName is what keeps them apart now, and " +
+        "a check written only against the entry would have passed while " +
+        "leaving this open", function () {
           refused(chainOther, "invalid_grant",
                   "a person's certificate presented to assert about somebody " +
                   "else");
@@ -997,17 +1042,18 @@ async function test() {
 const program = new Command();
 program
   .name("sts_jwt_bearer_grant")
-  .description("RFC 7521 and RFC 7523 at a real token endpoint: a certificate " +
-      "authority built through /admin-api/pki, a signing key pair issued to " +
-      "an application and written onto its own directory entry, an assertion " +
-      "signed with an implementation of this file's own, and the eleven ways " +
-      "it is refused — an undeclared issuer, a replay, a wrong key, a foreign " +
-      "audience, an expiry, a missing jti, exp or sub, alg=none, a lifetime " +
-      "over the ceiling, an unsigned encrypted assertion and a chain from " +
-      "another realm — and, since 2026-09-11, a PERSON as the issuer: a key " +
-      "pair issued onto their own ou=users entry, an assertion about " +
-      "themselves accepted, and one about somebody else refused both on the " +
-      "registered key and on the certificate presented alone.")
+  .description("RFC 7521 and RFC 7523 at a real token endpoint: a " +
+      "certificate authority built through /admin-api/pki, a signing key " +
+      "pair issued to an application and written onto its own directory " +
+      "entry, an assertion signed with an implementation of this file's own, " +
+      "and the eleven ways it is refused — an undeclared issuer, a replay, a " +
+      "wrong key, a foreign audience, an expiry, a missing jti, exp or sub, " +
+      "alg=none, a lifetime over the ceiling, an unsigned encrypted " +
+      "assertion and a chain from another realm — and, since 2026-09-11, a " +
+      "PERSON as the issuer: a key pair issued onto their own ou=users " +
+      "entry, an assertion about themselves accepted, and one about somebody " +
+      "else refused both on the registered key and on the certificate " +
+      "presented alone.")
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

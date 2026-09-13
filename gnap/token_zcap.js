@@ -52,8 +52,8 @@
 // against, and GNAP presents a token with an HTTP proof rather than a ZCAP
 // invocation, so the controller here is a statement of the binding in ZCAP's
 // own vocabulary; the binding CHECK is `gnap_access.checkBinding()` over
-// `gnapCnf`, and verification refuses a controller that is not the one `gnapCnf`
-// derives.
+// `gnapCnf`, and verification refuses a controller that is not the one
+// `gnapCnf` derives.
 //
 // ---------------------------------------------------------------------------
 // THE GNAP CONTEXT IS INLINE, AND THE WHOLE `@context` MUST BE EXACTLY IT.
@@ -151,9 +151,12 @@ const GNAP_CONTEXT = {
 };
 const CONTEXT = [ZCAP_CONTEXT_URL, SUITE_CONTEXT_URL, GNAP_CONTEXT];
 
-const MEMBERS = ['@context', 'id', 'parentCapability', 'invocationTarget', 'controller', 'expires',
-                 'allowedAction', 'gnapIssuer', 'gnapSubject', 'gnapAudience', 'gnapClient',
-                 'gnapAccess', 'gnapFlags', 'gnapCnf', 'gnapLabel', 'gnapIssuedAt',
+const MEMBERS = ['@context', 'id', 'parentCapability', 'invocationTarget',
+                 'controller', 'expires',
+                 'allowedAction', 'gnapIssuer', 'gnapSubject', 'gnapAudience',
+                 'gnapClient',
+                 'gnapAccess', 'gnapFlags', 'gnapCnf', 'gnapLabel',
+                 'gnapIssuedAt',
                  'gnapNotBefore', 'proof'];
 
 const VALUE_RE = /^[A-Za-z0-9_-]+$/;
@@ -161,6 +164,8 @@ const VALUE_RE = /^[A-Za-z0-9_-]+$/;
 let loading = null;
 
 function refusal(code, why) {
+  log.debug("Entering refusal().");
+  log.debug("Leaving refusal().");
   return access.refusal(code, why);
 }
 
@@ -195,22 +200,32 @@ function loadLibraries() {
 }
 
 async function libraries() {
+  log.debug("Entering libraries().");
   try {
+    log.debug("Leaving libraries().");
     return { ok: true, lib: await loadLibraries() };
   } catch (e) {
-    log.error(errorCodes.tag('STS-GNAP-0331') + 'the ZCAP libraries could not be loaded: ' + e.message);
-    return refusal('STS-GNAP-0331', 'the ZCAP libraries could not be loaded: ' + e.message);
+    log.error(errorCodes.tag('STS-GNAP-0331') + 'the ZCAP libraries could ' +
+                                                'not be loaded: ' + e.message);
+    log.debug("Leaving libraries().");
+    return refusal('STS-GNAP-0331',
+                   'the ZCAP libraries could not be loaded: ' + e.message);
   }
 }
 
 function isAbsoluteUrl(value) {
+  log.debug("Entering isAbsoluteUrl().");
   if (typeof value !== 'string') {
+    log.debug("Leaving isAbsoluteUrl().");
     return false;
   }
   try {
     const u = new URL(value);
+    log.debug("Leaving isAbsoluteUrl().");
     return !!u.protocol && !u.hash;
   } catch (e) {
+    log.debug("Caught in isAbsoluteUrl(): " + ((e && e.message) || e));
+    log.debug("Leaving isAbsoluteUrl().");
     // Not a URL; `false` is the answer.
     return false;
   }
@@ -224,15 +239,19 @@ async function keyPairOf(lib, keys, wantPrivate) {
   log.debug("Entering keyPairOf(). wantPrivate=" + wantPrivate);
   const k = keys || {};
   if (!isAbsoluteUrl(k.controller) || typeof k.keyId !== 'string' ||
-      k.keyId.indexOf(k.controller + '#') !== 0 || k.keyId.length === k.controller.length + 1) {
+      k.keyId.indexOf(k.controller + '#') !== 0 ||
+      k.keyId.length === k.controller.length + 1) {
     log.debug("Leaving keyPairOf(). controller / keyId unusable.");
-    return refusal('STS-GNAP-0330', 'ZCAP keys need an absolute controller URL and a keyId of ' +
-                   '<controller>#<fragment>.');
+    return refusal('STS-GNAP-0330', 'ZCAP keys need an absolute controller ' +
+                   'URL and a keyId of <controller>#<fragment>.');
   }
   const keyObject = wantPrivate ? k.privateKey : k.publicKey;
-  if (!keyObject || typeof keyObject.export !== 'function' || keyObject.asymmetricKeyType !== 'ed25519') {
+  if (!keyObject || typeof keyObject.export !== 'function' ||
+      keyObject.asymmetricKeyType !== 'ed25519') {
     log.debug("Leaving keyPairOf(). Not an Ed25519 KeyObject.");
-    return refusal('STS-GNAP-0330', 'a ZCAP token is ' + (wantPrivate ? 'signed with an Ed25519 private' :
+    return refusal('STS-GNAP-0330',
+                   'a ZCAP token is ' + (wantPrivate ? 'signed ' +
+        'with an Ed25519 private' :
                    'verified with an Ed25519 public') + ' KeyObject.');
   }
   const jwk = keyObject.export({ format: 'jwk' });
@@ -240,7 +259,8 @@ async function keyPairOf(lib, keys, wantPrivate) {
   if (wantPrivate) {
     // The seed IS the private key: generating from it reproduces the node key.
     pair = await lib.Ed25519VerificationKey2020.generate({
-      seed: new Uint8Array(Buffer.from(jwk.d, 'base64url')), id: k.keyId, controller: k.controller
+      seed: new Uint8Array(Buffer.from(jwk.d, 'base64url')), id: k.keyId,
+      controller: k.controller
     });
   } else {
     pair = await lib.Ed25519VerificationKey2020.fromJsonWebKey({
@@ -253,10 +273,13 @@ async function keyPairOf(lib, keys, wantPrivate) {
 }
 
 function controllerDocumentFor(lib, keys, publicPair) {
+  log.debug("Entering controllerDocumentFor().");
+  log.debug("Leaving controllerDocumentFor().");
   return {
     '@context': [SECURITY_V2_URL, SUITE_CONTEXT_URL],
     id: keys.controller,
-    verificationMethod: [publicPair.export({ publicKey: true, includeContext: false })],
+    verificationMethod: [publicPair.export({ publicKey: true,
+                                             includeContext: false })],
     assertionMethod: [keys.keyId],
     capabilityDelegation: [keys.keyId]
   };
@@ -288,6 +311,8 @@ async function controllerDocument(keys) {
 }
 
 function rootIdFor(target) {
+  log.debug("Entering rootIdFor().");
+  log.debug("Leaving rootIdFor().");
   return ROOT_PREFIX + encodeURIComponent(target);
 }
 
@@ -298,37 +323,56 @@ function rootIdFor(target) {
 function documentLoaderFor(lib, keys, publicPair, rootTarget) {
   log.debug("Entering documentLoaderFor().");
   const controllerDoc = controllerDocumentFor(lib, keys, publicPair);
-  const root = lib.zcap.createRootCapability({ controller: keys.controller, invocationTarget: rootTarget });
+  const root = lib.zcap.createRootCapability({ controller: keys.controller,
+                                               invocationTarget: rootTarget });
   function answer(documentUrl, document) {
-    return { contextUrl: null, documentUrl: documentUrl, document: document, tag: 'static' };
+    log.debug("Entering answer().");
+    log.debug("Leaving answer().");
+    return { contextUrl: null, documentUrl: documentUrl, document: document,
+             tag: 'static' };
   }
   log.debug("Leaving documentLoaderFor().");
-  return lib.zcap.extendDocumentLoader(async function offlineLoader(documentUrl) {
+  return lib.zcap.extendDocumentLoader(async function offlineLoader(
+      documentUrl) {
+    log.debug("Entering offlineLoader().");
     if (documentUrl === SUITE_CONTEXT_URL) {
-      return answer(documentUrl, lib.suiteContext.contexts.get(SUITE_CONTEXT_URL));
+      log.debug("Leaving offlineLoader().");
+      return answer(documentUrl,
+                    lib.suiteContext.contexts.get(SUITE_CONTEXT_URL));
     }
     if (documentUrl === SECURITY_V2_URL) {
+      log.debug("Leaving offlineLoader().");
       return answer(documentUrl, lib.securityContexts.get(SECURITY_V2_URL));
     }
     if (documentUrl === keys.controller) {
+      log.debug("Leaving offlineLoader().");
       return answer(documentUrl, controllerDoc);
     }
     if (documentUrl === keys.keyId) {
-      return answer(documentUrl, publicPair.export({ publicKey: true, includeContext: true }));
+      log.debug("Leaving offlineLoader().");
+      return answer(documentUrl,
+                    publicPair.export({ publicKey: true,
+                                        includeContext: true }));
     }
     if (documentUrl === root.id) {
+      log.debug("Leaving offlineLoader().");
       return answer(documentUrl, root);
     }
-    throw new Error('the offline ZCAP document loader serves no document at ' + documentUrl);
+    log.debug("Leaving offlineLoader().");
+    throw new Error('the offline ZCAP document loader serves no document at ' +
+                    documentUrl);
   });
 }
 
 function controllerFor(cnf) {
+  log.debug("Entering controllerFor().");
   if (!cnf) {
+    log.debug("Leaving controllerFor().");
     return BEARER_CONTROLLER;
   }
   const member = Object.keys(cnf)[0];
   const value = member === 'kid' ? encodeURIComponent(cnf.kid) : cnf[member];
+  log.debug("Leaving controllerFor().");
   return CONTROLLER_PREFIXES[member] + value;
 }
 
@@ -340,11 +384,15 @@ function controllerFor(cnf) {
 const RS_TARGET_PREFIX = 'urn:gnap:rs:';
 
 function targetFor(model) {
+  log.debug("Entering targetFor().");
   if (!model.aud.length) {
+    log.debug("Leaving targetFor().");
     return AS_TARGET_PREFIX + model.iss;
   }
   const first = String(model.aud[0]);
-  return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(first) ? first : RS_TARGET_PREFIX + encodeURIComponent(first);
+  log.debug("Leaving targetFor().");
+  return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(first) ? first :
+         RS_TARGET_PREFIX + encodeURIComponent(first);
 }
 
 function actionsOf(rights) {
@@ -364,6 +412,8 @@ function actionsOf(rights) {
 }
 
 function isoSeconds(seconds) {
+  log.debug("Entering isoSeconds().");
+  log.debug("Leaving isoSeconds().");
   return new Date(seconds * 1000).toISOString().replace(/\.000Z$/, 'Z');
 }
 
@@ -417,8 +467,9 @@ async function mint(model, keys) {
   const target = targetFor(valid.model);
   if (!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(target)) {
     log.debug("Leaving mint(). Target is not an absolute URI.");
-    return refusal('STS-GNAP-0330', 'a ZCAP invocationTarget must be an absolute URI, and the ' +
-                   'token\'s first audience "' + target + '" is not one.');
+    return refusal('STS-GNAP-0330', 'a ZCAP invocationTarget must be an ' +
+                   'absolute URI, and the token\'s first audience ' +
+                   '"' + target + '" is not one.');
   }
   const libs = await libraries();
   if (!libs.ok) {
@@ -431,22 +482,30 @@ async function mint(model, keys) {
     log.debug("Leaving mint(). Signing key unusable.");
     return signing;
   }
-  const publicKeys = Object.assign({}, keys, { publicKey: crypto.createPublicKey(keys.privateKey) });
+  const publicKeys = Object.assign({}, keys,
+                                   { publicKey: crypto.createPublicKey(
+                                       keys.privateKey) });
   const verifying = await keyPairOf(lib, publicKeys, false);
   const cap = capabilityFor(valid.model);
   let signed;
   try {
     signed = await lib.jsigs.sign(cap, {
-      suite: new lib.Ed25519Signature2020({ key: signing.pair, date: new Date(valid.model.iat * 1000) }),
-      purpose: new lib.zcap.CapabilityDelegation({ parentCapability: cap.parentCapability }),
+      suite: new lib.Ed25519Signature2020({ key: signing.pair,
+                                            date: new Date(
+                                                valid.model.iat * 1000) }),
+      purpose: new lib.zcap.CapabilityDelegation(
+          { parentCapability: cap.parentCapability }),
       documentLoader: documentLoaderFor(lib, publicKeys, verifying.pair, target)
     });
   } catch (e) {
-    log.warn(errorCodes.tag('STS-GNAP-0335') + 'ZCAP signing failed in the library: ' + e.message);
+    log.warn(errorCodes.tag('STS-GNAP-0335') + 'ZCAP signing failed in the ' +
+                                               'library: ' + e.message);
     log.debug("Leaving mint(). Library failure.");
-    return refusal('STS-GNAP-0335', 'the ZCAP libraries refused to sign the capability: ' + e.message);
+    return refusal('STS-GNAP-0335', 'the ZCAP libraries refused to sign the ' +
+                                    'capability: ' + e.message);
   }
-  const value = Buffer.from(JSON.stringify(signed), 'utf8').toString('base64url');
+  const value = Buffer.from(JSON.stringify(signed), 'utf8')
+                      .toString('base64url');
   log.debug("Leaving mint(). jti=" + valid.model.jti);
   return { value: value, format: FORMAT, jti: valid.model.jti };
 }
@@ -455,12 +514,14 @@ function decodeValue(value) {
   log.debug("Entering decodeValue().");
   if (typeof value !== 'string' || !VALUE_RE.test(value)) {
     log.debug("Leaving decodeValue(). Not base64url.");
-    return refusal('STS-GNAP-0332', 'the token value is not unpadded base64url.');
+    return refusal('STS-GNAP-0332',
+                   'the token value is not unpadded base64url.');
   }
   let doc;
   try {
     doc = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
   } catch (e) {
+    log.debug("Caught in decodeValue(): " + ((e && e.message) || e));
     log.debug("Leaving decodeValue(). Not JSON.");
     return refusal('STS-GNAP-0332', 'the token value is not base64url JSON.');
   }
@@ -468,16 +529,19 @@ function decodeValue(value) {
     log.debug("Leaving decodeValue(). Not an object.");
     return refusal('STS-GNAP-0332', 'the token value is not a JSON object.');
   }
-  const extra = Object.keys(doc).filter(function (k) { return MEMBERS.indexOf(k) < 0; });
+  const extra = Object.keys(doc)
+                      .filter(function (k) { return MEMBERS.indexOf(k) < 0; });
   if (extra.length) {
     log.debug("Leaving decodeValue(). Unknown members.");
-    return refusal('STS-GNAP-0332', 'the capability carries members this format does not write: ' +
+    return refusal('STS-GNAP-0332', 'the capability carries members this ' +
+                                    'format does not write: ' +
                    extra.join(', ') + '.');
   }
   if (access.canonicalJson(doc['@context']) !== access.canonicalJson(CONTEXT)) {
     log.debug("Leaving decodeValue(). Context is not the pinned one.");
-    return refusal('STS-GNAP-0332', 'the capability\'s @context is not exactly the GNAP ZCAP ' +
-                   'context, so what was signed and what would be read could differ.');
+    return refusal('STS-GNAP-0332', 'the capability\'s @context is not ' +
+                   'exactly the GNAP ZCAP context, so what was signed and ' +
+                   'what would be read could differ.');
   }
   log.debug("Leaving decodeValue(). Decoded.");
   return { ok: true, doc: doc };
@@ -490,16 +554,21 @@ function decodeValue(value) {
 function readModel(doc) {
   log.debug("Entering readModel().");
   function bad(why) {
+    log.debug("Entering bad().");
     log.debug("Leaving readModel(). " + why);
-    return refusal('STS-GNAP-0334', 'the capability\'s GNAP terms are inconsistent: ' + why + '.');
+    return refusal('STS-GNAP-0334', 'the capability\'s GNAP terms are ' +
+                                    'inconsistent: ' + why + '.');
   }
   if (typeof doc.id !== 'string' || doc.id.indexOf(ID_PREFIX) !== 0) {
+    log.debug("Leaving readModel().");
     return bad('its id is not ' + ID_PREFIX + '<jti>');
   }
   let jti;
   try {
     jti = decodeURIComponent(doc.id.slice(ID_PREFIX.length));
   } catch (e) {
+    log.debug("Caught in readModel(): " + ((e && e.message) || e));
+    log.debug("Leaving readModel().");
     return bad('its id is not percent-encoded');
   }
   const exp = Date.parse(doc.expires);
@@ -507,6 +576,7 @@ function readModel(doc) {
   if (doc.gnapCnf !== 'bearer') {
     cnf = access.cnfFromString(doc.gnapCnf);
     if (!cnf) {
+      log.debug("Leaving readModel().");
       return bad('gnapCnf is neither "bearer" nor a confirmation');
     }
   }
@@ -526,13 +596,17 @@ function readModel(doc) {
   };
   const valid = access.validateModel(model);
   if (!valid.ok) {
+    log.debug("Leaving readModel().");
     return bad('they are not a valid token model (' + valid.why + ')');
   }
   const expected = capabilityFor(valid.model);
-  const derived = ['id', 'parentCapability', 'invocationTarget', 'controller', 'expires', 'allowedAction'];
+  const derived = ['id', 'parentCapability', 'invocationTarget', 'controller',
+                   'expires', 'allowedAction'];
   for (let i = 0; i < derived.length; i++) {
     const name = derived[i];
-    if (access.canonicalJson(doc[name]) !== access.canonicalJson(expected[name])) {
+    if (access.canonicalJson(doc[name]) !== access.canonicalJson(
+        expected[name])) {
+      log.debug("Leaving readModel().");
       return bad('"' + name + '" is not the value the GNAP terms derive');
     }
   }
@@ -556,7 +630,8 @@ async function verify(value, keys, context) {
   const now = Number.isSafeInteger(ctx.now) ? ctx.now : helpers.nowSec();
   if (typeof doc.invocationTarget !== 'string' || !doc.invocationTarget) {
     log.debug("Leaving verify(). No target.");
-    return refusal('STS-GNAP-0334', 'the capability names no invocationTarget.');
+    return refusal('STS-GNAP-0334',
+                   'the capability names no invocationTarget.');
   }
   const libs = await libraries();
   if (!libs.ok) {
@@ -578,7 +653,8 @@ async function verify(value, keys, context) {
         allowTargetAttenuation: true,
         date: new Date(now * 1000)
       }),
-      documentLoader: documentLoaderFor(lib, keys, verifying.pair, doc.invocationTarget)
+      documentLoader: documentLoaderFor(lib, keys, verifying.pair,
+                                        doc.invocationTarget)
     });
   } catch (e) {
     // jsigs reports through `result`; a throw is malformed input it could not
@@ -586,19 +662,24 @@ async function verify(value, keys, context) {
     result = { verified: false, error: e };
   }
   if (!result || !result.verified) {
-    const errors = result && result.error ? (result.error.errors || [result.error]) : [];
-    const why = errors.map(function (e) { return e && e.message && e.message.replace(/\.$/, ''); })
+    const errors = result && result.error ?
+                   (result.error.errors || [result.error]) : [];
+    const why = errors.map(function (e) {
+      return e && e.message && e.message.replace(/\.$/, '');
+    })
       .filter(Boolean).join('; ');
     log.debug("Leaving verify(). Proof refused: " + why);
-    return refusal('STS-GNAP-0333', 'the capability\'s delegation proof does not verify under this ' +
-                   'authorization server\'s key' + (why ? ': ' + why : '') + '.');
+    return refusal('STS-GNAP-0333', 'the capability\'s delegation proof does ' +
+                   'not verify under this authorization server\'s ' +
+                   'key' + (why ? ': ' + why : '') + '.');
   }
   const read = readModel(doc);
   if (!read.ok) {
     log.debug("Leaving verify(). Model refused.");
     return read;
   }
-  const failed = access.checkPresentation(read.model, Object.assign({}, ctx, { now: now }));
+  const failed = access.checkPresentation(read.model,
+                                          Object.assign({}, ctx, { now: now }));
   if (failed) {
     log.debug("Leaving verify(). Presentation refused.");
     return failed;
@@ -611,18 +692,22 @@ function describe() {
   log.debug("Entering describe().");
   const out = {
     name: FORMAT,
-    libraries: ['@digitalbazaar/zcap', '@digitalbazaar/zcap-context', 'jsonld-signatures', 'jsonld',
-                '@digitalbazaar/ed25519-signature-2020', '@digitalbazaar/ed25519-verification-key-2020',
+    libraries: ['@digitalbazaar/zcap', '@digitalbazaar/zcap-context',
+                'jsonld-signatures', 'jsonld',
+                '@digitalbazaar/ed25519-signature-2020',
+                '@digitalbazaar/ed25519-verification-key-2020',
                 '@digitalbazaar/security-context'].map(access.libraryInfo),
     algorithms: [
       ['Proof suite', ['Ed25519Signature2020']],
       ['Canonicalisation', ['RDF Dataset Canonicalization (URDNA2015)']],
       ['Digest', ['SHA-256']],
       ['Signature', ['Ed25519']],
-      ['Proof purpose', ['capabilityDelegation, one link from a root the AS controls']],
+      ['Proof purpose', ['capabilityDelegation, one link from a root the AS ' +
+                         'controls']],
       ['Serialisation', ['JSON-LD, unpadded base64url']]
     ],
-    carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags', 'cnf',
+    carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
+              'cnf',
               'iat', 'nbf', 'exp', 'label'],
     cannot: []
   };

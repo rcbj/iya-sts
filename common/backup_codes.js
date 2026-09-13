@@ -144,6 +144,8 @@ const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 // because nothing about the comparison depends on the setting.
 // ---------------------------------------------------------------------------
 function settings() {
+  log.debug("Entering settings().");
+  log.debug("Leaving settings().");
   return {
     enabled: config.value('backupCodes.enabled') !== false,
     count: Math.max(1, Math.min(50,
@@ -164,7 +166,9 @@ function settings() {
 // A setting as a number, or the fallback where it is not one — never `||`,
 // which reads a legal zero as absent.
 function numberOr(value, fallback) {
+  log.debug("Entering numberOr().");
   const n = Number(value);
+  log.debug("Leaving numberOr().");
   return (value === '' || value === null || value === undefined || !isFinite(n))
     ? fallback : n;
 }
@@ -180,6 +184,8 @@ function numberOr(value, fallback) {
 // account whose phone is lost would be the worst possible knob in this
 // service. What it stops is a new set being ISSUED.
 function offered() {
+  log.debug("Entering offered().");
+  log.debug("Leaving offered().");
   return settings().enabled;
 }
 
@@ -195,11 +201,13 @@ function offered() {
 // coincidence a later reader would have to re-derive.
 // ---------------------------------------------------------------------------
 function generateCode(length) {
+  log.debug("Entering generateCode().");
   const want = Number(length || settings().length);
   let out = '';
   for (let i = 0; i < want; i++) {
     out += ALPHABET[nodeCrypto.randomInt(0, ALPHABET.length)];
   }
+  log.debug("Leaving generateCode().");
   return out;
 }
 
@@ -239,8 +247,8 @@ function generate(opts) {
     // asked for ten would write eight to the directory and tell the person
     // they had ten.
     log.error(errorCodes.tag('STS-AUTHN-0083') +
-              'backup_codes: only ' + codes.length + ' distinct code(s) could ' +
-              'be generated out of ' + count + ' asked for, in ' + tries +
+              'backup_codes: only ' + codes.length + ' distinct code(s) ' +
+              'could be generated out of ' + count + ' asked for, in ' + tries +
               ' attempt(s). The alphabet or the length must have been made ' +
               'too small to hold that many.');
     log.debug('Leaving generate(). Short.');
@@ -266,21 +274,27 @@ function generate(opts) {
 // which is a comparison against a string the person did not type.
 // ---------------------------------------------------------------------------
 function normalise(text) {
+  log.debug("Entering normalise().");
+  log.debug("Leaving normalise().");
   return String(text == null ? '' : text).toUpperCase().replace(/[\s-]/g, '');
 }
 
 // The printed form: groups with a dash between them, which is the rendering
 // `normalise()` above is written to accept back.
 function formatted(code, groupSize) {
-  const size = groupSize === undefined ? settings().groupSize : Number(groupSize);
+  log.debug("Entering formatted().");
+  const size = groupSize === undefined ? settings().groupSize :
+               Number(groupSize);
   const text = String(code || '');
   if (!size || size <= 0 || size >= text.length) {
+    log.debug("Leaving formatted().");
     return text;
   }
   const parts = [];
   for (let i = 0; i < text.length; i += size) {
     parts.push(text.slice(i, i + size));
   }
+  log.debug("Leaving formatted().");
   return parts.join('-');
 }
 
@@ -295,6 +309,8 @@ function formatted(code, groupSize) {
 // header about that.
 // ---------------------------------------------------------------------------
 function matches(presented, stored) {
+  log.debug("Entering matches().");
+  log.debug("Leaving matches().");
   return crypto.constantTimeEquals(normalise(presented), normalise(stored));
 }
 
@@ -332,10 +348,14 @@ function matches(presented, stored) {
 // presented code be looked up rather than walked.
 // ===========================================================================
 function hash(code) {
+  log.debug("Entering hash().");
+  log.debug("Leaving hash().");
   return crypto.hashSecret(normalise(code));
 }
 
 function hashAsync(code) {
+  log.debug("Entering hashAsync().");
+  log.debug("Leaving hashAsync().");
   return crypto.hashSecretAsync(normalise(code));
 }
 
@@ -347,10 +367,14 @@ function hashAsync(code) {
 // a plaintext comparison against anything that did not look like a hash —
 // which is precisely what a set written by an older build looks like.
 function matchesHash(presented, storedHash) {
+  log.debug("Entering matchesHash().");
+  log.debug("Leaving matchesHash().");
   return crypto.verifySecret(normalise(presented), storedHash);
 }
 
 function matchesHashAsync(presented, storedHash) {
+  log.debug("Entering matchesHashAsync().");
+  log.debug("Leaving matchesHashAsync().");
   return crypto.verifySecretAsync(normalise(presented), storedHash);
 }
 
@@ -359,6 +383,8 @@ function matchesHashAsync(presented, storedHash) {
 // keep in step, and a set written by a build that stored the codes themselves
 // is exactly the case this has to be able to tell apart.
 function isHash(stored) {
+  log.debug("Entering isHash().");
+  log.debug("Leaving isHash().");
   return /^\$scrypt\$/.test(String(stored || ''));
 }
 
@@ -367,15 +393,19 @@ function isHash(stored) {
 // rather than being compared — in constant time — against every code the
 // person holds.
 function wellFormed(presented) {
+  log.debug("Entering wellFormed().");
   const text = normalise(presented);
   if (!text) {
+    log.debug("Leaving wellFormed().");
     return false;
   }
   for (let i = 0; i < text.length; i++) {
     if (ALPHABET.indexOf(text[i]) < 0) {
+      log.debug("Leaving wellFormed().");
       return false;
     }
   }
+  log.debug("Leaving wellFormed().");
   return true;
 }
 
@@ -385,11 +415,13 @@ function wellFormed(presented) {
 // design: the table lives with the code that performs the thing.
 // ---------------------------------------------------------------------------
 function report() {
+  log.debug("Entering report().");
   const live = settings();
   // The entropy per code, said in bits rather than left for a reader to work
   // out from an alphabet size and a length. It is the number that decides
   // whether the mechanism is worth anything.
   const bits = Math.floor(live.length * Math.log2(ALPHABET.length));
+  log.debug("Leaving report().");
   return {
     offered: live.enabled,
     count: live.count,
@@ -411,9 +443,9 @@ function report() {
     atRest: 'A scrypt HASH of each code, through crypto.hashSecret() — the ' +
             'same function and the same stored form as userPassword — so ' +
             'this service can check a code and can never show one again, its ' +
-            'owner included. A set written by a build before 2026-09-11 holds ' +
-            'the codes themselves and is still accepted, code by code, until ' +
-            'its owner generates a new one.',
+            'owner included. A set written by a build before 2026-09-11 ' +
+            'holds the codes themselves and is still accepted, code by code, ' +
+            'until its owner generates a new one.',
     comparisonOfAHash: 'crypto.verifySecret() in constant time against each ' +
                        'stored hash in turn, on the worker pool where the ' +
                        'door is asynchronous.'

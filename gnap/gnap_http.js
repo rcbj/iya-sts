@@ -3,32 +3,35 @@
 // File: gnap_http.js
 //
 // ---------------------------------------------------------------------------
-// THE FIFTH OUTBOUND REQUEST IN THIS REPOSITORY: GNAP'S PUSH INTERACTION FINISH.
+// THE FIFTH OUTBOUND REQUEST IN THIS REPOSITORY: GNAP'S PUSH INTERACTION
+// FINISH.
 //
 // RFC 9635 section 4.2.2: when a client asked to be told by `push` that
 // interaction has finished, the AS "signals to the client instance that
 // interaction is complete ... by sending an HTTP POST request to the client
-// instance's callback URI", with `{ hash, interact_ref }` as JSON. That URI came
-// from the CLIENT, in the grant request, which is the one thing root CLAUDE.md's
-// row on outbound requests is careful about: this service does not dial a URL a
-// caller supplied for it to fetch something FROM, and every URL it does dial is
-// "an address somebody is asking to be SENT something at". A push finish URI is
-// squarely the second kind — the client is naming where it wants the
-// notification delivered — which is SSF push delivery's argument
+// instance's callback URI", with `{ hash, interact_ref }` as JSON. That URI
+// came from the CLIENT, in the grant request, which is the one thing root
+// CLAUDE.md's row on outbound requests is careful about: this service does not
+// dial a URL a caller supplied for it to fetch something FROM, and every URL it
+// does dial is "an address somebody is asking to be SENT something at". A push
+// finish URI is squarely the second kind — the client is naming where it wants
+// the notification delivered — which is SSF push delivery's argument
 // (`ssf/ssf_http.js`) made again rather than cited.
 //
-// **SECTION 11.34 (SSRF) IS WHY THE BOUNDS BELOW EXIST**, and each is a bound the
-// SSF transmitter already applies, read from GNAP's own settings so that turning
-// one family's outbound traffic off does not silently turn off the other's:
+// **SECTION 11.34 (SSRF) IS WHY THE BOUNDS BELOW EXIST**, and each is a bound
+// the SSF transmitter already applies, read from GNAP's own settings so that
+// turning one family's outbound traffic off does not silently turn off the
+// other's:
 //
 //   1. **A switch.** `gnap.pushFinish` off refuses before any socket opens, and
 //      discovery stops advertising `push`.
-//   2. **The address is checked BEFORE it is dialled, in `gnap.js`**: in product
-//      mode it must be a finish URI REGISTERED on the client's application entry
-//      (`applications.returnAddressesOf()`, the same decision every return
-//      address here goes through), and a sighting never registers one.
-//   3. **https unless `gnap.pushAllowInsecure`**, warned about on every insecure
-//      request; an optional host allowlist, `gnap.pushAllowedHosts`.
+//   2. **The address is checked BEFORE it is dialled, in `gnap.js`**: in
+//      product mode it must be a finish URI REGISTERED on the client's
+//      application entry (`applications.returnAddressesOf()`, the same decision
+//      every return address here goes through), and a sighting never registers
+//      one.
+//   3. **https unless `gnap.pushAllowInsecure`**, warned about on every
+//      insecure request; an optional host allowlist, `gnap.pushAllowedHosts`.
 //   4. **No redirects, a capped response, a timeout.** A 3xx is a failure — a
 //      redirect is how an allowed host forwards the request somewhere that is
 //      not — and nothing the client returns is read beyond its status.
@@ -50,6 +53,8 @@ const USER_AGENT = (function () {
   try {
     return version.userAgent('gnap-push-finish');
   } catch (e) {
+    log.debug("Caught in a callback in module scope: " +
+              ((e && e.message) || e));
     // The version record is never allowed to stop a request (root CLAUDE.md,
     // Versioning); a bare product token is the degraded answer.
     return 'sts (gnap-push-finish)';
@@ -59,8 +64,10 @@ const USER_AGENT = (function () {
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
 function allowedHosts() {
+  log.debug("Entering allowedHosts().");
   const asked = config.value('gnap.pushAllowedHosts');
   const list = Array.isArray(asked) ? asked : String(asked || '').split(',');
+  log.debug("Leaving allowedHosts().");
   return list.map(function (one) {
     return String(one).trim().toLowerCase();
   }).filter(Boolean);
@@ -76,21 +83,25 @@ function urlProblem(raw) {
   try {
     parsed = new URL(String(raw || ''));
   } catch (e) {
+    log.debug("Caught in urlProblem(): " + ((e && e.message) || e));
     log.debug("Leaving urlProblem(). Not a URL.");
     return 'the push finish URI is not an absolute URL';
   }
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     log.debug("Leaving urlProblem(). Scheme.");
-    return 'the push finish URI must be http(s); "' + parsed.protocol + '" cannot be POSTed to';
+    return 'the push finish URI must be http(s); "' + parsed.protocol + '" ' +
+        'cannot be POSTed to';
   }
   if (parsed.protocol === 'http:' && !config.value('gnap.pushAllowInsecure')) {
     log.debug("Leaving urlProblem(). Plain http without the setting.");
-    return 'the push finish URI uses plain http and gnap.pushAllowInsecure is off';
+    return 'the push finish URI uses plain http and gnap.pushAllowInsecure ' +
+           'is off';
   }
   const hosts = allowedHosts();
   if (hosts.length && hosts.indexOf(parsed.hostname.toLowerCase()) < 0) {
     log.debug("Leaving urlProblem(). Host not allowed.");
-    return 'the push finish URI\'s host ' + parsed.hostname + ' is not in gnap.pushAllowedHosts';
+    return 'the push finish URI\'s host ' + parsed.hostname + ' is not in ' +
+        'gnap.pushAllowedHosts';
   }
   log.debug("Leaving urlProblem(). Dialable.");
   return '';
@@ -100,21 +111,25 @@ function pushFinish(url, message) {
   log.debug("Entering pushFinish().");
   if (!config.value('gnap.pushFinish')) {
     log.debug("Leaving pushFinish(). Switched off.");
-    return Promise.resolve(errorCodes.mark({ ok: false, status: 0, errorCode: 'STS-GNAP-0600',
-      why: 'gnap.pushFinish is off, so this service makes no outbound request.', url: url },
+    return Promise.resolve(errorCodes.mark({ ok: false, status: 0,
+      errorCode: 'STS-GNAP-0600',
+      why: 'gnap.pushFinish is off, so this service makes no outbound request.',
+      url: url },
       'STS-GNAP-0600'));
   }
   const problem = urlProblem(url);
   if (problem) {
     log.debug("Leaving pushFinish(). " + problem);
-    return Promise.resolve(errorCodes.mark({ ok: false, status: 0, errorCode: 'STS-GNAP-0601',
+    return Promise.resolve(errorCodes.mark({ ok: false, status: 0,
+      errorCode: 'STS-GNAP-0601',
       why: problem, url: url }, 'STS-GNAP-0601'));
   }
   const target = new URL(url);
   const secure = target.protocol === 'https:';
   if (!secure) {
-    log.warn('gnap: pushing an interaction finish to ' + target.origin + ' over plain http ' +
-             'because gnap.pushAllowInsecure is ON. The interaction reference travels in clear.');
+    log.warn('gnap: pushing an interaction finish to ' + target.origin + ' ' +
+             'over plain http because gnap.pushAllowInsecure is ON. The ' +
+             'interaction reference travels in clear.');
   }
   const body = Buffer.from(JSON.stringify(message), 'utf8');
   const timeout = Number(config.value('gnap.pushTimeoutMs')) || 5000;
@@ -122,7 +137,9 @@ function pushFinish(url, message) {
   return new Promise(function (resolve) {
     let settled = false;
     const done = function (result) {
+      log.debug("Entering done().");
       if (settled) {
+        log.debug("Leaving done().");
         return;
       }
       settled = true;
@@ -130,6 +147,7 @@ function pushFinish(url, message) {
         errorCodes.mark(result, result.errorCode);
       }
       resolve(Object.assign({ url: url }, result));
+      log.debug("Leaving done().");
     };
     let request;
     try {
@@ -139,7 +157,8 @@ function pushFinish(url, message) {
         port: target.port || (secure ? 443 : 80),
         path: target.pathname + target.search,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': body.length,
+        headers: { 'Content-Type': 'application/json',
+                   'Content-Length': body.length,
                    'User-Agent': USER_AGENT },
         // The certificate IS checked unless the operator said otherwise: what
         // travels is a one-time interaction reference, and a client that can be
@@ -158,7 +177,8 @@ function pushFinish(url, message) {
           const status = response.statusCode;
           if (status >= 300 && status < 400) {
             done({ ok: false, status: status, errorCode: 'STS-GNAP-0602',
-                   why: 'the client answered the push with a redirect, which is not followed' });
+                   why: 'the client answered the push with a redirect, which ' +
+                        'is not followed' });
           } else if (status >= 200 && status < 300) {
             done({ ok: true, status: status });
           } else {
@@ -167,8 +187,10 @@ function pushFinish(url, message) {
           }
         });
         response.on('error', function (error) {
-          done({ ok: false, status: response.statusCode, errorCode: 'STS-GNAP-0604',
-                 why: 'the push response could not be read: ' + error.message });
+          done({ ok: false, status: response.statusCode,
+                 errorCode: 'STS-GNAP-0604',
+                 why: 'the push response could not be read: ' +
+                      error.message });
         });
       });
       request.setTimeout(timeout, function () {

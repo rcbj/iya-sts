@@ -20,6 +20,7 @@ process.on('message', function (message) {
     sawBuffer: Buffer.isBuffer(csr),
     sawType: (csr && csr.constructor && csr.constructor.name) || typeof csr,
     sameBytes: Buffer.isBuffer(csr) &&
-      Buffer.compare(csr, Buffer.from([0x30, 0x82, 0x01, 0xff, 0x00, 0x7f])) === 0
+      Buffer.compare(csr,
+                     Buffer.from([0x30, 0x82, 0x01, 0xff, 0x00, 0x7f])) === 0
   });
 });

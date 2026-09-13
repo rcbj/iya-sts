@@ -126,8 +126,8 @@ const bcp = require('../oauth-oidc/oauth2_bcp');
 // three audit rows, which is three facts at three layers rather than one fact
 // three times; /admin/audit says so where a reader counting rows will see it.
 //
-// This module also FILLS audit.js's actor slot at the bottom of this file, which
-// is what puts a name on every console and management API row.
+// This module also FILLS audit.js's actor slot at the bottom of this file,
+// which is what puts a name on every console and management API row.
 const audit = require('../common/audit');
 // The error codes (common/error_codes.js). A refusal here is marked on the
 // RESPONSE before the page or redirect is sent; a verdict from the credential
@@ -206,18 +206,24 @@ const SESSION_COOKIE = 'sts_session';
 const SESSION_TTL_MS = 60 * 60 * 1000;
 
 function secondsSetting(key, fallbackMs) {
+  log.debug("Entering secondsSetting().");
   const n = Number(config.value(key));
+  log.debug("Leaving secondsSetting().");
   return (isFinite(n) && n > 0 ? Math.floor(n) * 1000 : fallbackMs);
 }
 
 function sessionLifetimeMs() {
+  log.debug("Entering sessionLifetimeMs().");
+  log.debug("Leaving sessionLifetimeMs().");
   return secondsSetting('authn.sessionLifetimeS', SESSION_TTL_MS);
 }
 
 // ZERO IS THE DEFAULT AND MEANS NONE, so this is NOT `secondsSetting()`, whose
 // fallback would turn a deliberate zero into an hour.
 function sessionIdleTimeoutMs() {
+  log.debug("Entering sessionIdleTimeoutMs().");
   const n = Number(config.value('authn.sessionIdleTimeoutS'));
+  log.debug("Leaving sessionIdleTimeoutMs().");
   return isFinite(n) && n > 0 ? Math.floor(n) * 1000 : 0;
 }
 
@@ -233,18 +239,23 @@ function sessionIdleTimeoutMs() {
 // the screen.
 // ---------------------------------------------------------------------------
 function sessionEnded(session, nowMs) {
+  log.debug("Entering sessionEnded().");
   const now = nowMs || Date.now();
   if (!session) {
+    log.debug("Leaving sessionEnded().");
     return 'expired';
   }
   if (session.expires && session.expires < now) {
+    log.debug("Leaving sessionEnded().");
     return 'expired';
   }
   const idle = sessionIdleTimeoutMs();
   if (idle && session.chosen !== false && session.lastSeenAt &&
       now - session.lastSeenAt > idle) {
+    log.debug("Leaving sessionEnded().");
     return 'idle';
   }
+  log.debug("Leaving sessionEnded().");
   return '';
 }
 
@@ -255,15 +266,19 @@ function sessionEnded(session, nowMs) {
 // once a second, because `sessionOf()` is called several times per request and
 // the store's journal sees `set()` rather than a stamped field.
 function noteSessionUsed(store, id, session) {
+  log.debug("Entering noteSessionUsed().");
   if (!session || !sessionIdleTimeoutMs()) {
+    log.debug("Leaving noteSessionUsed().");
     return;
   }
   const now = Date.now();
   if (session.lastSeenAt && now - session.lastSeenAt < 1000) {
+    log.debug("Leaving noteSessionUsed().");
     return;
   }
   session.lastSeenAt = now;
   store.set(id, session);
+  log.debug("Leaving noteSessionUsed().");
 }
 
 // ---------------------------------------------------------------------------
@@ -293,6 +308,8 @@ const ANONYMOUS_USERNAME = 'anonymous';
 const AUTHN_TTL_MS = 10 * 60 * 1000;
 
 function pendingTtlMs() {
+  log.debug("Entering pendingTtlMs().");
+  log.debug("Leaving pendingTtlMs().");
   return secondsSetting('authn.pendingTtlS', AUTHN_TTL_MS);
 }
 
@@ -301,7 +318,8 @@ function pendingTtlMs() {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const sessions = realms.map({ persist: 'authn.sessions' });  // session id -> the signed-in user
+// session id -> the signed-in user
+const sessions = realms.map({ persist: 'authn.sessions' });
 
 // The requests waiting at the login screen: what to do with the person once
 // they have signed in, and what to tell them they are signing in FOR.
@@ -310,7 +328,8 @@ const sessions = realms.map({ persist: 'authn.sessions' });  // session id -> th
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const pending = realms.map({ persist: 'authn.pending' });  // authn id -> { returnTo, details, ... }
+// authn id -> { returnTo, details, ... }
+const pending = realms.map({ persist: 'authn.pending' });
 
 // WebAuthn, IN EITHER OF ITS TWO ROLES. The verifier is ./webauthn — written
 // from the specification and sharing no code with the debugger's own decoder,
@@ -399,6 +418,8 @@ const pendingMfa = realms.map({ persist: 'authn.pendingMfa' });
 const MFA_TTL_MS = 5 * 60 * 1000;
 
 function mfaStepTtlMs() {
+  log.debug("Entering mfaStepTtlMs().");
+  log.debug("Leaving mfaStepTtlMs().");
   return secondsSetting('authn.mfaStepTtlS', MFA_TTL_MS);
 }
 
@@ -411,7 +432,8 @@ function cookiesOf(req) {
   const out = {};
   String(req.headers.cookie || '').split(';').forEach(function (part) {
     const i = part.indexOf('=');
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(
+        part.slice(i + 1).trim());
   });
   log.debug("Leaving cookiesOf(). " + Object.keys(out).length + " cookie(s).");
   return out;
@@ -426,7 +448,8 @@ function sessionOf(req) {
   }
   const session = sessions.get(id);
   if (!session) {
-    log.debug("Leaving sessionOf(). The cookie names no session this server knows.");
+    log.debug("Leaving sessionOf(). The cookie names no session this server " +
+              "knows.");
     return null;
   }
   const ended = sessionEnded(session);
@@ -434,10 +457,12 @@ function sessionOf(req) {
     // Through expireSession() and not a bare delete: this is a session ENDING
     // and it owes the same audit row and the same CAEP event every other way of
     // ending one writes. See that function's header.
-    expireSession(sessions.realmMap(), id, session, 'a request that presented it',
+    expireSession(sessions.realmMap(), id, session, 'a request that ' +
+                                                    'presented it',
                   ended);
     log.debug("Leaving sessionOf(). The session had " +
-              (ended === 'idle' ? "gone idle" : "expired") + " and was discarded.");
+              (ended === 'idle' ? "gone idle" : "expired") + " and was " +
+                  "discarded.");
     return null;
   }
   // -------------------------------------------------------------------------
@@ -470,7 +495,8 @@ function sessionOf(req) {
   // construction rather than by everybody remembering.
   // -------------------------------------------------------------------------
   if (session.chosen === false) {
-    log.debug("Leaving sessionOf(). An anonymous session nobody has chosen yet.");
+    log.debug("Leaving sessionOf(). An anonymous session nobody has chosen " +
+              "yet.");
     return null;
   }
   noteSessionUsed(sessions.realmMap(), id, session);
@@ -550,8 +576,8 @@ function startArrivalSession(req, res, via) {
     relyingParties: []
   };
   sessions.set(sessionId, session);
-  setCookieHeader(res, SESSION_COOKIE + '=' + sessionId + '; Path=/; HttpOnly; ' +
-                  'SameSite=Lax' +
+  setCookieHeader(res, SESSION_COOKIE + '=' + sessionId + '; Path=/; ' +
+                  'HttpOnly; SameSite=Lax' +
                   (config.value('global.https') ? '; Secure' : ''));
   log.debug("Leaving startArrivalSession(). " + sessionId + ".");
   return session;
@@ -626,15 +652,19 @@ const NOT_ARRIVAL_PATHS = [
 ];
 
 function isArrivalPath(pathOnly) {
+  log.debug("Entering isArrivalPath().");
   if (NOT_ARRIVAL_PATHS.indexOf(pathOnly) >= 0) {
+    log.debug("Leaving isArrivalPath().");
     return false;
   }
   for (let i = 0; i < ARRIVAL_PATHS.length; i++) {
     const entry = ARRIVAL_PATHS[i];
     if (pathOnly === entry || pathOnly.indexOf(entry + '/') === 0) {
+      log.debug("Leaving isArrivalPath().");
       return true;
     }
   }
+  log.debug("Leaving isArrivalPath().");
   return false;
 }
 
@@ -694,15 +724,19 @@ app.use(function (req, res, next) {
 // business being applied to one.
 // ---------------------------------------------------------------------------
 function touchArrivalSession(req) {
+  log.debug("Entering touchArrivalSession().");
   const id = cookiesOf(req)[SESSION_COOKIE];
   if (!id) {
+    log.debug("Leaving touchArrivalSession().");
     return;
   }
   const session = sessions.get(id);
   if (!session || session.chosen !== false) {
+    log.debug("Leaving touchArrivalSession().");
     return;
   }
   if (session.expires && session.expires <= Date.now()) {
+    log.debug("Leaving touchArrivalSession().");
     // Already gone. Not revived — see the header.
     return;
   }
@@ -714,6 +748,7 @@ function touchArrivalSession(req) {
   // nothing else. Another process would go on holding the OLD expiry and
   // refuse a session somebody is actively using.
   sessions.set(id, session);
+  log.debug("Leaving touchArrivalSession().");
 }
 
 // The arrival session behind the cookie, if that is what it is. It exists for
@@ -721,17 +756,22 @@ function touchArrivalSession(req) {
 // wants sessionOf(), which is the question they are actually asking, and which
 // deliberately declines to hand one of these out.
 function arrivalSessionOf(req) {
+  log.debug("Entering arrivalSessionOf().");
   const id = cookiesOf(req)[SESSION_COOKIE];
   if (!id) {
+    log.debug("Leaving arrivalSessionOf().");
     return null;
   }
   const session = sessions.get(id);
   if (!session || session.chosen !== false) {
+    log.debug("Leaving arrivalSessionOf().");
     return null;
   }
   if (session.expires < Date.now()) {
+    log.debug("Leaving arrivalSessionOf().");
     return null;
   }
+  log.debug("Leaving arrivalSessionOf().");
   return session;
 }
 
@@ -819,6 +859,7 @@ function derivedFrom(parentId, store) {
   const found = [];
   const seen = {};
   function scan(realmId, map) {
+    log.debug("Entering scan().");
     map.forEach(function (held, id) {
       if (!held || held.derivedFrom !== parentId || seen[id]) {
         return;
@@ -829,6 +870,7 @@ function derivedFrom(parentId, store) {
       seen[id] = true;
       found.push({ id: id, session: held, realm: realmId });
     });
+    log.debug("Leaving scan().");
   }
   scan(here, store || sessions.realmMap());
   if (here !== realms.DEFAULT_ID) {
@@ -880,7 +922,25 @@ function relyingPartySessionOf(req, cookie, realmId) {
   const parentRealm = String(session.derivedFromRealm || ownRealm);
   const parentStore = parentRealm === ownRealm
     ? store : sessions.realmMap(parentRealm);
-  if (session.derivedFrom && !parentStore.get(session.derivedFrom)) {
+  // -------------------------------------------------------------------------
+  // A PARENT THAT RAN OUT IS NOT A PARENT THAT SIGNED OUT (2026-09-12).
+  //
+  // A relying-party session that holds a REFRESH TOKEN renews its own tokens
+  // (`common/oidc_rp.js`'s `renewIfDue()`), so it is not bound to the sign-on
+  // session's absolute lifetime any more than a real relying party is bound to
+  // its provider's. A SIGN-OUT still ends it: `dropSession()`'s cascade runs
+  // while the parent exists and ends every child. What is left for this check
+  // to tell apart is WHY a parent is missing, and the clock answers it without
+  // a flag anybody has to remember to write: a parent gone after the moment it
+  // would have expired (`derivedFromExpires`) ran out; one gone BEFORE that
+  // moment was ended, and a child still standing is a cascade that did not
+  // reach it — which is ended here exactly as before.
+  // -------------------------------------------------------------------------
+  const parentRanOut = !!(session.rpTokens && session.rpTokens.refreshToken &&
+                          session.derivedFromExpires &&
+                          Date.now() >= session.derivedFromExpires);
+  if (session.derivedFrom && !parentStore.get(session.derivedFrom) &&
+      !parentRanOut) {
     // The provider session is gone and this one is therefore over. It is ENDED
     // rather than merely refused, so that /admin/sessions stops listing it and
     // the audit log carries the row: a session that keeps being refused and
@@ -888,14 +948,16 @@ function relyingPartySessionOf(req, cookie, realmId) {
     log.info('authn: the ' + (session.rpSurface || 'relying party') +
              ' session ' + id + ' is being ended because the sign-on session ' +
              'it was derived from (' + session.derivedFrom + ', in realm ' +
-             parentRealm + ') is gone. A relying party session cannot outlive ' +
-             'the provider session it was issued against.');
-    // IN THE REALM THE SESSION IS IN, and not in the ambient one. `dropSession()`
-    // works on the ambient realm's partition, and this function is reached with
-    // an explicit realm — the console reads its default-realm session from
-    // inside whatever realm the request is in. Dropping it ambiently deleted
-    // nothing and left the orphan to be reported again on the next request.
-    if (parentRealm !== ownRealm || (realmId && realmId !== realms.currentId())) {
+             parentRealm + ') is gone. A relying party session cannot ' +
+             'outlive the provider session it was issued against.');
+    // IN THE REALM THE SESSION IS IN, and not in the ambient one.
+    // `dropSession()` works on the ambient realm's partition, and this function
+    // is reached with an explicit realm — the console reads its default-realm
+    // session from inside whatever realm the request is in. Dropping it
+    // ambiently deleted nothing and left the orphan to be reported again on the
+    // next request.
+    if (parentRealm !== ownRealm ||
+        (realmId && realmId !== realms.currentId())) {
       realms.run(realms.get(ownRealm), function () {
         dropSession(id, 'the sign-on session it came from ended', true, req);
       });
@@ -938,23 +1000,36 @@ function startRelyingPartySession(spec) {
   // the parent check above), so making it longer would only mean listing a row
   // that is already dead. Shorter is a legitimate thing for a deployment to
   // want and is not built: one lifetime is what `logout.js`'s
-  // SESSION_EXPIRY_RULES can describe honestly.
-  // THE PARENT MAY BE IN ANOTHER PARTITION. `spec.parentRealm` is the realm the
-  // code flow ran in, which for the admin console is the ambient realm while
-  // this session is being created in the default one. Reading the expiry out of
-  // THIS store would find nothing and fall back to a full session lifetime, so a
-  // console session would routinely outlive the sign-on session it descends
-  // from — which the parent check in relyingPartySessionOf() would then end, at
-  // a moment decided by nothing a reader could see.
+  // SESSION_EXPIRY_RULES can describe honestly. THE PARENT MAY BE IN ANOTHER
+  // PARTITION. `spec.parentRealm` is the realm the code flow ran in, which for
+  // the admin console is the ambient realm while this session is being created
+  // in the default one. Reading the expiry out of THIS store would find nothing
+  // and fall back to a full session lifetime, so a console session would
+  // routinely outlive the sign-on session it descends from — which the parent
+  // check in relyingPartySessionOf() would then end, at a moment decided by
+  // nothing a reader could see.
   const parentRealm = String(spec.parentRealm || realms.currentId());
   const parentStore = parentRealm === realms.currentId()
     ? store : sessions.realmMap(parentRealm);
   const parent = spec.parent ? parentStore.get(spec.parent) : null;
+  // -------------------------------------------------------------------------
+  // …UNLESS IT CAN RENEW ITSELF (2026-09-12). A session handed a refresh token
+  // is renewed through the refresh token grant when its ID Token and access
+  // token run out — see `common/oidc_rp.js` — so its absolute expiry is the
+  // end of the window it may renew in (`spec.renewableUntil`, the refresh
+  // token's lifetime from the sign-in), or the tokens' own expiry where that
+  // is later. The paragraph above is still the rule for a session with no
+  // refresh token, and every session made before this existed is one.
+  // -------------------------------------------------------------------------
+  const tokens = spec.tokens || null;
+  const renewable = !!(tokens && tokens.refreshToken && spec.renewableUntil);
   const session = {
     id: sessionId,
     user: userFor(username),
     authTime: Number(claims.auth_time) || nowSec(),
-    expires: parent ? parent.expires : Date.now() + sessionLifetimeMs(),
+    expires: renewable
+      ? Math.max(Number(spec.renewableUntil), tokensExpireAt(tokens))
+      : (parent ? parent.expires : Date.now() + sessionLifetimeMs()),
     // Off the ID TOKEN and not off the parent, because the token is what this
     // application was actually told. They agree today — the same process
     // issued both — and a relying party that read the provider's own record
@@ -968,11 +1043,12 @@ function startRelyingPartySession(spec) {
     // application entry it belongs to, so a row can be followed back to the
     // client that holds it.
     derivedFrom: spec.parent || '',
-    // WHICH REALM'S PARTITION THAT PARENT IS IN. Empty where there is no parent;
-    // otherwise the realm the code flow ran in, which is the ambient realm for
-    // both surfaces and is NOT this session's own realm for the admin console.
-    // Every reader treats an absent value as "this session's own realm", so a
-    // record from a process older than 2026-09-11 behaves as it did.
+    // WHICH REALM'S PARTITION THAT PARENT IS IN. Empty where there is no
+    // parent; otherwise the realm the code flow ran in, which is the ambient
+    // realm for both surfaces and is NOT this session's own realm for the admin
+    // console. Every reader treats an absent value as "this session's own
+    // realm", so a record from a process older than 2026-09-11 behaves as it
+    // did.
     derivedFromRealm: spec.parent ? parentRealm : '',
     rpSurface: String(spec.surface || ''),
     rpLabel: String(spec.label || spec.surface || ''),
@@ -981,6 +1057,24 @@ function startRelyingPartySession(spec) {
     // front-channel logout can name this session the way OpenID Connect
     // Front-Channel Logout section 3 means.
     rpSid: String(claims.sid || ''),
+    // THE TOKENS THIS RELYING PARTY WAS ISSUED, and the one place they are
+    // kept (2026-09-12). The ID Token, the access token and the refresh token,
+    // with the instants the first two run out, the issuer and subject the
+    // renewed ID Token must repeat, the realm the code flow ran in and the
+    // Host it was asked under. It is ON THE SESSION because that is what it
+    // belongs to: a store of its own would be a second record of who is signed
+    // in to the console, and it goes when the session does. Never drawn by a
+    // view — `logout.js` builds its rows field by field — and never audited.
+    // At rest it is what the whole session row is: sealed wherever minted rows
+    // persist (`persistence/persistence_minted.js`).
+    rpTokens: tokens,
+    rpRenewableUntil: renewable ? Number(spec.renewableUntil) : 0,
+    rpRenewals: 0,
+    rpRenewedAt: 0,
+    // When the sign-on session this one hangs off would have expired, so the
+    // reader can tell a parent that RAN OUT from one that was ENDED. See
+    // relyingPartySessionOf().
+    derivedFromExpires: parent ? Number(parent.expires || 0) : 0,
     credentialKey: null,
     lastSeenAt: Date.now(),
     calls: 1
@@ -1015,6 +1109,10 @@ function startRelyingPartySession(spec) {
       acr: session.acr || '',
       authTime: session.authTime,
       expiresAt: new Date(session.expires).toISOString(),
+      // Whether it renews its own tokens, and until when. Never the tokens.
+      renewable: renewable,
+      renewableUntil: renewable ?
+                      new Date(session.rpRenewableUntil).toISOString() : '',
       note: 'A RELYING PARTY session, established from a verified ID Token ' +
             'rather than from a credential. Nobody authenticated here: the ' +
             'authentication is the session.start row for ' +
@@ -1023,14 +1121,100 @@ function startRelyingPartySession(spec) {
   });
   session.firstPresentationIsTheSignIn = true;
   notifySession('established', session,
-                { via: 'OAuth 2.0 / OIDC', req: (spec.res && spec.res.req) || null });
+                { via: 'OAuth 2.0 / OIDC',
+                  req: (spec.res && spec.res.req) || null });
   log.info('authn: ' + username + ' holds a ' + (spec.label || spec.surface) +
            ' session (' + sessionId + ') in realm ' + realms.currentId() +
            ', derived from sign-on session ' + (spec.parent || '(none)') +
            (spec.parent ? ' in realm ' + parentRealm : '') +
-           '. No authentication was recorded here — the authorization endpoint ' +
-           'already counted it.');
+           '. No authentication was recorded here — the authorization ' +
+           'endpoint already counted it.');
   log.debug("Leaving startRelyingPartySession(). " + sessionId);
+  return session;
+}
+
+// When a relying party's tokens stop saying anything: the EARLIER of the
+// access token's expiry and the ID Token's, in milliseconds. 0 for a session
+// holding none, which every reader treats as "nothing to renew".
+function tokensExpireAt(tokens) {
+  log.debug("Entering tokensExpireAt().");
+  if (!tokens) {
+    log.debug("Leaving tokensExpireAt(). No tokens.");
+    return 0;
+  }
+  const instants = [Number(tokens.accessExpiresAt) || 0,
+                    Number(tokens.idTokenExpiresAt) || 0]
+    .filter(function (ms) { return ms > 0; });
+  log.debug("Leaving tokensExpireAt().");
+  return instants.length ? Math.min.apply(null, instants) : 0;
+}
+
+// ---------------------------------------------------------------------------
+// A RELYING PARTY SESSION'S TOKENS, RENEWED IN PLACE (2026-09-12).
+//
+// Called only from `common/oidc_rp.js`, after the refresh token grant has
+// answered and the ID Token in that answer has verified. **THE SESSION IS THE
+// SAME SESSION**: same id, same cookie, same CSRF token on every page a person
+// already has open, same `authTime`, `amr` and `acr` — because nobody
+// authenticated. What moves is what a renewal is: the tokens, the instant they
+// next run out, and a count. Nothing is recorded as an authentication and no
+// CAEP event is sent, for `startRelyingPartySession()`'s reason: the
+// authorization endpoint counted the sign-in once, and a renewal is not one.
+//
+// `expires` moves only as far as the new tokens need: a renewal inside the
+// window leaves it at the window's end, and never extends the window itself —
+// that is what keeps a console session somebody keeps using BOUNDED by the
+// refresh token's lifetime from the sign-in rather than renewed for ever.
+//
+// Answers the session as it now is, or null where it is gone.
+// ---------------------------------------------------------------------------
+function renewRelyingPartySession(spec) {
+  log.debug("Entering renewRelyingPartySession(). id=" + spec.id);
+  const store = sessions.realmMap(spec.realmId || realms.currentId());
+  const session = store.get(spec.id);
+  if (!session || !session.rpSurface) {
+    log.debug("Leaving renewRelyingPartySession(). No such relying party " +
+              "session.");
+    return null;
+  }
+  const previous = session.rpTokens || {};
+  session.rpTokens = Object.assign({}, previous, spec.tokens || {});
+  session.rpRenewals = (Number(session.rpRenewals) || 0) + 1;
+  session.rpRenewedAt = Date.now();
+  session.expires = Math.max(Number(session.rpRenewableUntil) || 0,
+                             tokensExpireAt(session.rpTokens),
+                             Number(session.expires) || 0);
+  store.set(spec.id, session);
+  audit.audit({
+    action: 'session.renew',
+    outcome: 'success',
+    actor: session.user.username,
+    protocol: 'OAuth 2.0 / OIDC',
+    channel: 'http',
+    target: spec.id,
+    summary: 'the ' + (session.rpLabel || session.rpSurface) + ' renewed the ' +
+             'tokens of ' + session.user.username + '\'s session ' + spec.id +
+             ' with the refresh token grant; the session is unchanged',
+    detail: {
+      sessionId: spec.id,
+      client_id: session.rpClientId,
+      surface: session.rpSurface,
+      renewals: session.rpRenewals,
+      tokensExpireAt: new Date(tokensExpireAt(session.rpTokens)).toISOString(),
+      renewableUntil: session.rpRenewableUntil
+        ? new Date(session.rpRenewableUntil).toISOString() : '',
+      refreshTokenRotated: !!(spec.tokens && spec.tokens.refreshToken &&
+                              spec.tokens.refreshToken !== previous.refreshToken),
+      note: 'Not a sign-in and not a new session: the same session id, the ' +
+            'same authentication time, new tokens.'
+    }
+  });
+  log.info('authn: the ' + (session.rpLabel || session.rpSurface) +
+           ' session ' +
+           spec.id + ' for ' + session.user.username + ' renewed its tokens (' +
+           session.rpRenewals + ' renewal(s)); they now run out at ' +
+           new Date(tokensExpireAt(session.rpTokens)).toISOString() + '.');
+  log.debug("Leaving renewRelyingPartySession().");
   return session;
 }
 
@@ -1101,7 +1285,8 @@ function consoleSession(req) {
   // always was.
   if (!realms.active() || realms.currentId() === realms.DEFAULT_ID) {
     const here = sessionOf(req);
-    log.debug("Leaving consoleSession(). The default realm is the one being read.");
+    log.debug("Leaving consoleSession(). The default realm is the one being " +
+              "read.");
     return here
       ? { session: here, realm: realms.DEFAULT_REALM, foreign: false }
       : null;
@@ -1117,7 +1302,8 @@ function consoleSession(req) {
   const store = sessions.realmMap(realms.DEFAULT_ID);
   const session = store.get(id);
   if (!session) {
-    log.debug("Leaving consoleSession(). The default realm holds no such session.");
+    log.debug("Leaving consoleSession(). The default realm holds no such " +
+              "session.");
     return null;
   }
   const ended = sessionEnded(session);
@@ -1129,7 +1315,8 @@ function consoleSession(req) {
     realms.run(realms.DEFAULT_REALM, function () {
       expireSession(store, id, session, 'the admin console', ended);
     });
-    log.debug("Leaving consoleSession(). The session had expired and was discarded.");
+    log.debug("Leaving consoleSession(). The session had expired and was " +
+              "discarded.");
     return null;
   }
   log.debug("Leaving consoleSession(). Signed in as " + session.user.username +
@@ -1139,40 +1326,42 @@ function consoleSession(req) {
 
 // --- starting and ending a session -----------------------------------------
 // Both are functions rather than four lines repeated at each call site, and the
-// reason is WS-Federation. `wsfed.js` signs a user in at its own login screen and
-// must land them in THE SAME session this service owns, because the two protocols
-// share the browser and single sign-on between them is the interesting behaviour:
-// sign in at this screen with a security key, arrive at `wsignin1.0`, and the
-// assertion says a hardware key was used because the session recorded it.
+// reason is WS-Federation. `wsfed.js` signs a user in at its own login screen
+// and must land them in THE SAME session this service owns, because the two
+// protocols share the browser and single sign-on between them is the
+// interesting behaviour: sign in at this screen with a security key, arrive at
+// `wsignin1.0`, and the assertion says a hardware key was used because the
+// session recorded it.
 //
-// The cookie's attributes are the part that must not be written twice. Sharing a
-// session across protocols means the cookie NAME, PATH and SameSite have to agree
-// exactly; a second copy that set Path=/oauth2 or omitted SameSite would produce
-// two sessions that each looked fine on its own and never saw each other, which is
-// a debugging session with no error message anywhere in it.
+// The cookie's attributes are the part that must not be written twice. Sharing
+// a session across protocols means the cookie NAME, PATH and SameSite have to
+// agree exactly; a second copy that set Path=/oauth2 or omitted SameSite would
+// produce two sessions that each looked fine on its own and never saw each
+// other, which is a debugging session with no error message anywhere in it.
 //
-// **SameSite=Lax is deliberate and it has one consequence worth knowing.** It is
-// sent on a top-level GET navigation, which is how a relying party sends a browser
-// here in both protocols — but NOT on a cross-site POST, and WS-Federation section
-// 13.2.1 permits the sign-in request to arrive as a form POST. Such a request
-// therefore sees no session and is shown the login screen even though one exists.
-// The alternative is SameSite=None, which requires Secure, which this service
-// cannot be over http://localhost — so the quirk stays, and wsfed.js says so on
-// the screen rather than leaving it to look like a broken session.
+// **SameSite=Lax is deliberate and it has one consequence worth knowing.** It
+// is sent on a top-level GET navigation, which is how a relying party sends a
+// browser here in both protocols — but NOT on a cross-site POST, and
+// WS-Federation section 13.2.1 permits the sign-in request to arrive as a form
+// POST. Such a request therefore sees no session and is shown the login screen
+// even though one exists. The alternative is SameSite=None, which requires
+// Secure, which this service cannot be over http://localhost — so the quirk
+// stays, and wsfed.js says so on the screen rather than leaving it to look like
+// a broken session.
 //
-// `via` names the screen the person actually used, and it is a parameter rather than
-// something derived here because this function cannot tell: WS-Federation's sign-in
-// screen calls it too, and a session started there is indistinguishable afterwards
-// from one started here — which is the point of sharing the store, and is exactly
-// why the admin console would otherwise report every WS-Federation sign-in as an
-// OIDC one. beginAuthentication() carries it from the caller as `protocol`; it
-// still defaults to OIDC, so a call site that omits it says what it always meant.
-// What the console and the audit log call this sign-in. A function because
-// there are THREE of them now and the two-way conditional this replaced could
-// not say the third: it asked whether `hwk` was present, so a passwordless
-// ceremony — amr ["hwk"] and no password anywhere — was reported as a password
-// sign-in with a security key beside it, which is the one thing the two roles
-// must not be confused about.
+// `via` names the screen the person actually used, and it is a parameter rather
+// than something derived here because this function cannot tell:
+// WS-Federation's sign-in screen calls it too, and a session started there is
+// indistinguishable afterwards from one started here — which is the point of
+// sharing the store, and is exactly why the admin console would otherwise
+// report every WS-Federation sign-in as an OIDC one. beginAuthentication()
+// carries it from the caller as `protocol`; it still defaults to OIDC, so a
+// call site that omits it says what it always meant. What the console and the
+// audit log call this sign-in. A function because there are THREE of them now
+// and the two-way conditional this replaced could not say the third: it asked
+// whether `hwk` was present, so a passwordless ceremony — amr ["hwk"] and no
+// password anywhere — was reported as a password sign-in with a security key
+// beside it, which is the one thing the two roles must not be confused about.
 //
 // **THERE ARE FOUR NOW (2026-09-10)**, because the authenticator app is a
 // second second factor. `otp` is RFC 8176's value and its registry entry names
@@ -1183,26 +1372,32 @@ function consoleSession(req) {
 // that quietly loses the second factor — the same defect the passwordless
 // ceremony had before this function replaced the conditional.
 function methodPhraseFor(amr) {
+  log.debug("Entering methodPhraseFor().");
   const factors = amr || [];
   const key = factors.indexOf('hwk') >= 0;
   const password = factors.indexOf('pwd') >= 0;
   const code = factors.indexOf('otp') >= 0;
   if (key && password) {
+    log.debug("Leaving methodPhraseFor().");
     return 'sign-in screen (password and a security key)';
   }
   if (key) {
+    log.debug("Leaving methodPhraseFor().");
     return 'sign-in screen (a security key alone, passwordless)';
   }
   if (code && password) {
+    log.debug("Leaving methodPhraseFor().");
     return 'sign-in screen (password and a one-time code)';
   }
   if (code) {
+    log.debug("Leaving methodPhraseFor().");
     // Unreachable today and deliberately written anyway: a one-time code can
     // never be a first factor here (see common/totp.js), so this branch says
     // what would be true if that ever changed rather than reporting it as a
     // password sign-in.
     return 'sign-in screen (a one-time code alone)';
   }
+  log.debug("Leaving methodPhraseFor().");
   return 'sign-in screen (password)';
 }
 
@@ -1356,7 +1551,8 @@ function expireSession(store, id, session, via, why) {
     protocol: (session && session.via) || 'Authentication service',
     channel: 'none',
     target: id,
-    summary: ((session && session.user && session.user.username) || 'somebody') +
+    summary: ((session && session.user &&
+               session.user.username) || 'somebody') +
              '\'s session ' + id + ' expired and was discarded',
     detail: {
       sessionId: id,
@@ -1435,10 +1631,11 @@ function sweepExpiredSessions() {
     });
   });
   if (gone) {
-    log.info('authn: the session sweep ended ' + gone + ' expired session(s). ' +
-             'Each one is an audit row and a CAEP session-revoked, which is ' +
-             'the whole reason the sweep exists: an expiry noticed only when ' +
-             'somebody comes back is an expiry nobody is ever told about.');
+    log.info('authn: the session sweep ended ' + gone + ' expired ' +
+             'session(s). Each one is an audit row and a CAEP ' +
+             'session-revoked, which is the whole reason the sweep exists: ' +
+             'an expiry noticed only when somebody comes back is an expiry ' +
+             'nobody is ever told about.');
   }
   log.debug("Leaving sweepExpiredSessions(). " + gone + " ended.");
 }
@@ -1446,7 +1643,9 @@ function sweepExpiredSessions() {
 // Armed by the first session this process creates, and never before — see the
 // header. `unref()` so it cannot be the reason a process will not exit.
 function armSessionSweep() {
+  log.debug("Entering armSessionSweep().");
   if (sweepTimer) {
+    log.debug("Leaving armSessionSweep().");
     return;
   }
   sweepTimer = setInterval(sweepExpiredSessions, SESSION_SWEEP_MS);
@@ -1457,6 +1656,7 @@ function armSessionSweep() {
            (SESSION_SWEEP_MS / 1000) + 's. A session that expires is ended, ' +
            'audited and reported over CAEP whether or not anybody comes back ' +
            'to look at it.');
+  log.debug("Leaving armSessionSweep().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1519,12 +1719,15 @@ function notePresented(session, via, req) {
 // `clearSessionCookie()`'s own comment already warns about from the other
 // direction.
 function setCookieHeader(res, value) {
+  log.debug("Entering setCookieHeader().");
   if (typeof res.set === 'function') {
     res.set('Set-Cookie', value);
+    log.debug("Leaving setCookieHeader().");
     return;
   }
   if (typeof res.setHeader === 'function') {
     res.setHeader('Set-Cookie', value);
+    log.debug("Leaving setCookieHeader().");
     return;
   }
   // Neither: not a response at all. Logged rather than thrown, because every
@@ -1533,8 +1736,9 @@ function setCookieHeader(res, value) {
   // failed".
   log.error(errorCodes.tag('STS-AUTHN-0015') +
             'authn: a session cookie could not be written — the response ' +
-            'object has neither set() nor setHeader(). The session exists and ' +
-            'the caller has not been told about it.');
+            'object has neither set() nor setHeader(). The session exists ' +
+            'and the caller has not been told about it.');
+  log.debug("Leaving setCookieHeader().");
 }
 
 function startSession(res, username, amr, acr, via, detail) {
@@ -1579,7 +1783,8 @@ function startSession(res, username, amr, acr, via, detail) {
     // AN ARRIVAL SESSION IS NOT ENDED, it is upgraded — ending it would write
     // a sign-out audit row and a CAEP `session-revoked` for a session nobody
     // was ever in, every time anybody signed in.
-    if (previous && sessions.get(previous) && !(arrived && arrived.id === previous)) {
+    if (previous && sessions.get(previous) &&
+        !(arrived && arrived.id === previous)) {
       log.info('authn: ending the session this browser was already on (' +
                previous + ') because a new sign-in is replacing it. Every ' +
                'sign-in is a privilege change and the old session must not ' +
@@ -1709,10 +1914,11 @@ function startSession(res, username, amr, acr, via, detail) {
   // ---------------------------------------------------------------------
   const sessionId = arrived ? arrived.id : randomId(24);
   const session = {
-    // The id is on the session as well as being the map key, because everything that
-    // is handed a session gets the object and not the key — the authorization
-    // endpoint, WS-Federation, the console — and without it the tokens issued on a
-    // session could not name the session they were issued on.
+    // The id is on the session as well as being the map key, because everything
+    // that is handed a session gets the object and not the key — the
+    // authorization endpoint, WS-Federation, the console — and without it the
+    // tokens issued on a session could not name the session they were issued
+    // on.
     id: sessionId,
     user: userFor(username), authTime: nowSec(),
     // `authn.sessionLifetimeS`, read now, so a change reaches the next session.
@@ -1746,8 +1952,8 @@ function startSession(res, username, amr, acr, via, detail) {
     // Preserved across an upgrade so that "when did this browser arrive" and
     // "when did they authenticate" stay two different facts.
     startedAt: arrived ? arrived.startedAt : Date.now(),
-    // Stated rather than omitted: a relying party that asked for a second factor
-    // needs to be able to see that it did not get one.
+    // Stated rather than omitted: a relying party that asked for a second
+    // factor needs to be able to see that it did not get one.
     amr: amr, acr: acr,
     // WHICH PROTOCOL THIS SESSION WAS STARTED THROUGH, on the session itself
     // (2026-09-04). It was already handed to `recordAuthentication()` and to
@@ -1800,11 +2006,12 @@ function startSession(res, username, amr, acr, via, detail) {
   // and it is deliberately opt-OUT: every caller that existed before this
   // field is a browser and must keep getting the cookie.
   if (extra.cookie !== false) {
-    setCookieHeader(res, SESSION_COOKIE + '=' + sessionId + '; Path=/; HttpOnly; SameSite=Lax' +
+    setCookieHeader(res, SESSION_COOKIE + '=' + sessionId + '; Path=/; ' +
+        'HttpOnly; SameSite=Lax' +
                          (config.value('global.https') ? '; Secure' : ''));
   }
-  // One of the two places a person is authenticated by typing a name at a screen —
-  // this one covers both, since WS-Federation signs in through here.
+  // One of the two places a person is authenticated by typing a name at a
+  // screen — this one covers both, since WS-Federation signs in through here.
   //
   // AN UNAUTHENTICATED SESSION IS RECORDED HERE TOO, and that needed deciding
   // rather than falling out. What this funnel counts is "an identity was
@@ -1854,7 +2061,8 @@ function startSession(res, username, amr, acr, via, detail) {
     // phrasing follows the caller where it says so. Federation is the one such
     // caller today: the person signed in somewhere else entirely.
     summary: extra.summary ||
-             (username + ' was signed in at the ' + (via || 'OAuth 2.0 / OIDC') +
+             (username + ' was signed in at the ' +
+              (via || 'OAuth 2.0 / OIDC') +
               ' screen; session ' + sessionId + ' was created'),
     detail: {
       sessionId: sessionId,
@@ -1867,7 +2075,8 @@ function startSession(res, username, amr, acr, via, detail) {
       // "No password was checked" is true and useless — nothing was typed
       // here at all — and the row is the only place that distinction will
       // ever be recorded.
-      note: extra.note || 'No password was checked; the name typed is the identity.'
+      note: extra.note || 'No password was checked; the name typed is the ' +
+                          'identity.'
     }
   });
   // THE ONE ACT IN THIS SERVICE THAT MAKES SOMETHING GO OUT WITHOUT ANYBODY
@@ -1882,7 +2091,8 @@ function startSession(res, username, amr, acr, via, detail) {
     // function is given. See the note in dropSession() for why the observer
     // needs one at all.
     req: (res && res.req) || null });
-  log.debug("Leaving startSession(). " + username + " is signed in (amr " + (amr || []).join(',') + ").");
+  log.debug("Leaving startSession(). " + username + " is signed in (amr " +
+            (amr || []).join(',') + ").");
   return session;
 }
 
@@ -1948,12 +2158,16 @@ function dropSession(id, via, cookiePresented, req) {
   // exact defect the cascade exists to prevent, moved one layer along.
   if (id && session) {
     derivedFrom(id).forEach(function (child) {
-      log.info('authn: ending the ' + (child.session.rpSurface || 'relying party') +
-               ' session ' + child.id + ' (realm ' + child.realm + ') with the ' +
-               'sign-on session it was derived from (' + id + ').');
+      log.info('authn: ending the ' + (child.session.rpSurface || 'relying ' +
+          'party') +
+               ' session ' + child.id + ' (realm ' + child.realm + ') with ' +
+               'the sign-on session it was derived from (' + id + ').');
       const endChild = function () {
-        dropSession(child.id, 'the sign-on session it was derived from ended (' +
+        log.debug("Entering endChild().");
+        dropSession(child.id,
+                    'the sign-on session it was derived from ended (' +
                     (via || 'unknown door') + ')', false, req);
+        log.debug("Leaving endChild().");
       };
       if (child.realm && child.realm !== realms.currentId()) {
         realms.run(realms.get(child.realm), endChild);
@@ -1987,13 +2201,16 @@ function dropSession(id, via, cookiePresented, req) {
   // of this is unchanged when the mode is.
   if (id) {
     const revoked = stats.revokeWhere(function (record) {
-      return record.sessionId === id && String(record.typ || '') === 'Refresh' &&
+      return record.sessionId === id &&
+             String(record.typ || '') === 'Refresh' &&
              bcp.revokeRefreshOnLogout(String(record.client_id || ''));
     }, 'RFC 9700 section 2.2.2: the sign-on session it was issued on ended');
     if (revoked) {
-      log.info('RFC 9700 section 2.2.2: signing out of session ' + id + ' revoked ' + revoked +
-               ' refresh token(s) issued on it. Without that, a sign-out drops a cookie and ' +
-               'leaves a thirty-day credential in the client\'s hands.');
+      log.info('RFC 9700 section 2.2.2: signing out of session ' + id + ' ' +
+          'revoked ' + revoked +
+               ' refresh token(s) issued on it. Without that, a sign-out ' +
+               'drops a cookie and leaves a thirty-day credential in the ' +
+               'client\'s hands.');
     }
   }
   // The sign-out, recorded here because this is the one place every door
@@ -2049,15 +2266,17 @@ function dropSession(id, via, cookiePresented, req) {
       acr: session ? (session.acr || '') : ''
     }
   });
-  log.debug("Leaving dropSession(). " + (session ? 'Dropped the session for ' + session.user.username + '.'
-                                                 : 'There was no session to drop.'));
+  log.debug("Leaving dropSession(). " +
+            (session ? 'Dropped the session for ' + session.user.username + '.'
+                                                 : 'There was no session to ' +
+                                                   'drop.'));
   return session || null;
 }
 
 // Every session this service holds for one person, newest first. The comparison
-// is on the USERNAME as typed, because that is what the session records and what
-// /logout was asked about; admin_stats.js's identityKeyOf() normalisation is
-// applied by the CALLER where it wants `alice` and `alice@REALM` to be one
+// is on the USERNAME as typed, because that is what the session records and
+// what /logout was asked about; admin_stats.js's identityKeyOf() normalisation
+// is applied by the CALLER where it wants `alice` and `alice@REALM` to be one
 // person, so that this function cannot quietly fold two names together for a
 // caller that meant one.
 function sessionsOf(username) {
@@ -2065,7 +2284,8 @@ function sessionsOf(username) {
   const wanted = String(username || '');
   const out = [];
   sessions.forEach(function (session) {
-    if (((session.user && session.user.username) || '') === wanted) out.push(session);
+    if (((session.user && session.user.username) || '') === wanted) out.push(
+        session);
   });
   out.sort(function (a, b) { return (b.authTime || 0) - (a.authTime || 0); });
   log.debug("Leaving sessionsOf(). " + out.length + " session(s).");
@@ -2076,6 +2296,8 @@ function sessionsOf(username) {
 // /logout to draw a row for a session that is not the caller's; `sessionOf()`
 // stays the function that reads the cookie and sweeps what it finds expired.
 function sessionById(id) {
+  log.debug("Entering sessionById().");
+  log.debug("Leaving sessionById().");
   return sessions.get(String(id || '')) || null;
 }
 
@@ -2087,7 +2309,8 @@ function sessionById(id) {
 function endSessionById(id, via) {
   log.debug("Entering endSessionById(). id=" + id);
   const session = dropSession(String(id || ''), via, false);
-  log.debug("Leaving endSessionById(). " + (session ? 'Ended.' : 'There was no such session.'));
+  log.debug("Leaving endSessionById(). " + (session ? 'Ended.' : 'There was ' +
+      'no such session.'));
   return session;
 }
 
@@ -2117,30 +2340,35 @@ function endSessionById(id, via) {
 // mean a rotated session id going out beside the one it replaced, with the
 // browser free to keep either.
 function clearSessionCookie(res, cookieName) {
+  log.debug("Entering clearSessionCookie().");
   const value = String(cookieName || SESSION_COOKIE) + '=; Path=/; Max-Age=0' +
                 (config.value('global.https') ? '; Secure' : '');
   if (typeof res.append === 'function') {
     res.append('Set-Cookie', value);
+    log.debug("Leaving clearSessionCookie().");
     return;
   }
   // Not an express response — the same case `setCookieHeader()` guards, and
   // handled the same way rather than thrown, because a sign-out that failed to
   // clear a cookie has still ended the session.
   setCookieHeader(res, value);
+  log.debug("Leaving clearSessionCookie().");
 }
 
-// Ends the session the request carries, and returns it — the caller needs what it
-// was, not merely that it is gone: WS-Federation's sign-out has to send a cleanup
-// request to each relying party the session signed into, and that list lives on
-// the session object it is about to discard.
+// Ends the session the request carries, and returns it — the caller needs what
+// it was, not merely that it is gone: WS-Federation's sign-out has to send a
+// cleanup request to each relying party the session signed into, and that list
+// lives on the session object it is about to discard.
 function endSession(req, res) {
   log.debug("Entering endSession().");
   const id = cookiesOf(req)[SESSION_COOKIE];
   const session = dropSession(id, 'the sign-out endpoint for this browser',
                               !!id, req);
   clearSessionCookie(res);
-  log.debug("Leaving endSession(). " + (session ? 'Dropped the session for ' + session.user.username + '.'
-                                                : 'There was no session to drop.'));
+  log.debug("Leaving endSession(). " +
+            (session ? 'Dropped the session for ' + session.user.username + '.'
+                                                : 'There was no session to ' +
+                                                  'drop.'));
   return session || null;
 }
 
@@ -2361,12 +2589,13 @@ function declaredMechanismFor(applicationId) {
     // shortcut and never the screen.
     log.error(errorCodes.tag('STS-AUTHN-0016') +
               'authn: the application registry threw while reading ' +
-              'appAuthnMechanism for "' + applicationId + '" and was ignored; ' +
-              'the sign-in screen itself is unaffected: ' + e.message);
+              'appAuthnMechanism for "' + applicationId + '" and was ' +
+              'ignored; the sign-in screen itself is unaffected: ' + e.message);
     log.debug("Leaving declaredMechanismFor(). The registry threw.");
     return { mechanism: '', problem: '' };
   }
-  const declared = String((((entry || {}).fields || {}).appAuthnMechanism) || '')
+  const declared = String((((entry ||
+                             {}).fields || {}).appAuthnMechanism) || '')
     .trim();
   if (!declared) {
     log.debug("Leaving declaredMechanismFor(). That entry declares nothing.");
@@ -2457,10 +2686,10 @@ function mechanismFor(applicationId) {
   // THE APPLICATION'S OWN DECLARATION, WHICH IS READ BEFORE ITS RELATIONSHIPS
   // AND FALLS THROUGH TO THEM.
   //
-  // `appAuthnMechanism` is the explicit statement and `appFederationRelationship`
-  // is an implicit one — naming a partner has always MEANT "authenticate my
-  // people there" — so the explicit one is read first. It falls through in
-  // exactly two cases and both are deliberate:
+  // `appAuthnMechanism` is the explicit statement and
+  // `appFederationRelationship` is an implicit one — naming a partner has
+  // always MEANT "authenticate my people there" — so the explicit one is read
+  // first. It falls through in exactly two cases and both are deliberate:
   //
   //   * it says `federation`, which IS the implicit statement said out loud,
   //     so the list below decides as it always did; and
@@ -2502,7 +2731,8 @@ function mechanismFor(applicationId) {
                       'appFederationRelationship on it.' };
   }
   if (declared.problem) {
-    log.debug("Leaving mechanismFor(). A declaration this service cannot honour.");
+    log.debug("Leaving mechanismFor(). A declaration this service cannot " +
+              "honour.");
     return { mechanism: 'password', source: 'application', federation: null,
              via: '', problem: declared.problem };
   }
@@ -2557,13 +2787,15 @@ function mechanismFor(applicationId) {
 // partners being chosen between rather than every relationship in the register.
 // ---------------------------------------------------------------------------
 function beginAuthentication(opts) {
-  log.debug("Entering beginAuthentication(). protocol=" + (opts.protocol || '(unnamed)'));
+  log.debug("Entering beginAuthentication(). protocol=" +
+            (opts.protocol || '(unnamed)'));
   const returnTo = String(opts.returnTo || '');
   // Same-origin, and a path: see the header. A caller that gets this wrong is a
   // bug in this service rather than a hostile request, so it throws rather than
   // quietly signing somebody in and sending them somewhere else.
   if (returnTo.charAt(0) !== '/' || returnTo.charAt(1) === '/') {
-    throw new Error('beginAuthentication() needs a path on this service to return to, not "' +
+    throw new Error('beginAuthentication() needs a path on this service to ' +
+                    'return to, not "' +
                     returnTo + '".');
   }
   // ---------------------------------------------------------------------
@@ -2596,14 +2828,14 @@ function beginAuthentication(opts) {
       // reach, so what makes it safe to write down is that recordUse() checks
       // the pair against the live register rather than believing this.
       '&application=' + encodeURIComponent(String(opts.application || ''));
-    log.info('authn: "' + String(opts.application) + '" authenticates through ' +
-             'the federation relationship "' + home.relationship.fedId +
+    log.info('authn: "' + String(opts.application) + '" authenticates ' +
+             'through the federation relationship "' + home.relationship.fedId +
              '"' + (chosen.source === 'relationship'
                       ? ', because the identity-provider-side relationship "' +
                         chosen.via + '" brokers it there'
                       : '') +
-             ', so this sign-in goes straight there rather than to the sign-in ' +
-             'screen.' +
+             ', so this sign-in goes straight there rather than to the ' +
+             'sign-in screen.' +
              // SAID HERE OR NOWHERE. This is the one branch that draws no page,
              // so a value on the entry that names something unusable has no
              // banner to appear on — and the flow works, which is exactly why
@@ -2705,9 +2937,9 @@ function beginAuthentication(opts) {
     log.info('authn: the configured mechanism for "' +
              String(opts.application || '(none)') + '" is a Kerberos ticket ' +
              'over SPNEGO, and this request demands two factors, so the ' +
-             'demand wins: the screen asks for a password and a key. A ticket ' +
-             'claims what its own flags claim and this service cannot promise ' +
-             'in advance that they will claim two.');
+             'demand wins: the screen asks for a password and a key. A ' +
+             'ticket claims what its own flags claim and this service cannot ' +
+             'promise in advance that they will claim two.');
     integrated = false;
   }
   if (forcePasswordless && forceMfa) {
@@ -2775,8 +3007,8 @@ function beginAuthentication(opts) {
              '), so this sign-in asks which one rather than choosing.' +
              (home.problems.length
                 ? ' ' + home.problems.length + ' more value(s) on that entry ' +
-                  'name something this service cannot use and are shown on the ' +
-                  'page as such.'
+                  'name something this service cannot use and are shown on ' +
+                  'the page as such.'
                 : ''));
     log.debug("Leaving beginAuthentication(). " + record.id +
               " goes to the chooser and will return to " + returnTo + ".");
@@ -2815,10 +3047,12 @@ function beginAuthentication(opts) {
              'meets a 401 there and a link back to this screen; nothing is ' +
              'lost, because the request is on the pending record either way.');
     log.debug("Leaving beginAuthentication(). " + record.id +
-              " goes to the Kerberos door and will return to " + returnTo + ".");
+              " goes to the Kerberos door and will return to " + returnTo +
+              ".");
     return SPNEGO_PATH + '?authn=' + encodeURIComponent(record.id);
   }
-  log.debug("Leaving beginAuthentication(). " + record.id + " will return to " + returnTo + ".");
+  log.debug("Leaving beginAuthentication(). " + record.id + " will return to " +
+            returnTo + ".");
   return LOGIN_PATH + '?authn=' + encodeURIComponent(record.id);
 }
 
@@ -2846,10 +3080,11 @@ function returnToCaller(res, record, error, description) {
   // the user's password to the client without either of them doing anything
   // wrong.
   //
-  // This service has never used 307. What it used was 302, whose behaviour after
-  // a POST is historically ambiguous — every browser turns it into a GET, and
-  // the specification does not say they must. 303 says it: change the method to
-  // GET. The section asks for 303 by name and there is no reason not to give it.
+  // This service has never used 307. What it used was 302, whose behaviour
+  // after a POST is historically ambiguous — every browser turns it into a GET,
+  // and the specification does not say they must. 303 says it: change the
+  // method to GET. The section asks for 303 by name and there is no reason not
+  // to give it.
   //
   // It is NOT gated on RFC 9700 mode, unlike the refusals that mode adds. No
   // client can tell the difference — a browser does the same thing with both —
@@ -2861,7 +3096,8 @@ function returnToCaller(res, record, error, description) {
   // rather than two that could come to differ.
   // ---------------------------------------------------------------------
   res.redirect(303, target);
-  log.debug("Leaving returnToCaller(). Sent the browser to " + target + " with a 303.");
+  log.debug("Leaving returnToCaller(). Sent the browser to " + target + " " +
+      "with a 303.");
 }
 
 // ---------------------------------------------------------------------------
@@ -2931,23 +3167,32 @@ function pendingFor(id) {
 // already argues at length, and it is not one of these two.
 // ---------------------------------------------------------------------------
 const CARD_CSS =
-  'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-  'display:flex;align-items:center;justify-content:center;min-height:100vh;color:#222}' +
-  '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;padding:28px 32px;width:380px;' +
-  'box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 4px}' +
-  'p.sub{color:#666;font-size:.85em;margin:0 0 18px}label{display:block;font-size:.85em;font-weight:600;' +
-  'margin:12px 0 4px}input[type=text],input[type=password]{width:100%;box-sizing:border-box;padding:8px 10px;' +
-  'border:1px solid #bbb;border-radius:5px;font-size:1em}.row{display:flex;gap:10px;margin-top:20px}' +
-  'button{flex:1;padding:9px 12px;border-radius:5px;border:1px solid #12107c;background:#12107c;color:#fff;' +
-  'font-size:.95em;cursor:pointer}button.secondary{background:#fff;color:#12107c}' +
-  '.err{background:#fdecea;border:1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
-  'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;padding-top:14px;border-top:1px solid #eee;' +
-  'font-size:.75em;color:#777;word-break:break-all}.meta div{margin:2px 0}code{font-family:ui-monospace,' +
-  'SFMono-Regular,Menlo,monospace}.fed{margin-top:18px;padding-top:14px;border-top:1px solid #eee}' +
-  '.fed p{font-size:.78em;color:#666;margin:0 0 8px}' +
-  'a.fedbtn{display:block;text-align:center;padding:9px 12px;margin:6px 0;border-radius:5px;' +
-  'border:1px solid #12107c;color:#12107c;background:#fff;text-decoration:none;font-size:.9em}' +
-  'a.fedbtn span{display:block;font-size:.75em;color:#777}';
+  'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;' +
+  'background:#f4f4f7;margin:0;display:flex;align-items:center;' +
+  'justify-content:center;min-height:100vh;color:#222}.card{background:#fff;' +
+  'border:1px solid #d5d5dd;border-radius:10px;padding:28px ' +
+  '32px;width:380px;box-shadow:0 6px 24px ' +
+  'rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 ' +
+  '4px}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
+  '18px}label{display:block;font-size:.85em;font-weight:600;margin:12px 0 ' +
+  '4px}input[type=text],input[type=password]{width:100%;' +
+  'box-sizing:border-box;padding:8px 10px;border:1px solid #bbb;' +
+  'border-radius:5px;font-size:1em}.row{display:flex;gap:10px;' +
+  'margin-top:20px}button{flex:1;padding:9px ' +
+  '12px;border-radius:5px;border:1px solid #12107c;background:#12107c;' +
+  'color:#fff;font-size:.95em;cursor:pointer}' +
+  'button.secondary{background:#fff;color:#12107c}.err{background:#fdecea;' +
+  'border:1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
+  'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;padding-top:14px;' +
+  'border-top:1px solid ' +
+  '#eee;font-size:.75em;color:#777;word-break:break-all}.meta div{margin:2px ' +
+  '0}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
+  '.fed{margin-top:18px;padding-top:14px;border-top:1px solid #eee}.fed ' +
+  'p{font-size:.78em;color:#666;margin:0 0 ' +
+  '8px}a.fedbtn{display:block;text-align:center;padding:9px 12px;margin:6px ' +
+  '0;border-radius:5px;border:1px solid #12107c;color:#12107c;' +
+  'background:#fff;text-decoration:none;font-size:.9em}a.fedbtn ' +
+  'span{display:block;font-size:.75em;color:#777}';
 
 // The partner buttons, or nothing at all. Nothing at all is the ordinary state
 // — a service with no federation configured must have a sign-in screen byte for
@@ -2999,7 +3244,8 @@ function federatedOptionsHtml(record) {
     return html;
   }
   if (!config.value('federation.loginButtons')) {
-    log.debug("Leaving federatedOptionsHtml(). federation.loginButtons is off.");
+    log.debug("Leaving federatedOptionsHtml(). federation.loginButtons is " +
+              "off.");
     return '';
   }
   let options = [];
@@ -3010,26 +3256,29 @@ function federatedOptionsHtml(record) {
     // service that may fail to draw. A federation register that throws costs
     // the buttons, never the password field underneath them.
     log.error(errorCodes.tag('STS-AUTHN-0017') +
-              'authn: the federation register threw while building the sign-in ' +
-              'screen and was ignored; the screen itself is unaffected: ' + e.message);
+              'authn: the federation register threw while building the ' +
+              'sign-in screen and was ignored; the screen itself is ' +
+              'unaffected: ' + e.message);
     log.debug("Leaving federatedOptionsHtml(). It threw.");
     return '';
   }
   if (!options.length) {
-    log.debug("Leaving federatedOptionsHtml(). No usable partner is configured.");
+    log.debug("Leaving federatedOptionsHtml(). No usable partner is " +
+              "configured.");
     return '';
   }
   // EVERY USABLE RELATIONSHIP IN THE REGISTER, WHICH IS NOT THIS APPLICATION'S
-  // LIST — so no application is named on these hrefs, deliberately. Somebody who
-  // picks one off here has signed in through a partner nothing configured for
-  // this application, and counting that as a use of the pair would put a number
-  // on /admin/federation/map that means something other than what the page says
-  // it means.
+  // LIST — so no application is named on these hrefs, deliberately. Somebody
+  // who picks one off here has signed in through a partner nothing configured
+  // for this application, and counting that as a use of the pair would put a
+  // number on /admin/federation/map that means something other than what the
+  // page says it means.
   const html = federatedButtons(record, options,
-    'Or sign in with a federated identity provider. No password is typed here ' +
-    'and none is checked there either as far as this service can tell — what ' +
-    'it checks is the partner\'s signature.');
-  log.debug("Leaving federatedOptionsHtml(). " + options.length + " partner(s) offered.");
+    'Or sign in with a federated identity provider. No password is typed ' +
+    'here and none is checked there either as far as this service can tell — ' +
+    'what it checks is the partner\'s signature.');
+  log.debug("Leaving federatedOptionsHtml(). " + options.length + " " +
+      "partner(s) offered.");
   return html;
 }
 
@@ -3042,15 +3291,16 @@ function federatedOptionsHtml(record) {
 // `application` IS PASSED RATHER THAN READ OFF THE RECORD, and that is the one
 // thing about this function worth a second look. `record.application` is set on
 // every pending sign-in — it is what the calling protocol was for — but only
-// SOME of these buttons are that application's OWN partners. The generic list at
-// the foot of the screen (`federation.loginButtons`) offers every usable
-// relationship in the register, and a person who picks one off it has not used a
-// partner the application is configured for; naming the application on those
-// hrefs would ask federation.js to record a pair it is right to refuse, once per
-// click, and fill the log with a warning about a state nothing is wrong with.
+// SOME of these buttons are that application's OWN partners. The generic list
+// at the foot of the screen (`federation.loginButtons`) offers every usable
+// relationship in the register, and a person who picks one off it has not used
+// a partner the application is configured for; naming the application on those
+// hrefs would ask federation.js to record a pair it is right to refuse, once
+// per click, and fill the log with a warning about a state nothing is wrong
+// with.
 //
-// So the caller says which kind of list it is drawing, because the caller is the
-// only thing that knows.
+// So the caller says which kind of list it is drawing, because the caller is
+// the only thing that knows.
 function federatedButtons(record, options, blurb, application) {
   log.debug("Entering federatedButtons(). " + options.length + " option(s).");
   // The whole original request rides along, so that whatever brought the person
@@ -3062,7 +3312,8 @@ function federatedButtons(record, options, blurb, application) {
     : '';
   const html = '<div class="fed"><p>' + blurb + '</p>' +
     options.map(function (one) {
-      return '<a class="fedbtn" href="/federation/login/' + encodeURIComponent(one.id) +
+      return '<a class="fedbtn" href="/federation/login/' +
+        encodeURIComponent(one.id) +
         '?returnTo=' + back + forApplication + '">' + xmlEscape(one.label) +
         '<span>' + xmlEscape(one.protocolLabel) +
         (one.peer ? ' · ' + xmlEscape(one.peer) : '') + '</span></a>';
@@ -3111,16 +3362,17 @@ function integratedOptionHtml(record) {
     return '';
   }
   if (record.forceMfa) {
-    log.debug("Leaving integratedOptionHtml(). Withheld: two factors were demanded.");
-    return '<div class="fed"><p>Integrated Kerberos sign-in is not offered for ' +
-      'this request: it demands two factors, and a ticket claims whatever its ' +
-      'own flags claim &mdash; usually one.</p></div>';
+    log.debug("Leaving integratedOptionHtml(). Withheld: two factors were " +
+              "demanded.");
+    return '<div class="fed"><p>Integrated Kerberos sign-in is not offered ' +
+      'for this request: it demands two factors, and a ticket claims ' +
+      'whatever its own flags claim &mdash; usually one.</p></div>';
   }
-  const html = '<div class="fed"><p>Or sign in with a Kerberos ticket, if this ' +
-    'machine holds one. Nothing is typed and this service checks the ticket ' +
-    'rather than a name &mdash; the only sign-in here that rests on a ' +
-    'credential it genuinely verified.</p>' +
-    '<a class="fedbtn" href="' + SPNEGO_PATH + '?authn=' +
+  const html = '<div class="fed"><p>Or sign in with a Kerberos ticket, if ' +
+    'this machine holds one. Nothing is typed and this service checks the ' +
+    'ticket rather than a name &mdash; the only sign-in here that rests on a ' +
+    'credential it genuinely verified.</p><a class="fedbtn" ' +
+    'href="' + SPNEGO_PATH + '?authn=' +
     encodeURIComponent(record.id) + '">Sign in with Kerberos' +
     '<span>SPNEGO &middot; RFC 4559</span></a></div>';
   log.debug("Leaving integratedOptionHtml(). Offered.");
@@ -3139,30 +3391,32 @@ function loginPage(base, record, error) {
     '<title>Sign in — mock authentication service</title><style>' + CARD_CSS +
     '</style></head><body><div class="card">' +
     '<h1>Sign in</h1>' +
-    '<p class="sub">Mock authentication service at <code>' + xmlEscape(base) + '</code></p>' +
+    '<p class="sub">Mock authentication service at <code>' + xmlEscape(base) +
+    '</code></p>' +
     (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
     '<form method="post" action="' + LOGIN_PATH + '">' +
-    '<input type="hidden" name="authn_id" value="' + xmlEscape(record.id) + '">' +
-    '<label for="username">Username</label>' +
-    '<input type="text" id="username" name="username" autocomplete="username" autofocus' +
-    ' value="' + xmlEscape(record.hint) + '">' +
-    '<label for="password">Password</label>' +
-    '<input type="password" id="password" name="password" autocomplete="current-password">' +
+    '<input type="hidden" name="authn_id" value="' + xmlEscape(record.id) +
+    '"><label ' +
+    'for="username">Username</label><input type="text" id="username" ' +
+    'name="username" autocomplete="username" autofocus ' +
+    'value="' + xmlEscape(record.hint) + '"><label ' +
+    'for="password">Password</label><input type="password" id="password" ' +
+    'name="password" autocomplete="current-password">' +
     // Two checkboxes rather than one, because a security key is two different
     // things here and the difference is what the tokens end up claiming: ticked
     // with a password it is a SECOND factor (amr ["pwd","hwk"], acr "mfa"), and
     // on its own it is the PRIMARY one (amr ["hwk"], acr "1"). They cannot be
-    // made exclusive in the browser — this screen runs no script, by design, and
-    // an inline one would not run under script-src 'none' — so the POST handler
-    // decides between them and `webauthn_only` wins. Under forceMfa the
+    // made exclusive in the browser — this screen runs no script, by design,
+    // and an inline one would not run under script-src 'none' — so the POST
+    // handler decides between them and `webauthn_only` wins. Under forceMfa the
     // passwordless box is disabled: one factor does not answer a request for
-    // two, however phishing-resistant that factor is.
-    // forcePasswordless is the mirror image and arrives from the OTHER
-    // direction: forceMfa is a demand the CALLING PROTOCOL made, and this is a
-    // mechanism an operator CONFIGURED on the federation relationship the
-    // partner is registered under (fedAuthnMechanism: webauthn). Both end here
-    // because both decide what this one screen offers, and they cannot both be
-    // on — beginAuthentication() resolves that, loudly, before the record is
+    // two, however phishing-resistant that factor is. forcePasswordless is the
+    // mirror image and arrives from the OTHER direction: forceMfa is a demand
+    // the CALLING PROTOCOL made, and this is a mechanism an operator CONFIGURED
+    // on the federation relationship the partner is registered under
+    // (fedAuthnMechanism: webauthn). Both end here because both decide what
+    // this one screen offers, and they cannot both be on —
+    // beginAuthentication() resolves that, loudly, before the record is
     // written.
     //
     // THE HIDDEN INPUT IS NOT THE ENFORCEMENT. A disabled checkbox posts
@@ -3185,26 +3439,31 @@ function loginPage(base, record, error) {
         '(<code>webauthn.enabled</code>), so neither WebAuthn option is ' +
         'offered. An already-enrolled key still works.</label>') +
     (keyPolicy.enabled && keyPolicy.mfaAllowed
-      ? '<label class="chk"><input type="checkbox" id="use_webauthn" name="use_webauthn" value="1"' +
+      ? '<label class="chk"><input type="checkbox" id="use_webauthn" ' +
+        'name="use_webauthn" value="1"' +
         (record.forceMfa ? ' checked disabled' : '') +
         (record.forcePasswordless ? ' disabled' : '') +
         '> Use a security key (WebAuthn) as a second factor' +
         (record.forcePasswordless
-           ? ' — not available: this partner is configured for a passwordless key'
+           ? ' — not available: this partner is configured for a ' +
+             'passwordless key'
            : '') + '</label>' +
-        (record.forceMfa ? '<input type="hidden" name="use_webauthn" value="1">' : '')
+        (record.forceMfa ?
+         '<input type="hidden" name="use_webauthn" value="1">' : '')
       : (keyPolicy.enabled
           ? '<label class="chk"><input type="checkbox" disabled> ' +
             'A security key as a second factor is switched off here ' +
             '(<code>webauthn.mfaAllowed</code>).</label>'
           : '')) +
     (keyPolicy.enabled && keyPolicy.primaryAllowed
-      ? '<label class="chk"><input type="checkbox" id="webauthn_only" name="webauthn_only" value="1"' +
+      ? '<label class="chk"><input type="checkbox" id="webauthn_only" ' +
+        'name="webauthn_only" value="1"' +
         (record.forceMfa ? ' disabled' : '') +
         (record.forcePasswordless ? ' checked disabled' : '') +
         '> Sign in with the security key alone (passwordless — ' +
         'no password step, and the tokens will say one factor)' +
-        (record.forceMfa ? ' — not available: this request demands two factors' : '') +
+        (record.forceMfa ?
+         ' — not available: this request demands two factors' : '') +
         (record.forcePasswordless
            ? ' — required: the federation relationship "' +
              xmlEscape(record.mechanismVia || '') + '" configures this'
@@ -3217,11 +3476,13 @@ function loginPage(base, record, error) {
             '(<code>webauthn.primaryAllowed</code>).' +
             (record.forcePasswordless
               ? ' <strong>This sign-in cannot complete</strong>: the ' +
-                'federation relationship "' + xmlEscape(record.mechanismVia || '') +
+                'federation relationship "' +
+                xmlEscape(record.mechanismVia || '') +
                 '" configures a mechanism this realm has turned off.'
               : '') + '</label>'
           : '')) +
-    '<div class="row"><button type="submit" id="kc-login" name="action" value="login">Sign In</button>' +
+    '<div class="row"><button type="submit" id="kc-login" name="action" ' +
+    'value="login">Sign In</button>' +
     // THE THIRD BUTTON, AND IT IS NOT CANCEL (2026-09-05).
     //
     // Cancel is beside it and answers `access_denied` to the calling protocol,
@@ -3238,27 +3499,27 @@ function loginPage(base, record, error) {
     // name from the form and called itself unauthenticated would be claiming
     // both things at once.
     (config.value('authn.unauthenticatedSessions')
-       ? '<button type="submit" id="kc-anonymous" name="action" value="anonymous" ' +
-         'class="secondary" title="' +
-         xmlEscape('Continue as the anonymous principal. The flow goes on and ' +
-                   'tokens may be issued, but the session records that nobody ' +
-                   'authenticated — so an application requiring ' +
+       ? '<button type="submit" id="kc-anonymous" name="action" ' +
+         'value="anonymous" class="secondary" title="' +
+         xmlEscape('Continue as the anonymous principal. The flow goes on ' +
+                   'and tokens may be issued, but the session records that ' +
+                   'nobody authenticated — so an application requiring ' +
                    'ALL_AUTHENTICATED_USERS will refuse it. Anything typed ' +
                    'above is ignored.') +
          '">Continue without signing in</button>'
        : '') +
-    '<button type="submit" id="kc-cancel" name="action" value="cancel" class="secondary">Cancel</button></div>' +
-    '</form>' +
+    '<button type="submit" id="kc-cancel" name="action" value="cancel" ' +
+    'class="secondary">Cancel</button></div></form>' +
     // ---------------------------------------------------------------------
     // AND THE FEDERATION PARTNERS, if any are configured and usable.
     //
     // THIS IS WHY THE BUTTONS ARE HERE RATHER THAN ONLY ON /federation: a
     // person arriving at this screen is in the middle of SOMETHING — an OAuth
     // 2.0 authorization request, a WS-Federation sign-in, a SAML AuthnRequest,
-    // the admin console — and `record.returnTo` is that something, whole. Handing
-    // it to the federated flow is what lets a foreign identity provider satisfy
-    // any protocol this service speaks, without a single one of them being told
-    // that federation exists.
+    // the admin console — and `record.returnTo` is that something, whole.
+    // Handing it to the federated flow is what lets a foreign identity provider
+    // satisfy any protocol this service speaks, without a single one of them
+    // being told that federation exists.
     //
     // ONLY USABLE ONES ARE OFFERED. `signInOptions()` filters to relationships
     // that are enabled AND fully configured, because a button leading to a
@@ -3276,16 +3537,19 @@ function loginPage(base, record, error) {
     // this is offered to everybody — a configured route belongs above an
     // ambient one.
     integratedOptionHtml(record) +
-    '<div class="meta">' +
-    '<div>No password is checked. The username you enter is the identity the issued tokens describe.</div>' +
-    '<div>Passwordless: the password field is not read at all, and the security key becomes the ' +
-    'only factor — a key is enrolled for this username on first use, so the first person to claim ' +
-    'a name here gets it. This service authenticates nobody; that is the same statement as the ' +
-    'line above and not a weaker one.</div>' +
-    '<div>Signing in for: <code>' + xmlEscape(record.protocol) + '</code></div>' +
+    '<div class="meta"><div>No password is checked. The username you enter ' +
+    'is the identity the issued tokens describe.</div><div>Passwordless: the ' +
+    'password field is not read at all, and the security key becomes the ' +
+    'only factor — a key is enrolled for this username on first use, so the ' +
+    'first person to claim a name here gets it. This service authenticates ' +
+    'nobody; that is the same statement as the line above and not a weaker ' +
+    'one.</div><div>Signing in for: ' +
+    '<code>' + xmlEscape(record.protocol) + '</code></div>' +
     record.details.map(function (d) {
-      return '<div>' + xmlEscape(d.label) + ': <code>' + xmlEscape(d.value == null ? '' : d.value) +
-             '</code>' + (d.note ? ' (' + xmlEscape(d.note) + ')' : '') + '</div>';
+      return '<div>' + xmlEscape(d.label) + ': <code>' +
+             xmlEscape(d.value == null ? '' : d.value) +
+             '</code>' + (d.note ? ' (' + xmlEscape(d.note) + ')' :
+                          '') + '</div>';
     }).join('') +
     '</div></div></body></html>\n';
   log.debug("Leaving loginPage().");
@@ -3293,7 +3557,9 @@ function loginPage(base, record, error) {
 }
 
 function sendLoginPage(res, html) {
+  log.debug("Entering sendLoginPage().");
   res.status(200).type('text/html').set('Cache-Control', 'no-store').send(html);
+  log.debug("Leaving sendLoginPage().");
 }
 
 // ---------------------------------------------------------------------------
@@ -3323,7 +3589,8 @@ function sendLoginPage(res, html) {
 // feature is careful about. Somebody who needs the password box clears the
 // attribute — and every relationship being unusable is the one case where this
 // page is not drawn at all, because federationFor() reports no usable partner
-// and beginAuthentication() falls through to the screen with the problems on it.
+// and beginAuthentication() falls through to the screen with the problems on
+// it.
 // ---------------------------------------------------------------------------
 function selectIdpPage(base, record) {
   log.debug("Entering selectIdpPage(). " +
@@ -3345,23 +3612,24 @@ function selectIdpPage(base, record) {
     }).join('') +
     federatedButtons(record, usable.map(function (one) { return one.option; }),
       (record.application
-         ? '<code>' + xmlEscape(record.application) + '</code> signs its users in at '
+         ? '<code>' + xmlEscape(record.application) + '</code> signs its ' +
+                                                      'users in at '
          : 'This application signs its users in at ') +
       'one of these federated identity providers. Pick the one you have an ' +
-      'account at. No password is typed here and none is checked there either ' +
-      'as far as this service can tell — what it checks is the partner\'s ' +
-      'signature.',
+      'account at. No password is typed here and none is checked there ' +
+      'either as far as this service can tell — what it checks is the ' +
+      'partner\'s signature.',
       // THIS APPLICATION'S OWN PARTNERS BY CONSTRUCTION — the page is not drawn
       // at all for any other list — so the pair is named on every href. It is
       // the same argument the sign-in screen's first branch makes, and it holds
-      // here with less to check: `usable` came from federationFor() against this
-      // record's application and from nowhere else.
+      // here with less to check: `usable` came from federationFor() against
+      // this record's application and from nowhere else.
       record.application) +
-    '<div class="meta">' +
-    '<div>These are the relationships named on this application\'s entry under ' +
-    '<code>ou=applications</code>, in <code>appFederationRelationship</code> — ' +
-    'not every federation relationship this service has.</div>' +
-    '<div>Signing in for: <code>' + xmlEscape(record.protocol) + '</code></div>' +
+    '<div class="meta"><div>These are the relationships named on this ' +
+    'application\'s entry under <code>ou=applications</code>, in ' +
+    '<code>appFederationRelationship</code> — not every federation ' +
+    'relationship this service has.</div><div>Signing in for: ' +
+    '<code>' + xmlEscape(record.protocol) + '</code></div>' +
     record.details.map(function (d) {
       return '<div>' + xmlEscape(d.label) + ': <code>' +
              xmlEscape(d.value == null ? '' : d.value) + '</code>' +
@@ -3413,7 +3681,8 @@ function selectIdpPage(base, record) {
 // is the vocabulary it was already going to be answered in.
 // ---------------------------------------------------------------------------
 function refuseInvalid(res, why) {
-  log.debug("Entering refuseInvalid(). code=" + why.code + " field=" + why.field);
+  log.debug("Entering refuseInvalid(). code=" + why.code + " field=" +
+            why.field);
   log.debug("Leaving refuseInvalid().");
   // error-code: none — the helper's own internals; every call site marks its own code first
   return oauthError(res, 400, 'invalid_request', why.detail);
@@ -3468,11 +3737,12 @@ app.get(SELECT_IDP_PATH, function (req, res) {
   }
   const record = pendingFor(asked.value.authn);
   if (!record) {
-    log.debug("Leaving the federation chooser. Nothing is pending under that id.");
+    log.debug("Leaving the federation chooser. Nothing is pending under that " +
+              "id.");
     errorCodes.mark(res, 'STS-AUTHN-0003');
     return oauthError(res, 400, 'invalid_request',
-      'There is no sign-in waiting under that id, or it has expired. Start the request again ' +
-      'from the application that sent you here.');
+      'There is no sign-in waiting under that id, or it has expired. Start ' +
+      'the request again from the application that sent you here.');
   }
   // ---------------------------------------------------------------------
   // RESOLVED AGAIN HERE, AND THE RECORD IS UPDATED WITH THE ANSWER.
@@ -3514,8 +3784,10 @@ app.get(SELECT_IDP_PATH, function (req, res) {
              'choose between — a relationship was disabled, deleted or ' +
              'unconfigured since this sign-in began. The sign-in screen is ' +
              'drawn instead, and it offers whatever is left.');
-    log.debug("Leaving the federation chooser. Nothing left to choose between.");
-    return res.redirect(303, LOGIN_PATH + '?authn=' + encodeURIComponent(record.id));
+    log.debug("Leaving the federation chooser. Nothing left to choose " +
+              "between.");
+    return res.redirect(303,
+                        LOGIN_PATH + '?authn=' + encodeURIComponent(record.id));
   }
   res.status(200).type('text/html').set('Cache-Control', 'no-store')
      .send(selectIdpPage(baseUrlOf(req), record));
@@ -3535,11 +3807,12 @@ app.get(LOGIN_PATH, function (req, res) {
   }
   const record = pendingFor(asked.value.authn);
   if (!record) {
-    log.debug("Leaving the authentication screen. Nothing is pending under that id.");
+    log.debug("Leaving the authentication screen. Nothing is pending under " +
+              "that id.");
     errorCodes.mark(res, 'STS-AUTHN-0003');
     return oauthError(res, 400, 'invalid_request',
-      'There is no sign-in waiting under that id, or it has expired. Start the request again ' +
-      'from the application that sent you here.');
+      'There is no sign-in waiting under that id, or it has expired. Start ' +
+      'the request again from the application that sent you here.');
   }
   // A relationship this application NAMES and cannot use is shown here rather
   // than being replaced silently by the password box below it. That fallback is
@@ -3567,7 +3840,8 @@ app.get(LOGIN_PATH, function (req, res) {
     })
     .join(' ');
   sendLoginPage(res, loginPage(baseUrlOf(req), record, problem));
-  log.debug("Leaving the authentication screen. Showed the form for " + record.id +
+  log.debug("Leaving the authentication screen. Showed the form for " +
+            record.id +
             (problem ? ", with a federation problem." : "."));
 });
 
@@ -3592,8 +3866,8 @@ app.post(LOGIN_PATH, function (req, res) {
     log.debug("Leaving the authentication endpoint. The form had expired.");
     errorCodes.mark(res, 'STS-AUTHN-0003');
     return oauthError(res, 400, 'invalid_request',
-      'This sign-in form has expired. Start the request again from the application that sent ' +
-      'you here.');
+      'This sign-in form has expired. Start the request again from the ' +
+      'application that sent you here.');
   }
 
   if (String(body.action || '') === 'cancel') {
@@ -3645,9 +3919,11 @@ app.post(LOGIN_PATH, function (req, res) {
       claims: null
     });
     if (!anonRoleAnswer.allowed) {
-      log.info('authn: the issuance policy refused an unauthenticated session ' +
-               'at "' + String(record.application) + '". ' + anonRoleAnswer.why);
-      log.debug("Leaving the authentication endpoint. The issuance policy refused the anonymous session.");
+      log.info('authn: the issuance policy refused an unauthenticated ' +
+               'session at ' +
+               '"' + String(record.application) + '". ' + anonRoleAnswer.why);
+      log.debug("Leaving the authentication endpoint. The issuance policy " +
+                "refused the anonymous session.");
       errorCodes.mark(res, 'STS-AUTHN-0005');
       return sendLoginPage(res, loginPage(base, record, anonRoleAnswer.why));
     }
@@ -3666,7 +3942,8 @@ app.post(LOGIN_PATH, function (req, res) {
       // and then chose to continue anonymously still had the first session.
       Object.assign({ request: req }, { authenticated: false, gated: true }));
     returnToCaller(res, record, null, null);
-    log.debug("Leaving the authentication endpoint. An unauthenticated session was started; back to " +
+    log.debug("Leaving the authentication endpoint. An unauthenticated " +
+              "session was started; back to " +
               record.returnTo + ".");
     return undefined;
   }
@@ -3675,11 +3952,12 @@ app.post(LOGIN_PATH, function (req, res) {
   // The only two ways to fail: no username to put in the tokens, and the
   // reserved password the rest of this mock also refuses.
   if (!username) {
-    log.debug("Leaving the authentication endpoint. No username was entered, so the form is shown again.");
+    log.debug("Leaving the authentication endpoint. No username was entered, " +
+              "so the form is shown again.");
     errorCodes.mark(res, 'STS-AUTHN-0006');
     return sendLoginPage(res, loginPage(base, record,
-      'Enter a username. It does not have to exist — it is the identity the issued tokens will ' +
-      'describe.'));
+      'Enter a username. It does not have to exist — it is the identity the ' +
+      'issued tokens will describe.'));
   }
   // Which role the security key is in, if it is in one at all. The two boxes
   // cannot be made exclusive on a screen that runs no script, so a POST can
@@ -3711,7 +3989,8 @@ app.post(LOGIN_PATH, function (req, res) {
   // and is being sent back to a password field needs to know that the answer
   // is a knob rather than their hardware.
   if (passwordless || secondFactor) {
-    const allowed = webauthnPolicy.roleAllowed(passwordless ? 'primary' : 'mfa');
+    const allowed = webauthnPolicy.roleAllowed(passwordless ? 'primary' :
+                                               'mfa');
     if (!allowed.ok) {
       log.info('authn: a security-key sign-in was asked for as a ' +
                (passwordless ? 'primary' : 'second-factor') + ' credential ' +
@@ -3724,17 +4003,19 @@ app.post(LOGIN_PATH, function (req, res) {
   }
 
   // A caller that demanded a second factor does not get the passwordless path.
-  // The checkbox is rendered disabled for this reason and THIS is the check that
-  // matters: `disabled` is a property of a browser, not of an HTTP request, and
-  // the whole value of acr_values and wauth is that the answer cannot be chosen
-  // by whoever is answering.
+  // The checkbox is rendered disabled for this reason and THIS is the check
+  // that matters: `disabled` is a property of a browser, not of an HTTP
+  // request, and the whole value of acr_values and wauth is that the answer
+  // cannot be chosen by whoever is answering.
   if (passwordless && record.forceMfa) {
-    log.debug("Leaving the authentication endpoint. Passwordless was asked for where the caller " +
-              "demands a second factor, so the form is shown again.");
+    log.debug("Leaving the authentication endpoint. Passwordless was asked " +
+              "for where the caller demands a second factor, so the form is " +
+              "shown again.");
     errorCodes.mark(res, 'STS-AUTHN-0007');
     return sendLoginPage(res, loginPage(base, record,
-      'This request asked for a second factor, so a security key on its own cannot answer it — ' +
-      'one factor is one factor. Sign in with a password and the key together.'));
+      'This request asked for a second factor, so a security key on its own ' +
+      'cannot answer it — one factor is one factor. Sign in with a password ' +
+      'and the key together.'));
   }
 
   // ---------------------------------------------------------------------
@@ -3791,7 +4072,8 @@ app.post(LOGIN_PATH, function (req, res) {
     if (!credential.ok) {
       log.info('authn: the sign-in for "' + username + '" was refused (' +
                credential.reason + '): ' + credential.detail);
-      log.debug("Leaving the authentication endpoint. The credential was refused, so the form is shown again.");
+      log.debug("Leaving the authentication endpoint. The credential was " +
+                "refused, so the form is shown again.");
       errorCodes.mark(res, errorCodes.codeOf(credential) || 'STS-AUTHN-0054');
       return sendLoginPage(res, loginPage(base, record,
         'Authentication failed for ' + username + '.'));
@@ -3851,7 +4133,8 @@ app.post(LOGIN_PATH, function (req, res) {
   if (!roleAnswer.allowed) {
     log.info('authn: the issuance policy refused a session for "' + username +
              '" at "' + String(record.application) + '". ' + roleAnswer.why);
-    log.debug("Leaving the authentication endpoint. The issuance policy refused the session.");
+    log.debug("Leaving the authentication endpoint. The issuance policy " +
+              "refused the session.");
     errorCodes.mark(res, 'STS-AUTHN-0009');
     return sendLoginPage(res, loginPage(base, record, roleAnswer.why));
   }
@@ -3859,11 +4142,11 @@ app.post(LOGIN_PATH, function (req, res) {
   // The security key, in whichever role. On the second-factor path the password
   // step has succeeded and the session is NOT created yet, because a session
   // created here and upgraded later would be a valid single-factor session in
-  // the window between — and a request arriving in that window would be answered
-  // with tokens that claim one factor's worth of assurance and carry none of the
-  // second's. On the passwordless path there is nothing to upgrade FROM, and the
-  // rule holds for the same reason: nothing has been authenticated until the
-  // ceremony verifies.
+  // the window between — and a request arriving in that window would be
+  // answered with tokens that claim one factor's worth of assurance and carry
+  // none of the second's. On the passwordless path there is nothing to upgrade
+  // FROM, and the rule holds for the same reason: nothing has been
+  // authenticated until the ceremony verifies.
   // ---------------------------------------------------------------------
   // WHICH SECOND FACTOR, AND THE ANSWER IS THE PERSON'S RATHER THAN THE
   // FORM'S (2026-09-10).
@@ -3958,8 +4241,10 @@ app.post(LOGIN_PATH, function (req, res) {
       return sendTotpPage(res, totpPage(base, mfaId, username, '', ''));
     }
     log.debug("Leaving the authentication endpoint. " + username +
-              (passwordless ? " asked for a passwordless sign-in; asking for the security key."
-                            : " passed the password step; asking for the security key."));
+              (passwordless ? " asked for a passwordless sign-in; asking for " +
+                              "the security key."
+                            : " passed the password step; asking for the " +
+                              "security key."));
     return sendWebauthnPage(res, webauthnPage(base, mfaId, username, ''));
   }
 
@@ -3974,14 +4259,15 @@ app.post(LOGIN_PATH, function (req, res) {
   // Back to whatever sent them here, with its own original request — which now
   // runs a second time, sees the session cookie, and completes.
   returnToCaller(res, record, null, null);
-  log.debug("Leaving the authentication endpoint. " + username + " is signed in; back to " +
+  log.debug("Leaving the authentication endpoint. " + username + " is signed " +
+      "in; back to " +
             record.returnTo + ".");
 });
 
 // The security-key screen, and it is ONE screen for both roles. It performs the
-// ceremony in the browser against THIS origin — the RP ID is the STS's own host,
-// because WebAuthn binds a ceremony to the calling origin and no amount of
-// configuration changes that.
+// ceremony in the browser against THIS origin — the RP ID is the STS's own
+// host, because WebAuthn binds a ceremony to the calling origin and no amount
+// of configuration changes that.
 //
 // Registration on first use, assertion afterwards: a mock authorization server
 // that demanded an already-enrolled key would be untestable without a manual
@@ -4069,8 +4355,10 @@ function keyForAssertion(username, role, presentedId) {
 // not answer, which older ones and a ceremony run with `webauthn.credProps` off
 // both do; that is a third state and not a `false`.
 function discoverableFrom(credential) {
+  log.debug("Entering discoverableFrom().");
   const results = credential && credential.clientExtensionResults;
   const props = results && results.credProps;
+  log.debug("Leaving discoverableFrom().");
   return (props && typeof props.rk === 'boolean') ? props.rk : null;
 }
 
@@ -4084,13 +4372,18 @@ function discoverableFrom(credential) {
 // service, and this service consults none — see `webauthn.attestation`. A
 // hex string is worse than no label at all.
 function labelForKey(credential, verdict) {
-  const attachment = String((credential && credential.authenticatorAttachment) || '');
+  log.debug("Entering labelForKey().");
+  const attachment = String((credential &&
+                             credential.authenticatorAttachment) || '');
   if (attachment === 'platform') {
+    log.debug("Leaving labelForKey().");
     return 'this device';
   }
   if (attachment === 'cross-platform') {
+    log.debug("Leaving labelForKey().");
     return 'security key';
   }
+  log.debug("Leaving labelForKey().");
   return (verdict && verdict.algorithm)
     ? 'security key (' + verdict.algorithm + ')' : 'security key';
 }
@@ -4129,26 +4422,35 @@ function webauthnPage(base, mfaId, username, error) {
   // one page.
   const rpId = rpIdOf(base);
   const options = webauthnPolicy.settings();
-  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<title>Security key — mock authentication service</title><style>' +
-    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-    'display:flex;align-items:center;justify-content:center;min-height:100vh;color:#222}' +
-    '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;padding:28px 32px;width:420px;' +
-    'box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 4px}' +
-    'p.sub{color:#666;font-size:.85em;margin:0 0 18px}button{padding:9px 12px;border-radius:5px;' +
-    'border:1px solid #12107c;background:#12107c;color:#fff;font-size:.95em;cursor:pointer;width:100%}' +
-    '.err{background:#fdecea;border:1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
-    'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;padding-top:14px;border-top:1px solid #eee;' +
-    'font-size:.75em;color:#777;word-break:break-all}.meta div{margin:2px 0}' +
-    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}</style></head><body>' +
-    '<div class="card"><h1>' + (mode === 'create' ? 'Enrol a security key' : 'Use your security key') + '</h1>' +
-    '<p class="sub">' + (passwordless
-      ? 'Passwordless sign-in as <code>' + xmlEscape(username) + '</code> — the key is the only factor'
+  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    'charset="utf-8"><title>Security key — mock authentication ' +
+    'service</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
+    'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
+    'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
+    '.card{background:#fff;border:1px solid ' +
+    '#d5d5dd;border-radius:10px;padding:28px 32px;width:420px;box-shadow:0 ' +
+    '6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 ' +
+    '4px}p.sub{color:#666;font-size:.85em;margin:0 0 18px}button{padding:9px ' +
+    '12px;border-radius:5px;border:1px solid #12107c;background:#12107c;' +
+    'color:#fff;font-size:.95em;cursor:pointer;width:100%}' +
+    '.err{background:#fdecea;border:1px solid ' +
+    '#f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;' +
+    'padding-top:14px;border-top:1px solid ' +
+    '#eee;font-size:.75em;color:#777;word-break:break-all}.meta ' +
+    'div{margin:2px 0}code{font-family:ui-monospace,SFMono-Regular,Menlo,' +
+    'monospace}</style></head><body><div ' +
+    'class="card"><h1>' + (mode === 'create' ? 'Enrol a security key' : 'Use ' +
+        'your security key') + '</h1><p ' +
+    'class="sub">' + (passwordless
+      ? 'Passwordless sign-in as <code>' + xmlEscape(username) + '</code> — ' +
+          'the key is the only factor'
       : 'Second factor for <code>' + xmlEscape(username) + '</code>') + '</p>' +
     (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
     '<button id="wa-go" type="button">' +
-    (mode === 'create' ? 'Enrol security key' : 'Authenticate with security key') + '</button>' +
-    '<form method="post" action="' + WEBAUTHN_PATH + '" id="wa-form">' +
+    (mode === 'create' ? 'Enrol security key' :
+     'Authenticate with security key') + '</button><form ' +
+    'method="post" action="' + WEBAUTHN_PATH + '" id="wa-form">' +
     '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
     '<input type="hidden" name="mode" value="' + mode + '">' +
     '<input type="hidden" name="credential" id="wa-credential">' +
@@ -4173,7 +4475,8 @@ function webauthnPage(base, mfaId, username, error) {
     // registered here cannot be registered again on the enrolment path. It is
     // a fact about the DEVICE rather than about what the credential is for,
     // which is why it is not the role-filtered list above.
-    ' data-exclude="' + xmlEscape(credentials.keysOf(username).map(function (one) {
+    ' data-exclude="' +
+    xmlEscape(credentials.keysOf(username).map(function (one) {
       return one.credentialId;
     }).join(',')) + '"' +
     // THE CEREMONY'S OPTIONS, AS ONE JSON OBJECT (2026-09-10). Every one of
@@ -4191,11 +4494,13 @@ function webauthnPage(base, mfaId, username, error) {
                           : webauthnPolicy.requestOptions(rpId))) + '"' +
     ' data-mode="' + mode + '"></div>' +
     '<div class="meta">' +
-    '<div>RP ID: <code>' + xmlEscape(rpId) + '</code> — the ceremony is bound to this origin' +
+    '<div>RP ID: <code>' + xmlEscape(rpId) + '</code> — the ceremony is ' +
+                                             'bound to this origin' +
     (options.rpId
       ? ', widened to this suffix by <code>webauthn.rpId</code>'
       : '') + '.</div>' +
-    '<div>challenge: <code>' + xmlEscape(step ? step.challenge : '') + '</code></div>' +
+    '<div>challenge: <code>' + xmlEscape(step ? step.challenge : '') +
+    '</code></div>' +
     // WHAT THIS CEREMONY IS ASKING FOR, said on the page rather than only in
     // the options attribute. This is a debugging service and these four are
     // the settings whose effect somebody is most likely to be here to observe;
@@ -4217,14 +4522,16 @@ function webauthnPage(base, mfaId, username, error) {
         : '')) + '</div>' +
     '<div>' + (mode === 'create'
       ? 'No key is enrolled for this user yet, so this step registers one.'
-      : 'A key is already enrolled for this user, so this step is an assertion.') + '</div>' +
-    '<div>' + (passwordless
-      ? 'No password was presented. On success the session records amr ["hwk"] and acr "1" — ' +
-        'ONE factor — and this counts as an authentication in its own right, so it appears on ' +
-        '/admin/users and the directory grows an entry for ' + xmlEscape(username) + '.'
-      : 'A password step has already succeeded. On success the session records amr ["pwd","hwk"] ' +
-        'and acr "mfa", and the directory entry for ' + xmlEscape(username) + ' is flagged as ' +
-        'having authenticated with more than one factor.') + '</div>' +
+      : 'A key is already enrolled for this user, so this step is an assertion.') + '</div><div>' + (passwordless
+      ? 'No password was presented. On success the session records amr ' +
+        '["hwk"] and acr "1" — ONE factor — and this counts as an ' +
+        'authentication in its own right, so it appears on /admin/users and ' +
+        'the directory grows an entry for ' + xmlEscape(username) + '.'
+      : 'A password step has already succeeded. On success the session ' +
+        'records amr ["pwd","hwk"] and acr "mfa", and the directory entry ' +
+        'for ' + xmlEscape(username) + ' ' +
+        'is flagged as having authenticated with more than one ' +
+        'factor.') + '</div>' +
     // THE OTHER SECOND FACTOR, WHERE THIS PERSON HOLDS ONE (2026-09-10). The
     // step's `alternate` is resolved when the step is MINTED and not here, so
     // this link cannot offer a mechanism the person has not enrolled — see the
@@ -4252,10 +4559,10 @@ function webauthnPage(base, mfaId, username, error) {
 }
 
 // The ceremony script, as its own resource. Written with split/join rather than
-// regular expressions on purpose: this string passes through a JavaScript string
-// literal on the way out, where `\+` collapses to `+` and `\/` to `/`, which
-// silently produced `/+/g` and `///g` in the delivered script the first time
-// this was written inline. split/join has nothing to escape.
+// regular expressions on purpose: this string passes through a JavaScript
+// string literal on the way out, where `\+` collapses to `+` and `\/` to `/`,
+// which silently produced `/+/g` and `///g` in the delivered script the first
+// time this was written inline. split/join has nothing to escape.
 const WEBAUTHN_SCRIPT = [
   '(function () {',
   '  var d = document.getElementById("wa-data");',
@@ -4354,11 +4661,14 @@ const WEBAUTHN_SCRIPT = [
 // is a named resource rather than a hole. app.js sets script-src 'none' on
 // everything by default and that default is worth keeping.
 function sendWebauthnPage(res, html) {
+  log.debug("Entering sendWebauthnPage().");
   // Through the builder, so the framing clauses cannot be lost by editing this
   // line — see the note above contentSecurityPolicy() in app.js. What is being
   // relaxed is script-src and nothing else.
-  res.set('Content-Security-Policy', app.contentSecurityPolicy({ 'script-src': "'self'" }));
+  res.set('Content-Security-Policy',
+          app.contentSecurityPolicy({ 'script-src': "'self'" }));
   res.status(200).type('text/html').set('Cache-Control', 'no-store').send(html);
+  log.debug("Leaving sendWebauthnPage().");
 }
 
 app.get(WEBAUTHN_SCRIPT_PATH, function (req, res) {
@@ -4367,9 +4677,13 @@ app.get(WEBAUTHN_SCRIPT_PATH, function (req, res) {
   // clickjacking vector the page it belongs to is — but it goes through the
   // builder anyway, because "this one does not need it" is the reasoning that
   // ends with a PAGE that does not have it.
-  res.set('Content-Security-Policy', app.contentSecurityPolicy({ 'style-src': null,
-                                                                 'img-src': null }));
-  res.type('application/javascript').set('Cache-Control', 'no-store').send(WEBAUTHN_SCRIPT);
+  res.set('Content-Security-Policy',
+          app.contentSecurityPolicy({ 'style-src': null,
+                                                                 'img-src':
+                                                                   null }));
+  res.type('application/javascript')
+     .set('Cache-Control', 'no-store')
+     .send(WEBAUTHN_SCRIPT);
 });
 
 // ---------------------------------------------------------------------------
@@ -4398,6 +4712,7 @@ function originOf(base) {
     log.debug("Leaving originOf(). " + origin);
     return origin;
   } catch (e) {
+    log.debug("Caught in originOf(): " + ((e && e.message) || e));
     // A base that will not parse is a misconfiguration of this service rather
     // than of the ceremony, and the same fallback rpIdOf() takes: strip
     // whatever path is there and keep the authority, so the comparison below
@@ -4453,27 +4768,33 @@ function originOf(base) {
 // more than a page that throws.
 // ---------------------------------------------------------------------------
 function rpIdProblem(base) {
+  log.debug("Entering rpIdProblem().");
   const wanted = webauthnPolicy.settings().rpId;
   if (!wanted || mode.acceptsUnregisteredAddresses()) {
+    log.debug("Leaving rpIdProblem().");
     return '';
   }
   let host;
   try {
     host = new URL(base).hostname;
   } catch (e) {
+    log.debug("Caught in rpIdProblem(): " + ((e && e.message) || e));
     // Unparseable base: the same literal fallback `rpIdOf()` takes.
     host = String(base).replace(/^https?:\/\//, '').split(':')[0];
   }
   const lower = String(host).toLowerCase();
   const want = String(wanted).toLowerCase();
   if (lower === want || lower.endsWith('.' + want)) {
+    log.debug("Leaving rpIdProblem().");
     return '';
   }
+  log.debug("Leaving rpIdProblem().");
   return 'webauthn.rpId is "' + wanted + '", which is neither the host this ' +
-         'request reached ("' + host + '") nor a registrable domain suffix of ' +
-         'it, and in product mode a security-key ceremony is not run against ' +
-         'an address the configuration did not name. Reach this service at a ' +
-         'host under "' + wanted + '", or set global.publicBaseUrl to one.';
+         'request reached ("' + host + '") nor a registrable domain suffix ' +
+         'of it, and in product mode a security-key ceremony is not run ' +
+         'against an address the configuration did not name. Reach this ' +
+         'service at a host under ' +
+         '"' + wanted + '", or set global.publicBaseUrl to one.';
 }
 
 // ---------------------------------------------------------------------------
@@ -4492,7 +4813,9 @@ function rpIdProblem(base) {
 // compares the signed bytes against it.
 // ---------------------------------------------------------------------------
 function allowedOrigins() {
+  log.debug("Entering allowedOrigins().");
   const raw = config.value('webauthn.allowedOrigins');
+  log.debug("Leaving allowedOrigins().");
   return (Array.isArray(raw) ? raw : String(raw || '').split(','))
     .map(function (one) { return String(one || '').trim(); })
     .filter(Boolean)
@@ -4514,6 +4837,7 @@ function expectedOriginFor(base, credential) {
                                 .toString('utf8'));
     claimed = String((parsed && parsed.origin) || '');
   } catch (e) {
+    log.debug("Caught in expectedOriginFor(): " + ((e && e.message) || e));
     // Not decodable. The verifier reads the same bytes and refuses them with a
     // sentence about the client data, which is the right place for that.
     claimed = '';
@@ -4522,7 +4846,8 @@ function expectedOriginFor(base, credential) {
     log.debug("Leaving expectedOriginFor(). " + claimed + " is on the list.");
     return claimed;
   }
-  log.debug("Leaving expectedOriginFor(). Not on the list; the verifier refuses.");
+  log.debug("Leaving expectedOriginFor(). Not on the list; the verifier " +
+            "refuses.");
   return list[0];
 }
 
@@ -4532,6 +4857,7 @@ function rpIdOf(base) {
   try {
     host = new URL(base).hostname;
   } catch (e) {
+    log.debug("Caught in rpIdOf(): " + ((e && e.message) || e));
     // A base that will not parse is a misconfiguration of this service rather
     // than of the ceremony; fall back to the literal so the page still says
     // something true about what it will send.
@@ -4549,21 +4875,24 @@ function rpIdOf(base) {
   const lower = String(host).toLowerCase();
   const want = String(wanted).toLowerCase();
   if (lower === want || lower.endsWith('.' + want)) {
-    log.debug("Leaving rpIdOf(). " + want + " (configured, a domain suffix of " +
+    log.debug("Leaving rpIdOf(). " + want +
+              " (configured, a domain suffix of " +
               host + ").");
     return want;
   }
   log.warn('authn: webauthn.rpId is "' + wanted + '", which is NOT this ' +
            'origin\'s host ("' + host + '") nor a registrable domain suffix ' +
            'of it. WebAuthn forbids that and the browser would refuse the ' +
-           'ceremony with an error indistinguishable from a hardware failure, ' +
-           'so this service is using "' + host + '" instead and telling you ' +
-           'why. Set webauthn.rpId to "" or to a suffix of the host you reach ' +
-           'this service on.' +
+           'ceremony with an error indistinguishable from a hardware ' +
+           'failure, so this service is using ' +
+           '"' + host + '" instead and telling you ' +
+           'why. Set webauthn.rpId to "" or to a suffix of the host you ' +
+           'reach this service on.' +
            (mode.acceptsUnregisteredAddresses() ? ''
              : ' In product mode the ceremony itself is refused — see ' +
                'rpIdProblem().'));
-  log.debug("Leaving rpIdOf(). " + host + " (the configured value was refused).");
+  log.debug("Leaving rpIdOf(). " + host +
+            " (the configured value was refused).");
   return host;
 }
 
@@ -4593,7 +4922,8 @@ app.get(WEBAUTHN_PATH, function (req, res) {
   const step = pendingMfa.get(mfaId);
   if (!step || step.expires < Date.now()) {
     pendingMfa.delete(mfaId);
-    log.debug("Leaving the WebAuthn second-factor screen. The step had expired.");
+    log.debug("Leaving the WebAuthn second-factor screen. The step had " +
+              "expired.");
     errorCodes.mark(res, 'STS-AUTHN-0019');
     return oauthError(res, 400, 'invalid_request',
       'This second-factor step has expired. Start the request again from the ' +
@@ -4635,28 +4965,38 @@ app.post(WEBAUTHN_PATH, function (req, res) {
     log.debug("Leaving the WebAuthn endpoint. The step had expired.");
     errorCodes.mark(res, 'STS-AUTHN-0019');
     return oauthError(res, 400, 'invalid_request',
-      'This security-key step has expired. Start the request again from the application that ' +
-      'sent you here.');
+      'This security-key step has expired. Start the request again from the ' +
+      'application that sent you here.');
   }
 
   let credential;
   try {
     credential = JSON.parse(String(body.credential || '{}'));
   } catch (e) {
-    log.debug("Leaving the WebAuthn endpoint. The posted credential was not JSON.");
+    log.debug("Caught in a callback in module scope: " +
+              ((e && e.message) || e));
+    log.debug("Leaving the WebAuthn endpoint. The posted credential was not " +
+              "JSON.");
     errorCodes.mark(res, 'STS-AUTHN-0021');
-    return sendWebauthnPage(res, webauthnPage(base, step.authn && String(body.mfa_id), step.username,
-                         'The browser returned something this server could not read.'));
+    return sendWebauthnPage(res,
+                            webauthnPage(base,
+                         step.authn && String(body.mfa_id), step.username,
+                         'The browser returned something this server could ' +
+                         'not read.'));
   }
   if (credential.error) {
     // The browser refused the ceremony. Its error is deliberately ambiguous —
     // no credential, declined, and timed out are one error — so report it as
     // given rather than guessing which happened.
-    log.debug("Leaving the WebAuthn endpoint. The browser refused: " + credential.error);
+    log.debug("Leaving the WebAuthn endpoint. The browser refused: " +
+              credential.error);
     errorCodes.mark(res, 'STS-AUTHN-0022');
-    return sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id), step.username,
+    return sendWebauthnPage(res,
+                            webauthnPage(base, String(body.mfa_id),
+        step.username,
         credential.error + ': ' + (credential.message || '') +
-        '  (WebAuthn reports one error for several situations, so this does not say which.)'));
+        '  (WebAuthn reports one error for several situations, so this does ' +
+        'not say which.)'));
   }
 
   // THE RP ID MUST FIT, IN PRODUCT MODE, BEFORE ANYTHING IS VERIFIED. See
@@ -4740,12 +5080,13 @@ app.post(WEBAUTHN_PATH, function (req, res) {
         // everywhere else.
         if (!mode.autoCreates() && !stats.knownUser(step.username)) {
           log.info('authn: product mode, so a WebAuthn key was NOT enrolled ' +
-                   'for "' + step.username + '" — there is no directory entry ' +
-                   'for them and enrolling would create one.');
+                   'for "' + step.username + '" — there is no directory ' +
+                   'entry for them and enrolling would create one.');
           verdict = errorCodes.mark({ ok: false,
-                      why: 'This service is in product mode, where a security ' +
-                           'key can only be enrolled for somebody who already ' +
-                           'exists. Create the person first.' }, 'STS-AUTHN-0024');
+                      why: 'This service is in product mode, where a ' +
+                           'security key can only be enrolled for somebody ' +
+                           'who already exists. Create the person ' +
+                           'first.' }, 'STS-AUTHN-0024');
         } else {
           // THE ENTRY FIRST, AND THE ORDER IS NOW LOAD-BEARING RATHER THAN
           // TIDY. `credentials.addKey()` writes an ATTRIBUTE ON THE PERSON'S
@@ -4810,8 +5151,10 @@ app.post(WEBAUTHN_PATH, function (req, res) {
             log.info('authn: the security key "' + step.username + '" just ' +
                      'registered was NOT stored: ' +
                      (stored.errors || []).join(' '));
-            verdict = errorCodes.mark({ ok: false, why: (stored.errors || []).join(' ') },
-                                      errorCodes.codeOf(stored) || 'STS-AUTHN-0068');
+            verdict = errorCodes.mark({ ok: false,
+                                        why: (stored.errors || []).join(' ') },
+                                      errorCodes.codeOf(stored) ||
+                                      'STS-AUTHN-0068');
           }
         }
       }
@@ -4878,47 +5221,61 @@ app.post(WEBAUTHN_PATH, function (req, res) {
       }
     }
   } catch (e) {
-    log.debug("Leaving the WebAuthn endpoint. Verification threw: " + e.message);
+    log.debug("Leaving the WebAuthn endpoint. Verification threw: " +
+              e.message);
     errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-AUTHN-0027');
-    return sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id), step.username,
-                         'The second factor could not be checked: ' + e.message));
+    return sendWebauthnPage(res,
+                            webauthnPage(base, String(body.mfa_id),
+                         step.username,
+                         'The second factor could not be checked: ' +
+                         e.message));
   }
 
-  logArtifact('WebAuthn ' + (String(body.mode) === 'create' ? 'registration' : 'assertion'),
-              'as verified by this server', { ok: verdict.ok, checks: verdict.checks });
+  logArtifact('WebAuthn ' +
+              (String(body.mode) === 'create' ? 'registration' : 'assertion'),
+              'as verified by this server', { ok: verdict.ok,
+                                              checks: verdict.checks });
 
   if (!verdict.ok) {
     // Name the check that failed. "Authentication failed" would be true and
     // useless, and this is a debugging service.
-    errorCodes.mark(res, errorCodes.codeOf(verdict) || webauthnPolicy.failureCodeFor(verdict));
-    log.debug("Leaving the WebAuthn endpoint. Refused: " + verdict.failed.join('; '));
-    return sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id), step.username,
-                         'The second factor did not verify — ' + verdict.failed.join('; ') + '.'));
+    errorCodes.mark(res,
+                    errorCodes.codeOf(verdict) ||
+                    webauthnPolicy.failureCodeFor(verdict));
+    log.debug("Leaving the WebAuthn endpoint. Refused: " +
+              verdict.failed.join('; '));
+    return sendWebauthnPage(res,
+                            webauthnPage(base, String(body.mfa_id),
+                         step.username,
+                         'The second factor did not verify — ' +
+                         verdict.failed.join('; ') + '.'));
   }
 
   pendingMfa.delete(String(body.mfa_id));
-  // What the session claims, which is the whole difference between the two roles
-  // and the only place it is decided. `hwk` is the RFC 8176 value for proof of
-  // possession of a hardware key, which is what a WebAuthn assertion is; `pwd`
-  // is on the list only where a password step actually happened.
+  // What the session claims, which is the whole difference between the two
+  // roles and the only place it is decided. `hwk` is the RFC 8176 value for
+  // proof of possession of a hardware key, which is what a WebAuthn assertion
+  // is; `pwd` is on the list only where a password step actually happened.
   //
   // acr "1" for the passwordless sign-in is deliberate and it is the
   // conservative reading: this ceremony is performed with userVerification
-  // "preferred" rather than "required" (see the script above), so the key proves
-  // possession and nothing about the person holding it. Calling that "mfa"
-  // because it is phishing-resistant would be the fake this profile refuses
-  // everywhere else — a relying party that asked for two factors would be told
-  // it got them.
+  // "preferred" rather than "required" (see the script above), so the key
+  // proves possession and nothing about the person holding it. Calling that
+  // "mfa" because it is phishing-resistant would be the fake this profile
+  // refuses everywhere else — a relying party that asked for two factors would
+  // be told it got them.
   const amr = step.passwordless ? ['hwk'] : ['pwd', 'hwk'];
   const acr = step.passwordless ? '1' : 'mfa';
   // The single funnel, reached through startSession() as every sign-in at these
   // screens is. It is what puts the person on /admin/users and what seeds their
-  // entry in the embedded directory — so a PRIMARY WebAuthn sign-in creates that
-  // entry exactly as a password one does, and a SECOND FACTOR adds no second
-  // identity, because the person it authenticates is the one the password step
-  // already named. What the second factor adds to the entry is a flag; see
-  // ldap_server.js's applyAuthenticationFactors(), which reads the amr below.
-  startSession(res, step.username, amr, acr, step.authn.protocol, { request: req });
+  // entry in the embedded directory — so a PRIMARY WebAuthn sign-in creates
+  // that entry exactly as a password one does, and a SECOND FACTOR adds no
+  // second identity, because the person it authenticates is the one the
+  // password step already named. What the second factor adds to the entry is a
+  // flag; see ldap_server.js's applyAuthenticationFactors(), which reads the
+  // amr below.
+  startSession(res, step.username, amr, acr, step.authn.protocol,
+               { request: req });
   // Back to the caller, exactly as the password-only path returns: the
   // session now records what happened, and the request that was interrupted
   // runs again and sees it.
@@ -4976,47 +5333,54 @@ function totpPage(base, mfaId, username, error, notice) {
   const enrolled = credentials.mechanismsFor(username);
   const digits = (enrolled.totpDetail && enrolled.totpDetail.digits) || 6;
   const alternate = step && step.alternate === 'webauthn';
-  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<title>One-time code — mock authentication service</title><style>' +
-    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-    'display:flex;align-items:center;justify-content:center;min-height:100vh;color:#222}' +
-    '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;padding:28px 32px;width:420px;' +
-    'box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 4px}' +
-    'p.sub{color:#666;font-size:.85em;margin:0 0 18px}' +
-    'label{display:block;font-size:.8em;color:#444;margin:0 0 4px}' +
+  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    'charset="utf-8"><title>One-time code — mock authentication ' +
+    'service</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
+    'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
+    'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
+    '.card{background:#fff;border:1px solid ' +
+    '#d5d5dd;border-radius:10px;padding:28px 32px;width:420px;box-shadow:0 ' +
+    '6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 ' +
+    '4px}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
+    '18px}label{display:block;font-size:.8em;color:#444;margin:0 0 4px}' +
     // A WIDE, MONOSPACED, LETTER-SPACED FIELD. `inputmode="numeric"` puts a
     // phone's number pad up, `autocomplete="one-time-code"` is what lets iOS
     // and Android offer the code from the notification, and `autofocus` means
     // somebody arriving here can start typing. None of the three is script.
-    'input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #c8c8d0;' +
-    'border-radius:5px;font-size:1.4em;letter-spacing:.35em;text-align:center;' +
-    'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-bottom:14px}' +
-    'button{padding:9px 12px;border-radius:5px;border:1px solid #12107c;background:#12107c;' +
+    'input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px ' +
+    'solid #c8c8d0;border-radius:5px;font-size:1.4em;letter-spacing:.35em;' +
+    'text-align:center;font-family:ui-monospace,SFMono-Regular,Menlo,' +
+    'monospace;margin-bottom:14px}button{padding:9px ' +
+    '12px;border-radius:5px;border:1px solid #12107c;background:#12107c;' +
     'color:#fff;font-size:.95em;cursor:pointer;width:100%}' +
-    '.err{background:#fdecea;border:1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
-    'font-size:.85em;margin-bottom:12px}' +
-    '.ok{background:#eef7ee;border:1px solid #cfe6cf;color:#1d5c1d;padding:8px 10px;border-radius:5px;' +
-    'font-size:.85em;margin-bottom:12px}' +
-    '.meta{margin-top:20px;padding-top:14px;border-top:1px solid #eee;' +
-    'font-size:.75em;color:#777}.meta div{margin:2px 0}.meta a{color:#12107c}' +
-    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}</style></head><body>' +
-    '<div class="card"><h1>Your one-time code</h1>' +
-    '<p class="sub">Second factor for <code>' + xmlEscape(username) + '</code></p>' +
+    '.err{background:#fdecea;border:1px solid ' +
+    '#f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}.ok{background:#eef7ee;border:1px ' +
+    'solid #cfe6cf;color:#1d5c1d;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;' +
+    'padding-top:14px;border-top:1px solid ' +
+    '#eee;font-size:.75em;color:#777}.meta div{margin:2px 0}.meta ' +
+    'a{color:#12107c}code{font-family:ui-monospace,SFMono-Regular,Menlo,' +
+    'monospace}</style></head><body><div class="card"><h1>Your one-time ' +
+    'code</h1><p class="sub">Second factor for <code>' + xmlEscape(username) +
+    '</code></p>' +
     (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
     (notice ? '<div class="ok">' + xmlEscape(notice) + '</div>' : '') +
     '<form method="post" action="' + TOTP_PATH + '">' +
     '<input type="hidden" name="mfa_id" value="' + xmlEscape(mfaId) + '">' +
-    '<label for="code">The ' + digits + '-digit code from your authenticator app</label>' +
-    '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
-    'inputmode="numeric" pattern="[0-9]*" maxlength="' + digits + '" autofocus ' +
-    'placeholder="' + '0'.repeat(digits) + '">' +
+    '<label for="code">The ' + digits + '-digit code from your authenticator ' +
+    'app</label><input type="text" id="code" name="code" ' +
+    'autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]*" ' +
+    'maxlength="' + digits + '" ' +
+    'autofocus placeholder="' + '0'.repeat(digits) + '">' +
     '<button type="submit" id="totp-submit">Sign in</button>' +
     '</form>' +
     '<div class="meta">' +
     '<div>The code changes every ' +
-    xmlEscape(String((enrolled.totpDetail && enrolled.totpDetail.period) || 30)) +
-    ' seconds. A code can only be used once (RFC 6238 section 5.2), so if you ' +
-    'have just signed in, wait for the next one.</div>' +
+    xmlEscape(String((enrolled.totpDetail &&
+                      enrolled.totpDetail.period) || 30)) +
+    ' seconds. A code can only be used once (RFC 6238 section 5.2), so if ' +
+    'you have just signed in, wait for the next one.</div>' +
     (alternate
       ? '<div><a href="/authn/webauthn?mfa=' + encodeURIComponent(mfaId) +
         '">Use your security key instead</a></div>'
@@ -5100,11 +5464,13 @@ app.get(TOTP_PATH, function (req, res) {
     log.debug('Leaving the one-time code screen. Nothing is enrolled.');
     errorCodes.mark(res, 'STS-AUTHN-0076');
     return oauthError(res, 400, 'invalid_request',
-      'No authenticator app is enrolled for that account, so there is no code ' +
-      'to ask for.');
+      'No authenticator app is enrolled for that account, so there is no ' +
+      'code to ask for.');
   }
-  log.debug('Leaving the one-time code screen. Drawn for ' + step.username + '.');
-  return sendTotpPage(res, totpPage(baseUrlOf(req), mfaId, step.username, '', ''));
+  log.debug('Leaving the one-time code screen. Drawn for ' + step.username +
+            '.');
+  return sendTotpPage(res,
+                      totpPage(baseUrlOf(req), mfaId, step.username, '', ''));
 });
 
 // ---------------------------------------------------------------------------
@@ -5160,7 +5526,8 @@ app.post(TOTP_PATH, function (req, res) {
                                       allowed.detail, ''));
   }
 
-  const verdict = credentials.verifyTotp(step.username, String(body.code || ''));
+  const verdict = credentials.verifyTotp(step.username,
+                                         String(body.code || ''));
   if (!verdict.ok) {
     // THE REASON IS SHOWN HERE, WHERE THE SIGN-IN SCREEN SHOWS NONE. That
     // screen hides which of "wrong password" and "no such person" happened,
@@ -5171,7 +5538,8 @@ app.post(TOTP_PATH, function (req, res) {
     // between waiting thirty seconds and thinking your authenticator is broken.
     log.info('authn: the one-time code for "' + step.username +
              '" was refused (' + verdict.reason + ').');
-    log.debug('Leaving the one-time code endpoint. Refused: ' + verdict.reason + '.');
+    log.debug('Leaving the one-time code endpoint. Refused: ' + verdict.reason +
+              '.');
     errorCodes.mark(res, errorCodes.codeOf(verdict) || 'STS-AUTHN-0105');
     return sendTotpPage(res, totpPage(base, mfaId, step.username,
                                       verdict.detail, ''));
@@ -5254,37 +5622,41 @@ function backupCodePage(base, mfaId, username, error, notice) {
   const insteadOf = step && step.factor === 'webauthn'
     ? 'your security key' : 'your authenticator app';
   const low = status.remaining > 0 && status.remaining <= 3;
-  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<title>Recovery code — mock authentication service</title><style>' +
-    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-    'display:flex;align-items:center;justify-content:center;min-height:100vh;color:#222}' +
-    '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;padding:28px 32px;width:420px;' +
-    'box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 4px}' +
-    'p.sub{color:#666;font-size:.85em;margin:0 0 18px}' +
-    'label{display:block;font-size:.8em;color:#444;margin:0 0 4px}' +
+  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    'charset="utf-8"><title>Recovery code — mock authentication ' +
+    'service</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
+    'UI",Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
+    'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
+    '.card{background:#fff;border:1px solid ' +
+    '#d5d5dd;border-radius:10px;padding:28px 32px;width:420px;box-shadow:0 ' +
+    '6px 24px rgba(0,0,0,.08)}h1{font-size:1.25em;margin:0 0 ' +
+    '4px}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
+    '18px}label{display:block;font-size:.8em;color:#444;margin:0 0 4px}' +
     // WIDER AND LESS LETTER-SPACED THAN THE ONE-TIME CODE FIELD NEXT DOOR. A
     // recovery code is ten characters with a dash in the middle rather than
     // six digits, so the spacing that makes a PIN readable makes this one
     // overflow. `autocomplete="one-time-code"` is still right — a password
     // manager that stored the list offers it — and `inputmode` is deliberately
     // NOT numeric here, because these are letters as well.
-    'input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #c8c8d0;' +
-    'border-radius:5px;font-size:1.15em;letter-spacing:.12em;text-align:center;' +
-    'text-transform:uppercase;' +
-    'font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-bottom:14px}' +
-    'button{padding:9px 12px;border-radius:5px;border:1px solid #12107c;background:#12107c;' +
+    'input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px ' +
+    'solid #c8c8d0;border-radius:5px;font-size:1.15em;letter-spacing:.12em;' +
+    'text-align:center;text-transform:uppercase;font-family:ui-monospace,' +
+    'SFMono-Regular,Menlo,monospace;margin-bottom:14px}button{padding:9px ' +
+    '12px;border-radius:5px;border:1px solid #12107c;background:#12107c;' +
     'color:#fff;font-size:.95em;cursor:pointer;width:100%}' +
-    '.err{background:#fdecea;border:1px solid #f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
-    'font-size:.85em;margin-bottom:12px}' +
-    '.ok{background:#eef7ee;border:1px solid #cfe6cf;color:#1d5c1d;padding:8px 10px;border-radius:5px;' +
-    'font-size:.85em;margin-bottom:12px}' +
-    '.warn{background:#fff8e6;border:1px solid #f0dca8;color:#7a5a00;padding:8px 10px;' +
-    'border-radius:5px;font-size:.85em;margin-bottom:12px}' +
-    '.meta{margin-top:20px;padding-top:14px;border-top:1px solid #eee;' +
-    'font-size:.75em;color:#777}.meta div{margin:2px 0}.meta a{color:#12107c}' +
-    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}</style></head><body>' +
-    '<div class="card"><h1>Use a recovery code</h1>' +
-    '<p class="sub">Instead of ' + xmlEscape(insteadOf) + ', for <code>' +
+    '.err{background:#fdecea;border:1px solid ' +
+    '#f5c6c2;color:#b00020;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}.ok{background:#eef7ee;border:1px ' +
+    'solid #cfe6cf;color:#1d5c1d;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}.warn{background:#fff8e6;border:1px ' +
+    'solid #f0dca8;color:#7a5a00;padding:8px 10px;border-radius:5px;' +
+    'font-size:.85em;margin-bottom:12px}.meta{margin-top:20px;' +
+    'padding-top:14px;border-top:1px solid ' +
+    '#eee;font-size:.75em;color:#777}.meta div{margin:2px 0}.meta ' +
+    'a{color:#12107c}code{font-family:ui-monospace,SFMono-Regular,Menlo,' +
+    'monospace}</style></head><body><div class="card"><h1>Use a recovery ' +
+    'code</h1><p class="sub">Instead ' +
+    'of ' + xmlEscape(insteadOf) + ', for <code>' +
     xmlEscape(username) + '</code></p>' +
     (error ? '<div class="err">' + xmlEscape(error) + '</div>' : '') +
     (notice ? '<div class="ok">' + xmlEscape(notice) + '</div>' : '') +
@@ -5385,16 +5757,18 @@ app.get(BACKUP_CODE_PATH, function (req, res) {
                ? 'spent every code in their set' : 'no recovery codes')
              + '. Refused.');
     log.debug('Leaving the recovery code screen. Nothing left to present.');
-    errorCodes.mark(res, (held && held.total) ? 'STS-AUTHN-0088' : 'STS-AUTHN-0087');
+    errorCodes.mark(res,
+                    (held && held.total) ? 'STS-AUTHN-0088' : 'STS-AUTHN-0087');
     return oauthError(res, 400, 'invalid_request',
       (held && held.total)
-        ? 'Every recovery code on that account has been used. A set is issued ' +
-          'once and is never topped up, so an administrator has to clear it ' +
-          'before a new one can be issued.'
+        ? 'Every recovery code on that account has been used. A set is ' +
+          'issued once and is never topped up, so an administrator has to ' +
+          'clear it before a new one can be issued.'
         : 'No recovery codes have been issued for that account, so there is ' +
           'nothing to ask for.');
   }
-  log.debug('Leaving the recovery code screen. Drawn for ' + step.username + '.');
+  log.debug('Leaving the recovery code screen. Drawn for ' + step.username +
+            '.');
   return sendBackupCodePage(res, backupCodePage(baseUrlOf(req), mfaId,
                                                 step.username, '', ''));
 });
@@ -5423,7 +5797,8 @@ app.get(BACKUP_CODE_PATH, function (req, res) {
 app.post(BACKUP_CODE_PATH, function (req, res) {
   log.debug('Entering the recovery code endpoint.');
   const base = baseUrlOf(req);
-  const posted = validation.checkParsed(parseBody(req), 'body', BACKUP_CODE_FORM);
+  const posted = validation.checkParsed(parseBody(req), 'body',
+                                        BACKUP_CODE_FORM);
   if (!posted.ok) {
     errorCodes.mark(res, 'STS-AUTHN-0041');
     return refuseInvalid(res, posted);
@@ -5500,6 +5875,7 @@ function finishBackupCode(req, res, base, mfaId, step, verdict) {
     log.debug('Leaving the recovery code endpoint. Refused: ' +
               verdict.reason + '.');
     errorCodes.mark(res, errorCodes.codeOf(verdict) || 'STS-AUTHN-0092');
+    log.debug("Leaving finishBackupCode().");
     return sendBackupCodePage(res, backupCodePage(base, mfaId, step.username,
                                                   verdict.detail, ''));
   }
@@ -5539,7 +5915,9 @@ function finishBackupCode(req, res, base, mfaId, step, verdict) {
             ' completed the second factor with a recovery code; ' +
             verdict.remaining + ' of ' + verdict.total + ' left.');
   }
+  log.debug("Leaving finishBackupCode().");
 }
+
 // ---------------------------------------------------------------------------
 // WHO POSTED THAT FORM: the audit log's actor, filled from here.
 //
@@ -5553,8 +5931,8 @@ function finishBackupCode(req, res, base, mfaId, step, verdict) {
 // slot and this file fills it at require time, which is before any route can be
 // called because every protocol module requires app.js.
 //
-// It is deliberately NOT sessionOf(). Three differences, and each of them is the
-// reason:
+// It is deliberately NOT sessionOf(). Three differences, and each of them is
+// the reason:
 //
 //   * It has NO SIDE EFFECTS. sessionOf() deletes an expired session as it
 //     finds it, which is right for a protocol endpoint deciding whether to show
@@ -5571,10 +5949,18 @@ function finishBackupCode(req, res, base, mfaId, step, verdict) {
 //     (cookiesOf() writes its own pair, which is one parser rather than two.)
 // ---------------------------------------------------------------------------
 function auditActorOf(req) {
+  log.debug("Entering auditActorOf().");
   const id = cookiesOf(req)[SESSION_COOKIE];
-  if (!id) return '';
+  if (!id) {
+    log.debug("Leaving auditActorOf().");
+    return '';
+  }
   const session = sessions.get(id);
-  if (!session) return '';
+  if (!session) {
+    log.debug("Leaving auditActorOf().");
+    return '';
+  }
+  log.debug("Leaving auditActorOf().");
   return session.user.username;
 }
 
@@ -5653,6 +6039,8 @@ module.exports = {
   // flow would be a caller inventing a session out of nothing, which is the
   // thing moving these surfaces onto OIDC was for.
   startRelyingPartySession: startRelyingPartySession,
+  renewRelyingPartySession: renewRelyingPartySession,
+  tokensExpireAt: tokensExpireAt,
   relyingPartySessionOf: relyingPartySessionOf,
   // Exported for `logout/logout.js`, which lists what is live and has to be
   // able to say which rows hang off which. It is a walk rather than an index;

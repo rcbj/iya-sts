@@ -130,20 +130,28 @@ const SECTIONS = [
 //     be mistaken for somebody's query.
 // ---------------------------------------------------------------------------
 function cell(value) {
+  log.debug("Entering cell().");
   if (value === null || value === undefined) {
+    log.debug("Leaving cell().");
     return '<span class="muted">—</span>';
   }
   if (value === '<insufficient privilege>') {
+    log.debug("Leaving cell().");
     return '<span class="muted">withheld</span>';
   }
   if (value instanceof Date) {
-    return admin.esc(value.toISOString().replace('T', ' ').replace(/\..*$/, 'Z'));
+    log.debug("Leaving cell().");
+    return admin.esc(value.toISOString()
+                          .replace('T', ' ')
+                          .replace(/\..*$/, 'Z'));
   }
   if (typeof value === 'boolean') {
+    log.debug("Leaving cell().");
     return value ? '<span class="ok">yes</span>'
                  : '<span class="muted">no</span>';
   }
   if (typeof value === 'object') {
+    log.debug("Leaving cell().");
     return '<code>' + admin.esc(JSON.stringify(value)) + '</code>';
   }
   const text = String(value);
@@ -151,8 +159,10 @@ function cell(value) {
   // stretch the table past the width of the page; `clipped()` is the console's
   // own control for that and opens out on a click, so nothing is lost.
   if (text.length > 90) {
+    log.debug("Leaving cell().");
     return admin.clipped(text, 90);
   }
+  log.debug("Leaving cell().");
   return admin.esc(text);
 }
 
@@ -162,11 +172,14 @@ function cell(value) {
 // name goes in a `title`, so the page never costs a reader the string they
 // would need to look it up.
 function columnLabel(name) {
+  log.debug("Entering columnLabel().");
+  log.debug("Leaving columnLabel().");
   return '<span title="' + admin.esc(name) + '">' +
          admin.esc(String(name).replace(/_/g, ' ')) + '</span>';
 }
 
 function probeFailure(id, probe) {
+  log.debug("Entering probeFailure().");
   const why = probe.code === '42P01'
     ? 'This server version does not have that view.' +
       (probe.expected
@@ -178,6 +191,7 @@ function probeFailure(id, probe) {
           '<code>pg_monitor</code> to that role is what fills it in; this ' +
           'service does not ask for it.'
         : '');
+  log.debug("Leaving probeFailure().");
   return '<tr><td><code>' + admin.esc(id) + '</code></td>' +
          '<td>' + admin.esc(probe.what) + '</td>' +
          '<td><code>' + admin.esc(probe.code || '—') + '</code></td>' +
@@ -190,12 +204,15 @@ function probeFailure(id, probe) {
 // for `pg_stat_database` — is unreadable as a table with thirty headings and
 // one line under them, which is what the first version of this did.
 function rowTable(probe) {
+  log.debug("Entering rowTable().");
   if (!probe.row) {
+    log.debug("Leaving rowTable().");
     return admin.note('That view answered no row at all, which for a probe ' +
                       'scoped to this database means the server keeps no ' +
                       'statistics for it yet.');
   }
   const keys = Object.keys(probe.row);
+  log.debug("Leaving rowTable().");
   return '<table class="grid"><tbody>' +
     keys.map(function (key) {
       return '<tr><th>' + columnLabel(key) + '</th><td>' +
@@ -210,10 +227,13 @@ function rowTable(probe) {
 // the loop: with no row there are no keys, and a table with no headings is not
 // an empty table, it is a rendering bug.
 function rowsTable(probe) {
+  log.debug("Entering rowsTable().");
   if (!probe.rows || !probe.rows.length) {
+    log.debug("Leaving rowsTable().");
     return '<p class="muted">No rows.</p>';
   }
   const keys = Object.keys(probe.rows[0]);
+  log.debug("Leaving rowsTable().");
   // `.wide` is the console's OWN overflow wrapper (`overflow-x:auto`), reused
   // rather than a class of this page's invention: a thirty-column
   // `pg_stat_user_tables` is wider than any screen, and a second answer to
@@ -249,11 +269,14 @@ function rowsTable(probe) {
 // misunderstanding this page can actually cause.
 // ---------------------------------------------------------------------------
 function ratio(hit, read) {
+  log.debug("Entering ratio().");
   const h = Number(hit || 0);
   const r = Number(read || 0);
   if (!(h + r)) {
+    log.debug("Leaving ratio().");
     return null;
   }
+  log.debug("Leaving ratio().");
   return Math.round((h / (h + r)) * 1000) / 10;
 }
 
@@ -325,6 +348,7 @@ function derived(probes) {
 // permission error naming a statement nobody typed.
 // ---------------------------------------------------------------------------
 function schemaDrift(report) {
+  log.debug("Entering schemaDrift().");
   const declared = report.declaredObjects || [];
   const tables = ((report.probes.tables && report.probes.tables.rows) || [])
     .map(function (one) { return one.relname; });
@@ -339,6 +363,7 @@ function schemaDrift(report) {
   const missing = declared.filter(function (name) {
     return present.indexOf(name) < 0;
   });
+  log.debug("Leaving schemaDrift().");
   return { declared: declared, present: present, missing: missing };
 }
 
@@ -349,6 +374,7 @@ function schemaDrift(report) {
 // ===========================================================================
 function databaseJson() {
   log.debug('Entering databaseJson().');
+  log.debug("Leaving databaseJson().");
   return persistence.databaseMetrics().then(function (report) {
     const out = {
       what: 'Everything PostgreSQL will tell this service about itself, and ' +
@@ -365,7 +391,8 @@ function databaseJson() {
     out.target = report.target;
     out.pool = report.pool;
     out.tookMs = report.tookMs;
-    out.statementTimeoutMs = Number(config.value('persistence.metricsTimeoutMs'));
+    out.statementTimeoutMs = Number(config.value(
+        'persistence.metricsTimeoutMs'));
     out.statementTimeoutSet = report.timeoutSet !== false;
     if (!report.ok) {
       out.error = report.error;
@@ -401,7 +428,8 @@ function renderDatabase(req, res) {
     admin.respond(req, res, json, 'Database', '/admin/database', body(json));
     log.debug('Leaving renderDatabase().');
   }).catch(function (e) {
-    log.error(errorCodes.tag('STS-ADMIN-0598') + 'database_admin: the page threw: ' +
+    log.error(errorCodes.tag('STS-ADMIN-0598') + 'database_admin: the page ' +
+                                                 'threw: ' +
               (e && e.stack ? e.stack : e));
     errorCodes.mark(res, 'STS-ADMIN-0598');
     admin.respond(req, res, { ok: false, error: String(e && e.message || e) },
@@ -410,6 +438,7 @@ function renderDatabase(req, res) {
                              admin.esc(String(e && e.message || e)),
                              'It threw'));
   });
+  log.debug("Leaving renderDatabase().");
 }
 
 function body(json) {
@@ -447,24 +476,23 @@ function body(json) {
     '</div>';
 
   const what = admin.note(
-    '<p>This page is <strong>what the database has been DOING</strong>. ' +
-    '<a href="/admin/persistence">Persistence</a>, under Settings, is what ' +
-    'this service is CONFIGURED to write down and where &mdash; that page ' +
-    'reads the same on a service that started a second ago, and the numbers ' +
-    'here move while you watch.</p>' +
-    '<p><strong>The shape of this page is decided by the database it is ' +
-    'pointed at.</strong> Every statement behind it is a ' +
-    '<code>SELECT *</code>, and the columns drawn are the ones this server ' +
+    '<p>This page is <strong>what the database has been DOING</strong>. <a ' +
+    'href="/admin/persistence">Persistence</a>, under Settings, is what this ' +
+    'service is CONFIGURED to write down and where &mdash; that page reads ' +
+    'the same on a service that started a second ago, and the numbers here ' +
+    'move while you watch.</p><p><strong>The shape of this page is decided ' +
+    'by the database it is pointed at.</strong> Every statement behind it is ' +
+    'a <code>SELECT *</code>, and the columns drawn are the ones this server ' +
     'returned, in its order. That is not laziness: PostgreSQL moves these ' +
     'views between major versions &mdash; <code>pg_stat_bgwriter</code> has ' +
     'eleven columns on 16 and four on 18, because the checkpoint counters ' +
     'moved to a view that does not exist before 17 &mdash; so a page naming ' +
     'its columns would be wrong on every server but one, and wrong in the ' +
-    'way that reads as a blank cell.</p>' +
-    '<p><strong>There is no query box here and there must never be one.</strong> ' +
-    'The role this service dials with can INSERT, UPDATE and DELETE on six ' +
-    'tables, so a console that could hand it a statement would be a console ' +
-    'that could empty the directory. Every statement is a literal in ' +
+    'way that reads as a blank cell.</p><p><strong>There is no query box ' +
+    'here and there must never be one.</strong> The role this service dials ' +
+    'with can INSERT, UPDATE and DELETE on six tables, so a console that ' +
+    'could hand it a statement would be a console that could empty the ' +
+    'directory. Every statement is a literal in ' +
     '<code>persistence/persistence_postgres.js</code> and none is built from ' +
     'anything a request carries. They are all catalog reads, bounded by ' +
     'PostgreSQL\'s own <code>statement_timeout</code> at ' +
@@ -498,21 +526,21 @@ function body(json) {
     '<p>This service connects as an ordinary application role &mdash; ' +
     'SELECT, INSERT, UPDATE and DELETE on six tables, USAGE on one schema, ' +
     'and <strong>not <code>pg_monitor</code></strong>. Most of what is below ' +
-    'is readable by anybody; two things are not, and they fail differently:</p>' +
-    '<ul><li>a view this role may not read <strong>fails</strong>, and is ' +
-    'drawn as a row in <em>What could not be collected</em> with ' +
-    'PostgreSQL\'s SQLSTATE beside it;</li>' +
-    '<li>a <strong>backend belonging to another role does not fail</strong> ' +
+    'is readable by anybody; two things are not, and they fail ' +
+    'differently:</p><ul><li>a view this role may not read ' +
+    '<strong>fails</strong>, and is drawn as a row in <em>What could not be ' +
+    'collected</em> with PostgreSQL\'s SQLSTATE beside it;</li><li>a ' +
+    '<strong>backend belonging to another role does not fail</strong> ' +
     '&mdash; it appears as a row with its state empty and its query given as ' +
-    'the literal string <code>&lt;insufficient privilege&gt;</code>, which is ' +
-    'a value and not an error. This page draws that as <em>withheld</em>. ' +
+    'the literal string <code>&lt;insufficient privilege&gt;</code>, which ' +
+    'is a value and not an error. This page draws that as <em>withheld</em>. ' +
     'The same is true of <code>pg_stat_replication</code>: an empty table ' +
     'there means either that there are no standbys or that this role may not ' +
-    'see them, and nothing in this service can tell those apart.</li></ul>' +
-    '<p>Granting <code>pg_monitor</code> to the application role fills all of ' +
-    'it in. This service does not ask for it, because the whole point of ' +
-    '<code>postgres/schema.sql</code> is that the role it dials with holds ' +
-    'the least it can.</p>',
+    'see them, and nothing in this service can tell those ' +
+    'apart.</li></ul><p>Granting <code>pg_monitor</code> to the application ' +
+    'role fills all of it in. This service does not ask for it, because the ' +
+    'whole point of <code>postgres/schema.sql</code> is that the role it ' +
+    'dials with holds the least it can.</p>',
     'What this role is NOT allowed to see, and how each kind of refusal looks');
 
   if (!json.ok) {
@@ -530,6 +558,7 @@ function body(json) {
       'The database could not be reached') + connection;
   }
 
+  log.debug("Leaving body().");
   return tiles + what + connection + narrowed +
          derivedBlock(json) +
          driftBlock(json) +
@@ -540,28 +569,32 @@ function body(json) {
 }
 
 function derivedBlock(json) {
+  log.debug("Entering derivedBlock().");
   const d = json.derived;
   const unused = d.unusedIndexes.length
     ? '<p><strong>' + d.unusedIndexes.length + ' index(es) have never been ' +
       'scanned:</strong> ' + d.unusedIndexes.map(function (one) {
         return '<code>' + admin.esc(one) + '</code>';
       }).join(', ') + '. On a database that has been serving traffic that is ' +
-      'the most actionable number on this page &mdash; an index nothing reads ' +
-      'is write cost and disk for nothing. On one that has just started it ' +
-      'means only that nothing has queried yet, and the counters below say ' +
-      'which situation this is.</p>'
+      'the most actionable number on this page &mdash; an index nothing ' +
+      'reads is write cost and disk for nothing. On one that has just ' +
+      'started it means only that nothing has queried yet, and the counters ' +
+      'below say which situation this is.</p>'
     : '<p>Every index here has been scanned at least once.</p>';
+  log.debug("Leaving derivedBlock().");
   return '<h3>The four ratios</h3>' + admin.note(
     '<table class="grid"><tbody>' +
     '<tr><th>Cache hit</th><td>' +
-      (d.cacheHitPercent === null ? '<span class="muted">nothing read yet</span>'
+      (d.cacheHitPercent === null ? '<span class="muted">nothing read ' +
+                                    'yet</span>'
         : admin.esc(String(d.cacheHitPercent)) + '%') +
       '</td><td class="why">Blocks found in the buffer cache against blocks ' +
       'read from disk. PostgreSQL keeps the two counters and not the ratio, ' +
       'because a counter can be subtracted between two readings and a ratio ' +
       'cannot.</td></tr>' +
     '<tr><th>Rollbacks</th><td>' +
-      (d.rollbackPercent === null ? '<span class="muted">no transactions yet</span>'
+      (d.rollbackPercent === null ? '<span class="muted">no transactions ' +
+                                    'yet</span>'
         : admin.esc(String(d.rollbackPercent)) + '%') +
       '</td><td class="why">A share and not a count: rollbacks are ordinary ' +
       'here &mdash; a conflicting upsert produces one &mdash; and only the ' +
@@ -571,8 +604,10 @@ function derivedBlock(json) {
         : admin.esc(String(d.deadTuplePercent)) + '%') +
       '</td><td class="why">Dead rows as a share of all rows, summed across ' +
       'the schema. This is the bloat signal; autovacuum is what brings it ' +
-      'down, and the per-table vacuum times are in the schema section.</td></tr>' +
-    '<tr><th>Scans</th><td>' + admin.esc(String(d.seqScans)) + ' sequential, ' +
+      'down, and the per-table vacuum times are in the schema ' +
+      'section.</td></tr><tr><th>Scans</th><td>' +
+    admin.esc(String(d.seqScans)) + ' ' +
+          'sequential, ' +
       admin.esc(String(d.idxScans)) + ' index</td>' +
       '<td class="why">On six small tables a sequential scan is frequently ' +
       'the right plan and this is <em>not</em> a fault to chase &mdash; read ' +
@@ -591,8 +626,10 @@ function derivedBlock(json) {
 }
 
 function driftBlock(json) {
+  log.debug("Entering driftBlock().");
   const drift = json.schemaDrift;
   if (!drift.declared.length) {
+    log.debug("Leaving driftBlock().");
     return '';
   }
   const body = drift.missing.length
@@ -601,16 +638,16 @@ function driftBlock(json) {
         'driver declares are NOT in the database:</strong> ' +
         drift.missing.map(function (one) {
           return '<code>' + admin.esc(one) + '</code>';
-        }).join(', ') + '.</p>' +
-        '<p>The driver creates what is missing when it opens &mdash; and on a ' +
-        'least-privilege deployment it <strong>cannot</strong>, because the ' +
-        'role it dials with holds no CREATE. There the failure arrives as a ' +
-        'permission error naming a statement nobody typed. Re-run ' +
-        '<code>postgres/schema.sql</code> as the owner.</p>',
+        }).join(', ') + '.</p><p>The driver creates what is missing when it ' +
+        'opens &mdash; and on a least-privilege deployment it ' +
+        '<strong>cannot</strong>, because the role it dials with holds no ' +
+        'CREATE. There the failure arrives as a permission error naming a ' +
+        'statement nobody typed. Re-run <code>postgres/schema.sql</code> as ' +
+        'the owner.</p>',
         'The schema is missing something the driver expects')
     : admin.note(
-        '<p>All ' + drift.declared.length + ' objects the driver declares are ' +
-        'present, at schema version ' +
+        '<p>All ' + drift.declared.length + ' objects the driver declares ' +
+        'are present, at schema version ' +
         admin.esc(String(json.schemaExpected.version)) + '.</p>' +
         '<p>Nothing else in this service makes this check. ' +
         '<code>tests/postgres_schema.js</code> compares the driver against ' +
@@ -623,16 +660,20 @@ function driftBlock(json) {
         'and a page calling it an error would be this service claiming a ' +
         'namespace it does not own.</p>',
         'The schema is what the driver expects');
+  log.debug("Leaving driftBlock().");
   return '<h3>Schema drift</h3>' + body;
 }
 
 function sectionBlock(section, json) {
+  log.debug("Entering sectionBlock().");
   const ids = Object.keys(json.probes).filter(function (id) {
     return json.probes[id].group === section.group && json.probes[id].ok;
   });
   if (!ids.length) {
+    log.debug("Leaving sectionBlock().");
     return '';
   }
+  log.debug("Leaving sectionBlock().");
   return '<h3>' + admin.esc(section.heading) + '</h3>' +
     admin.note(section.blurb) +
     ids.map(function (id) {
@@ -647,11 +688,14 @@ function sectionBlock(section, json) {
 }
 
 function failureBlock(json) {
+  log.debug("Entering failureBlock().");
   if (!json.failed.length) {
+    log.debug("Leaving failureBlock().");
     return '<h3>What could not be collected</h3>' +
       admin.note('Nothing. Every one of the ' +
                  Object.keys(json.probes).length + ' probes answered.');
   }
+  log.debug("Leaving failureBlock().");
   return '<h3>What could not be collected</h3>' + admin.note(
     '<p>' + json.failed.length + ' of ' + Object.keys(json.probes).length +
     ' probes did not answer. <strong>Each one costs a row here rather than ' +
@@ -686,5 +730,9 @@ module.exports = {
   // For `tests/database_metrics.js`, which checks every probe's group against
   // a heading this page actually draws. A probe in a group with no section is
   // collected on every render and shown to nobody.
-  sections: function () { return SECTIONS.slice(); }
+  sections: function () {
+    log.debug("Entering sections().");
+    log.debug("Leaving sections().");
+    return SECTIONS.slice();
+  }
 };

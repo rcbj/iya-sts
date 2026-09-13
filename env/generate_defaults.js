@@ -36,14 +36,23 @@
 const path = require('path');
 const fs = require('fs');
 
+// This script's own logger. Its level is LOG_LEVEL, and info without one.
+const log = require('bunyan').createLogger({ name: 'generate-defaults',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 const OUT = path.join(ROOT, 'env', 'defaults.js');
 
 // The table has to be read through the module that owns it, and reading it
 // costs a startup check this file is allowed to fail. See the header.
-process.env.CONFIG_FILE = process.env.CONFIG_FILE || path.join(ROOT, 'env', 'defaults.js');
+process.env.CONFIG_FILE = process.env.CONFIG_FILE ||
+                          path.join(ROOT, 'env', 'defaults.js');
 const realExit = process.exit;
-process.exit = function () { return undefined; };
+process.exit = function () {
+  log.debug("Entering exit().");
+  log.debug("Leaving exit().");
+  return undefined;
+};
 const c = require(path.join(ROOT, 'common', 'config.js'));
 process.exit = realExit;
 
@@ -96,8 +105,8 @@ const GROUP_COMMENT = {};
 const lines = [];
 let lastGroup = null;
 
-// Order: the table's own order, which is the order /admin/config renders and the
-// order README.md's table is generated in.
+// Order: the table's own order, which is the order /admin/config renders and
+// the order README.md's table is generated in.
 const rows = c.SETTINGS.filter(function (s) { return !s.derived; });
 
 // Group by the appconfig path's first segment, since that is what the file's
@@ -117,7 +126,9 @@ rows.forEach(function (s) {
 });
 
 function literal(setting) {
+  log.debug("Entering literal().");
   const v = typeof setting.dflt === 'function' ? setting.dflt() : setting.dflt;
+  log.debug("Leaving literal().");
   return JSON.stringify(v);
 }
 
@@ -133,10 +144,12 @@ sections.forEach(function (name, i) {
   const section = byTop[name];
   const label = section.top === null ? 'The log level' : section.label;
   const rule = '  // --- ' + label + ' ';
-  out += (i ? '\n' : '') + rule + '-'.repeat(Math.max(3, 74 - rule.length)) + '\n';
+  out += (i ? '\n' : '') + rule + '-'.repeat(Math.max(3,
+                                                      74 - rule.length)) + '\n';
   const entries = section.rows.map(function (s) {
     const path = s.path || s.key;
-    const leaf = section.top === null ? path : path.slice(section.top.length + 1);
+    const leaf = section.top === null ? path :
+                 path.slice(section.top.length + 1);
     return { leaf: leaf, lit: literal(s), s: s };
   });
   const width = entries.reduce(function (w, e) {

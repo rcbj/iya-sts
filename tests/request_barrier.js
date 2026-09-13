@@ -47,6 +47,12 @@
 
 const pool = require('../common/request_pool');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'request_barrier',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // `workers.readYourWrite` is process-wide and every later file in this run
 // reads through it — see tests/CLAUDE.md's rule about process-wide state.
 //
@@ -57,9 +63,11 @@ const pool = require('../common/request_pool');
 // run. The barrier then reads the setting as OFF for the whole body and every
 // assertion about waiting passes vacuously in the wrong direction.
 async function withReadYourWrite(on, fn) {
+  log.debug("Entering withReadYourWrite().");
   const had = process.env.STS_WORKERS_READ_YOUR_WRITE;
   process.env.STS_WORKERS_READ_YOUR_WRITE = on ? 'true' : 'false';
   try {
+    log.debug("Leaving withReadYourWrite().");
     return await fn();
   } finally {
     if (had === undefined) {
@@ -74,6 +82,8 @@ async function withReadYourWrite(on, fn) {
 // it by and the set of tickets it owes. The real thing carries a socket, a
 // child process and a generation, and none of those is reachable from here.
 function worker(pid) {
+  log.debug("Entering worker().");
+  log.debug("Leaving worker().");
   return { pid: pid, tickets: new Set() };
 }
 
@@ -82,8 +92,10 @@ function worker(pid) {
 // The threshold below is 500ms rather than anything tighter because this is a
 // timer and the runner may be sharing a machine with a container build.
 async function waitedFor(servedBy) {
+  log.debug("Entering waitedFor().");
   const at = Date.now();
   await pool.awaitCommitConfirmations(servedBy);
+  log.debug("Leaving waitedFor().");
   return Date.now() - at;
 }
 
@@ -96,6 +108,7 @@ async function waitedFor(servedBy) {
 // is the 2026-09-08 exemption in blockedBelow().
 // ---------------------------------------------------------------------------
 async function checkAnArmedTicketBlocksUntilItCommits(t) {
+  log.debug("Entering checkAnArmedTicketBlocksUntilItCommits().");
   t.log.info('=== an armed ticket blocks a reader on another worker ===');
 
   pool.reset();
@@ -122,8 +135,8 @@ async function checkAnArmedTicketBlocksUntilItCommits(t) {
     t.check(await waitedFor(a) < 500,
             'but the worker that answered it does not wait for itself',
             'the write is in A’s own memory whether or not it has been ' +
-            'flushed, and waiting for it is what made a sequential client pay ' +
-            'a commit round trip per request');
+            'flushed, and waiting for it is what made a sequential client ' +
+            'pay a commit round trip per request');
 
     pool.receiveCommitted(a, { wrote: true, tickets: [ticket] });
     t.check(await waitedFor(b) < 500,
@@ -132,6 +145,7 @@ async function checkAnArmedTicketBlocksUntilItCommits(t) {
     t.equal(pool.stats().tickets.outstanding, 0,
             'with nothing left outstanding');
   });
+  log.debug("Leaving checkAnArmedTicketBlocksUntilItCommits().");
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +155,7 @@ async function checkAnArmedTicketBlocksUntilItCommits(t) {
 // state the service stayed in for ever.
 // ---------------------------------------------------------------------------
 async function checkAnUnansweredRequestReleasesItsTicket(t) {
+  log.debug("Entering checkAnUnansweredRequestReleasesItsTicket().");
   t.log.info('=== a request the worker never answered releases its ticket ===');
 
   pool.reset();
@@ -170,6 +185,7 @@ async function checkAnUnansweredRequestReleasesItsTicket(t) {
     t.equal(pool.stats().tickets.outstanding, 0,
             'nothing having come back into the set');
   });
+  log.debug("Leaving checkAnUnansweredRequestReleasesItsTicket().");
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +205,7 @@ async function checkAnUnansweredRequestReleasesItsTicket(t) {
 // assertion here is that a FRESH stuck ticket survives its first timeout.
 // ---------------------------------------------------------------------------
 async function checkAFreshTicketSurvivesItsFirstTimeout(t) {
+  log.debug("Entering checkAFreshTicketSurvivesItsFirstTimeout().");
   t.log.info('=== a ticket that is merely slow is not reaped ===');
 
   pool.reset();
@@ -214,6 +231,7 @@ async function checkAFreshTicketSurvivesItsFirstTimeout(t) {
     t.equal(pool.stats().tickets.outstanding, 0,
             'and a slow announcement still clears it when it arrives');
   });
+  log.debug("Leaving checkAFreshTicketSurvivesItsFirstTimeout().");
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +242,7 @@ async function checkAFreshTicketSurvivesItsFirstTimeout(t) {
 // ever clear, because the pool's own clearing path returns early too.
 // ---------------------------------------------------------------------------
 async function checkTheSwitchIsHonoured(t) {
+  log.debug("Entering checkTheSwitchIsHonoured().");
   t.log.info('=== with read-your-write off, no ticket is taken ===');
 
   pool.reset();
@@ -239,6 +258,7 @@ async function checkTheSwitchIsHonoured(t) {
             'and no reader ever waits',
             'the barrier is the whole cost of the setting and it is off');
   });
+  log.debug("Leaving checkTheSwitchIsHonoured().");
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +275,7 @@ async function checkTheSwitchIsHonoured(t) {
 // to assert one comparison is thirty seconds nobody spends.
 // ---------------------------------------------------------------------------
 async function checkAStuckTicketIsReaped(t) {
+  log.debug("Entering checkAStuckTicketIsReaped().");
   t.log.info('=== a ticket nothing has explained for 30s is reaped ===');
 
   pool.reset();
@@ -280,9 +301,11 @@ async function checkAStuckTicketIsReaped(t) {
             'that reader would have been served without it anyway — reaping ' +
             'changes no answer, only how long the next one waits for it');
   });
+  log.debug("Leaving checkAStuckTicketIsReaped().");
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   await checkAnArmedTicketBlocksUntilItCommits(t);
   await checkAnUnansweredRequestReleasesItsTicket(t);
   await checkAFreshTicketSurvivesItsFirstTimeout(t);
@@ -291,6 +314,7 @@ async function run(t) {
   // THE POOL IS PROCESS-WIDE MODULE STATE AND THIS FILE ARMED TICKETS IN IT.
   // Left behind, they would make every later file's reader wait the bound.
   pool.reset();
+  log.debug("Leaving run().");
 }
 
 module.exports = {

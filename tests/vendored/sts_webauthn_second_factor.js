@@ -55,17 +55,23 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_webauthn_second_factor",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -85,33 +91,60 @@ var PERSON = usernameFor("wa-second-factor");
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  ✓ " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
 // THE AUTHENTICATOR. See the header for why it is this file's own.
 // ---------------------------------------------------------------------------
 function sha256(buf) {
+  log.debug("Entering sha256().");
+  log.debug("Leaving sha256().");
   return nodeCrypto.createHash("sha256").update(buf).digest();
 }
+
 function cborBytes(buf) {
+  log.debug("Entering cborBytes().");
   const head = buf.length < 24 ? Buffer.from([0x40 + buf.length])
     : Buffer.concat([Buffer.from([0x58]), Buffer.from([buf.length])]);
+  log.debug("Leaving cborBytes().");
   return Buffer.concat([head, buf]);
 }
+
 function cborText(text) {
+  log.debug("Entering cborText().");
   const body = Buffer.from(text, "utf8");
+  log.debug("Leaving cborText().");
   return Buffer.concat([Buffer.from([0x60 + body.length]), body]);
 }
-function cborMapHeader(n) { return Buffer.from([0xa0 + n]); }
-function cborInt(n) { return Buffer.from([n]); }
-function cborNegInt(n) { return Buffer.from([0x20 + (Math.abs(n) - 1)]); }
+
+function cborMapHeader(n) {
+  log.debug("Entering cborMapHeader().");
+  log.debug("Leaving cborMapHeader().");
+  return Buffer.from([0xa0 + n]);
+}
+
+function cborInt(n) {
+  log.debug("Entering cborInt().");
+  log.debug("Leaving cborInt().");
+  return Buffer.from([n]);
+}
+
+function cborNegInt(n) {
+  log.debug("Entering cborNegInt().");
+  log.debug("Leaving cborNegInt().");
+  return Buffer.from([0x20 + (Math.abs(n) - 1)]);
+}
 
 function coseKey(jwk) {
+  log.debug("Entering coseKey().");
   const x = Buffer.from(jwk.x, "base64url");
   const y = Buffer.from(jwk.y, "base64url");
+  log.debug("Leaving coseKey().");
   return Buffer.concat([
     cborMapHeader(5),
     cborInt(0x01), cborInt(0x02),          // kty: EC2
@@ -123,6 +156,7 @@ function coseKey(jwk) {
 }
 
 function authenticatorData(opts) {
+  log.debug("Entering authenticatorData().");
   const flags = Buffer.from([opts.flags]);
   const count = Buffer.alloc(4);
   count.writeUInt32BE(opts.signCount >>> 0, 0);
@@ -133,10 +167,13 @@ function authenticatorData(opts) {
     idLen.writeUInt16BE(opts.credentialId.length, 0);
     parts.push(aaguid, idLen, opts.credentialId, opts.cose);
   }
+  log.debug("Leaving authenticatorData().");
   return Buffer.concat(parts);
 }
 
 function clientData(type, challenge) {
+  log.debug("Entering clientData().");
+  log.debug("Leaving clientData().");
   return Buffer.from(JSON.stringify({
     type: type, challenge: challenge, origin: ORIGIN, crossOrigin: false
   }), "utf8");
@@ -147,16 +184,24 @@ function clientData(type, challenge) {
 // UV could not be run against a realm with `webauthn.userVerification:
 // required` and the difference would look like a broken key.
 function makeAuthenticator() {
-  const pair = nodeCrypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  log.debug("Entering makeAuthenticator().");
+  const pair = nodeCrypto.generateKeyPairSync("ec",
+                                              { namedCurve: "prime256v1" });
   const jwk = pair.publicKey.export({ format: "jwk" });
   const credentialId = nodeCrypto.randomBytes(32);
   let signCount = 0;
 
+  log.debug("Leaving makeAuthenticator().");
   return {
     credentialId: credentialId,
     idB64: credentialId.toString("base64url"),
-    counter: function () { return signCount; },
+    counter: function () {
+      log.debug("Entering counter().");
+      log.debug("Leaving counter().");
+      return signCount;
+    },
     register: function (challenge) {
+      log.debug("Entering register().");
       const authData = authenticatorData({
         flags: 0x45, signCount: signCount, attested: true,
         credentialId: credentialId, cose: coseKey(jwk)
@@ -170,6 +215,7 @@ function makeAuthenticator() {
         cborText("authData"),
         Buffer.concat([Buffer.from([0x59]), length, authData])
       ]);
+      log.debug("Leaving register().");
       return {
         id: credentialId.toString("base64url"),
         rawId: credentialId.toString("base64url"),
@@ -178,16 +224,19 @@ function makeAuthenticator() {
         clientExtensionResults: { credProps: { rk: false } },
         response: {
           attestationObject: attestationObject.toString("base64url"),
-          clientDataJSON: clientData("webauthn.create", challenge).toString("base64url")
+          clientDataJSON: clientData("webauthn.create", challenge).toString(
+              "base64url")
         }
       };
     },
     assert: function (challenge) {
+      log.debug("Entering assert().");
       signCount += 1;
       const authData = authenticatorData({ flags: 0x05, signCount: signCount });
       const cdj = clientData("webauthn.get", challenge);
       const signature = nodeCrypto.sign(
         "sha256", Buffer.concat([authData, sha256(cdj)]), pair.privateKey);
+      log.debug("Leaving assert().");
       return {
         id: credentialId.toString("base64url"),
         rawId: credentialId.toString("base64url"),
@@ -208,47 +257,62 @@ function makeAuthenticator() {
 // THE VERBS. Manual redirects and a cookie jar, because every claim here is
 // about a session and about WHICH page came back.
 // ---------------------------------------------------------------------------
-function form(o) { return new URLSearchParams(o).toString(); }
+function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
+  return new URLSearchParams(o).toString();
+}
 
 function absolute(location) {
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
 }
 
 function browser() {
+  log.debug("Entering browser().");
   const self = {
     cookie: "",
     async go(method, path, body) {
+      log.debug("Entering go().");
       const headers = {};
       if (self.cookie) { headers.cookie = self.cookie; }
       if (body !== undefined) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
-      const r = await fetch(absolute(path), { method: method, redirect: "manual",
+      const r = await fetch(absolute(path),
+                            { method: method, redirect: "manual",
                                               headers: headers, body: body });
       const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
       set.forEach(function (one) { self.cookie = String(one).split(";")[0]; });
+      log.debug("Leaving go().");
       return { status: r.status, location: r.headers.get("location") || "",
                text: await r.text() };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
 async function get(path) {
+  log.debug("Entering get().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in get(): " + ((e && e.message) || e));
     // An HTML error page from a door that answers JSON is worth quoting whole.
     body = raw;
   }
+  log.debug("Leaving get().");
   return { status: r.status, body: body, raw: raw };
 }
 
 async function post(path, payload) {
+  log.debug("Entering post().");
   const r = await fetch(api + path, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {})
@@ -258,19 +322,25 @@ async function post(path, payload) {
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in post(): " + ((e && e.message) || e));
     body = raw;
   }
+  log.debug("Leaving post().");
   return { status: r.status, body: body, raw: raw };
 }
 
 function attr(html, name) {
+  log.debug("Entering attr().");
   const m = String(html).match(new RegExp(name + '="([^"]*)"'));
+  log.debug("Leaving attr().");
   return m ? m[1] : "";
 }
 
 function hidden(html, name) {
+  log.debug("Entering hidden().");
   const m = String(html)
     .match(new RegExp('name="' + name + '"[^>]*value="([^"]*)"'));
+  log.debug("Leaving hidden().");
   return m ? m[1] : "";
 }
 
@@ -279,6 +349,7 @@ function hidden(html, name) {
 // it draws a form for a PENDING RECORD and answers 400 to a request naming
 // none, which `sts_portal_sessions.js` asserts of every page in this service.
 async function reachTheSignInScreen(b) {
+  log.debug("Entering reachTheSignInScreen().");
   const started = await b.go("GET",
     "/oauth2/authorize?" + form({
       client_id: "wa-probe", redirect_uri: "http://localhost:9999/cb",
@@ -287,12 +358,14 @@ async function reachTheSignInScreen(b) {
   assert.ok(/\/authn\/login\?authn=/.test(started.location),
     "the authorization endpoint did not send us to the sign-in screen: " +
     started.status + " " + started.location);
+  log.debug("Leaving reachTheSignInScreen().");
   return started.location.replace(/.*authn=/, "").replace(/&.*/, "");
 }
 
 // Complete whichever ceremony the security-key page is drawing. Returns the
 // page's own answer, so a caller can assert what came back.
 async function completeCeremony(b, page, authenticator) {
+  log.debug("Entering completeCeremony().");
   const mode = attr(page, "data-mode");
   const challenge = attr(page, "data-challenge");
   const mfaId = hidden(page, "mfa_id");
@@ -301,6 +374,7 @@ async function completeCeremony(b, page, authenticator) {
   assert.ok(challenge, "the security-key page carried no challenge.");
   const credential = mode === "create"
     ? authenticator.register(challenge) : authenticator.assert(challenge);
+  log.debug("Leaving completeCeremony().");
   return b.go("POST", "/authn/webauthn",
               form({ mfa_id: mfaId, mode: mode,
                      credential: JSON.stringify(credential) }));
@@ -313,7 +387,8 @@ async function completeCeremony(b, page, authenticator) {
 // the password — so every password step below presents the one set here, of at
 // least twelve characters, rather than a word nothing checks.
 // ---------------------------------------------------------------------------
-var PASSWORD = "webauthn-second-factor-Passw0rd!-" + String(Date.now()).slice(-6);
+var PASSWORD = "webauthn-second-factor-Passw0rd!-" +
+               String(Date.now()).slice(-6);
 
 async function createThePerson() {
   log.debug("Entering createThePerson().");
@@ -331,10 +406,12 @@ async function createThePerson() {
 }
 
 async function factorsFor(who) {
+  log.debug("Entering factorsFor().");
   const r = await get("/users?user=" + encodeURIComponent(who));
   assert.strictEqual(r.status, 200,
     "GET /admin-api/users?user=" + who + " answered " + r.status + " " +
     String(r.raw).slice(0, 200));
+  log.debug("Leaving factorsFor().");
   return r.body.factors || {};
 }
 
@@ -343,6 +420,7 @@ async function factorsFor(who) {
 //    ceremony this job performs is accepted by the real verifier.
 // ---------------------------------------------------------------------------
 async function enrollingAKeyAtTheSignInScreen(authenticator) {
+  log.debug("Entering enrollingAKeyAtTheSignInScreen().");
   log.info("=== enrolling a security key at the sign-in screen ===");
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
@@ -350,8 +428,8 @@ async function enrollingAKeyAtTheSignInScreen(authenticator) {
   const page = await b.go("POST", "/authn/login",
     form({ authn_id: authnId, username: PERSON, password: PASSWORD,
            use_webauthn: "1", action: "login" }));
-  check("a person holding no key is offered the ENROLMENT ceremony — which is " +
-        "this service's enrol-on-first-use behaviour and is unchanged",
+  check("a person holding no key is offered the ENROLMENT ceremony — which " +
+        "is this service's enrol-on-first-use behaviour and is unchanged",
     function () {
       assert.strictEqual(page.status, 200,
         "the sign-in answered " + page.status + " " +
@@ -363,8 +441,9 @@ async function enrollingAKeyAtTheSignInScreen(authenticator) {
 
   const done = await completeCeremony(b, page.text, authenticator);
   check("AND THE CEREMONY IS ACCEPTED BY THE REAL VERIFIER — a real P-256 " +
-        "signature over the real authenticatorData || SHA-256(clientDataJSON), " +
-        "from an implementation that shares no code with the one checking it",
+        "signature over the real authenticatorData || " +
+        "SHA-256(clientDataJSON), from an implementation that shares no code " +
+        "with the one checking it",
     function () {
       assert.ok(done.status === 302 || done.status === 303,
         "the registration was refused: " + done.status + " " +
@@ -376,6 +455,7 @@ async function enrollingAKeyAtTheSignInScreen(authenticator) {
         "ceremony rather than on the password step alone", function () {
     assert.ok(b.cookie, "no session cookie came back.");
   });
+  log.debug("Leaving enrollingAKeyAtTheSignInScreen().");
   return b;
 }
 
@@ -385,6 +465,7 @@ async function enrollingAKeyAtTheSignInScreen(authenticator) {
 //    the ceremony wrote to a map in `authn.js` that nothing else could see.
 // ---------------------------------------------------------------------------
 async function theKeyIsInTheStoreEverythingElseReads(authenticator) {
+  log.debug("Entering theKeyIsInTheStoreEverythingElseReads().");
   log.info("=== the key reached the credential store ===");
   const factors = await factorsFor(PERSON);
 
@@ -400,16 +481,17 @@ async function theKeyIsInTheStoreEverythingElseReads(authenticator) {
   });
 
   check("IT CARRIES THE ROLE IT WAS ENROLLED IN. The ceremony cannot say " +
-        "which — the POST is the browser's result and nothing in it says what " +
-        "was chosen a screen ago — so the role comes off the pending record, " +
-        "and a key with no role is a key no policy can decide anything about",
+        "which — the POST is the browser's result and nothing in it says " +
+        "what was chosen a screen ago — so the role comes off the pending " +
+        "record, and a key with no role is a key no policy can decide " +
+        "anything about",
     function () {
       assert.strictEqual(factors.keys[0].role, "mfa",
         "the key is stored as " + factors.keys[0].role);
     });
 
-  check("and it names the credential the browser sent, so an assertion can be " +
-        "matched to it later", function () {
+  check("and it names the credential the browser sent, so an assertion can " +
+        "be matched to it later", function () {
       assert.strictEqual(factors.keys[0].credentialId, authenticator.idB64,
         "the stored credential id is not the one enrolled.");
     });
@@ -422,6 +504,7 @@ async function theKeyIsInTheStoreEverythingElseReads(authenticator) {
     assert.strictEqual(factors.secondFactor, "webauthn",
       "and the wrong factor will be asked for: " + factors.secondFactor);
   });
+  log.debug("Leaving theKeyIsInTheStoreEverythingElseReads().");
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +515,7 @@ async function theKeyIsInTheStoreEverythingElseReads(authenticator) {
 // anybody who knows the password signs in without ever meeting it.
 // ---------------------------------------------------------------------------
 async function theSecondSignInDemandsItWithoutBeingAsked(authenticator) {
+  log.debug("Entering theSecondSignInDemandsItWithoutBeingAsked().");
   log.info("=== the second sign-in demands the key with the box UNTICKED ===");
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
@@ -440,15 +524,16 @@ async function theSecondSignInDemandsItWithoutBeingAsked(authenticator) {
     form({ authn_id: authnId, username: PERSON, password: PASSWORD,
            action: "login" }));
   check("A PASSWORD ALONE NO LONGER SIGNS THEM IN. The checkbox is untouched " +
-        "and the security-key step is demanded anyway, because the account is " +
-        "CONFIGURED for two factors — which is what `mfaRequired` means and " +
-        "what nothing at this door read", function () {
+        "and the security-key step is demanded anyway, because the account " +
+        "is CONFIGURED for two factors — which is what `mfaRequired` means " +
+        "and what nothing at this door read", function () {
     assert.strictEqual(page.status, 200,
       "the sign-in answered " + page.status + " — a redirect here is a " +
       "session minted on one factor, which is the bypass this asserts is " +
       "closed: " + page.location);
     assert.ok(/wa-data/.test(page.text),
-      "the security-key page was not drawn: " + String(page.text).slice(0, 400));
+      "the security-key page was not drawn: " +
+      String(page.text).slice(0, 400));
   });
 
   check("AND IT IS AN ASSERTION, NOT ANOTHER ENROLMENT — the ceremony is " +
@@ -478,6 +563,7 @@ async function theSecondSignInDemandsItWithoutBeingAsked(authenticator) {
     assert.ok(factors.keys[0].signCount > 0,
       "the stored counter is still " + factors.keys[0].signCount);
   });
+  log.debug("Leaving theSecondSignInDemandsItWithoutBeingAsked().");
 }
 
 // ---------------------------------------------------------------------------
@@ -488,6 +574,7 @@ async function theSecondSignInDemandsItWithoutBeingAsked(authenticator) {
 // ceremony with a DIFFERENT key and requires a refusal.
 // ---------------------------------------------------------------------------
 async function somebodyElsesAuthenticatorIsRefused() {
+  log.debug("Entering somebodyElsesAuthenticatorIsRefused().");
   log.info("=== an authenticator this person never enrolled is refused ===");
   const stranger = makeAuthenticator();
   const b = browser();
@@ -513,6 +600,7 @@ async function somebodyElsesAuthenticatorIsRefused() {
     assert.ok(!b.cookie || !/oauth2/.test(done.location),
       "a session was established on a refused ceremony.");
   });
+  log.debug("Leaving somebodyElsesAuthenticatorIsRefused().");
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +612,7 @@ async function somebodyElsesAuthenticatorIsRefused() {
 // refuses somebody who holds nothing.
 // ---------------------------------------------------------------------------
 async function theUseYourKeyInsteadLinkWorks() {
+  log.debug("Entering theUseYourKeyInsteadLinkWorks().");
   log.info("=== the use-your-key-instead link is reachable ===");
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
@@ -535,12 +624,14 @@ async function theUseYourKeyInsteadLinkWorks() {
                            encodeURIComponent(mfaId));
   check("GET /authn/webauthn draws the ceremony for somebody who HOLDS a key " +
         "— its own gate asks the credential store, which answered `nobody " +
-        "holds one` for everybody until the two stores became one", function () {
+        "holds one` for everybody until the two stores became one",
+        function () {
     assert.strictEqual(drawn.status, 200,
       "it answered " + drawn.status + " " + String(drawn.text).slice(0, 300));
     assert.strictEqual(attr(drawn.text, "data-mode"), "get",
       "and it is not drawing an assertion.");
   });
+  log.debug("Leaving theUseYourKeyInsteadLinkWorks().");
 }
 
 // ---------------------------------------------------------------------------
@@ -552,6 +643,7 @@ async function theUseYourKeyInsteadLinkWorks() {
 // enrolled".
 // ---------------------------------------------------------------------------
 async function anOperatorCanClearItAndTheDemandStops(authenticator) {
+  log.debug("Entering anOperatorCanClearItAndTheDemandStops().");
   log.info("=== an operator clears it and the demand stops ===");
   const r = await post("/users/clear-key",
     { user: PERSON, credentialId: authenticator.idB64 });
@@ -582,6 +674,7 @@ async function anOperatorCanClearItAndTheDemandStops(authenticator) {
       "the sign-in answered " + page.status + " rather than completing: " +
       String(page.text).slice(0, 300));
   });
+  log.debug("Leaving anOperatorCanClearItAndTheDemandStops().");
 }
 
 async function test() {
@@ -611,13 +704,13 @@ async function test() {
 const program = new Command();
 program
   .name("sts_webauthn_second_factor")
-  .description("Drive a real WebAuthn ceremony against the sign-in screen and " +
-      "assert the credential reaches the store every other door reads: that " +
-      "enrolling writes a key with its ROLE to the person's directory entry, " +
-      "that the SECOND sign-in demands it with the checkbox untouched, that " +
-      "an assertion from an authenticator they never enrolled is refused, " +
-      "that the signature counter advances, and that an operator's clear " +
-      "stops the demand.")
+  .description("Drive a real WebAuthn ceremony against the sign-in screen " +
+      "and assert the credential reaches the store every other door reads: " +
+      "that enrolling writes a key with its ROLE to the person's directory " +
+      "entry, that the SECOND sign-in demands it with the checkbox " +
+      "untouched, that an assertion from an authenticator they never " +
+      "enrolled is refused, that the signature counter advances, and that an " +
+      "operator's clear stops the demand.")
   // Accepted and ignored: run-report.js passes --url to every job.
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))

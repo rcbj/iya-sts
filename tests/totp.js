@@ -46,6 +46,12 @@ const crypto = require('../common/crypto');
 const totp = require('../common/totp');
 const credentials = require('../common/credentials');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'totp',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // RFC 4226 APPENDIX D. The shared secret is the ASCII string
 // "12345678901234567890" and the counters are 0 to 9.
@@ -65,10 +71,12 @@ const HOTP_VECTORS = ['755224', '287082', '359152', '969429', '338314',
 // implementation, which is how this table gets abandoned.
 // ---------------------------------------------------------------------------
 function seedOf(bytes) {
+  log.debug("Entering seedOf().");
   let s = '';
   while (s.length < bytes) {
     s += '1234567890';
   }
+  log.debug("Leaving seedOf().");
   return Buffer.from(s.slice(0, bytes), 'utf8');
 }
 
@@ -89,6 +97,7 @@ const TOTP_VECTORS = [
 ];
 
 function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== RFC 4226 Appendix D: the HOTP vectors ===');
   HOTP_VECTORS.forEach(function (expected, counter) {
     t.equal(crypto.hotpCode(HOTP_SECRET, counter, { digits: 6 }), expected,
@@ -106,7 +115,8 @@ function run(t) {
           'every vector is padded to its full width — the leading-zero case ' +
           'that a numeric formatter silently loses');
 
-  t.log.info('=== RFC 6238 Appendix B: the TOTP vectors, all three digests ===');
+  t.log.info('=== RFC 6238 Appendix B: the TOTP vectors, all three digests ' +
+             '===');
   const modes = ['SHA1', 'SHA256', 'SHA512'];
   TOTP_VECTORS.forEach(function (row) {
     const seconds = row[0];
@@ -143,6 +153,7 @@ function run(t) {
   try {
     totp.base32Decode('NOT!VALID');
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     threw = true;
   }
   t.check(threw,
@@ -155,6 +166,8 @@ function run(t) {
   const now = Date.now();
   const record = { secret: s, digits: 6, period: 30, algorithm: 'SHA1' };
   const at = function (offsetSeconds) {
+    log.debug("Entering at().");
+    log.debug("Leaving at().");
     return totp.codeAt(s, now + offsetSeconds * 1000,
                        { digits: 6, period: 30, algorithm: 'SHA1' });
   };
@@ -182,8 +195,8 @@ function run(t) {
   try {
     config.setOverride('totp.window', '0');
     t.equal(totp.settings().window, 0,
-            'totp.window=0 is honoured as zero rather than read as absent and ' +
-            'replaced with the default of one');
+            'totp.window=0 is honoured as zero rather than read as absent ' +
+            'and replaced with the default of one');
     t.check(!totp.verify(record, at(-30), { at: now }).ok,
             'and a sign-in with no window of its own then refuses the ' +
             'previous step, which is what the setting promises');
@@ -227,7 +240,8 @@ function run(t) {
   const uri = totp.otpauthUri({ issuer: 'mock STS (acme)', account: 'alice',
                                 secret: 'JBSWY3DPEHPK3PXP', algorithm: 'SHA1',
                                 digits: 6, period: 30 });
-  t.check(uri.indexOf('otpauth://totp/') === 0, 'it is an otpauth totp URI', uri);
+  t.check(uri.indexOf('otpauth://totp/') === 0, 'it is an otpauth totp URI',
+          uri);
   t.check(uri.indexOf('mock%20STS%20(acme):alice') > 0,
           'the issuer is a PREFIX on the label, for the apps that read only ' +
           'that');
@@ -273,6 +287,7 @@ function run(t) {
           'SHA-1 is first and is the default, which is the one place in this ' +
           'service the oldest algorithm is the recommended one: this is a ' +
           'keyed MAC over a counter, and every authenticator app assumes it');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

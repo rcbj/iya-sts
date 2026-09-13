@@ -47,12 +47,14 @@ const EVENTS = {
   'grant.modified': ['modified', 'grant modifications'],
   'grant.immediate': ['immediate', 'grants approved with no interaction'],
   'continue.poll': ['polls', 'continuation polls'],
-  'continue.interact_ref': ['finishedContinuations', 'continuations after interaction'],
+  'continue.interact_ref': ['finishedContinuations', 'continuations after ' +
+                                                     'interaction'],
   'continue.too_fast': ['tooFast', 'continuations refused as too fast'],
   'interaction.redirect': ['startRedirect', 'redirect interactions'],
   'interaction.app': ['startApp', 'app interactions'],
   'interaction.user_code': ['startUserCode', 'user code interactions'],
-  'interaction.user_code_uri': ['startUserCodeUri', 'user code URI interactions'],
+  'interaction.user_code_uri': ['startUserCodeUri',
+                                'user code URI interactions'],
   'finish.redirect': ['finishRedirect', 'redirect finishes'],
   'finish.push': ['finishPush', 'push finishes delivered'],
   'finish.push_failed': ['finishPushFailed', 'push finishes that failed'],
@@ -63,7 +65,8 @@ const EVENTS = {
   'subject.released': ['subjects', 'subject information releases'],
   'proof.failed': ['proofFailures', 'key proofs that failed'],
   'rs.introspection': ['introspections', 'introspection calls'],
-  'rs.introspection_active': ['introspectionsActive', 'introspections answered active'],
+  'rs.introspection_active': ['introspectionsActive', 'introspections ' +
+                                                      'answered active'],
   'rs.registration': ['registrations', 'resource sets registered'],
   'rs.derivation': ['derivations', 'downstream tokens derived'],
   'rs.presented': ['presented', 'tokens presented at the demonstration RS']
@@ -72,6 +75,7 @@ const EVENTS = {
 const FORMATS = ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit', 'zcap'];
 
 function emptyRow() {
+  log.debug("Entering emptyRow().");
   const row = { lastAt: null, lastEvent: null, formats: {}, errors: {} };
   Object.keys(EVENTS).forEach(function (event) {
     row[EVENTS[event][0]] = 0;
@@ -79,6 +83,7 @@ function emptyRow() {
   FORMATS.forEach(function (format) {
     row.formats[format] = 0;
   });
+  log.debug("Leaving emptyRow().");
   return row;
 }
 
@@ -86,19 +91,24 @@ const counters = realms.map({ persist: 'gnap_monitor.counters', merge: 'own' });
 
 const startedAt = new Date().toISOString();
 
-// `detail.format` counts a token format; `detail.gnapError` counts the RFC error
-// a refusal returned, which is the column a client developer reads first.
+// `detail.format` counts a token format; `detail.gnapError` counts the RFC
+// error a refusal returned, which is the column a client developer reads first.
 function record(identifier, event, detail) {
+  log.debug("Entering record().");
   try {
     if (!EVENTS[event]) {
-      log.warn(errorCodes.tag('STS-GNAP-0650') + 'gnap: the event "' + event + '" is not in ' +
-               'gnap_monitor.js\'s vocabulary and was not counted. Add it to EVENTS.');
+      log.warn(errorCodes.tag('STS-GNAP-0650') + 'gnap: the event "' + event +
+               '" ' +
+               'is not in gnap_monitor.js\'s vocabulary and was not counted. ' +
+               'Add it to EVENTS.');
+      log.debug("Leaving record().");
       return;
     }
     const id = String(identifier || '(unidentified)');
     const said = detail || {};
     const format = FORMATS.indexOf(said.format) >= 0 ? said.format : null;
-    const gnapError = said.gnapError ? String(said.gnapError).slice(0, 40) : null;
+    const gnapError = said.gnapError ? String(said.gnapError).slice(0, 40) :
+                      null;
     const row = counters.has(id) ? counters.get(id) : emptyRow();
     row[EVENTS[event][0]] += 1;
     if (format) {
@@ -113,16 +123,19 @@ function record(identifier, event, detail) {
     counters.set(id, row);
   } catch (error) {
     // SWALLOWED, for the header's reason: this is on the path of every grant.
-    log.error(errorCodes.tag('STS-GNAP-0651') + 'gnap: a counter threw and was ignored; the ' +
-              'grant itself is unaffected: ' + error.message);
+    log.error(errorCodes.tag('STS-GNAP-0651') + 'gnap: a counter threw and ' +
+              'was ignored; the grant itself is unaffected: ' + error.message);
   }
+  log.debug("Leaving record().");
 }
 
 // This process's row plus every other process's (merge: 'own').
 function merge(id) {
+  log.debug("Entering merge().");
   const mine = counters.has(id) ? counters.get(id) : emptyRow();
   const theirs = replication.remoteRows('gnap_monitor.counters', undefined, id);
   if (!theirs.length) {
+    log.debug("Leaving merge().");
     return mine;
   }
   const out = JSON.parse(JSON.stringify(mine));
@@ -145,21 +158,25 @@ function merge(id) {
       out.lastEvent = row.lastEvent;
     }
   });
+  log.debug("Leaving merge().");
   return out;
 }
 
 // Every identifier with a row, in this process or another.
 function identifiers() {
+  log.debug("Entering identifiers().");
   const out = [];
   counters.forEach(function (row, id) {
     out.push(id);
   });
   // Another process may be counting an application this one has never served.
-  (replication.remoteKeys('gnap_monitor.counters') || []).forEach(function (key) {
+  (replication.remoteKeys('gnap_monitor.counters') || []).forEach(
+      function (key) {
     if (key && out.indexOf(key) < 0) {
       out.push(key);
     }
   });
+  log.debug("Leaving identifiers().");
   return out;
 }
 
@@ -173,7 +190,8 @@ function snapshot() {
   return {
     startedAt: startedAt,
     events: Object.keys(EVENTS).map(function (event) {
-      return { event: event, counter: EVENTS[event][0], label: EVENTS[event][1] };
+      return { event: event, counter: EVENTS[event][0],
+               label: EVENTS[event][1] };
     }),
     formats: FORMATS.slice(),
     rows: rows,

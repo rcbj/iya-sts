@@ -59,17 +59,23 @@ const nodeCrypto = require("crypto");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_portal_totp",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -85,9 +91,11 @@ var NEWCOMER = usernameFor("totp-newcomer");
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  [ok] " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +105,7 @@ function check(what, fn) {
 const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 function base32ToBytes(text) {
+  log.debug("Entering base32ToBytes().");
   const cleaned = String(text).toUpperCase().replace(/[\s=-]/g, "");
   let bits = 0;
   let value = 0;
@@ -112,11 +121,13 @@ function base32ToBytes(text) {
       bits -= 8;
     }
   }
+  log.debug("Leaving base32ToBytes().");
   return Buffer.from(out);
 }
 
 // RFC 4226 section 5.3 over RFC 6238 section 4.2.
 function codeFor(secret, atMs, opts) {
+  log.debug("Entering codeFor().");
   const options = opts || {};
   const digits = Number(options.digits || 6);
   const period = Number(options.period || 30);
@@ -131,6 +142,7 @@ function codeFor(secret, atMs, opts) {
                  ((digest[offset + 1] & 0xff) << 16) |
                  ((digest[offset + 2] & 0xff) << 8) |
                  (digest[offset + 3] & 0xff);
+  log.debug("Leaving codeFor().");
   return String(binary % Math.pow(10, digits)).padStart(digits, "0");
 }
 
@@ -140,31 +152,40 @@ function codeFor(secret, atMs, opts) {
 // redirects would answer the question by hiding it.
 // ---------------------------------------------------------------------------
 function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
   return new URLSearchParams(o).toString();
 }
 
 function absolute(location) {
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
 }
 
 function browser(name) {
+  log.debug("Entering browser().");
   const self = {
     name: name,
     cookie: "",
     jar: {},
     cookieHeader: function () {
+      log.debug("Entering cookieHeader().");
+      log.debug("Leaving cookieHeader().");
       return Object.keys(self.jar).map(function (k) {
         return k + "=" + self.jar[k];
       }).join("; ");
     },
     async go(method, path, body) {
+      log.debug("Entering go().");
       const headers = {};
       if (self.cookie) headers.cookie = self.cookie;
       if (body !== undefined) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
-      const r = await fetch(absolute(path), { method: method, redirect: "manual",
+      const r = await fetch(absolute(path),
+                            { method: method, redirect: "manual",
                                               headers: headers, body: body });
       // KEYED BY NAME: a browser signing in to a hosted surface holds TWO
       // cookies — the sign-on session and the surface's own — and keeping only
@@ -181,28 +202,34 @@ function browser(name) {
         }
         self.cookie = self.cookieHeader();
       });
+      log.debug("Leaving go().");
       return { status: r.status, location: r.headers.get("location") || "",
                text: await r.text() };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
 async function apiGet(path) {
+  log.debug("Entering apiGet().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in apiGet(): " + ((e && e.message) || e));
     // An HTML error page from a door that answers JSON is worth quoting whole
     // rather than reporting as a parse failure.
     body = raw;
   }
+  log.debug("Leaving apiGet().");
   return { status: r.status, body: body, raw: raw };
 }
 
 async function apiPost(path, body) {
+  log.debug("Entering apiPost().");
   const r = await fetch(api + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -213,13 +240,18 @@ async function apiPost(path, body) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in apiPost(): " + ((e && e.message) || e));
     parsed = raw;
   }
+  log.debug("Leaving apiPost().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 function csrfOf(text) {
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
+  log.debug("Entering csrfOf().");
+  log.debug("Leaving csrfOf().");
+  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
+          [])[1] || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +271,8 @@ var PASSWORD = "portal-totp-Passw0rd!-" + String(Date.now()).slice(-6);
 var MAIL_DOMAIN = "portal-totp.test";
 
 function personAttributes(who) {
+  log.debug("Entering personAttributes().");
+  log.debug("Leaving personAttributes().");
   return { cn: "TOTP Person " + who, givenName: "TOTP", sn: who,
            displayName: "TOTP Person " + who, mail: who + "@" + MAIL_DOMAIN };
 }
@@ -269,12 +303,17 @@ async function ensurePerson(who) {
 // QR code and printed secret disagreed would pass an assertion that read only
 // one of them.
 function secretShownOn(text) {
+  log.debug("Entering secretShownOn().");
   const cell = String(text).match(/<th>Secret<\/th><td><code>([^<]+)<\/code>/);
+  log.debug("Leaving secretShownOn().");
   return cell ? cell[1].replace(/\s+/g, "") : "";
 }
 
 function qrShownOn(text) {
-  return /<img src="data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+"/.test(String(text));
+  log.debug("Entering qrShownOn().");
+  log.debug("Leaving qrShownOn().");
+  return /<img src="data:image\/svg\+xml;base64,[A-Za-z0-9+/=]+"/.test(
+      String(text));
 }
 
 // ---------------------------------------------------------------------------
@@ -320,7 +359,8 @@ async function signIn(door, who, onSecondFactor) {
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
     String(r.text).slice(0, 300));
-  r = await b.go("GET", r.location);   // the authorization endpoint, with a code
+  r = await b.go("GET",
+                 r.location);   // the authorization endpoint, with a code
   r = await b.go("GET", r.location);   // the callback, which mints the session
   assert.ok(b.cookie, "completing the flow should establish a session cookie.");
   log.debug("Leaving signIn().");
@@ -336,16 +376,21 @@ async function signIn(door, who, onSecondFactor) {
 // request.
 // ===========================================================================
 function theGeneratorIsRight() {
+  log.debug("Entering theGeneratorIsRight().");
   log.info("=== 0. the job's own RFC 6238 implementation ===");
   // The seeds are the RFC's, with errata 2866 applied: the prose says one
   // twenty-byte ASCII seed for all three modes and the published values are
   // only reproducible with a seed as long as the digest.
   const seed = function (bytes) {
+    log.debug("Entering seed().");
     let s = "";
     while (s.length < bytes) { s += "1234567890"; }
+    log.debug("Leaving seed().");
     return s.slice(0, bytes);
   };
+
   const toBase32 = function (ascii) {
+    log.debug("Entering toBase32().");
     const bytes = Buffer.from(ascii, "utf8");
     let bits = 0;
     let value = 0;
@@ -359,6 +404,7 @@ function theGeneratorIsRight() {
       }
     }
     if (bits > 0) { out += B32[(value << (5 - bits)) & 31]; }
+    log.debug("Leaving toBase32().");
     return out;
   };
   const vectors = [
@@ -378,17 +424,20 @@ function theGeneratorIsRight() {
   check("the generator this job checks the SERVICE with is itself checked " +
         "against RFC 6238 Appendix B — four vectors across all three digests",
         function () { assert.ok(true); });
+  log.debug("Leaving theGeneratorIsRight().");
 }
 
 // ===========================================================================
 // 1. ENROLMENT: A SECRET IS SHOWN AND NOTHING IS STORED UNTIL A CODE PROVES IT.
 // ===========================================================================
 async function enrolling() {
+  log.debug("Entering enrolling().");
   log.info("=== 1. enrolling an authenticator app at /portal/mfa ===");
   const b = await signIn("/portal/mfa", OWNER);
 
   let page = await b.go("GET", "/portal/mfa");
-  check("the portal offers to set one up, and reports none enrolled", function () {
+  check("the portal offers to set one up, and reports none enrolled",
+        function () {
     assert.strictEqual(page.status, 200,
       "/portal/mfa answered " + page.status);
     assert.ok(/No authenticator app is set up/.test(page.text),
@@ -503,7 +552,8 @@ async function enrolling() {
       return one.username === OWNER;
     })[0];
     assert.ok(row, "the person left /admin-api/mfa.");
-    assert.strictEqual(row.totp, true, "the enrolment did not reach the store.");
+    assert.strictEqual(row.totp, true,
+                       "the enrolment did not reach the store.");
     assert.strictEqual(row.totpUsable, true,
       "the stored enrolment cannot be read back: " +
       JSON.stringify(row.totpDetail));
@@ -522,12 +572,17 @@ async function enrolling() {
     const mine = events.filter(function (e) {
       return String(e.actor || "") === OWNER;
     });
-    assert.ok(mine.some(function (e) { return e.action === "portal.mfa.started"; }),
+    assert.ok(mine.some(function (e) {
+      return e.action === "portal.mfa.started";
+    }),
       "no portal.mfa.started row for " + OWNER + ".");
-    assert.ok(mine.some(function (e) { return e.action === "portal.mfa.enrolled"; }),
+    assert.ok(mine.some(function (e) {
+      return e.action === "portal.mfa.enrolled";
+    }),
       "no portal.mfa.enrolled row for " + OWNER + ".");
   });
 
+  log.debug("Leaving enrolling().");
   return { browser: b, secret: secret, confirmationCode: code };
 }
 
@@ -542,13 +597,15 @@ async function enrolling() {
 // MFA on.
 // ===========================================================================
 async function theSignInDemandsIt(enrolment) {
+  log.debug("Entering theSignInDemandsIt().");
   log.info("=== 2. the sign-in screen asks for a code, unprompted ===");
   let sawTheCodeScreen = false;
   let replayRefused = false;
   let amr = "";
 
   const b = await signIn("/portal", OWNER, async function (bb, r) {
-    sawTheCodeScreen = /One-time code|one-time code|authenticator app/i.test(r.text) &&
+    sawTheCodeScreen = /One-time code|one-time code|authenticator app/i.test(
+        r.text) &&
                        /name="mfa_id"/.test(r.text);
     assert.ok(sawTheCodeScreen,
       "the password alone got through, or some other screen was drawn: " +
@@ -558,7 +615,8 @@ async function theSignInDemandsIt(enrolment) {
     // RFC 6238 SECTION 5.2, END TO END. The code that CONFIRMED the enrolment
     // is a code, and a code is accepted once.
     let x = await bb.go("POST", "/authn/totp",
-                        form({ mfa_id: mfaId, code: enrolment.confirmationCode }));
+                        form({ mfa_id: mfaId,
+                               code: enrolment.confirmationCode }));
     replayRefused = x.status === 200 && /already been used/.test(x.text);
     assert.ok(replayRefused,
       "the code that confirmed the enrolment was accepted a second time, or " +
@@ -593,6 +651,7 @@ async function theSignInDemandsIt(enrolment) {
       "the session's acr is not mfa: '" + amr + "'");
   });
 
+  log.debug("Leaving theSignInDemandsIt().");
   return b;
 }
 
@@ -611,6 +670,7 @@ async function theSignInDemandsIt(enrolment) {
 // named, and every page-level assertion passed.
 // ===========================================================================
 async function oneUserCannotEnrolForAnother() {
+  log.debug("Entering oneUserCannotEnrolForAnother().");
   log.info("=== 3. A01: enrolling for somebody else ===");
   const b = await signIn("/portal/mfa", INTRUDER);
   let page = await b.go("GET", "/portal/mfa");
@@ -651,7 +711,8 @@ async function oneUserCannotEnrolForAnother() {
         function () {
     assert.ok(before && after, "the owner left /admin-api/mfa.");
     assert.strictEqual(after.totp, true, "the owner's enrolment was removed.");
-    assert.strictEqual(after.totpDetail.enrolledAt, before.totpDetail.enrolledAt,
+    assert.strictEqual(after.totpDetail.enrolledAt,
+      before.totpDetail.enrolledAt,
       "the owner's enrolment was REPLACED by the intruder's — the exact " +
       "takeover this rule exists to prevent.");
   });
@@ -663,10 +724,12 @@ async function oneUserCannotEnrolForAnother() {
                                     username: OWNER, code: "123456",
                                     csrf_token: csrfOf(page.text) }));
   check("and a confirmation naming somebody else confirms nothing of theirs " +
-        "— the pending enrolment is keyed by the SESSION'S person", function () {
+        "— the pending enrolment is keyed by the SESSION'S person",
+        function () {
     assert.ok(confirm.status === 400 || confirm.status === 303,
       "it answered " + confirm.status);
   });
+  log.debug("Leaving oneUserCannotEnrolForAnother().");
 }
 
 // ===========================================================================
@@ -682,6 +745,7 @@ async function oneUserCannotEnrolForAnother() {
 // must still hold a usable link.
 // ===========================================================================
 async function anActivationLinkCanSetOneUp() {
+  log.debug("Entering anActivationLinkCanSetOneUp().");
   log.info("=== 4. setting one up while spending an activation link ===");
   // Created with the attributes a real account carries and `invent: false`,
   // so nothing on the entry is a persona this service made up; the password
@@ -696,19 +760,21 @@ async function anActivationLinkCanSetOneUp() {
     "creating " + NEWCOMER + " answered " + created.status + " " +
     String(created.raw).slice(0, 300));
 
-  const issued = await apiPost("/users/issue-activation", { username: NEWCOMER });
+  const issued = await apiPost("/users/issue-activation",
+                               { username: NEWCOMER });
   assert.ok(issued.status === 200,
     "issuing an activation link answered " + issued.status + " " +
     String(issued.raw).slice(0, 300));
   const url = issued.body.activationUrl || issued.body.url || "";
-  assert.ok(url, "no activation URL came back: " + String(issued.raw).slice(0, 300));
+  assert.ok(url,
+            "no activation URL came back: " + String(issued.raw).slice(0, 300));
 
   const b = browser(NEWCOMER);
   let page = await b.go("GET", url);
   const token = (page.text.match(/name="token" value="([^"]+)"/) || [])[1];
   check("the setup form offers an authenticator app as an independent " +
-        "CHECKBOX beside the password — it is a second factor, not one of the " +
-        "answers to 'what signs you in'", function () {
+        "CHECKBOX beside the password — it is a second factor, not one of " +
+        "the answers to 'what signs you in'", function () {
     assert.strictEqual(page.status, 200, "the link answered " + page.status);
     assert.ok(/name="totp" value="1"/.test(page.text),
       "no authenticator checkbox on the setup form.");
@@ -772,6 +838,7 @@ async function anActivationLinkCanSetOneUp() {
     assert.strictEqual(row.mfaRequired, true,
       "a second factor is not required of them.");
   });
+  log.debug("Leaving anActivationLinkCanSetOneUp().");
 }
 
 // ===========================================================================
@@ -787,12 +854,15 @@ async function anActivationLinkCanSetOneUp() {
 // on a service that had stopped asking for the code for some other reason.
 // ===========================================================================
 async function anOperatorCanClearIt() {
+  log.debug("Entering anOperatorCanClearIt().");
   log.info("=== 5. clearing an authenticator through /admin-api ===");
   const cleared = await apiPost("/mfa/clear-totp", { username: OWNER });
   check("POST /admin-api/mfa/clear-totp accepts it", function () {
     assert.strictEqual(cleared.status, 200,
-      "it answered " + cleared.status + " " + String(cleared.raw).slice(0, 300));
-    assert.strictEqual(cleared.body.ok, true, String(cleared.raw).slice(0, 200));
+      "it answered " + cleared.status + " " +
+      String(cleared.raw).slice(0, 300));
+    assert.strictEqual(cleared.body.ok, true,
+                       String(cleared.raw).slice(0, 200));
   });
 
   const again = await apiPost("/mfa/clear-totp", { username: OWNER });
@@ -810,7 +880,8 @@ async function anOperatorCanClearIt() {
         "is the only shape of assertion that can tell 'the factor was " +
         "cleared' from 'the factor was never being asked for'", function () {
     assert.strictEqual(page.status, 200, "/portal answered " + page.status);
-    const amr = (page.text.match(/<tr><th>How<\/th><td>([^<]*)/) || [])[1] || "";
+    const amr = (page.text.match(/<tr><th>How<\/th><td>([^<]*)/) ||
+                 [])[1] || "";
     assert.ok(!/otp/.test(amr),
       "the session still claims a one-time code: '" + amr + "'");
   });
@@ -825,9 +896,11 @@ async function anOperatorCanClearIt() {
              JSON.stringify(e.detail || {}).indexOf(OWNER) >= 0;
     }), "no admin.mfa.totp.cleared row naming " + OWNER + ".");
   });
+  log.debug("Leaving anOperatorCanClearIt().");
 }
 
 async function test() {
+  log.debug("Entering test().");
   log.info("Running the /portal/mfa and RFC 6238 checks against " + base);
   theGeneratorIsRight();
   const enrolment = await enrolling();
@@ -837,6 +910,7 @@ async function test() {
   await anOperatorCanClearIt();
   log.info(checks + " assertion(s).");
   log.info("Test completed successfully.");
+  log.debug("Leaving test().");
 }
 
 test().catch(function (e) {

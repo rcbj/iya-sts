@@ -318,6 +318,7 @@ function jsonBody(req) {
     log.debug('Leaving jsonBody(). Parsed.');
     return (parsed && typeof parsed === 'object') ? parsed : {};
   } catch (e) {
+    log.debug("Caught in jsonBody(): " + ((e && e.message) || e));
     // Not JSON. The caller reports it as a refusal naming the body rather
     // than throwing, because a 500 on a malformed body tells a client
     // nothing about what it sent.
@@ -378,6 +379,19 @@ function transmit(record, options) {
              ? record.events_delivered.join(', ')
              : 'nothing at all') + ' — the intersection of what the ' +
            'receiver requested and what this transmitter supports.' }));
+  }
+  // THE OWNER'S ENTRY, asked at the moment of delivery rather than only when
+  // the stream was agreed — see ssf_streams.js's allowedEventsFor().
+  if (!streams.deliversEvent(record, uri)) {
+    log.debug('Leaving transmit(). Not allowed by the owning application.');
+    return Promise.resolve(transmitRefused('STS-SSF-0081', record, uri, {
+      ok: false, delivered: false, jti: '',
+      why: 'The application that owns this stream ("' + record.createdBy +
+           '") ' +
+           'is not allowed ' +
+           '"' + uri + '": ssfAllowedEvents on its entry does not ' +
+           'name it or its profile. Add it there, or ask for an event type ' +
+           'it does allow.' }));
   }
   const verdict = events.validateEvent(uri, asked.payload);
   if (!verdict.ok) {
@@ -445,6 +459,7 @@ function transmit(record, options) {
     toe: typeof asked.toe === 'number' ? asked.toe : undefined
   });
 
+  log.debug("Leaving transmit().");
   return events.signSet(claims).then(function (token) {
     // COUNTED HERE, which is after the SET exists and before anybody knows
     // whether it will be delivered — because what /admin/caep-sessions
@@ -1547,9 +1562,9 @@ app.get('/ssf', function (req, res) {
     'the transmitter PUBLISH what it accepts, in ' +
     '<code>authorization_schemes</code> &mdash; so a receiver discovers how ' +
     'to authenticate rather than guessing. It is ' +
-    (info.authentication.required ? 'ON' : 'OFF (<code>unreachable since 2026-09-06' +
-      '</code>)') + '. ' + xmlEscape(info.authentication.note) + '</p>' +
-    '<table><tr><th>Scheme</th><th>spec_urn</th><th>What</th></tr>' +
+    (info.authentication.required ? 'ON' : 'OFF (<code>unreachable since ' +
+      '2026-09-06</code>)') + '. ' + xmlEscape(info.authentication.note) +
+    '</p><table><tr><th>Scheme</th><th>spec_urn</th><th>What</th></tr>' +
     schemeRows + '</table>' +
     '<h2>Streams right now</h2>' +
     '<table><tr><th>stream_id</th><th>Status</th><th>Delivery</th>' +
@@ -1685,6 +1700,7 @@ function consoleAction(name, body, req) {
     audit.audit({ action: 'ssf.stream.status', category: 'signals',
       protocol: 'SSF', channel: 'http', target: id,
       summary: 'The stream is now ' + changed.stream.status });
+    log.debug("Leaving consoleAction().");
     return transmit(changed.stream, {
       uri: events.SSF_PREFIX + 'stream-updated',
       payload: { status: changed.stream.status,
@@ -1729,6 +1745,7 @@ function consoleAction(name, body, req) {
     } else if (typeof subject === 'string') {
       subject = null;
     }
+    log.debug("Leaving consoleAction().");
     return transmit(record, { uri: String(asked.type || ''),
       payload: payload || {}, subject: subject || null,
       txn: String(asked.txn || '') }).then(function (report) {
@@ -1778,6 +1795,8 @@ adminConsole.setSignalsReporter({
   action: consoleAction,
   actions: CONSOLE_ACTIONS,
   eventTypes: function () {
+    log.debug("Entering eventTypes().");
+    log.debug("Leaving eventTypes().");
     return events.EVENTS.map(function (row) {
       return { uri: row.uri, name: row.name,
         offered: events.supportedEventUris().indexOf(row.uri) >= 0 };
@@ -1836,7 +1855,7 @@ function caepAutoEmit(notice) {
     return Promise.resolve({ sent: 0, streams: 0 });
   }
   const candidates = streams.listStreams().filter(function (record) {
-    return record.events_delivered.indexOf(due.uri) >= 0 &&
+    return streams.deliversEvent(record, due.uri) &&
            streams.streamCoversSubject(record, due.subject);
   });
   if (!candidates.length) {
@@ -1857,6 +1876,7 @@ function caepAutoEmit(notice) {
     log.debug('Leaving caepAutoEmit(). No stream takes it.');
     return Promise.resolve({ sent: 0, streams: 0 });
   }
+  log.debug("Leaving caepAutoEmit().");
   return Promise.all(candidates.map(function (record) {
     return transmit(record, { uri: due.uri, payload: due.payload,
       subject: due.subject, toe: due.payload.event_timestamp });
@@ -1893,11 +1913,11 @@ function caepAutoEmit(notice) {
 // why a revoked grant is a `session-revoked` at all.
 //
 // **THE CALLER BUILDS THE SUBJECT AND THIS BUILDS EVERYTHING ELSE**, for
-// `caepAutoEmit()`'s division of labour: the payload through `caep.buildPayload()`
-// so there is one shape for every CAEP event this service sends, and the
-// candidate streams through `streamCoversSubject()` so a family's subject
-// scope (`ssf_streams.setSubjectScope()`) is honoured here exactly as it is for
-// a sign-on session.
+// `caepAutoEmit()`'s division of labour: the payload through
+// `caep.buildPayload()` so there is one shape for every CAEP event this service
+// sends, and the candidate streams through `streamCoversSubject()` so a
+// family's subject scope (`ssf_streams.setSubjectScope()`) is honoured here
+// exactly as it is for a sign-on session.
 //
 // **IT NEVER REJECTS.** A grant revocation does not wait on somebody else's
 // push endpoint, and a failure is logged, coded and recorded on the stream.
@@ -1911,13 +1931,17 @@ function emitProtocolEvent(asked) {
     return Promise.resolve({ sent: 0, streams: 0 });
   }
   const type = String(options.type || '');
-  const uri = type.indexOf(events.CAEP_PREFIX) === 0 ? type : events.CAEP_PREFIX + type;
+  const uri = type.indexOf(events.CAEP_PREFIX) === 0 ? type :
+              events.CAEP_PREFIX + type;
   const row = events.EVENT_BY_URI[uri];
   if (!row || row.family !== 'caep') {
-    log.warn(errorCodes.tag('STS-SSF-0073') + 'ssf: ' + protocol + ' asked for a CAEP "' +
-             type + '", which is not one of CAEP\'s event types; nothing was sent.');
+    log.warn(errorCodes.tag('STS-SSF-0073') + 'ssf: ' + protocol + ' asked ' +
+        'for a CAEP "' +
+             type + '", which is not one of CAEP\'s event types; nothing was ' +
+                    'sent.');
     log.debug('Leaving emitProtocolEvent(). Not a CAEP type.');
-    return Promise.resolve({ sent: 0, streams: 0, why: 'not a CAEP event type' });
+    return Promise.resolve({ sent: 0, streams: 0,
+                             why: 'not a CAEP event type' });
   }
   let payload;
   try {
@@ -1927,28 +1951,33 @@ function emitProtocolEvent(asked) {
       reasonUser: String(options.reasonUser || '')
     });
   } catch (e) {
-    log.error(errorCodes.tag('STS-SSF-0075') + 'ssf: a CAEP ' + row.name + ' from ' + protocol +
+    log.error(errorCodes.tag('STS-SSF-0075') + 'ssf: a CAEP ' + row.name + ' ' +
+        'from ' + protocol +
               ' could not be built: ' + e.message);
     log.debug('Leaving emitProtocolEvent(). The payload could not be built.');
     return Promise.resolve({ sent: 0, streams: 0, why: e.message });
   }
   const verdict = events.validateEvent(uri, payload);
   if (!verdict.ok) {
-    log.warn(errorCodes.tag('STS-SSF-0074') + 'ssf: a CAEP ' + row.name + ' from ' + protocol +
-             ' is not a valid event and was not sent: ' + verdict.errors.join(' '));
+    log.warn(errorCodes.tag('STS-SSF-0074') + 'ssf: a CAEP ' + row.name + ' ' +
+        'from ' + protocol +
+             ' is not a valid event and was not sent: ' +
+        verdict.errors.join(' '));
     log.debug('Leaving emitProtocolEvent(). The payload is invalid.');
-    return Promise.resolve({ sent: 0, streams: 0, why: verdict.errors.join(' ') });
+    return Promise.resolve({ sent: 0, streams: 0,
+                             why: verdict.errors.join(' ') });
   }
   const subject = options.subject;
   const candidates = streams.listStreams().filter(function (record) {
-    return record.events_delivered.indexOf(uri) >= 0 &&
+    return streams.deliversEvent(record, uri) &&
            (!subject || streams.streamCoversSubject(record, subject));
   });
   if (!candidates.length) {
     // The same line caepAutoEmit() says, for the same reason: "nothing
     // arrived" is almost always "no stream asked for that type".
     log.info('ssf: a ' + row.name + ' from ' + protocol + ' is due about ' +
-             (subject ? subjects.describeSubject(subject) : 'nobody') + ' and NO STREAM takes it.');
+             (subject ? subjects.describeSubject(subject) : 'nobody') + ' ' +
+                 'and NO STREAM takes it.');
     log.debug('Leaving emitProtocolEvent(). No stream takes it.');
     return Promise.resolve({ sent: 0, streams: 0 });
   }
@@ -1957,6 +1986,7 @@ function emitProtocolEvent(asked) {
     target: subject && subject.session ? String(subject.session.id || '') : '',
     summary: 'A CAEP ' + row.name + ' was emitted for ' + protocol,
     detail: { type: uri, streams: candidates.length, via: protocol } });
+  log.debug("Leaving emitProtocolEvent().");
   return Promise.all(candidates.map(function (record) {
     return transmit(record, { uri: uri, payload: payload, subject: subject,
       toe: payload.event_timestamp });
@@ -1964,13 +1994,16 @@ function emitProtocolEvent(asked) {
     const sent = reports.filter(function (one) {
       return one.ok;
     }).length;
-    log.info('ssf: ' + row.name + ' from ' + protocol + ' went to ' + sent + ' of ' +
+    log.info('ssf: ' + row.name + ' from ' + protocol + ' went to ' + sent +
+        ' ' +
+        'of ' +
              candidates.length + ' stream(s).');
     log.debug('Leaving emitProtocolEvent(). ' + sent + ' sent.');
     return { sent: sent, streams: candidates.length, reports: reports };
   }).catch(function (e) {
     // A rejected promise nobody waits on would be an unhandled rejection.
-    log.error(errorCodes.tag('STS-SSF-0075') + 'ssf: a CAEP ' + row.name + ' from ' + protocol +
+    log.error(errorCodes.tag('STS-SSF-0075') + 'ssf: a CAEP ' + row.name + ' ' +
+        'from ' + protocol +
               ' could not be delivered: ' + e.message);
     log.debug('Leaving emitProtocolEvent(). Failed.');
     return { sent: 0, streams: candidates.length, why: e.message };
@@ -2043,8 +2076,10 @@ function caepApplications() {
   });
 
   function blank(identifier, name, registered) {
+    log.debug("Entering blank().");
     const counts = {};
     caepUris.forEach(function (uri) { counts[uri] = 0; });
+    log.debug("Leaving blank().");
     return { identifier: identifier, name: name, registered: registered,
       dn: '', declared: false, streams: [], streamCount: 0, enabled: 0,
       deliveries: [], audiences: [], takes: [], counts: counts, total: 0,
@@ -2055,10 +2090,12 @@ function caepApplications() {
   const rows = {};
   const order = [];
   function rowFor(identifier, name, registered) {
+    log.debug("Entering rowFor().");
     if (!rows[identifier]) {
       rows[identifier] = blank(identifier, name, registered);
       order.push(identifier);
     }
+    log.debug("Leaving rowFor().");
     return rows[identifier];
   }
 
@@ -2077,7 +2114,8 @@ function caepApplications() {
                        entry.name || entry.identifier, true);
     row.dn = entry.dn || '';
     row.declared = declared;
-    row.endpoints = ((entry.attributes || {}).ssfDeliveryEndpoint || []).slice();
+    row.endpoints = ((entry.attributes ||
+                      {}).ssfDeliveryEndpoint || []).slice();
   });
 
   const NOBODY = '(no application — the stream was agreed unauthenticated)';
@@ -2100,7 +2138,7 @@ function caepApplications() {
       row.audiences.push(aud);
     }
     caepUris.forEach(function (uri) {
-      if (record.events_delivered.indexOf(uri) >= 0) {
+      if (streams.deliversEvent(record, uri)) {
         const short = uri.slice(events.CAEP_PREFIX.length);
         if (row.takes.indexOf(short) < 0) {
           row.takes.push(short);
@@ -2167,7 +2205,7 @@ function caepReport(req) {
   report.applications = caepApplications();
   report.streams = streams.listStreams().map(function (record) {
     const takes = events.CAEP_EVENT_URIS.filter(function (uri) {
-      return record.events_delivered.indexOf(uri) >= 0;
+      return streams.deliversEvent(record, uri);
     });
     return { stream_id: record.stream_id, aud: record.aud,
       status: record.status, delivery: record.delivery.method,
@@ -2232,7 +2270,7 @@ function caepEmit(asked) {
   }
   const subject = caep.subjectFor(known);
   const candidates = streams.listStreams().filter(function (record) {
-    return record.events_delivered.indexOf(uri) >= 0 &&
+    return streams.deliversEvent(record, uri) &&
            streams.streamCoversSubject(record, subject);
   });
   audit.audit({ action: 'caep.event.emit', category: 'signals',
@@ -2256,6 +2294,7 @@ function caepEmit(asked) {
           'session register for session ' + sessionId,
         detail: { type: uri, why: applied.errors.join(' ') } });
     }
+    log.debug("Leaving caepEmit().");
     return Promise.resolve({ ok: applied.ok, errors: applied.errors,
       warnings: applied.warnings,
       message: applied.ok
@@ -2265,6 +2304,7 @@ function caepEmit(asked) {
           'still updated, so the change is on this page.'
         : applied.errors.join(' ') });
   }
+  log.debug("Leaving caepEmit().");
   return Promise.all(candidates.map(function (record) {
     return transmit(record, { uri: uri, payload: payload, subject: subject,
       toe: payload.event_timestamp });
@@ -2287,6 +2327,7 @@ function caepAction(name, body) {
   log.debug('Entering caepAction(). ' + name);
   const asked = body || {};
   if (name === 'emit') {
+    log.debug("Leaving caepAction().");
     return caepEmit(asked);
   }
   if (name === 'reset-session') {
@@ -2331,6 +2372,8 @@ adminConsole.setCaepReporter({
   action: caepAction,
   actions: CAEP_CONSOLE_ACTIONS,
   eventTypes: function () {
+    log.debug("Entering eventTypes().");
+    log.debug("Leaving eventTypes().");
     return events.CAEP_EVENTS.map(function (row) {
       return { uri: row.uri, name: row.name,
         short: row.uri.slice(events.CAEP_PREFIX.length),
@@ -2389,6 +2432,7 @@ function riscAutoEmit(notice) {
     log.debug('Leaving riscAutoEmit(). Nothing is due.');
     return Promise.resolve({ sent: 0, streams: 0 });
   }
+  log.debug("Leaving riscAutoEmit().");
   return Promise.all(due.map(function (one) {
     return sendOneRiscEvent(one);
   })).then(function (results) {
@@ -2416,7 +2460,7 @@ function riscAutoEmit(notice) {
 function sendOneRiscEvent(due) {
   log.debug('Entering sendOneRiscEvent(). ' + due.uri);
   const candidates = streams.listStreams().filter(function (record) {
-    return record.events_delivered.indexOf(due.uri) >= 0 &&
+    return streams.deliversEvent(record, due.uri) &&
            streams.streamCoversSubject(record, due.subject);
   });
   if (!candidates.length) {
@@ -2445,6 +2489,7 @@ function sendOneRiscEvent(due) {
     log.debug('Leaving sendOneRiscEvent(). No stream takes it.');
     return Promise.resolve({ sent: 0, streams: 0, uri: due.uri });
   }
+  log.debug("Leaving sendOneRiscEvent().");
   return Promise.all(candidates.map(function (record) {
     return transmit(record, { uri: due.uri, payload: due.payload,
       subject: due.subject, toe: due.payload.event_timestamp });
@@ -2498,8 +2543,10 @@ function riscApplications() {
   });
 
   function blank(identifier, name, registered) {
+    log.debug("Entering blank().");
     const counts = {};
     riscUris.forEach(function (uri) { counts[uri] = 0; });
+    log.debug("Leaving blank().");
     return { identifier: identifier, name: name, registered: registered,
       dn: '', declared: false, streams: [], streamCount: 0, enabled: 0,
       deliveries: [], audiences: [], takes: [], counts: counts, total: 0,
@@ -2510,10 +2557,12 @@ function riscApplications() {
   const rows = {};
   const order = [];
   function rowFor(identifier, name, registered) {
+    log.debug("Entering rowFor().");
     if (!rows[identifier]) {
       rows[identifier] = blank(identifier, name, registered);
       order.push(identifier);
     }
+    log.debug("Leaving rowFor().");
     return rows[identifier];
   }
 
@@ -2552,7 +2601,7 @@ function riscApplications() {
       row.audiences.push(aud);
     }
     riscUris.forEach(function (uri) {
-      if (record.events_delivered.indexOf(uri) >= 0) {
+      if (streams.deliversEvent(record, uri)) {
         const short = uri.slice(events.RISC_PREFIX.length);
         if (row.takes.indexOf(short) < 0) {
           row.takes.push(short);
@@ -2608,7 +2657,7 @@ function riscReport(req) {
   report.applications = riscApplications();
   report.streams = streams.listStreams().map(function (record) {
     const takes = events.RISC_EVENT_URIS.filter(function (uri) {
-      return record.events_delivered.indexOf(uri) >= 0;
+      return streams.deliversEvent(record, uri);
     });
     return { stream_id: record.stream_id, aud: record.aud,
       status: record.status, delivery: record.delivery.method,
@@ -2721,10 +2770,11 @@ function riscEmit(asked) {
     known.suppressed += 1;
     log.debug('Leaving riscEmit(). Suppressed by the opt-out gate.');
     return actionRefused('STS-SSF-0060', 'RISC', 'emit',
-                         { ok: false, errors: [allowed.why], warnings: advice });
+                         { ok: false, errors: [allowed.why],
+                           warnings: advice });
   }
   const candidates = streams.listStreams().filter(function (record) {
-    return record.events_delivered.indexOf(uri) >= 0 &&
+    return streams.deliversEvent(record, uri) &&
            streams.streamCoversSubject(record, subject);
   });
   audit.audit({ action: 'risc.event.emit', category: 'signals',
@@ -2748,6 +2798,7 @@ function riscEmit(asked) {
           'account register for account ' + accountId,
         detail: { type: uri, why: applied.errors.join(' ') } });
     }
+    log.debug("Leaving riscEmit().");
     return Promise.resolve({ ok: applied.ok, errors: applied.errors,
       warnings: applied.warnings.concat(advice),
       message: applied.ok
@@ -2757,6 +2808,7 @@ function riscEmit(asked) {
           'still updated, so the change is on this page.'
         : applied.errors.join(' ') });
   }
+  log.debug("Leaving riscEmit().");
   return Promise.all(candidates.map(function (record) {
     return transmit(record, { uri: uri, payload: payload, subject: subject,
       toe: payload.event_timestamp });
@@ -2780,6 +2832,7 @@ function riscAction(name, body) {
   log.debug('Entering riscAction(). ' + name);
   const asked = body || {};
   if (name === 'emit') {
+    log.debug("Leaving riscAction().");
     return riscEmit(asked);
   }
   if (name === 'reset-account') {
@@ -2824,6 +2877,8 @@ adminConsole.setRiscReporter({
   action: riscAction,
   actions: RISC_CONSOLE_ACTIONS,
   eventTypes: function () {
+    log.debug("Entering eventTypes().");
+    log.debug("Leaving eventTypes().");
     return events.RISC_EVENTS.map(function (row) {
       return { uri: row.uri, name: row.name,
         short: row.uri.slice(events.RISC_PREFIX.length),
@@ -2848,8 +2903,8 @@ adminConsole.setRiscReporter({
 // One stream each, per trust realm, asking for every CAEP and every RISC event
 // type. `ssf/ssf_receivers.js` carries the whole argument — why delivery is a
 // real RFC 8935 push over the loopback interface rather than a function call,
-// why the streams are in every realm while the console's CLIENT entry is in one,
-// and what an empty inbox page can mean.
+// why the streams are in every realm while the console's CLIENT entry is in
+// one, and what an empty inbox page can mean.
 //
 // **THE DEFAULT REALM IS SEEDED HERE AND EVERY LATER REALM FROM `onCreate()`**,
 // which is the arrangement `applications.js`'s internal client entries have and

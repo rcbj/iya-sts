@@ -13,26 +13,28 @@
 // else makes; it never duplicates a check the handler already makes better"):
 //
 //   1. `validation.checkDocument()` — the service-wide SANITISATION of any JSON
-//      body: bounded depth, bounded key count, and no prototype-polluting member
-//      names (`__proto__`, `constructor`, `prototype`) at any depth.
+//      body: bounded depth, bounded key count, and no prototype-polluting
+//      member names (`__proto__`, `constructor`, `prototype`) at any depth.
 //   2. **these schemas** — the SHAPE: every known member's JSON type, a length
-//      cap on every string, an item cap on every array and a member cap on every
-//      object, URI formats where RFC 9635 says "absolute URI", and NO control
-//      characters in any string. That last one is sanitisation too: a label, a
-//      class_id or a display name is echoed onto the approval page, the audit log
-//      and the console, and a C0 control character in it is never meaningful.
+//      cap on every string, an item cap on every array and a member cap on
+//      every object, URI formats where RFC 9635 says "absolute URI", and NO
+//      control characters in any string. That last one is sanitisation too: a
+//      label, a class_id or a display name is echoed onto the approval page,
+//      the audit log and the console, and a C0 control character in it is never
+//      meaningful.
 //   3. `gnap_request.js`'s walk — the SEMANTICS, refused with the GNAP error
 //      code the specification names: a flag twice is `invalid_flag`, a missing
-//      label in a multi-token request is `invalid_request`, a key in two formats
-//      is `invalid_client`.
+//      label in a multi-token request is `invalid_request`, a key in two
+//      formats is `invalid_client`.
 //
-// **WHICH IS WHY `required` AND `enum` ARE NOT IN THESE SCHEMAS.** A schema that
-// enforced `required: ["client"]` would answer a request with no client as a
-// generic shape error — `invalid_request`, "must have required property" — where
-// section 2.3 makes it `invalid_client`, and an `enum` on `flags` would turn
-// section 2.1.1's `invalid_flag` into the same. The walk refuses both, by name,
-// with the right code; the schema would pre-empt it with a worse answer. It is
-// the trade `mgmt-api/admin_api.js`'s `structureOnly()` made, for this reason.
+// **WHICH IS WHY `required` AND `enum` ARE NOT IN THESE SCHEMAS.** A schema
+// that enforced `required: ["client"]` would answer a request with no client as
+// a generic shape error — `invalid_request`, "must have required property" —
+// where section 2.3 makes it `invalid_client`, and an `enum` on `flags` would
+// turn section 2.1.1's `invalid_flag` into the same. The walk refuses both, by
+// name, with the right code; the schema would pre-empt it with a worse answer.
+// It is the trade `mgmt-api/admin_api.js`'s `structureOnly()` made, for this
+// reason.
 //
 // **`additionalProperties` IS OPEN WHERE RFC 9635 HAS AN EXTENSION REGISTRY** —
 // the grant request (section 10.3), the client (10.7), its display (10.8), the
@@ -55,17 +57,24 @@ const CAP = validation.CAP;
 const SAFE = '^[^\\u0000-\\u001f\\u007f]*$';
 
 function str(max) {
+  log.debug("Entering str().");
+  log.debug("Leaving str().");
   return { type: 'string', maxLength: max || CAP.DEFAULT, pattern: SAFE };
 }
 
 function strings(maxItems, maxLength) {
-  return { type: 'array', maxItems: maxItems, items: str(maxLength || CAP.URI) };
+  log.debug("Entering strings().");
+  log.debug("Leaving strings().");
+  return { type: 'array', maxItems: maxItems,
+           items: str(maxLength || CAP.URI) };
 }
 
 const DEFS = {
   uri: { type: 'string', maxLength: CAP.URI, format: 'uri', pattern: SAFE },
   // A logo may be a data: image (section 2.3.2), which is legitimately long.
-  logoUri: { type: 'string', maxLength: CAP.TEXT, pattern: '^(data:image/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=]*|[A-Za-z][A-Za-z0-9+.-]*:[^\\u0000-\\u001f\\u007f\\s]*)$' },
+  logoUri: { type: 'string', maxLength: CAP.TEXT,
+             pattern: '^(data:image/[A-Za-z0-9.+-]+;base64,' +
+                      '[A-Za-z0-9+/=]*|[A-Za-z][A-Za-z0-9+.-]*:[^\\u0000-\\u001f\\u007f\\s]*)$' },
   accessRight: {
     anyOf: [
       str(CAP.URI),
@@ -83,19 +92,22 @@ const DEFS = {
       }
     ]
   },
-  access: { type: 'array', maxItems: 200, items: { $ref: '#/$defs/accessRight' } },
+  access: { type: 'array', maxItems: 200,
+            items: { $ref: '#/$defs/accessRight' } },
   proof: {
     anyOf: [
       str(64),
       { type: 'object', maxProperties: 16,
-        properties: { method: str(64), alg: str(64), 'content-digest-alg': str(64) },
+        properties: { method: str(64), alg: str(64),
+                      'content-digest-alg': str(64) },
         additionalProperties: true }
     ]
   },
   jwk: {
     type: 'object', maxProperties: 32,
     properties: {
-      kty: str(16), alg: str(64), kid: str(CAP.IDENTIFIER), crv: str(32), use: str(16),
+      kty: str(16), alg: str(64), kid: str(CAP.IDENTIFIER), crv: str(32),
+      use: str(16),
       x: str(512), y: str(512), n: str(4096), e: str(64),
       x5c: { type: 'array', maxItems: 10, items: str(CAP.TEXT) }
     },
@@ -109,8 +121,10 @@ const DEFS = {
         properties: {
           proof: { $ref: '#/$defs/proof' },
           jwk: { $ref: '#/$defs/jwk' },
-          cert: { type: 'string', maxLength: CAP.TEXT, pattern: '^[A-Za-z0-9+/=\\s-]*$' },
-          'cert#S256': { type: 'string', maxLength: 128, pattern: '^[A-Za-z0-9_-]*$' }
+          cert: { type: 'string', maxLength: CAP.TEXT,
+                  pattern: '^[A-Za-z0-9+/=\\s-]*$' },
+          'cert#S256': { type: 'string', maxLength: 128,
+                         pattern: '^[A-Za-z0-9_-]*$' }
         },
         additionalProperties: true
       }
@@ -119,9 +133,12 @@ const DEFS = {
   subId: {
     type: 'object', maxProperties: 16,
     properties: {
-      format: str(64), uri: str(CAP.URI), email: str(CAP.NAME), iss: str(CAP.URI),
-      sub: str(CAP.URI), id: str(CAP.URI), phone_number: str(32), url: str(CAP.URI),
-      identifiers: { type: 'array', maxItems: 20, items: { type: 'object', maxProperties: 16 } }
+      format: str(64), uri: str(CAP.URI), email: str(CAP.NAME),
+      iss: str(CAP.URI),
+      sub: str(CAP.URI), id: str(CAP.URI), phone_number: str(32), url: str(
+          CAP.URI),
+      identifiers: { type: 'array', maxItems: 20,
+                     items: { type: 'object', maxProperties: 16 } }
     },
     additionalProperties: true
   },
@@ -193,11 +210,13 @@ const DEFS = {
       start: {
         type: 'array', maxItems: 16,
         items: { anyOf: [str(64), { type: 'object', maxProperties: 16,
-                                    properties: { mode: str(64) }, additionalProperties: true }] }
+                                    properties: { mode: str(64) },
+                                    additionalProperties: true }] }
       },
       finish: {
         type: 'object',
-        properties: { method: str(64), uri: { $ref: '#/$defs/uri' }, nonce: str(256),
+        properties: { method: str(64), uri: { $ref: '#/$defs/uri' },
+                      nonce: str(256),
                       hash_method: str(64) },
         additionalProperties: false
       },
@@ -212,13 +231,15 @@ const DEFS = {
   resourceServer: {
     anyOf: [
       str(CAP.IDENTIFIER),
-      { type: 'object', maxProperties: 16, properties: { key: { $ref: '#/$defs/key' } },
+      { type: 'object', maxProperties: 16,
+        properties: { key: { $ref: '#/$defs/key' } },
         additionalProperties: true }
     ]
   },
   // A GNAP access token value: token68 (RFC 9110 section 11.2), which every
   // format this AS issues satisfies. A ZCAP is the long one.
-  tokenValue: { type: 'string', maxLength: CAP.TEXT, pattern: '^[A-Za-z0-9._~+/-]*=*$' }
+  tokenValue: { type: 'string', maxLength: CAP.TEXT,
+                pattern: '^[A-Za-z0-9._~+/-]*=*$' }
 };
 
 const SCHEMAS = {
@@ -244,7 +265,8 @@ const SCHEMAS = {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     $id: 'urn:mock-sts:gnap:continuation',
     type: 'object',
-    properties: { interact_ref: { type: 'string', maxLength: 256, pattern: '^[A-Za-z0-9._~-]*$' } },
+    properties: { interact_ref: { type: 'string', maxLength: 256,
+                                  pattern: '^[A-Za-z0-9._~-]*$' } },
     additionalProperties: true,
     $defs: DEFS
   },
@@ -332,21 +354,26 @@ function validate(name, document) {
   // otherwise the error at the deepest path is the one nearest the mistake.
   const errors = check.errors || [];
   const control = errors.filter(function (one) {
-    return one.keyword === 'pattern' && one.params && one.params.pattern === SAFE;
+    return one.keyword === 'pattern' && one.params &&
+           one.params.pattern === SAFE;
   })[0];
   const first = control || errors.slice().sort(function (a, b) {
-    return String(b.instancePath || '').length - String(a.instancePath || '').length;
+    return String(b.instancePath || '').length -
+           String(a.instancePath || '').length;
   })[0] || {};
   const path = first.instancePath || '(the document)';
   let detail;
-  if (first.keyword === 'pattern' && String(first.schemaPath || '').indexOf('pattern') >= 0 &&
+  if (first.keyword === 'pattern' &&
+      String(first.schemaPath || '').indexOf('pattern') >= 0 &&
       first.params && first.params.pattern === SAFE) {
-    detail = path + ' contains a control character, which no member of a GNAP document may carry';
+    detail = path + ' contains a control character, which no member of a ' +
+                    'GNAP document may carry';
   } else {
     detail = path + ' ' + (first.message || 'is not valid');
   }
   log.debug("Leaving validate(). " + detail);
-  return { ok: false, path: path, detail: detail + ' (JSON Schema ' + SCHEMAS[name].$id + ')' };
+  return { ok: false, path: path,
+           detail: detail + ' (JSON Schema ' + SCHEMAS[name].$id + ')' };
 }
 
 module.exports = {

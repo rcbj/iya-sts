@@ -3,7 +3,8 @@
 // File: access_gate.js
 //
 // ---------------------------------------------------------------------------
-// EVERY ACCESS-CONTROL DECISION IN THIS SERVICE, ASKED IN ONE PLACE (2026-09-06).
+// EVERY ACCESS-CONTROL DECISION IN THIS SERVICE, ASKED IN ONE PLACE
+// (2026-09-06).
 //
 // This is `issuance_gate.js`'s sibling and is deliberately the same shape. That
 // one answers "may this be ISSUED"; this one answers "may this subject DO this
@@ -58,9 +59,9 @@
 
 const { log } = require('./helpers');
 const config = require('./config');
-// The error-code registry. A LEAF that requires nothing here, so this file stays
-// one; the two failures below are tagged in the log rather than audited, because
-// `audit.js` is a heavier require than a leaf gate should carry.
+// The error-code registry. A LEAF that requires nothing here, so this file
+// stays one; the two failures below are tagged in the log rather than audited,
+// because `audit.js` is a heavier require than a leaf gate should carry.
 const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
@@ -169,7 +170,9 @@ function setDecider(fn) {
     log.error(errorCodes.tag('STS-XACML-0050') +
               'access_gate: setDecider() was given something that is not a ' +
               'function, so it was refused. Every access decision will be ' +
-              'ALLOWED, which is what a process without the XACML family does.');
+              'ALLOWED, which is what a process without the XACML family ' +
+              'does.');
+    log.debug("Leaving setDecider().");
     return false;
   }
   decider = fn;
@@ -178,10 +181,14 @@ function setDecider(fn) {
 }
 
 function deciderInstalled() {
+  log.debug("Entering deciderInstalled().");
+  log.debug("Leaving deciderInstalled().");
   return !!decider;
 }
 
 function allow(why) {
+  log.debug("Entering allow().");
+  log.debug("Leaving allow().");
   return { allowed: true, decision: 'NotApplicable', why: why, policy: null };
 }
 
@@ -207,6 +214,7 @@ function allow(why) {
 // caller branches on and the rest is what it logs or shows.
 // ---------------------------------------------------------------------------
 function check(request) {
+  log.debug("Entering check().");
   const asked = request || {};
   log.debug('Entering check(). resource=' + asked.resource +
             ', action=' + asked.action);
@@ -228,6 +236,7 @@ function check(request) {
              (asked.resource ? 'no action' : 'no resource') +
              ', so it was allowed. That is a defect at the call site rather ' +
              'than a decision.');
+    log.debug("Leaving check().");
     return allow('The check named no resource or no action.');
   }
   let answer;
@@ -236,9 +245,10 @@ function check(request) {
   } catch (error) {
     // See the header: a THROW is a defect, not a Deny.
     log.error(errorCodes.tag('STS-XACML-0051') +
-              'access_gate: the decider threw and access was ALLOWED; this is ' +
-              'a defect in the embedded PEP rather than a decision. ' +
+              'access_gate: the decider threw and access was ALLOWED; this ' +
+              'is a defect in the embedded PEP rather than a decision. ' +
               error.message);
+    log.debug("Leaving check().");
     return allow('The embedded PEP threw, which is a defect rather than a ' +
                  'decision: ' + error.message);
   }

@@ -34,12 +34,20 @@ const websecurity = require('../common/websecurity');
 const credentials = require('../common/credentials');
 const xacml = require('../xacml/xacml');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'scan_and_rate_limits',
+  level: process.env.LOG_LEVEL || 'info' });
+
 function withSettings(pairs, fn) {
+  log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
   try {
     keys.forEach(function (key) {
       config.setOverride(key, String(pairs[key]));
     });
+    log.debug("Leaving withSettings().");
     return fn();
   } finally {
     keys.forEach(function (key) {
@@ -49,10 +57,13 @@ function withSettings(pairs, fn) {
 }
 
 function fromAddress(address) {
+  log.debug("Entering fromAddress().");
+  log.debug("Leaving fromAddress().");
   return { headers: {}, socket: { remoteAddress: address } };
 }
 
 function run(t) {
+  log.debug("Entering run().");
   websecurity.reset();
 
   // -----------------------------------------------------------------------
@@ -68,10 +79,11 @@ function run(t) {
           'and the third is refused by the IDENTITY bucket, at its own number',
           JSON.stringify(third));
   t.check(websecurity.attempt(what, fromAddress(office), 'ben', limits).ok,
-          'while somebody else behind the SAME address is not — which a single ' +
-          'number for both buckets could not say without being five for a ' +
-          'whole office');
-  const bucketed = websecurity.attempt(what, fromAddress(office), 'cat', limits);
+          'while somebody else behind the SAME address is not — which a ' +
+          'single number for both buckets could not say without being five ' +
+          'for a whole office');
+  const bucketed = websecurity.attempt(what, fromAddress(office), 'cat',
+                                       limits);
   t.check(!bucketed.ok && bucketed.kind === 'address' && bucketed.limit === 4,
           'and the address bucket refuses at ITS number, counting everybody',
           JSON.stringify(bucketed));
@@ -96,9 +108,9 @@ function run(t) {
                                                  'portal.js'), 'utf8');
   t.check(/attempt\('portal-signing-key', req, username, \{\s*identity: config\.value\('pki\.personSelfServicePerIdentity'\),\s*address: config\.value\('pki\.personSelfServicePerAddress'\)/
             .test(portalSource),
-          'the portal\'s signing-key door passes the two settings rather than ' +
-          'the literal 5 — read as source, since reaching it means five RSA ' +
-          'key generations');
+          'the portal\'s signing-key door passes the two settings rather ' +
+          'than the literal 5 — read as source, since reaching it means five ' +
+          'RSA key generations');
   t.equal(config.value('pki.personSelfServicePerIdentity') + '/' +
           config.value('pki.personSelfServicePerAddress'), '5/5',
           'and both default to the five it was');
@@ -117,9 +129,9 @@ function run(t) {
   t.check(/const limit = scanLimit\(\);\s*const scanned = all\.slice\(0, limit\);/
             .test(portalSource) &&
           /config\.value\('portal\.applicationScanLimit'\)/.test(portalSource),
-          'the portal slices the registry at portal.applicationScanLimit — the ' +
-          'page needs a signed-in session and a registry past the cap to reach ' +
-          'over HTTP');
+          'the portal slices the registry at portal.applicationScanLimit — ' +
+          'the page needs a signed-in session and a registry past the cap to ' +
+          'reach over HTTP');
   t.check(/esc\(String\(found\.limit\)\)/.test(portalSource),
           'and the sentence that says it stopped prints the number in force ' +
           'rather than the constant');
@@ -128,13 +140,16 @@ function run(t) {
   t.log.info('=== 4. the PIP query\'s cap ===');
   t.equal(xacml.pipMaxDesignators(), 50, 'fifty designators by default');
   withSettings({ 'xacml.pipMaxDesignators': 3 }, function () {
-    t.equal(xacml.pipMaxDesignators(), 3, 'and xacml.pipMaxDesignators when set');
+    t.equal(xacml.pipMaxDesignators(), 3,
+            'and xacml.pipMaxDesignators when set');
   });
   const xacmlSource = fs.readFileSync(path.join(__dirname, '..', 'xacml',
                                                 'xacml.js'), 'utf8');
   t.check(/const most = pipMaxDesignators\(\);\s*if \(nodes\.length > most\)/
             .test(xacmlSource),
-          'and the query handler compares against it, not against the constant');
+          'and the query handler compares against it, not against the ' +
+          'constant');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

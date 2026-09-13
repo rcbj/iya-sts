@@ -64,6 +64,12 @@ const path = require('path');
 const pki = require('../common/pki');
 const tls = require('../tls/tls_server');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'worker_server_certificate',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // THE CHILD. It sets nothing itself, reports what the module answered, and
 // makes no assertion — every assertion is made in run() below, where a failure
@@ -83,6 +89,8 @@ const tls = require('../tls/tls_server');
 const MARKER = '#ANSWER#';
 
 function childSource() {
+  log.debug("Entering childSource().");
+  log.debug("Leaving childSource().");
   return [
     "'use strict';",
     'const tls = require(' +
@@ -128,6 +136,7 @@ function childSource() {
 }
 
 function runTheChild(env) {
+  log.debug("Entering runTheChild().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-worker-cert-'));
   const file = path.join(dir, 'child.js');
   fs.writeFileSync(file, childSource());
@@ -149,10 +158,12 @@ function runTheChild(env) {
       .filter(function (one) { return one.indexOf(MARKER) === 0; })
       .pop();
     if (!line) {
+      log.debug("Leaving runTheChild().");
       return { error: 'the child exited ' + run.status +
                       ' without answering. stderr: ' +
                       String(run.stderr || '').slice(-600) };
     }
+    log.debug("Leaving runTheChild().");
     return JSON.parse(line.slice(MARKER.length));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -160,6 +171,7 @@ function runTheChild(env) {
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== A. a process handed a certificate certifies nothing ===');
 
   await pki.start();
@@ -184,8 +196,8 @@ async function run(t) {
   await pki.certifyRegistered();
   const second = tls.serverCertificateBundle();
   t.check(second.certPem !== front.certPem && wasRoot !== second.anchorPem,
-          'a second bundle exists to hand over, from a hierarchy the first one ' +
-          'does not chain to');
+          'a second bundle exists to hand over, from a hierarchy the first ' +
+          'one does not chain to');
   env.STS_TEST_SECOND_BUNDLE = JSON.stringify(second);
   const child = runTheChild(env);
   t.check(!child.error, 'the handed-in process starts', child.error || '');
@@ -195,16 +207,17 @@ async function run(t) {
           'happens');
   t.equal(child.afterCert, front.certPem,
           '**AND `pki.start()` DOES NOT REPLACE IT.** This is the whole of ' +
-          'section A: that process built a Root of its own — it has to, every ' +
-          'process does — and certifying this record under it would put a ' +
-          'certificate no socket in this service presents where the one it ' +
-          'does present used to be');
+          'section A: that process built a Root of its own — it has to, ' +
+          'every process does — and certifying this record under it would ' +
+          'put a certificate no socket in this service presents where the ' +
+          'one it does present used to be');
   t.check(child.root && child.root !== child.afterAnchor,
           'and it HAS a Root of its own, which is what makes the line above ' +
           'an assertion rather than a description of a process with no PKI');
   t.equal(child.afterAnchor, front.trustAnchorPem,
-          'and it pins the anchor it was handed — the one that signs what the ' +
-          'socket presents, rather than the one its own hierarchy would answer');
+          'and it pins the anchor it was handed — the one that signs what ' +
+          'the socket presents, rather than the one its own hierarchy would ' +
+          'answer');
   t.check(child.reconciled === false,
           'and reconcileWithHierarchy() refuses there, because repairing a ' +
           'certificate it does not serve is the same mistake in the other ' +
@@ -224,15 +237,15 @@ async function run(t) {
           'hierarchy answers — which is the whole of what a worker gets this ' +
           'for');
   t.equal(child.adopted && child.adopted.chain, second.chainPem.length,
-          'and the chain, so what it reports is a bundle a client can build a ' +
-          'path through');
+          'and the chain, so what it reports is a bundle a client can build ' +
+          'a path through');
 
   t.log.info('=== B. and the process that DOES own it repairs itself ===');
 
   t.check(await tls.reconcileWithHierarchy() === false,
           'reconciling does nothing while the certificate still chains to ' +
-          'this service\'s Root — it is called on every hierarchy any process ' +
-          'publishes, so the ordinary case has to be free');
+          'this service\'s Root — it is called on every hierarchy any ' +
+          'process publishes, so the ordinary case has to be free');
 
   const rootBefore = pki.serviceRoot().certificatePem;
   // The leaf as it stands NOW, which is section A's second bundle rather than
@@ -240,21 +253,22 @@ async function run(t) {
   // asserting that section A did nothing.
   const serving = tls.serverCertificate().certPem;
   const replaced = await pki.buildRoot({ organisation: 'sts' });
-  t.check(replaced.ok, 'the Root is replaced underneath the listener, which is ' +
-          'what a build-root on another process leaves behind here',
+  t.check(replaced.ok, 'the Root is replaced underneath the listener, which ' +
+          'is what a build-root on another process leaves behind here',
           (replaced.errors || []).join(' '));
   const stale = tls.serverCertificate();
   t.equal(stale.certPem, serving,
-          'and the listener is untouched by it — that is the state, and it is ' +
-          'the one nothing could see');
+          'and the listener is untouched by it — that is the state, and it ' +
+          'is the one nothing could see');
   t.equal(stale.trustAnchorPem, '',
           'so no anchor is published at all, which is what a client fetching ' +
           '/tls/server-certificate meets: a bundle that terminates nowhere');
 
   t.check(await tls.reconcileWithHierarchy() === true,
-          '**AND RECONCILING RE-ISSUES IT.** The certificate is replaced under ' +
-          'the hierarchy this service now holds, in the process that owns the ' +
-          'socket, so what it presents and what it publishes agree again');
+          '**AND RECONCILING RE-ISSUES IT.** The certificate is replaced ' +
+          'under the hierarchy this service now holds, in the process that ' +
+          'owns the socket, so what it presents and what it publishes agree ' +
+          'again');
   const fixed = tls.serverCertificate();
   t.check(fixed.certPem !== stale.certPem, 'the leaf is new');
   t.check(!!fixed.trustAnchorPem, 'an anchor is published again');
@@ -281,10 +295,10 @@ async function run(t) {
           'build no path',
           String(bundle.chainPem.length));
   t.check(!Object.prototype.hasOwnProperty.call(bundle, 'privateKeyPem'),
-          '**AND NO PRIVATE KEY.** A worker pins and reports this certificate ' +
-          'and never presents it — the socket is the front process\'s — so ' +
-          'sending the key would be moving a private key between processes ' +
-          'for nothing');
+          '**AND NO PRIVATE KEY.** A worker pins and reports this ' +
+          'certificate and never presents it — the socket is the front ' +
+          'process\'s — so sending the key would be moving a private key ' +
+          'between processes for nothing');
 
   // ---------------------------------------------------------------------
   // PUT THE HIERARCHY BACK, for the reason pki_anchor_drift.js gives at
@@ -304,9 +318,10 @@ async function run(t) {
           'after it inherit a service whose branches chain to its Root',
           restored.join(' '));
   t.check(rootBefore !== pki.serviceRoot().certificatePem,
-          'the Root is still the one this file installed, which is the honest ' +
-          'report: what is restored is the BRANCHES under it and not the ' +
-          'Root, and nothing downstream depends on which Root it is');
+          'the Root is still the one this file installed, which is the ' +
+          'honest report: what is restored is the BRANCHES under it and not ' +
+          'the Root, and nothing downstream depends on which Root it is');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

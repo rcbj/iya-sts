@@ -7,15 +7,15 @@
 // AUTHORIZATION SERVER (2026-09-06).
 //
 // `/admin` and `/portal` used to authenticate by REDIRECTING STRAIGHT TO THE
-// SIGN-IN SCREEN: `authn.beginAuthentication()` stashed the interrupted request,
-// the screen took a name, and the session it minted was the one those surfaces
-// then read. That worked, and what was wrong with it is that **this service's
-// own two applications were the only applications in the process that did not
-// use the protocol this service exists to demonstrate.** An OpenID Connect
-// relying party does not read the provider's session store — it has no access
-// to one. It sends the person to the authorization endpoint, gets a code back
-// at a registered redirect URI, redeems it with a client credential, verifies
-// an ID Token and establishes a session of its OWN.
+// SIGN-IN SCREEN: `authn.beginAuthentication()` stashed the interrupted
+// request, the screen took a name, and the session it minted was the one those
+// surfaces then read. That worked, and what was wrong with it is that **this
+// service's own two applications were the only applications in the process that
+// did not use the protocol this service exists to demonstrate.** An OpenID
+// Connect relying party does not read the provider's session store — it has no
+// access to one. It sends the person to the authorization endpoint, gets a code
+// back at a registered redirect URI, redeems it with a client credential,
+// verifies an ID Token and establishes a session of its OWN.
 //
 // So they do that now, and this module is the client.
 //
@@ -35,14 +35,15 @@
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3): IT REGISTERS NOTHING.
 //
-// The two callback routes are registered by the two surfaces — `/admin/callback`
-// in `admin-ui/admin.js` and `/portal/callback` in `portal/portal.js` — and that
-// is deliberate rather than tidy. A route registered HERE would land wherever
-// this file was first required, which is a position decided by whoever edits an
-// import list; a route registered there lands where that surface's other routes
-// are, which is what `/admin/sts-metadata` walks and what the console's gate
-// applies to. It also keeps the one exemption that gate needs (its own callback)
-// in the file that has the gate in it.
+// The two callback routes are registered by the two surfaces —
+// `/admin/callback` in `admin-ui/admin.js` and `/portal/callback` in
+// `portal/portal.js` — and that is deliberate rather than tidy. A route
+// registered HERE would land wherever this file was first required, which is a
+// position decided by whoever edits an import list; a route registered there
+// lands where that surface's other routes are, which is what
+// `/admin/sts-metadata` walks and what the console's gate applies to. It also
+// keeps the one exemption that gate needs (its own callback) in the file that
+// has the gate in it.
 //
 // It requires `authn.js`, which is loaded at 8 — long before either surface —
 // so requiring it here is a cache hit and cannot move a route.
@@ -68,11 +69,11 @@
 //
 // **IT IS AN HTTP REQUEST RATHER THAN A FUNCTION CALL ON PURPOSE.** Redeeming
 // the code in process would be a client that skips client authentication, skips
-// PKCE verification, writes no audit row at the token endpoint, mints nothing on
-// `/admin/tokens` and proves nothing about the flow. The whole value of moving
-// these surfaces onto the code flow is that the flow is REALLY RUN, and a
-// back channel that was a function call would be the half of it that only looked
-// run.
+// PKCE verification, writes no audit row at the token endpoint, mints nothing
+// on `/admin/tokens` and proves nothing about the flow. The whole value of
+// moving these surfaces onto the code flow is that the flow is REALLY RUN, and
+// a back channel that was a function call would be the half of it that only
+// looked run.
 //
 // Four things bound it, and each is `federation_http.js`'s rule made again:
 //
@@ -90,8 +91,8 @@
 //     — which is not the issuer the authorization endpoint advertised to the
 //     browser, so the RP would have to accept an issuer it should refuse.
 //   * **TLS IS VERIFIED AGAINST THIS SERVICE'S OWN CERTIFICATE**, passed as the
-//     trust anchor. The certificate is self-signed and generated at start, so it
-//     IS its own root; what is skipped is the HOSTNAME check, because the
+//     trust anchor. The certificate is self-signed and generated at start, so
+//     it IS its own root; what is skipped is the HOSTNAME check, because the
 //     certificate names the service and the connection names the loopback
 //     interface. Skipping the hostname while pinning the key is the stronger
 //     half of the two — it is the same argument `federation/CLAUDE.md` makes
@@ -107,21 +108,25 @@
 // WHAT IT DELIBERATELY DOES NOT DO.
 //
 //   * **No discovery document is fetched.** An RP normally learns the endpoints
-//     from `/.well-known/openid-configuration`, and this one already knows them:
-//     it is inside the service that serves them. Fetching it would mean reading
-//     back three paths this file could not be wrong about, and then REBASING
-//     every absolute URL in it onto the loopback address — because that document
-//     advertises the address a BROWSER uses. That is more moving parts for no
-//     check.
-//   * **No refresh token is kept.** The tokens buy exactly one thing here: an ID
-//     Token that says who signed in. Keeping a refresh token would mean this
-//     service holding a credential for itself, refreshing a session nobody is
-//     using, and having somewhere to keep it — which is a store, and the wrong
-//     one.
-//   * **The access token is discarded too.** These surfaces read the directory
-//     directly; there is no resource server to present one to. It is still
-//     ISSUED, and appears on `/admin/tokens` like any other, because that is
-//     what the authorization code grant does.
+//     from `/.well-known/openid-configuration`, and this one already knows
+//     them: it is inside the service that serves them. Fetching it would mean
+//     reading back three paths this file could not be wrong about, and then
+//     REBASING every absolute URL in it onto the loopback address — because
+//     that document advertises the address a BROWSER uses. That is more moving
+//     parts for no check.
+//   * **It presents the access token to nobody.** These surfaces read the
+//     directory directly; there is no resource server to present one to.
+//
+// **TWO BULLETS HERE SAID "NO REFRESH TOKEN IS KEPT" AND "THE ACCESS TOKEN IS
+// DISCARDED TOO" UNTIL 2026-09-12, AND THE FIRST WAS THE DEFECT.** Its argument
+// was that a refresh token would be this service refreshing a session nobody is
+// using, kept in a store that is the wrong one. What it cost is the thing a
+// relying party exists to avoid: an operator working in the console was sent
+// back through the sign-in screen, off the page they were on, the moment the
+// hour ran out. Both halves of the argument are answered in section 4 below —
+// a renewal happens only on a request somebody made, so nothing is refreshed
+// for nobody, and the tokens live on the relying-party session itself, which
+// is the store the session already is rather than a second one.
 // ===========================================================================
 
 const https = require('https');
@@ -148,9 +153,11 @@ const authn = require('../authn/authn');
 const errorCodes = require('./error_codes');
 
 function coded(code, answer, res) {
+  log.debug("Entering coded().");
   if (res) {
     errorCodes.mark(res, code);
   }
+  log.debug("Leaving coded().");
   return errorCodes.mark(answer, code);
 }
 
@@ -160,26 +167,27 @@ function coded(code, answer, res) {
 // `clientId` is the identifier of the entry `applications.js` seeds under
 // `ou=applications` — this file does not create it and must not: that container
 // IS the registry, and a client this module invented would be a second answer
-// to what a client is. If the entry is gone, the flow REFUSES and says so, which
-// is what makes "an operator who deleted one of these meant it" a sentence with
-// an observable consequence.
+// to what a client is. If the entry is gone, the flow REFUSES and says so,
+// which is what makes "an operator who deleted one of these meant it" a
+// sentence with an observable consequence.
 //
 // `cookie` is the surface's own session cookie and is never `authn.js`'s. Two
 // surfaces, two cookies: signing in to the portal does not sign anybody in to
-// the console, which is what makes them two applications rather than one wearing
-// two paths.
+// the console, which is what makes them two applications rather than one
+// wearing two paths.
 //
 // **A SURFACE HAS TWO REALMS AND THEY ARE NOT THE SAME QUESTION (2026-09-11).**
-// It had one — `realm`, meaning both — and that one answer is what stopped these
-// two surfaces from sharing a sign-on session anywhere but the default realm.
+// It had one — `realm`, meaning both — and that one answer is what stopped
+// these two surfaces from sharing a sign-on session anywhere but the default
+// realm.
 //
 // `flowRealm` is where the AUTHORIZATION CODE FLOW runs: which
 // `/oauth2/authorize` the browser is sent to, which `/oauth2/token` the code is
 // redeemed at, and therefore **which realm's sign-on session the authorization
-// endpoint is able to answer out of**. It is `ambient` for both, because that is
-// the whole of single sign-on between them: a person who signed in at
-// `/realm/acme/portal` and then opens `/realm/acme/admin` is answered out of the
-// session they already have, and the sign-in screen is never reached. The
+// endpoint is able to answer out of**. It is `ambient` for both, because that
+// is the whole of single sign-on between them: a person who signed in at
+// `/realm/acme/portal` and then opens `/realm/acme/admin` is answered out of
+// the session they already have, and the sign-in screen is never reached. The
 // console's used to be `default` wherever it was reached, which meant the two
 // surfaces authenticated against two different partitions of `authn.js`'s
 // session store and neither endpoint could see the other's — two sign-ins, in
@@ -229,15 +237,15 @@ const AUTHORIZE_PATH = '/oauth2/authorize';
 const TOKEN_PATH = '/oauth2/token';
 const JWKS_PATH = '/oauth2/jwks';
 
-// A flow in progress, per realm, keyed by `state`. `federation_sp.js`'s decision
-// 3 exactly: the partner — here, the browser — carries an opaque handle and
-// every fact about the request stays on this side. The `returnTo` in particular
-// must never ride in a parameter, because a return address a caller can write is
-// an open redirect operated by whoever can forge a state.
+// A flow in progress, per realm, keyed by `state`. `federation_sp.js`'s
+// decision 3 exactly: the partner — here, the browser — carries an opaque
+// handle and every fact about the request stays on this side. The `returnTo` in
+// particular must never ride in a parameter, because a return address a caller
+// can write is an open redirect operated by whoever can forge a state.
 const flows = realms.map({ persist: 'oidc_rp.flows' });
 // In flight at once, per realm rather than per process, for the reason
-// `federation_sp.js` gives about a shared cap: one realm's flood would otherwise
-// evict another realm's in-flight sign-ins. `oidcRp.maxFlows` since
+// `federation_sp.js` gives about a shared cap: one realm's flood would
+// otherwise evict another realm's in-flight sign-ins. `oidcRp.maxFlows` since
 // 2026-09-12; this is its default.
 const MAX_FLOWS = 200;
 // How long somebody has to get through the sign-in screen. It is the
@@ -261,24 +269,34 @@ const MAX_REDIRECT_URIS = 20;
 
 // A positive-integer setting, or its default where the store holds none.
 function positiveSetting(key, fallback) {
+  log.debug("Entering positiveSetting().");
   const n = Number(config.value(key));
+  log.debug("Leaving positiveSetting().");
   return isFinite(n) && n > 0 ? Math.floor(n) : fallback;
 }
 
 function maxFlows() {
+  log.debug("Entering maxFlows().");
+  log.debug("Leaving maxFlows().");
   return positiveSetting('oidcRp.maxFlows', MAX_FLOWS);
 }
 
 function flowTtlMs() {
+  log.debug("Entering flowTtlMs().");
+  log.debug("Leaving flowTtlMs().");
   return positiveSetting('authn.pendingTtlS', FLOW_TTL_MS / 1000) * 1000;
 }
 
 function backChannelTimeoutMs() {
+  log.debug("Entering backChannelTimeoutMs().");
+  log.debug("Leaving backChannelTimeoutMs().");
   return positiveSetting('oidcRp.backChannelTimeoutS',
                          BACK_CHANNEL_TIMEOUT_MS / 1000) * 1000;
 }
 
 function maxRedirectUris() {
+  log.debug("Entering maxRedirectUris().");
+  log.debug("Leaving maxRedirectUris().");
   return positiveSetting('oidcRp.maxRedirectUris', MAX_REDIRECT_URIS);
 }
 
@@ -289,23 +307,28 @@ function maxRedirectUris() {
 // `undefined`.
 // ---------------------------------------------------------------------------
 function surfaceOf(id) {
+  log.debug("Entering surfaceOf().");
   const surface = SURFACES[String(id)];
   if (!surface) {
     throw new Error('oidc_rp: there is no surface called "' + id + '". The ' +
                     'surfaces are ' + Object.keys(SURFACES).join(', ') + '.');
   }
+  log.debug("Leaving surfaceOf().");
   return surface;
 }
 
 // Run `fn` in the realm this surface's CODE FLOW belongs to — the authorization
 // request, the token request, the JWKS fetch and the flow record that joins
-// them. Both surfaces answer `ambient` today; the branch stays because the field
-// is what makes the decision readable, and a surface added later may want the
-// other answer.
+// them. Both surfaces answer `ambient` today; the branch stays because the
+// field is what makes the decision readable, and a surface added later may want
+// the other answer.
 function inFlowRealm(surface, fn) {
+  log.debug("Entering inFlowRealm().");
   if (surface.flowRealm === 'default') {
+    log.debug("Leaving inFlowRealm().");
     return realms.run(realms.DEFAULT_REALM, fn);
   }
+  log.debug("Leaving inFlowRealm().");
   return fn();
 }
 
@@ -314,45 +337,59 @@ function inFlowRealm(surface, fn) {
 // from every realm; the portal's is the realm it was reached in, because a
 // person in `acme` is a different person from the one in the default realm.
 function inSessionRealm(surface, fn) {
+  log.debug("Entering inSessionRealm().");
   if (surface.sessionRealm === 'default') {
+    log.debug("Leaving inSessionRealm().");
     return realms.run(realms.DEFAULT_REALM, fn);
   }
+  log.debug("Leaving inSessionRealm().");
   return fn();
 }
 
-// The id of that realm, for the readers that take one rather than running in it.
+// The id of that realm, for the readers that take one rather than running in
+// it.
 function sessionRealmIdOf(surface) {
-  return surface.sessionRealm === 'default' ? realms.DEFAULT_ID : realms.currentId();
+  log.debug("Entering sessionRealmIdOf().");
+  log.debug("Leaving sessionRealmIdOf().");
+  return surface.sessionRealm === 'default' ? realms.DEFAULT_ID :
+         realms.currentId();
 }
 
 // ---------------------------------------------------------------------------
 // THE ADDRESSES.
 //
 // `publicBaseOf()` is what the BROWSER is sent to and what goes in the redirect
-// URI. `loopbackOrigin()` is where this process dials itself. They are different
-// strings on purpose and the difference is the whole of the back channel's
-// design — see the header.
+// URI. `loopbackOrigin()` is where this process dials itself. They are
+// different strings on purpose and the difference is the whole of the back
+// channel's design — see the header.
 // ---------------------------------------------------------------------------
 function publicBaseOf(req) {
+  log.debug("Entering publicBaseOf().");
+  log.debug("Leaving publicBaseOf().");
   return baseUrlOf(req);
 }
 
 function loopbackOrigin() {
+  log.debug("Entering loopbackOrigin().");
   const scheme = config.value('global.https') ? 'https' : 'http';
+  log.debug("Leaving loopbackOrigin().");
   // An ADDRESS rather than `localhost`, which resolves to ::1 first on some
   // hosts while this service binds 0.0.0.0 — a connection refused on a name
   // that pings, which is among the least obvious failures available. Which
   // address is `helpers.loopbackHost()`'s answer about the interface this
   // service is bound to; `hostForUrl()` brackets it when it is IPv6.
-  return scheme + '://' + helpers.hostForUrl(helpers.loopbackHost()) + ':' + PORT;
+  return scheme + '://' + helpers.hostForUrl(helpers.loopbackHost()) + ':' +
+         PORT;
 }
 
 // The Host header the loopback request carries: the authority the browser used,
-// so that `issuerOf()` builds the issuer the browser was told about. It is taken
-// from the public base rather than from `req.headers.host` directly because the
-// public base has already been through `forwardedFrom()`, which is where
-// `global.trustProxy` is honoured.
+// so that `issuerOf()` builds the issuer the browser was told about. It is
+// taken from the public base rather than from `req.headers.host` directly
+// because the public base has already been through `forwardedFrom()`, which is
+// where `global.trustProxy` is honoured.
 function hostHeaderFrom(publicBase) {
+  log.debug("Entering hostHeaderFrom().");
+  log.debug("Leaving hostHeaderFrom().");
   return String(publicBase).replace(/^https?:\/\//i, '').split('/')[0];
 }
 
@@ -463,12 +500,13 @@ function ensureRedirectUri(surface, client, uri) {
   if (!mode.acceptsUnregisteredAddresses() &&
       [].concat(client.unconfirmed_redirect_uris || []).indexOf(uri) >= 0) {
     const why = uri + ' is on the oauthRedirectUri of "' + surface.clientId +
-                '", but this service LEARNT it from a request while the realm ' +
-                'was in development mode and nobody has confirmed it, so in ' +
-                'product mode it is not a registered redirect URI. Confirm it ' +
-                'on that application\'s page under /admin/applications, or ' +
-                'with POST /admin-api/applications/confirm-address, if people ' +
-                'really reach this service at that address.';
+                '", but this service LEARNT it from a request while the ' +
+                'realm was in development mode and nobody has confirmed it, ' +
+                'so in product mode it is not a registered redirect URI. ' +
+                'Confirm it on that application\'s page under ' +
+                '/admin/applications, or with POST ' +
+                '/admin-api/applications/confirm-address, if people really ' +
+                'reach this service at that address.';
     log.warn('oidc_rp: the ' + surface.label + ' refused to start a sign-in. ' +
              why);
     log.debug('Leaving ensureRedirectUri(). Refused: still marked observed.');
@@ -476,17 +514,18 @@ function ensureRedirectUri(surface, client, uri) {
   }
   if (!mode.acceptsUnregisteredAddresses()) {
     const why = 'this service is being reached at an address that is not a ' +
-                'redirect URI of "' + surface.clientId + '" (' + uri + '), and ' +
-                'in product mode that entry is not taught new addresses by ' +
-                'the requests that arrive at them — an invented Host header ' +
-                'would otherwise plant a callback on this service\'s own ' +
-                'client. ' +
+                'redirect URI of "' + surface.clientId + '" (' + uri + '), ' +
+                'and in product mode that entry is not taught new addresses ' +
+                'by the requests that arrive at them — an invented Host ' +
+                'header would otherwise plant a callback on this service\'s ' +
+                'own client. ' +
                 (pinned
                   ? 'global.publicBaseUrl is set, so add ' + uri + ' to that ' +
                     'entry\'s oauthRedirectUri on /admin/applications or ' +
                     'through POST /admin-api/applications/add.'
-                  : 'Set global.publicBaseUrl to the address people reach this ' +
-                    'service at, and register its ' + surface.callbackPath +
+                  : 'Set global.publicBaseUrl to the address people reach ' +
+                    'this service at, and register ' +
+                    'its ' + surface.callbackPath +
                     ' on that entry\'s oauthRedirectUri.');
     log.warn('oidc_rp: the ' + surface.label + ' refused to start a sign-in. ' +
              why);
@@ -495,21 +534,22 @@ function ensureRedirectUri(surface, client, uri) {
   }
   if (pinned) {
     log.info('oidc_rp: "' + surface.clientId + '" does not carry the pinned ' +
-             'callback ' + uri + '. It is used without being written, because ' +
-             'global.publicBaseUrl is set and a pinned address is never ' +
-             'learnt; register it on the entry if oauth2.rfc9700 is on, where ' +
-             'a redirect URI is matched by exact string.');
+             'callback ' + uri + '. It is used without being written, ' +
+             'because global.publicBaseUrl is set and a pinned address is ' +
+             'never learnt; register it on the entry if oauth2.rfc9700 is ' +
+             'on, where a redirect URI is matched by exact string.');
     log.debug('Leaving ensureRedirectUri(). Pinned; not learnt.');
     return { ok: true, learnt: false };
   }
   const cap = maxRedirectUris();
   if (held.length >= cap) {
     log.warn('oidc_rp: "' + surface.clientId + '" already carries ' +
-             held.length + ' redirect URI(s), the most oidcRp.maxRedirectUris ' +
-             'allows (' + cap + '), so ' + uri + ' was NOT added. The sign-in ' +
-             'goes ahead; it will be refused only where oauth2.rfc9700 matches ' +
-             'redirect URIs by exact string. Set global.publicBaseUrl rather ' +
-             'than raising the cap.');
+             held.length + ' redirect URI(s), the most ' +
+             'oidcRp.maxRedirectUris allows ' +
+             '(' + cap + '), so ' + uri + ' was NOT added. The ' +
+             'sign-in goes ahead; it will be refused only where ' +
+             'oauth2.rfc9700 matches redirect URIs by exact string. Set ' +
+             'global.publicBaseUrl rather than raising the cap.');
     log.debug('Leaving ensureRedirectUri(). At the cap.');
     return { ok: true, learnt: false, capped: true };
   }
@@ -546,9 +586,10 @@ function ensureRedirectUri(surface, client, uri) {
     log.debug('Leaving ensureRedirectUri(). The write was refused.');
     return { ok: true, learnt: false };
   }
-  log.info('oidc_rp: "' + surface.clientId + '" learnt the redirect URI ' + uri +
-           '. This service is being reached at an address the seeded entry did ' +
-           'not name, which is the ordinary case behind a proxy or in a ' +
+  log.info('oidc_rp: "' + surface.clientId + '" learnt the redirect URI ' +
+           uri +
+           '. This service is being reached at an address the seeded entry ' +
+           'did not name, which is the ordinary case behind a proxy or in a ' +
            'container. It is ADDED rather than replacing what was there. ' +
            'Development mode only; set global.publicBaseUrl to stop it.');
   log.debug('Leaving ensureRedirectUri(). Added.');
@@ -561,8 +602,12 @@ function ensureRedirectUri(surface, client, uri) {
 // not sending PKCE is a flag that stops.
 // ---------------------------------------------------------------------------
 function pkcePair() {
+  log.debug("Entering pkcePair().");
   const verifier = nodeCrypto.randomBytes(32).toString('base64url');
-  const challenge = nodeCrypto.createHash('sha256').update(verifier).digest('base64url');
+  const challenge = nodeCrypto.createHash('sha256')
+                              .update(verifier)
+                              .digest('base64url');
+  log.debug("Leaving pkcePair().");
   return { verifier: verifier, challenge: challenge };
 }
 
@@ -572,13 +617,16 @@ function pkcePair() {
 // the check catches a caller's bug and the storage catches an attacker.
 // ---------------------------------------------------------------------------
 function safeReturnTo(value, fallback) {
+  log.debug("Entering safeReturnTo().");
   const wanted = String(value || '');
   // A single-slash-rooted path with no whitespace and no scheme. `//host` is
   // refused rather than corrected, because it is the shape an open redirect
   // takes and correcting it would teach a caller that it works.
   if (/^\/(?!\/)[^\s]*$/.test(wanted)) {
+    log.debug("Leaving safeReturnTo().");
     return wanted;
   }
+  log.debug("Leaving safeReturnTo().");
   return fallback;
 }
 
@@ -591,28 +639,32 @@ function safeReturnTo(value, fallback) {
 // differently by accident: the console passes `req.originalUrl`, which still
 // carries the prefix, and the portal passes the CONSTANT `/portal`. So a person
 // signing in at `/realm/acme/portal` completed the flow in acme, was handed a
-// session in acme, and was then redirected to the DEFAULT realm's portal — which
-// correctly has no session for them, and asks them to sign in again. The
+// session in acme, and was then redirected to the DEFAULT realm's portal —
+// which correctly has no session for them, and asks them to sign in again. The
 // symptom is a sign-in that works and then immediately asks again, with nothing
 // in the flow having failed.
 //
 // It is fixed HERE rather than at the seven `requireSignIn()` call sites,
 // because a prefix somebody has to remember to add is a prefix that will be
 // missing from the eighth. It is IDEMPOTENT for the same reason — the console's
-// address already carries the prefix, and a caller should not have to know which
-// kind it is holding.
+// address already carries the prefix, and a caller should not have to know
+// which kind it is holding.
 //
 // The default realm's prefix is empty, so this is inert there: the bytes of
 // every redirect in a service with no realms defined are untouched.
 // ---------------------------------------------------------------------------
 function inThisRealm(path) {
+  log.debug("Entering inThisRealm().");
   const prefix = realms.currentPrefix();
   if (!prefix) {
+    log.debug("Leaving inThisRealm().");
     return path;
   }
   if (path === prefix || path.indexOf(prefix + '/') === 0) {
+    log.debug("Leaving inThisRealm().");
     return path;
   }
+  log.debug("Leaving inThisRealm().");
   return prefix + path;
 }
 
@@ -624,6 +676,7 @@ function inThisRealm(path) {
 // ---------------------------------------------------------------------------
 function backChannel(options) {
   log.debug('Entering backChannel(). ' + options.method + ' ' + options.path);
+  log.debug("Leaving backChannel().");
   return new Promise(function (resolve) {
     const useHttps = config.value('global.https');
     // THE LAZY REQUIRE. See the header: at the top of this file it would move
@@ -640,12 +693,14 @@ function backChannel(options) {
         // connection. `trustAnchorPems()` answers the Root while there is
         // one and the self-signed certificate while there is not, so this
         // call site does not have to know which.
-        anchor = require('../tls/tls_server').serverCertificate().trustAnchorPem;
+        anchor =
+            require('../tls/tls_server').serverCertificate().trustAnchorPem;
       } catch (e) {
         log.debug('Leaving backChannel(). No server certificate: ' + e.message);
         resolve(coded('STS-AUTHN-0116', { ok: false,
-                  why: 'this service could not read its own TLS certificate to ' +
-                       'verify the loopback connection against: ' + e.message }));
+                  why: 'this service could not read its own TLS certificate ' +
+                       'to verify the loopback connection ' +
+                       'against: ' + e.message }));
         return;
       }
     }
@@ -695,12 +750,13 @@ function backChannel(options) {
       method: options.method,
       path: options.path,
       headers: headers,
-      // THE PIN. Our own certificate as the trust anchor — it is self-signed, so
-      // it is its own root — and the hostname check skipped, because the
+      // THE PIN. Our own certificate as the trust anchor — it is self-signed,
+      // so it is its own root — and the hostname check skipped, because the
       // certificate names this service and the connection names the loopback
       // interface. Pinning the key is the stronger half of the two.
       ca: anchor ? [anchor] : undefined,
-      checkServerIdentity: useHttps ? function () { return undefined; } : undefined
+      checkServerIdentity: useHttps ? function () { return undefined; } :
+                           undefined
     }, function (response) {
       // NO REDIRECT IS FOLLOWED. See the header: a 302 here would hand the
       // Basic credential to whatever Location said.
@@ -708,8 +764,8 @@ function backChannel(options) {
         response.resume();
         resolve(coded('STS-AUTHN-0117', { ok: false,
                   why: 'the token endpoint answered ' + response.statusCode +
-                       ' with a redirect, which this client does not follow — ' +
-                       'a redirect from a credentialed request is how the ' +
+                       ' with a redirect, which this client does not follow ' +
+                       '— a redirect from a credentialed request is how the ' +
                        'credential ends up somewhere else' }));
         return;
       }
@@ -728,7 +784,8 @@ function backChannel(options) {
       });
       response.on('end', function () {
         if (over) {
-          resolve(coded('STS-AUTHN-0118', { ok: false, why: 'the answer was larger than ' +
+          resolve(coded('STS-AUTHN-0118', { ok: false, why: 'the answer was ' +
+              'larger than ' +
                                     MAX_BODY_BYTES + ' bytes' }));
           return;
         }
@@ -736,6 +793,8 @@ function backChannel(options) {
         try {
           json = JSON.parse(text);
         } catch (e) {
+          log.debug("Caught in a callback in backChannel(): " +
+                    ((e && e.message) || e));
           // Not JSON; the raw text is what gets reported, because an HTML error
           // page from a door that answers JSON is the interesting case.
           json = null;
@@ -778,6 +837,8 @@ function backChannel(options) {
 // rather than from the token, which is the classic JWT forgery.
 // ---------------------------------------------------------------------------
 function jsonFromB64u(part) {
+  log.debug("Entering jsonFromB64u().");
+  log.debug("Leaving jsonFromB64u().");
   return JSON.parse(Buffer.from(String(part), 'base64url').toString('utf8'));
 }
 
@@ -788,12 +849,17 @@ function verifyIdToken(token, keys, expected) {
     header = jsonFromB64u(String(token).split('.')[0]);
   } catch (e) {
     log.debug('Leaving verifyIdToken(). The header will not decode.');
-    return coded('STS-AUTHN-0129', { ok: false, why: 'its header is not base64url JSON: ' + e.message });
+    return coded('STS-AUTHN-0129', { ok: false, why: 'its header is not ' +
+                                                     'base64url ' +
+                                                     'JSON: ' + e.message });
   }
   if (!header || !header.alg) {
-    return coded('STS-AUTHN-0130', { ok: false, why: 'it has no alg in its header' });
+    log.debug("Leaving verifyIdToken().");
+    return coded('STS-AUTHN-0130', { ok: false, why: 'it has no alg in its ' +
+                                                     'header' });
   }
   if (String(header.alg).toLowerCase() === 'none') {
+    log.debug("Leaving verifyIdToken().");
     return coded('STS-AUTHN-0131', { ok: false,
              why: 'its header says alg=none, which is an unsigned token ' +
                   'presented as a signed one' });
@@ -806,6 +872,7 @@ function verifyIdToken(token, keys, expected) {
     return true;
   });
   if (!candidates.length) {
+    log.debug("Leaving verifyIdToken().");
     return coded('STS-AUTHN-0132', { ok: false,
              why: kid
                ? 'its header names kid "' + kid + '" and ' + JWKS_PATH +
@@ -835,7 +902,15 @@ function verifyIdToken(token, keys, expected) {
       // handover. `oauth2_bcp.js` records it as unenforceable on the ISSUING
       // side because nothing there can observe a client doing it; here this
       // service IS the client, so it does it.
-      if (String(payload.nonce || '') !== String(expected.nonce)) {
+      //
+      // `expected.nonce === null` is a RENEWAL (2026-09-12): OpenID Connect
+      // Core section 12.2 says an ID Token from a refresh response SHOULD NOT
+      // carry a nonce, because no authorization request sent one — so there is
+      // nothing to compare, and what binds that token to this session instead
+      // is `checkRenewedClaims()`: the same issuer, the same subject and the
+      // same authentication time.
+      if (expected.nonce !== null &&
+          String(payload.nonce || '') !== String(expected.nonce)) {
         log.debug('Leaving verifyIdToken(). The nonce does not match.');
         return coded('STS-AUTHN-0134', { ok: false,
                  why: 'its nonce is not the one this sign-in sent, which is ' +
@@ -850,7 +925,121 @@ function verifyIdToken(token, keys, expected) {
     }
   }
   log.debug('Leaving verifyIdToken(). Nothing verified it: ' + lastWhy);
-  return coded('STS-AUTHN-0133', { ok: false, why: lastWhy || 'no published key verified it' });
+  return coded('STS-AUTHN-0133', { ok: false, why: lastWhy || 'no published ' +
+      'key verified it' });
+}
+
+// ---------------------------------------------------------------------------
+// CLIENT AUTHENTICATION AT THE TOKEN ENDPOINT, for both grants this client
+// makes — the code redemption and the renewal. `client_secret_basic` is what
+// the entry's own `token_endpoint_auth_method` says, read off the registration
+// rather than assumed, so an operator who changes it there gets a client that
+// says so rather than one that silently keeps using Basic. Adds the POST
+// members to `form` where the method puts the secret in the body, and answers
+// the headers to send.
+// ---------------------------------------------------------------------------
+function clientAuthentication(surface, client, form) {
+  log.debug("Entering clientAuthentication().");
+  const method = String(client.token_endpoint_auth_method ||
+                        'client_secret_basic');
+  const headers = {};
+  if (method === 'client_secret_post') {
+    form.set('client_id', surface.clientId);
+    form.set('client_secret', client.client_secret);
+  } else {
+    headers.authorization = 'Basic ' + Buffer.from(
+      encodeURIComponent(surface.clientId) + ':' +
+      encodeURIComponent(client.client_secret)).toString('base64');
+  }
+  log.debug("Leaving clientAuthentication(). method=" + method);
+  return headers;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THIS RELYING PARTY KEEPS OF A TOKEN RESPONSE (2026-09-12).
+//
+// The three tokens, the instants the access token and the ID Token run out,
+// and — from the ID Token, which is the only one this client can read — the
+// issuer, subject and authentication time a renewed ID Token must repeat.
+// `flowRealm` and `host` are how a renewal reaches the SAME authorization
+// server later: the realm whose token endpoint issued the refresh token (a
+// refresh token is encrypted to that realm's keys and opens nowhere else) and
+// the Host header the issuer was built from, so a renewal made while the
+// browser is reading another realm, or reached this service under another
+// name, still gets an ID Token from the issuer it started with.
+//
+// A token response WITHOUT a refresh token — the entry's grant types no longer
+// include `refresh_token` — keeps the rest, and a session holding no refresh
+// token is not renewed: it ends with its sign-on session, exactly as every
+// console session did before renewal existed.
+// ---------------------------------------------------------------------------
+function tokensFrom(json, claims, flowRealmId, host, previous) {
+  log.debug("Entering tokensFrom().");
+  const now = Date.now();
+  const kept = previous || {};
+  const expiresIn = Number(json.expires_in);
+  const tokens = {
+    accessToken: String(json.access_token || ''),
+    tokenType: String(json.token_type || 'Bearer'),
+    scope: String(json.scope || kept.scope || ''),
+    accessExpiresAt: isFinite(expiresIn) && expiresIn > 0
+      ? now + expiresIn * 1000
+      : (Number(claims && claims.exp) || 0) * 1000,
+    // A renewal that came back with no NEW refresh token keeps using the one
+    // it has: RFC 6749 section 6 makes a new one optional, and outside RFC
+    // 9700 mode the old one is still good.
+    refreshToken: String(json.refresh_token || kept.refreshToken || ''),
+    idToken: String(json.id_token || kept.idToken || ''),
+    // A renewal answered with NO ID Token (section 12.2 makes it optional)
+    // leaves the access token's expiry as the only clock: keeping the old ID
+    // Token's would make a renewal due on every request for ever.
+    idTokenExpiresAt: claims && claims.exp ? Number(claims.exp) * 1000 : 0,
+    issuer: String((claims && claims.iss) || kept.issuer || ''),
+    sub: String((claims && claims.sub) || kept.sub || ''),
+    authTime: Number(kept.authTime || (claims && claims.auth_time)) || 0,
+    flowRealm: String(flowRealmId || kept.flowRealm || realms.DEFAULT_ID),
+    host: String(host || kept.host || '')
+  };
+  log.debug("Leaving tokensFrom().");
+  return tokens;
+}
+
+// ---------------------------------------------------------------------------
+// A RENEWED ID TOKEN MUST DESCRIBE THE SAME SIGN-IN (OpenID Connect Core
+// section 12.2): the same `iss`, the same `sub`, and where both carry one, the
+// same `auth_time`. The signature, the audience and the expiry are
+// `verifyIdToken()`'s; these three are what make it THIS session's token
+// rather than a genuine token about somebody else. Pure, and exported for
+// `tests/oidc_rp_renewal.js`, because the case worth asserting — an
+// authorization server answering a refresh with a different person — is one
+// this service will not produce on demand.
+// ---------------------------------------------------------------------------
+function checkRenewedClaims(previous, claims) {
+  log.debug("Entering checkRenewedClaims().");
+  const was = previous || {};
+  const now = claims || {};
+  if (was.issuer && String(now.iss || '') !== was.issuer) {
+    log.debug("Leaving checkRenewedClaims(). The issuer moved.");
+    return { ok: false, why: 'the renewed ID Token was issued by "' +
+             String(now.iss || '') + '", and the sign-in\'s by "' + was.issuer +
+             '"' };
+  }
+  if (was.sub && String(now.sub || '') !== was.sub) {
+    log.debug("Leaving checkRenewedClaims(). The subject moved.");
+    return { ok: false, why: 'the renewed ID Token names subject "' +
+             String(now.sub || '') + '", and the sign-in named "' + was.sub +
+             '"' };
+  }
+  if (was.authTime && now.auth_time !== undefined &&
+      Number(now.auth_time) !== Number(was.authTime)) {
+    log.debug("Leaving checkRenewedClaims(). The authentication time moved.");
+    return { ok: false, why: 'the renewed ID Token says the person ' +
+             'authenticated ' +
+             'at ' + Number(now.auth_time) + ', and the sign-in said ' +
+             Number(was.authTime) + ' — a refresh is not an authentication' };
+  }
+  log.debug("Leaving checkRenewedClaims(). The same sign-in.");
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -864,6 +1053,7 @@ function beginSignIn(req, res, surfaceId, options) {
   log.debug('Entering beginSignIn(). surface=' + surfaceId);
   const surface = surfaceOf(surfaceId);
   const opts = options || {};
+  log.debug("Leaving beginSignIn().");
   return inFlowRealm(surface, function () {
     const found = clientOf(surface);
     if (!found.ok) {
@@ -880,7 +1070,8 @@ function beginSignIn(req, res, surfaceId, options) {
     if (!registered.ok) {
       log.debug('Leaving beginSignIn(). The address is not registered.');
       return coded(errorCodes.codeOf(registered) || 'STS-AUTHN-0114',
-                   { ok: false, why: registered.why, reason: 'unregistered-address' }, res);
+                   { ok: false, why: registered.why,
+                     reason: 'unregistered-address' }, res);
     }
 
     const store = flows;
@@ -898,9 +1089,9 @@ function beginSignIn(req, res, surfaceId, options) {
         }
       });
       if (oldestKey) {
-        log.warn('oidc_rp: ' + cap + ' sign-ins are in flight in this ' +
-                 'realm, so the oldest is being dropped. Somebody who was part ' +
-                 'way through will be sent round again.');
+        log.warn('oidc_rp: ' + cap + ' sign-ins are in flight in this realm, ' +
+                 'so the oldest is being dropped. Somebody who was part way ' +
+                 'through will be sent round again.');
         store.delete(oldestKey);
       }
     }
@@ -951,14 +1142,14 @@ function beginSignIn(req, res, surfaceId, options) {
 // 2. THE CALLBACK. Where the browser comes back with a code.
 //
 // Every refusal here is REPORTED and never redirected, which is
-// `federation_sp.js`'s decision 6 and its reason applies unchanged: the person's
-// sign-in has already succeeded at the authorization endpoint, so the only
-// interesting question is what THIS side disliked about the answer — and that is
-// unanswerable from a redirect that has thrown the detail away.
+// `federation_sp.js`'s decision 6 and its reason applies unchanged: the
+// person's sign-in has already succeeded at the authorization endpoint, so the
+// only interesting question is what THIS side disliked about the answer — and
+// that is unanswerable from a redirect that has thrown the detail away.
 //
-// It returns `{ ok, session, returnTo, why }`. The caller draws its own refusal,
-// because the console's shell and the portal's are different applications and a
-// page drawn here would belong to neither.
+// It returns `{ ok, session, returnTo, why }`. The caller draws its own
+// refusal, because the console's shell and the portal's are different
+// applications and a page drawn here would belong to neither.
 // ---------------------------------------------------------------------------
 async function handleCallback(req, res, surfaceId) {
   log.debug('Entering handleCallback(). surface=' + surfaceId);
@@ -972,10 +1163,12 @@ async function handleCallback(req, res, surfaceId) {
   if (query.error) {
     const why = 'the authorization endpoint refused the request: ' +
                 String(query.error) +
-                (query.error_description ? ' — ' + String(query.error_description) : '');
+                (query.error_description ?
+                 ' — ' + String(query.error_description) : '');
     log.info('oidc_rp: the ' + surface.label + ' sign-in was refused. ' + why);
     log.debug('Leaving handleCallback(). The AS refused.');
-    return coded('STS-AUTHN-0121', { ok: false, why: why, refusedByAs: true }, res);
+    return coded('STS-AUTHN-0121', { ok: false, why: why, refusedByAs: true },
+                 res);
   }
 
   const state = String(query.state || '');
@@ -988,6 +1181,7 @@ async function handleCallback(req, res, surfaceId) {
                   'browser here and not by being opened directly.' }, res);
   }
 
+  log.debug("Leaving handleCallback().");
   return inFlowRealm(surface, async function () {
     const flow = flows.get(state);
     // SPENT ON SIGHT, whatever happens next. A state is single use: the second
@@ -1001,7 +1195,8 @@ async function handleCallback(req, res, surfaceId) {
       return coded('STS-AUTHN-0123', { ok: false,
                why: 'this sign-in is not one this service started, or it has ' +
                     'already been completed, or it took longer than ' +
-                    Math.round(flowTtlMs() / 1000) + ' seconds. Start again.' }, res);
+                    Math.round(flowTtlMs() / 1000) + ' seconds. Start again.' },
+                   res);
     }
     if (flow.surface !== surface.id) {
       // The state belongs to the OTHER surface. Refused rather than honoured,
@@ -1010,13 +1205,15 @@ async function handleCallback(req, res, surfaceId) {
       log.warn('oidc_rp: a ' + flow.surface + ' state was presented at the ' +
                surface.id + ' callback. Refused.');
       return coded('STS-AUTHN-0124',
-                   { ok: false, why: 'this sign-in belongs to a different surface' }, res);
+                   { ok: false, why: 'this sign-in belongs to a different ' +
+                                     'surface' }, res);
     }
     const ttlMs = flowTtlMs();
     if (Date.now() - flow.startedAt > ttlMs) {
       log.debug('Leaving handleCallback(). The flow expired.');
       return coded('STS-AUTHN-0125', { ok: false,
-               why: 'this sign-in took longer than ' + Math.round(ttlMs / 1000) +
+               why: 'this sign-in took longer than ' +
+                    Math.round(ttlMs / 1000) +
                     ' seconds (authn.pendingTtlS) and has expired. Start again.' }, res);
     }
 
@@ -1042,16 +1239,7 @@ async function handleCallback(req, res, surfaceId) {
       redirect_uri: flow.redirectUri,
       code_verifier: flow.verifier
     });
-    const method = String(client.token_endpoint_auth_method || 'client_secret_basic');
-    const headers = {};
-    if (method === 'client_secret_post') {
-      form.set('client_id', surface.clientId);
-      form.set('client_secret', client.client_secret);
-    } else {
-      headers.authorization = 'Basic ' + Buffer.from(
-        encodeURIComponent(surface.clientId) + ':' +
-        encodeURIComponent(client.client_secret)).toString('base64');
-    }
+    const headers = clientAuthentication(surface, client, form);
     const tokenAnswer = await backChannel({
       method: 'POST',
       path: realms.currentPrefix() + TOKEN_PATH,
@@ -1060,8 +1248,10 @@ async function handleCallback(req, res, surfaceId) {
       body: form.toString()
     });
     if (!tokenAnswer.ok) {
-      log.error(errorCodes.tag(errorCodes.codeOf(tokenAnswer) || 'STS-AUTHN-0120') +
-                'oidc_rp: the ' + surface.label + ' could not redeem its code. ' +
+      log.error(errorCodes.tag(errorCodes.codeOf(tokenAnswer) ||
+                               'STS-AUTHN-0120') +
+                'oidc_rp: the ' + surface.label +
+                ' could not redeem its code. ' +
                 tokenAnswer.why);
       return coded(errorCodes.codeOf(tokenAnswer) || 'STS-AUTHN-0120',
                    { ok: false, why: tokenAnswer.why }, res);
@@ -1084,9 +1274,9 @@ async function handleCallback(req, res, surfaceId) {
       // OAuth-shaped federated sign-in. Signing somebody in on it would be
       // signing in as nobody.
       return coded('STS-AUTHN-0127', { ok: false,
-               why: 'the token response carried no id_token, so nothing in it ' +
-                    'says who signed in. An access token means a client was ' +
-                    'authorized, not that a person authenticated.' }, res);
+               why: 'the token response carried no id_token, so nothing in ' +
+                    'it says who signed in. An access token means a client ' +
+                    'was authorized, not that a person authenticated.' }, res);
     }
 
     // ---------------------------------------------------------------------
@@ -1102,9 +1292,11 @@ async function handleCallback(req, res, surfaceId) {
       return coded('STS-AUTHN-0128', { ok: false,
                why: 'this service\'s own JWKS at ' + JWKS_PATH +
                     ' could not be read: ' +
-                    (jwksAnswer.why || ('it answered ' + jwksAnswer.status)) }, res);
+                    (jwksAnswer.why || ('it answered ' + jwksAnswer.status)) },
+                   res);
     }
-    const keys = Array.isArray(jwksAnswer.json.keys) ? jwksAnswer.json.keys : [];
+    const keys = Array.isArray(jwksAnswer.json.keys) ? jwksAnswer.json.keys :
+                 [];
 
     const verified = verifyIdToken(idToken, keys, {
       // The issuer the AUTHORIZATION endpoint would have advertised, which is
@@ -1157,11 +1349,27 @@ async function handleCallback(req, res, surfaceId) {
     // `inSessionRealm()` says where this session is created.
     //
     // `sid` is what joins them — see startRelyingPartySession(), where the
-    // cascade that ends a derived session with its sign-on session is argued and
-    // where the parent is now looked up in the realm named here rather than
+    // cascade that ends a derived session with its sign-on session is argued
+    // and where the parent is now looked up in the realm named here rather than
     // assumed to be in its own.
     // ---------------------------------------------------------------------
     const parentRealm = realms.currentId();
+    // THE TOKENS, KEPT (2026-09-12), and the window they may be renewed in:
+    // the refresh token's lifetime from now, which is what the authorization
+    // server states for THIS client — the service-wide
+    // `oauth2.refreshTokenTtlS` or the entry's own `oauthRefreshTokenTtlS`. It
+    // is read off this client's own registry entry, the same entry its secret
+    // came from two steps up, rather than decoded out of the refresh token,
+    // which is encrypted to the authorization server and is nothing this
+    // client can or should read. See renewIfDue().
+    const tokens = tokensFrom(tokenAnswer.json, claims, parentRealm, host,
+                              null);
+    const refreshTtlS = Number(applications.settingFor(surface.clientId,
+                                                       'oauth2.refreshTokenTtlS',
+                                                       config));
+    const renewableUntil = tokens.refreshToken && isFinite(refreshTtlS) &&
+                           refreshTtlS > 0
+      ? Date.now() + refreshTtlS * 1000 : 0;
     const session = inSessionRealm(surface, function () {
       return authn.startRelyingPartySession({
       res: res,
@@ -1182,11 +1390,14 @@ async function handleCallback(req, res, surfaceId) {
       // which is what every session made before 2026-09-11 meant and what the
       // portal still means; the console says `acme` while being created in the
       // default realm's partition.
-      parentRealm: parentRealm
+      parentRealm: parentRealm,
+      tokens: tokens,
+      renewableUntil: renewableUntil
       });
     });
-    log.info('oidc_rp: ' + username + ' completed the authorization code flow ' +
-             'for the ' + surface.label + ' and holds session ' + session.id +
+    log.info('oidc_rp: ' + username + ' completed the authorization code ' +
+             'flow for ' +
+             'the ' + surface.label + ' and holds session ' + session.id +
              '. The ID Token verified against ' + JWKS_PATH + '.');
     log.debug('Leaving handleCallback(). Signed in.');
     return { ok: true, session: session, returnTo: flow.returnTo,
@@ -1198,9 +1409,336 @@ async function handleCallback(req, res, surfaceId) {
 // 3. THE READER. What a hosted surface asks on every request.
 // ---------------------------------------------------------------------------
 function sessionFor(req, surfaceId) {
+  log.debug("Entering sessionFor().");
   const surface = surfaceOf(surfaceId);
+  log.debug("Leaving sessionFor().");
   return authn.relyingPartySessionOf(req, surface.cookie,
                                      sessionRealmIdOf(surface));
+}
+
+// ---------------------------------------------------------------------------
+// 4. RENEWAL — THE SAME SESSION, NEW TOKENS (2026-09-12).
+//
+// **WHAT WAS WRONG IS WHAT A PERSON SAW.** A console session expired an hour
+// after the sign-in, together with its ID Token and access token, and the next
+// click sent the operator back through the sign-in screen — off the page they
+// were on, and with any form they had open refused for want of a session. A
+// real relying party does not do that: it holds a refresh token, and when its
+// tokens run out it asks the token endpoint for new ones and carries on. This
+// one was issued a refresh token on every sign-in (the entry's grant types
+// have always included `refresh_token`) and threw it away.
+//
+// So now:
+//
+//   * the tokens are KEPT on the relying-party session (`tokensFrom()`,
+//     `authn.startRelyingPartySession()`);
+//   * every request to the surface passes through `renewal()` BEFORE the
+//     surface's own gate, and `renewIfDue()` asks one question — do this
+//     session's tokens run out within `oidcRp.renewBeforeExpiryS`? — and where
+//     they do, redeems the refresh token over the same loopback back channel
+//     the sign-in used, verifies the new ID Token, and writes the new tokens
+//     onto THE SAME SESSION (`authn.renewRelyingPartySession()`);
+//   * and the request goes on to the page it asked for. Same session id, same
+//     cookie, same CSRF token on every form already open: nothing about the
+//     browser changes, which is what "stay signed in on the page I was on"
+//     means.
+//
+// **IT IS NOT A SIGN-IN AND CREATES NO SESSION.** No authentication is
+// recorded, no `session.start` row is written, no CAEP event is sent, and the
+// sign-on session the relying-party session descends from is not touched:
+// `session.renew` is the one audit row, and it says the session is unchanged.
+//
+// **THE WINDOW IS BOUNDED.** A session may renew until the refresh token it
+// was issued at sign-in would have expired (`renewableUntil`) and never past
+// it — renewing does not extend the window, so a console somebody keeps using
+// still signs them out after `oauth2.refreshTokenTtlS` (twenty-four hours by
+// default, and the client's own `oauthRefreshTokenTtlS` where one is set).
+//
+// **THE SIGN-ON SESSION'S LIFETIME NO LONGER ENDS IT; A SIGN-OUT STILL DOES.**
+// `dropSession()`'s cascade ends every relying-party session derived from a
+// sign-on session that is ended — by any sign-out door, by a Revoke on
+// `/admin/sessions`, by a global logout — exactly as before. What changed is
+// the case where the sign-on session simply RAN OUT: a session that can renew
+// carries on, and `authn.relyingPartySessionOf()` tells the two cases apart by
+// the clock (see there).
+//
+// **A RENEWAL THAT FAILS ENDS THE SESSION**, and the gate then does what it
+// always did for a request with no session: a GET is sent through the
+// authorization code flow and comes back to the page it asked for. A refused
+// refresh token, a renewed ID Token about a different sign-in, a client entry
+// that has gone — each is an audit row coded `session.renew` refused and a
+// `session.end` beside it. What it never does is let a request through on
+// tokens that have run out and could not be renewed.
+//
+// **ONE RENEWAL AT A TIME PER SESSION.** A page's several requests arriving
+// together would otherwise each redeem the refresh token — and in RFC 9700
+// mode a refresh token is rotated on use, so the second redemption is a
+// REPLAY, and a replay revokes the whole family. `renewing` holds the promise
+// for the length of one round trip and every concurrent caller waits on it.
+// ---------------------------------------------------------------------------
+const RENEW_BEFORE_EXPIRY_S = 60;
+// Keyed by the realm the session lives in and the session id. Process-wide
+// rather than `realms.map()` because it is keyed BY realm already and holds a
+// promise for one back-channel round trip: nothing to persist, and nothing
+// another process could use — a console or portal request holds affinity to
+// one request worker.
+const renewing = new Map();
+
+// `oidcRp.renewBeforeExpiryS`, where ZERO is legal and means "only once they
+// have run out" — so not `Number(x || n)`.
+function renewBeforeExpiryMs() {
+  log.debug("Entering renewBeforeExpiryMs().");
+  const n = Number(config.value('oidcRp.renewBeforeExpiryS'));
+  log.debug("Leaving renewBeforeExpiryMs().");
+  return (isFinite(n) && n >= 0 ? Math.floor(n) : RENEW_BEFORE_EXPIRY_S) * 1000;
+}
+
+// Ending a session whose tokens could not be renewed: the refused
+// `session.renew` row, the log line, the session ended through `dropSession()`
+// like every other, and the surface's cookie cleared. In the SESSION's realm,
+// so both rows land in the audit log the `session.start` for it is in.
+function renewalFailed(surface, session, sessionRealmId, res, code, why) {
+  log.debug("Entering renewalFailed(). code=" + code);
+  log.warn(errorCodes.tag(code) + 'oidc_rp: the ' + surface.label + ' could ' +
+           'not renew the tokens of session ' + session.id + ' for ' +
+           session.user.username + ', so the session is ended and the next ' +
+           'page runs the authorization code flow again. ' + why);
+  realms.run(realms.get(sessionRealmId), function () {
+    // The code is the caller's, one of STS-AUTHN-0136 to STS-AUTHN-0141 or the
+    // back channel's own (STS-AUTHN-0112, -0120, -0128, -0133).
+    audit.audit({
+      action: 'session.renew',
+      outcome: 'refused',
+      errorCode: code,
+      actor: session.user.username,
+      protocol: 'OAuth 2.0 / OIDC',
+      channel: 'http',
+      target: session.id,
+      summary: 'the ' + surface.label + ' could not renew the tokens of ' +
+               session.user.username + '\'s session ' + session.id + ': ' + why,
+      detail: { sessionId: session.id, surface: surface.id,
+                client_id: surface.clientId, why: why }
+    });
+    // `via` deliberately names neither "admin" nor "console": dropSession()
+    // reads those words as an ADMINISTRATOR ending somebody's session and says
+    // so in the CAEP event, and nobody did.
+    authn.endSessionById(session.id, 'a token renewal that did not complete');
+  });
+  if (res && !res.headersSent) {
+    authn.clearSessionCookie(res, surface.cookie);
+  }
+  log.debug("Leaving renewalFailed().");
+  return { renewed: false, ended: true, why: why };
+}
+
+// The round trip. Runs in the realm the sign-in's code flow ran in, because
+// that realm's token endpoint issued the refresh token and its keys are the
+// only ones that open it.
+async function renewNow(req, res, surface, session, sessionRealmId) {
+  log.debug("Entering renewNow(). session=" + session.id);
+  const tokens = session.rpTokens;
+  const found = clientOf(surface);
+  if (!found.ok) {
+    log.debug("Leaving renewNow(). There is no client.");
+    return renewalFailed(surface, session, sessionRealmId, res,
+                         errorCodes.codeOf(found) || 'STS-AUTHN-0112',
+                         found.why);
+  }
+  const host = tokens.host || hostHeaderFrom(publicBaseOf(req));
+  const form = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: tokens.refreshToken
+  });
+  const headers = clientAuthentication(surface, found.client, form);
+  const tokenAnswer = await backChannel({
+    method: 'POST',
+    path: realms.currentPrefix() + TOKEN_PATH,
+    host: host,
+    headers: headers,
+    body: form.toString()
+  });
+  if (!tokenAnswer.ok) {
+    log.debug("Leaving renewNow(). The back channel failed.");
+    return renewalFailed(surface, session, sessionRealmId, res,
+                         errorCodes.codeOf(tokenAnswer) || 'STS-AUTHN-0120',
+                         tokenAnswer.why);
+  }
+  if (tokenAnswer.status !== 200 || !tokenAnswer.json ||
+      !tokenAnswer.json.access_token) {
+    const detail = (tokenAnswer.json && tokenAnswer.json.error)
+      ? tokenAnswer.json.error +
+        (tokenAnswer.json.error_description
+          ? ' — ' + tokenAnswer.json.error_description : '')
+      : tokenAnswer.text;
+    log.debug("Leaving renewNow(). The token endpoint refused.");
+    return renewalFailed(surface, session, sessionRealmId, res,
+                         'STS-AUTHN-0137',
+                         'the token endpoint answered the refresh token grant ' +
+                         tokenAnswer.status + ': ' + detail);
+  }
+  let claims = null;
+  const idToken = String(tokenAnswer.json.id_token || '');
+  if (idToken) {
+    const jwksAnswer = await backChannel({
+      method: 'GET',
+      path: realms.currentPrefix() + JWKS_PATH,
+      host: host
+    });
+    if (!jwksAnswer.ok || jwksAnswer.status !== 200 || !jwksAnswer.json) {
+      log.debug("Leaving renewNow(). The JWKS could not be read.");
+      return renewalFailed(surface, session, sessionRealmId, res,
+                           'STS-AUTHN-0128',
+                           'this service\'s own JWKS at ' + JWKS_PATH +
+                           ' could not be read: ' +
+                           (jwksAnswer.why ||
+                            ('it answered ' + jwksAnswer.status)));
+    }
+    const keys = Array.isArray(jwksAnswer.json.keys) ? jwksAnswer.json.keys :
+                 [];
+    const verified = verifyIdToken(idToken, keys, {
+      issuer: undefined,
+      audience: surface.clientId,
+      nonce: null
+    });
+    if (!verified.ok) {
+      log.debug("Leaving renewNow(). The renewed ID Token did not verify.");
+      return renewalFailed(surface, session, sessionRealmId, res,
+                           errorCodes.codeOf(verified) || 'STS-AUTHN-0133',
+                           'the renewed ID Token did not verify: ' +
+                           verified.why);
+    }
+    const same = checkRenewedClaims(tokens, verified.claims);
+    if (!same.ok) {
+      log.debug("Leaving renewNow(). The renewed ID Token is about another " +
+                "sign-in.");
+      return renewalFailed(surface, session, sessionRealmId, res,
+                           'STS-AUTHN-0138',
+                           same.why);
+    }
+    claims = verified.claims;
+  }
+  const renewedTokens = tokensFrom(tokenAnswer.json, claims, tokens.flowRealm,
+                                   tokens.host, tokens);
+  const renewed = realms.run(realms.get(sessionRealmId), function () {
+    return authn.renewRelyingPartySession({ realmId: sessionRealmId,
+                                            id: session.id,
+                                            tokens: renewedTokens });
+  });
+  log.debug("Leaving renewNow(). " + (renewed ? "Renewed." : "The session " +
+      "had gone."));
+  return renewed ? { renewed: true, session: renewed }
+                 : { renewed: false, why: 'the session ended while it was ' +
+                                          'renewed' };
+}
+
+// Is this session's renewal due, and may it happen? Answers what to do rather
+// than doing it, so the one decision is readable in one place:
+//   `none`   — nothing to do (no tokens, or not due yet)
+//   `renew`  — redeem the refresh token now
+//   `end`    — the tokens have run out and cannot be renewed
+function renewalDecision(session, nowMs, marginMs) {
+  log.debug("Entering renewalDecision().");
+  const tokens = session && session.rpTokens;
+  const expireAt = authn.tokensExpireAt(tokens);
+  if (!expireAt || nowMs < expireAt - marginMs) {
+    log.debug("Leaving renewalDecision(). Not due.");
+    return { action: 'none' };
+  }
+  const windowOpen = tokens.refreshToken &&
+    (!session.rpRenewableUntil || nowMs < Number(session.rpRenewableUntil));
+  if (windowOpen) {
+    log.debug("Leaving renewalDecision(). Due.");
+    return { action: 'renew' };
+  }
+  if (nowMs < expireAt) {
+    // Inside the lead time with nothing to renew with: the tokens are still
+    // good, so they are left to run out rather than the session being ended
+    // early.
+    log.debug("Leaving renewalDecision(). Due, not renewable, not yet run " +
+              "out.");
+    return { action: 'none' };
+  }
+  log.debug("Leaving renewalDecision(). Run out and not renewable.");
+  return tokens.refreshToken
+    ? { action: 'end', code: 'STS-AUTHN-0141',
+        why: 'its tokens have run out and the window it could renew them in ' +
+             '(the refresh token\'s lifetime from the sign-in, ' +
+             'oauth2.refreshTokenTtlS) has closed' }
+    : { action: 'end', code: 'STS-AUTHN-0136',
+        why: 'its tokens have run out and the sign-in was issued no refresh ' +
+             'token to renew them with — the client entry does not allow the ' +
+             'refresh_token grant' };
+}
+
+async function renewIfDue(req, res, surfaceId) {
+  log.debug('Entering renewIfDue(). surface=' + surfaceId);
+  const surface = surfaceOf(surfaceId);
+  const session = sessionFor(req, surfaceId);
+  if (!session || !session.rpTokens) {
+    log.debug("Leaving renewIfDue(). No session holding tokens.");
+    return { renewed: false };
+  }
+  const sessionRealmId = sessionRealmIdOf(surface);
+  const flowRealm = realms.get(session.rpTokens.flowRealm);
+  if (!flowRealm) {
+    log.debug("Leaving renewIfDue(). The realm the sign-in ran in is gone.");
+    return renewalFailed(surface, session, sessionRealmId, res,
+                         'STS-AUTHN-0139',
+                         'the trust realm "' + session.rpTokens.flowRealm +
+                         '" ' +
+                         'the sign-in ran in no longer exists, so there is ' +
+                         'no token endpoint that can open its refresh token');
+  }
+  const decision = renewalDecision(session, Date.now(),
+                                   realms.run(flowRealm, renewBeforeExpiryMs));
+  if (decision.action === 'none') {
+    log.debug("Leaving renewIfDue(). Nothing to do.");
+    return { renewed: false };
+  }
+  if (decision.action === 'end') {
+    log.debug("Leaving renewIfDue(). Ended.");
+    return renewalFailed(surface, session, sessionRealmId, res, decision.code,
+                         decision.why);
+  }
+  const key = sessionRealmId + ' ' + session.id;
+  if (renewing.has(key)) {
+    log.debug("Leaving renewIfDue(). Waiting on the renewal already in " +
+              "flight.");
+    return renewing.get(key);
+  }
+  const work = realms.run(flowRealm, function () {
+    return renewNow(req, res, surface, session, sessionRealmId);
+  });
+  renewing.set(key, work);
+  try {
+    const answer = await work;
+    log.debug("Leaving renewIfDue().");
+    return answer;
+  } finally {
+    renewing.delete(key);
+  }
+}
+
+// The middleware each surface registers ABOVE its own gate and routes (rule 1:
+// middleware applies only to routes added after it). It never answers the
+// request itself — a renewal that ended the session leaves the gate to send
+// the browser through the code flow, which is the one place that decision is
+// made — and a renewal that throws is logged and the request goes on, because
+// the session it was renewing is still what the gate reads.
+function renewal(surfaceId) {
+  log.debug("Entering renewal(). surface=" + surfaceId);
+  surfaceOf(surfaceId);
+  log.debug("Leaving renewal().");
+  return function renewTokensIfDue(req, res, next) {
+    renewIfDue(req, res, surfaceId).then(function () {
+      next();
+    }, function (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0140') + 'oidc_rp: renewing the ' +
+                surfaceId + ' session\'s tokens threw, and the request goes ' +
+                'on without them: ' + ((e && e.stack) || e));
+      next();
+    });
+  };
 }
 
 // Ending one. The surface's own cookie is cleared and the session goes through
@@ -1216,7 +1754,8 @@ function endSessionFor(req, res, surfaceId, via) {
     });
   }
   authn.clearSessionCookie(res, surface.cookie);
-  log.debug('Leaving endSessionFor(). ' + (session ? 'Ended.' : 'Nothing to end.'));
+  log.debug('Leaving endSessionFor(). ' + (session ? 'Ended.' : 'Nothing to ' +
+      'end.'));
   return !!session;
 }
 
@@ -1227,10 +1766,26 @@ module.exports = {
   handleCallback: handleCallback,
   sessionFor: sessionFor,
   endSessionFor: endSessionFor,
+  // THE RENEWAL (2026-09-12): the middleware both surfaces register above
+  // their routes, the function it calls, and — for `tests/oidc_rp_renewal.js`
+  // — the two pure decisions no request can be made to exercise on demand.
+  renewal: renewal,
+  renewIfDue: renewIfDue,
+  renewalDecision: renewalDecision,
+  checkRenewedClaims: checkRenewedClaims,
+  tokensFrom: tokensFrom,
   // For the two surfaces' own metadata pages and for the tests: which client a
   // surface is, so that nothing has to write the identifier down twice.
-  clientIdFor: function (surfaceId) { return surfaceOf(surfaceId).clientId; },
-  cookieFor: function (surfaceId) { return surfaceOf(surfaceId).cookie; },
+  clientIdFor: function (surfaceId) {
+    log.debug("Entering clientIdFor().");
+    log.debug("Leaving clientIdFor().");
+    return surfaceOf(surfaceId).clientId;
+  },
+  cookieFor: function (surfaceId) {
+    log.debug("Entering cookieFor().");
+    log.debug("Leaving cookieFor().");
+    return surfaceOf(surfaceId).cookie;
+  },
   // For `tests/oidc_rp_addresses.js` (2026-09-12): the address rule and the
   // loopback origin are the two halves of this file no request can see
   // directly — one decides what is written onto an entry, the other where a

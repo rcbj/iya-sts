@@ -31,19 +31,28 @@ delete process.env.CONFIG_FILE;
 const realms = require('../common/realms');
 const dir = require('../ldap/ldap_server');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'directory_group_writes',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // Create a realm, hand it to `fn`, and remove it however that goes. The realm
 // table is process-wide and a realm left behind changes what a later test
 // resolves — the same shape `realm_directory_lookups.js` uses, and the reason
 // these writes are not made in the default realm at all.
 function withRealm(t, id, fn) {
+  log.debug("Entering withRealm().");
   const made = realms.create({ id: id, name: id,
                                description: 'Created by ' + __filename });
   if (!made.ok) {
     t.bad('could not create the realm "' + id + '"',
           (made.errors || []).join(' '));
+    log.debug("Leaving withRealm().");
     return undefined;
   }
   try {
+    log.debug("Leaving withRealm().");
     return realms.run(made.realm, function () { return fn(made.realm); });
   } finally {
     realms.remove(id);
@@ -58,6 +67,7 @@ function withRealm(t, id, fn) {
 // are written, `nameUsableInDn()`, rather than a second list that could drift.
 // ---------------------------------------------------------------------------
 function checkTheNameRules(t) {
+  log.debug("Entering checkTheNameRules().");
   t.log.info('what a group may be called');
 
   withRealm(t, 'dgw-names', function () {
@@ -73,8 +83,8 @@ function checkTheNameRules(t) {
     const again = dir.createGroup('dgw-developers', { origin: 'test' });
     t.equal(again.ok, false, 'creating it twice is refused');
     t.check(String((again.errors || []).join(' ')).indexOf(made.dn) >= 0,
-            'and the refusal NAMES the entry that is already there — a caller ' +
-            'that gets it looks for what it collided with');
+            'and the refusal NAMES the entry that is already there — a ' +
+            'caller that gets it looks for what it collided with');
 
     const seeded = dir.createGroup('developers', { origin: 'test' });
     t.equal(seeded.ok, false,
@@ -97,6 +107,7 @@ function checkTheNameRules(t) {
     const empty = dir.createGroup('   ', { origin: 'test' });
     t.equal(empty.ok, false, 'and an empty name is refused');
   });
+  log.debug("Leaving checkTheNameRules().");
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +120,7 @@ function checkTheNameRules(t) {
 // behaviour somebody would helpfully fix.
 // ---------------------------------------------------------------------------
 function checkTheEmptyGroup(t) {
+  log.debug("Entering checkTheEmptyGroup().");
   t.log.info('an empty group');
 
   withRealm(t, 'dgw-empty', function () {
@@ -124,6 +136,7 @@ function checkTheEmptyGroup(t) {
             'and it is a groupOfNames, so it counts as a group by BOTH of ' +
             'groupRuleFor()\'s rules rather than by placement alone');
   });
+  log.debug("Leaving checkTheEmptyGroup().");
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +148,7 @@ function checkTheEmptyGroup(t) {
 // exists to avoid, and this is the same rule at a second door.
 // ---------------------------------------------------------------------------
 function checkWhereTheValuePoints(t) {
+  log.debug("Entering checkWhereTheValuePoints().");
   t.log.info('where a membership value points');
 
   withRealm(t, 'dgw-members', function () {
@@ -165,7 +179,8 @@ function checkWhereTheValuePoints(t) {
     // from this door, and this directory does no referential integrity in
     // either direction.
     t.equal(byDn.present, false,
-            'somebody with no entry is a DANGLING member and is written anyway');
+            'somebody with no entry is a DANGLING member and is written ' +
+            'anyway');
 
     const read = dir.readGroupEntry(group.dn);
     t.equal((read.members || []).length, 2, 'the group holds both values');
@@ -173,6 +188,7 @@ function checkWhereTheValuePoints(t) {
             'and exactly one of them resolves — which is the state the ' +
             'console reports as memberCount 2, presentCount 1');
   });
+  log.debug("Leaving checkWhereTheValuePoints().");
 }
 
 // ---------------------------------------------------------------------------
@@ -184,14 +200,17 @@ function checkWhereTheValuePoints(t) {
 // bulk-load jobs are exactly such a script.
 // ---------------------------------------------------------------------------
 function checkIdempotenceAndRefusals(t) {
+  log.debug("Entering checkIdempotenceAndRefusals().");
   t.log.info('idempotence, and what it refuses');
 
   withRealm(t, 'dgw-again', function () {
     dir.createUser('dgw-carol', { origin: 'test' });
     const group = dir.createGroup('dgw-twice', { origin: 'test' });
 
-    const first = dir.addGroupMember('dgw-twice', 'dgw-carol', { origin: 'test' });
-    const second = dir.addGroupMember('dgw-twice', 'dgw-carol', { origin: 'test' });
+    const first = dir.addGroupMember('dgw-twice', 'dgw-carol',
+                                     { origin: 'test' });
+    const second = dir.addGroupMember('dgw-twice', 'dgw-carol',
+                                      { origin: 'test' });
     t.equal(first.changed, true, 'the first add changes something');
     t.equal(second.ok, true, 'the second is NOT an error');
     t.equal(second.changed, false, 'and reports that it changed nothing');
@@ -205,7 +224,8 @@ function checkIdempotenceAndRefusals(t) {
     // nothing anybody will look at.
     const missing = dir.addGroupMember('dgw-no-such-group', 'dgw-carol',
                                        { origin: 'test' });
-    t.equal(missing.ok, false, 'adding to a group that does not exist is refused');
+    t.equal(missing.ok, false, 'adding to a group that does not exist is ' +
+                               'refused');
     t.check(dir.readGroupEntry(dir.groupDnFor('dgw-no-such-group')) === null,
             'and it did NOT create it on the way past');
 
@@ -222,6 +242,7 @@ function checkIdempotenceAndRefusals(t) {
     t.equal(dir.addGroupMember('', 'dgw-carol', { origin: 'test' }).ok, false,
             'and so is naming no group');
   });
+  log.debug("Leaving checkIdempotenceAndRefusals().");
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +256,7 @@ function checkIdempotenceAndRefusals(t) {
 // the one thing every door onto this directory is told never to do.
 // ---------------------------------------------------------------------------
 function checkWhatIsNotWritten(t) {
+  log.debug("Entering checkWhatIsNotWritten().");
   t.log.info('what is not written');
 
   withRealm(t, 'dgw-untouched', function () {
@@ -248,8 +270,8 @@ function checkWhatIsNotWritten(t) {
       held[name.toLowerCase()] = true;
     });
     t.check(!held.memberof,
-            'the PERSON gained no memberOf — nothing here maintains it, and a ' +
-            'value written there is one no other door can take away',
+            'the PERSON gained no memberOf — nothing here maintains it, and ' +
+            'a value written there is one no other door can take away',
             person.dn);
 
     // Read the stored group back and look for the synthesised attribute having
@@ -265,14 +287,17 @@ function checkWhatIsNotWritten(t) {
             'and the group did not gain a stored entryDN from being read and ' +
             'written back');
   });
+  log.debug("Leaving checkWhatIsNotWritten().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkTheNameRules(t);
   checkTheEmptyGroup(t);
   checkWhereTheValuePoints(t);
   checkIdempotenceAndRefusals(t);
   checkWhatIsNotWritten(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

@@ -60,22 +60,26 @@ const CANONICALIZATIONS = {
 // worth a failed assertion.
 function signatureOptions() {
   log.debug("Entering signatureOptions().");
-  const sigName = String(config.value('saml.signatureAlgorithm') || 'rsa-sha256');
-  const c14nName = String(config.value('saml.canonicalizationAlgorithm') || 'exclusive');
+  const sigName = String(config.value('saml.signatureAlgorithm') ||
+                         'rsa-sha256');
+  const c14nName = String(config.value('saml.canonicalizationAlgorithm') ||
+                          'exclusive');
   let sigAlg = SIGNATURE_ALGORITHMS[sigName];
   let c14nAlg = CANONICALIZATIONS[c14nName];
   if (!sigAlg) {
-    log.warn('saml: saml.signatureAlgorithm is "' + sigName + '", which this service ' +
-             'cannot sign with; RSA-SHA256 is used instead.');
+    log.warn('saml: saml.signatureAlgorithm is "' + sigName + '", which this ' +
+             'service cannot sign with; RSA-SHA256 is used instead.');
     sigAlg = SIGNATURE_ALGORITHMS['rsa-sha256'];
   }
   if (!c14nAlg) {
-    log.warn('saml: saml.canonicalizationAlgorithm is "' + c14nName + '", which this ' +
-             'service does not offer; exclusive c14n is used instead.');
+    log.warn('saml: saml.canonicalizationAlgorithm is "' + c14nName + '", ' +
+             'which this service does not offer; exclusive c14n is used ' +
+             'instead.');
     c14nAlg = CANONICALIZATIONS.exclusive;
   }
   log.debug("Leaving signatureOptions(). " + sigName + ", " + c14nName + ".");
-  return { sigAlg: sigAlg, c14nAlg: c14nAlg, sigName: sigName, c14nName: c14nName };
+  return { sigAlg: sigAlg, c14nAlg: c14nAlg, sigName: sigName,
+           c14nName: c14nName };
 }
 
 // ---------------------------------------------------------------------------
@@ -84,9 +88,9 @@ function signatureOptions() {
 //
 // EMPTY OMITS THE ELEMENT, IN EITHER MODE. saml-metadata-2.0-os section 2.3.2.1
 // makes OrganizationName, OrganizationDisplayName and OrganizationURL each
-// one-or-more, so half an Organization is a schema-invalid document; an operator
-// who empties the name has said there is no organisation to publish, and the
-// element is optional. The URL defaults to the base URL as before.
+// one-or-more, so half an Organization is a schema-invalid document; an
+// operator who empties the name has said there is no organisation to publish,
+// and the element is optional. The URL defaults to the base URL as before.
 //
 // WHY NOT OMIT IT IN PRODUCT MODE AUTOMATICALLY: a setting whose value is
 // silently ignored in one mode is a setting that lies on the console. The
@@ -96,20 +100,23 @@ function signatureOptions() {
 function organizationElement(base) {
   log.debug("Entering organizationElement().");
   const name = String(config.value('saml.organizationName') || '').trim();
-  const display = String(config.value('saml.organizationDisplayName') || '').trim();
+  const display = String(config.value('saml.organizationDisplayName') ||
+                         '').trim();
   if (!name || !display) {
-    log.debug("Leaving organizationElement(). Omitted: no name or no display name.");
+    log.debug("Leaving organizationElement(). Omitted: no name or no display " +
+              "name.");
     return '';
   }
   const url = String(config.value('saml.organizationUrl') || '').trim() ||
     (String(base || '') + '/');
   log.debug("Leaving organizationElement().");
   return '<md:Organization>' +
-    '<md:OrganizationName xml:lang="en">' + xmlEscape(name) + '</md:OrganizationName>' +
-    '<md:OrganizationDisplayName xml:lang="en">' + xmlEscape(display) +
+    '<md:OrganizationName xml:lang="en">' + xmlEscape(name) +
+    '</md:OrganizationName><md:OrganizationDisplayName ' +
+    'xml:lang="en">' + xmlEscape(display) +
     '</md:OrganizationDisplayName>' +
-    '<md:OrganizationURL xml:lang="en">' + xmlEscape(url) + '</md:OrganizationURL>' +
-    '</md:Organization>';
+    '<md:OrganizationURL xml:lang="en">' + xmlEscape(url) +
+    '</md:OrganizationURL></md:Organization>';
 }
 
 module.exports = {

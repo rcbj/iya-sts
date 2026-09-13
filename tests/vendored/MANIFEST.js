@@ -1,5 +1,11 @@
 const path = require('path');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'MANIFEST',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ===========================================================================
 // MANIFEST.js — what is vendored here, where each file came from, and which of
 // them are JOBS rather than the helpers the jobs share.
@@ -221,6 +227,16 @@ const JOBS = [
   { file: 'sts_gnap_core.js',            browser: false, local: true },
   { file: 'sts_gnap_rs.js',              browser: false, local: true },
   { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  // ssfAllowedEvents (2026-09-12): an application entry limiting which Shared
+  // Signals event types a stream it owns is sent. `local: true` because the
+  // attribute is this repository's own and the assertion spans an /admin-api
+  // write and a protocol delivery.
+  { file: 'sts_ssf_allowed_events.js',   browser: false, local: true },
+  // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
+  // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
+  // out a sixty-second sign-on session, which is why the watchdog is raised.
+  { file: 'sts_hosted_surface_renewal.js', browser: false, local: true,
+    timeoutMs: 420000 },
   { file: 'sts_jws_verification.js',     browser: false },
   { file: 'sts_route_inputs.js',         browser: false, local: true },
   { file: 'sts_global_logout.js',        browser: false, local: true },
@@ -476,9 +492,9 @@ const JOBS = [
 // THE HELPERS, and `env/local.js`. None of these is a job; every one of them is
 // reached by a `require` from at least one job above, which is the whole reason
 // it is here. The set was computed as the transitive local-require closure of
-// the seventeen jobs, not chosen — so a job that grows a new `require('./x.js')`
-// over there arrives here as a MISSING MODULE at load time, which is a failed
-// job with a name in it rather than a silent gap.
+// the seventeen jobs, not chosen — so a job that grows a new
+// `require('./x.js')` over there arrives here as a MISSING MODULE at load time,
+// which is a failed job with a name in it rather than a silent gap.
 // ---------------------------------------------------------------------------
 const HELPERS = [
   'browser_flags.js',
@@ -560,6 +576,7 @@ const CLIENT_MODULES = [
 // directory. A `local` job is skipped — it has no upstream to differ from, and
 // listing it would report it GONE UPSTREAM for ever. See the note on JOBS.
 function allFiles() {
+  log.debug("Entering allFiles().");
   const out = [];
   JOBS.forEach(function (j) {
     if (j.local) {
@@ -576,6 +593,7 @@ function allFiles() {
   CLIENT_MODULES.forEach(function (c) {
     out.push({ rel: c, source: CLIENT_SOURCE_DIR });
   });
+  log.debug("Leaving allFiles().");
   return out;
 }
 

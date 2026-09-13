@@ -304,9 +304,10 @@ services:
         GIT_COMMIT: "${GIT_COMMIT:-}"
     environment:
       # env/docker-tests.js, which exists for this file and says so in its own
-      # header. It is env/local.js with a different comment: `logLevel: debug`,
-      # every request and every artifact before and after signing written down,
-      # which is what a failing protocol job is read from.
+      # header. It is env/local.js with a different comment. It was
+      # `logLevel: debug` until 2026-09-12 and is `info` now, like every
+      # appconfig file in env/, because every function logs its entry and exit
+      # at debug; STS_LOG_LEVEL=debug asks for the record back.
       #
       # THAT IS THE DEFAULT FOR THIS FILE DRIVEN DIRECTLY, AND NOT WHAT A
       # ./docker-run-tests.sh RUN GETS: that launcher chooses the file from the
@@ -314,9 +315,9 @@ services:
       # somebody asks for otherwise. The file has to be chosen rather than the
       # level alone, because the vendored modules under common/vendored/ build
       # their loggers from CONFIG_FILE and never see STS_LOG_LEVEL — the
-      # launcher's own THE SERVICE'S LOG LEVEL block argues all of it. The
-      # `debug` default stays HERE so that `docker compose -f this up` by hand
-      # is still the loudest way to watch the mock.
+      # launcher's own THE SERVICE'S LOG LEVEL block argues all of it. This
+      # file driven by hand is `info` too since 2026-09-12; STS_LOG_LEVEL=debug
+      # is the loud way to watch the mock.
       - CONFIG_FILE=${CONFIG_FILE:-./env/docker-tests.js}
       # THE ADDRESSES A REALM'S SPIFFE LISTENERS MAY BIND — see `cap_add` and
       # the `command` above.
@@ -654,6 +655,16 @@ services:
       # publishes anything, and the tests container is on the bridge with it.
       # ---------------------------------------------------------------------
       - XACML_PEP_URL=${XACML_PEP_URL:-http://xacml-pep:9090}
+      # ---------------------------------------------------------------------
+      # WHERE THE SERVICE DIALS BACK INTO THIS CONTAINER (2026-09-12).
+      # `sts_gnap_core` runs a listener in the job and has the authorization
+      # server POST an RFC 9635 push finish to it; the job's default of
+      # `localhost` is the SERVICE's own loopback from inside `sts`, and the
+      # push never arrived in any mode. `tests` is this service's name on the
+      # bridge. ./run-coverage.sh empties it, because there the service is a
+      # child of this container and `localhost` is right.
+      # ---------------------------------------------------------------------
+      - GNAP_PUSH_HOST=${GNAP_PUSH_HOST:-tests}
       - XACML_PEP_NAME=${XACML_PEP_NAME:-xacml-pep}
       - XACML_PEP_REALM=${XACML_PEP_REALM:-pep-e2e}
       # ---------------------------------------------------------------------

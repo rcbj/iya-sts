@@ -60,6 +60,12 @@ const persistence = require('../persistence/persistence');
 // else's tree.
 const ConnectionParameters = require('pg/lib/connection-parameters.js');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'database_password',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The settings this file moves. All four are RESTART-ONLY — the pool is opened
 // before the listener binds — so `config.setOverride()` would refuse them and a
 // test that used it would silently assert against the defaults. The
@@ -75,12 +81,14 @@ const VARS = ['STS_KEYS_KEK_PROVIDER', 'STS_KEYS_KEK_FILE', 'STS_KEYS_KEK_REF',
               'STS_DATABASE_PASSWORD_TOKEN', 'STS_KEYS_VAULT_CERT_AUTH_MOUNT'];
 
 function withEnvironment(values, fn) {
+  log.debug("Entering withEnvironment().");
   const before = {};
   VARS.forEach(function (name) { before[name] = process.env[name]; });
   VARS.forEach(function (name) { delete process.env[name]; });
   Object.keys(values).forEach(function (name) {
     process.env[name] = values[name];
   });
+  log.debug("Leaving withEnvironment().");
   return Promise.resolve()
     .then(fn)
     .finally(function () {
@@ -96,10 +104,13 @@ function withEnvironment(values, fn) {
 
 // The password `pg` will really use, out of a string this module produced.
 function passwordPgSees(url) {
+  log.debug("Entering passwordPgSees().");
+  log.debug("Leaving passwordPgSees().");
   return new ConnectionParameters({ connectionString: url }).password;
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-dbpw-'));
   const shared = path.join(dir, 'shared.json');
   const rawKey = path.join(dir, 'kek');
@@ -186,11 +197,11 @@ async function run(t) {
       }
       t.check(refusal,
               'C. **A SHARED LOCATION HOLDING SOMETHING THAT IS NOT JSON IS ' +
-              'REFUSED.** What is in a plain key file is the KEY, and handing ' +
-              'it over as a database password would send this service\'s ' +
-              'master key to a database server as a credential — in the ' +
-              'clear, on the wire, with a failed connection as the only ' +
-              'symptom');
+              'REFUSED.** What is in a plain key file is the KEY, and ' +
+              'handing it over as a database password would send this ' +
+              'service\'s master key to a database server as a credential — ' +
+              'in the clear, on the wire, with a failed connection as the ' +
+              'only symptom');
       t.check(/rather than a password|key/.test(refusal),
               'and the sentence says WHY rather than reporting a parse that ' +
               'failed', refusal.slice(0, 140));
@@ -283,14 +294,16 @@ async function run(t) {
                    'trailing ', ' leading'];
     for (const password of nasty) {
       const secretFile = path.join(dir, 'nasty.json');
-      fs.writeFileSync(secretFile, JSON.stringify({ databasePassword: password }),
+      fs.writeFileSync(secretFile,
+                       JSON.stringify({ databasePassword: password }),
                        { mode: 0o600 });
       await withEnvironment({
         STS_KEYS_KEK_PROVIDER: 'file',
         STS_KEYS_KEK_FILE: rawKey,
         STS_DATABASE_PASSWORD_PROVIDER: 'file',
         STS_DATABASE_PASSWORD_REF: secretFile,
-        STS_DATABASE_URL: 'postgres://sts_app@db.example:5432/sts?sslmode=require'
+        STS_DATABASE_URL:
+          'postgres://sts_app@db.example:5432/sts?sslmode=require'
       }, async function () {
         const url = await persistence.resolveDatabaseUrl();
         t.equal(passwordPgSees(url), password.trim(),
@@ -468,6 +481,7 @@ async function run(t) {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+  log.debug("Leaving run().");
 }
 
 module.exports = {

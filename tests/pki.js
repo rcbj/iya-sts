@@ -54,6 +54,12 @@ const keystore = require('../common/keystore');
 const stsCrypto = require('../common/crypto');
 const x509 = require('../common/vendored/x509');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'pki',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A realm id per section, so that nothing below depends on the order the
 // sections run in — every one of these is a partition of `keystore`'s PKI map,
 // and a section reusing another's realm would be a test that passes because of
@@ -65,20 +71,23 @@ const OTHER = 'pki-other';
 // key — what is under test is where the bytes LAND, and generating a key pair
 // to prove that would be paying for an assertion nobody makes about it.
 const APP = 'pki-seal-probe';
-const PEM = '-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n';
+const PEM = '-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE ' +
+            'KEY-----\n';
 
 async function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== the three tiers, built in one act ===');
 
-  const built = await pki.buildChain(REALM, { organisation: 'Acme', country: 'US' });
+  const built = await pki.buildChain(REALM,
+                                     { organisation: 'Acme', country: 'US' });
   t.check(built.ok, 'a hierarchy is built', (built.errors || []).join(' '));
   const chain = built.chain;
   t.equal(chain.tiers.length, 3, 'three tiers and not two');
   t.equal(chain.tiers.map(function (one) { return one.tier; }).join(' -> '),
           'root -> intermediate -> issuing',
           'in that order — the order they are BUILT in, which is the reverse ' +
-          'of the order a chain is SENT in, and getting the two the wrong way ' +
-          'round produces a chain every validator refuses with a message ' +
+          'of the order a chain is SENT in, and getting the two the wrong ' +
+          'way round produces a chain every validator refuses with a message ' +
           'about the leaf');
 
   // The lifetimes come from the vendored certificate PROFILES rather than from
@@ -141,7 +150,8 @@ async function run(t) {
           'would be accepting a certificate that vouched for itself');
 
   t.log.info('=== issuing a signing key pair ===');
-  const issued = await pki.issueSigningKeyPair(REALM, { identifier: 'webapp1' });
+  const issued = await pki.issueSigningKeyPair(REALM,
+                                               { identifier: 'webapp1' });
   t.check(issued.ok, 'a key pair is issued', (issued.errors || []).join(' '));
   const leaf = issued.issued;
   t.check(String(leaf.privateKeyPem).indexOf('PRIVATE KEY') >= 0,
@@ -221,8 +231,8 @@ async function run(t) {
   const bare = await pki.verifyLeaf(REALM, leaf.certificatePem, []);
   t.check(bare.ok,
           'and so does the same leaf presented with NO chain at all — the ' +
-          'missing tiers are this realm\'s own, so a client may send just its ' +
-          'certificate');
+          'missing tiers are this realm\'s own, so a client may send just ' +
+          'its certificate');
 
   // The case the whole check exists for.
   const foreignPair = await require('../common/vendored/key_material')
@@ -234,7 +244,8 @@ async function run(t) {
     profile: 'root-ca',
     issuer: { privateKeyPem: foreignPair.privatePem, keyAlg: 'rsa-2048' },
     extensions: {
-      basicConstraints: { present: true, critical: true, ca: true, pathLen: null },
+      basicConstraints: { present: true, critical: true, ca: true,
+                          pathLen: null },
       keyUsage: { present: true, critical: true,
                   usages: ['keyCertSign', 'cRLSign'] }
     }
@@ -253,12 +264,13 @@ async function run(t) {
       keyUsage: { present: true, critical: true, usages: ['digitalSignature'] }
     }
   });
-  const elsewhere = await pki.verifyLeaf(REALM, foreignLeaf.pem, [foreignRoot.pem]);
+  const elsewhere = await pki.verifyLeaf(REALM, foreignLeaf.pem,
+                                         [foreignRoot.pem]);
   t.check(!elsewhere.ok,
           'A CHAIN TO SOMEBODY ELSE\'S ANCHOR IS REFUSED. Every link of it ' +
           'verifies — it is a real hierarchy, correctly built — and it means ' +
-          'nothing here. That is the check the `x5c` path rests on, and it is ' +
-          'the one a "does this chain verify?" implementation gets wrong',
+          'nothing here. That is the check the `x5c` path rests on, and it ' +
+          'is the one a "does this chain verify?" implementation gets wrong',
           elsewhere.why);
   t.check(/does not end at this service/.test(elsewhere.why || ''),
           'and the refusal says WHY rather than reporting a bad signature, ' +
@@ -272,7 +284,8 @@ async function run(t) {
           'a leaf presented under an intermediate that did not sign it is ' +
           'refused', mismatched.why);
 
-  t.log.info('=== the realm boundary, WHICH MOVED DOWN A TIER ON 2026-09-11 ===');
+  t.log.info('=== the realm boundary, WHICH MOVED DOWN A TIER ON 2026-09-11 ' +
+             '===');
   // ==========================================================================
   // **THIS SECTION ASSERTED THE OPPOSITE UNTIL THAT DATE AND THE REVERSAL IS
   // THE POINT OF IT.** It read: "it is a DIFFERENT Root. A CA shared across
@@ -293,7 +306,8 @@ async function run(t) {
   const otherBuilt = await pki.buildChain(OTHER, { organisation: 'Beta' });
   t.check(otherBuilt.ok, 'a second realm builds a branch of its own',
           (otherBuilt.errors || []).join(' '));
-  const crossed = await pki.verifyLeaf(OTHER, leaf.certificatePem, leaf.chainPem);
+  const crossed = await pki.verifyLeaf(OTHER, leaf.certificatePem,
+                                       leaf.chainPem);
   t.check(!crossed.ok,
           'A CERTIFICATE ISSUED IN ONE REALM DOES NOT VERIFY IN ANOTHER, ' +
           'which is that sentence made checkable rather than asserted',
@@ -311,21 +325,21 @@ async function run(t) {
   const theirs = pki.describe(OTHER);
   t.check(stsCrypto.stripPem(mine.tiers[1].certificatePem) !==
           stsCrypto.stripPem(theirs.tiers[1].certificatePem),
-          'and a DIFFERENT Intermediate, which is what a realm has of its own ' +
-          'and is now where the boundary is');
+          'and a DIFFERENT Intermediate, which is what a realm has of its ' +
+          'own and is now where the boundary is');
   t.equal(mine.tiers[0].subject, theirs.tiers[0].subject,
-          'the three-tier view each realm reports still ends at the same Root, ' +
-          'because the Root is composed back on top of the branch rather than ' +
-          'copied into it — one private key, one copy');
+          'the three-tier view each realm reports still ends at the same ' +
+          'Root, because the Root is composed back on top of the branch ' +
+          'rather than copied into it — one private key, one copy');
 
   t.log.info('=== the algorithm pairing, which no request can ask for ===');
   const badPair = await pki.buildChain('pki-badpair',
                                        { keyAlg: 'ec-p256',
                                          signatureAlg: 'sha256-rsa' });
   t.check(!badPair.ok,
-          'an EC key asked to produce an RSA signature is REFUSED here rather ' +
-          'than left to Web Crypto, which reports it as a key usage error ' +
-          'naming neither the key nor the algorithm',
+          'an EC key asked to produce an RSA signature is REFUSED here ' +
+          'rather than left to Web Crypto, which reports it as a key usage ' +
+          'error naming neither the key nor the algorithm',
           (badPair.errors || []).join(' '));
   t.check(/cannot produce/.test((badPair.errors || []).join(' ')),
           'and the refusal lists what that key CAN sign with',
@@ -333,19 +347,19 @@ async function run(t) {
 
   t.equal(pki.defaultSignatureAlgorithmFor('ec-p384'), 'sha384-ecdsa',
           'a P-384 key\'s default digest is SHA-384 — decided by the CURVE ' +
-          'rather than by a first-non-weak scan, which would hand a P-521 key ' +
-          'SHA-256: legal, verifying, and nobody\'s intention');
+          'rather than by a first-non-weak scan, which would hand a P-521 ' +
+          'key SHA-256: legal, verifying, and nobody\'s intention');
   t.equal(pki.defaultSignatureAlgorithmFor('ed25519'), 'ed25519',
-          'and an Ed25519 key names its own algorithm, which has no digest to ' +
-          'choose');
+          'and an Ed25519 key names its own algorithm, which has no digest ' +
+          'to choose');
 
   const ec = await pki.buildChain('pki-ec', { keyAlg: 'ec-p384' });
   t.check(ec.ok, 'an EC hierarchy builds', (ec.errors || []).join(' '));
   const ecLeaf = await pki.issueSigningKeyPair('pki-ec', { identifier: 'svc' });
   t.equal(ecLeaf.issued.jwsAlg, 'ES384',
           'and its leaf signs ES384 — RFC 7518 pins the algorithm to the ' +
-          'CURVE, so a P-384 key is ES384 whatever digest the certificate was ' +
-          'signed with');
+          'CURVE, so a P-384 key is ES384 whatever digest the certificate ' +
+          'was signed with');
 
   t.log.info('=== a leaf may not outlive the CA that signed it ===');
   const long = await pki.issueSigningKeyPair(REALM,
@@ -355,13 +369,14 @@ async function run(t) {
   const issuing = pki.describe(REALM).tiers[2];
   t.check(new Date(long.issued.notAfter).getTime() <=
           new Date(issuing.notAfter).getTime(),
-          'IT IS CLAMPED to the Issuing CA\'s own expiry rather than refused. ' +
-          'The ordinary cause is a five-year Issuing CA in its fifth year, and ' +
-          'an operator who asked for a year should get eleven months rather ' +
-          'than an error about arithmetic',
+          'IT IS CLAMPED to the Issuing CA\'s own expiry rather than ' +
+          'refused. The ordinary cause is a five-year Issuing CA in its ' +
+          'fifth year, and an operator who asked for a year should get ' +
+          'eleven months rather than an error about arithmetic',
           long.issued.notAfter + ' <= ' + issuing.notAfter);
 
-  t.log.info('=== issuing needs a hierarchy, and says which one is missing ===');
+  t.log.info('=== issuing needs a hierarchy, and says which one is missing ' +
+             '===');
   const none = await pki.issueSigningKeyPair('pki-empty',
                                              { identifier: 'nobody' });
   t.check(!none.ok, 'a realm with no CA cannot issue');
@@ -370,7 +385,8 @@ async function run(t) {
           'reporting an absence',
           (none.errors || []).join(' '));
 
-  t.log.info('=== rebuilding replaces the BRANCH, and clearing is destructive ===');
+  t.log.info('=== rebuilding replaces the BRANCH, and clearing is ' +
+             'destructive ===');
   // **WHAT A REBUILD REPLACES IS THE BRANCH AND NOT THE ROOT, SINCE
   // 2026-09-11**, and the two halves are asserted separately because they are
   // now different claims. The Root is the service's: every other realm's
@@ -388,15 +404,16 @@ async function run(t) {
           'process');
   t.check(stsCrypto.stripPem(pki.describe(REALM).tiers[1].certificatePem) !==
           stsCrypto.stripPem(firstIntermediate),
-          'while REPLACING this realm\'s own Intermediate and the Issuing CAs ' +
-          'under it, which is what makes everything they issued chain to ' +
+          'while REPLACING this realm\'s own Intermediate and the Issuing ' +
+          'CAs under it, which is what makes everything they issued chain to ' +
           'nothing');
   const orphaned = await pki.verifyLeaf(REALM, leaf.certificatePem,
                                         leaf.chainPem);
   t.check(!orphaned.ok,
-          'so everything issued from the old one chains to nothing — which is ' +
-          'stated on the page rather than hidden, because there is no honest ' +
-          'way to hide it and this service keeps no copy of what it issued');
+          'so everything issued from the old one chains to nothing — which ' +
+          'is stated on the page rather than hidden, because there is no ' +
+          'honest way to hide it and this service keeps no copy of what it ' +
+          'issued');
   t.equal(pki.describe(REALM).issuedCount, 0,
           'and the new hierarchy has issued nothing, because the count is a ' +
           'fact about THIS hierarchy');
@@ -417,7 +434,8 @@ async function run(t) {
           'a realm\'s BRANCH is held by common/keystore.js — the same module ' +
           'that holds the signing keys, in the same sts_keys row family, ' +
           'sealed under the same key-encryption key where there is one');
-  t.check(String(held.intermediate.privateKeyPem || '').indexOf('PRIVATE KEY') >= 0,
+  t.check(String(held.intermediate.privateKeyPem || '').indexOf(
+      'PRIVATE KEY') >= 0,
           'WITH its private keys, which is the difference between what is ' +
           'stored and what describe() hands out');
   // **AND THE ROOT IS NOT IN IT, WHICH IS THE STORAGE HALF OF THE REVERSAL.**
@@ -432,7 +450,8 @@ async function run(t) {
           'out, so the Root has one copy rather than one per realm');
   const serviceRow = keystore.pkiFor(pki.SERVICE_SCOPE);
   t.check(serviceRow && serviceRow.root &&
-          String(serviceRow.root.privateKeyPem || '').indexOf('PRIVATE KEY') >= 0,
+          String(serviceRow.root.privateKeyPem || '').indexOf(
+              'PRIVATE KEY') >= 0,
           'the Root lives in the SERVICE row, once, with its private key');
 
   t.log.info('=== the report the crypto page reads ===');
@@ -440,7 +459,8 @@ async function run(t) {
   t.equal(report.tiers.length, 3, 'three tiers in the report');
   t.check(report.keyAlgorithms.length >= 7,
           'the key algorithms are read from the module that GENERATES them',
-          report.keyAlgorithms.map(function (one) { return one.id; }).join(', '));
+          report.keyAlgorithms.map(function (one) { return one.id; })
+                              .join(', '));
   t.check(report.signatureAlgorithms.some(function (one) { return one.weak; }),
           'and the two deliberately weak SHA-1 rows are in the list and ' +
           'MARKED, because "does my stack refuse a SHA-1 certificate?" is a ' +
@@ -482,6 +502,7 @@ async function run(t) {
           'reversed');
 
   await theIssuedKeyIsSealedAtRest(t);
+  log.debug("Leaving run().");
 }
 
 // ===========================================================================
@@ -505,6 +526,7 @@ async function run(t) {
 // restart-only.
 // ===========================================================================
 async function theIssuedKeyIsSealedAtRest(t) {
+  log.debug("Entering theIssuedKeyIsSealedAtRest().");
   t.log.info('=== the issued private key, at rest ===');
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-pki-seal-'));
@@ -537,9 +559,21 @@ async function theIssuedKeyIsSealedAtRest(t) {
   process.env.STS_KEYS_KEK_FILE = kekFile;
   keystore.reset();
   keystore.setStore({
-    loadKeys: function () { return Promise.resolve([]); },
-    saveKeys: function () { return Promise.resolve(); },
-    deleteKeys: function () { return Promise.resolve(); }
+    loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
+      return Promise.resolve([]);
+    },
+    saveKeys: function () {
+      log.debug("Entering saveKeys().");
+      log.debug("Leaving saveKeys().");
+      return Promise.resolve();
+    },
+    deleteKeys: function () {
+      log.debug("Entering deleteKeys().");
+      log.debug("Leaving deleteKeys().");
+      return Promise.resolve();
+    }
   });
   await keystore.start();
 
@@ -550,7 +584,8 @@ async function theIssuedKeyIsSealedAtRest(t) {
 
     const written = applications.updateApplication(APP,
       { attribute: 'oauthAssertionPrivateKey', mode: 'set', value: PEM });
-    t.check(written.ok, 'the key pair is written', (written.errors || []).join(' '));
+    t.check(written.ok, 'the key pair is written',
+            (written.errors || []).join(' '));
 
     entry = applications.get(APP);
     const stored = String(entry.attributes.oauthAssertionPrivateKey);
@@ -575,7 +610,8 @@ async function theIssuedKeyIsSealedAtRest(t) {
     // this key signs. Sealing them would hide something published and break
     // the verification path in the same act.
     applications.updateApplication(APP,
-      { attribute: 'oauthAssertionCertificate', mode: 'set', value: 'CERTIFICATE' });
+      { attribute: 'oauthAssertionCertificate', mode: 'set',
+        value: 'CERTIFICATE' });
     entry = applications.get(APP);
     t.check(!applications.isSealed(String(entry.attributes.oauthAssertionCertificate)),
             'the CERTIFICATE beside it is stored as it is — five of the six ' +
@@ -608,14 +644,16 @@ async function theIssuedKeyIsSealedAtRest(t) {
     keystore.reset();
     fs.rmSync(dir, { recursive: true, force: true });
   }
+  log.debug("Leaving theIssuedKeyIsSealedAtRest().");
 }
 
 module.exports = {
   name: 'pki',
-  describe: 'The certificate authority: three tiers built in one act from the ' +
-            'vendored profiles, a leaf that is a signing certificate and not ' +
-            'a TLS one, the path check that refuses a chain to somebody ' +
+  describe: 'The certificate authority: three tiers built in one act from ' +
+            'the vendored profiles, a leaf that is a signing certificate and ' +
+            'not a TLS one, the path check that refuses a chain to somebody ' +
             'else\'s anchor, the realm boundary, the algorithm pairing no ' +
-            'request can ask for, and what is stored against what is handed out',
+            'request can ask for, and what is stored against what is handed ' +
+            'out',
   run: run
 };

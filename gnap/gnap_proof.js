@@ -56,7 +56,8 @@
 // each. A verifier that accepted only one would refuse the other half of the
 // ecosystem over an ambiguity that has nothing to do with security — both bind
 // exactly the same digest. So both are accepted, and a middle segment left
-// EMPTY (a true RFC 7515 Appendix F detached payload) is reconstructed each way.
+// EMPTY (a true RFC 7515 Appendix F detached payload) is reconstructed each
+// way.
 // ---------------------------------------------------------------------------
 
 const nodeCrypto = require('crypto');
@@ -69,26 +70,37 @@ const httpsig = require('./gnap_httpsig');
 const store = require('./gnap_store');
 
 function refusal(code, why, gnapError) {
-  const out = { ok: false, errorCode: code, why: why, gnapError: gnapError || 'invalid_client' };
+  log.debug("Entering refusal().");
+  const out = { ok: false, errorCode: code, why: why,
+                gnapError: gnapError || 'invalid_client' };
+  log.debug("Leaving refusal().");
   return errorCodes.mark(out, code);
 }
 
 function maxAgeS() {
+  log.debug("Entering maxAgeS().");
   const value = Number(config.value('gnap.signatureMaxAgeS'));
+  log.debug("Leaving maxAgeS().");
   return Number.isFinite(value) && value > 0 ? value : 300;
 }
 
 function b64u(buffer) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
   return Buffer.from(buffer).toString('base64url');
 }
 
 function sha256(bytes) {
+  log.debug("Entering sha256().");
+  log.debug("Leaving sha256().");
   return nodeCrypto.createHash('sha256').update(bytes).digest();
 }
 
 // The access token hash of sections 7.3.3/7.3.4: base64url SHA-256 of the
 // ASCII token value — the same computation as DPoP's `ath` (RFC 9449).
 function athOf(token) {
+  log.debug("Entering athOf().");
+  log.debug("Leaving athOf().");
   return b64u(sha256(Buffer.from(String(token), 'ascii')));
 }
 
@@ -97,13 +109,17 @@ function athOf(token) {
 // A signature over any other spelling of the URI fails, which is correct: the
 // client signed the URI the AS gave it, and section 3.1 says to use it exactly.
 function targetUriOf(req) {
+  log.debug("Entering targetUriOf().");
+  log.debug("Leaving targetUriOf().");
   return baseUrlOf(req) + (req.url || '');
 }
 
 // The GNAP token in `Authorization`, when the request carries one.
 function presentedToken(req) {
+  log.debug("Entering presentedToken().");
   const header = String((req.headers && req.headers.authorization) || '');
   const match = header.match(/^GNAP\s+([A-Za-z0-9\-._~+/]+=*)\s*$/);
+  log.debug("Leaving presentedToken().");
   return match ? match[1] : null;
 }
 
@@ -138,26 +154,33 @@ function readBody(req) {
       // (section 7.3.4.1), so the payload may itself be a compact JWS. Its
       // content is the innermost payload.
       if (typeof json === 'string' && json.split('.').length === 3) {
-        json = JSON.parse(Buffer.from(json.split('.')[1], 'base64url').toString('utf8'));
+        json = JSON.parse(Buffer.from(json.split('.')[1], 'base64url')
+                                .toString('utf8'));
       }
     } catch (e) {
+      log.debug("Caught in readBody(): " + ((e && e.message) || e));
       const inner = Buffer.from(parts[1] || '', 'base64url').toString('utf8');
       if (inner.split('.').length === 3) {
         try {
-          json = JSON.parse(Buffer.from(inner.split('.')[1], 'base64url').toString('utf8'));
+          json = JSON.parse(Buffer.from(inner.split('.')[1], 'base64url')
+                                  .toString('utf8'));
         } catch (e2) {
+          log.debug("Caught in readBody(): " + ((e2 && e2.message) || e2));
           // Neither layer is JSON; refused below with one sentence.
           json = undefined;
         }
       }
       if (json === undefined) {
-        log.debug("Leaving readBody(). An attached JWS whose payload is not JSON.");
-        return refusal('STS-GNAP-0260', 'the request content is a JWS whose payload is not a ' +
-                       'JSON object (RFC 9635 section 7.3.4).', 'invalid_request');
+        log.debug("Leaving readBody(). An attached JWS whose payload is not " +
+                  "JSON.");
+        return refusal('STS-GNAP-0260', 'the request content is a JWS whose ' +
+                       'payload is not a JSON object (RFC 9635 section ' +
+                       '7.3.4).', 'invalid_request');
       }
     }
     log.debug("Leaving readBody(). Attached JWS.");
-    return { ok: true, hadContent: true, raw: raw, json: json, jose: text.trim() };
+    return { ok: true, hadContent: true, raw: raw, json: json,
+             jose: text.trim() };
   }
   try {
     const json = JSON.parse(text);
@@ -165,8 +188,9 @@ function readBody(req) {
     return { ok: true, hadContent: true, raw: raw, json: json, jose: null };
   } catch (e) {
     log.debug("Leaving readBody(). Not JSON: " + e.message);
-    return refusal('STS-GNAP-0261', 'the request content is not JSON (RFC 9635 section 2 ' +
-                   'requires a JSON object with Content-Type application/json).',
+    return refusal('STS-GNAP-0261', 'the request content is not JSON (RFC ' +
+                   '9635 section 2 requires a JSON object with Content-Type ' +
+                   'application/json).',
                    'invalid_request');
   }
 }
@@ -194,8 +218,11 @@ function verifyJwsBytes(alg, descriptor, signingInput, signature) {
         log.debug("Leaving verifyJwsBytes(). HMAC with no shared secret.");
         return false;
       }
-      const mac = nodeCrypto.createHmac(spec.hash, descriptor.secret).update(data).digest();
-      const ok = mac.length === signature.length && nodeCrypto.timingSafeEqual(mac, signature);
+      const mac = nodeCrypto.createHmac(spec.hash, descriptor.secret)
+                            .update(data)
+                            .digest();
+      const ok = mac.length === signature.length &&
+                 nodeCrypto.timingSafeEqual(mac, signature);
       log.debug("Leaving verifyJwsBytes(). HMAC " + ok);
       return ok;
     }
@@ -232,6 +259,8 @@ function verifyJwsBytes(alg, descriptor, signingInput, signature) {
 // parameter of the key"), the registered one for a shared secret, and the
 // type-derived one for a certificate.
 function expectedJwsAlg(descriptor) {
+  log.debug("Entering expectedJwsAlg().");
+  log.debug("Leaving expectedJwsAlg().");
   return descriptor.alg || null;
 }
 
@@ -244,52 +273,64 @@ function checkJwsLayer(compact, descriptor, ctx, allowedTypes, payloadCheck) {
   const parts = String(compact || '').split('.');
   if (parts.length !== 3) {
     log.debug("Leaving checkJwsLayer(). Not a compact JWS.");
-    return refusal('STS-GNAP-0262', 'the key proof is not a compact JWS (RFC 7515).');
+    return refusal('STS-GNAP-0262', 'the key proof is not a compact JWS (RFC ' +
+                                    '7515).');
   }
   let header;
   try {
     header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
   } catch (e) {
     log.debug("Leaving checkJwsLayer(). Header is not JSON: " + e.message);
-    return refusal('STS-GNAP-0262', 'the key proof\'s JOSE header is not JSON.');
+    return refusal('STS-GNAP-0262',
+                   'the key proof\'s JOSE header is not JSON.');
   }
   if (allowedTypes.indexOf(header.typ) < 0) {
     log.debug("Leaving checkJwsLayer(). typ " + header.typ);
-    return refusal('STS-GNAP-0263', 'the key proof\'s typ is "' + header.typ + '"; this ' +
-                   'request needs ' + allowedTypes.join(' or ') + ' (RFC 9635 section 7.3).');
+    return refusal('STS-GNAP-0263',
+                   'the key proof\'s typ is "' + header.typ + '"; ' +
+                   'this request ' +
+                   'needs ' + allowedTypes.join(' or ') + ' (RFC ' +
+                       '9635 section 7.3).');
   }
   const expected = expectedJwsAlg(descriptor);
   if (!header.alg || header.alg === 'none' || header.alg !== expected) {
-    log.debug("Leaving checkJwsLayer(). alg " + header.alg + " expected " + expected);
-    return refusal('STS-GNAP-0264', 'the key proof\'s alg must be the key\'s own ("' +
+    log.debug("Leaving checkJwsLayer(). alg " + header.alg + " expected " +
+              expected);
+    return refusal('STS-GNAP-0264', 'the key proof\'s alg must be the key\'s ' +
+                                    'own ("' +
                    expected + '") and never "none" (RFC 9635 section 7.3.3).');
   }
   if (descriptor.format === 'jwk' && header.kid !== descriptor.jwk.kid) {
     log.debug("Leaving checkJwsLayer(). kid mismatch.");
-    return refusal('STS-GNAP-0265', 'the key proof\'s kid does not name the presented JWK ' +
-                   '(RFC 9635 section 7.3.3).');
+    return refusal('STS-GNAP-0265', 'the key proof\'s kid does not name the ' +
+                   'presented JWK (RFC 9635 section 7.3.3).');
   }
   if (header.htm !== ctx.method) {
     log.debug("Leaving checkJwsLayer(). htm mismatch.");
-    return refusal('STS-GNAP-0266', 'the key proof\'s htm is "' + header.htm + '" and the ' +
-                   'request method is ' + ctx.method + '.');
+    return refusal('STS-GNAP-0266',
+                   'the key proof\'s htm is "' + header.htm + '" ' +
+                   'and the request method is ' + ctx.method + '.');
   }
   if (header.uri !== ctx.targetUri) {
-    log.debug("Leaving checkJwsLayer(). uri mismatch: " + header.uri + " vs " + ctx.targetUri);
-    return refusal('STS-GNAP-0267', 'the key proof\'s uri is not the URI this request was ' +
-                   'sent to (' + ctx.targetUri + ').');
+    log.debug("Leaving checkJwsLayer(). uri mismatch: " + header.uri + " vs " +
+              ctx.targetUri);
+    return refusal('STS-GNAP-0267', 'the key proof\'s uri is not the URI ' +
+                   'this request was sent to (' + ctx.targetUri + ').');
   }
   const now = nowSec();
-  if (!Number.isInteger(header.created) || Math.abs(now - header.created) > maxAgeS()) {
+  if (!Number.isInteger(header.created) ||
+      Math.abs(now - header.created) > maxAgeS()) {
     log.debug("Leaving checkJwsLayer(). created out of window.");
-    return refusal('STS-GNAP-0268', 'the key proof\'s created time is missing or more than ' +
+    return refusal('STS-GNAP-0268', 'the key proof\'s created time is ' +
+                                    'missing or more than ' +
                    maxAgeS() + ' seconds from now.');
   }
   if (ctx.accessToken) {
     if (header.ath !== athOf(ctx.accessToken)) {
       log.debug("Leaving checkJwsLayer(). ath mismatch.");
-      return refusal('STS-GNAP-0269', 'the key proof does not carry the hash of the presented ' +
-                     'access token in "ath" (RFC 9635 section 7.3.3).');
+      return refusal('STS-GNAP-0269', 'the key proof does not carry the hash ' +
+                     'of the presented access token in "ath" (RFC 9635 ' +
+                     'section 7.3.3).');
     }
   }
   const signature = Buffer.from(parts[2], 'base64url');
@@ -299,12 +340,13 @@ function checkJwsLayer(compact, descriptor, ctx, allowedTypes, payloadCheck) {
     return payloads;
   }
   const verified = payloads.candidates.some(function (middle) {
-    return verifyJwsBytes(header.alg, descriptor, parts[0] + '.' + middle, signature);
+    return verifyJwsBytes(header.alg, descriptor, parts[0] + '.' + middle,
+                          signature);
   });
   if (!verified) {
     log.debug("Leaving checkJwsLayer(). Signature does not verify.");
-    return refusal('STS-GNAP-0270', 'the key proof\'s signature does not verify against the ' +
-                   'presented key.');
+    return refusal('STS-GNAP-0270', 'the key proof\'s signature does not ' +
+                   'verify against the presented key.');
   }
   if (!store.remember('jws|' + parts[2], maxAgeS() * 2)) {
     log.debug("Leaving checkJwsLayer(). Replay.");
@@ -316,11 +358,13 @@ function checkJwsLayer(compact, descriptor, ctx, allowedTypes, payloadCheck) {
 
 // What the middle segment of a detached JWS may be, given the content.
 function detachedPayloadCheck(raw, hadContent) {
+  log.debug("Entering detachedPayloadCheck().");
+  log.debug("Leaving detachedPayloadCheck().");
   return function (middle) {
     if (!hadContent) {
       if (middle !== '') {
-        return refusal('STS-GNAP-0272', 'a request with no content is signed over an empty ' +
-                       'payload (RFC 9635 section 7.3.3).');
+        return refusal('STS-GNAP-0272', 'a request with no content is signed ' +
+                       'over an empty payload (RFC 9635 section 7.3.3).');
       }
       return { ok: true, candidates: [''] };
     }
@@ -331,8 +375,9 @@ function detachedPayloadCheck(raw, hadContent) {
       return { ok: true, candidates: [once, twice] };
     }
     if (middle !== once && middle !== twice) {
-      return refusal('STS-GNAP-0273', 'the detached JWS does not carry the SHA-256 digest of ' +
-                     'this request\'s content (RFC 9635 section 7.3.3).');
+      return refusal('STS-GNAP-0273', 'the detached JWS does not carry the ' +
+                     'SHA-256 digest of this request\'s content (RFC 9635 ' +
+                     'section 7.3.3).');
     }
     return { ok: true, candidates: [middle] };
   };
@@ -342,12 +387,18 @@ function detachedPayloadCheck(raw, hadContent) {
 // HTTP MESSAGE SIGNATURES (section 7.3.1).
 // ---------------------------------------------------------------------------
 function httpsigAlgorithm(descriptor) {
-  if (descriptor.proof && descriptor.proof.params && descriptor.proof.params.alg) {
+  log.debug("Entering httpsigAlgorithm().");
+  if (descriptor.proof && descriptor.proof.params &&
+      descriptor.proof.params.alg) {
+    log.debug("Leaving httpsigAlgorithm().");
     return descriptor.proof.params.alg;
   }
   if (descriptor.secret) {
-    return descriptor.alg === 'HS256' || !descriptor.alg ? 'hmac-sha256' : descriptor.alg;
+    log.debug("Leaving httpsigAlgorithm().");
+    return descriptor.alg === 'HS256' || !descriptor.alg ? 'hmac-sha256' :
+           descriptor.alg;
   }
+  log.debug("Leaving httpsigAlgorithm().");
   return descriptor.alg;
 }
 
@@ -357,13 +408,19 @@ function httpsigAlgorithm(descriptor) {
 // back through the structured-field parser rather than matched as text, because
 // parameter order and quoting are the serialiser's to choose.
 function componentNamed(components, name, key) {
+  log.debug("Entering componentNamed().");
   const sf = require('./gnap_sf');
+  log.debug("Leaving componentNamed().");
   return (components || []).some(function (serialised) {
     let item;
     try {
-      item = typeof serialised === 'string' ? sf.parseItem(serialised) : serialised;
+      item = typeof serialised === 'string' ? sf.parseItem(serialised) :
+             serialised;
     } catch (e) {
-      // Not a component identifier this parser reads; it covers nothing asked about.
+      log.debug("Caught in a callback in componentNamed(): " +
+                ((e && e.message) || e));
+      // Not a component identifier this parser reads; it covers nothing asked
+      // about.
       return false;
     }
     if (!item || item.value !== name) {
@@ -378,15 +435,19 @@ function componentNamed(components, name, key) {
 
 function verifyHttpsig(req, descriptor, ctx) {
   log.debug("Entering verifyHttpsig().");
-  const message = { method: ctx.method, targetUri: ctx.targetUri, headers: req.headers };
+  const message = { method: ctx.method, targetUri: ctx.targetUri,
+                    headers: req.headers };
   if (ctx.hadContent) {
-    const accepted = [(descriptor.proof.params && descriptor.proof.params.contentDigestAlg) || 'sha-256'];
-    const digest = httpsig.verifyContentDigest(req.headers['content-digest'], ctx.raw,
+    const accepted = [(descriptor.proof.params &&
+                       descriptor.proof.params.contentDigestAlg) || 'sha-256'];
+    const digest = httpsig.verifyContentDigest(req.headers['content-digest'],
+                                               ctx.raw,
                                                { accepted: accepted });
     if (!digest.ok) {
       log.debug("Leaving verifyHttpsig(). Content-Digest refused.");
       return refusal(errorCodes.codeOf(digest) || 'STS-GNAP-0274',
-                     'the Content-Digest does not match the request content: ' + digest.why);
+                     'the Content-Digest does not match the request content: ' +
+                     digest.why);
     }
   }
   const required = ['@method', '@target-uri'];
@@ -398,13 +459,19 @@ function verifyHttpsig(req, descriptor, ctx) {
   }
   const result = httpsig.verify(message, {
     keyFor: function (parsed) {
+      log.debug("Entering keyFor().");
       if (parsed.params.tag !== (ctx.tag || 'gnap')) {
+        log.debug("Leaving keyFor().");
         return null;
       }
-      if (descriptor.format === 'jwk' && parsed.params.keyid !== descriptor.jwk.kid) {
+      if (descriptor.format === 'jwk' &&
+          parsed.params.keyid !== descriptor.jwk.kid) {
+        log.debug("Leaving keyFor().");
         return null;
       }
-      return { key: descriptor.secret || descriptor.publicKey, algorithm: httpsigAlgorithm(descriptor) };
+      log.debug("Leaving keyFor().");
+      return { key: descriptor.secret || descriptor.publicKey,
+               algorithm: httpsigAlgorithm(descriptor) };
     },
     now: nowSec(),
     maxAgeS: maxAgeS(),
@@ -424,10 +491,11 @@ function verifyHttpsig(req, descriptor, ctx) {
   }
   const chosen = result.verified[0];
   if (chosen.params.nonce &&
-      !store.remember('httpsig|' + descriptor.identity + '|' + chosen.params.nonce, maxAgeS() * 2)) {
+      !store.remember('httpsig|' + descriptor.identity + '|' +
+                      chosen.params.nonce, maxAgeS() * 2)) {
     log.debug("Leaving verifyHttpsig(). Nonce replay.");
-    return refusal('STS-GNAP-0276', 'the signature nonce has already been used (RFC 9635 ' +
-                   'section 7.3.1).');
+    return refusal('STS-GNAP-0276', 'the signature nonce has already been ' +
+                   'used (RFC 9635 section 7.3.1).');
   }
   log.debug("Leaving verifyHttpsig(). label=" + chosen.label);
   return { ok: true, verified: result.verified };
@@ -441,31 +509,35 @@ function verifyMtls(req, descriptor) {
   const certificate = mtls.peerCertificate(req);
   if (!certificate) {
     log.debug("Leaving verifyMtls(). No client certificate.");
-    return refusal('STS-GNAP-0277', 'the key is proved by mutual TLS and this connection ' +
-                   'presented no client certificate (RFC 9635 section 7.3.2).');
+    return refusal('STS-GNAP-0277', 'the key is proved by mutual TLS and ' +
+                   'this connection presented no client certificate (RFC ' +
+                   '9635 section 7.3.2).');
   }
   const thumbprint = stsCrypto.certificateThumbprint(certificate.raw);
   if (descriptor.format === 'cert' || descriptor.format === 'cert#S256') {
     if (thumbprint !== descriptor.thumbprint) {
       log.debug("Leaving verifyMtls(). Thumbprint mismatch.");
-      return refusal('STS-GNAP-0278', 'the TLS client certificate is not the certificate the ' +
-                     'key names.');
+      return refusal('STS-GNAP-0278', 'the TLS client certificate is not the ' +
+                     'certificate the key names.');
     }
     log.debug("Leaving verifyMtls(). Certificate matches.");
     return { ok: true, thumbprint: thumbprint };
   }
   if (descriptor.publicKey) {
-    // A JWK proved over MTLS: the same PUBLIC KEY, compared as SubjectPublicKeyInfo.
+    // A JWK proved over MTLS: the same PUBLIC KEY, compared as
+    // SubjectPublicKeyInfo.
     const presented = new nodeCrypto.X509Certificate(certificate.raw).publicKey
       .export({ type: 'spki', format: 'der' });
-    const expected = descriptor.publicKey.export({ type: 'spki', format: 'der' });
+    const expected = descriptor.publicKey.export(
+        { type: 'spki', format: 'der' });
     if (Buffer.compare(presented, expected) === 0) {
       log.debug("Leaving verifyMtls(). JWK matches the certificate's key.");
       return { ok: true, thumbprint: thumbprint };
     }
   }
   log.debug("Leaving verifyMtls(). Key does not match.");
-  return refusal('STS-GNAP-0278', 'the TLS client certificate does not carry the presented key.');
+  return refusal('STS-GNAP-0278', 'the TLS client certificate does not carry ' +
+                                  'the presented key.');
 }
 
 // ---------------------------------------------------------------------------
@@ -477,33 +549,40 @@ function verifyMtls(req, descriptor) {
 // 7.3 requires.
 // ---------------------------------------------------------------------------
 function verifyRequest(req, body, descriptor, options) {
-  log.debug("Entering verifyRequest(). method=" + (descriptor && descriptor.proof &&
+  log.debug("Entering verifyRequest(). method=" +
+            (descriptor && descriptor.proof &&
             descriptor.proof.method));
   const opts = options || {};
   if (!descriptor || !descriptor.ok) {
     log.debug("Leaving verifyRequest(). No key.");
     return refusal('STS-GNAP-0279', 'no key to verify this request with.');
   }
-  const ctx = { method: req.method, targetUri: targetUriOf(req), accessToken: opts.accessToken || null,
+  const ctx = { method: req.method, targetUri: targetUriOf(req),
+                accessToken: opts.accessToken || null,
                 hadContent: body.hadContent, raw: body.raw };
   const method = descriptor.proof.method;
   if (descriptor.format === 'cert#S256' && method !== 'mtls') {
-    log.debug("Leaving verifyRequest(). Thumbprint-only key with a signature method.");
-    return refusal('STS-GNAP-0280', 'a "cert#S256" key carries no public key and can only be ' +
-                   'proved by mutual TLS (RFC 9635 section 7.1).');
+    log.debug("Leaving verifyRequest(). Thumbprint-only key with a signature " +
+              "method.");
+    return refusal('STS-GNAP-0280', 'a "cert#S256" key carries no public key ' +
+                   'and can only be proved by mutual TLS (RFC 9635 section ' +
+                   '7.1).');
   }
   const rotation = opts.rotation || null;
-  if (rotation && !require('./gnap_keys').sameProof(rotation.proof, descriptor.proof)) {
+  if (rotation &&
+      !require('./gnap_keys').sameProof(rotation.proof, descriptor.proof)) {
     log.debug("Leaving verifyRequest(). Rotation changes the proofing method.");
-    return refusal('STS-GNAP-0281', 'a key rotation must keep the proofing method and its ' +
-                   'parameters (RFC 9635 section 6.1.1).', 'invalid_rotation');
+    return refusal('STS-GNAP-0281', 'a key rotation must keep the proofing ' +
+                   'method and its parameters (RFC 9635 section ' +
+                   '6.1.1).', 'invalid_rotation');
   }
   let outcome;
   if (method === 'mtls') {
     if (rotation) {
       log.debug("Leaving verifyRequest(). MTLS cannot rotate.");
-      return refusal('STS-GNAP-0282', 'key rotation is not defined for mutual TLS (RFC 9635 ' +
-                     'section 7.3.2.1).', 'key_rotation_not_supported');
+      return refusal('STS-GNAP-0282', 'key rotation is not defined for ' +
+                     'mutual TLS (RFC 9635 section ' +
+                     '7.3.2.1).', 'key_rotation_not_supported');
     }
     outcome = verifyMtls(req, descriptor);
   } else if (method === 'httpsig') {
@@ -516,7 +595,8 @@ function verifyRequest(req, body, descriptor, options) {
     outcome = rotation ? verifyJwsRotation(req, body, descriptor, rotation, ctx)
                        : verifyJws(req, body, descriptor, ctx);
   } else {
-    outcome = refusal('STS-GNAP-0283', 'the proofing method "' + method + '" is not implemented.');
+    outcome = refusal('STS-GNAP-0283', 'the proofing method "' + method + '" ' +
+        'is not implemented.');
   }
   if (!outcome.ok && rotation) {
     outcome.gnapError = outcome.gnapError === 'key_rotation_not_supported'
@@ -527,33 +607,46 @@ function verifyRequest(req, body, descriptor, options) {
 }
 
 function verifyJwsd(req, descriptor, ctx) {
+  log.debug("Entering verifyJwsd().");
   const header = req.headers['detached-jws'];
   if (!header) {
-    return refusal('STS-GNAP-0284', 'the key is proved by a detached JWS and the request has no ' +
-                   'Detached-JWS header (RFC 9635 section 7.3.3).');
+    log.debug("Leaving verifyJwsd().");
+    return refusal('STS-GNAP-0284', 'the key is proved by a detached JWS and ' +
+                   'the request has no Detached-JWS header (RFC 9635 section ' +
+                   '7.3.3).');
   }
+  log.debug("Leaving verifyJwsd().");
   return checkJwsLayer(header, descriptor, ctx, ['gnap-binding-jwsd'],
                        detachedPayloadCheck(ctx.raw, ctx.hadContent));
 }
 
 function verifyJws(req, body, descriptor, ctx) {
+  log.debug("Entering verifyJws().");
   if (!ctx.hadContent) {
     // Section 7.3.4: with no content the attached method signs an empty
     // payload and sends it in Detached-JWS — the section names no typ for that
     // case, so either binding type is accepted.
     const header = req.headers['detached-jws'];
     if (!header) {
-      return refusal('STS-GNAP-0284', 'a request with no content proved by "jws" carries its ' +
-                     'signature in the Detached-JWS header (RFC 9635 section 7.3.4).');
+      log.debug("Leaving verifyJws().");
+      return refusal('STS-GNAP-0284', 'a request with no content proved by ' +
+                     '"jws" carries its signature in the Detached-JWS header ' +
+                     '(RFC 9635 section 7.3.4).');
     }
-    return checkJwsLayer(header, descriptor, ctx, ['gnap-binding-jws', 'gnap-binding-jwsd'],
+    log.debug("Leaving verifyJws().");
+    return checkJwsLayer(header, descriptor, ctx,
+                         ['gnap-binding-jws', 'gnap-binding-jwsd'],
                          detachedPayloadCheck(ctx.raw, false));
   }
   if (!body.jose) {
-    return refusal('STS-GNAP-0285', 'the key is proved by an attached JWS and the request ' +
-                   'content is not one (RFC 9635 section 7.3.4).');
+    log.debug("Leaving verifyJws().");
+    return refusal('STS-GNAP-0285', 'the key is proved by an attached JWS ' +
+                   'and the request content is not one (RFC 9635 section ' +
+                   '7.3.4).');
   }
-  return checkJwsLayer(body.jose, descriptor, ctx, ['gnap-binding-jws'], function (middle) {
+  log.debug("Leaving verifyJws().");
+  return checkJwsLayer(body.jose, descriptor, ctx, ['gnap-binding-jws'],
+                       function (middle) {
     return { ok: true, candidates: [middle] };
   });
 }
@@ -570,7 +663,8 @@ function verifyHttpsigRotation(req, oldKey, newKey, ctx) {
   const oldLabels = first.verified.map(function (one) {
     return one.label;
   });
-  const second = verifyHttpsig(req, newKey, Object.assign({}, ctx, { tag: 'gnap-rotate' }));
+  const second = verifyHttpsig(req, newKey,
+                               Object.assign({}, ctx, { tag: 'gnap-rotate' }));
   if (!second.ok) {
     log.debug("Leaving verifyHttpsigRotation(). New key refused.");
     return second;
@@ -582,9 +676,11 @@ function verifyHttpsigRotation(req, oldKey, newKey, ctx) {
     });
   });
   if (!covers) {
-    log.debug("Leaving verifyHttpsigRotation(). New signature does not cover the old one.");
-    return refusal('STS-GNAP-0286', 'the new key\'s signature must cover the old key\'s ' +
-                   '"signature" and "signature-input" (RFC 9635 section 7.3.1.1).');
+    log.debug("Leaving verifyHttpsigRotation(). New signature does not cover " +
+              "the old one.");
+    return refusal('STS-GNAP-0286', 'the new key\'s signature must cover the ' +
+                   'old key\'s "signature" and "signature-input" (RFC 9635 ' +
+                   'section 7.3.1.1).');
   }
   log.debug("Leaving verifyHttpsigRotation().");
   return { ok: true };
@@ -597,11 +693,13 @@ function verifyJwsdRotation(req, oldKey, newKey, ctx) {
   const outer = req.headers['detached-jws'];
   if (!outer) {
     log.debug("Leaving verifyJwsdRotation(). No header.");
-    return refusal('STS-GNAP-0284', 'a detached-JWS key rotation carries its proof in the ' +
-                   'Detached-JWS header (RFC 9635 section 7.3.3.1).');
+    return refusal('STS-GNAP-0284', 'a detached-JWS key rotation carries its ' +
+                   'proof in the Detached-JWS header (RFC 9635 section ' +
+                   '7.3.3.1).');
   }
   let inner = null;
-  const checkedOuter = checkJwsLayer(outer, newKey, ctx, ['gnap-binding-jwsd'], function (middle) {
+  const checkedOuter = checkJwsLayer(outer, newKey, ctx, ['gnap-binding-jwsd'],
+                                     function (middle) {
     inner = Buffer.from(middle, 'base64url').toString('ascii');
     return { ok: true, candidates: [middle] };
   });
@@ -609,8 +707,10 @@ function verifyJwsdRotation(req, oldKey, newKey, ctx) {
     log.debug("Leaving verifyJwsdRotation(). Outer layer refused.");
     return checkedOuter;
   }
-  const checkedInner = checkJwsLayer(inner, oldKey, ctx, ['gnap-binding-rotation-jwsd'],
-                                     detachedPayloadCheck(ctx.raw, ctx.hadContent));
+  const checkedInner = checkJwsLayer(inner, oldKey, ctx,
+                                     ['gnap-binding-rotation-jwsd'],
+                                     detachedPayloadCheck(ctx.raw,
+                                                          ctx.hadContent));
   log.debug("Leaving verifyJwsdRotation(). inner ok=" + checkedInner.ok);
   return checkedInner.ok ? { ok: true } : checkedInner;
 }
@@ -620,11 +720,12 @@ function verifyJwsRotation(req, body, oldKey, newKey, ctx) {
   log.debug("Entering verifyJwsRotation().");
   if (!body.jose) {
     log.debug("Leaving verifyJwsRotation(). Content is not a JWS.");
-    return refusal('STS-GNAP-0285', 'an attached-JWS key rotation sends a JWS as the content ' +
-                   '(RFC 9635 section 7.3.4.1).');
+    return refusal('STS-GNAP-0285', 'an attached-JWS key rotation sends a ' +
+                   'JWS as the content (RFC 9635 section 7.3.4.1).');
   }
   let inner = null;
-  const checkedOuter = checkJwsLayer(body.jose, newKey, ctx, ['gnap-binding-jws'], function (middle) {
+  const checkedOuter = checkJwsLayer(body.jose, newKey, ctx,
+                                     ['gnap-binding-jws'], function (middle) {
     inner = Buffer.from(middle, 'base64url').toString('utf8');
     return { ok: true, candidates: [middle] };
   });
@@ -640,10 +741,13 @@ function verifyJwsRotation(req, body, oldKey, newKey, ctx) {
       inner = JSON.parse(inner);
     } catch (e) {
       // Left as it was; the inner check below refuses it with a sentence.
-      log.debug("verifyJwsRotation(): inner payload is not a JSON string: " + e.message);
+      log.debug("verifyJwsRotation(): inner payload is not a JSON string: " +
+                e.message);
     }
   }
-  const checkedInner = checkJwsLayer(inner, oldKey, ctx, ['gnap-binding-rotation-jws'], function (middle) {
+  const checkedInner = checkJwsLayer(inner, oldKey, ctx,
+                                     ['gnap-binding-rotation-jws'],
+                                     function (middle) {
     return { ok: true, candidates: [middle] };
   });
   log.debug("Leaving verifyJwsRotation(). inner ok=" + checkedInner.ok);

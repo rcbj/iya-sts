@@ -91,6 +91,12 @@ delete process.env.CONFIG_FILE;
 const realms = require('../common/realms');
 const stats = require('../common/admin_stats');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'realm_isolation',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // Create a realm, hand it to `fn`, and remove it however that goes. The realm
 // table is process-wide, so a realm left
@@ -99,14 +105,17 @@ const stats = require('../common/admin_stats');
 // yourself" is how one of them comes to be the one nobody follows.
 // ---------------------------------------------------------------------------
 function withRealm(t, id, fn) {
+  log.debug("Entering withRealm().");
   const made = realms.create({ id: id, name: id,
                                description: 'Created by ' + __filename });
   if (!made.ok) {
     t.bad('could not create the realm "' + id + '"',
           (made.errors || []).join(' '));
+    log.debug("Leaving withRealm().");
     return undefined;
   }
   try {
+    log.debug("Leaving withRealm().");
     return fn(made.realm);
   } finally {
     realms.remove(id);
@@ -117,10 +126,14 @@ function withRealm(t, id, fn) {
 // called. `userRows()` is what `/admin/users` and `/admin/metrics` are both
 // built from, so asserting on it is asserting on both pages at once.
 function keysHere() {
+  log.debug("Entering keysHere().");
+  log.debug("Leaving keysHere().");
   return stats.userRows().map(function (row) { return row.key; });
 }
 
 function has(list, key) {
+  log.debug("Entering has().");
+  log.debug("Leaving has().");
   return list.indexOf(key) >= 0;
 }
 
@@ -133,6 +146,7 @@ function has(list, key) {
 // module-level binding — would pass one of them.
 // ---------------------------------------------------------------------------
 function checkRegister(t) {
+  log.debug("Entering checkRegister().");
   t.log.info('the identity register — who a realm has SEEN');
 
   const before = keysHere();
@@ -155,7 +169,8 @@ function checkRegister(t) {
             'the realm lists the person who authenticated in it',
             inside.join(', ') || '(nobody)');
     t.check(!has(inside, 'iso-outside'),
-            'and does NOT list the person who authenticated in the default realm',
+            'and does NOT list the person who authenticated in the default ' +
+            'realm',
             inside.join(', ') || '(nobody)');
     t.check(has(outside, 'iso-outside'),
             'the default realm lists its own person',
@@ -174,6 +189,7 @@ function checkRegister(t) {
     t.equal(insideKnown, inside.length,
             'the realm\'s metrics count agrees with the realm\'s list');
   });
+  log.debug("Leaving checkRegister().");
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +202,7 @@ function checkRegister(t) {
 // authentication count.
 // ---------------------------------------------------------------------------
 function checkSameName(t) {
+  log.debug("Entering checkSameName().");
   t.log.info('one name in two realms');
 
   withRealm(t, 'iso-samename', function (realm) {
@@ -217,6 +234,7 @@ function checkSameName(t) {
               'and the realm counted its own one');
     }
   });
+  log.debug("Leaving checkSameName().");
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +246,7 @@ function checkSameName(t) {
 // first.
 // ---------------------------------------------------------------------------
 function checkRevocation(t) {
+  log.debug("Entering checkRevocation().");
   t.log.info('the revocation set');
 
   withRealm(t, 'iso-revoke', function (realm) {
@@ -258,6 +277,7 @@ function checkRevocation(t) {
     t.check(!realms.run(realm, function () { return stats.isRevoked(jti); }),
             'restoring inside the realm un-revokes it there', jti);
   });
+  log.debug("Leaving checkRevocation().");
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +290,7 @@ function checkRevocation(t) {
 // nothing.
 // ---------------------------------------------------------------------------
 function checkPurge(t) {
+  log.debug("Entering checkPurge().");
   t.log.info('removing a realm');
 
   withRealm(t, 'iso-purge', function (realm) {
@@ -295,6 +316,7 @@ function checkPurge(t) {
             }),
             'and none of its revocations', 'iso-ghost-jti');
   });
+  log.debug("Leaving checkPurge().");
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +328,7 @@ function checkPurge(t) {
 // above is asserted both ways for the same reason.
 // ---------------------------------------------------------------------------
 function checkScimCounters(t) {
+  log.debug("Entering checkScimCounters().");
   t.log.info('the SCIM traffic counters');
 
   // A known state to measure from. This is the counters' own reset — there is
@@ -392,6 +415,7 @@ function checkScimCounters(t) {
   // Left as it was found, so that a later file in the same run is not looking
   // at this one's traffic.
   stats.resetScimForTests();
+  log.debug("Leaving checkScimCounters().");
 }
 
 // ---------------------------------------------------------------------------
@@ -410,6 +434,7 @@ function checkScimCounters(t) {
 // mode writes down the sessions and accounts these rows describe.
 // ---------------------------------------------------------------------------
 function checkSignalRegisters(t) {
+  log.debug("Entering checkSignalRegisters().");
   t.log.info('the CAEP and RISC registers');
   const caep = require('../ssf/caep');
   const risc = require('../ssf/risc');
@@ -421,8 +446,8 @@ function checkSignalRegisters(t) {
     const key = spec[2];
     const handle = realms.handleFor(spec[3]);
     t.check(!!handle && handle.scope === 'realm' && handle.merge === 'replace',
-            label + '\'s register is DECLARED as a persisted store with a realm in ' +
-            'it, merged by replacement — a row is whole-valued',
+            label + '\'s register is DECLARED as a persisted store with a ' +
+            'realm in it, merged by replacement — a row is whole-valued',
             handle ? handle.scope + '/' + handle.merge : '(not declared)');
 
     withRealm(t, 'iso-' + label, function (realm) {
@@ -432,10 +457,13 @@ function checkSignalRegisters(t) {
       t.check(!!realms.run(realm, function () { return register.get(key); }),
               label + ': a row made in a realm is there in that realm');
       t.equal(register.get(key), null,
-              label.toUpperCase() + ': AND IS NOT IN THE DEFAULT REALM. It was, ' +
-              'while the register was one Map for the process');
+              label.toUpperCase() + ': AND IS NOT IN THE DEFAULT REALM. It ' +
+              'was, while the register was one Map for the process');
       register.rowFor(key + '-outside', {});
-      t.equal(realms.run(realm, function () { return register.get(key + '-outside'); }),
+      t.equal(realms.run(realm,
+                         function () {
+                           return register.get(key + '-outside');
+                         }),
               null,
               label + ': and a row made outside the realm is not inside it');
 
@@ -448,11 +476,13 @@ function checkSignalRegisters(t) {
 
     // Same id, second life.
     withRealm(t, 'iso-' + label, function (realm) {
-      t.equal(realms.run(realm, function () { return register.get(key); }), null,
-              label + ': a realm removed and created again has none of the old ' +
-              'one\'s rows');
+      t.equal(realms.run(realm, function () { return register.get(key); }),
+              null,
+              label + ': a realm removed and created again has none of the ' +
+              'old one\'s rows');
     });
   });
+  log.debug("Leaving checkSignalRegisters().");
 }
 
 // ---------------------------------------------------------------------------
@@ -482,7 +512,8 @@ function childStores() {
   const OUT = process.env.ISO_CHILD_OUT;
   const findings = [];
   function note(ok, what, detail) {
-    findings.push({ ok: !!ok, what: what, detail: detail === undefined ? '' : String(detail) });
+    findings.push({ ok: !!ok, what: what,
+                    detail: detail === undefined ? '' : String(detail) });
   }
   try {
     delete process.env.CONFIG_FILE;
@@ -497,43 +528,54 @@ function childStores() {
     // THE DEFERRED ACCESS TOKENS.
     const tokens = offers.deferredAccessTokens;
     realms.run(a, function () { tokens.add('iso-deferred-token'); });
-    note(realms.run(a, function () { return tokens.has('iso-deferred-token'); }),
-         'vc_offers: a deferred access token recorded in a realm is deferred there');
+    note(realms.run(a,
+                    function () { return tokens.has('iso-deferred-token'); }),
+         'vc_offers: a deferred access token recorded in a realm is deferred ' +
+         'there');
     note(!tokens.has('iso-deferred-token') &&
-         !realms.run(b, function () { return tokens.has('iso-deferred-token'); }),
-         'VC_OFFERS: AND IS AN ORDINARY TOKEN IN THE DEFAULT REALM AND IN ANOTHER — ' +
-         'it was deferred everywhere while the store was one Set');
+         !realms.run(b,
+                     function () { return tokens.has('iso-deferred-token'); }),
+         'VC_OFFERS: AND IS AN ORDINARY TOKEN IN THE DEFAULT REALM AND IN ' +
+         'ANOTHER — it was deferred everywhere while the store was one Set');
     const tokenHandle = realms.handleFor('vc_offers.deferredAccessTokens');
     note(tokenHandle && tokenHandle.scope === 'realm',
          'vc_offers: the store is declared persisted, with a realm in it',
          tokenHandle ? tokenHandle.scope : '(not declared)');
     const dumped = tokenHandle ? tokenHandle.dump(a.id) : [];
     note(dumped.length === 1 && dumped[0].key.indexOf('iso-deferred-token') < 0,
-         'vc_offers: and what it holds is a DIGEST of the token, never the bearer ' +
-         'credential itself', JSON.stringify(dumped.map(function (row) { return row.key; })));
+         'vc_offers: and what it holds is a DIGEST of the token, never the ' +
+         'bearer credential ' +
+         'itself',
+         JSON.stringify(dumped.map(function (row) { return row.key; })));
     realms.remove('iso-child-a');
     const again = realms.create({ id: 'iso-child-a', name: 'a' }).realm;
-    note(!realms.run(again, function () { return tokens.has('iso-deferred-token'); }),
-         'vc_offers: a realm removed and remade has none of the old one\'s tokens');
+    note(!realms.run(again,
+                     function () { return tokens.has('iso-deferred-token'); }),
+         'vc_offers: a realm removed and remade has none of the old one\'s ' +
+         'tokens');
 
     // THE SPIRE SERVER API'S RECORDED CONNECTIONS.
-    const caller = { authenticated: true, spiffeId: 'spiffe://iso.example/agent',
+    const caller = { authenticated: true,
+                     spiffeId: 'spiffe://iso.example/agent',
                      peer: '10.9.8.7:40001', transport: 'tcp',
                      certificate: { fingerprintSha256: 'AA:BB:CC' },
                      entities: {} };
     const connKey = 'AA:BB:CC|10.9.8.7:40001';
     const connHandle = realms.handleFor('spiffe.recordedConnections');
     note(connHandle && connHandle.scope === 'realm',
-         'spiffe_auth: the recorded-connection store is declared per realm and ' +
-         'not `shared` any more', connHandle ? connHandle.scope : '(not declared)');
+         'spiffe_auth: the recorded-connection store is declared per realm ' +
+         'and not `shared` any ' +
+         'more', connHandle ? connHandle.scope : '(not ' +
+             'declared)');
     realms.run(b, function () { auth.recordCaller(caller); });
     note(connHandle && connHandle.read(b.id, connKey).present,
-         'spiffe_auth: a connection accepted on a realm\'s listener is recorded in ' +
-         'THAT realm — the ambient realm spiffe_server.js enters around the handler');
+         'spiffe_auth: a connection accepted on a realm\'s listener is ' +
+         'recorded in THAT realm — the ambient realm spiffe_server.js enters ' +
+         'around the handler');
     note(connHandle && !connHandle.read('', connKey).present &&
          !connHandle.read(again.id, connKey).present,
-         'SPIFFE_AUTH: AND NOT IN THE DEFAULT REALM OR ANOTHER ONE, so one realm\'s ' +
-         'connections neither count against nor evict another\'s');
+         'SPIFFE_AUTH: AND NOT IN THE DEFAULT REALM OR ANOTHER ONE, so one ' +
+         'realm\'s connections neither count against nor evict another\'s');
     realms.remove('iso-child-b');
     const remadeB = realms.create({ id: 'iso-child-b', name: 'b' }).realm;
     note(connHandle && !connHandle.read(remadeB.id, connKey).present,
@@ -562,10 +604,12 @@ function childStores() {
         spec[1].applyToState(spec[1].get(spec[2]), spec[3], {});
       });
       note(journal.some(function (row) {
-             return row[0] === spec[0] && row[1] === remadeB.id && row[2] === spec[2];
+             return row[0] === spec[0] && row[1] === remadeB.id &&
+                    row[2] === spec[2];
            }),
-           spec[0] + ': a row edited IN PLACE by the state machine is reported to ' +
-           'the journal, in the realm it was edited in', JSON.stringify(journal));
+           spec[0] + ': a row edited IN PLACE by the state machine is ' +
+           'reported to the journal, in the realm it was edited ' +
+           'in', JSON.stringify(journal));
     });
   } catch (e) {
     note(false, 'the child ran to the end', e && e.stack);
@@ -575,6 +619,7 @@ function childStores() {
 }
 
 function checkChildStores(t) {
+  log.debug("Entering checkChildStores().");
   t.log.info('the stores asserted in a child process');
   const fs = require('fs');
   const os = require('os');
@@ -594,6 +639,7 @@ function checkChildStores(t) {
   try {
     findings = JSON.parse(fs.readFileSync(out, 'utf8'));
   } catch (e) {
+    log.debug("Caught in checkChildStores(): " + ((e && e.message) || e));
     // The child died before writing a report; said below with its status.
     findings = null;
   }
@@ -603,29 +649,35 @@ function checkChildStores(t) {
     // A temporary file left behind is not a failed assertion.
     t.log.debug('could not remove ' + out + ': ' + e.message);
   }
-  if (t.check(Array.isArray(findings), 'the child process reported its findings',
-              'status=' + result.status + ' ' + String(result.stderr || '').slice(-2000))) {
+  if (t.check(Array.isArray(findings),
+              'the child process reported its findings',
+              'status=' + result.status + ' ' +
+              String(result.stderr || '').slice(-2000))) {
     findings.forEach(function (one) { t.check(one.ok, one.what, one.detail); });
   }
 
   // THE THREE DECLARATIONS.
   const read = function (rel) {
+    log.debug("Entering read().");
+    log.debug("Leaving read().");
     return fs.readFileSync(path.join(root, rel), 'utf8');
   };
   const scim = read('scim/scim_auth.js');
   ['digestNonces', 'hobaChallenges', 'hobaSeen'].forEach(function (name) {
-    t.check(new RegExp('^const ' + name + ' = realms\\.map\\(', 'm').test(scim) &&
+    t.check(new RegExp('^const ' + name + ' = realms\\.map\\(', 'm').test(
+        scim) &&
             !new RegExp('^const ' + name + ' = new Map\\(', 'm').test(scim),
-            'scim_auth: `' + name + '` is declared realms.map() — one realm\'s ' +
-            'unauthenticated challenges no longer evict another realm\'s from a ' +
-            'shared cap');
+            'scim_auth: `' + name + '` is declared realms.map() — one ' +
+            'realm\'s unauthenticated challenges no longer evict another ' +
+            'realm\'s from a shared cap');
   });
   const federation = read('federation/federation.js');
   t.check(/^const releaseIndexes = realms\.keyed\(/m.test(federation) &&
           !/^let releaseIndex = /m.test(federation),
-          'federation: the release index is realms.keyed() — it was built out of ' +
-          'whichever realm issued the first token in its window and applied to ' +
-          'every realm\'s tokens for the rest of it');
+          'federation: the release index is realms.keyed() — it was built ' +
+          'out of whichever realm issued the first token in its window and ' +
+          'applied to every realm\'s tokens for the rest of it');
+  log.debug("Leaving checkChildStores().");
 }
 
 // ---------------------------------------------------------------------------
@@ -641,6 +693,7 @@ function checkChildStores(t) {
 // Map or Set at module scope for the next store to be added as.
 // ---------------------------------------------------------------------------
 function checkGnapStores(t) {
+  log.debug("Entering checkGnapStores().");
   t.log.info('the GNAP stores');
   const fs = require('fs');
   const path = require('path');
@@ -651,25 +704,29 @@ function checkGnapStores(t) {
 
   withRealm(t, 'iso-gnap', function (realm) {
     realms.run(realm, function () {
-      ids.grant = store.newGrant({ client: { identifier: 'iso-gnap-client' } }).id;
-      store.putToken({ jti: 'iso-gnap-jti', grant: ids.grant }, 'iso-gnap-token-value');
+      ids.grant =
+          store.newGrant({ client: { identifier: 'iso-gnap-client' } }).id;
+      store.putToken({ jti: 'iso-gnap-jti', grant: ids.grant },
+                     'iso-gnap-token-value');
       store.putResource('iso-gnap-resource', { access: ['read'] });
       signals.noteApprover('iso-gnap-client', 'iso-gnap-person');
       monitor.record('iso-gnap-client', 'grant.requested', {});
     });
     t.check(!store.getGrant(ids.grant),
-            'a GNAP grant made inside a realm is not in the default realm', ids.grant);
+            'a GNAP grant made inside a realm is not in the default realm',
+            ids.grant);
     t.check(!store.tokenByValue('iso-gnap-token-value'),
             'nor is its access token, looked up by value');
     t.check(!store.resourceByReference('iso-gnap-resource'),
             'nor a resource set registered there');
     t.check(!signals.approvedBy('iso-gnap-client', 'iso-gnap-person'),
-            'nor who approved a grant to which application — the index a GNAP ' +
-            'application\'s scoped stream is decided by');
+            'nor who approved a grant to which application — the index a ' +
+            'GNAP application\'s scoped stream is decided by');
     t.check(!monitor.snapshot().rows['iso-gnap-client'],
             'nor the monitor\'s counters');
     t.check(realms.run(realm, function () {
-      return !!store.getGrant(ids.grant) && !!store.tokenByValue('iso-gnap-token-value') &&
+      return !!store.getGrant(ids.grant) &&
+             !!store.tokenByValue('iso-gnap-token-value') &&
              !!store.resourceByReference('iso-gnap-resource') &&
              !!monitor.snapshot().rows['iso-gnap-client'];
     }), 'and every one of them IS there inside the realm that made it');
@@ -686,12 +743,16 @@ function checkGnapStores(t) {
   });
 
   const dir = path.join(__dirname, '..', 'gnap');
-  fs.readdirSync(dir).filter(function (f) { return /\.js$/.test(f); }).forEach(function (file) {
+  fs.readdirSync(dir)
+    .filter(function (f) { return /\.js$/.test(f); })
+    .forEach(function (file) {
     const src = fs.readFileSync(path.join(dir, file), 'utf8');
     t.check(!/^(const|let|var)\s+\w+\s*=\s*new (Map|Set)\(/m.test(src),
-            'gnap/' + file + ' declares no module-scope Map or Set — a store there ' +
-            'is realms.map(), or it is one realm\'s state in every realm');
+            'gnap/' + file + ' declares no module-scope Map or Set — a store ' +
+            'there is realms.map(), or it is one realm\'s state in every ' +
+            'realm');
   });
+  log.debug("Leaving checkGnapStores().");
 }
 
 // ---------------------------------------------------------------------------
@@ -705,6 +766,7 @@ function checkGnapStores(t) {
 // the run rather than merely true.
 // ---------------------------------------------------------------------------
 function checkDefaultUnchanged(t) {
+  log.debug("Entering checkDefaultUnchanged().");
   t.log.info('a service with no realms defined');
 
   t.equal(realms.count(), 1,
@@ -724,9 +786,11 @@ function checkDefaultUnchanged(t) {
   t.check(has(keysHere(), 'iso-plain'),
           'and an authentication in the default realm reads back there',
           'iso-plain');
+  log.debug("Leaving checkDefaultUnchanged().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkRegister(t);
   checkSameName(t);
   checkRevocation(t);
@@ -736,6 +800,7 @@ function run(t) {
   checkGnapStores(t);
   checkChildStores(t);
   checkDefaultUnchanged(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

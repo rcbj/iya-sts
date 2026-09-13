@@ -46,6 +46,8 @@ const FROM_DIRECTORY = {
 };
 
 function present(value) {
+  log.debug("Entering present().");
+  log.debug("Leaving present().");
   return value !== undefined && value !== null && String(value) !== '';
 }
 
@@ -53,10 +55,12 @@ function present(value) {
 // invents none. Always a NEW object — the session's own user is never written
 // to, because it is shared by every protocol reading the session.
 function personFor(user) {
-  log.debug("Entering personFor(). user=" + ((user && user.username) || '(none)'));
+  log.debug("Entering personFor(). user=" +
+            ((user && user.username) || '(none)'));
   const out = Object.assign({}, user || {});
   if (mode.inventsClaimValues()) {
-    log.debug("Leaving personFor(). This realm invents persona values; unchanged.");
+    log.debug("Leaving personFor(). This realm invents persona values; " +
+              "unchanged.");
     return out;
   }
   const missing = Object.keys(FROM_DIRECTORY).filter(function (field) {
@@ -68,7 +72,8 @@ function personFor(user) {
   }
   let byLdap = {};
   try {
-    byLdap = require('../common/claim_attributes').catalogueValuesFor(out.username).byLdap || {};
+    byLdap = require('../common/claim_attributes').catalogueValuesFor(
+        out.username).byLdap || {};
   } catch (e) {
     // No directory in this process (an in-process test, a parent-project job
     // loading saml/ alone). Omitting is exactly the product-mode answer for a
@@ -93,6 +98,8 @@ function personFor(user) {
 // write a row per fact whether or not there is one; an <AttributeValue> of
 // "undefined" is a claim this service would be signing.
 function withoutAbsent(attributes) {
+  log.debug("Entering withoutAbsent().");
+  log.debug("Leaving withoutAbsent().");
   return (attributes || []).filter(function (a) {
     if (Array.isArray(a.values)) {
       return a.values.length > 0;

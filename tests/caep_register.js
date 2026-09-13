@@ -61,10 +61,18 @@ const config = require('../common/config');
 const events = require('../ssf/ssf_events');
 const caep = require('../ssf/caep');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'caep_register',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const P = events.CAEP_PREFIX;
 
 // A sign-in, in the shape `authn.js`'s observer hands one over.
 function signIn(id, username) {
+  log.debug("Entering signIn().");
+  log.debug("Leaving signIn().");
   return { kind: 'established', via: 'OAuth 2.0 / OIDC',
     issuer: 'https://sts.example.com',
     session: { id: id, user: { sub: 'u-' + username, username: username },
@@ -73,6 +81,7 @@ function signIn(id, username) {
 
 // What `ssf.js`'s transmit() hands back to the register once the SET exists.
 function transmitted(row, uri, payload, streamId) {
+  log.debug("Entering transmitted().");
   caep.noteTransmitted({ stream_id: streamId || 'st-1' }, {
     jti: 'jti-' + Math.random().toString(16).slice(2, 10),
     iss: 'https://sts.example.com',
@@ -83,9 +92,11 @@ function transmitted(row, uri, payload, streamId) {
       return map;
     })()
   });
+  log.debug("Leaving transmitted().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   caep.clear();
 
   // -----------------------------------------------------------------------
@@ -356,6 +367,7 @@ function run(t) {
   const gone = caep.clear();
   t.check(gone > 0, 'clearing drops every row, and says how many');
   t.equal(caep.list().length, 0, 'the register is empty');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

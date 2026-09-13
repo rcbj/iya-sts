@@ -142,7 +142,8 @@ const { log, STS } = require('../common/helpers');
 // caller that sends the wrong one is told which is expected rather than being
 // told its assertion is invalid.
 const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:saml2-bearer';
-const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:saml2-bearer';
+const ASSERTION_TYPE =
+    'urn:ietf:params:oauth:client-assertion-type:saml2-bearer';
 // RFC 7521 section 4.2's error code, which is `invalid_grant` for section 2.1
 // and `invalid_client` for section 2.2 — the same document refused for the
 // same reason gets two codes depending on what it was being used AS. The
@@ -156,7 +157,8 @@ const BEARER = 'urn:oasis:names:tc:SAML:2.0:cm:bearer';
 // SAML core section 2.5.1. The condition types this service RECOGNISES —
 // anything else makes the assertion Invalid rather than being ignored, which
 // is item 11 and is the one check here that most implementations skip.
-const KNOWN_CONDITIONS = ['AudienceRestriction', 'OneTimeUse', 'ProxyRestriction'];
+const KNOWN_CONDITIONS = ['AudienceRestriction', 'OneTimeUse',
+                          'ProxyRestriction'];
 
 // ---------------------------------------------------------------------------
 // THE REPLAY CACHE. Per trust realm, like every other store here.
@@ -187,7 +189,9 @@ const MAX_ASSERTIONS = 1000;
 const seenAssertions = realms.map({ persist: 'saml_assertion_grant.seen' });
 
 function maxAssertions() {
+  log.debug("Entering maxAssertions().");
   const count = Number(config.value('oauth2.assertionReplayCacheSize'));
+  log.debug("Leaving maxAssertions().");
   return isFinite(count) && count > 0 ? Math.floor(count) : MAX_ASSERTIONS;
 }
 
@@ -202,12 +206,15 @@ function forgetStaleAssertions() {
     }
   });
   const room = seenAssertions.size < maxAssertions();
-  log.debug('Leaving forgetStaleAssertions(). ' + seenAssertions.size + ' live; ' +
+  log.debug('Leaving forgetStaleAssertions(). ' + seenAssertions.size + ' ' +
+      'live; ' +
             (room ? 'room for another.' : 'FULL.'));
   return room;
 }
 
 function skewSeconds() {
+  log.debug("Entering skewSeconds().");
+  log.debug("Leaving skewSeconds().");
   // THE SAME SETTING BOTH RFC 7523 SECTIONS USE, deliberately. It answers "how
   // far out may somebody else's clock be", and this service has no reason to
   // hold a different opinion about that because the document arrived as XML.
@@ -215,15 +222,21 @@ function skewSeconds() {
 }
 
 function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return config.value('oauth2.saml2BearerGrant') !== false;
 }
 
 function requiresRegisteredIssuer() {
+  log.debug("Entering requiresRegisteredIssuer().");
+  log.debug("Leaving requiresRegisteredIssuer().");
   return config.value('oauth2.saml2BearerRequireRegisteredIssuer') !== false;
 }
 
 function maxLifetimeSeconds() {
+  log.debug("Entering maxLifetimeSeconds().");
   const seconds = Number(config.value('oauth2.saml2BearerMaxLifetimeS'));
+  log.debug("Leaving maxLifetimeSeconds().");
   return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
 }
 
@@ -278,13 +291,17 @@ function decode(presented) {
 
 // The value of an attribute on an element, as a string, with no undefined.
 function attr(el, name) {
+  log.debug("Entering attr().");
   const value = el && el.getAttribute ? el.getAttribute(name) : '';
+  log.debug("Leaving attr().");
   return value === null || value === undefined ? '' : String(value);
 }
 
 function childrenByLocal(parent, local) {
+  log.debug("Entering childrenByLocal().");
   const out = [];
   if (!parent || !parent.childNodes) {
+    log.debug("Leaving childrenByLocal().");
     return out;
   }
   for (let i = 0; i < parent.childNodes.length; i++) {
@@ -293,14 +310,19 @@ function childrenByLocal(parent, local) {
       out.push(node);
     }
   }
+  log.debug("Leaving childrenByLocal().");
   return out;
 }
 
 function firstByLocal(parent, local) {
+  log.debug("Entering firstByLocal().");
+  log.debug("Leaving firstByLocal().");
   return childrenByLocal(parent, local)[0] || null;
 }
 
 function textOf(el) {
+  log.debug("Entering textOf().");
+  log.debug("Leaving textOf().");
   return el ? String(el.textContent || '').trim() : '';
 }
 
@@ -325,12 +347,14 @@ function decryptIfNeeded(xml) {
     doc = new DOMParser().parseFromString(String(xml), 'text/xml');
   } catch (e) {
     log.debug('Leaving decryptIfNeeded(). It did not parse.');
-    return { ok: false, why: 'the assertion is not well-formed XML: ' + e.message };
+    return { ok: false,
+             why: 'the assertion is not well-formed XML: ' + e.message };
   }
   const root = doc && doc.documentElement;
   if (!root) {
     log.debug('Leaving decryptIfNeeded(). No root element.');
-    return { ok: false, why: 'the assertion decoded to XML with no root element.' };
+    return { ok: false, why: 'the assertion decoded to XML with no root ' +
+                             'element.' };
   }
   if (root.localName !== 'EncryptedAssertion') {
     log.debug('Leaving decryptIfNeeded(). Not encrypted.');
@@ -370,17 +394,19 @@ function read(xml) {
     doc = new DOMParser().parseFromString(String(xml), 'text/xml');
   } catch (e) {
     log.debug('Leaving read(). It did not parse.');
-    return { ok: false, why: 'the assertion is not well-formed XML: ' + e.message };
+    return { ok: false,
+             why: 'the assertion is not well-formed XML: ' + e.message };
   }
   const root = doc && doc.documentElement;
   if (!root || root.localName !== 'Assertion') {
     log.debug('Leaving read(). The root is not an Assertion.');
-    return { ok: false, why: 'RFC 7522 section 2.1: the `assertion` parameter ' +
-             'carries a single SAML 2.0 <Assertion>. This document\'s root ' +
-             'element is <' + ((root && root.localName) || 'nothing') + '>' +
+    return { ok: false, why: 'RFC 7522 section 2.1: the `assertion` ' +
+             'parameter carries a single SAML 2.0 <Assertion>. This ' +
+             'document\'s root element is ' +
+             '<' + ((root && root.localName) || 'nothing') + '>' +
              (root && root.localName === 'Response'
-               ? ' — a <Response> is the browser profile\'s envelope and this ' +
-                 'profile takes the assertion out of it'
+               ? ' — a <Response> is the browser profile\'s envelope and ' +
+                 'this profile takes the assertion out of it'
                : '') + '.' };
   }
 
@@ -410,7 +436,8 @@ function read(xml) {
     }
   }
 
-  const confirmations = (subject ? childrenByLocal(subject, 'SubjectConfirmation') : [])
+  const confirmations = (subject ?
+                         childrenByLocal(subject, 'SubjectConfirmation') : [])
     .map(function (sc) {
       const data = firstByLocal(sc, 'SubjectConfirmationData');
       return {
@@ -515,6 +542,8 @@ function read(xml) {
 // and an `x5c` member carry exactly the same bytes in exactly the same
 // encoding, which is why this looks like `assertion_grant.js`'s `pem()`.
 function pemFrom(b64) {
+  log.debug("Entering pemFrom().");
+  log.debug("Leaving pemFrom().");
   return '-----BEGIN CERTIFICATE-----\n' +
          String(b64).replace(/\s+/g, '').replace(/(.{64})/g, '$1\n')
            .replace(/\n$/, '') +
@@ -522,13 +551,16 @@ function pemFrom(b64) {
 }
 
 function thumbprintOf(pem) {
+  log.debug("Entering thumbprintOf().");
   try {
+    log.debug("Leaving thumbprintOf().");
     return stsCrypto.certificateThumbprint(pem, { format: 'base64url' });
   } catch (e) {
     // An unreadable certificate has no thumbprint and must not match one.
     // Swallowed rather than thrown because the caller is comparing a list and
     // one bad member is not a reason to refuse the others.
     log.debug('thumbprintOf(): a certificate could not be read: ' + e.message);
+    log.debug("Leaving thumbprintOf().");
     return '';
   }
 }
@@ -581,7 +613,8 @@ function certificatesForParty(fields) {
       found.push({ pem: pem, source: pair[1], thumbprint: thumbprint });
     });
   });
-  log.debug('Leaving certificatesForParty(). ' + found.length + ' certificate(s).');
+  log.debug('Leaving certificatesForParty(). ' + found.length + ' ' +
+      'certificate(s).');
   return { certificates: found, problems: problems };
 }
 
@@ -609,7 +642,8 @@ function issuerEntry(iss) {
     const values = Array.isArray(declared) ? declared
       : (declared ? [String(declared)] : []);
     if (values.indexOf(wanted) >= 0) {
-      log.debug('Leaving issuerEntry(). Declared by ' + all[i].identifier + '.');
+      log.debug('Leaving issuerEntry(). Declared by ' + all[i].identifier +
+                '.');
       return { identifier: all[i].identifier, fields: fields, declared: true };
     }
   }
@@ -635,15 +669,21 @@ function issuerEntry(iss) {
 // sends somebody to their template, and one naming a missing one sends them to
 // the profile.
 function instantOf(text) {
+  log.debug("Entering instantOf().");
   if (!text) {
+    log.debug("Leaving instantOf().");
     return null;
   }
   const at = Date.parse(String(text));
+  log.debug("Leaving instantOf().");
   return isFinite(at) ? at : NaN;
 }
 
 function refuse(code, description) {
-  return { ok: false, errorCode: code, error: GRANT_ERROR, description: description };
+  log.debug("Entering refuse().");
+  log.debug("Leaving refuse().");
+  return { ok: false, errorCode: code, error: GRANT_ERROR,
+           description: description };
 }
 
 // ---------------------------------------------------------------------------
@@ -671,7 +711,8 @@ async function verify(opts) {
 
   if (!asClient && !enabled()) {
     log.debug('Leaving verify(). The grant is switched off.');
-    return { ok: false, errorCode: 'STS-OAUTH-0056', error: 'unsupported_grant_type',
+    return { ok: false, errorCode: 'STS-OAUTH-0056',
+             error: 'unsupported_grant_type',
              description: 'This authorization server does not perform the ' +
                           'SAML 2.0 bearer grant (RFC 7522 section 2.1). ' +
                           'oauth2.saml2BearerGrant is off.' };
@@ -706,8 +747,9 @@ async function verify(opts) {
     // the Conditions, because the two documents look alike enough that
     // somebody will send the wrong one.
     log.debug('Leaving verify(). Not a SAML 2.0 assertion.');
-    return refuse('STS-OAUTH-0060', 'this assertion says Version="' + parsed.version + '". RFC ' +
-                  '7522 is the SAML 2.0 profile of RFC 7521 and this ' +
+    return refuse('STS-OAUTH-0060',
+                  'this assertion says Version="' + parsed.version + '". ' +
+                  'RFC 7522 is the SAML 2.0 profile of RFC 7521 and this ' +
                   'authorization server reads Version="2.0" here. A SAML 1.1 ' +
                   'assertion has no profile of RFC 7521 at all.');
   }
@@ -716,8 +758,8 @@ async function verify(opts) {
   const iss = parsed.issuer;
   if (!iss) {
     log.debug('Leaving verify(). No issuer.');
-    return refuse('STS-OAUTH-0061', 'RFC 7522 section 3 item 1: an assertion must carry an ' +
-                  '<Issuer> naming the entity that issued it.');
+    return refuse('STS-OAUTH-0061', 'RFC 7522 section 3 item 1: an assertion ' +
+                  'must carry an <Issuer> naming the entity that issued it.');
   }
 
   // --- Which certificates could have signed it ------------------------------
@@ -749,8 +791,9 @@ async function verify(opts) {
                'for Issuer="' + iss + '", which no application in this realm ' +
                'has declared. Refused.');
       log.debug('Leaving verify(). Nobody has declared that issuer.');
-      return refuse('STS-OAUTH-0062', 'no application in this realm is registered to issue SAML ' +
-                    '2.0 assertions as "' + iss + '". This grant cannot be ' +
+      return refuse('STS-OAUTH-0062', 'no application in this realm is ' +
+                    'registered to issue SAML 2.0 assertions as ' +
+                    '"' + iss + '". This grant cannot be ' +
                     'permissive: an assertion IS the whole authorization — ' +
                     'there is no browser, no password and no consent step in ' +
                     'it — so accepting one from anybody would mean anybody ' +
@@ -760,31 +803,33 @@ async function verify(opts) {
                     'on `oauthSamlAssertionSigningCertificate` or a key pair ' +
                     'issued for RFC 7522 from /admin/pki. ' +
                     '`oauth2.saml2BearerRequireRegisteredIssuer` turns this ' +
-                    'refusal off, and reading what it says before doing so is ' +
-                    'the point of it having a description.');
+                    'refusal off, and reading what it says before doing so ' +
+                    'is the point of it having a description.');
     }
   }
   if (!certificates.length) {
     log.debug('Leaving verify(). No certificate to try.');
-    return refuse(problems.length ? 'STS-OAUTH-0063' : 'STS-OAUTH-0064', problems.length
+    return refuse(problems.length ? 'STS-OAUTH-0063' : 'STS-OAUTH-0064',
+                  problems.length
       ? problems.join('; ') + '.'
       : 'there is no certificate registered against "' +
         (asClient ? options.clientId : iss) + '" to verify this SAML ' +
         'assertion with. Put one on the application entry as ' +
         '`oauthSamlAssertionSigningCertificate`, or issue it an RFC 7522 ' +
         'signing key pair from /admin/pki. **The RFC 7523 key pair is not ' +
-        'read here**: the two profiles hold separate key pairs on purpose, so ' +
-        'an application with only a JWT one has nothing registered for this.');
+        'read here**: the two profiles hold separate key pairs on purpose, ' +
+        'so an application with only a JWT one has nothing registered for ' +
+        'this.');
   }
 
   // --- item 9: the signature ------------------------------------------------
   if (!parsed.signed) {
     log.debug('Leaving verify(). It is not signed.');
-    return refuse('STS-OAUTH-0065', 'RFC 7522 section 3 item 9: the assertion MUST be digitally ' +
-                  'signed or have a MAC applied by the issuer, and this one ' +
-                  'carries no <ds:Signature> of its own. An unsigned ' +
-                  'assertion is a request to issue a token for anybody who ' +
-                  'asks.' +
+    return refuse('STS-OAUTH-0065', 'RFC 7522 section 3 item 9: the ' +
+                  'assertion MUST be digitally signed or have a MAC applied ' +
+                  'by the issuer, and this one carries no <ds:Signature> of ' +
+                  'its own. An unsigned assertion is a request to issue a ' +
+                  'token for anybody who asks.' +
                   (opened.encrypted
                     ? ' It WAS encrypted, and encryption does not stand in ' +
                       'for a signature: an encrypted document says nothing ' +
@@ -804,15 +849,15 @@ async function verify(opts) {
     });
     if (!narrowed.length) {
       log.debug('Leaving verify(). The KeyInfo certificate is not registered.');
-      return refuse('STS-OAUTH-0066', 'this assertion carries a certificate in its ' +
-                    '<ds:KeyInfo> that is not registered against "' +
+      return refuse('STS-OAUTH-0066', 'this assertion carries a certificate ' +
+                    'in its <ds:KeyInfo> that is not registered against "' +
                     (asClient ? options.clientId : iss) + '" for RFC 7522. A ' +
-                    'certificate that arrives WITH a signature proves nothing ' +
-                    'on its own, and this profile does not accept one merely ' +
-                    'because it chains to this realm\'s certificate authority ' +
-                    '— that would let any key pair this realm ever issued, ' +
-                    'the application\'s own RFC 7523 one included, sign a ' +
-                    'SAML assertion. Register it on ' +
+                    'certificate that arrives WITH a signature proves ' +
+                    'nothing on its own, and this profile does not accept ' +
+                    'one merely because it chains to this realm\'s ' +
+                    'certificate authority — that would let any key pair ' +
+                    'this realm ever issued, the application\'s own RFC 7523 ' +
+                    'one included, sign a SAML assertion. Register it on ' +
                     '`oauthSamlAssertionSigningCertificate`.');
     }
   }
@@ -837,10 +882,12 @@ async function verify(opts) {
   }
   if (!verified) {
     log.debug('Leaving verify(). The signature did not verify.');
-    return refuse('STS-OAUTH-0067', 'the signature on this assertion did not verify against ' +
+    return refuse('STS-OAUTH-0067', 'the signature on this assertion did not ' +
+                                    'verify against ' +
                   (narrowed.length === 1 ? 'the certificate' :
                    'any of the ' + narrowed.length + ' certificates') +
-                  ' registered against "' + (asClient ? options.clientId : iss) +
+                  ' registered against "' +
+                                    (asClient ? options.clientId : iss) +
                   '" for RFC 7522: ' + lastWhy + '.');
   }
 
@@ -856,34 +903,41 @@ async function verify(opts) {
             (asClient ? options.clientId : iss) + '"'
   });
   if (certificateRevocation.refused) {
-    log.warn('saml_assertion_grant: the certificate that verified an assertion from "' +
-             (asClient ? options.clientId : iss) + '" is refused: ' + certificateRevocation.why);
+    log.warn('saml_assertion_grant: the certificate that verified an ' +
+             'assertion from "' +
+             (asClient ? options.clientId : iss) + '" is refused: ' +
+             certificateRevocation.why);
     log.debug('Leaving verify(). The registered certificate is revoked.');
     return refuse('STS-PKI-0129', 'the certificate registered against "' +
-                  (asClient ? options.clientId : iss) + '" that verified this assertion may ' +
-                  'no longer be used: ' + certificateRevocation.why);
+                  (asClient ? options.clientId : iss) + '" that verified ' +
+                  'this assertion may no longer be ' +
+                  'used: ' + certificateRevocation.why);
   }
 
   // === From here on the document has been vouched for. ======================
 
   // --- item 11 and item 6: the Conditions -----------------------------------
   if (parsed.unknownConditions.length) {
-    return refuse('STS-OAUTH-0068', 'this assertion carries a <Condition> this authorization ' +
-                  'server does not understand (' +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0068', 'this assertion carries a <Condition> ' +
+                  'this authorization server does not understand (' +
                   parsed.unknownConditions.join(', ') + '). SAML 2.0 core ' +
                   'section 2.5.1 makes an assertion Invalid when a condition ' +
                   'cannot be evaluated, and RFC 7522 section 3 item 11 says ' +
-                  'the assertion must be valid in all other respects per that ' +
-                  'specification — so it is refused rather than ignored.');
+                  'the assertion must be valid in all other respects per ' +
+                  'that specification — so it is refused rather than ignored.');
   }
   const now = Date.now();
   const skewMs = skewSeconds() * 1000;
   const notBefore = instantOf(parsed.notBefore);
   if (isNaN(notBefore)) {
-    return refuse('STS-OAUTH-0069', 'this assertion\'s <Conditions> NotBefore is "' +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0069', 'this assertion\'s <Conditions> ' +
+                                    'NotBefore is "' +
                   parsed.notBefore + '", which is not an xsd:dateTime.');
   }
   if (notBefore !== null && now + skewMs < notBefore) {
+    log.debug("Leaving verify().");
     return refuse('STS-OAUTH-0070', 'this assertion is not valid until ' +
                   new Date(notBefore).toISOString() + ' and it is now ' +
                   new Date(now).toISOString() + '. This authorization server ' +
@@ -892,10 +946,13 @@ async function verify(opts) {
   }
   const conditionsExpiry = instantOf(parsed.notOnOrAfter);
   if (isNaN(conditionsExpiry)) {
-    return refuse('STS-OAUTH-0069', 'this assertion\'s <Conditions> NotOnOrAfter is "' +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0069', 'this assertion\'s <Conditions> ' +
+                                    'NotOnOrAfter is "' +
                   parsed.notOnOrAfter + '", which is not an xsd:dateTime.');
   }
   if (conditionsExpiry !== null && now - skewMs >= conditionsExpiry) {
+    log.debug("Leaving verify().");
     return refuse('STS-OAUTH-0071', 'this assertion expired at ' +
                   new Date(conditionsExpiry).toISOString() +
                   ' (its <Conditions> NotOnOrAfter). RFC 7522 section 3 item ' +
@@ -909,9 +966,10 @@ async function verify(opts) {
   // own identity as the intended audience." It is what stops an assertion
   // minted for one authorization server being replayed at another.
   if (!parsed.hasConditions || !parsed.audiences.length) {
-    return refuse('STS-OAUTH-0072', 'RFC 7522 section 3 item 2: an assertion must carry a ' +
-                  '<Conditions> with an <AudienceRestriction> naming this ' +
-                  'authorization server. This one names ' +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0072', 'RFC 7522 section 3 item 2: an assertion ' +
+                  'must carry a <Conditions> with an <AudienceRestriction> ' +
+                  'naming this authorization server. This one names ' +
                   (parsed.hasConditions ? 'no audience at all'
                                         : 'no <Conditions> at all') + '. ' +
                   'Acceptable values here are ' + audiences.join(' or ') + '.');
@@ -920,7 +978,9 @@ async function verify(opts) {
     return audiences.indexOf(one) >= 0;
   })[0];
   if (!matchedAudience) {
-    return refuse('STS-OAUTH-0073', 'RFC 7522 section 3 item 2: this assertion is addressed to ' +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0073', 'RFC 7522 section 3 item 2: this ' +
+                                    'assertion is addressed to ' +
                   parsed.audiences.join(', ') + ' and this authorization ' +
                   'server is ' + audiences.join(' or ') + '. The comparison ' +
                   'is Simple String Comparison (RFC 3986 section 6.2.1), so ' +
@@ -930,8 +990,9 @@ async function verify(opts) {
 
   // --- item 3: the subject --------------------------------------------------
   if (!parsed.hasSubject || !parsed.subject) {
-    return refuse('STS-OAUTH-0074', 'RFC 7522 section 3 item 3: an assertion must contain a ' +
-                  '<Subject> identifying the principal' +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0074', 'RFC 7522 section 3 item 3: an assertion ' +
+                  'must contain a <Subject> identifying the principal' +
                   (parsed.subjectWasEncrypted
                     ? '. Its <EncryptedID> would not decrypt with this ' +
                       'authorization server\'s key'
@@ -940,9 +1001,11 @@ async function verify(opts) {
                       : '') + '.');
   }
   if (asClient && parsed.subject !== String(options.clientId)) {
-    return refuse('STS-OAUTH-0075', 'RFC 7522 section 3 item 3B: for client authentication the ' +
-                  '<Subject> MUST be the client_id of the OAuth client. This ' +
-                  'assertion names "' + parsed.subject + '" and the request ' +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0075', 'RFC 7522 section 3 item 3B: for client ' +
+                  'authentication the <Subject> MUST be the client_id of the ' +
+                  'OAuth client. This assertion names ' +
+                  '"' + parsed.subject + '" and the request ' +
                   'is for "' + options.clientId + '".');
   }
 
@@ -957,8 +1020,10 @@ async function verify(opts) {
     return one.method === BEARER;
   });
   if (!bearer.length) {
-    return refuse('STS-OAUTH-0076', 'RFC 7522 section 3 item 5: the <Subject> must contain at ' +
-                  'least one <SubjectConfirmation> whose Method is "' +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0076', 'RFC 7522 section 3 item 5: the ' +
+                  '<Subject> must contain at least one <SubjectConfirmation> ' +
+                  'whose Method is "' +
                   BEARER + '". This assertion carries ' +
                   (parsed.confirmations.length
                     ? parsed.confirmations.map(function (one) {
@@ -972,9 +1037,11 @@ async function verify(opts) {
     const one = bearer[i];
     const expiry = instantOf(one.notOnOrAfter);
     if (isNaN(expiry)) {
-      return refuse('STS-OAUTH-0069', 'a <SubjectConfirmationData> NotOnOrAfter on this ' +
-                    'assertion is "' + one.notOnOrAfter + '", which is not an ' +
-                    'xsd:dateTime.');
+      log.debug("Leaving verify().");
+      return refuse('STS-OAUTH-0069', 'a <SubjectConfirmationData> ' +
+                    'NotOnOrAfter on this assertion is ' +
+                    '"' + one.notOnOrAfter + '", which is not ' +
+                    'an xsd:dateTime.');
     }
     if (expiry !== null && now - skewMs >= expiry) {
       discarded.push(one);
@@ -1001,7 +1068,9 @@ async function verify(opts) {
     live.push(one);
   }
   if (!live.length) {
-    return refuse('STS-OAUTH-0077', 'RFC 7522 section 3 items 5 and 6: this assertion carries ' +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0077', 'RFC 7522 section 3 items 5 and 6: this ' +
+                                    'assertion carries ' +
                   bearer.length + ' bearer <SubjectConfirmation>(s) and none ' +
                   'of them can be used — ' +
                   discarded.map(function (one) {
@@ -1022,8 +1091,8 @@ async function verify(opts) {
     log.warn('saml_assertion_grant: the assertion from "' + iss + '" carries ' +
              'a <SubjectConfirmationData> Address of "' + used.address + '". ' +
              'It is recorded and NOT enforced — RFC 7522 section 3 item 5 ' +
-             'leaves that to the server, and the address this request arrived ' +
-             'from is a proxy\'s as often as it is the client\'s.');
+             'leaves that to the server, and the address this request ' +
+             'arrived from is a proxy\'s as often as it is the client\'s.');
   }
 
   // --- item 4: there must be an expiry at all -------------------------------
@@ -1031,12 +1100,13 @@ async function verify(opts) {
   const expiresAt = conditionsExpiry !== null ? conditionsExpiry
                                               : confirmationExpiry;
   if (expiresAt === null) {
-    return refuse('STS-OAUTH-0078', 'RFC 7522 section 3 item 4: an assertion must have an expiry ' +
-                  'that limits the time window during which it can be used — ' +
-                  'either a NotOnOrAfter on its <Conditions> or one on a ' +
-                  '<SubjectConfirmationData>. This one has neither, which ' +
-                  'makes it a credential anybody who captures it can use for ' +
-                  'ever.');
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0078', 'RFC 7522 section 3 item 4: an assertion ' +
+                  'must have an expiry that limits the time window during ' +
+                  'which it can be used — either a NotOnOrAfter on its ' +
+                  '<Conditions> or one on a <SubjectConfirmationData>. This ' +
+                  'one has neither, which makes it a credential anybody who ' +
+                  'captures it can use for ever.');
   }
 
   // --- The ceiling on the lifetime ------------------------------------------
@@ -1048,13 +1118,17 @@ async function verify(opts) {
   // somebody has to be able to revoke.
   const issued = instantOf(parsed.issueInstant);
   if (isNaN(issued)) {
-    return refuse('STS-OAUTH-0069', 'this assertion\'s IssueInstant is "' + parsed.issueInstant +
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0069',
+                  'this assertion\'s IssueInstant is "' + parsed.issueInstant +
                   '", which is not an xsd:dateTime.');
   }
   if (issued !== null && issued > now + skewMs) {
+    log.debug("Leaving verify().");
     return refuse('STS-OAUTH-0079', 'this assertion says it was issued at ' +
-                  new Date(issued).toISOString() + ', which is in the future. ' +
-                  'One of the two clocks involved is wrong, and this service ' +
+                  new Date(issued).toISOString() + ', which is in the ' +
+                  'future. One of the two clocks involved is wrong, and this ' +
+                  'service ' +
                   'allows ' + skewSeconds() + ' seconds of difference ' +
                   '(oauth2.clientAssertionSkewS).');
   }
@@ -1064,23 +1138,25 @@ async function verify(opts) {
   // ceiling entirely, which is the JWT profile's `iat` hole made in XML.
   const lifetimeFrom = issued !== null ? issued : now;
   if (cap && (expiresAt - lifetimeFrom) / 1000 > cap) {
+    log.debug("Leaving verify().");
     return refuse('STS-OAUTH-0080', 'this assertion is valid for ' +
-                  Math.round((expiresAt - lifetimeFrom) / 1000) + ' seconds and ' +
-                  'this authorization server accepts at most ' + cap +
-                  ' (oauth2.saml2BearerMaxLifetimeS). RFC 7522 section 3 item ' +
-                  '6 invites a server to refuse an assertion whose expiry is ' +
-                  'unreasonably far in the future and leaves "unreasonable" ' +
-                  'to it.');
+                  Math.round((expiresAt - lifetimeFrom) / 1000) + ' seconds ' +
+                  'and this authorization server accepts at most ' + cap +
+                  ' (oauth2.saml2BearerMaxLifetimeS). RFC 7522 section 3 ' +
+                  'item 6 invites a server to refuse an assertion whose ' +
+                  'expiry is unreasonably far in the future and leaves ' +
+                  '"unreasonable" to it.');
   }
 
   // --- item 6: the replay ---------------------------------------------------
   if (!parsed.id) {
-    return refuse('STS-OAUTH-0081', 'this assertion carries no ID attribute. SAML 2.0 core ' +
-                  'section 2.3.3 makes it REQUIRED, and RFC 7522 section 3 ' +
-                  'item 6 says a server may keep the set of used ID values to ' +
-                  'refuse a replay — an assertion with no ID cannot be ' +
-                  'remembered, so accepting one means accepting a bearer ' +
-                  'credential this service has no way to spend.');
+    log.debug("Leaving verify().");
+    return refuse('STS-OAUTH-0081', 'this assertion carries no ID attribute. ' +
+                  'SAML 2.0 core section 2.3.3 makes it REQUIRED, and RFC ' +
+                  '7522 section 3 item 6 says a server may keep the set of ' +
+                  'used ID values to refuse a replay — an assertion with no ' +
+                  'ID cannot be remembered, so accepting one means accepting ' +
+                  'a bearer credential this service has no way to spend.');
   }
   const room = forgetStaleAssertions();
   const key = iss + ':' + parsed.id;
@@ -1089,21 +1165,22 @@ async function verify(opts) {
              parsed.id + '. A signed assertion is a credential until it ' +
              'expires, so a second use of one is refused.');
     log.debug('Leaving verify(). The ID was replayed.');
-    return refuse('STS-OAUTH-0082', 'this assertion has been used already. Its ID is remembered ' +
-                  'until it expires, because a signed assertion captured off ' +
-                  'the wire is a credential until then. Mint a fresh one per ' +
-                  'request.');
+    return refuse('STS-OAUTH-0082', 'this assertion has been used already. ' +
+                  'Its ID is remembered until it expires, because a signed ' +
+                  'assertion captured off the wire is a credential until ' +
+                  'then. Mint a fresh one per request.');
   }
   if (!room) {
-    log.warn('saml_assertion_grant: the replay cache for this realm is full of ' +
-             'unexpired assertions (oauth2.assertionReplayCacheSize = ' +
-             maxAssertions() + '), so a new assertion from "' + iss + '" is REFUSED ' +
-             'rather than a live one being forgotten.');
+    log.warn('saml_assertion_grant: the replay cache for this realm is full ' +
+             'of unexpired assertions (oauth2.assertionReplayCacheSize = ' +
+             maxAssertions() + '), so a new assertion from "' + iss + '" is ' +
+             'REFUSED rather than a live one being forgotten.');
     log.debug('Leaving verify(). The replay cache is full.');
-    return refuse('STS-OAUTH-0083', 'this authorization server is holding as many unexpired SAML ' +
-                  'assertions as it is configured to remember ' +
-                  '(oauth2.assertionReplayCacheSize), and it will not forget one that ' +
-                  'could still be replayed in order to accept yours. Retry shortly.');
+    return refuse('STS-OAUTH-0083', 'this authorization server is holding as ' +
+                  'many unexpired SAML assertions as it is configured to ' +
+                  'remember (oauth2.assertionReplayCacheSize), and it will ' +
+                  'not forget one that could still be replayed in order to ' +
+                  'accept yours. Retry shortly.');
   }
   seenAssertions.set(key, expiresAt + skewMs);
 
@@ -1116,7 +1193,8 @@ async function verify(opts) {
   // where a SAML assertion says everything else.
   const assertedScope = (parsed.attributes.scope || [])
     .join(' ').split(/\s+/).filter(Boolean);
-  const requestedScope = String(options.scope || '').split(/\s+/).filter(Boolean);
+  const requestedScope = String(options.scope || '').split(/\s+/)
+    .filter(Boolean);
   let scope = requestedScope;
   let scopeNarrowed = [];
   if (assertedScope.length) {
@@ -1142,7 +1220,8 @@ async function verify(opts) {
   log.info('saml_assertion_grant: an RFC 7522 section ' +
            (asClient ? '2.2' : '2.1') + ' assertion from "' + iss + '" for "' +
            parsed.subject + '" verified. ' + verified.signatureMethod +
-           (opened.encrypted ? ', encrypted ' + opened.encryption.algorithm : '') +
+           (opened.encrypted ? ', encrypted ' + opened.encryption.algorithm :
+            '') +
            ', certificate from ' + usedCertificate.source +
            ', ID=' + parsed.id + '.');
   log.debug('Leaving verify(). Verified.');
@@ -1210,7 +1289,8 @@ function extraClaimsFrom(attributes) {
     const values = attributes[name] || [];
     out[name] = values.length === 1 ? values[0] : values;
   });
-  log.debug('Leaving extraClaimsFrom(). ' + Object.keys(out).length + ' claim(s).');
+  log.debug('Leaving extraClaimsFrom(). ' + Object.keys(out).length + ' ' +
+      'claim(s).');
   return out;
 }
 
@@ -1228,5 +1308,9 @@ module.exports = {
   verify: verify,
   extraClaimsFrom: extraClaimsFrom,
   // For the pages that report how many assertions are being remembered.
-  assertionsRemembered: function () { return seenAssertions.size; }
+  assertionsRemembered: function () {
+    log.debug("Entering assertionsRemembered().");
+    log.debug("Leaving assertionsRemembered().");
+    return seenAssertions.size;
+  }
 };

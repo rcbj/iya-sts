@@ -213,9 +213,10 @@ const INET_ORG_PERSON = [
   { ldap: 'audio', label: 'Audio', rfc: 'RFC 1274 9.3.45', binary: true },
   { ldap: 'userCertificate', label: 'X.509 certificate', rfc: 'RFC 4523 4.1',
     binary: true,
-    note: 'A DER certificate. **This is not the certificate a client presents ' +
-          'on 9443** — nothing here reads this attribute during a TLS ' +
-          'handshake, and a certificate written to it authorises nothing.' },
+    note: 'A DER certificate. **This is not the certificate a client ' +
+          'presents on 9443** — nothing here reads this attribute during a ' +
+          'TLS handshake, and a certificate written to it authorises ' +
+          'nothing.' },
   { ldap: 'userSMIMECertificate', label: 'S/MIME certificate',
     rfc: 'RFC 2798 2.8', binary: true },
   { ldap: 'userPKCS12', label: 'PKCS#12 bundle', rfc: 'RFC 2798 2.9',
@@ -280,16 +281,22 @@ ALL.forEach(function (row) {
 // list and of each class's row array, so that a caller sorting or splicing
 // cannot reorder the schema for everybody else.
 function classes() {
+  log.debug("Entering classes().");
+  log.debug("Leaving classes().");
   return CLASSES.map(function (klass) {
     return Object.assign({}, klass, { attributes: klass.attributes.slice(0) });
   });
 }
 
 function attributes() {
+  log.debug("Entering attributes().");
+  log.debug("Leaving attributes().");
   return ALL.slice(0);
 }
 
 function attribute(name) {
+  log.debug("Entering attribute().");
+  log.debug("Leaving attribute().");
   return BY_NAME.get(String(name == null ? '' : name).trim().toLowerCase()) ||
          null;
 }
@@ -307,8 +314,10 @@ function attribute(name) {
 // is exactly what `ldap/ldap_server.js` holds and hands over.
 // ---------------------------------------------------------------------------
 function rowFor(row, entry) {
+  log.debug("Entering rowFor().");
   const held = (entry || {})[row.ldap.toLowerCase()];
-  const values = Array.isArray(held) ? held : (held === undefined ? [] : [held]);
+  const values = Array.isArray(held) ? held :
+                 (held === undefined ? [] : [held]);
   const present = values.length > 0 &&
                   values.some(function (one) { return String(one) !== ''; });
   const out = {
@@ -324,9 +333,11 @@ function rowFor(row, entry) {
     values: []
   };
   if (!present) {
+    log.debug("Leaving rowFor().");
     return out;
   }
   if (row.secret) {
+    log.debug("Leaving rowFor().");
     // NAMED AND NOT PRINTED. See the header.
     return out;
   }
@@ -338,9 +349,11 @@ function rowFor(row, entry) {
       return total + (Buffer.isBuffer(one)
         ? one.length : Buffer.byteLength(String(one), 'utf8'));
     }, 0);
+    log.debug("Leaving rowFor().");
     return out;
   }
   out.values = values.map(String);
+  log.debug("Leaving rowFor().");
   return out;
 }
 

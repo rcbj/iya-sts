@@ -25,7 +25,8 @@
 // they are put in this claim exactly like any other group a person is in, and
 // no endpoint reads the claim to find them. A client that saw `admin-write` in
 // an access token and concluded the token could do something would be making
-// precisely the mistake the paragraph above is about. See `admin-ui/admin_rbac.js`.
+// precisely the mistake the paragraph above is about. See
+// `admin-ui/admin_rbac.js`.
 //
 // What stopped being true is the OTHER half of that sentence, which used to run
 // "...and no token carries a group from this directory". One now can. The two
@@ -138,19 +139,30 @@ const errorCodes = require('./error_codes');
 // because a preview with no application in mind is asking what the DEFAULT
 // does. groupsOf() says so in its answer.
 function enabled(app) {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return !!applications.settingFor(app || '', 'groups.claim', config);
 }
 
 function claimName(app) {
-  return String(applications.settingFor(app || '', 'groups.claimName', config) || '').trim();
+  log.debug("Entering claimName().");
+  log.debug("Leaving claimName().");
+  return String(applications.settingFor(app || '', 'groups.claimName',
+                                        config) || '').trim();
 }
 
 function valueForm(app) {
-  return String(applications.settingFor(app || '', 'groups.claimValue', config) || 'cn').trim();
+  log.debug("Entering valueForm().");
+  log.debug("Leaving valueForm().");
+  return String(applications.settingFor(app || '', 'groups.claimValue',
+                                        config) || 'cn').trim();
 }
 
 function memberOfCounts(app) {
-  return !!applications.settingFor(app || '', 'groups.claimFromMemberOf', config);
+  log.debug("Entering memberOfCounts().");
+  log.debug("Leaving memberOfCounts().");
+  return !!applications.settingFor(app || '', 'groups.claimFromMemberOf',
+                                   config);
 }
 
 // WHICH APPLICATION A CLAIM IS BEING BUILT FOR, out of the context both
@@ -159,7 +171,9 @@ function memberOfCounts(app) {
 // entityID, or the SAML 1.1 relying party — and the registry files an
 // application under either, so one lookup answers for all four claim sets.
 function appOf(context) {
+  log.debug("Entering appOf().");
   const ctx = context || {};
+  log.debug("Leaving appOf().");
   return String(ctx.client_id || ctx.audience || '');
 }
 
@@ -174,12 +188,16 @@ function appOf(context) {
 let directory = null;
 
 function setDirectory(hooks) {
+  log.debug("Entering setDirectory().");
   directory = hooks || null;
-  log.debug("A directory was installed; the groups claim can now be read from " +
-            "the embedded LDAP directory.");
+  log.debug("A directory was installed; the groups claim can now be read " +
+            "from the embedded LDAP directory.");
+  log.debug("Leaving setDirectory().");
 }
 
 function directoryLoaded() {
+  log.debug("Entering directoryLoaded().");
+  log.debug("Leaving directoryLoaded().");
   return !!(directory && typeof directory.groupsOfUser === 'function');
 }
 
@@ -349,8 +367,8 @@ function groupsOf(username, app) {
     // is BY FAR the common one and a reader who sees "reason" filled in assumes
     // something is broken otherwise.
     out.reason = read.groups.length
-      ? 'This person is named by ' + read.groups.length + ' group(s), but only ' +
-        'through their own memberOf, and groups.claimFromMemberOf is off.'
+      ? 'This person is named by ' + read.groups.length + ' group(s), but ' +
+        'only through their own memberOf, and groups.claimFromMemberOf is off.'
       : 'This person is in no group here, so the claim is omitted entirely ' +
         'rather than sent as an empty list.';
   }
@@ -365,7 +383,9 @@ function groupsOf(username, app) {
 // because that is what a SAML Subject is. Reading both here is one line, and it
 // is the same line claim_attributes.js has for the same reason.
 function subjectOf(context) {
+  log.debug("Entering subjectOf().");
   const ctx = context || {};
+  log.debug("Leaving subjectOf().");
   return String(ctx.username || ctx.subject || '');
 }
 
@@ -378,17 +398,20 @@ function subjectOf(context) {
 //
 // `setId` is accepted and deliberately unread: all four sets carry the claim,
 // because "automatically" is what this feature is for and a per-set selection
-// is what the claim-set pages already offer for everything that wants one. It stays
-// in the signature because the resolver contract has it and because a future
-// per-set rule would go here rather than at four call sites.
+// is what the claim-set pages already offer for everything that wants one. It
+// stays in the signature because the resolver contract has it and because a
+// future per-set rule would go here rather than at four call sites.
 // ---------------------------------------------------------------------------
 function jwtClaimsFor(setId, context) {
+  log.debug("Entering jwtClaimsFor().");
   const answer = groupsOf(subjectOf(context), appOf(context));
   if (!answer.values.length) {
+    log.debug("Leaving jwtClaimsFor().");
     return {};
   }
   const out = {};
   out[answer.claim] = answer.values;
+  log.debug("Leaving jwtClaimsFor().");
   return out;
 }
 
@@ -441,8 +464,8 @@ function state() {
             'the directory by /admin and never from this claim, so a token ' +
             'carrying admin-write can still do nothing a token without it ' +
             'cannot.',
-    precedence: 'A typed claim and a directory attribute of the same name both ' +
-                'win over the groups claim.',
+    precedence: 'A typed claim and a directory attribute of the same name ' +
+                'both win over the groups claim.',
     settings: ['groups.claim', 'groups.claimName', 'groups.claimValue',
                'groups.claimFromMemberOf']
   };
@@ -468,11 +491,11 @@ stats.setGroupResolver({
 });
 
 log.info('The group claim is loaded: an access token, an ID Token and both ' +
-         'SAML assertions will carry "' + claimName() + '" for anybody who is ' +
-         'a member of a group in the embedded directory. It is ' +
+         'SAML assertions will carry "' + claimName() + '" for anybody who ' +
+         'is a member of a group in the embedded directory. It is ' +
          (enabled() ? 'ON' : 'OFF') + ' (groups.claim), and the claim is ' +
-         'omitted entirely for somebody who is in no group. A group here still ' +
-         'grants nothing — no endpoint reads this claim.');
+         'omitted entirely for somebody who is in no group. A group here ' +
+         'still grants nothing — no endpoint reads this claim.');
 
 module.exports = {
   setDirectory: setDirectory,

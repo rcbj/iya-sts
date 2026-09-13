@@ -5,10 +5,10 @@
 // ===========================================================================
 // THE REVOCATION ENDPOINTS AND THE CONSOLE PANE, OVER HTTP (2026-09-11).
 //
-// **THIS REPOSITORY'S OWN (`local: true`)**, on the first of `tests/CLAUDE.md`'s
-// two questions: most of what it drives is `/admin-api/pki` and the pane on
-// `/admin/pki`, and the tree that ADDS a control to that console is the tree
-// that should go red when the control loses its operation.
+// **THIS REPOSITORY'S OWN (`local: true`)**, on the first of
+// `tests/CLAUDE.md`'s two questions: most of what it drives is `/admin-api/pki`
+// and the pane on `/admin/pki`, and the tree that ADDS a control to that
+// console is the tree that should go red when the control loses its operation.
 //
 // ---------------------------------------------------------------------------
 // WHAT THIS ASSERTS THAT `tests/pki_revocation.js` CANNOT.
@@ -46,17 +46,23 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_pki_revocation",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -66,26 +72,32 @@ var api = base + "/admin-api";
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  ✓ " + what);
+  log.debug("Leaving check().");
 }
 
 async function getJson(path) {
+  log.debug("Entering getJson().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in getJson(): " + ((e && e.message) || e));
     // Not JSON — an HTML error page. Quoting it whole says more than a parse
     // failure would.
     body = raw;
   }
+  log.debug("Leaving getJson().");
   return { status: r.status, body: body, raw: raw };
 }
 
 async function post(path, payload) {
+  log.debug("Entering post().");
   const r = await fetch(api + path, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {})
@@ -95,8 +107,10 @@ async function post(path, payload) {
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in post(): " + ((e && e.message) || e));
     body = raw;
   }
+  log.debug("Leaving post().");
   return { status: r.status, body: body, raw: raw };
 }
 
@@ -108,10 +122,12 @@ async function post(path, payload) {
 // nothing", and it is the difference between this file testing what it says it
 // tests and testing nothing.
 async function anonymous(path, options) {
+  log.debug("Entering anonymous().");
   const opts = Object.assign({}, options || {});
   opts.headers = Object.assign({ Authorization: "none" }, opts.headers || {});
   const r = await fetch(base + path, opts);
   const buf = Buffer.from(await r.arrayBuffer());
+  log.debug("Leaving anonymous().");
   return {
     status: r.status,
     type: String(r.headers.get("content-type") || ""),
@@ -125,10 +141,13 @@ async function anonymous(path, options) {
 // where the bytes were sent through something that stringified them, which
 // leaves a body that is the right length and is not DER at all.
 function looksLikeDer(buf) {
+  log.debug("Entering looksLikeDer().");
+  log.debug("Leaving looksLikeDer().");
   return buf.length > 100 && buf[0] === 0x30;
 }
 
 async function test() {
+  log.debug("Entering test().");
   log.info("=== A. the index: ungated, and it names all three schemes ===");
 
   const index = await anonymous("/pki/revocation");
@@ -137,7 +156,8 @@ async function test() {
         "hands out, and a client reads them before it has decided to trust " +
         "anything", function () {
           assert.strictEqual(index.status, 200,
-            "status " + index.status + ": " + index.bytes.toString().slice(0, 200));
+            "status " + index.status + ": " +
+            index.bytes.toString().slice(0, 200));
         });
   const listing = JSON.parse(index.bytes.toString("utf8"));
   check("it lists one entry PER CERTIFICATE AUTHORITY rather than one per " +
@@ -241,7 +261,8 @@ async function test() {
           assert.ok(caCert.bytes.toString("latin1").indexOf("PRIVATE") < 0);
         });
 
-  log.info("=== C. the OCSP responder, and three refusals that are answers ===");
+  log.info("=== C. the OCSP responder, and three refusals that are answers " +
+           "===");
 
   const garbage = await anonymous("/pki/ocsp/" + scope + "/" + ca, {
     method: "POST",
@@ -297,7 +318,8 @@ async function test() {
             "status " + notBase64.status);
         });
 
-  log.info("=== D. the management API carries the register AND the sentence ===");
+  log.info("=== D. the management API carries the register AND the sentence " +
+           "===");
 
   const view = await getJson("/pki");
   check("GET /admin-api/pki answers", function () {
@@ -332,7 +354,8 @@ async function test() {
           assert.ok(view.body.actions.indexOf("release-hold") >= 0);
           assert.ok(view.body.actions.indexOf("revoke") >= 0,
             "the OLDER `revoke` must still be there — that list is published " +
-            "and renaming it to make room would break every caller that has it");
+            "and renaming it to make room would break every caller that has " +
+            "it");
         });
 
   // **A LEAF OF THE JOSE AUTHORITY, AND NEVER A CERTIFICATE AUTHORITY
@@ -346,6 +369,8 @@ async function test() {
   // presented to this service by nothing, so revoking it tests the register
   // and the documents and changes no other job's answer.
   const isLeaf = function (cert) {
+    log.debug("Entering isLeaf().");
+    log.debug("Leaving isLeaf().");
     return !cert.revoked && cert.kind === "leaf";
   };
   const authority = view.body.revocation.authorities.filter(function (one) {
@@ -426,7 +451,8 @@ async function test() {
         "refusal says why a serial alone is not a question: a serial is " +
         "unique only WITHIN one issuer", function () {
           assert.strictEqual(noAuthority.body.ok, false);
-          assert.ok(/BY AN ISSUER/.test((noAuthority.body.errors || []).join(" ")),
+          assert.ok(/BY AN ISSUER/.test((noAuthority.body.errors || []).join(
+              " ")),
             (noAuthority.body.errors || []).join(" "));
         });
   const noSerial = await post("/pki/revoke-certificate", {
@@ -493,6 +519,7 @@ async function test() {
         });
 
   log.info(checks + " check(s) passed.");
+  log.debug("Leaving test().");
 }
 
 const program = new Command();

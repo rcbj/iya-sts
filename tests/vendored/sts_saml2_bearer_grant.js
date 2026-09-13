@@ -65,17 +65,23 @@ const { usernameFor } = require("./random_username.js");
 const saml = require("./saml_xmldsig.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_saml2_bearer_grant",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -94,7 +100,8 @@ var ISS = "https://issuer.example.test/saml2bearer";
 var OTHER_ISS = "https://other-issuer.example.test/saml2bearer";
 
 // ---------------------------------------------------------------------------
-// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT (2026-09-12).
+// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT
+// (2026-09-12).
 //
 // Product mode seeds no `alice`, invents no persona onto an entry, and holds
 // every OAuth application to a client credential. So the asserting
@@ -118,9 +125,11 @@ var JWT_CLIENT_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  ✓ " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
@@ -130,18 +139,24 @@ function check(what, fn) {
 // `saml_xmldsig.js`'s reason.
 // ---------------------------------------------------------------------------
 function b64u(buf) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
   return Buffer.from(buf).toString("base64url");
 }
 
 function signJws(header, payload, privateKeyPem) {
+  log.debug("Entering signJws().");
   const signing = b64u(Buffer.from(JSON.stringify(header), "utf8")) + "." +
                   b64u(Buffer.from(JSON.stringify(payload), "utf8"));
   const sig = nodeCrypto.sign("sha256", Buffer.from(signing, "ascii"),
                               privateKeyPem);
+  log.debug("Leaving signJws().");
   return signing + "." + b64u(sig);
 }
 
 function now() {
+  log.debug("Entering now().");
+  log.debug("Leaving now().");
   return Math.floor(Date.now() / 1000);
 }
 
@@ -149,6 +164,7 @@ function now() {
 // The two doors.
 // ---------------------------------------------------------------------------
 async function post(url, body) {
+  log.debug("Entering post().");
   const r = await fetch(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body || {}) });
@@ -157,35 +173,43 @@ async function post(url, body) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in post(): " + ((e && e.message) || e));
     // Not JSON — an HTML error page. Quoting it whole says more than a parse
     // failure would.
     parsed = raw;
   }
+  log.debug("Leaving post().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 async function get(url) {
+  log.debug("Entering get().");
   const r = await fetch(url);
   const raw = await r.text();
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in get(): " + ((e && e.message) || e));
     parsed = raw;
   }
+  log.debug("Leaving get().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 async function ok(url, body, what) {
+  log.debug("Entering ok().");
   const r = await post(url, body);
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "POST " + url + " should have " + what + "; it answered " + r.status + " " +
     JSON.stringify((r.body && (r.body.errors || r.body.why)) || r.body)
       .slice(0, 400));
+  log.debug("Leaving ok().");
   return r.body;
 }
 
 async function tokenRequest(fields) {
+  log.debug("Entering tokenRequest().");
   const r = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -195,12 +219,16 @@ async function tokenRequest(fields) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in tokenRequest(): " + ((e && e.message) || e));
     parsed = raw;
   }
+  log.debug("Leaving tokenRequest().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 function claimsOf(token) {
+  log.debug("Entering claimsOf().");
+  log.debug("Leaving claimsOf().");
   return JSON.parse(Buffer.from(String(token).split(".")[1], "base64url")
     .toString("utf8"));
 }
@@ -209,6 +237,7 @@ function claimsOf(token) {
 // `sts_roles.js` records why: a gate that works and a handler that has fallen
 // over both produce a 400, and only the code tells them apart.
 function refused(r, code, what) {
+  log.debug("Entering refused().");
   assert.ok(r.status === 400 && r.body && r.body.error === code,
     what + " should be refused " + code + "; it answered " + r.status + " " +
     JSON.stringify(r.body).slice(0, 300));
@@ -216,6 +245,7 @@ function refused(r, code, what) {
     "RFC 7521 section 4.2: a refusal carries an error_description a client " +
     "author can act on; " + what + " came back with " +
     JSON.stringify(r.body.error_description));
+  log.debug("Leaving refused().");
   return r.body.error_description;
 }
 
@@ -250,7 +280,8 @@ async function test() {
              attributes: { cn: "SAML Asserted " + ASSERTED_PERSON,
                            givenName: "SAML", sn: ASSERTED_PERSON,
                            displayName: "SAML Asserted " + ASSERTED_PERSON,
-                           mail: ASSERTED_PERSON + "@saml2-bearer-grant.test" } },
+                           mail: ASSERTED_PERSON +
+                                 "@saml2-bearer-grant.test" } },
            "created the person the assertions are about");
   await ok(realmApi + "/applications/create",
            { identifier: AUTH_CLIENT, protocols: ["oauth2"],
@@ -324,13 +355,17 @@ async function test() {
 
   // The assertion builder every section below goes through.
   function assertionFor(o) {
+    log.debug("Entering assertionFor().");
     const options = o || {};
     const doc = saml.buildAssertion(Object.assign(
       { issuer: ISS, subject: options.person || ASSERTED_PERSON,
-        audience: TOKEN_ENDPOINT, recipient: TOKEN_ENDPOINT }, options.build || {}));
+        audience: TOKEN_ENDPOINT, recipient: TOKEN_ENDPOINT },
+      options.build || {}));
     const xml = saml.sign(doc, options.key || samlKey,
-                          options.cert === null ? "" : (options.cert || samlCert),
+                          options.cert === null ? "" :
+                          (options.cert || samlCert),
                           options.signOpts || {});
+    log.debug("Leaving assertionFor().");
     return options.encode === "base64" ? saml.b64(xml) : saml.b64u(xml);
   }
 
@@ -401,8 +436,8 @@ async function test() {
                                             assertion: assertionFor({}) });
   check("DECLARING THE ISSUER FOR RFC 7523 DOES NOT DECLARE IT FOR RFC 7522 " +
         "— being trusted to assert in one format is not being trusted to " +
-        "assert in the other, and an operator who wrote one attribute has not " +
-        "accidentally written two", function () {
+        "assert in the other, and an operator who wrote one attribute has " +
+        "not accidentally written two", function () {
           refused(stillRefused, "invalid_grant",
                   "a SAML assertion whose issuer is declared only for JWTs");
         });
@@ -463,8 +498,8 @@ async function test() {
   const standard = await tokenRequest({ grant_type: GRANT,
     assertion: assertionFor({ person: person, encode: "base64" }) });
   check("an assertion in STANDARD base64 is accepted, though RFC 7522 " +
-        "section 2.1 asks for base64url — a mock that refused it would send a " +
-        "client author to look at their signature code", function () {
+        "section 2.1 asks for base64url — a mock that refused it would send " +
+        "a client author to look at their signature code", function () {
           assert.strictEqual(standard.status, 200,
             JSON.stringify(standard.body).slice(0, 300));
         });
@@ -485,9 +520,9 @@ async function test() {
   const replay = await tokenRequest({ grant_type: GRANT,
                                       assertion: replayableXml });
   check("AND THE SAME ASSERTION A SECOND TIME IS REFUSED. RFC 7522 section 3 " +
-        "item 6 makes the replay cache a MAY; a signed assertion captured off " +
-        "the wire is a credential until it expires, so \"may\" is not the " +
-        "useful reading", function () {
+        "item 6 makes the replay cache a MAY; a signed assertion captured " +
+        "off the wire is a credential until it expires, so \"may\" is not " +
+        "the useful reading", function () {
           const said = refused(replay, "invalid_grant", "a replayed assertion");
           assert.ok(/used already/.test(said), said.slice(0, 200));
         });
@@ -567,7 +602,8 @@ async function test() {
         });
 
   const noSubject = await tokenRequest({ grant_type: GRANT,
-    assertion: assertionFor({ person: person, build: { omitSubject: true } }) });
+    assertion: assertionFor({ person: person,
+                              build: { omitSubject: true } }) });
   check("one with no <Subject> is refused — it says who is asking and not " +
         "who they are asking about", function () {
           refused(noSubject, "invalid_grant", "an assertion with no subject");
@@ -584,7 +620,8 @@ async function test() {
         "did not verify", function () {
           const said = refused(noSignature, "invalid_grant",
                                "an unsigned assertion");
-          assert.ok(/item 9|signed or have a MAC/.test(said), said.slice(0, 250));
+          assert.ok(/item 9|signed or have a MAC/.test(said),
+                    said.slice(0, 250));
         });
 
   const tooLong = await tokenRequest({ grant_type: GRANT,
@@ -682,8 +719,8 @@ async function test() {
     assertion: assertionFor({ person: person,
       build: { attributes: { scope: "openid email" } } }) });
   check("a request asking for MORE than the assertion's <Attribute " +
-        "Name=\"scope\"> carries gets the intersection — the issuer said what " +
-        "this grant is for, and a request cannot ask the assertion to " +
+        "Name=\"scope\"> carries gets the intersection — the issuer said " +
+        "what this grant is for, and a request cannot ask the assertion to " +
         "authorize something it did not", function () {
           assert.strictEqual(scoped.status, 200,
             JSON.stringify(scoped.body).slice(0, 300));
@@ -703,7 +740,8 @@ async function test() {
   assert.ok(authIssued.thumbprint, "no thumbprint on the issue reply");
   const authView = await get(realmApi + "/applications?application=" +
                              encodeURIComponent(AUTH_CLIENT));
-  const authFields = ((authView.body.application || authView.body).fields) || {};
+  const authFields = ((authView.body.application ||
+                       authView.body).fields) || {};
   const authKey = authFields.oauthSamlAssertionPrivateKey;
   const authCert = authFields.oauthSamlAssertionCertificate;
 
@@ -715,10 +753,12 @@ async function test() {
            "put this realm into RFC 9700 mode");
 
   function clientAssertion(o) {
+    log.debug("Entering clientAssertion().");
     const options = o || {};
     const doc = saml.buildAssertion(Object.assign(
       { issuer: AUTH_CLIENT, subject: AUTH_CLIENT, audience: TOKEN_ENDPOINT,
         recipient: TOKEN_ENDPOINT }, options.build || {}));
+    log.debug("Leaving clientAssertion().");
     return saml.b64u(saml.sign(doc, options.key || authKey,
                                options.cert === null ? "" :
                                  (options.cert || authCert)));
@@ -726,7 +766,8 @@ async function test() {
 
   const authed = await tokenRequest({ grant_type: "client_credentials",
     scope: "openid", client_id: AUTH_CLIENT,
-    client_assertion_type: CLIENT_TYPE, client_assertion: clientAssertion({}) });
+    client_assertion_type: CLIENT_TYPE,
+    client_assertion: clientAssertion({}) });
   check("A CLIENT AUTHENTICATES WITH A SAML 2.0 ASSERTION (section 2.2) and " +
         "gets a token, in a realm where authentication is REQUIRED — which " +
         "is the only state in which this section asserts anything",
@@ -750,7 +791,8 @@ async function test() {
   const wrongSubject = await tokenRequest({ grant_type: "client_credentials",
     scope: "openid", client_id: AUTH_CLIENT,
     client_assertion_type: CLIENT_TYPE,
-    client_assertion: clientAssertion({ build: { subject: "somebody-else" } }) });
+    client_assertion: clientAssertion({ build: {
+      subject: "somebody-else" } }) });
   check("an assertion whose <Subject> is not the client_id is refused — item " +
         "3B, and it is the check that stops one client authenticating as " +
         "another with a perfectly valid signature of its own", function () {
@@ -940,13 +982,14 @@ async function test() {
 const program = new Command();
 program
   .name("sts_saml2_bearer_grant")
-  .description("RFC 7521 and RFC 7522 at a real token endpoint: a certificate " +
-      "authority built through /admin-api/pki, TWO signing key pairs issued " +
-      "to one application — one per assertion profile — a SAML 2.0 assertion " +
-      "signed with an XML Signature implementation of this suite's own, the " +
-      "fourteen ways it is refused, the same document authenticating a " +
-      "client under section 2.2, and the claim the whole design rests on: " +
-      "neither key pair can sign for the other profile, at either grant.")
+  .description("RFC 7521 and RFC 7522 at a real token endpoint: a " +
+      "certificate authority built through /admin-api/pki, TWO signing key " +
+      "pairs issued to one application — one per assertion profile — a SAML " +
+      "2.0 assertion signed with an XML Signature implementation of this " +
+      "suite's own, the fourteen ways it is refused, the same document " +
+      "authenticating a client under section 2.2, and the claim the whole " +
+      "design rests on: neither key pair can sign for the other profile, at " +
+      "either grant.")
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

@@ -75,7 +75,9 @@ function setDirectory(fns) {
 }
 
 function available() {
+  log.debug("Entering available().");
   if (directory) {
+    log.debug("Leaving available().");
     return true;
   }
   if (!warnedAboutNoDirectory) {
@@ -85,6 +87,7 @@ function available() {
              'the REQUEST carried, which is the pure-XACML behaviour the ' +
              'conformance suite runs under and is not a failure.');
   }
+  log.debug("Leaving available().");
   return false;
 }
 
@@ -160,16 +163,20 @@ function subjectOf(request) {
 // — but the warning it logs about the second is the only trace of it, and a
 // caller in another container cannot read this service's log.
 function attributeOf(attributes, name) {
+  log.debug("Entering attributeOf().");
   if (!attributes) {
+    log.debug("Leaving attributeOf().");
     return null;
   }
   const wanted = String(name).toLowerCase();
   const keys = Object.keys(attributes);
   for (let i = 0; i < keys.length; i += 1) {
     if (keys[i].toLowerCase() === wanted) {
+      log.debug("Leaving attributeOf().");
       return attributes[keys[i]];
     }
   }
+  log.debug("Leaving attributeOf().");
   return null;
 }
 
@@ -215,25 +222,31 @@ function resolverFor(request) {
   let looked = false;
 
   function subjectEntry() {
+    log.debug("Entering subjectEntry().");
     if (looked) {
+      log.debug("Leaving subjectEntry().");
       return entry;
     }
     looked = true;
     entry = null;
     if (!available()) {
+      log.debug("Leaving subjectEntry().");
       return null;
     }
     const subject = subjectOf(request);
     if (!subject) {
       log.debug('resolverFor(): the request names no subject-id, so no ' +
                 'entry is looked up.');
+      log.debug("Leaving subjectEntry().");
       return null;
     }
     const located = directory.locateEntry(subject);
     entry = located && located.stored ? located.stored : null;
+    log.debug("Leaving subjectEntry().");
     return entry;
   }
 
+  log.debug("Leaving resolverFor().");
   return function resolve(designator) {
     log.debug('Entering resolve(). id=' + designator.attributeId);
     if (designator.category !== model.CATEGORY.ACCESS_SUBJECT) {

@@ -5,9 +5,10 @@
 // (2026-09-10).
 //
 // **THIS IS RULE 3: A LIBRARY.** It registers no route, so its position in the
-// require order is not a position. It requires `common/config`, `common/helpers`
-// and `./webauthn` — the last of which requires npm leaves and `common/crypto`
-// — so it cannot join a cycle and nothing that requires it moves a route.
+// require order is not a position. It requires `common/config`,
+// `common/helpers` and `./webauthn` — the last of which requires npm leaves and
+// `common/crypto` — so it cannot join a cycle and nothing that requires it
+// moves a route.
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS NOT IN `authn/webauthn.js` NEXT DOOR, WHICH IS THE OBVIOUS PLACE.
@@ -104,14 +105,17 @@ const FALLBACK_ALGS = ['ES256', 'RS256'];
 // ---------------------------------------------------------------------------
 function settings() {
   log.debug('Entering webauthn_policy settings().');
-  const attachment = String(config.value('webauthn.authenticatorAttachment') || 'any');
+  const attachment = String(config.value('webauthn.authenticatorAttachment') ||
+                            'any');
   const out = {
     enabled: config.value('webauthn.enabled') !== false,
-    rpName: String(config.value('webauthn.rpName') || 'Mock authorization server'),
+    rpName: String(config.value('webauthn.rpName') || 'Mock authorization ' +
+                                                      'server'),
     rpId: String(config.value('webauthn.rpId') || '').trim(),
     algorithms: algorithmsOffered(),
     userVerification: oneOf(config.value('webauthn.userVerification'),
-                            ['discouraged', 'preferred', 'required'], 'preferred'),
+                            ['discouraged', 'preferred', 'required'],
+                            'preferred'),
     attestation: oneOf(config.value('webauthn.attestation'),
                        ['none', 'indirect', 'direct', 'enterprise'], 'direct'),
     timeoutMs: clamp(config.value('webauthn.timeoutMs'), 10000, 600000, 60000),
@@ -119,13 +123,15 @@ function settings() {
     // dictionary's absent member and its "no preference" value are the same
     // thing to a browser and there is no third state to represent.
     authenticatorAttachment: oneOf(attachment,
-                                   ['any', 'platform', 'cross-platform'], 'any'),
+                                   ['any', 'platform', 'cross-platform'],
+                                   'any'),
     residentKey: oneOf(config.value('webauthn.residentKey'),
                        ['discouraged', 'preferred', 'required'], 'discouraged'),
     credProps: config.value('webauthn.credProps') !== false,
     primaryAllowed: config.value('webauthn.primaryAllowed') !== false,
     mfaAllowed: config.value('webauthn.mfaAllowed') !== false,
-    maxKeysPerPerson: clamp(config.value('webauthn.maxKeysPerPerson'), 1, 50, 10)
+    maxKeysPerPerson: clamp(config.value('webauthn.maxKeysPerPerson'), 1, 50,
+                            10)
   };
   log.debug('Leaving webauthn_policy settings(). uv=' + out.userVerification +
             ', ' + out.algorithms.length + ' algorithm(s).');
@@ -133,15 +139,20 @@ function settings() {
 }
 
 function oneOf(value, allowed, dflt) {
+  log.debug("Entering oneOf().");
   const wanted = String(value == null ? '' : value);
+  log.debug("Leaving oneOf().");
   return allowed.indexOf(wanted) >= 0 ? wanted : dflt;
 }
 
 function clamp(value, low, high, dflt) {
+  log.debug("Entering clamp().");
   const n = Number(value);
   if (!Number.isFinite(n)) {
+    log.debug("Leaving clamp().");
     return dflt;
   }
+  log.debug("Leaving clamp().");
   return Math.max(low, Math.min(high, n));
 }
 
@@ -160,9 +171,10 @@ function algorithmsOffered() {
   const kept = [];
   list.forEach(function (name) {
     if (ALG_IDS[name] === undefined) {
-      log.warn('webauthn: "' + name + '" is not an algorithm this service can ' +
-               'verify, so it is NOT being offered to browsers. The ones it ' +
-               'knows are ' + Object.keys(ALG_IDS).join(', ') + '. Offering ' +
+      log.warn('webauthn: "' + name + '" is not an algorithm this service ' +
+               'can verify, so it is NOT being offered to browsers. The ones ' +
+               'it knows ' +
+               'are ' + Object.keys(ALG_IDS).join(', ') + '. Offering ' +
                'one it cannot check would enrol a credential that never ' +
                'works again.');
       return;
@@ -178,7 +190,8 @@ function algorithmsOffered() {
     // like a broken authenticator. The default is the safe answer and the
     // warning is how somebody finds out.
     log.warn('webauthn: webauthn.algorithms named nothing this service can ' +
-             'verify, so the ceremony is offering ' + FALLBACK_ALGS.join(' and ') +
+             'verify, so the ceremony is offering ' +
+             FALLBACK_ALGS.join(' and ') +
              ' instead. An empty pubKeyCredParams is refused by the browser ' +
              'and would look like a hardware failure.');
     log.debug('Leaving algorithmsOffered(). Fell back.');
@@ -193,6 +206,8 @@ function algorithmsOffered() {
 // the ceremony wants the numbers, and computing either from the other at two
 // call sites is how the two come to disagree.
 function algorithmIds() {
+  log.debug("Entering algorithmIds().");
+  log.debug("Leaving algorithmIds().");
   return algorithmsOffered().map(function (name) { return ALG_IDS[name]; });
 }
 
@@ -202,6 +217,8 @@ function algorithmIds() {
 // an endpoint is a door, and a form posted by hand while the setting is off
 // must not enrol anybody.
 function offered() {
+  log.debug("Entering offered().");
+  log.debug("Leaving offered().");
   return settings().enabled;
 }
 
@@ -231,12 +248,14 @@ function roleAllowed(role) {
   if (String(role) === 'primary' && !live.primaryAllowed) {
     log.debug('Leaving roleAllowed(). Primary keys are not allowed here.');
     return errorCodes.mark({ ok: false,
-             why: 'A security key cannot be the only credential on an account ' +
-                  'in this realm (webauthn.primaryAllowed). Enrol it as a ' +
-                  'second factor beside a password instead.' }, 'STS-AUTHN-0045');
+             why: 'A security key cannot be the only credential on an ' +
+                  'account in this realm (webauthn.primaryAllowed). Enrol it ' +
+                  'as a second factor beside a password ' +
+                  'instead.' }, 'STS-AUTHN-0045');
   }
   if (String(role) === 'mfa' && !live.mfaAllowed) {
-    log.debug('Leaving roleAllowed(). Second-factor keys are not allowed here.');
+    log.debug('Leaving roleAllowed(). Second-factor keys are not allowed ' +
+              'here.');
     return errorCodes.mark({ ok: false,
              why: 'A security key cannot be a second factor in this realm ' +
                   '(webauthn.mfaAllowed). An authenticator app is the other ' +
@@ -275,12 +294,16 @@ const FAILED_CHECK_CODES = {
 };
 
 function failureCodeFor(verdict) {
-  const failed = (verdict && Array.isArray(verdict.failed)) ? verdict.failed : [];
+  log.debug("Entering failureCodeFor().");
+  const failed = (verdict && Array.isArray(verdict.failed)) ? verdict.failed :
+                  [];
   for (let i = 0; i < failed.length; i++) {
     if (FAILED_CHECK_CODES[failed[i]]) {
+      log.debug("Leaving failureCodeFor().");
       return FAILED_CHECK_CODES[failed[i]];
     }
   }
+  log.debug("Leaving failureCodeFor().");
   return 'STS-AUTHN-0037';
 }
 
@@ -331,7 +354,8 @@ function creationOptions(rpId) {
   // preference" — the member is simply not there — and sending the string
   // `"any"` is a validation error in the browser rather than a wide filter.
   if (live.authenticatorAttachment !== 'any') {
-    out.authenticatorSelection.authenticatorAttachment = live.authenticatorAttachment;
+    out.authenticatorSelection.authenticatorAttachment =
+        live.authenticatorAttachment;
   }
   log.debug('Leaving creationOptions(). attestation=' + out.attestation);
   return out;
@@ -353,6 +377,8 @@ function requestOptions(rpId) {
 // is handed as `requireUserVerification`, and the one ceremony setting that
 // becomes a CHECK rather than a request — see the header.
 function requireUserVerification() {
+  log.debug("Entering requireUserVerification().");
+  log.debug("Leaving requireUserVerification().");
   return settings().userVerification === 'required';
 }
 
@@ -370,7 +396,8 @@ function report() {
     offered: live.enabled,
     rpName: live.rpName,
     rpId: live.rpId,
-    rpIdSource: live.rpId ? 'configured' : 'the host this service was reached on',
+    rpIdSource: live.rpId ? 'configured' : 'the host this service was ' +
+                                           'reached on',
     // EVERY algorithm the verifier knows, with the ones being offered marked —
     // rather than only the offered ones. A page that listed two rows could not
     // answer the question somebody comes to it with, which is *what else could

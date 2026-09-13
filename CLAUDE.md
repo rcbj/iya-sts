@@ -637,8 +637,14 @@ reach outside it and this is the index of them:
    API session is told apart by `credentialKey`, because a second register would
    be a second answer to "is somebody signed in" (rule 3m). **A relying-party
    session names the sign-on session it came from and dies with it**, in a
-   cascade inside `dropSession()` — the one place a session ends. —
-   `authn/CLAUDE.md`, `logout/CLAUDE.md`
+   cascade inside `dropSession()` — the one place a session ends. **What it no
+   longer dies with, since 2026-09-12, is the sign-on session RUNNING OUT**: the
+   console and the portal keep the tokens their sign-in was issued and, when
+   the ID Token and access token expire, renew them with the refresh token grant
+   over the same back channel, writing them onto the same session — same cookie,
+   same page, no sign-in — for up to the refresh token's lifetime from the
+   sign-in (`common/oidc_rp.js` section 4, `oidcRp.renewBeforeExpiryS`). A
+   sign-out still ends it. — `authn/CLAUDE.md`, `logout/CLAUDE.md`
 4. **`/admin/callback` IS THE ONE PATH UNDER `/admin` THE CONSOLE GATE DOES NOT
    GUARD**, and it cannot be: somebody arriving there has no console session
    yet. It is an exemption IN the gate rather than a route registered above it,
@@ -1484,12 +1490,52 @@ renumbered or reused; a condition that stops existing keeps its row `retired`.
 
 ## Code style
 
-* **No one-liner `try`/`catch`.** Braces and a body, always.
-* **Every function longer than about ten lines opens with
-  `log.debug("Entering fn().")` and returns through `log.debug("Leaving fn().")`.**
-  Several `Leaving` lines in one body is correct, not a mistake — one per exit.
-* **Every swallowed `catch` explains itself in a comment.** "Not JSON; the raw text
-  is what gets shown" is a reason. An empty block is not.
+**THESE ARE THE PARENT PROJECT'S RULES SINCE 2026-09-12** — its root
+`CLAUDE.md`'s *Style Notes* — adopted here and swept across the tree that day.
+They bind every `.js` file except `common/vendored/`, the eight Kerberos codec
+copies, the `node-ldapjs` submodule and the non-`local` copies in
+`tests/vendored/`, none of which may be edited here.
+
+* **Every named function is entered and left out loud.** Its first statement
+  is `log.debug("Entering NAME().")` and every exit goes through
+  `log.debug("Leaving NAME().")`, where `NAME` is its own name — declarations,
+  `const f = function () {…}`, object and class methods. Several `Leaving`
+  lines in one body is correct: one before each `return`, and one before a
+  trailing `throw`. Anonymous inline callbacks are left alone. **The standing
+  exception is a hot path, and it must say so** in a comment above the function
+  naming it — a comment such as "no Entering/Leaving pair … would drown the
+  log" is what the sweep honoured, and an exception without one is
+  indistinguishable from an oversight. Code that runs in a browser or in a
+  `node -e` child is exempt, and `common/config_file.js` (no logger exists yet)
+  says why in its header; `mgmt-api/admin_api_explorer.js` carries a
+  console-backed `log` of bunyan's shape instead, the parent's arrangement for
+  files that cannot reach bunyan.
+* **No swallowed exception.** Every `catch` does something with what it caught:
+  `log.debug("Caught in NAME(): " + ((e && e.message) || e))` at the least, and
+  a promise `.catch()` or `.then(ok, fail)` handler the same. A catch that runs
+  before the module's logger exists records the error in a variable
+  (`logLevelProblem`, `appconfigProblem`) and the line after the logger is made
+  reports it; code in a `node -e` child carries it on the result it returns.
+  The comment saying WHY it is handled that way is still required as well.
+* **No single-line `try`/`catch`**, and no one-line block a log line has to go
+  into — `if (x) { return y; }`, `case X: return y;` and a callback's
+  `{ return x; }` open out. JavaScript inside a string (a script served to a
+  browser, a child process's program) is data and stays as written.
+* **80 columns.** Break at a comma, after a binary operator (it stays on the
+  first line), after `?` and `:`, before each `.method()` of a long chain, and
+  after `=` as a last resort; a long string becomes a concatenation. A
+  continuation keeps the column the construct already uses. What stays long:
+  a `require()` string, a regex literal, a URL, a template literal, a test
+  vector that cannot be cut into fitting pieces, a comment holding a table or an
+  aligned layout, and an `error-code: none —` exemption (it must stay within two
+  lines of the line it exempts). About 560 lines are over for those reasons.
+  **A source-inspection test must read a statement rather than a line** —
+  `tests/error_codes.js` and `tests/return_address_provenance.js` both broke on
+  this sweep and were fixed that way.
+* **One blank line between one function and the next.**
+* **The log level is `info` in every appconfig file in `env/`** (2026-09-12),
+  because every function now logs its entry and exit at `debug`.
+  `STS_LOG_LEVEL=debug` is the run that asks for the whole record.
 * **Never read a setting as `Number(config.value(key) || n)` where `0` is a legal
   value.** `0 || n` is `n`, so the setting silently cannot be set to the one
   value its own description often calls out — `totp.window`'s "a perfectly

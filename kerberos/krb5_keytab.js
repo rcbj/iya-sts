@@ -3,7 +3,8 @@
 // File: krb5_keytab.js
 //
 // ---------------------------------------------------------------------------
-// THE MIT KEYTAB FILE FORMAT, VERSION 0x502 — A WRITER AND A READER (2026-09-12).
+// THE MIT KEYTAB FILE FORMAT, VERSION 0x502 — A WRITER AND A READER
+// (2026-09-12).
 //
 // A keytab is how a real Kerberos service holds its long-term key: the service
 // never types a password, it reads a file of (principal, kvno, enctype, key)
@@ -62,14 +63,18 @@ const NAME_TYPE_PRINCIPAL = 1;
 const MAX_DATA = 0xffff;
 
 function asBytes(value) {
+  log.debug("Entering asBytes().");
   if (value instanceof Uint8Array) {
+    log.debug("Leaving asBytes().");
     return value;
   }
+  log.debug("Leaving asBytes().");
   return Buffer.from(String(value == null ? '' : value), 'utf8');
 }
 
 // One counted string: a 16-bit length, then the bytes.
 function counted(value) {
+  log.debug("Entering counted().");
   const bytes = asBytes(value);
   if (bytes.length > MAX_DATA) {
     throw new Error('krb5_keytab: a field of ' + bytes.length + ' bytes does ' +
@@ -78,6 +83,7 @@ function counted(value) {
   const out = Buffer.alloc(2 + bytes.length);
   out.writeUInt16BE(bytes.length, 0);
   Buffer.from(bytes).copy(out, 2);
+  log.debug("Leaving counted().");
   return out;
 }
 
@@ -106,7 +112,8 @@ function writeKeytab(entries) {
     }
     const kvno = Number(entry.kvno);
     if (!Number.isInteger(kvno) || kvno < 0 || kvno > 0xffffffff) {
-      throw new Error('krb5_keytab: entry ' + index + ' has kvno ' + entry.kvno);
+      throw new Error('krb5_keytab: entry ' + index + ' has kvno ' +
+                      entry.kvno);
     }
     const stamp = entry.timestamp instanceof Date
       ? Math.floor(entry.timestamp.getTime() / 1000)
@@ -117,7 +124,8 @@ function writeKeytab(entries) {
     components.forEach(function (c) { body.push(counted(c)); });
     const middle = Buffer.alloc(4 + 4 + 1 + 2);
     middle.writeUInt32BE((entry.nameType == null ? NAME_TYPE_PRINCIPAL
-                                                 : Number(entry.nameType)) >>> 0, 0);
+                                                 : Number(
+                                                     entry.nameType)) >>> 0, 0);
     middle.writeUInt32BE(stamp >>> 0, 4);
     middle.writeUInt8(kvno & 0xff, 8);
     middle.writeUInt16BE(Number(entry.etype) & 0xffff, 9);
@@ -153,11 +161,15 @@ function readKeytab(bytes) {
   const entries = [];
   let at = 2;
   function need(n) {
+    log.debug("Entering need().");
     if (at + n > buf.length) {
       throw new Error('krb5_keytab: truncated at byte ' + at);
     }
+    log.debug("Leaving need().");
   }
+
   function data(end) {
+    log.debug("Entering data().");
     need(2);
     const len = buf.readUInt16BE(at);
     at += 2;
@@ -166,6 +178,7 @@ function readKeytab(bytes) {
     }
     const out = buf.subarray(at, at + len);
     at += len;
+    log.debug("Leaving data().");
     return out;
   }
   while (at < buf.length) {

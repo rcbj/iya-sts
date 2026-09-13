@@ -183,9 +183,12 @@ let origin = '';
 // there is no row anywhere in the old format to read back.
 // ---------------------------------------------------------------------------
 function storedKey(row, key) {
+  log.debug("Entering storedKey().");
   if (row.merge !== 'own') {
+    log.debug("Leaving storedKey().");
     return key;
   }
+  log.debug("Leaving storedKey().");
   return Buffer.from(String(key), 'utf8').toString('base64url') + '.' +
          Buffer.from(String(origin), 'utf8').toString('base64url');
 }
@@ -270,12 +273,16 @@ let unsupportedReason = '';
 // here, because it arrives later than everything above: `keystore.start()` runs
 // after `persistence.start()`.
 function enabled() {
+  log.debug("Entering enabled().");
   if (stopped || !driver) {
+    log.debug("Leaving enabled().");
     return false;
   }
   if (!config.value('persistence.minted')) {
+    log.debug("Leaving enabled().");
     return false;
   }
+  log.debug("Leaving enabled().");
   // PRODUCT MODE, OR A DEVELOPMENT RUN WHOSE PROCESSES MUST AGREE (2026-09-07).
   //
   // The product half is unchanged and is what this file was written for. The
@@ -329,8 +336,10 @@ function enabled() {
 // coordination is refused at startup, so this being true means the store is
 // shared as well.
 function severalProcesses() {
+  log.debug("Entering severalProcesses().");
   const count = Number(config.value('workers.requestCount')) || 0;
   const paths = String(config.value('workers.dispatch') || '').trim();
+  log.debug("Leaving severalProcesses().");
   return count > 0 && paths !== '';
 }
 
@@ -339,6 +348,8 @@ function severalProcesses() {
 // up — every one of them expired, every one of them swept moments later, and
 // all of them read, decrypted and parsed first.
 function retentionMs() {
+  log.debug("Entering retentionMs().");
+  log.debug("Leaving retentionMs().");
   return Math.max(0, Number(config.value('persistence.mintedRetention')) || 0);
 }
 
@@ -356,6 +367,8 @@ function retentionMs() {
 // sentence at the point of the decision beats a surprise afterwards.
 // ---------------------------------------------------------------------------
 function supports(theDriver) {
+  log.debug("Entering supports().");
+  log.debug("Leaving supports().");
   return !!(theDriver && typeof theDriver.loadMinted === 'function' &&
             typeof theDriver.saveMinted === 'function');
 }
@@ -387,7 +400,8 @@ function setDriver(theDriver, activeMode) {
     return false;
   }
   driver = theDriver;
-  origin = typeof theDriver.origin === 'function' ? theDriver.origin() : 'local';
+  origin = typeof theDriver.origin === 'function' ? theDriver.origin() :
+           'local';
   unsupportedReason = '';
   realms.setPersistObserver(note);
   log.debug('Leaving setDriver(). ' + realms.handles().length +
@@ -430,23 +444,29 @@ function note(handle, realmId, key) {
 // The inverse of `storedKey()`. A `replace` store's key is itself; an `own`
 // store's carries the origin after a NUL.
 function splitKey(row, storedName) {
+  log.debug("Entering splitKey().");
   if (!row || row.merge !== 'own') {
+    log.debug("Leaving splitKey().");
     return { key: storedName, origin: '' };
   }
   const text = String(storedName);
   const at = text.lastIndexOf('.');
   if (at < 0) {
+    log.debug("Leaving splitKey().");
     // A row written before this store was declared `own`, or by an older
     // build. Treated as unqualified rather than dropped: it is somebody's
     // real data, and the worst it can do is be restored as this process's.
     return { key: text, origin: '' };
   }
   try {
+    log.debug("Leaving splitKey().");
     return {
       key: Buffer.from(text.slice(0, at), 'base64url').toString('utf8'),
       origin: Buffer.from(text.slice(at + 1), 'base64url').toString('utf8')
     };
   } catch (e) {
+    log.debug("Caught in splitKey(): " + ((e && e.message) || e));
+    log.debug("Leaving splitKey().");
     // Not the shape storedKey() writes. Same answer as no separator at all:
     // somebody's real data, restored unqualified rather than thrown away.
     return { key: text, origin: '' };
@@ -493,8 +513,10 @@ function splitKey(row, storedName) {
 let prefetched = null;
 
 function prefetch(changes) {
+  log.debug("Entering prefetch().");
   prefetched = null;
   if (!driver || typeof driver.readMintedMany !== 'function') {
+    log.debug("Leaving prefetch().");
     return Promise.resolve(0);
   }
   const refs = [];
@@ -504,7 +526,8 @@ function prefetch(changes) {
     if (!parsed) {
       return;
     }
-    const id = parsed.handle + '\u0000' + change.realm + '\u0000' + parsed.storedName;
+    const id = parsed.handle + '\u0000' + change.realm + '\u0000' +
+               parsed.storedName;
     if (wanted.has(id)) {
       return;
     }
@@ -513,8 +536,10 @@ function prefetch(changes) {
                 key: parsed.storedName });
   });
   if (!refs.length) {
+    log.debug("Leaving prefetch().");
     return Promise.resolve(0);
   }
+  log.debug("Leaving prefetch().");
   return driver.readMintedMany(refs).then(function (rows) {
     const map = new Map();
     (rows || []).forEach(function (row) {
@@ -547,23 +572,30 @@ function prefetch(changes) {
 }
 
 function endPrefetch() {
+  log.debug("Entering endPrefetch().");
   prefetched = null;
+  log.debug("Leaving endPrefetch().");
 }
 
 // The change key's two halves, or null. Shared by prefetch() and applyChange()
 // so the encoding is read in one place.
 function splitChangeKey(key) {
+  log.debug("Entering splitChangeKey().");
   const text = String(key == null ? '' : key);
   const at = text.indexOf('.');
   if (at < 0) {
+    log.debug("Leaving splitChangeKey().");
     return null;
   }
   try {
+    log.debug("Leaving splitChangeKey().");
     return {
       handle: Buffer.from(text.slice(0, at), 'base64url').toString('utf8'),
       storedName: Buffer.from(text.slice(at + 1), 'base64url').toString('utf8')
     };
   } catch (e) {
+    log.debug("Caught in splitChangeKey(): " + ((e && e.message) || e));
+    log.debug("Leaving splitChangeKey().");
     return null;
   }
 }
@@ -571,6 +603,7 @@ function splitChangeKey(key) {
 function applyChange(change) {
   log.debug('Entering applyChange(). key=' + change.key);
   if (!driver || typeof driver.readMinted !== 'function') {
+    log.debug("Leaving applyChange().");
     return Promise.resolve(false);
   }
   // THE INVERSE OF WHAT `recordChanges()` PACKS INTO A MINTED CHANGE ROW:
@@ -590,6 +623,7 @@ function applyChange(change) {
     log.error(errorCodes.tag('STS-STORE-0014') +
               'persistence: a minted change names "' + change.key + '", ' +
               'which carries no handle. Skipped.');
+    log.debug("Leaving applyChange().");
     return Promise.resolve(false);
   }
   let handle;
@@ -598,9 +632,11 @@ function applyChange(change) {
     handle = Buffer.from(text.slice(0, at), 'base64url').toString('utf8');
     storedName = Buffer.from(text.slice(at + 1), 'base64url').toString('utf8');
   } catch (e) {
+    log.debug("Caught in applyChange(): " + ((e && e.message) || e));
     log.error(errorCodes.tag('STS-STORE-0014') +
               'persistence: a minted change names "' + change.key + '", ' +
               'which is not the shape recordChanges() writes. Skipped.');
+    log.debug("Leaving applyChange().");
     return Promise.resolve(false);
   }
   const store = realms.handleFor(handle);
@@ -620,6 +656,7 @@ function applyChange(change) {
   const reading = held === undefined
     ? driver.readMinted(handle, change.realm, storedName)
     : Promise.resolve(held);
+  log.debug("Leaving applyChange().");
   return reading
     .then(function (row) {
       if (!row) {
@@ -653,6 +690,8 @@ function applyChange(change) {
       try {
         value = JSON.parse(text);
       } catch (e) {
+        log.debug("Caught in a callback in applyChange(): " +
+                  ((e && e.message) || e));
         log.warn(errorCodes.tag('STS-STORE-0017') +
                  'persistence: another process\'s "' + handle + '" row ' +
                  'opened and is not JSON. Skipped.');
@@ -672,6 +711,7 @@ function applyChange(change) {
 // same reason: applying somebody else's write must not make this process
 // report it as its own and write it straight back.
 function applyLocally(store, realmId, key, value, remove) {
+  log.debug("Entering applyLocally().");
   const was = restoring;
   restoring = true;
   try {
@@ -684,9 +724,11 @@ function applyLocally(store, realmId, key, value, remove) {
       if (typeof store.remove === 'function') {
         store.remove(realmId, key);
       }
+      log.debug("Leaving applyLocally().");
       return true;
     }
     store.restore(realmId, key, value);
+    log.debug("Leaving applyLocally().");
     return true;
   } finally {
     restoring = was;
@@ -695,6 +737,8 @@ function applyLocally(store, realmId, key, value, remove) {
 
 // Is there anything to write? `persistence.js` asks before scheduling.
 function dirty() {
+  log.debug("Entering dirty().");
+  log.debug("Leaving dirty().");
   return journal.size > 0;
 }
 
@@ -751,6 +795,9 @@ function flush() {
         if (!present || !present.present) {
           deletes.push({ handle: handle, realm: realmId,
                          key: storedKey(row, key),
+                         // The key as the STORE knows it, for the retry — see
+                         // the catch below.
+                         journalKey: key,
                          own: row.merge === 'own' });
           return;
         }
@@ -770,7 +817,7 @@ function flush() {
           return;
         }
         upserts.push({ handle: handle, realm: realmId,
-                       key: storedKey(row, key), body: body,
+                       key: storedKey(row, key), journalKey: key, body: body,
                        // WHETHER A READER HAS TO WAIT FOR THIS ROW. An `own`
                        // store is per-process fan-in — every process keeps its
                        // own contribution and the console SUMS them when
@@ -792,6 +839,7 @@ function flush() {
     return Promise.resolve({ written: false });
   }
 
+  log.debug("Leaving flush().");
   return driver.saveMinted(upserts, deletes).then(function () {
     writes++;
     rowsWritten += upserts.length;
@@ -812,10 +860,28 @@ function flush() {
     // failed write loses nothing — except that a key whose value has since
     // changed is re-read at the next flush and written with the NEWER value,
     // which is what anybody would want.
+    //
+    // **THE KEY THAT GOES BACK IS THE JOURNAL'S, NOT THE ROW'S (2026-09-12).**
+    // This re-noted `row.key`, which is `storedKey()`'s answer — and for a
+    // `merge: 'own'` store that is the key base64url-encoded with the origin
+    // appended. The next flush then read the store under that name, found
+    // nothing, and wrote a delete keyed `storedKey()` of IT: the key grew by a
+    // third plus the origin on every consecutive failure. A dispatched stack
+    // whose workers deadlocked on this table for forty minutes grew those keys
+    // until PostgreSQL refused them (`index row size 3880 exceeds btree version
+    // 4 maximum 2704`), which made every later flush fail by construction, and
+    // then kept growing them: one worker reached 5.6 GB and spent every sample
+    // of an 8-second CPU profile hashing keys in `note()`, with its commit
+    // announcements — and so the read barrier — stalled behind it. The SCIM
+    // bulk load was the job that timed out.
     failures++;
     lastError = err.message;
-    upserts.forEach(function (row) { note(row.handle, row.realm, row.key); });
-    deletes.forEach(function (row) { note(row.handle, row.realm, row.key); });
+    upserts.forEach(function (row) {
+      note(row.handle, row.realm, row.journalKey);
+    });
+    deletes.forEach(function (row) {
+      note(row.handle, row.realm, row.journalKey);
+    });
     log.error(errorCodes.tag('STS-STORE-0021') +
               'persistence: minted state could not be written: ' + err.message +
               '. The service is unaffected and is still answering from ' +
@@ -889,6 +955,7 @@ function restore() {
                 'front process cleared the table before this one started.');
       return Promise.resolve({ restored: 0 });
     }
+    log.debug("Leaving restore().");
     return driver.purgeMinted(Date.now()).then(function (removed) {
       log.info('persistence: ' + (removed || 0) + ' minted row(s) from an ' +
                'earlier run were cleared. This run seals under a key of its ' +
@@ -905,6 +972,7 @@ function restore() {
       return { restored: 0, cleared: 0 };
     });
   }
+  log.debug("Leaving restore().");
   return driver.loadMinted().then(function (rows) {
     restoring = true;
     let restored = 0;
@@ -914,7 +982,8 @@ function restore() {
     const staleHandles = new Set();
 
     (rows || []).forEach(function (row) {
-      if (cutoff && Number(row.writtenAt || 0) && Number(row.writtenAt) < cutoff) {
+      if (cutoff && Number(row.writtenAt || 0) &&
+          Number(row.writtenAt) < cutoff) {
         droppedStale++;
         return;
       }
@@ -933,6 +1002,8 @@ function restore() {
       try {
         value = JSON.parse(text);
       } catch (e) {
+        log.debug("Caught in a callback in restore(): " +
+                  ((e && e.message) || e));
         // A row that opened and is not JSON. It cannot have been written by
         // this service, because everything here is stringified before it is
         // sealed — so this is corruption, and it is counted with the rows that
@@ -1003,9 +1074,9 @@ function restore() {
                              'persistence.mintedRetention' : '') +
              (droppedUnreadable ? ', ' + droppedUnreadable + ' unreadable ' +
                                   '(written under a different key-encryption ' +
-                                  'key?)' : '') + '. Sessions, tokens, codes, ' +
-             'artifacts, tickets, the replay caches and the audit log are ' +
-             'as they were before the restart.');
+                                  'key?)' : '') + '. Sessions, tokens, ' +
+             'codes, artifacts, tickets, the replay caches and the audit log ' +
+             'are as they were before the restart.');
 
     // WHAT THE RETENTION DROPPED IS DELETED, not merely skipped. Skipping
     // alone would leave every row this service has ever written in the table
@@ -1043,6 +1114,7 @@ function restore() {
 // ---------------------------------------------------------------------------
 function stop() {
   log.debug('Entering stop().');
+  log.debug("Leaving stop().");
   return flush().then(function (result) {
     stopped = true;
     log.debug('Leaving stop().');
@@ -1054,7 +1126,9 @@ function stop() {
 // function, so the page and the API cannot disagree about what is persisted —
 // rule 7's shape applied to a report rather than to an action.
 function status() {
+  log.debug("Entering status().");
   const declared = realms.handles();
+  log.debug("Leaving status().");
   return {
     persisting: enabled(),
     supported: supports(driver),
@@ -1064,7 +1138,8 @@ function status() {
     setting: !!config.value('persistence.minted'),
     retentionMs: retentionMs(),
     stores: declared.length,
-    shared: declared.filter(function (row) { return row.scope === 'shared'; }).length,
+    shared:
+      declared.filter(function (row) { return row.scope === 'shared'; }).length,
     handles: declared.map(function (row) {
       return { handle: row.handle, shape: row.shape, scope: row.scope };
     }),
@@ -1089,6 +1164,7 @@ function status() {
 // two processes and therefore cannot run in the in-process suite at all.
 // ---------------------------------------------------------------------------
 function reset() {
+  log.debug("Entering reset().");
   journal.clear();
   driver = null;
   stopped = false;
@@ -1105,6 +1181,7 @@ function reset() {
   droppedUnreadable = 0;
   droppedUnknown = 0;
   unsupportedReason = '';
+  log.debug("Leaving reset().");
 }
 
 module.exports = {

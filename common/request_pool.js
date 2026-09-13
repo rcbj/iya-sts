@@ -90,16 +90,22 @@ const keystore = require('./keystore');
 // 503s below. See common/error_codes.js.
 const errorCodes = require('./error_codes');
 
+let logLevelProblem = null;
 const log = bunyan.createLogger({
   name: 'request_pool',
   level: (function () {
     try {
       return config.value('global.logLevel') || 'info';
     } catch (e) {
+      logLevelProblem = e;
       return 'info';
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug('No log level could be read, so info: ' +
+            logLevelProblem.message);
+}
 
 const WORKER_MODULE = path.join(__dirname, 'request_worker.js');
 
@@ -163,6 +169,7 @@ let ticketWaiters = [];
 // counts once its response has finished — and until then it is somebody else's
 // business.
 function blockedBelow(need, servedBy) {
+  log.debug("Entering blockedBelow().");
   let blocked = false;
   outstanding.forEach(function (t) {
     if (t <= need && finishedTickets.has(t)) {
@@ -188,11 +195,14 @@ function blockedBelow(need, servedBy) {
       blocked = true;
     }
   });
+  log.debug("Leaving blockedBelow().");
   return blocked;
 }
 
 function releaseTicketWaiters() {
+  log.debug("Entering releaseTicketWaiters().");
   if (!ticketWaiters.length) {
+    log.debug("Leaving releaseTicketWaiters().");
     return;
   }
   ticketWaiters = ticketWaiters.filter(function (w) {
@@ -202,19 +212,23 @@ function releaseTicketWaiters() {
     }
     return true;
   });
+  log.debug("Leaving releaseTicketWaiters().");
 }
 
 // A ticket for a request about to be sent to `entry`. Cleared when that worker
 // reports a commit — see receiveCommitted(), which clears everything the worker
 // owes, because its flush covers every request it has finished.
 function dispatchTicket(entry) {
+  log.debug("Entering dispatchTicket().");
   if (!readYourWrite()) {
+    log.debug("Leaving dispatchTicket().");
     return;
   }
   issuedTickets++;
   outstanding.add(issuedTickets);
   if (!entry.tickets) { entry.tickets = new Set(); }
   entry.tickets.add(issuedTickets);
+  log.debug("Leaving dispatchTicket().");
   return issuedTickets;
 }
 
@@ -234,11 +248,14 @@ function dispatchTicket(entry) {
 // nothing. It cost one lost group member in five thousand in the bulk-load
 // job, which is exactly what a race like this looks like from outside.
 function ticketFinished(entry, ticket) {
+  log.debug("Entering ticketFinished().");
   if (!ticket || !entry.tickets || !entry.tickets.has(ticket)) {
+    log.debug("Leaving ticketFinished().");
     return;
   }
   finishedTickets.add(ticket);
   finishedAt.set(ticket, Date.now());
+  log.debug("Leaving ticketFinished().");
 }
 
 // ---------------------------------------------------------------------------
@@ -273,7 +290,9 @@ function ticketFinished(entry, ticket) {
 // receiveCommitted() skips a ticket the entry no longer owns.
 // ---------------------------------------------------------------------------
 function ticketAbandoned(entry, ticket) {
+  log.debug("Entering ticketAbandoned().");
   if (!ticket) {
+    log.debug("Leaving ticketAbandoned().");
     return;
   }
   outstanding.delete(ticket);
@@ -283,6 +302,7 @@ function ticketAbandoned(entry, ticket) {
     entry.tickets.delete(ticket);
   }
   releaseTicketWaiters();
+  log.debug("Leaving ticketAbandoned().");
 }
 
 // ---------------------------------------------------------------------------
@@ -376,19 +396,28 @@ function reapStuckTickets(need, clock) {
 }
 
 function awaitCommitConfirmations(servedBy) {
+  log.debug("Entering awaitCommitConfirmations().");
   if (!readYourWrite()) {
+    log.debug("Leaving awaitCommitConfirmations().");
     return Promise.resolve();
   }
   const need = issuedTickets;
   if (!blockedBelow(need, servedBy)) {
+    log.debug("Leaving awaitCommitConfirmations().");
     return Promise.resolve();
   }
+  log.debug("Leaving awaitCommitConfirmations().");
   return new Promise(function (resolve) {
     let done = false;
     const waiter = { need: need, servedBy: servedBy, resolve: function () {
-      if (done) { return; }
+      log.debug("Entering resolve().");
+      if (done) {
+        log.debug("Leaving resolve().");
+        return;
+      }
       done = true;
       resolve();
+      log.debug("Leaving resolve().");
     } };
     ticketWaiters.push(waiter);
     setTimeout(function () {
@@ -416,17 +445,21 @@ function awaitCommitConfirmations(servedBy) {
 // signed can be verified against. Generated in server.js because making one is
 // asynchronous and this file's start() is not the place to await.
 function setBbsKeyPair(encoded) {
+  log.debug("Entering setBbsKeyPair().");
   bbsKeyPairB64 = String(encoded || '');
   if (bbsKeyPairB64) {
     process.env.STS_BBS_KEYPAIR = bbsKeyPairB64;
   }
+  log.debug("Leaving setBbsKeyPair().");
 }
 
 function setServerCertificate(material) {
+  log.debug("Entering setServerCertificate().");
   if (!material || !material.certPem || !material.keyPem) {
     throw new Error('request_pool: setServerCertificate() needs certPem and ' +
       'keyPem. Every process in this service must present and pin the SAME ' +
-      'certificate, or the console and the portal fail TLS against themselves.');
+      'certificate, or the console and the portal fail TLS against ' +
+      'themselves.');
   }
   // **THE CHAIN AND THE ANCHOR ARE CARRIED TOO**, and they are not optional
   // extras: a worker with the leaf alone presents no chain and, having no
@@ -437,6 +470,7 @@ function setServerCertificate(material) {
   tlsMaterial = { certPem: material.certPem, keyPem: material.keyPem,
                   chainPem: (material.chainPem || []).slice(0),
                   trustAnchorPem: material.trustAnchorPem || '' };
+  log.debug("Leaving setServerCertificate().");
 }
 
 // ---------------------------------------------------------------------------
@@ -506,17 +540,22 @@ const PEER_AUTHORIZED_HEADER = 'x-sts-peer-authorized';
 // certificate. The DIFFERENCE between them is reported by the surfaces that
 // care, out of `global.https`, exactly as it is today.
 function peerOf(req) {
+  log.debug("Entering peerOf().");
   const socket = req && req.socket;
   if (!socket || typeof socket.getPeerCertificate !== 'function') {
+    log.debug("Leaving peerOf().");
     return null;
   }
   let cert;
   try {
     cert = socket.getPeerCertificate();
   } catch (e) {
+    log.debug("Caught in peerOf(): " + ((e && e.message) || e));
+    log.debug("Leaving peerOf().");
     return null;
   }
   if (!cert || !cert.raw || !cert.raw.length) {
+    log.debug("Leaving peerOf().");
     return null;
   }
   const flat = {};
@@ -556,6 +595,7 @@ function peerOf(req) {
       at = at.issuerCertificate;
     }
   } catch (e) {
+    log.debug("Caught in peerOf(): " + ((e && e.message) || e));
     // A socket that went away between the two reads. The leaf still goes; a
     // worker without the chain answers a foreign certificate as unknown, which
     // is what the policy exists to decide about.
@@ -568,6 +608,8 @@ function peerOf(req) {
   try {
     encoded = Buffer.from(JSON.stringify(flat), 'utf8').toString('base64');
   } catch (e) {
+    log.debug("Caught in peerOf(): " + ((e && e.message) || e));
+    log.debug("Leaving peerOf().");
     return null;
   }
   // THE CHAIN IS WHAT IS GIVEN UP FIRST when the header would be too large:
@@ -575,13 +617,16 @@ function peerOf(req) {
   // request presenting nothing at all.
   if (encoded.length > 12000 && flat.issuerChain) {
     log.warn(errorCodes.tag('STS-WORKER-0037') +
-             'request_pool: a client certificate\'s issuer chain is too large ' +
-             'to forward (' + encoded.length + ' bytes encoded); the worker ' +
+             'request_pool: a client certificate\'s issuer chain is too ' +
+             'large to forward ' +
+             '(' + encoded.length + ' bytes encoded); the worker ' +
              'gets the leaf alone and cannot verify a foreign CRL about it.');
     delete flat.issuerChain;
     try {
       encoded = Buffer.from(JSON.stringify(flat), 'utf8').toString('base64');
     } catch (e) {
+      log.debug("Caught in peerOf(): " + ((e && e.message) || e));
+      log.debug("Leaving peerOf().");
       return null;
     }
   }
@@ -593,8 +638,10 @@ function peerOf(req) {
              'request_pool: a client certificate is too large to forward (' +
              encoded.length + ' bytes encoded); the worker will see this ' +
              'request as having presented none.');
+    log.debug("Leaving peerOf().");
     return null;
   }
+  log.debug("Leaving peerOf().");
   return { cert: encoded, authorized: socket.authorized === true };
 }
 
@@ -619,14 +666,18 @@ const SESSION_COOKIE = 'sts_session';
 const RP_COOKIES = ['sts_admin', 'sts_portal'];
 
 function sessionCookieName(bit) {
+  log.debug("Entering sessionCookieName().");
   if (bit.indexOf(SESSION_COOKIE + '=') === 0) {
+    log.debug("Leaving sessionCookieName().");
     return SESSION_COOKIE;
   }
   for (let i = 0; i < RP_COOKIES.length; i++) {
     if (bit.indexOf(RP_COOKIES[i] + '=') === 0) {
+      log.debug("Leaving sessionCookieName().");
       return RP_COOKIES[i];
     }
   }
+  log.debug("Leaving sessionCookieName().");
   return '';
 }
 
@@ -664,6 +715,7 @@ function size() {
   try {
     wanted = parseInt(config.value('workers.requestCount'), 10);
   } catch (e) {
+    log.debug("Caught in size(): " + ((e && e.message) || e));
     // A module loaded with no configuration at all — which is how the parent
     // project's in-process jobs and this repository's own npm test load this
     // tree. Handling requests HERE is the right answer for one of those.
@@ -708,16 +760,21 @@ function size() {
 // the list is for.
 // ---------------------------------------------------------------------------
 function dispatchList() {
+  log.debug("Entering dispatchList().");
   let raw;
   try {
     raw = config.value('workers.dispatch');
   } catch (e) {
+    log.debug("Caught in dispatchList(): " + ((e && e.message) || e));
+    log.debug("Leaving dispatchList().");
     return [];
   }
   if (!raw) {
+    log.debug("Leaving dispatchList().");
     return [];
   }
   const list = Array.isArray(raw) ? raw : String(raw).split(',');
+  log.debug("Leaving dispatchList().");
   return list.map(function (one) {
     return String(one).trim();
   }).filter(function (one) {
@@ -728,6 +785,8 @@ function dispatchList() {
 // An entry that names a URL. `*` is in BOTH halves because it names everything,
 // and it has to be in this one for `dispatched()`'s wildcard branch to see it.
 function dispatchPrefixes() {
+  log.debug("Entering dispatchPrefixes().");
+  log.debug("Leaving dispatchPrefixes().");
   return dispatchList().filter(function (one) {
     return one === '*' || one.charAt(0) === '/';
   });
@@ -753,16 +812,21 @@ function dispatchPrefixes() {
 // affinity like the rest of the console.
 // ---------------------------------------------------------------------------
 function fanoutPrefixes() {
+  log.debug("Entering fanoutPrefixes().");
   let raw;
   try {
     raw = config.value('workers.fanout');
   } catch (e) {
+    log.debug("Caught in fanoutPrefixes(): " + ((e && e.message) || e));
+    log.debug("Leaving fanoutPrefixes().");
     return [];
   }
   if (!raw) {
+    log.debug("Leaving fanoutPrefixes().");
     return [];
   }
   const list = Array.isArray(raw) ? raw : String(raw).split(',');
+  log.debug("Leaving fanoutPrefixes().");
   return list.map(function (one) {
     return String(one).trim();
   }).filter(function (one) {
@@ -771,7 +835,9 @@ function fanoutPrefixes() {
 }
 
 function matchesAny(url, prefixes) {
+  log.debug("Entering matchesAny().");
   if (!prefixes.length) {
+    log.debug("Leaving matchesAny().");
     return false;
   }
   let pathOnly = String(url || '').split('?')[0];
@@ -782,15 +848,19 @@ function matchesAny(url, prefixes) {
   for (let i = 0; i < prefixes.length; i++) {
     const prefix = prefixes[i];
     if (pathOnly === prefix || pathOnly.indexOf(prefix + '/') === 0) {
+      log.debug("Leaving matchesAny().");
       return true;
     }
   }
+  log.debug("Leaving matchesAny().");
   return false;
 }
 
 // Whether this request fans out. A dispatched path that is NOT named fans in —
 // it holds affinity — which is the way round the header above argues for.
 function fansOut(url) {
+  log.debug("Entering fansOut().");
+  log.debug("Leaving fansOut().");
   return matchesAny(url, fanoutPrefixes());
 }
 
@@ -884,6 +954,7 @@ function fansOut(url) {
 const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust'];
 
 function dispatched(url) {
+  log.debug("Entering dispatched().");
   // A SEGMENT BOUNDARY RATHER THAN A BARE PREFIX, and the loose version was
   // written first and was wrong: `/admin` as a prefix also matched
   // `/admin-api`, so naming the console would have silently dragged the
@@ -891,14 +962,18 @@ function dispatched(url) {
   // an exact `/admin` are what a path prefix means.
   const prefixes = dispatchPrefixes();
   if (!prefixes.length) {
+    log.debug("Leaving dispatched().");
     return false;
   }
   if (matchesAny(url, NEVER_DISPATCHED)) {
+    log.debug("Leaving dispatched().");
     return false;
   }
   if (prefixes.indexOf('*') >= 0) {
+    log.debug("Leaving dispatched().");
     return true;
   }
+  log.debug("Leaving dispatched().");
   return matchesAny(url, prefixes);
 }
 
@@ -917,6 +992,7 @@ function ensureSocketDir() {
   try {
     base = String(config.value('workers.socketDir') || '');
   } catch (e) {
+    log.debug("Caught in ensureSocketDir(): " + ((e && e.message) || e));
     base = '';
   }
   base = base || os.tmpdir();
@@ -952,7 +1028,8 @@ function ensureSocketDir() {
 // below is what helpers.js calls there — so there is one path and not two.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// A WORKER HAS COMMITTED, AND ONLY NOW IS EVERY OTHER WORKER BEHIND (2026-09-07).
+// A WORKER HAS COMMITTED, AND ONLY NOW IS EVERY OTHER WORKER BEHIND
+// (2026-09-07).
 //
 // proxy() used to bump the generation when a write-method request FINISHED, on
 // the premise that the write was in the change log by then. It was not:
@@ -975,7 +1052,9 @@ function ensureSocketDir() {
 // it has the write in its own memory and must not be sent to fetch it.
 // ---------------------------------------------------------------------------
 function receiveCommitted(entry, committed) {
+  log.debug("Entering receiveCommitted().");
   if (!readYourWrite()) {
+    log.debug("Leaving receiveCommitted().");
     return;
   }
   // THE GENERATION MOVES ONLY WHEN SOMETHING WAS WRITTEN. Bumping it for a
@@ -1015,10 +1094,13 @@ function receiveCommitted(entry, committed) {
   releaseTicketWaiters();
   log.debug('receiveCommitted(): worker ' + entry.pid + ' committed at seq ' +
             entry.committedSeq + '; generation is now ' + generation + '.');
+  log.debug("Leaving receiveCommitted().");
 }
 
 function receivePublishedKeys(entry, published) {
+  log.debug("Entering receivePublishedKeys().");
   if (!published || !published.realm || !published.blob) {
+    log.debug("Leaving receivePublishedKeys().");
     return;
   }
   const realmId = String(published.realm);
@@ -1042,15 +1124,18 @@ function receivePublishedKeys(entry, published) {
              'post-quantum keys or its request-encryption key); every ' +
              'process here now uses them.');
     broadcastKeys(realmId, published.blob, entry);
+    log.debug("Leaving receivePublishedKeys().");
     return;
   }
   const held = heldBlob ? true : false;
   if (!held) {
     keystore.adoptShared(realmId, published.blob);
-    log.info('request_pool: worker ' + (entry && entry.pid) + ' generated the ' +
-             '"' + realmId + '" realm\'s signing keys; every process here now ' +
-             'uses them.');
+    log.info('request_pool: worker ' + (entry && entry.pid) + ' generated ' +
+             'the ' +
+             '"' + realmId + '" realm\'s signing keys; every process here ' +
+             'now uses them.');
     broadcastKeys(realmId, published.blob, entry);
+    log.debug("Leaving receivePublishedKeys().");
     return;
   }
   // SOMEBODY ELSE GOT THERE FIRST. The publisher is told what the answer is and
@@ -1059,6 +1144,7 @@ function receivePublishedKeys(entry, published) {
   // it is lost. That is the price of a synchronous property read that cannot
   // await, and it is written down rather than discovered.
   sendKeys(entry, realmId);
+  log.debug("Leaving receivePublishedKeys().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1081,10 +1167,13 @@ function receivePublishedKeys(entry, published) {
 // is loaded and it is a cache hit.
 // ---------------------------------------------------------------------------
 function directory() {
+  log.debug("Entering directory().");
+  log.debug("Leaving directory().");
   return require('../ldap/ldap_server');
 }
 
 function publishDirectoryConnections(rows) {
+  log.debug("Entering publishDirectoryConnections().");
   const snapshot = rows || [];
   workers.forEach(function (one) {
     if (!one.child || !one.child.connected) {
@@ -1100,14 +1189,17 @@ function publishDirectoryConnections(rows) {
                 'worker ' + one.pid + ': ' + e.message);
     }
   });
+  log.debug("Leaving publishDirectoryConnections().");
 }
 
 // Called with whatever the worker put in the header — one or more identity
 // keys, comma separated and percent-encoded, because a key is a username and a
 // header is bytes.
 function closeDirectoryConnections(header) {
+  log.debug("Entering closeDirectoryConnections().");
   const raw = String(header || '');
   if (!raw) {
+    log.debug("Leaving closeDirectoryConnections().");
     return;
   }
   raw.split(',').forEach(function (encoded) {
@@ -1138,9 +1230,11 @@ function closeDirectoryConnections(header) {
                'worker asked to end for ' + key + ': ' + e.message);
     }
   });
+  log.debug("Leaving closeDirectoryConnections().");
 }
 
 function broadcastKeys(realmId, blob, except) {
+  log.debug("Entering broadcastKeys().");
   workers.forEach(function (other) {
     if (other === except || !other.child || !other.child.connected) {
       return;
@@ -1153,6 +1247,7 @@ function broadcastKeys(realmId, blob, except) {
                'keys to worker ' + other.pid + ': ' + e.message);
     }
   });
+  log.debug("Leaving broadcastKeys().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1172,7 +1267,9 @@ function broadcastKeys(realmId, blob, except) {
 // chain to nothing anybody here will accept.
 // ---------------------------------------------------------------------------
 function receivePublishedPki(entry, published) {
+  log.debug("Entering receivePublishedPki().");
   if (!published || published.realm === undefined) {
+    log.debug("Leaving receivePublishedPki().");
     return;
   }
   const realmId = String(published.realm);
@@ -1208,6 +1305,7 @@ function receivePublishedPki(entry, published) {
   // which is every publish but the rare one.
   // -------------------------------------------------------------------------
   reconcileTheListener();
+  log.debug("Leaving receivePublishedPki().");
 }
 
 // The asynchronous half of the block above, kept out of it so that
@@ -1216,6 +1314,7 @@ function receivePublishedPki(entry, published) {
 // that is handed the new one a few milliseconds late pins the old one for those
 // milliseconds, which is the state it was in before this existed.
 function reconcileTheListener() {
+  log.debug("Entering reconcileTheListener().");
   // **LAZILY, AND THAT IS RULE 1 RATHER THAN TASTE.** `server.js` requires this
   // module at 122 and the protocol stack — `tls/tls_server.js` with it — at
   // 176, so a require at the top of this file would register `/tls`'s three
@@ -1258,9 +1357,11 @@ function reconcileTheListener() {
                 'request_pool: the listener certificate could not be ' +
                 'reconciled with the rebuilt hierarchy: ' + e.message);
     });
+  log.debug("Leaving reconcileTheListener().");
 }
 
 function broadcastPki(realmId, chain, except) {
+  log.debug("Entering broadcastPki().");
   workers.forEach(function (other) {
     if (other === except || !other.child || !other.child.connected) {
       return;
@@ -1274,9 +1375,11 @@ function broadcastPki(realmId, chain, except) {
                e.message);
     }
   });
+  log.debug("Leaving broadcastPki().");
 }
 
 function sendKeys(entry, realmId) {
+  log.debug("Entering sendKeys().");
   const all = keystore.sharedAll();
   for (let i = 0; i < all.length; i++) {
     if (all[i].realm === realmId && entry.child && entry.child.connected) {
@@ -1287,16 +1390,20 @@ function sendKeys(entry, realmId) {
                  'request_pool: could not correct worker ' + entry.pid +
                  '\'s keys for "' + realmId + '": ' + e.message);
       }
+      log.debug("Leaving sendKeys().");
       return;
     }
   }
+  log.debug("Leaving sendKeys().");
 }
 
 // How many connections the front process may have open to ONE worker at once.
 // Read at fork, because an agent is made there and a change would not reach an
 // agent that exists — which is why `workers.maxSockets` is restart-only.
 function maxSocketsPerWorker() {
+  log.debug("Entering maxSocketsPerWorker().");
   const n = Number(config.value('workers.maxSockets'));
+  log.debug("Leaving maxSocketsPerWorker().");
   return (n > 0) ? n : 64;
 }
 
@@ -1540,6 +1647,7 @@ function reap(entry, code, signal) {
   } catch (e) {
     // The worker unlinks its own on a clean exit; this is for one that was
     // killed. Already gone is the ordinary case.
+    log.debug("Caught in reap(): " + ((e && e.message) || e));
   }
   failOperations(entry);
   const how = signal ? 'was killed with ' + signal : 'exited with code ' + code;
@@ -1571,6 +1679,8 @@ function reap(entry, code, signal) {
 }
 
 function readyWorkers() {
+  log.debug("Entering readyWorkers().");
+  log.debug("Leaving readyWorkers().");
   return workers.filter(function (one) {
     return one.ready && !one.retiring;
   });
@@ -1581,8 +1691,10 @@ function readyWorkers() {
 // queued behind another, and the second stops a burst landing on whichever
 // child was forked first.
 function leastLoaded() {
+  log.debug("Entering leastLoaded().");
   const live = readyWorkers();
   if (!live.length) {
+    log.debug("Leaving leastLoaded().");
     return null;
   }
   const chosen = live.slice().sort(function (a, b) {
@@ -1599,6 +1711,7 @@ function leastLoaded() {
   log.debug('leastLoaded(): ' + live.map(function (one) {
     return one.pid + '(' + one.inFlight + '/' + one.served + ')';
   }).join(' ') + ' -> ' + (chosen ? chosen.pid : '(none)'));
+  log.debug("Leaving leastLoaded().");
   return chosen;
 }
 
@@ -1727,29 +1840,37 @@ const RESOURCE_PATHS = [
 // that is not a reason to put a Basic credential in it.
 // ---------------------------------------------------------------------------
 function credentialKeyOf(req) {
+  log.debug("Entering credentialKeyOf().");
   const said = req.headers && req.headers.authorization;
   if (!said) {
+    log.debug("Leaving credentialKeyOf().");
     return '';
   }
+  log.debug("Leaving credentialKeyOf().");
   return 'c:' + nodeCrypto.createHash('sha256').update(String(said))
     .digest('base64url').slice(0, 22);
 }
 
 function mutationKeyOf(req, url) {
+  log.debug("Entering mutationKeyOf().");
   if (!mayWrite(req.method)) {
+    log.debug("Leaving mutationKeyOf().");
     return credentialKeyOf(req);
   }
   const path = String(url || '').split('?')[0];
   for (let i = 0; i < RESOURCE_PATHS.length; i++) {
     const found = RESOURCE_PATHS[i].exec(path);
     if (found) {
+      log.debug("Leaving mutationKeyOf().");
       return 'r:' + found[0];
     }
   }
+  log.debug("Leaving mutationKeyOf().");
   return credentialKeyOf(req);
 }
 
 function affinityKeyOf(req) {
+  log.debug("Entering affinityKeyOf().");
   const header = req.headers && req.headers.cookie;
   if (header) {
     const parts = String(header).split(';');
@@ -1775,6 +1896,7 @@ function affinityKeyOf(req) {
     // The pin is the fallback for a browser whose binding this process has
     // lost — a worker that died, or a pool that restarted.
     if (session) {
+      log.debug("Leaving affinityKeyOf().");
       return 's:' + session;
     }
     // THE RELYING-PARTY SESSION SECOND. It is bound the same way — `learn()`
@@ -1783,24 +1905,29 @@ function affinityKeyOf(req) {
     // browser holding both is one browser, and the sign-on session is the one
     // the other one dies with.
     if (rp) {
+      log.debug("Leaving affinityKeyOf().");
       return 's:' + rp;
     }
     if (pooled) {
+      log.debug("Leaving affinityKeyOf().");
       return 'p:' + pooled;
     }
   }
   const url = String(req.originalUrl || req.url || '');
   const q = url.indexOf('?');
   if (q < 0) {
+    log.debug("Leaving affinityKeyOf().");
     return '';
   }
   const query = url.slice(q + 1);
   for (let i = 0; i < FLOW_PARAMS.length; i++) {
     const found = flowParam(query, FLOW_PARAMS[i]);
     if (found) {
+      log.debug("Leaving affinityKeyOf().");
       return FLOW_PARAMS[i] + ':' + found;
     }
   }
+  log.debug("Leaving affinityKeyOf().");
   return '';
 }
 
@@ -1808,14 +1935,18 @@ function affinityKeyOf(req) {
 // dispatched request and the whole value of this file is that the front process
 // does as little as possible per request.
 function flowParam(query, name) {
+  log.debug("Entering flowParam().");
   const parts = String(query || '').split('&');
   for (let i = 0; i < parts.length; i++) {
     const bit = parts[i];
     if (bit.indexOf(name + '=') === 0) {
       const raw = bit.slice(name.length + 1);
       try {
+        log.debug("Leaving flowParam().");
         return decodeURIComponent(raw);
       } catch (e) {
+        log.debug("Caught in flowParam(): " + ((e && e.message) || e));
+        log.debug("Leaving flowParam().");
         // A value that is not valid percent-encoding. Used as it arrived: this
         // is a routing key and never a credential, so the only thing that
         // matters is that the same string maps to the same worker.
@@ -1823,6 +1954,7 @@ function flowParam(query, name) {
       }
     }
   }
+  log.debug("Leaving flowParam().");
   return '';
 }
 
@@ -1884,7 +2016,9 @@ function learn(entry, answer) {
 }
 
 function remember(key, entry) {
+  log.debug("Entering remember().");
   if (affinity.get(key) === entry.pid) {
+    log.debug("Leaving remember().");
     return;
   }
   if (affinity.size >= AFFINITY_MAX) {
@@ -1894,13 +2028,15 @@ function remember(key, entry) {
   affinity.set(key, entry.pid);
   log.debug('remember(): ' + key.split(':')[0] + ' -> worker ' + entry.pid +
             '. ' + affinity.size + ' affinity/affinities held.');
+  log.debug("Leaving remember().");
 }
 
 // The worker this request goes to. A session holds affinity; everything else
 // fans out. A session whose worker has gone gets a new one, which is the whole
 // of the recovery story — see the header on why that is safe.
 function workerFor(key) {
-  log.debug('Entering workerFor(). key=' + (key ? key.split(':')[0] : '(none)'));
+  log.debug('Entering workerFor(). key=' +
+            (key ? key.split(':')[0] : '(none)'));
   if (!key) {
     // Either this path fans out by policy, or it is the first hop of a flow and
     // has nothing to be stuck to yet. Both are the same routing decision, and
@@ -1973,12 +2109,14 @@ function start() {
     // one per worker per generation, and that is a fork bomb rather than a bug.
     log.debug('Leaving start(). This process is a request worker.');
     starting = Promise.resolve({ started: 0, wanted: 0 });
+    log.debug("Leaving start().");
     return starting;
   }
   const wanted = size();
   if (!wanted) {
     log.debug('Leaving start(). No request workers are configured.');
     starting = Promise.resolve({ started: 0, wanted: 0 });
+    log.debug("Leaving start().");
     return starting;
   }
 
@@ -2034,16 +2172,17 @@ function start() {
         'request_pool: ' + wants.length + ' entry/entries in ' +
         'workers.dispatch are configured to be handled in a request worker (' +
         wants.join(', ') + ') and THIS PROCESS IS NOT COORDINATING: ' + why +
-        '. Every worker would hold its own private copy of the directory, the ' +
-        'sessions and the settings, and a request answered by one would not ' +
-        'see what another had written — which does not fail, it answers ' +
+        '. Every worker would hold its own private copy of the directory, ' +
+        'the sessions and the settings, and a request answered by one would ' +
+        'not see what another had written — which does not fail, it answers ' +
         'wrongly and intermittently. Configure a coordinating store ' +
-        '(persistence.mode postgres with persistence.coordinate on), or clear ' +
-        'workers.dispatch.'));
+        '(persistence.mode postgres with persistence.coordinate on), or ' +
+        'clear workers.dispatch.'));
+      log.debug("Leaving start().");
       return starting;
     }
-    log.info('request_pool: coordinating through the ' + state.mode + ' store, ' +
-             'so a worker sees what the others write.');
+    log.info('request_pool: coordinating through the ' + state.mode + ' ' +
+             'store, so a worker sees what the others write.');
 
   }
   // ---------------------------------------------------------------------
@@ -2191,9 +2330,13 @@ function start() {
 // for more.
 // ---------------------------------------------------------------------------
 function readYourWrite() {
+  log.debug("Entering readYourWrite().");
   try {
+    log.debug("Leaving readYourWrite().");
     return !!config.value('workers.readYourWrite');
   } catch (e) {
+    log.debug("Caught in readYourWrite(): " + ((e && e.message) || e));
+    log.debug("Leaving readYourWrite().");
     // No configuration at all — the parent project's in-process jobs, npm
     // test. Off is the answer that changes nothing.
     return false;
@@ -2247,15 +2390,19 @@ let generation = 0;
 let localWritesSeen = -1;
 
 function noteLocalWrites(written) {
+  log.debug("Entering noteLocalWrites().");
   if (!readYourWrite()) {
+    log.debug("Leaving noteLocalWrites().");
     return false;
   }
   const count = Number(written) || 0;
   if (localWritesSeen < 0) {
     localWritesSeen = count;
+    log.debug("Leaving noteLocalWrites().");
     return false;
   }
   if (count <= localWritesSeen) {
+    log.debug("Leaving noteLocalWrites().");
     return false;
   }
   // The delta is read BEFORE the baseline moves, which is the ordinary shape
@@ -2266,6 +2413,7 @@ function noteLocalWrites(written) {
   log.debug('noteLocalWrites(): this process committed ' + added +
             ' change row(s) of its own; the generation is now ' + generation +
             ', so every worker catches up before it answers again.');
+  log.debug("Leaving noteLocalWrites().");
   return true;
 }
 
@@ -2274,9 +2422,13 @@ function noteLocalWrites(written) {
 // file is lazy: it sits above the protocol modules in the require order and a
 // top-level require would pull it into the router's position.
 function localWriteCount() {
+  log.debug("Entering localWriteCount().");
   try {
+    log.debug("Leaving localWriteCount().");
     return require('../persistence/persistence').changeRowsWritten();
   } catch (e) {
+    log.debug("Caught in localWriteCount(): " + ((e && e.message) || e));
+    log.debug("Leaving localWriteCount().");
     // No store, or none that counts. Nothing to notice, which is the honest
     // answer for a process that cannot have written a change row.
     return 0;
@@ -2288,6 +2440,8 @@ function localWriteCount() {
 const READ_ONLY_METHODS = { GET: true, HEAD: true, OPTIONS: true };
 
 function mayWrite(method) {
+  log.debug("Entering mayWrite().");
+  log.debug("Leaving mayWrite().");
   return !READ_ONLY_METHODS[String(method || '').toUpperCase()];
 }
 
@@ -2308,6 +2462,7 @@ function barrier(entry, wanted) {
     return Promise.resolve(true);
   }
   const id = nextSyncId++;
+  log.debug("Leaving barrier().");
   return new Promise(function (resolve) {
     const timer = setTimeout(function () {
       pendingSyncs.delete(id);
@@ -2331,6 +2486,8 @@ function barrier(entry, wanted) {
     try {
       entry.child.send({ sync: true, id: id });
     } catch (e) {
+      log.debug("Caught in a callback in barrier(): " +
+                ((e && e.message) || e));
       clearTimeout(timer);
       pendingSyncs.delete(id);
       resolve(false);
@@ -2339,12 +2496,15 @@ function barrier(entry, wanted) {
 }
 
 function receiveSync(entry, message) {
+  log.debug("Entering receiveSync().");
   const waiter = pendingSyncs.get(message.id);
   if (!waiter) {
+    log.debug("Leaving receiveSync().");
     return;
   }
   pendingSyncs.delete(message.id);
   waiter(message);
+  log.debug("Leaving receiveSync().");
 }
 
 // ---------------------------------------------------------------------------
@@ -2356,14 +2516,17 @@ function receiveSync(entry, message) {
 // what works it out.
 // ---------------------------------------------------------------------------
 function middleware() {
+  log.debug("Entering middleware().");
   if (IS_REQUEST_WORKER) {
     // A worker HANDLES requests; it does not dispatch them. Returning a bare
     // pass-through rather than checking on every request keeps the hot path in
     // a worker free of a test whose answer cannot change.
     log.debug('request_pool: this process is a request worker, so the ' +
               'dispatch middleware is a pass-through.');
+    log.debug("Leaving middleware().");
     return function (req, res, next) { next(); };
   }
+  log.debug("Leaving middleware().");
   return function (req, res, next) {
     if (!dispatched(req.originalUrl || req.url)) {
       // ---------------------------------------------------------------------
@@ -2374,17 +2537,17 @@ function middleware() {
       // reaches a worker; a request kept here got none, so this process
       // answered from whatever it had last pulled on its timer.
       //
-      // `/tls` does not need it — its whole content is the connection in
-      // front of it. **The two truststore doors DO (2026-09-12)**: they are a
-      // console page behind a session and an API behind a token, answered by
-      // a process that did not mint either, which is exactly the case the
-      // next sentence describes. It was written for the next entry, and it is here rather than
-      // in a comment because the list is exactly where somebody adds a path
-      // without thinking about staleness. It was written when `/admin/spiffe`
-      // was briefly on the list: a console page behind a session, answered by
-      // a process that could not yet see the session a worker had just
-      // minted. That path is dispatched again — `spiffe_ca.js` shares the
-      // authority now — and the lesson it taught is worth keeping.
+      // `/tls` does not need it — its whole content is the connection in front
+      // of it. **The two truststore doors DO (2026-09-12)**: they are a console
+      // page behind a session and an API behind a token, answered by a process
+      // that did not mint either, which is exactly the case the next sentence
+      // describes. It was written for the next entry, and it is here rather
+      // than in a comment because the list is exactly where somebody adds a
+      // path without thinking about staleness. It was written when
+      // `/admin/spiffe` was briefly on the list: a console page behind a
+      // session, answered by a process that could not yet see the session a
+      // worker had just minted. That path is dispatched again — `spiffe_ca.js`
+      // shares the authority now — and the lesson it taught is worth keeping.
       //
       // `syncNow()` rather than the generation check, because the generation
       // is a property of the WORKERS and this process is not one of them; and
@@ -2438,8 +2601,8 @@ function middleware() {
       res.set('Retry-After', '5');
       res.type('text/plain');
       res.send('No request worker is available. This path is dispatched to ' +
-               'the worker pool (workers.dispatch) and the pool is empty; the ' +
-               'service log says why.\n');
+               'the worker pool (workers.dispatch) and the pool is empty; ' +
+               'the service log says why.\n');
       return;
     }
     // ---------------------------------------------------------------------
@@ -2500,6 +2663,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
   // one for a request the client was handed a 502 for.
   let answered = false;
   const finish = function (lost) {
+    log.debug("Entering finish().");
     if (!done) {
       done = true;
       entry.inFlight--;
@@ -2545,6 +2709,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
       // every other worker stale for no reason.
       // ----------------------------------------------------------------
     }
+    log.debug("Leaving finish().");
   };
 
   const headers = Object.assign({}, req.headers);
@@ -2866,6 +3031,8 @@ const pendingOperations = new Map();
 // `dispatchList()`: the leading slash is what tells the two apart, and `*` is
 // in both halves because it names everything.
 function operationKinds() {
+  log.debug("Entering operationKinds().");
+  log.debug("Leaving operationKinds().");
   return dispatchList().filter(function (one) {
     return one === '*' || one.charAt(0) !== '/';
   });
@@ -2876,16 +3043,20 @@ function operationKinds() {
 // (`ldap.search`), or everything (`*`) — so a family can be moved a piece at a
 // time, which is how a store this size has any chance of being moved safely.
 function operationDispatched(kind) {
+  log.debug("Entering operationDispatched().");
   const kinds = operationKinds();
   if (!kinds.length) {
+    log.debug("Leaving operationDispatched().");
     return false;
   }
   const family = String(kind || '').split('.')[0];
   for (let i = 0; i < kinds.length; i++) {
     if (kinds[i] === '*' || kinds[i] === kind || kinds[i] === family) {
+      log.debug("Leaving operationDispatched().");
       return true;
     }
   }
+  log.debug("Leaving operationDispatched().");
   return false;
 }
 
@@ -2934,6 +3105,7 @@ function runOperation(kind, args, opts) {
     log.debug('Leaving runOperation(). Sent without a barrier.');
     return sendOperation(entry, kind, args, 0);
   }
+  log.debug("Leaving runOperation().");
   return awaitCommitConfirmations(entry).then(function () {
     const ticket = dispatchTicket(entry);
     // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST ONE, before the
@@ -2968,6 +3140,7 @@ function sendOperation(entry, kind, args, ticket) {
     entry.child.send({ operation: true, id: id, kind: kind, args: args,
                        ticket: ticket });
   } catch (e) {
+    log.debug("Caught in sendOperation(): " + ((e && e.message) || e));
     const pending = pendingOperations.get(id);
     pendingOperations.delete(id);
     entry.inFlight--;
@@ -3035,6 +3208,7 @@ function receiveOperation(entry, message) {
 // is a client waiting for ever, which is the failure `ldap/CLAUDE.md` records
 // having already had once from a missing result message.
 function failOperations(entry) {
+  log.debug("Entering failOperations().");
   pendingOperations.forEach(function (pending, id) {
     if (pending.pid !== entry.pid) {
       return;
@@ -3050,6 +3224,7 @@ function failOperations(entry) {
       ' operation went away before it answered. A worker holds no state that ' +
       'this operation needed, so it can simply be tried again.'));
   });
+  log.debug("Leaving failOperations().");
 }
 
 // ---------------------------------------------------------------------------
@@ -3069,6 +3244,7 @@ function stop(timeoutMs) {
     return Promise.resolve({ stopped: 0, killed: 0 });
   }
   log.info('request_pool: draining ' + going.length + ' request worker(s).');
+  log.debug("Leaving stop().");
   return new Promise(function (resolve) {
     let killed = 0;
     let left = going.length;
@@ -3085,6 +3261,7 @@ function stop(timeoutMs) {
       done();
     }, limit);
     function done() {
+      log.debug("Entering done().");
       left = 0;
       clearTimeout(timer);
       // AND EVERY AGENT, for `reap()`'s reason: `stop()` is what a test calls
@@ -3100,6 +3277,7 @@ function stop(timeoutMs) {
       removeSocketDir();
       log.debug('Leaving stop().');
       resolve({ stopped: going.length - killed, killed: killed });
+      log.debug("Leaving done().");
     }
     going.forEach(function (entry) {
       entry.retiring = true;
@@ -3113,13 +3291,16 @@ function stop(timeoutMs) {
         entry.child.send({ stop: true });
       } catch (e) {
         // The channel has already gone; the exit handler above covers it.
+        log.debug("Caught in a callback in stop(): " + ((e && e.message) || e));
       }
     });
   });
 }
 
 function removeSocketDir() {
+  log.debug("Entering removeSocketDir().");
   if (!socketDir) {
+    log.debug("Leaving removeSocketDir().");
     return;
   }
   try {
@@ -3130,11 +3311,14 @@ function removeSocketDir() {
     log.debug('request_pool: could not remove ' + socketDir + ': ' + e.message);
   }
   socketDir = '';
+  log.debug("Leaving removeSocketDir().");
 }
 
 // What the pool is doing, for `/admin` and for the tests. A copy, so a reader
 // cannot reach into the live entries.
 function stats() {
+  log.debug("Entering stats().");
+  log.debug("Leaving stats().");
   return {
     configured: size(),
     running: workers.length,
@@ -3163,6 +3347,7 @@ function stats() {
 
 // For the tests, which have to drive the give-up path and then keep going.
 function reset() {
+  log.debug("Entering reset().");
   generation = 0;
   pendingSyncs.clear();
   givenUp = false;
@@ -3178,6 +3363,7 @@ function reset() {
   finishedAt.clear();
   ticketWaiters = [];
   reaped = 0;
+  log.debug("Leaving reset().");
 }
 
 module.exports = {

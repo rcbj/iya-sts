@@ -43,17 +43,23 @@ const assert = require("assert");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_portal_backup_codes",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -68,9 +74,11 @@ var INTRUDER = usernameFor("backup-intruder");
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  [ok] " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
@@ -84,13 +92,15 @@ function check(what, fn) {
 // claim is that a third party holding the secret can produce a code this
 // service accepts, so a generator that agreed with a broken service would be
 // worse than no test. Here it is scaffolding — if it is wrong the enrolment
-// simply fails and every assertion below reports it loudly. `sts_portal_totp.js`
-// and `tests/totp.js` are where that arithmetic is held to the specification.
+// simply fails and every assertion below reports it loudly.
+// `sts_portal_totp.js` and `tests/totp.js` are where that arithmetic is held to
+// the specification.
 // ---------------------------------------------------------------------------
 const nodeCrypto = require("crypto");
 const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 function base32ToBytes(text) {
+  log.debug("Entering base32ToBytes().");
   const cleaned = String(text).toUpperCase().replace(/[\s=-]/g, "");
   let bits = 0;
   let value = 0;
@@ -106,10 +116,12 @@ function base32ToBytes(text) {
       bits -= 8;
     }
   }
+  log.debug("Leaving base32ToBytes().");
   return Buffer.from(out);
 }
 
 function codeFor(secret, atMs, opts) {
+  log.debug("Entering codeFor().");
   const options = opts || {};
   const digits = Number(options.digits || 6);
   const period = Number(options.period || 30);
@@ -124,6 +136,7 @@ function codeFor(secret, atMs, opts) {
                  ((digest[offset + 1] & 0xff) << 16) |
                  ((digest[offset + 2] & 0xff) << 8) |
                  (digest[offset + 3] & 0xff);
+  log.debug("Leaving codeFor().");
   return String(binary % Math.pow(10, digits)).padStart(digits, "0");
 }
 
@@ -133,31 +146,40 @@ function codeFor(secret, atMs, opts) {
 // redirects would answer the question by hiding it.
 // ---------------------------------------------------------------------------
 function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
   return new URLSearchParams(o).toString();
 }
 
 function absolute(location) {
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
 }
 
 function browser(name) {
+  log.debug("Entering browser().");
   const self = {
     name: name,
     cookie: "",
     jar: {},
     cookieHeader: function () {
+      log.debug("Entering cookieHeader().");
+      log.debug("Leaving cookieHeader().");
       return Object.keys(self.jar).map(function (k) {
         return k + "=" + self.jar[k];
       }).join("; ");
     },
     async go(method, path, body) {
+      log.debug("Entering go().");
       const headers = {};
       if (self.cookie) headers.cookie = self.cookie;
       if (body !== undefined) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
-      const r = await fetch(absolute(path), { method: method, redirect: "manual",
+      const r = await fetch(absolute(path),
+                            { method: method, redirect: "manual",
                                               headers: headers, body: body });
       // KEYED BY NAME: a browser signing in to a hosted surface holds TWO
       // cookies — the sign-on session and the surface's own — and keeping only
@@ -174,28 +196,34 @@ function browser(name) {
         }
         self.cookie = self.cookieHeader();
       });
+      log.debug("Leaving go().");
       return { status: r.status, location: r.headers.get("location") || "",
                text: await r.text() };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
 async function apiGet(path) {
+  log.debug("Entering apiGet().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in apiGet(): " + ((e && e.message) || e));
     // An HTML error page from a door that answers JSON is worth quoting whole
     // rather than reporting as a parse failure.
     body = raw;
   }
+  log.debug("Leaving apiGet().");
   return { status: r.status, body: body, raw: raw };
 }
 
 async function apiPost(path, body) {
+  log.debug("Entering apiPost().");
   const r = await fetch(api + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -206,13 +234,18 @@ async function apiPost(path, body) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in apiPost(): " + ((e && e.message) || e));
     parsed = raw;
   }
+  log.debug("Leaving apiPost().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 function csrfOf(text) {
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
+  log.debug("Entering csrfOf().");
+  log.debug("Leaving csrfOf().");
+  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
+          [])[1] || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -232,8 +265,11 @@ var PASSWORD = "portal-backup-codes-Passw0rd!-" + String(Date.now()).slice(-6);
 var MAIL_DOMAIN = "portal-backup-codes.test";
 
 function personAttributes(who) {
+  log.debug("Entering personAttributes().");
+  log.debug("Leaving personAttributes().");
   return { cn: "Recovery Person " + who, givenName: "Recovery", sn: who,
-           displayName: "Recovery Person " + who, mail: who + "@" + MAIL_DOMAIN };
+           displayName: "Recovery Person " + who,
+           mail: who + "@" + MAIL_DOMAIN };
 }
 
 // Create `who` with a password and real attributes, once per run.
@@ -257,7 +293,9 @@ async function ensurePerson(who) {
 }
 
 function secretShownOn(text) {
+  log.debug("Entering secretShownOn().");
   const cell = String(text).match(/<th>Secret<\/th><td><code>([^<]+)<\/code>/);
+  log.debug("Leaving secretShownOn().");
   return cell ? cell[1].replace(/\s+/g, "") : "";
 }
 
@@ -267,8 +305,10 @@ function secretShownOn(text) {
 // page whose stored value and printed value disagreed would pass an assertion
 // that read only one of them.
 function codesShownOn(text) {
+  log.debug("Entering codesShownOn().");
   const list = String(text).match(/<ul class="codes">([\s\S]*?)<\/ul>/);
   if (!list) {
+    log.debug("Leaving codesShownOn().");
     return [];
   }
   const out = [];
@@ -277,6 +317,7 @@ function codesShownOn(text) {
   while ((m = re.exec(list[1])) !== null) {
     out.push({ code: m[2], spent: /spent/.test(m[1] || "") });
   }
+  log.debug("Leaving codesShownOn().");
   return out;
 }
 
@@ -287,7 +328,9 @@ function codesShownOn(text) {
 // Written as a search rather than an index because that endpoint is a roster
 // and this job is about one name in it.
 function mfaRowFor(body, who) {
+  log.debug("Entering mfaRowFor().");
   const rows = (body && (body.people || body.rows || body.users)) || [];
+  log.debug("Leaving mfaRowFor().");
   return rows.filter(function (one) {
     return one && (one.username === who || one.user === who ||
                    one.name === who);
@@ -295,7 +338,9 @@ function mfaRowFor(body, who) {
 }
 
 function remainingShownOn(text) {
+  log.debug("Entering remainingShownOn().");
   const m = String(text).match(/(\d+) of your (\d+) recovery codes are unused/);
+  log.debug("Leaving remainingShownOn().");
   return m ? { remaining: Number(m[1]), total: Number(m[2]) } : null;
 }
 
@@ -340,7 +385,8 @@ async function signIn(door, who, onSecondFactor) {
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
     String(r.text).slice(0, 300));
-  r = await b.go("GET", r.location);   // the authorization endpoint, with a code
+  r = await b.go("GET",
+                 r.location);   // the authorization endpoint, with a code
   r = await b.go("GET", r.location);   // the callback, which mints the session
   assert.ok(b.cookie, "completing the flow should establish a session cookie.");
   log.debug("Leaving signIn().");
@@ -351,6 +397,7 @@ async function signIn(door, who, onSecondFactor) {
 // Returns the whole POST response, because the CODES ARE ON IT and that is
 // claim 1.
 async function enrolAuthenticator(b) {
+  log.debug("Entering enrolAuthenticator().");
   let page = await b.go("GET", "/portal/mfa");
   await b.go("POST", "/portal/mfa",
              form({ action: "start", csrf_token: csrfOf(page.text) }));
@@ -360,6 +407,7 @@ async function enrolAuthenticator(b) {
   const confirmed = await b.go("POST", "/portal/mfa",
     form({ action: "confirm", code: codeFor(secret, Date.now()),
            csrf_token: csrfOf(page.text) }));
+  log.debug("Leaving enrolAuthenticator().");
   return { secret: secret, response: confirmed };
 }
 
@@ -388,6 +436,7 @@ async function enrolAuthenticator(b) {
 // they hold none, and the card carries a standing prompt.
 // ===========================================================================
 async function enrollingIssuesNothing() {
+  log.debug("Entering enrollingIssuesNothing().");
   log.info("=== 1. enrolling a second factor issues nothing, and says so ===");
   const b = await signIn("/portal", OWNER);
 
@@ -427,6 +476,7 @@ async function enrollingIssuesNothing() {
       "it printed a count for a set nobody holds.");
   });
 
+  log.debug("Leaving enrollingIssuesNothing().");
   return { browser: b };
 }
 
@@ -440,6 +490,7 @@ async function enrollingIssuesNothing() {
 // replaced.
 // ===========================================================================
 async function generateThenConfirm(state) {
+  log.debug("Entering generateThenConfirm().");
   log.info("=== 2. generated, shown, and stored only on confirm ===");
   const b = state.browser;
 
@@ -447,7 +498,8 @@ async function generateThenConfirm(state) {
   const shown = await b.go("POST", "/portal/mfa",
     form({ action: "generate-codes", csrf_token: csrfOf(page.text) }));
 
-  const codes = codesShownOn(shown.text).map(function (one) { return one.code; });
+  const codes = codesShownOn(shown.text).map(function (
+      one) { return one.code; });
   check("asking generates a set and SHOWS it, on the response to the POST — " +
         "a 303 cannot carry a list of credentials and a query string would " +
         "put them in a browser history entry and every proxy log on the way",
@@ -532,6 +584,7 @@ async function generateThenConfirm(state) {
       "the page drew codes for a set that is only stored as hashes.");
   });
 
+  log.debug("Leaving generateThenConfirm().");
   return { browser: b, codes: codes };
 }
 
@@ -544,6 +597,7 @@ async function generateThenConfirm(state) {
 // nobody else ever could, and now nobody at all can.
 // ===========================================================================
 async function nothingShowsAStoredSet(state) {
+  log.debug("Entering nothingShowsAStoredSet().");
   log.info("=== 3. no door produces a stored set, not even the owner's ===");
 
   const page = await state.browser.go("GET", "/portal/mfa");
@@ -578,6 +632,7 @@ async function nothingShowsAStoredSet(state) {
       "the set is reported as not hashed: " +
       JSON.stringify(row.backupCodes));
   });
+  log.debug("Leaving nothingShowsAStoredSet().");
 }
 
 // ===========================================================================
@@ -588,6 +643,7 @@ async function nothingShowsAStoredSet(state) {
 // that the one-time code screen OFFERS it — and then that following it works.
 // ===========================================================================
 async function aCodeSignsThemIn(state) {
+  log.debug("Entering aCodeSignsThemIn().");
   log.info("=== 4/5. a recovery code at the sign-in screen, and the spend ===");
   const before = remainingShownOn(
     (await state.browser.go("GET", "/portal/mfa")).text);
@@ -630,7 +686,8 @@ async function aCodeSignsThemIn(state) {
     // and a service that refused its own printed form would be arguing with
     // its own page.
     const ok = await br.go("POST", "/authn/backup-code",
-                           form({ mfa_id: mfaId, code: spending.toLowerCase() }));
+                           form({ mfa_id: mfaId,
+                                  code: spending.toLowerCase() }));
 
     // AND THE REPLAY, inside the same flow, before the step is gone. It cannot
     // be checked afterwards: the step is spent on success. Sent WITHOUT the
@@ -656,7 +713,8 @@ async function aCodeSignsThemIn(state) {
         "[\"pwd\",\"otp\"], acr \"mfa\". RFC 8176 registers no value for a " +
         "recovery code, and inventing one would put a string in amr that no " +
         "relying party can look up", function () {
-    const amr = (page.text.match(/<tr><th>How<\/th><td>([^<]*)/) || [])[1] || "";
+    const amr = (page.text.match(/<tr><th>How<\/th><td>([^<]*)/) ||
+                 [])[1] || "";
     assert.ok(/pwd/.test(amr) && /otp/.test(amr),
       "the session claims '" + amr + "'.");
     assert.ok(/acr mfa/.test(amr),
@@ -694,7 +752,8 @@ async function aCodeSignsThemIn(state) {
     const now = remainingShownOn(card.text);
     assert.ok(now, "no count on the card.");
     assert.strictEqual(now.total, state.codes.length,
-      "the total changed from " + state.codes.length + " to " + now.total + ".");
+      "the total changed from " + state.codes.length + " to " + now.total +
+      ".");
     assert.strictEqual(now.remaining, state.codes.length - 1,
       "the remaining count is " + now.remaining + ".");
   });
@@ -703,6 +762,7 @@ async function aCodeSignsThemIn(state) {
     assert.strictEqual(codesShownOn(card.text).length, 0,
       "the card drew codes for a set stored as hashes.");
   });
+  log.debug("Leaving aCodeSignsThemIn().");
 }
 
 // ===========================================================================
@@ -714,12 +774,15 @@ async function aCodeSignsThemIn(state) {
 // state this whole mechanism exists to prevent, reached through the mechanism.
 // ===========================================================================
 async function anOperatorCanClearIt(state) {
+  log.debug("Entering anOperatorCanClearIt().");
   log.info("=== 6. clearing a set through /admin-api ===");
   const cleared = await apiPost("/users/clear-backup-codes", { user: OWNER });
   check("POST /admin-api/users/clear-backup-codes accepts it", function () {
     assert.strictEqual(cleared.status, 200,
-      "it answered " + cleared.status + " " + String(cleared.raw).slice(0, 300));
-    assert.strictEqual(cleared.body.ok, true, String(cleared.raw).slice(0, 200));
+      "it answered " + cleared.status + " " +
+      String(cleared.raw).slice(0, 300));
+    assert.strictEqual(cleared.body.ok, true,
+                       String(cleared.raw).slice(0, 200));
   });
 
   const again = await apiPost("/users/clear-backup-codes", { user: OWNER });
@@ -762,7 +825,8 @@ async function anOperatorCanClearIt(state) {
   const asked = await state.browser.go("GET", "/portal/mfa");
   const made = await state.browser.go("POST", "/portal/mfa",
     form({ action: "generate-codes", csrf_token: csrfOf(asked.text) }));
-  const fresh = codesShownOn(made.text).map(function (one) { return one.code; });
+  const fresh = codesShownOn(made.text).map(function (
+      one) { return one.code; });
   check("and the person can generate one for themselves, which is the only " +
         "path to a set there now is", function () {
     assert.ok(fresh.length >= 5,
@@ -816,9 +880,11 @@ async function anOperatorCanClearIt(state) {
              e.actor === OWNER;
     }), "no portal.mfa.backup-codes.confirmed row for " + OWNER + ".");
   });
+  log.debug("Leaving anOperatorCanClearIt().");
 }
 
 async function test() {
+  log.debug("Entering test().");
   log.info("Running the recovery code checks against " + base);
   const state = await enrollingIssuesNothing();
   const held = await generateThenConfirm(state);
@@ -827,6 +893,7 @@ async function test() {
   await anOperatorCanClearIt(held);
   log.info(checks + " assertion(s).");
   log.info("Test completed successfully.");
+  log.debug("Leaving test().");
 }
 
 test().catch(function (e) {

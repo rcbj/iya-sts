@@ -3,8 +3,9 @@
 // File: wstrust.js
 //
 // ---------------------------------------------------------------------------
-// WS-Trust 1.4 (and 1.0-1.3, which differ only in the namespace and action URIs):
-// the SOAP RequestSecurityToken endpoint and everything that reads or writes one.
+// WS-Trust 1.4 (and 1.0-1.3, which differ only in the namespace and action
+// URIs): the SOAP RequestSecurityToken endpoint and everything that reads or
+// writes one.
 //
 // It accepts an RST and dispatches on wst:RequestType:
 //
@@ -62,18 +63,18 @@
 //     RenewTarget and recorded THAT as the credential; the token was talking,
 //     not the requester.
 //
-// The SAML assertion itself is built and protected by saml2.js: WS-Trust carries
-// tokens, it does not define them.
+// The SAML assertion itself is built and protected by saml2.js: WS-Trust
+// carries tokens, it does not define them.
 // ---------------------------------------------------------------------------
 
 // One signer and one verifier for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
 const app = require('../common/app');
-// firstByLocal/textByLocal were written here and now live in helpers.js: WS-Federation
-// reads the same shapes (a `wreq` RST, and a `wresult` at its mock relying party), and a
-// second copy of a reader that has to cope with four trust namespaces is a second copy
-// that gets one of them wrong.
+// firstByLocal/textByLocal were written here and now live in helpers.js:
+// WS-Federation reads the same shapes (a `wreq` RST, and a `wresult` at its
+// mock relying party), and a second copy of a reader that has to cope with four
+// trust namespaces is a second copy that gets one of them wrong.
 const { log, logArtifact, STS, xmlEscape, iso, randomId, signJwtAs,
         firstByLocal, textByLocal } = require('../common/helpers');
 // The input validator. A LEAF (rule 3): it registers no route and requires only
@@ -110,13 +111,13 @@ const authn = require('../authn/authn');
 // nothing and require nothing here.
 const credentials = require('../common/credentials');
 const mode = require('../common/mode');
-// The one reading of how a requester authenticated, in SAML 2.0's vocabulary, so
-// an assertion this STS issues says what the credential was rather than calling
-// everything a password. A leaf in `saml/` that registers nothing.
+// The one reading of how a requester authenticated, in SAML 2.0's vocabulary,
+// so an assertion this STS issues says what the credential was rather than
+// calling everything a password. A leaf in `saml/` that registers nothing.
 const authnContext = require('../saml/authn_context');
-// The error codes (common/error_codes.js). A LEAF that requires nothing. A refusal
-// decided below handleRst() travels out on the result's `errorCode` and is marked
-// on the response by the route; it never reaches the SOAP body.
+// The error codes (common/error_codes.js). A LEAF that requires nothing. A
+// refusal decided below handleRst() travels out on the result's `errorCode` and
+// is marked on the response by the route; it never reaches the SOAP body.
 const errorCodes = require('../common/error_codes');
 const WST_NS = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
 
@@ -124,7 +125,8 @@ const SOAP12_NS = 'http://www.w3.org/2003/05/soap-envelope';
 
 const SOAP11_NS = 'http://schemas.xmlsoap.org/soap/envelope/';
 
-const SAML2_TOKEN_TYPE = 'http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0';
+const SAML2_TOKEN_TYPE =
+    'http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0';
 
 const JWT_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:jwt';
 
@@ -134,7 +136,11 @@ const STATUS_VALID = WST_NS + '/status/valid';
 
 const STATUS_INVALID = WST_NS + '/status/invalid';
 
-function soapNsFor(version) { return version === '1.1' ? SOAP11_NS : SOAP12_NS; }
+function soapNsFor(version) {
+  log.debug("Entering soapNsFor().");
+  log.debug("Leaving soapNsFor().");
+  return version === '1.1' ? SOAP11_NS : SOAP12_NS;
+}
 
 // ---------------------------------------------------------------------------
 // THE JWT, and three things changed on 2026-09-12.
@@ -163,12 +169,15 @@ function buildJwt(subject, audience, lifetimeMin) {
     sub: subject,
     name: subject,
     iat: now,
-    exp: now + (lifetimeMin > 0 ? lifetimeMin : Number(config.value('wstrust.tokenLifetimeMin'))) * 60,
+    exp: now +
+         (lifetimeMin > 0 ? lifetimeMin :
+          Number(config.value('wstrust.tokenLifetimeMin'))) * 60,
     jti: randomId(18)
   };
   // An empty-string audience is not an audience — only set it when present.
   if (audience) claims.aud = audience;
-  logArtifact('WS-Trust JWT', 'before signing', { header: { alg: alg }, payload: claims });
+  logArtifact('WS-Trust JWT', 'before signing',
+              { header: { alg: alg }, payload: claims });
   const signed = signJwtAs(claims, alg, null);
   logArtifact('WS-Trust JWT', 'after signing', signed);
   log.debug("Leaving buildJwt(). " + alg + ", jti=" + claims.jti + ".");
@@ -180,25 +189,34 @@ function buildJwt(subject, audience, lifetimeMin) {
 // authnContextOf() — and is written into a SAML assertion's AuthnStatement. It
 // is optional so an existing caller of this export gets `unspecified`, which is
 // the builder's default and overstates nothing.
-function buildToken(tokenType, subject, audience, lifetimeMin, authnContextClassRef) {
-  log.debug("Entering buildToken(). tokenType=" + tokenType + ", subject=" + subject);
+function buildToken(tokenType, subject, audience, lifetimeMin,
+                    authnContextClassRef) {
+  log.debug("Entering buildToken(). tokenType=" + tokenType + ", subject=" +
+            subject);
   if (tokenType === JWT_TOKEN_TYPE) {
     const built = buildJwt(subject, audience, lifetimeMin);
-    const token = { xml: '<wsse:BinarySecurityToken xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"' +
-      ' ValueType="urn:ietf:params:oauth:token-type:jwt">' + built.token + '</wsse:BinarySecurityToken>',
+    const token = { xml: '<wsse:BinarySecurityToken ' +
+      'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" ' +
+      'ValueType="urn:ietf:params:oauth:token-type:jwt">' + built.token +
+      '</wsse:BinarySecurityToken>',
       ref: '', tokenType: JWT_TOKEN_TYPE, id: built.jti };
     log.debug("Leaving buildToken(). Issued a JWT.");
     return token;
   }
   const assertion = buildSamlAssertion(subject, audience, lifetimeMin,
-    { authnContextClassRef: authnContextClassRef || authnContext.AC_UNSPECIFIED });
+    { authnContextClassRef: authnContextClassRef ||
+                            authnContext.AC_UNSPECIFIED });
   const idm = assertion.match(/\bID="([^"]+)"/);
   const id = idm ? idm[1] : '';
-  const ref = '<wst:RequestedAttachedReference><wsse:SecurityTokenReference' +
-    ' xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
-    '<wsse:KeyIdentifier ValueType="http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID">' +
-    xmlEscape(id) + '</wsse:KeyIdentifier></wsse:SecurityTokenReference></wst:RequestedAttachedReference>';
-  log.debug("Leaving buildToken(). Issued a SAML 2.0 assertion with ID " + id + ".");
+  const ref = '<wst:RequestedAttachedReference><wsse:SecurityTokenReference ' +
+    'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
+    '<wsse:KeyIdentifier ' +
+    'ValueType="http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLID">' +
+    xmlEscape(id) +
+    '</wsse:KeyIdentifier></wsse:SecurityTokenReference>' +
+    '</wst:RequestedAttachedReference>';
+  log.debug("Leaving buildToken(). Issued a SAML 2.0 assertion with ID " + id +
+            ".");
   // `id` is carried out because /admin/delegation quotes the identifier of what
   // a delegated request PRODUCED: the AssertionID for this branch and, since
   // 2026-09-12, the `jti` for the JWT branch above, which had no identifier at
@@ -212,7 +230,9 @@ function envelope(version, action, bodyInner) {
   log.debug("Entering envelope(). version=" + version + ", action=" + action);
   const soapNs = soapNsFor(version);
   const header = action
-    ? '<soap:Header><wsa:Action xmlns:wsa="http://www.w3.org/2005/08/addressing">' + action + '</wsa:Action></soap:Header>'
+    ? '<soap:Header><wsa:Action ' +
+      'xmlns:wsa="http://www.w3.org/2005/08/addressing">' + action +
+      '</wsa:Action></soap:Header>'
     : '';
   log.debug("Leaving envelope().");
   return '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -224,12 +244,15 @@ function soapFault(version, reason) {
   log.debug("Entering soapFault(). version=" + version + ", reason=" + reason);
   const soapNs = soapNsFor(version);
   const body = version === '1.1'
-    ? '<soap:Fault><faultcode>soap:Client</faultcode><faultstring>' + xmlEscape(reason) + '</faultstring></soap:Fault>'
-    : '<soap:Fault><soap:Code><soap:Value>soap:Sender</soap:Value></soap:Code>' +
-      '<soap:Reason><soap:Text xml:lang="en">' + xmlEscape(reason) + '</soap:Text></soap:Reason></soap:Fault>';
+    ? '<soap:Fault><faultcode>soap:Client</faultcode><faultstring>' +
+      xmlEscape(reason) + '</faultstring></soap:Fault>'
+    : '<soap:Fault><soap:Code><soap:Value>soap:Sender</soap:Value>' +
+      '</soap:Code><soap:Reason><soap:Text xml:lang="en">' + xmlEscape(reason) +
+      '</soap:Text></soap:Reason></soap:Fault>';
   log.debug("Leaving soapFault().");
   return '<?xml version="1.0" encoding="UTF-8"?>' +
-    '<soap:Envelope xmlns:soap="' + soapNs + '">' + '<soap:Body>' + body + '</soap:Body></soap:Envelope>';
+    '<soap:Envelope xmlns:soap="' + soapNs + '">' + '<soap:Body>' + body +
+    '</soap:Body></soap:Envelope>';
 }
 
 // --- request handling ------------------------------------------------------
@@ -237,8 +260,15 @@ function detectSoapVersion(doc, contentType) {
   log.debug("Entering detectSoapVersion().");
   const root = doc && doc.documentElement;
   log.debug("Leaving detectSoapVersion().");
-  if (root && root.namespaceURI === SOAP11_NS) return '1.1';
-  if (root && root.namespaceURI === SOAP12_NS) return '1.2';
+  if (root && root.namespaceURI === SOAP11_NS) {
+    log.debug("Leaving detectSoapVersion().");
+    return '1.1';
+  }
+  if (root && root.namespaceURI === SOAP12_NS) {
+    log.debug("Leaving detectSoapVersion().");
+    return '1.2';
+  }
+  log.debug("Leaving detectSoapVersion().");
   return /text\/xml/i.test(contentType || '') ? '1.1' : '1.2';
 }
 
@@ -323,42 +353,52 @@ function credentialScope(doc) {
 //      REALM'S OWN signing certificate. The element is serialised on its own
 //      first, because the SOAP document can hold several assertions — the
 //      requester's and the delegated one — and a verifier asked about "the
-//      assertion in this document" would be answered about whichever came first.
-//      Exclusive canonicalization is what makes a standalone serialisation of an
-//      embedded element verify, and it is the only one this service signs with.
+//      assertion in this document" would be answered about whichever came
+//      first. Exclusive canonicalization is what makes a standalone
+//      serialisation of an embedded element verify, and it is the only one this
+//      service signs with.
 //   2. THE CONDITIONS, NotBefore and NotOnOrAfter, with `oauth2.clockSkewS` of
-//      tolerance — the reading tolerance `federation_sp.js` applies to an inbound
-//      assertion, for the reason it gives: a deployment decides once how far out
-//      the clocks it reads may be.
+//      tolerance — the reading tolerance `federation_sp.js` applies to an
+//      inbound assertion, for the reason it gives: a deployment decides once
+//      how far out the clocks it reads may be.
 //   3. A SUBJECT. An assertion naming nobody names nobody; development's
 //      `saml-subject` fallback is not a person.
 //
-// WHY THIS REALM'S CERTIFICATE AND NOTHING ELSE: it is the smallest real answer.
-// It is the key this STS already holds and publishes at /sts/cert, and it covers
-// what an assertion is presented here FOR — renewing, validating or exchanging a
-// token this STS issued. Trusting a foreign issuer needs a register of which
-// certificate may assert which subjects, and accepting any certificate in the
-// document's own KeyInfo would be accepting any assertion at all.
+// WHY THIS REALM'S CERTIFICATE AND NOTHING ELSE: it is the smallest real
+// answer. It is the key this STS already holds and publishes at /sts/cert, and
+// it covers what an assertion is presented here FOR — renewing, validating or
+// exchanging a token this STS issued. Trusting a foreign issuer needs a
+// register of which certificate may assert which subjects, and accepting any
+// certificate in the document's own KeyInfo would be accepting any assertion at
+// all.
 // ---------------------------------------------------------------------------
 function checkedAssertion(assertion, what) {
   log.debug("Entering checkedAssertion(). what=" + what);
-  const nameId = firstByLocal(assertion, 'NameID') || firstByLocal(assertion, 'NameIdentifier');
+  const nameId = firstByLocal(assertion, 'NameID') ||
+                 firstByLocal(assertion, 'NameIdentifier');
   const named = nameId ? (nameId.textContent || '').trim() : '';
   const xml = new XMLSerializer().serializeToString(assertion);
-  const signature = stsCrypto.verifyXmlSignature(xml, { element: 'Assertion', certPem: STS.certPem });
+  const signature = stsCrypto.verifyXmlSignature(xml,
+                                                 { element: 'Assertion',
+                                                   certPem: STS.certPem });
   if (!signature.ok) {
     log.debug("Leaving checkedAssertion(). The signature did not verify.");
     return { ok: false, errorCode: 'STS-WSTRUST-0004',
-             reason: 'The ' + what + ' is a SAML assertion whose signature does not verify ' +
-                     'against this security token service\'s own certificate (' +
-                     (signature.why || 'unsigned') + '). In product mode an assertion is ' +
-                     'accepted only if this STS issued it.' };
+             reason: 'The ' + what + ' is a SAML assertion whose signature ' +
+                     'does not verify against this security token service\'s ' +
+                     'own certificate (' +
+                     (signature.why || 'unsigned') + '). In product mode an ' +
+                     'assertion is accepted only if this STS issued it.' };
   }
   const conditions = firstByLocal(assertion, 'Conditions');
   const skewMs = Math.max(0, Number(config.value('oauth2.clockSkewS'))) * 1000;
   const now = Date.now();
-  const notBefore = conditions ? Date.parse(conditions.getAttribute('NotBefore') || '') : NaN;
-  const notOnOrAfter = conditions ? Date.parse(conditions.getAttribute('NotOnOrAfter') || '') : NaN;
+  const notBefore = conditions ?
+                    Date.parse(conditions.getAttribute('NotBefore') || '') :
+                    NaN;
+  const notOnOrAfter = conditions ?
+                       Date.parse(conditions.getAttribute('NotOnOrAfter') ||
+                                  '') : NaN;
   if (!isNaN(notBefore) && notBefore - skewMs > now) {
     log.debug("Leaving checkedAssertion(). Not yet valid.");
     return { ok: false, errorCode: 'STS-WSTRUST-0005',
@@ -374,8 +414,9 @@ function checkedAssertion(assertion, what) {
   if (!named) {
     log.debug("Leaving checkedAssertion(). It names nobody.");
     return { ok: false, errorCode: 'STS-WSTRUST-0007',
-             reason: 'The ' + what + ' carries no NameID, so it names nobody. ' +
-                                'Product mode does not invent a subject for it.' };
+             reason: 'The ' + what + ' carries no NameID, so it names ' +
+                                'nobody. Product mode does not invent a ' +
+                                'subject for it.' };
   }
   log.debug("Leaving checkedAssertion(). Verified, for " + named + ".");
   return { ok: true, subject: named };
@@ -416,7 +457,8 @@ function requesterCredential(doc) {
     }
     log.debug("Leaving requesterCredential(). A UsernameToken for " + user +
               ".");
-    return { ok: true, subject: user, method: 'WS-Security UsernameToken', kind: 'password',
+    return { ok: true, subject: user, method: 'WS-Security UsernameToken',
+             kind: 'password',
              note: mode.verifiesCredentials()
                ? 'The password was verified against the stored userPassword.'
                : 'The password is not checked in development mode, except ' +
@@ -429,17 +471,20 @@ function requesterCredential(doc) {
     if (mode.verifiesCredentials()) {
       const checked = checkedAssertion(assertion, 'requester\'s credential');
       if (!checked.ok) {
-        log.info('wstrust: a SAML assertion presented as a credential was refused: ' +
+        log.info('wstrust: a SAML assertion presented as a credential was ' +
+                 'refused: ' +
                  checked.reason);
         log.debug("Leaving requesterCredential(). The assertion was refused.");
-        return { ok: false, reason: checked.reason, errorCode: checked.errorCode };
+        return { ok: false, reason: checked.reason,
+                 errorCode: checked.errorCode };
       }
       log.debug("Leaving requesterCredential(). A verified SAML assertion for " +
                 checked.subject + ".");
       return { ok: true, subject: checked.subject, kind: 'assertion',
                method: 'a SAML assertion as the credential',
-               note: 'The assertion\'s signature was verified against this STS\'s ' +
-                     'own certificate and its Conditions were checked.' };
+               note: 'The assertion\'s signature was verified against this ' +
+                     'STS\'s own certificate and its Conditions were ' +
+                     'checked.' };
     }
     const nameId = firstByLocal(assertion, 'NameID') ||
       firstByLocal(assertion, 'NameIdentifier');
@@ -450,7 +495,8 @@ function requesterCredential(doc) {
     return { ok: true, subject: named, kind: 'assertion',
              method: 'a SAML assertion as the credential',
              note: 'The assertion\'s signature and Conditions are not ' +
-                   'checked in development mode; the NameID is read and believed.' };
+                   'checked in development mode; the NameID is read and ' +
+                   'believed.' };
   }
   log.debug("Leaving requesterCredential(). Nothing was presented.");
   return null;
@@ -479,11 +525,11 @@ function requesterCredential(doc) {
 // here that /admin/tokens/credential cannot do without. That page walks a
 // lineage by joining what an act PRODUCED to what the next act CONSUMED, on the
 // identifier and on nothing else (see credential_graph.js). A chain of
-// OnBehalfOf hops — the assertion one call issues is the assertion the next call
-// delegates with — is exactly the shape it exists to draw, and it was invisible
-// to it until this was read: the act's `consumed` named the requester's
-// WS-Security credential, which this service never issued and cannot name, so
-// every trail stopped one generation in at a wall.
+// OnBehalfOf hops — the assertion one call issues is the assertion the next
+// call delegates with — is exactly the shape it exists to draw, and it was
+// invisible to it until this was read: the act's `consumed` named the
+// requester's WS-Security credential, which this service never issued and
+// cannot name, so every trail stopped one generation in at a wall.
 //
 // Three spellings, because three things can legitimately be inside one of these
 // elements: a SAML 2.0 assertion (`ID`), a SAML 1.1 one (`AssertionID`), and a
@@ -531,20 +577,29 @@ function delegatedSubject(doc) {
   if (mode.verifiesCredentials()) {
     const inner = firstByLocal(obo, 'Assertion');
     if (!inner) {
-      log.debug("Leaving delegatedSubject(). Product: no assertion to delegate with.");
-      return { subject: '', element: element, tokenId: '', errorCode: 'STS-WSTRUST-0008',
-               refused: 'The <wst:' + element + '> carries no SAML assertion. In product mode a ' +
-                        'delegated subject must be carried in an assertion this security token ' +
-                        'service issued, because a name alone is not evidence of anybody.' };
+      log.debug("Leaving delegatedSubject(). Product: no assertion to " +
+                "delegate with.");
+      return { subject: '', element: element, tokenId: '',
+               errorCode: 'STS-WSTRUST-0008',
+               refused: 'The <wst:' + element + '> carries no SAML ' +
+                        'assertion. In product mode a delegated subject must ' +
+                        'be carried in an assertion this security token ' +
+                        'service issued, because a name alone is not ' +
+                        'evidence of anybody.' };
     }
-    const checked = checkedAssertion(inner, 'token inside <wst:' + element + '>');
+    const checked = checkedAssertion(inner,
+                                     'token inside <wst:' + element + '>');
     if (!checked.ok) {
-      log.debug("Leaving delegatedSubject(). Product: the delegated token was refused.");
-      return { subject: '', element: element, tokenId: '', refused: checked.reason,
+      log.debug("Leaving delegatedSubject(). Product: the delegated token " +
+                "was refused.");
+      return { subject: '', element: element, tokenId: '',
+               refused: checked.reason,
                errorCode: checked.errorCode };
     }
-    log.debug("Leaving delegatedSubject(). Product: " + checked.subject + " via " + element + ".");
-    return { subject: checked.subject, element: element, both: !!(oboEl && actAsEl),
+    log.debug("Leaving delegatedSubject(). Product: " + checked.subject + " " +
+        "via " + element + ".");
+    return { subject: checked.subject, element: element,
+             both: !!(oboEl && actAsEl),
              tokenId: delegatedTokenId(obo) };
   }
   const nameId = firstByLocal(obo, 'NameID') ||
@@ -578,7 +633,8 @@ function authenticate(doc) {
   const credential = requesterCredential(doc);
   if (credential && !credential.ok) {
     log.debug("Leaving authenticate(). The credential was refused.");
-    return { ok: false, reason: credential.reason, errorCode: credential.errorCode };
+    return { ok: false, reason: credential.reason,
+             errorCode: credential.errorCode };
   }
   if (credential) {
     stats.recordAuthentication({
@@ -589,21 +645,25 @@ function authenticate(doc) {
   const delegatedBy = delegatedSubject(doc);
   if (delegatedBy.refused) {
     log.debug("Leaving authenticate(). The delegated token was refused.");
-    return { ok: false, reason: delegatedBy.refused, errorCode: delegatedBy.errorCode };
+    return { ok: false, reason: delegatedBy.refused,
+             errorCode: delegatedBy.errorCode };
   }
   const delegated = delegatedBy.subject;
   // PRODUCT: A DELEGATION NEEDS A REQUESTER. Development issues a token about
-  // somebody for a request that presented no credential of its own — the gap the
-  // delegation register draws on purpose. In product the requester is the one
-  // party a delegation must be attributable to, so a request with nobody in that
-  // seat is refused before anything is recorded.
+  // somebody for a request that presented no credential of its own — the gap
+  // the delegation register draws on purpose. In product the requester is the
+  // one party a delegation must be attributable to, so a request with nobody in
+  // that seat is refused before anything is recorded.
   if (delegated && !credential && mode.verifiesCredentials()) {
-    log.debug("Leaving authenticate(). Product: a delegation with no requester credential.");
+    log.debug("Leaving authenticate(). Product: a delegation with no " +
+              "requester credential.");
     return { ok: false, errorCode: 'STS-WSTRUST-0009',
-             reason: 'This request delegates (<wst:' + delegatedBy.element + '>) and presents ' +
-                     'no credential of its own. In product mode the requester must ' +
-                     'authenticate — a WS-Security UsernameToken, or a SAML assertion this ' +
-                     'security token service issued — before a token about somebody else is ' +
+             reason: 'This request delegates (<wst:' + delegatedBy.element +
+                     '>) ' +
+                     'and presents no credential of its own. In product mode ' +
+                     'the requester must authenticate — a WS-Security ' +
+                     'UsernameToken, or a SAML assertion this security token ' +
+                     'service issued — before a token about somebody else is ' +
                      'issued to it.' };
   }
   if (delegated) {
@@ -655,18 +715,21 @@ function authenticate(doc) {
   if (mode.verifiesCredentials()) {
     log.debug("Leaving authenticate(). Product: no credential was presented.");
     return { ok: false, errorCode: 'STS-WSTRUST-0010',
-             reason: 'No credential was presented. In product mode every WS-Trust operation ' +
-                     'requires one in the wsse:Security header — a WS-Security UsernameToken ' +
-                     'verified against the directory, or a SAML assertion this security token ' +
+             reason: 'No credential was presented. In product mode every ' +
+                     'WS-Trust operation requires one in the wsse:Security ' +
+                     'header — a WS-Security UsernameToken verified against ' +
+                     'the directory, or a SAML assertion this security token ' +
                      'service issued.' };
   }
   // No credential — lenient (anonymous), so a "None" credential still issues.
   //
   // Deliberately NOT recorded as an authentication: no userid was presented, so
-  // there is nothing to record. The assertion this issues names `anonymous`, and the
-  // users page picks that up from the assertion instead — as a subject something was
-  // issued to and who never authenticated, which is exactly what happened.
-  log.debug("Leaving authenticate(). No credential was presented; treating as anonymous.");
+  // there is nothing to record. The assertion this issues names `anonymous`,
+  // and the users page picks that up from the assertion instead — as a subject
+  // something was issued to and who never authenticated, which is exactly what
+  // happened.
+  log.debug("Leaving authenticate(). No credential was presented; treating " +
+            "as anonymous.");
   return { ok: true, subject: 'anonymous', kind: 'none' };
 }
 
@@ -687,12 +750,16 @@ function authenticate(doc) {
 //   nothing          unspecified
 // ---------------------------------------------------------------------------
 function authnContextOf(auth) {
+  log.debug("Entering authnContextOf().");
   if (auth && auth.kind === 'password') {
+    log.debug("Leaving authnContextOf().");
     return authnContext.AC_PASSWORD_PROTECTED;
   }
   if (auth && auth.kind === 'assertion') {
+    log.debug("Leaving authnContextOf().");
     return 'urn:oasis:names:tc:SAML:2.0:ac:classes:PreviousSession';
   }
+  log.debug("Leaving authnContextOf().");
   return authnContext.AC_UNSPECIFIED;
 }
 
@@ -717,8 +784,10 @@ function handleRst(rawBody, contentType, options) {
   const read = validation.parseXml(rawBody, 'request');
   if (!read.ok) {
     log.debug("Leaving handleRst(). The request is not well-formed XML.");
-    return { status: 400, errorCode: 'STS-WSTRUST-0001', version: detectSoapVersion(null, contentType),
-             body: soapFault(detectSoapVersion(null, contentType), read.detail) };
+    return { status: 400, errorCode: 'STS-WSTRUST-0001',
+             version: detectSoapVersion(null, contentType),
+             body: soapFault(detectSoapVersion(null, contentType),
+                             read.detail) };
   }
   const doc = read.value;
   const version = detectSoapVersion(doc, contentType);
@@ -737,7 +806,9 @@ function handleRst(rawBody, contentType, options) {
 
   const tokenTypeReq = textByLocal(doc, 'TokenType');
   const appliesToEl = firstByLocal(doc, 'AppliesTo');
-  const audience = appliesToEl ? (textByLocal(appliesToEl, 'Address') || (appliesToEl.textContent || '').trim()) : '';
+  const audience = appliesToEl ?
+                   (textByLocal(appliesToEl, 'Address') ||
+                    (appliesToEl.textContent || '').trim()) : '';
   // THE LIFETIME (2026-09-12). The default was the literal 60 and is
   // `wstrust.tokenLifetimeMin`. A requested wst:Lifetime REPLACED it with no
   // bound at all, so a caller could ask for a token valid for a year and get
@@ -749,7 +820,8 @@ function handleRst(rawBody, contentType, options) {
   // wst:Lifetime says below, so a client can see it was shortened.
   const lifetimeEl = firstByLocal(doc, 'Lifetime');
   const maxLifetimeMin = Number(config.value('wstrust.maxTokenLifetimeMin'));
-  let lifetimeMin = Math.min(Number(config.value('wstrust.tokenLifetimeMin')), maxLifetimeMin);
+  let lifetimeMin = Math.min(Number(config.value('wstrust.tokenLifetimeMin')),
+                             maxLifetimeMin);
   if (lifetimeEl) {
     const created = textByLocal(lifetimeEl, 'Created');
     const expires = textByLocal(lifetimeEl, 'Expires');
@@ -758,8 +830,11 @@ function handleRst(rawBody, contentType, options) {
       if (diff > 0) {
         lifetimeMin = Math.max(1, Math.round(diff));
         if (lifetimeMin > maxLifetimeMin) {
-          log.info('wstrust: the request asked for a ' + lifetimeMin + '-minute token; it is ' +
-                   'issued for wstrust.maxTokenLifetimeMin, ' + maxLifetimeMin + ' minutes.');
+          log.info('wstrust: the request asked for a ' + lifetimeMin +
+                   '-minute ' +
+                   'token; it is issued for ' +
+                   'wstrust.maxTokenLifetimeMin, ' + maxLifetimeMin + ' ' +
+                       'minutes.');
           lifetimeMin = maxLifetimeMin;
         }
       }
@@ -782,33 +857,43 @@ function handleRst(rawBody, contentType, options) {
   // acceptable because of what was asked with it.
   const auth = authenticate(doc);
   if (!auth.ok) {
-    log.debug("Leaving handleRst(). Authentication failed, answering with a SOAP Fault.");
+    log.debug("Leaving handleRst(). Authentication failed, answering with a " +
+              "SOAP Fault.");
     // error-code: none — the code was decided where authenticate() refused, and rides out on auth.errorCode
     return { status: 500, version: version, errorCode: auth.errorCode,
-             body: soapFault(version, auth.reason || 'Authentication failed.') };
+             body: soapFault(version,
+                             auth.reason || 'Authentication failed.') };
   }
 
   if (op === 'validate') {
     const target = firstByLocal(doc, 'ValidateTarget');
-    const hasToken = target && (firstByLocal(target, 'Assertion') || firstByLocal(target, 'BinarySecurityToken') || (target.textContent || '').trim());
+    const hasToken = target &&
+                     (firstByLocal(target, 'Assertion') ||
+                      firstByLocal(target, 'BinarySecurityToken') ||
+                      (target.textContent || '').trim());
     const code = hasToken ? statusValid : statusInvalid;
     // A wst:Status of invalid is this operation's refusal, delivered in a 200.
     const invalidCode = hasToken ? '' : 'STS-WSTRUST-0014';
     const reason = hasToken ? 'The token is valid.' : 'No token to validate.';
-    const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs + '">' +
-      '<wst:TokenType>' + statusTokenType + '</wst:TokenType>' +
-      '<wst:Status><wst:Code>' + code + '</wst:Code><wst:Reason>' + xmlEscape(reason) + '</wst:Reason></wst:Status>' +
-      '</wst:RequestSecurityTokenResponse>';
+    const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
+                 '"><wst:TokenType>' + statusTokenType +
+                 '</wst:TokenType><wst:Status><wst:Code>' + code +
+                 '</wst:Code><wst:Reason>' + xmlEscape(reason) +
+                 '</wst:Reason></wst:Status>' +
+                 '</wst:RequestSecurityTokenResponse>';
     log.debug("Leaving handleRst(). Validate answered with wst:Status.");
     return { status: 200, version: version, errorCode: invalidCode,
              body: envelope(version, trustNs + '/RSTR/ValidateFinal', rstr) };
   }
 
   if (op === 'cancel') {
-    const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs + '">' +
-      '<wst:RequestedTokenCancelled/></wst:RequestSecurityTokenResponse>';
-    log.debug("Leaving handleRst(). Cancel answered with wst:RequestedTokenCancelled.");
-    return { status: 200, version: version, body: envelope(version, trustNs + '/RSTR/CancelFinal', rstr) };
+    const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
+                 '"><wst:RequestedTokenCancelled/>' +
+                 '</wst:RequestSecurityTokenResponse>';
+    log.debug("Leaving handleRst(). Cancel answered with " +
+              "wst:RequestedTokenCancelled.");
+    return { status: 200, version: version,
+             body: envelope(version, trustNs + '/RSTR/CancelFinal', rstr) };
   }
 
   // Issue / Renew both mint (or re-mint) a token, for whoever authenticate()
@@ -869,11 +954,14 @@ function handleRst(rawBody, contentType, options) {
              body: soapFault(version, roleAnswer.why) };
   }
 
-  const tokenType = (tokenTypeReq === JWT_TOKEN_TYPE) ? JWT_TOKEN_TYPE : SAML2_TOKEN_TYPE;
-  const tok = buildToken(tokenType, subject, audience, lifetimeMin, authnContextOf(auth));
+  const tokenType = (tokenTypeReq === JWT_TOKEN_TYPE) ? JWT_TOKEN_TYPE :
+                     SAML2_TOKEN_TYPE;
+  const tok = buildToken(tokenType, subject, audience, lifetimeMin,
+                         authnContextOf(auth));
 
-  // Optional encryption (?encrypt=1): encrypt the SAML assertion to the recipient
-  // certificate carried in the request's WS-Security signature (X509Data).
+  // Optional encryption (?encrypt=1): encrypt the SAML assertion to the
+  // recipient certificate carried in the request's WS-Security signature
+  // (X509Data).
   //
   // TWO CHANGES ON 2026-09-12. The algorithms are `saml2.encryptionAlgorithm`
   // and `saml2.keyTransportAlgorithm`, answered for the AppliesTo as
@@ -892,39 +980,51 @@ function handleRst(rawBody, contentType, options) {
     const recipB64 = x509 ? (x509.textContent || '').replace(/\s+/g, '') : '';
     let failure = '';
     if (recipB64) {
-      const recipPem = '-----BEGIN CERTIFICATE-----\n' + (recipB64.match(/.{1,64}/g) || []).join('\n') + '\n-----END CERTIFICATE-----\n';
+      const recipPem = '-----BEGIN CERTIFICATE-----\n' +
+          (recipB64.match(/.{1,64}/g) || []).join('\n') + '\n-----END ' +
+          'CERTIFICATE-----\n';
       const how = {
-        algorithm: String(applications.settingFor(audience || '', 'saml2.encryptionAlgorithm', config) || ''),
-        keyTransport: String(applications.settingFor(audience || '', 'saml2.keyTransportAlgorithm', config) || '')
+        algorithm: String(applications.settingFor(audience || '',
+                                                  'saml2.encryptionAlgorithm',
+                                                  config) || ''),
+        keyTransport: String(applications.settingFor(audience || '',
+                                                     'saml2.keyTransportAlgorithm', config) || '')
       };
       try {
         tok.xml = encryptAssertion(tok.xml, recipPem, how);
         tok.ref = '';
       } catch (e) {
-        failure = 'the assertion could not be encrypted to the certificate in the request: ' +
+        failure = 'the assertion could not be encrypted to the certificate ' +
+                  'in the request: ' +
                   e.message;
       }
     } else {
-      failure = '?encrypt=1 was requested and the request carries no recipient certificate ' +
-                '(no X509Certificate in its WS-Security signature)';
+      failure = '?encrypt=1 was requested and the request carries no ' +
+                'recipient certificate (no X509Certificate in its ' +
+                'WS-Security signature)';
     }
     if (failure) {
       if (!mode.sendsWeakerThanAsked()) {
-        log.info('wstrust: refused to return a plaintext assertion — ' + failure + '.');
-        log.debug("Leaving handleRst(). Encryption was required and did not happen.");
+        log.info('wstrust: refused to return a plaintext assertion — ' +
+                 failure + '.');
+        log.debug("Leaving handleRst(). Encryption was required and did not " +
+                  "happen.");
         return { status: 500, version: version,
                  errorCode: recipB64 ? 'STS-WSTRUST-0013' : 'STS-WSTRUST-0012',
-                 body: soapFault(version, 'Encryption was requested and ' + failure + '. In ' +
-                                          'product mode the assertion is not returned in ' +
-                                          'clear instead.') };
+                 body: soapFault(version,
+                                 'Encryption was requested and ' + failure +
+                                          '. ' +
+                                          'In product mode the assertion is ' +
+                                          'not returned in clear instead.') };
       }
-      log.error(errorCodes.tag(recipB64 ? 'STS-WSTRUST-0013' : 'STS-WSTRUST-0012') +
+      log.error(errorCodes.tag(recipB64 ? 'STS-WSTRUST-0013' :
+                               'STS-WSTRUST-0012') +
                 failure + '; returning plaintext.');
     }
   }
   // THE RELYING PARTY. AppliesTo is WS-Trust's name for the service a token is
-  // being issued FOR, and this is where one is about to be. It is optional in an
-  // RST — a token with no AppliesTo has no audience restriction, which is a
+  // being issued FOR, and this is where one is about to be. It is optional in
+  // an RST — a token with no AppliesTo has no audience restriction, which is a
   // state this service deliberately allows — so an absent one records nothing
   // rather than an empty application.
   //
@@ -953,16 +1053,16 @@ function handleRst(rawBody, contentType, options) {
   // THE DELEGATION ACT, for /admin/delegation.
   //
   // Recorded here rather than in authenticate() for the reason the KDC records
-  // its own at the bottom of handleTgsReq(): this is the first line at which the
-  // token EXISTS, and an act recorded where the decision was made would name a
-  // credential nobody ever held. It is also the only place that knows the
-  // AppliesTo, which is the TARGET of the chain — authenticate() reads the
+  // its own at the bottom of handleTgsReq(): this is the first line at which
+  // the token EXISTS, and an act recorded where the decision was made would
+  // name a credential nobody ever held. It is also the only place that knows
+  // the AppliesTo, which is the TARGET of the chain — authenticate() reads the
   // security header and never sees it.
   //
   // Nothing about this is a check. This service accepts any delegation from
   // anybody about anybody, and the row says so in the column where a Kerberos
-  // row names an attribute. That asymmetry is the most useful thing on the page:
-  // the same picture, policed at one end and not at the other.
+  // row names an attribute. That asymmetry is the most useful thing on the
+  // page: the same picture, policed at one end and not at the other.
   // ---------------------------------------------------------------------------
   if (auth.delegation) {
     const via = auth.delegation.element;
@@ -991,7 +1091,8 @@ function handleRst(rawBody, contentType, options) {
       log.debug('the AppliesTo "' + audience + '" is registered to ' +
                 'application "' + targetApplication.identifier + '" on ' +
                 targetApplication.matchedAttribute + ', so the delegation is ' +
-                'recorded against that application rather than against the URI.');
+                'recorded against that application rather than against the ' +
+                'URI.');
     }
     // AND WHETHER THE REQUESTER IS ONE TOO. The middle tier of a WS-Trust chain
     // authenticates with a credential rather than by naming an application, so
@@ -1009,7 +1110,8 @@ function handleRst(rawBody, contentType, options) {
       outcome: 'issued',
       initial: {
         presented: subject,
-        what: 'the subject named in <wst:' + via + '>, who presented nothing here'
+        what: 'the subject named in <wst:' + via + '>, who presented nothing ' +
+                                                   'here'
       },
       intermediary: {
         // Empty where the request presented no credential of its own, which is
@@ -1017,17 +1119,20 @@ function handleRst(rawBody, contentType, options) {
         // token about somebody else and got one. The page draws that as a gap
         // in the chain rather than as a missing value.
         presented: auth.delegation.requester,
-        application: requesterApplication ? requesterApplication.identifier : '',
+        application: requesterApplication ? requesterApplication.identifier :
+                     '',
         what: auth.delegation.requester
-          ? 'the requester, authenticated by ' + auth.delegation.requesterMethod +
+          ? 'the requester, authenticated by ' +
+            auth.delegation.requesterMethod +
             (requesterApplication
               ? ', and an application in this registry'
               : '')
-          : 'nobody — the request presented no credential of its own, and this ' +
-            'service issued the token anyway'
+          : 'nobody — the request presented no credential of its own, and ' +
+            'this service issued the token anyway'
       },
       target: {
-        application: targetApplication ? targetApplication.identifier : audience,
+        application: targetApplication ? targetApplication.identifier :
+                     audience,
         what: audience
           ? (targetApplication
               ? 'the application registered for the AppliesTo "' + audience +
@@ -1037,13 +1142,14 @@ function handleRst(rawBody, contentType, options) {
               : 'the AppliesTo, which is also the assertion\'s audience. No ' +
                 'application here has registered it, so it is recorded ' +
                 'exactly as it was asked for')
-          : 'unstated — the RST carried no AppliesTo, so the token issued has ' +
-            'no audience restriction at all'
+          : 'unstated — the RST carried no AppliesTo, so the token issued ' +
+            'has no audience restriction at all'
       },
       authorizedBy: 'nothing. WS-Trust puts no authorization on ' +
                     '<wst:' + via + '> and this service adds none: any ' +
                     'requester may ask for a token about anybody. A real STS ' +
-                    'decides this from policy that has no place in the message.',
+                    'decides this from policy that has no place in the ' +
+                    'message.',
       consumed: (auth.delegation.requester
         ? [{ kind: 'WS-Security credential',
              note: auth.delegation.requesterMethod }]
@@ -1067,28 +1173,33 @@ function handleRst(rawBody, contentType, options) {
           'OnBehalfOf is what this act is attributed to, which is the order ' +
           'this service has always read them in.'
         : (via === 'ActAs'
-            ? 'ActAs is COMPOSITE: the far end is meant to be able to see that ' +
-              'a middle tier is acting. Nothing in the token this service ' +
-              'issues carries that, which is a gap in the mock rather than in ' +
-              'the profile.'
+            ? 'ActAs is COMPOSITE: the far end is meant to be able to see ' +
+              'that a middle tier is acting. Nothing in the token this ' +
+              'service issues carries that, which is a gap in the mock ' +
+              'rather than in the profile.'
             : 'OnBehalfOf is IMPERSONATION: the assertion names the subject ' +
-              'and says nothing about the requester, so the relying party sees ' +
-              'an ordinary sign-in.')
+              'and says nothing about the requester, so the relying party ' +
+              'sees an ordinary sign-in.')
     });
   }
 
   const appliesToOut = audience
-    ? '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy"' +
-      ' xmlns:wsa="http://www.w3.org/2005/08/addressing"><wsa:EndpointReference><wsa:Address>' +
-      xmlEscape(audience) + '</wsa:Address></wsa:EndpointReference></wsp:AppliesTo>'
+    ? '<wsp:AppliesTo ' +
+      'xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy" ' +
+      'xmlns:wsa="http://www.w3.org/2005/08/addressing">' +
+      '<wsa:EndpointReference><wsa:Address>' +
+      xmlEscape(audience) +
+      '</wsa:Address></wsa:EndpointReference></wsp:AppliesTo>'
     : '';
   const rstrInner =
     '<wst:TokenType>' + tok.tokenType + '</wst:TokenType>' +
     '<wst:RequestedSecurityToken>' + tok.xml + '</wst:RequestedSecurityToken>' +
     appliesToOut +
-    '<wst:Lifetime xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">' +
-    '<wsu:Created>' + iso(0) + '</wsu:Created><wsu:Expires>' + iso(lifetimeMin) + '</wsu:Expires></wst:Lifetime>' +
-    '<wst:KeyType>' + keyTypeReq + '</wst:KeyType>' +
+    '<wst:Lifetime ' +
+    'xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">' +
+    '<wsu:Created>' + iso(0) + '</wsu:Created><wsu:Expires>' +
+    iso(lifetimeMin) + '</wsu:Expires></wst:Lifetime><wst:KeyType>' +
+    keyTypeReq + '</wst:KeyType>' +
     tok.ref;
 
   // ---------------------------------------------------------------------
@@ -1126,23 +1237,27 @@ function handleRst(rawBody, contentType, options) {
   // THE AMR SAYS WHICH CREDENTIAL IT WAS. `pwd` for a UsernameToken, as before;
   // nothing for a SAML assertion, which is evidence of an earlier sign-in
   // elsewhere rather than of a password presented now.
-  const signIn = auth.subject && auth.subject !== 'anonymous' && auth.kind !== 'delegated'
+  const signIn = auth.subject && auth.subject !== 'anonymous' &&
+                 auth.kind !== 'delegated'
     ? { username: auth.subject, method: auth.method || 'WS-Trust',
         via: 'WS-Trust ' + op,
         amr: auth.kind === 'assertion' ? [] : ['pwd'] }
     : null;
 
   if (op === 'renew') {
-    const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs + '">' + rstrInner + '</wst:RequestSecurityTokenResponse>';
+    const rstr = '<wst:RequestSecurityTokenResponse xmlns:wst="' + trustNs +
+                 '">' + rstrInner + '</wst:RequestSecurityTokenResponse>';
     log.debug("Leaving handleRst(). Renew answered with a fresh token.");
     return { status: 200, version: version, signIn: signIn,
              body: envelope(version, trustNs + '/RSTR/RenewFinal', rstr) };
   }
 
-  // Issue -> RSTR Collection (WS-Trust 1.3+; pre-OASIS clients tolerate it too).
-  const rstrc = '<wst:RequestSecurityTokenResponseCollection xmlns:wst="' + trustNs + '">' +
-    '<wst:RequestSecurityTokenResponse>' + rstrInner + '</wst:RequestSecurityTokenResponse>' +
-    '</wst:RequestSecurityTokenResponseCollection>';
+  // Issue -> RSTR Collection (WS-Trust 1.3+; pre-OASIS clients tolerate it
+  // too).
+  const rstrc = '<wst:RequestSecurityTokenResponseCollection xmlns:wst="' +
+                trustNs + '"><wst:RequestSecurityTokenResponse>' + rstrInner +
+                '</wst:RequestSecurityTokenResponse>' +
+                '</wst:RequestSecurityTokenResponseCollection>';
   log.debug("Leaving handleRst(). Issue answered with an RSTR Collection.");
   return { status: 200, version: version, signIn: signIn,
            body: envelope(version, trustNs + '/RSTRC/IssueFinal', rstrc) };
@@ -1176,23 +1291,29 @@ app.get('/sts/cert', function (req, res) {
 // reconciled, because making one follow the other would take away the split.
 // ---------------------------------------------------------------------------
 function issuerDisagreement() {
+  log.debug("Entering issuerDisagreement().");
   const jwtIssuer = String(config.value('wstrust.issuer') || '');
   const samlIssuer = String(config.value('saml.issuer') || '');
   if (jwtIssuer === samlIssuer) {
+    log.debug("Leaving issuerDisagreement().");
     return '';
   }
-  return 'wstrust.issuer ("' + jwtIssuer + '") and saml.issuer ("' + samlIssuer + '") differ: ' +
-         'a JWT from this STS names the first as its iss and a SAML assertion from it names ' +
-         'the second as its Issuer, so a relying party configured with one will refuse the ' +
-         'other token type.';
+  log.debug("Leaving issuerDisagreement().");
+  return 'wstrust.issuer ("' + jwtIssuer + '") and saml.issuer ("' +
+         samlIssuer + '") ' +
+         'differ: a JWT from this STS names the first as its iss and a SAML ' +
+         'assertion from it names the second as its Issuer, so a relying ' +
+         'party configured with one will refuse the other token type.';
 }
 
 app.get('/sts', function (req, res) {
   log.debug("Entering the STS description endpoint.");
   const disagreement = issuerDisagreement();
-  res.type('text/plain').send('WS-Trust STS mock. POST a SOAP RequestSecurityToken here.\nIssuer: ' +
+  res.type('text/plain').send('WS-Trust STS mock. POST a SOAP ' +
+                              'RequestSecurityToken here.\nIssuer: ' +
                               config.value('wstrust.issuer') + '\n' +
-                              (disagreement ? 'WARNING: ' + disagreement + '\n' : ''));
+                              (disagreement ?
+                               'WARNING: ' + disagreement + '\n' : ''));
   log.debug("Leaving the STS description endpoint.");
 });
 
@@ -1242,30 +1363,38 @@ app.post('/sts', function (req, res) {
         // reason to answer a SOAP Fault.
         log.error(errorCodes.tag('STS-WSTRUST-0016') +
                   'wstrust: starting a session for ' + result.signIn.username +
-                  ' failed and was ignored; the token is unaffected: ' + e.message);
+                  ' failed and was ignored; the token is unaffected: ' +
+                  e.message);
       }
     }
-    const ct = result.version === '1.1' ? 'text/xml; charset=utf-8' : 'application/soap+xml; charset=utf-8';
+    const ct = result.version === '1.1' ? 'text/xml; charset=utf-8' :
+               'application/soap+xml; ' +
+        'charset=utf-8';
     if (result.errorCode) {
       errorCodes.mark(res, result.errorCode);
     }
     res.status(result.status).type(ct).send(result.body);
     log.debug("Leaving the WS-Trust STS endpoint. HTTP " + result.status + ".");
   } catch (e) {
-    log.error(errorCodes.tag('STS-WSTRUST-0015') + 'STS error: ' + (e && e.stack ? e.stack : e));
+    log.error(errorCodes.tag('STS-WSTRUST-0015') + 'STS error: ' +
+              (e && e.stack ? e.stack : e));
     errorCodes.mark(res, 'STS-WSTRUST-0015');
     res.status(500).type('application/soap+xml; charset=utf-8')
-       .send(soapFault('1.2', 'STS error: ' + (e && e.message ? e.message : String(e))));
+       .send(soapFault('1.2',
+                       'STS error: ' +
+                       (e && e.message ? e.message : String(e))));
     log.debug("Leaving the WS-Trust STS endpoint. It failed.");
   }
 });
 
 // The startup half of issuerDisagreement(), once, for the process-wide values.
 (function warnAtStartup() {
+  log.debug("Entering warnAtStartup().");
   const disagreement = issuerDisagreement();
   if (disagreement) {
     log.warn('wstrust: ' + disagreement);
   }
+  log.debug("Leaving warnAtStartup().");
 })();
 
 module.exports = {

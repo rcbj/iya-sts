@@ -42,8 +42,8 @@
 // OAuth's prefixed routes are three, so it would match `POST /admin/gnap` and
 // create an authorization server named "admin" on sight. A reserved first
 // segment falls through (`next()`) to whatever else would have answered — in
-// the worst case express's own 404, which `tests/vendored/sts_metadata.js` reads
-// as unrouted, which it is.
+// the worst case express's own 404, which `tests/vendored/sts_metadata.js`
+// reads as unrouted, which it is.
 //
 // ---------------------------------------------------------------------------
 // ERROR RESPONSES (section 3.6, RFC 9767 section 3.5).
@@ -89,7 +89,9 @@ const STATUS_FOR = {
 function gnapError(res, status, code, description, extra) {
   // error-code: none — the helper's trace line, not a call to it.
   log.debug("Entering gnapError(). status=" + status + ", error=" + code);
-  const body = Object.assign({ error: { code: code, description: description } }, extra || {});
+  const body = Object.assign({ error: { code: code,
+                                        description: description } },
+                             extra || {});
   res.status(status).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify(body));
   // error-code: none — the helper's trace line, not a call to it.
@@ -97,63 +99,85 @@ function gnapError(res, status, code, description, extra) {
 }
 
 function sendResult(res, result) {
+  log.debug("Entering sendResult().");
   if (result.status === 204) {
     res.status(204).set('Cache-Control', 'no-store').end();
+    log.debug("Leaving sendResult().");
     return;
   }
-  res.status(result.status || 200).type('application/json').set('Cache-Control', 'no-store')
+  res.status(result.status || 200)
+     .type('application/json')
+     .set('Cache-Control', 'no-store')
      .send(JSON.stringify(result.body));
+  log.debug("Leaving sendResult().");
 }
 
 // A refusal from the engine, in GNAP's shape. The engine has already marked the
 // result with its code; the response object is marked from it.
 function refuse(res, result, fallbackCode, rsFacing) {
-  errorCodes.mark(res, errorCodes.codeOf(result) || result.errorCode || fallbackCode);
+  log.debug("Entering refuse().");
+  errorCodes.mark(res,
+                  errorCodes.codeOf(result) || result.errorCode ||
+                  fallbackCode);
   const status = rsFacing ? (result.status === 404 ? 404 : 400)
     : (result.status || STATUS_FOR[result.gnapError] || 400);
+  log.debug("Leaving refuse().");
   // error-code: none — the response was marked on the first line of refuse() with the result's own code or the caller's fallback.
-  return gnapError(res, status, result.gnapError || 'invalid_request', result.why, result.extra);
+  return gnapError(res, status, result.gnapError || 'invalid_request',
+                   result.why, result.extra);
 }
 
 // Every async handler goes through here, so a thrown defect is a coded 500 and
 // never an unhandled rejection (which ends the process under some node flags).
 function guarded(name, handler) {
+  log.debug("Entering guarded().");
+  log.debug("Leaving guarded().");
   return function (req, res, next) {
     Promise.resolve().then(function () {
       return handler(req, res, next);
     }).catch(function (e) {
-      log.error(errorCodes.tag('STS-GNAP-0160') + 'gnap: ' + name + ' failed: ' + (e && e.stack || e));
+      log.error(errorCodes.tag('STS-GNAP-0160') + 'gnap: ' + name +
+                ' failed: ' + (e && e.stack || e));
       if (!res.headersSent) {
         errorCodes.mark(res, 'STS-GNAP-0160');
-        gnapError(res, 500, 'request_denied', 'The authorization server could not process this ' +
-                  'request.');
+        gnapError(res, 500, 'request_denied', 'The authorization server ' +
+                  'could not process this request.');
       }
     });
   };
 }
 
 function offCheck(res) {
+  log.debug("Entering offCheck().");
   if (config.value('gnap.enabled') === false) {
     errorCodes.mark(res, 'STS-GNAP-0161');
-    gnapError(res, 404, 'request_denied', 'GNAP is turned off in this trust realm (gnap.enabled).');
+    gnapError(res, 404, 'request_denied', 'GNAP is turned off in this trust ' +
+                                          'realm (gnap.enabled).');
+    log.debug("Leaving offCheck().");
     return true;
   }
+  log.debug("Leaving offCheck().");
   return false;
 }
 
 // The authorization server a `/:as` path names, or `null` to fall through.
 function asFrom(req, res) {
-  const named = validation.checkParsed({ as: req.params.as }, 'params', AS_PARAMS);
+  log.debug("Entering asFrom().");
+  const named = validation.checkParsed({ as: req.params.as }, 'params',
+                                       AS_PARAMS);
   if (!named.ok) {
     errorCodes.mark(res, 'STS-GNAP-0162');
     gnapError(res, 400, 'invalid_request', named.detail);
+    log.debug("Leaving asFrom().");
     return { answered: true };
   }
   const id = String(named.value.as || '');
   if (grants.RESERVED_AS_NAMES.indexOf(id) >= 0) {
+    log.debug("Leaving asFrom().");
     return { fallThrough: true };
   }
   authorizationServers.ensure(id, { autoCreated: true, seen: true });
+  log.debug("Leaving asFrom().");
   return { id: id };
 }
 
@@ -161,6 +185,8 @@ function asFrom(req, res) {
 // SECTION 2: THE GRANT ENDPOINT.
 // ---------------------------------------------------------------------------
 function grantEndpoint(named) {
+  log.debug("Entering grantEndpoint().");
+  log.debug("Leaving grantEndpoint().");
   return guarded('the grant endpoint', async function (req, res, next) {
     log.debug("Entering the grant endpoint.");
     let asId = null;
@@ -171,7 +197,8 @@ function grantEndpoint(named) {
         return undefined;
       }
       if (selected.fallThrough) {
-        log.debug("Leaving the grant endpoint. Reserved segment; falling through.");
+        log.debug("Leaving the grant endpoint. Reserved segment; falling " +
+                  "through.");
         return next();
       }
       asId = selected.id;
@@ -193,6 +220,8 @@ function grantEndpoint(named) {
 
 // SECTION 9: DISCOVERY, by OPTIONS to the grant endpoint.
 function discovery(named) {
+  log.debug("Entering discovery().");
+  log.debug("Leaving discovery().");
   return function (req, res, next) {
     log.debug("Entering GNAP discovery.");
     let asId = null;
@@ -227,18 +256,20 @@ app.options('/:as/gnap', discovery(true));
 // ---------------------------------------------------------------------------
 // SECTION 5: CONTINUATION.
 // ---------------------------------------------------------------------------
-const continuation = guarded('the continuation endpoint', async function (req, res) {
+const continuation = guarded('the continuation endpoint',
+                             async function (req, res) {
   log.debug("Entering the continuation endpoint. method=" + req.method);
   if (offCheck(res)) {
     log.debug("Leaving the continuation endpoint. Off.");
     return;
   }
-  const params = validation.checkParsed({ grant: req.params.grant }, 'params', GRANT_PARAMS);
+  const params = validation.checkParsed({ grant: req.params.grant }, 'params',
+                                        GRANT_PARAMS);
   if (!params.ok) {
     log.debug("Leaving the continuation endpoint. Bad URI.");
     errorCodes.mark(res, 'STS-GNAP-0164');
-    gnapError(res, 401, 'invalid_continuation', 'The continuation URI does not identify a grant ' +
-              'request.');
+    gnapError(res, 401, 'invalid_continuation', 'The continuation URI does ' +
+              'not identify a grant request.');
     return;
   }
   const result = await grants.continueGrant(req, params.value.grant);
@@ -258,17 +289,20 @@ app.delete('/gnap/continue/:grant', continuation);
 // ---------------------------------------------------------------------------
 // SECTION 6: TOKEN MANAGEMENT.
 // ---------------------------------------------------------------------------
-const management = guarded('the token management endpoint', async function (req, res) {
+const management = guarded('the token management endpoint',
+                           async function (req, res) {
   log.debug("Entering the token management endpoint. method=" + req.method);
   if (offCheck(res)) {
     log.debug("Leaving the token management endpoint. Off.");
     return;
   }
-  const params = validation.checkParsed({ handle: req.params.handle }, 'params', HANDLE_PARAMS);
+  const params = validation.checkParsed({ handle: req.params.handle }, 'params',
+                                        HANDLE_PARAMS);
   if (!params.ok) {
     log.debug("Leaving the token management endpoint. Bad URI.");
     errorCodes.mark(res, 'STS-GNAP-0166');
-    gnapError(res, 401, req.method === 'DELETE' ? 'invalid_request' : 'invalid_rotation',
+    gnapError(res, 401,
+              req.method === 'DELETE' ? 'invalid_request' : 'invalid_rotation',
               'The token management URI does not identify a token.');
     return;
   }
@@ -289,6 +323,8 @@ app.delete('/gnap/token/:handle', management);
 // RFC 9767: THE RESOURCE-SERVER-FACING API.
 // ---------------------------------------------------------------------------
 function rsDiscovery(named) {
+  log.debug("Entering rsDiscovery().");
+  log.debug("Leaving rsDiscovery().");
   return function (req, res, next) {
     log.debug("Entering RS-facing discovery.");
     let asId = null;
@@ -333,7 +369,8 @@ function rsDiscovery(named) {
 app.get('/.well-known/gnap-as-rs', rsDiscovery(false));
 app.get('/.well-known/gnap-as-rs/:as', rsDiscovery(true));
 
-app.post('/gnap/introspect', guarded('the introspection endpoint', function (req, res) {
+app.post('/gnap/introspect',
+         guarded('the introspection endpoint', function (req, res) {
   log.debug("Entering the introspection endpoint.");
   if (offCheck(res)) {
     log.debug("Leaving the introspection endpoint. Off.");
@@ -349,7 +386,8 @@ app.post('/gnap/introspect', guarded('the introspection endpoint', function (req
   log.debug("Leaving the introspection endpoint.");
 }));
 
-app.post('/gnap/resource', guarded('the resource registration endpoint', function (req, res) {
+app.post('/gnap/resource',
+         guarded('the resource registration endpoint', function (req, res) {
   log.debug("Entering the resource registration endpoint.");
   if (offCheck(res)) {
     log.debug("Leaving the resource registration endpoint. Off.");
@@ -357,7 +395,8 @@ app.post('/gnap/resource', guarded('the resource registration endpoint', functio
   }
   const result = rs.register(req);
   if (!result.ok) {
-    log.debug("Leaving the resource registration endpoint. Refused: " + result.why);
+    log.debug("Leaving the resource registration endpoint. Refused: " +
+              result.why);
     refuse(res, result, 'STS-GNAP-0169', true);
     return;
   }
@@ -377,17 +416,20 @@ app.get('/gnap/keys', function (req, res) {
     return;
   }
   res.status(200).type('application/json').set('Cache-Control', 'no-store')
-     .send(JSON.stringify(tokens.publicMaterial(grants.realmBase(req)), null, 2));
+     .send(JSON.stringify(tokens.publicMaterial(grants.realmBase(req)), null,
+                          2));
   log.debug("Leaving GET /gnap/keys.");
 });
 
-app.get('/gnap/zcap/controller', guarded('the ZCAP controller document', async function (req, res) {
+app.get('/gnap/zcap/controller',
+        guarded('the ZCAP controller document', async function (req, res) {
   log.debug("Entering GET /gnap/zcap/controller.");
   if (offCheck(res)) {
     log.debug("Leaving GET /gnap/zcap/controller. Off.");
     return;
   }
-  const document = await zcap.controllerDocument(tokens.zcapKeys(grants.realmBase(req)));
+  const document = await zcap.controllerDocument(
+      tokens.zcapKeys(grants.realmBase(req)));
   res.status(200).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify(document, null, 2));
   log.debug("Leaving GET /gnap/zcap/controller.");
@@ -406,6 +448,8 @@ const DEMO_TYPE = 'urn:mock-sts:gnap:demo';
 const DEMO_REFERENCE = 'mock-sts-gnap-demo';
 
 function demoResource(req, res) {
+  log.debug("Entering demoResource().");
+  log.debug("Leaving demoResource().");
   return guarded('the demonstration resource server', async function () {
     log.debug("Entering the demonstration RS. method=" + req.method);
     if (offCheck(res)) {
@@ -414,22 +458,26 @@ function demoResource(req, res) {
     }
     if (config.value('gnap.demoResourceServer') === false) {
       errorCodes.mark(res, 'STS-GNAP-0550');
-      gnapError(res, 404, 'invalid_request', 'The demonstration resource server is turned off ' +
-                '(gnap.demoResourceServer).');
+      gnapError(res, 404, 'invalid_request', 'The demonstration resource ' +
+                'server is turned off (gnap.demoResourceServer).');
       log.debug("Leaving the demonstration RS. Turned off.");
       return;
     }
     const base = grants.realmBase(req);
     const self = base + '/gnap/rs/resource';
     const action = req.method === 'GET' ? 'read' : 'write';
-    const challenge = 'GNAP as_uri="' + grants.grantEndpointOf(req, null) + '", access="' +
+    const challenge = 'GNAP as_uri="' + grants.grantEndpointOf(req, null) +
+        '", ' +
+        'access="' +
       DEMO_REFERENCE + '", referrer="' + self + '"';
     if (!req.headers.authorization) {
       errorCodes.mark(res, 'STS-GNAP-0551');
-      res.status(401).set('WWW-Authenticate', challenge).set('Cache-Control', 'no-store')
+      res.status(401)
+         .set('WWW-Authenticate', challenge)
+         .set('Cache-Control', 'no-store')
          .type('application/json').send(JSON.stringify({ error: 'invalid_token',
-           error_description: 'This resource needs a GNAP access token; ask the authorization ' +
-           'server named in WWW-Authenticate.' }));
+           error_description: 'This resource needs a GNAP access token; ask ' +
+           'the authorization server named in WWW-Authenticate.' }));
       log.debug("Leaving the demonstration RS. RS-first challenge.");
       return;
     }
@@ -437,26 +485,35 @@ function demoResource(req, res) {
     const judged = await rs.authenticate(req, { audience: self, base: base });
     if (!judged.ok) {
       errorCodes.mark(res, errorCodes.codeOf(judged) || 'STS-GNAP-0552');
-      res.status(judged.status || 401).set('WWW-Authenticate', challenge + ', error="' +
-        judged.gnapError + '"').set('Cache-Control', 'no-store').type('application/json')
-         .send(JSON.stringify({ error: judged.gnapError, error_description: judged.why }));
+      res.status(judged.status || 401)
+         .set('WWW-Authenticate', challenge + ', ' +
+          'error="' +
+        judged.gnapError + '"').set('Cache-Control', 'no-store').type(
+            'application/json')
+         .send(JSON.stringify({ error: judged.gnapError,
+                                error_description: judged.why }));
       log.debug("Leaving the demonstration RS. Refused: " + judged.why);
       return;
     }
-    const covers = require('./gnap_access').accessCovers(judged.model.access, required) ||
+    const covers = require('./gnap_access').accessCovers(judged.model.access,
+                                                         required) ||
       (judged.model.access || []).indexOf(DEMO_REFERENCE) >= 0;
     if (!covers) {
       errorCodes.mark(res, 'STS-GNAP-0553');
-      res.status(403).set('WWW-Authenticate', challenge + ', error="insufficient_scope"')
+      res.status(403).set('WWW-Authenticate', challenge + ', ' +
+          'error="insufficient_scope"')
          .set('Cache-Control', 'no-store').type('application/json')
-         .send(JSON.stringify({ error: 'insufficient_scope', error_description: 'The token does ' +
-           'not grant ' + action + ' on ' + DEMO_TYPE + '.' }));
+         .send(JSON.stringify({ error: 'insufficient_scope',
+                                error_description: 'The ' +
+           'token does not grant ' + action + ' on ' + DEMO_TYPE + '.' }));
       log.debug("Leaving the demonstration RS. Access not covered.");
       return;
     }
-    require('./gnap_monitor').record(judged.record.instanceId, 'rs.presented', {});
+    require('./gnap_monitor').record(judged.record.instanceId, 'rs.presented',
+                                     {});
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify({ ok: true, action: action, format: judged.format, method: judged.method,
+       .send(JSON.stringify({ ok: true, action: action, format: judged.format,
+                              method: judged.method,
                               token: judged.model }, null, 2));
     log.debug("Leaving the demonstration RS. Allowed.");
   })(req, res);

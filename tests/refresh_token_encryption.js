@@ -37,6 +37,12 @@ const os = require('os');
 const path = require('path');
 const childProcess = require('child_process');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'refresh_token_encryption',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 
 const config = require('../common/config');
@@ -50,23 +56,32 @@ const rt = require('../oauth-oidc/refresh_token_crypto');
 // A structurally valid JWS — the module encrypts and decrypts bytes and never
 // verifies, so a real signature is not what these sections are about.
 const INNER = [Buffer.from('{"alg":"RS256","typ":"JWT"}').toString('base64url'),
-               Buffer.from('{"jti":"rt-probe","typ":"Refresh"}').toString('base64url'),
+               Buffer.from('{"jti":"rt-probe","typ":"Refresh"}')
+                     .toString('base64url'),
                'c2lnbmF0dXJl'].join('.');
 
 function headerOf(compact) {
-  return JSON.parse(Buffer.from(String(compact).split('.')[0], 'base64url').toString('utf8'));
+  log.debug("Entering headerOf().");
+  log.debug("Leaving headerOf().");
+  return JSON.parse(Buffer.from(String(compact).split('.')[0], 'base64url')
+                          .toString('utf8'));
 }
 
 function codeThrown(fn) {
+  log.debug("Entering codeThrown().");
   try {
     fn();
+    log.debug("Leaving codeThrown().");
     return '(nothing thrown)';
   } catch (e) {
+    log.debug("Leaving codeThrown().");
     return errorCodes.codeOf(e) || ('(uncoded: ' + e.message + ')');
   }
 }
 
 function settingRow(key) {
+  log.debug("Entering settingRow().");
+  log.debug("Leaving settingRow().");
   return config.SETTINGS.filter(function (row) {
     return row.key === key;
   })[0] || null;
@@ -79,25 +94,34 @@ function childMain() {
   const http = require('http');
   const findings = [];
   function note(ok, what, detail) {
-    findings.push({ ok: !!ok, what: what, detail: detail === undefined ? '' : String(detail) });
+    findings.push({ ok: !!ok, what: what,
+                    detail: detail === undefined ? '' : String(detail) });
   }
+
   function post(port, urlPath, form) {
     return new Promise(function (resolve) {
       const body = new URLSearchParams(form).toString();
-      const req = http.request({ host: '127.0.0.1', port: port, path: urlPath, method: 'POST',
+      const req = http.request({ host: '127.0.0.1', port: port, path: urlPath,
+        method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded',
-                   'content-length': Buffer.byteLength(body) } }, function (res) {
+                   'content-length': Buffer.byteLength(body) } }, function (
+                       res) {
         let text = '';
         res.on('data', function (c) { text += c; });
         res.on('end', function () {
           let json = null;
+          let parseError = null;
           try {
             json = JSON.parse(text);
           } catch (e) {
-            // Not JSON; the raw text is kept for the detail.
+            // Not JSON; the raw text is kept for the detail, and so is the
+            // reason. This runs in a `node -e` child with no logger, so the
+            // reason travels on the result.
+            parseError = e.message;
             json = null;
           }
-          resolve({ status: res.statusCode, text: text, json: json });
+          resolve({ status: res.statusCode, text: text, json: json,
+                    parseError: parseError });
         });
       });
       req.end(body);
@@ -113,9 +137,11 @@ function childMain() {
     const server = http.createServer(app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
-    const client = { client_id: 'rt-client', client_secret: 'rt-client-secret-0123456789' };
+    const client = { client_id: 'rt-client',
+                     client_secret: 'rt-client-secret-0123456789' };
     const registration = { identifier: 'rt-client', protocols: ['oauth2'],
-      fields: { oauthClientId: 'rt-client', oauthClientSecret: client.client_secret,
+      fields: { oauthClientId: 'rt-client',
+                oauthClientSecret: client.client_secret,
                 oauthTokenEndpointAuthMethod: 'client_secret_post',
                 oauthGrantType: ['password', 'refresh_token'] } };
     ldap.createUser('rt-alice', { invent: false });
@@ -136,23 +162,29 @@ function childMain() {
     const refresh = r.json && r.json.refresh_token;
     note(r.status === 200 && typeof refresh === 'string' &&
          refresh.split('.').length === 5,
-         '6a. the token endpoint hands out a refresh token that is a five-part JWE',
+         '6a. the token endpoint hands out a refresh token that is a ' +
+         'five-part JWE',
          r.status + ' ' + String(refresh).split('.').length + ' part(s)');
     note(r.json && String(r.json.access_token || '').split('.').length === 3,
          '6b. and the access token beside it is still a plain JWS',
          String(r.json && r.json.access_token).split('.').length);
 
     const ins = await post(port, '/oauth2/introspect', { token: refresh });
-    note(ins.json && ins.json.active === true && ins.json.token_type === 'refresh_token' &&
+    note(ins.json && ins.json.active === true &&
+         ins.json.token_type === 'refresh_token' &&
          ins.json.username === 'rt-alice',
-         '6c. introspection opens it: active, a refresh_token, for the right person',
+         '6c. introspection opens it: active, a refresh_token, for the right ' +
+         'person',
          ins.text.slice(0, 200));
 
-    const inner = require(ROOT_DIR + '/oauth-oidc/refresh_token_crypto').open(refresh);
+    const inner = require(ROOT_DIR + '/oauth-oidc/refresh_token_crypto').open(
+        refresh);
     const plain = await post(port, '/oauth2/token', Object.assign({
       grant_type: 'refresh_token', refresh_token: inner }, client));
-    note(plain.status === 400 && plain.json && plain.json.error === 'invalid_grant',
-         '6d. the SIGNED JWT inside it, presented on its own, is refused as invalid_grant',
+    note(plain.status === 400 && plain.json &&
+         plain.json.error === 'invalid_grant',
+         '6d. the SIGNED JWT inside it, presented on its own, is refused as ' +
+         'invalid_grant',
          plain.status + ' ' + plain.text.slice(0, 200));
     const plainIns = await post(port, '/oauth2/introspect', { token: inner });
     note(plainIns.json && plainIns.json.active === false,
@@ -165,28 +197,36 @@ function childMain() {
     note(redeemed.status === 200 && redeemed.json && redeemed.json.access_token,
          '6f. the refresh grant decrypts it and issues', redeemed.status + ' ' +
          redeemed.text.slice(0, 160));
-    note(typeof next === 'string' && next.split('.').length === 5 && next !== refresh,
+    note(typeof next === 'string' && next.split('.').length === 5 &&
+         next !== refresh,
          '6g. and the refresh token it hands back is encrypted too',
          String(next).split('.').length + ' part(s)');
 
     const tampered = refresh.split('.');
-    tampered[3] = Buffer.from('not the ciphertext at all').toString('base64url');
+    tampered[3] = Buffer.from('not the ciphertext at all')
+                        .toString('base64url');
     const bad = await post(port, '/oauth2/token', Object.assign({
-      grant_type: 'refresh_token', refresh_token: tampered.join('.') }, client));
+      grant_type: 'refresh_token', refresh_token: tampered.join('.') },
+                                                                client));
     note(bad.status === 400 && bad.json && bad.json.error === 'invalid_grant',
-         '6h. a tampered refresh token is invalid_grant', bad.status + ' ' + bad.text.slice(0, 160));
+         '6h. a tampered refresh token is invalid_grant',
+         bad.status + ' ' + bad.text.slice(0, 160));
 
     const other = await issue('/realm/rtrealm');
     const otherRefresh = other.json && other.json.refresh_token;
     const across = await post(port, '/oauth2/token', Object.assign({
       grant_type: 'refresh_token', refresh_token: otherRefresh }, client));
-    note(other.status === 200 && typeof otherRefresh === 'string' && across.status === 400 &&
+    note(other.status === 200 && typeof otherRefresh === 'string' &&
+         across.status === 400 &&
          across.json && across.json.error === 'invalid_grant',
-         '6i. a refresh token minted in another realm does not open in this one',
-         other.status + ' / ' + across.status + ' ' + across.text.slice(0, 160));
+         '6i. a refresh token minted in another realm does not open in this ' +
+         'one',
+         other.status + ' / ' + across.status + ' ' +
+         across.text.slice(0, 160));
     const home = await post(port, '/realm/rtrealm/oauth2/token', Object.assign({
       grant_type: 'refresh_token', refresh_token: otherRefresh }, client));
-    note(home.status === 200, '6j. while it redeems in the realm that minted it',
+    note(home.status === 200,
+         '6j. while it redeems in the realm that minted it',
          home.status + ' ' + home.text.slice(0, 160));
 
     if (next) {
@@ -194,7 +234,8 @@ function childMain() {
       const revoked = await post(port, '/oauth2/token', Object.assign({
         grant_type: 'refresh_token', refresh_token: next }, client));
       note(revoked.status === 400,
-           '6k. revocation reads an encrypted refresh token: once revoked it no longer redeems',
+           '6k. revocation reads an encrypted refresh token: once revoked it ' +
+           'no longer redeems',
            revoked.status + ' ' + revoked.text.slice(0, 160));
     }
 
@@ -202,24 +243,30 @@ function childMain() {
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
   })().catch(function (e) {
-    findings.push({ ok: false, what: 'the endpoint half threw', detail: e.stack });
+    findings.push({ ok: false, what: 'the endpoint half threw',
+                    detail: e.stack });
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
   });
 }
 
 function run(t) {
+  log.debug("Entering run().");
   // -------------------------------------------------------------------------
   t.log.info('=== 1. the settings table is the JWE module\'s table ===');
   const algRow = settingRow('oauth2.refreshTokenEncryptionAlg');
   const encRow = settingRow('oauth2.refreshTokenEncryptionEnc');
-  t.check(!!algRow && JSON.stringify((algRow.enumValues || []).slice().sort()) ===
+  t.check(!!algRow &&
+          JSON.stringify((algRow.enumValues || []).slice().sort()) ===
           JSON.stringify(stsCrypto.JWE_ALGS.slice().sort()),
-          'oauth2.refreshTokenEncryptionAlg offers exactly common/crypto.js\'s JWE_ALGS',
+          'oauth2.refreshTokenEncryptionAlg offers exactly ' +
+          'common/crypto.js\'s JWE_ALGS',
           JSON.stringify(algRow && algRow.enumValues));
-  t.check(!!encRow && JSON.stringify((encRow.enumValues || []).slice().sort()) ===
+  t.check(!!encRow &&
+          JSON.stringify((encRow.enumValues || []).slice().sort()) ===
           JSON.stringify(Object.keys(stsCrypto.JWE_ENCS).sort()),
-          'oauth2.refreshTokenEncryptionEnc offers exactly common/crypto.js\'s JWE_ENCS',
+          'oauth2.refreshTokenEncryptionEnc offers exactly ' +
+          'common/crypto.js\'s JWE_ENCS',
           JSON.stringify(encRow && encRow.enumValues));
 
   // -------------------------------------------------------------------------
@@ -233,7 +280,8 @@ function run(t) {
         const sealed = rt.seal(INNER, null, { alg: alg, enc: enc });
         const header = headerOf(sealed);
         const kind = rt.kindOf(alg);
-        const expectedKid = kind === 'secret' ? keys.secretKid : keys[kind].publicJwk.kid;
+        const expectedKid = kind === 'secret' ? keys.secretKid :
+                            keys[kind].publicJwk.kid;
         if (header.alg !== alg || header.enc !== enc || header.cty !== 'JWT' ||
             header.kid !== expectedKid) {
           kidsWrong.push(alg + '/' + enc + ' ' + JSON.stringify(header));
@@ -246,10 +294,10 @@ function run(t) {
       }
     });
   });
-  t.check(!failures.length, 'all ' + stsCrypto.JWE_ALGS.length * 6 + ' (alg, enc) ' +
-          'pairs round-trip', failures.slice(0, 8).join('; '));
-  t.check(!kidsWrong.length, 'and every JWE is a nested JWT (cty JWT) naming the realm ' +
-          'key of the right kind', kidsWrong.slice(0, 4).join('; '));
+  t.check(!failures.length, 'all ' + stsCrypto.JWE_ALGS.length * 6 + ' (alg, ' +
+          'enc) pairs round-trip', failures.slice(0, 8).join('; '));
+  t.check(!kidsWrong.length, 'and every JWE is a nested JWT (cty JWT) naming ' +
+          'the realm key of the right kind', kidsWrong.slice(0, 4).join('; '));
   t.check(rt.symmetricBytes('A128KW', 'A256GCM') === 16 &&
           rt.symmetricBytes('A256GCMKW', 'A128GCM') === 32 &&
           rt.symmetricBytes('dir', 'A256CBC-HS512') === 64 &&
@@ -261,24 +309,29 @@ function run(t) {
   // hand A128KW the first half of A256KW's key. It survived a mutation round
   // before this assertion existed.
   const k = function (alg, enc) {
+    log.debug("Entering k().");
+    log.debug("Leaving k().");
     return rt.symmetricKeyFor(keys.secret, alg, enc).toString('hex');
   };
   t.check(k('A128KW', 'A128GCM') !== k('A128GCMKW', 'A128GCM') &&
           k('A128KW', 'A128GCM') !== k('dir', 'A128GCM') &&
           k('A256KW', 'A256GCM').indexOf(k('A128KW', 'A256GCM')) !== 0 &&
           k('A256KW', 'A128GCM') !== k('A256KW', 'A256GCM'),
-          'no two (alg, enc) pairs derive the same key, or one key the prefix of another');
+          'no two (alg, enc) pairs derive the same key, or one key the ' +
+          'prefix of another');
 
   // -------------------------------------------------------------------------
   t.log.info('=== 3. the refusals ===');
   t.equal(codeThrown(function () { rt.open(INNER); }), 'STS-OAUTH-0237',
           'an unencrypted refresh token is refused');
-  t.equal(codeThrown(function () { rt.open('not.a.token.at.all.really'); }), 'STS-OAUTH-0238',
+  t.equal(codeThrown(function () { rt.open('not.a.token.at.all.really'); }),
+          'STS-OAUTH-0238',
           'something that is not a JWE is refused');
   const sealed = rt.seal(INNER);
   const parts = sealed.split('.');
   parts[3] = Buffer.from('tampered ciphertext').toString('base64url');
-  t.equal(codeThrown(function () { rt.open(parts.join('.')); }), 'STS-OAUTH-0238',
+  t.equal(codeThrown(function () { rt.open(parts.join('.')); }),
+          'STS-OAUTH-0238',
           'a tampered refresh token is refused');
   const notJwt = stsCrypto.encryptJweCompact('just some text', {
     alg: 'RSA-OAEP-256', enc: 'A256GCM', cty: 'JWT', jwk: keys.rsa.publicJwk });
@@ -303,7 +356,8 @@ function run(t) {
     ['RSA-OAEP-256', 'ECDH-ES+A256KW', 'A256GCMKW', 'dir', 'PBES2-HS256+A128KW']
       .forEach(function (alg) {
         const inA = rt.seal(INNER, setA, { alg: alg, enc: 'A256GCM' });
-        t.equal(codeThrown(function () { rt.open(inA, setB); }), 'STS-OAUTH-0238',
+        t.equal(codeThrown(function () { rt.open(inA, setB); }),
+                'STS-OAUTH-0238',
                 alg + ': a token sealed in one realm does not open in another');
         t.check(rt.open(inA, setA) === INNER, alg + ': and opens in its own');
       });
@@ -314,25 +368,36 @@ function run(t) {
     t.check(!!(blob.refreshTokenEncKeys && blob.refreshTokenEncKeys.rsa &&
                /PRIVATE KEY/.test(blob.refreshTokenEncKeys.rsa.privateKeyPem) &&
                blob.refreshTokenEncKeys.secret),
-            'the serialised set carries the refresh-token keys, secret included');
-    const restored = keystore.deserialise(JSON.parse(JSON.stringify(blob)), require('crypto'));
+            'the serialised set carries the refresh-token keys, secret ' +
+            'included');
+    const restored = keystore.deserialise(JSON.parse(JSON.stringify(blob)),
+                                          require('crypto'));
     t.check(!!restored.refreshTokenEncKeys &&
             restored.refreshTokenEncKeys.rsa.publicJwk.kid === kA.rsa.publicJwk.kid &&
-            Buffer.from(restored.refreshTokenEncKeys.secret).equals(Buffer.from(kA.secret)),
-            'and come back through JSON with the same kid and the same secret bytes');
-    const viaRestored = rt.seal(INNER, setA, { alg: 'A128KW', enc: 'A128CBC-HS256' });
-    t.check(rt.open(viaRestored, { realm: realmA, refreshTokenEncKeys: restored.refreshTokenEncKeys }) === INNER,
+            Buffer.from(restored.refreshTokenEncKeys.secret)
+                  .equals(Buffer.from(kA.secret)),
+            'and come back through JSON with the same kid and the same ' +
+            'secret bytes');
+    const viaRestored = rt.seal(INNER, setA,
+                                { alg: 'A128KW', enc: 'A128CBC-HS256' });
+    t.check(rt.open(viaRestored,
+                    { realm: realmA,
+                      refreshTokenEncKeys:
+                        restored.refreshTokenEncKeys }) === INNER,
             'a token sealed before a restore opens with the restored keys');
     const without = Object.assign({}, blob, { refreshTokenEncKeys: null });
-    t.check(keystore.enriches(blob, without) === true && keystore.enriches(without, blob) === false,
-            'the enrichment rule counts the refresh-token keys: a set gaining them enriches, ' +
-            'losing them does not');
+    t.check(keystore.enriches(blob, without) === true &&
+            keystore.enriches(without, blob) === false,
+            'the enrichment rule counts the refresh-token keys: a set ' +
+            'gaining them enriches, losing them does not');
     // A realm NOBODY has made keys for, so the backfill takes its generating
     // branch rather than finding keys a process already holds — the first
     // version used realmB and passed with the assignment deleted.
-    const legacy = { realm: 'rt-never-' + Date.now().toString(36), certB64: 'x' };
+    const legacy = { realm: 'rt-never-' + Date.now().toString(36),
+                     certB64: 'x' };
     const backfilled = helpers.refreshTokenKeysFor(legacy);
-    t.check(!!(backfilled && backfilled.rsa && legacy.refreshTokenEncKeys === backfilled),
+    t.check(!!(backfilled && backfilled.rsa &&
+               legacy.refreshTokenEncKeys === backfilled),
             'a key set written before the keys existed is backfilled');
   } finally {
     realms.remove(realmA);
@@ -346,7 +411,8 @@ function run(t) {
   config.setOverride('oauth2.refreshTokenEncryptionEnc', 'A128CBC-HS256');
   try {
     const after = rt.seal(INNER);
-    t.equal(headerOf(after).alg + '/' + headerOf(after).enc, 'A256KW/A128CBC-HS256',
+    t.equal(headerOf(after).alg + '/' + headerOf(after).enc,
+            'A256KW/A128CBC-HS256',
             'a new token is sealed under the new setting');
     t.check(rt.open(before) === INNER,
             'and a token sealed under the old one still opens');
@@ -367,13 +433,15 @@ function run(t) {
   });
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
-      env: Object.assign(clean, { LOG_LEVEL: 'fatal', RT_ROOT: ROOT, RT_OUT: out }),
+      env: Object.assign(clean,
+                         { LOG_LEVEL: 'fatal', RT_ROOT: ROOT, RT_OUT: out }),
       encoding: 'utf8', timeout: 180000, cwd: ROOT
     });
   let findings = null;
   try {
     findings = JSON.parse(fs.readFileSync(out, 'utf8'));
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     // No report: the child died before writing one; reported below.
     findings = null;
   }
@@ -381,19 +449,24 @@ function run(t) {
     fs.unlinkSync(out);
   } catch (e) {
     // Never written, which the read above has already reported.
+    log.debug("Caught in run(): " + ((e && e.message) || e));
   }
-  if (!t.check(Array.isArray(findings), 'the child process reported its findings',
-               'exit ' + result.status + ' ' + String(result.stderr || '').slice(-800))) {
+  if (!t.check(Array.isArray(findings), 'the child process reported its ' +
+                                        'findings',
+               'exit ' + result.status + ' ' +
+               String(result.stderr || '').slice(-800))) {
+    log.debug("Leaving run().");
     return;
   }
   findings.forEach(function (one) {
     t.check(one.ok, one.what, one.detail);
   });
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'refresh_token_encryption',
-  describe: 'refresh tokens are signed JWTs encrypted to their own realm, under every ' +
-            'JWE algorithm, and every reader decrypts first',
+  describe: 'refresh tokens are signed JWTs encrypted to their own realm, ' +
+            'under every JWE algorithm, and every reader decrypts first',
   run: run
 };

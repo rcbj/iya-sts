@@ -69,6 +69,9 @@ const log = bunyan.createLogger({
 });
 
 const pki = require('./pki');
+// For DEFAULT_ID only. `pki.js` requires it already and it requires nothing
+// here, so this is a cache hit and closes no cycle.
+const realms = require('./realms');
 // The error-code registry (a leaf). A refusal returned to a caller carries its
 // code non-enumerably, so an OCSP answer or a console reply serialised whole
 // never shows it; `pki/pki_service.js` marks its response from `codeOf()`.
@@ -112,16 +115,18 @@ const REASONS = [
           'longer says something true.' },
   { id: 'superseded', code: 4,
     what: 'A replacement was issued. **This is what this service uses when a ' +
-          'certificate is rotated or reissued**, which is the commonest entry ' +
-          'on any of these lists.' },
+          'certificate is rotated or reissued**, which is the commonest ' +
+          'entry on any of these lists.' },
   { id: 'cessationOfOperation', code: 5,
     what: 'The subject has stopped doing whatever the certificate was for.' },
   { id: 'certificateHold', code: 6,
     what: 'Temporarily suspended. **The only reason that can be UNDONE** — ' +
-          'everything else is permanent, and a validator is entitled to cache ' +
-          'a permanent revocation for as long as the CRL says it is fresh.' },
+          'everything else is permanent, and a validator is entitled to ' +
+          'cache a permanent revocation for as long as the CRL says it is ' +
+          'fresh.' },
   { id: 'privilegeWithdrawn', code: 9,
-    what: 'The subject is no longer entitled to what the certificate asserts.' },
+    what:
+      'The subject is no longer entitled to what the certificate asserts.' },
   { id: 'aACompromise', code: 10,
     what: 'An attribute authority\'s key is compromised. Here for ' +
           'completeness: this service issues no attribute certificates.' }
@@ -130,6 +135,8 @@ const REASONS = [
 const REASON_IDS = REASONS.map(function (one) { return one.id; });
 
 function reason(id) {
+  log.debug("Entering reason().");
+  log.debug("Leaving reason().");
   return REASONS.filter(function (one) {
     return one.id === String(id || '');
   })[0] || null;
@@ -159,7 +166,8 @@ function authorities(scopeIds) {
     }
     const row = pki.rawRowFor(scopeId);
     out.push({ scope: String(scopeId), ca: 'intermediate',
-               tier: row.intermediate, label: scope.label + ' Intermediate CA' });
+               tier: row.intermediate,
+               label: scope.label + ' Intermediate CA' });
     Object.keys(row.issuing || {}).forEach(function (useCaseId) {
       out.push({ scope: String(scopeId), ca: useCaseId,
                  tier: row.issuing[useCaseId],
@@ -175,21 +183,26 @@ function authorities(scopeIds) {
 // One authority by (scope, ca), with the signing material. Internal: what
 // leaves this module is a CRL or an OCSP response, never a key.
 function authorityFor(scopeId, caId) {
+  log.debug("Entering authorityFor().");
   const id = String(caId || '');
   if (id === 'root') {
     const root = pki.serviceRoot();
+    log.debug("Leaving authorityFor().");
     return root ? { scope: pki.SERVICE_SCOPE, ca: 'root', tier: root } : null;
   }
   const row = pki.rawRowFor(scopeId);
   if (!row) {
+    log.debug("Leaving authorityFor().");
     return null;
   }
   if (id === 'intermediate') {
+    log.debug("Leaving authorityFor().");
     return row.intermediate
       ? { scope: String(scopeId), ca: 'intermediate', tier: row.intermediate }
       : null;
   }
   const held = (row.issuing || {})[id];
+  log.debug("Leaving authorityFor().");
   return held ? { scope: String(scopeId), ca: id, tier: held } : null;
 }
 
@@ -201,12 +214,16 @@ function authorityFor(scopeId, caId) {
 // where the Root itself lives.
 // ---------------------------------------------------------------------------
 function rowFor(scopeId) {
+  log.debug("Entering rowFor().");
+  log.debug("Leaving rowFor().");
   return pki.rawRowFor(scopeId) || null;
 }
 
 function listFor(scopeId, caId) {
+  log.debug("Entering listFor().");
   const row = rowFor(scopeId);
   const held = (row && row.revoked) || {};
+  log.debug("Leaving listFor().");
   return (held[String(caId)] || []).slice();
 }
 
@@ -216,13 +233,17 @@ function listFor(scopeId, caId) {
 // typed — so every comparison in this file goes through here. Two spellings of
 // one serial is a certificate that is revoked and reports as good.
 function normalSerial(text) {
+  log.debug("Entering normalSerial().");
   const hex = String(text || '').toLowerCase().replace(/[^0-9a-f]/g, '');
   const trimmed = hex.replace(/^0+/, '');
+  log.debug("Leaving normalSerial().");
   return trimmed || '0';
 }
 
 function isRevoked(scopeId, caId, serialHex) {
+  log.debug("Entering isRevoked().");
   const wanted = normalSerial(serialHex);
+  log.debug("Leaving isRevoked().");
   return listFor(scopeId, caId).filter(function (one) {
     return normalSerial(one.serialHex) === wanted;
   })[0] || null;
@@ -255,7 +276,8 @@ function revoke(scopeId, caId, spec) {
     return errorCodes.mark({ ok: false,
              errors: ['A revocation names a SERIAL NUMBER. It is the only ' +
                       'thing a CRL entry and an OCSP answer have in common ' +
-                      'with the certificate they are about.'] }, 'STS-PKI-0056');
+                      'with the certificate they are about.'] },
+                           'STS-PKI-0056');
   }
   const chosen = reason((spec || {}).reason || 'superseded');
   if (!chosen) {
@@ -286,8 +308,10 @@ function revoke(scopeId, caId, spec) {
   };
   const row = rowFor(id);
   if (!row) {
+    log.debug("Leaving revoke().");
     return errorCodes.mark({ ok: false,
-             errors: ['That scope holds no certificate authority.'] }, 'STS-PKI-0055');
+             errors: ['That scope holds no certificate authority.'] },
+                           'STS-PKI-0055');
   }
   row.revoked = Object.assign({}, row.revoked || {});
   row.revoked[String(caId)] = listFor(id, caId).concat([entry]);
@@ -340,7 +364,8 @@ function release(scopeId, caId, serialHex) {
                       'entitled to cache a permanent revocation for as long ' +
                       'as the CRL it read says it is fresh, so undoing one ' +
                       'here would produce a certificate this service calls ' +
-                      'good and half the world still calls revoked.'] }, 'STS-PKI-0059');
+                      'good and half the world still calls revoked.'] },
+                           'STS-PKI-0059');
   }
   const row = rowFor(id);
   row.revoked = Object.assign({}, row.revoked || {});
@@ -357,15 +382,19 @@ function release(scopeId, caId, serialHex) {
   return { ok: true,
            why: 'The hold is released and that certificate is no longer on ' +
                 'the CRL. **A validator that cached the earlier list still ' +
-                'has it** until that list expires, which is what makes a hold ' +
-                'the only reversible reason and still not an instant one.' };
+                'has it** until that list expires, which is what makes a ' +
+                'hold the only reversible reason and still not an instant ' +
+                'one.' };
 }
 
 function describeEntry(one) {
+  log.debug("Entering describeEntry().");
   if (!one) {
+    log.debug("Leaving describeEntry().");
     return null;
   }
   const chosen = reason(one.reason);
+  log.debug("Leaving describeEntry().");
   return {
     serialHex: one.serialHex,
     revokedAt: one.revokedAt,
@@ -392,21 +421,27 @@ function describeEntry(one) {
 // what a debugging tool should let somebody discover.
 // ---------------------------------------------------------------------------
 function httpBase() {
+  log.debug("Entering httpBase().");
   const set = String(config.value('pki.distributionBaseUrl') || '').trim();
   if (set) {
+    log.debug("Leaving httpBase().");
     return set.replace(/\/+$/, '');
   }
   const host = (config.value('tls.hostnames') || ['localhost'])[0] ||
                'localhost';
   const scheme = config.value('global.https') ? 'https' : 'http';
+  log.debug("Leaving httpBase().");
   return scheme + '://' + host + ':' + config.value('global.port');
 }
 
 function ldapHost() {
+  log.debug("Entering ldapHost().");
   const set = String(config.value('pki.distributionLdapHost') || '').trim();
   if (set) {
+    log.debug("Leaving ldapHost().");
     return set;
   }
+  log.debug("Leaving ldapHost().");
   return (config.value('tls.hostnames') || ['localhost'])[0] || 'localhost';
 }
 
@@ -414,24 +449,32 @@ function ldapHost() {
 // URL as they are — a `*` is legal in a path and reads as a wildcard to
 // everything that logs one — so they are spelled out.
 function scopeSegment(scopeId) {
+  log.debug("Entering scopeSegment().");
   const id = String(scopeId);
   if (id === pki.SERVICE_SCOPE) {
+    log.debug("Leaving scopeSegment().");
     return 'service';
   }
   if (id === pki.PROCESS_SCOPE) {
+    log.debug("Leaving scopeSegment().");
     return 'process';
   }
+  log.debug("Leaving scopeSegment().");
   return id || 'default';
 }
 
 function scopeFromSegment(segment) {
+  log.debug("Entering scopeFromSegment().");
   const one = String(segment || '');
   if (one === 'service') {
+    log.debug("Leaving scopeFromSegment().");
     return pki.SERVICE_SCOPE;
   }
   if (one === 'process') {
+    log.debug("Leaving scopeFromSegment().");
     return pki.PROCESS_SCOPE;
   }
+  log.debug("Leaving scopeFromSegment().");
   return one === 'default' ? '' : one;
 }
 
@@ -444,9 +487,11 @@ function scopeFromSegment(segment) {
 // it fetches nothing usable, and the failure is an empty attribute rather than
 // an error.
 function distributionPoints(scopeId, caId) {
+  log.debug("Entering distributionPoints().");
   const segment = scopeSegment(scopeId);
   const file = segment + '/' + String(caId);
   const dn = crlDn(scopeId, caId);
+  log.debug("Leaving distributionPoints().");
   return {
     http: httpBase() + '/pki/crl/' + file + '.crl',
     ldap: 'ldap://' + ldapHost() + ':' + config.value('ldap.port') + '/' +
@@ -463,7 +508,9 @@ function distributionPoints(scopeId, caId) {
 // that realm's own subtree, because a CRL belongs to the realm whose authority
 // signed it — exactly as `ou=applications` does.
 function crlDn(scopeId, caId) {
+  log.debug("Entering crlDn().");
   const base = directoryBaseFor(scopeId);
+  log.debug("Leaving crlDn().");
   return 'cn=' + String(caId) + ',ou=crl,' + base;
 }
 
@@ -478,11 +525,12 @@ function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
   if (!hooks || typeof hooks.publishCrl !== 'function' ||
       typeof hooks.baseDnFor !== 'function') {
-    log.error(errorCodes.tag('STS-PKI-0060') + 'pki_revocation: a directory was offered without both ' +
-              'publishCrl() and baseDnFor(). It was REFUSED WHOLE — a ' +
-              'half-filled slot would leave the CRLs published over HTTP and ' +
-              'silently absent from LDAP, which is the one failure a reader ' +
-              'checking three schemes would not think to look for.');
+    log.error(errorCodes.tag('STS-PKI-0060') + 'pki_revocation: a directory ' +
+              'was offered without both publishCrl() and baseDnFor(). It was ' +
+              'REFUSED WHOLE — a half-filled slot would leave the CRLs ' +
+              'published over HTTP and silently absent from LDAP, which is ' +
+              'the one failure a reader checking three schemes would not ' +
+              'think to look for.');
     log.debug('Leaving setDirectory(). Refused.');
     return false;
   }
@@ -492,11 +540,15 @@ function setDirectory(hooks) {
 }
 
 function directoryBaseFor(scopeId) {
+  log.debug("Entering directoryBaseFor().");
   if (directory) {
     try {
+      log.debug("Leaving directoryBaseFor().");
       return directory.baseDnFor(scopeId);
     } catch (e) {
-      log.warn(errorCodes.tag('STS-PKI-0061') + 'pki_revocation: the directory could not say where the "' +
+      log.warn(errorCodes.tag('STS-PKI-0061') + 'pki_revocation: the ' +
+                                                'directory could not say ' +
+                                                'where the "' +
                scopeId + '" scope lives: ' + e.message);
     }
   }
@@ -505,9 +557,19 @@ function directoryBaseFor(scopeId) {
   // this particular process happens to hold a directory.
   const base = config.value('ldap.baseDn');
   const id = String(scopeId);
-  if (id === pki.SERVICE_SCOPE || id === pki.PROCESS_SCOPE || !id) {
+  // **THE DEFAULT REALM HAS TWO SPELLINGS AND BOTH ARE ITS BASE.** A caller
+  // may pass `''` or the id `realmIdOf()` resolves it to, `default`, and until
+  // 2026-09-12 only the first was recognised here — so a process holding no
+  // directory named `dc=default,<base>` in every default-realm certificate
+  // while `ldap_server.js`'s `baseDnFor()`, which publishes the list, answers
+  // `<base>`. The URL was stable across processes only when all of them had a
+  // directory, which is the one condition this fallback exists for not having.
+  if (id === pki.SERVICE_SCOPE || id === pki.PROCESS_SCOPE || !id ||
+      id === realms.DEFAULT_ID) {
+    log.debug("Leaving directoryBaseFor().");
     return base;
   }
+  log.debug("Leaving directoryBaseFor().");
   return 'dc=' + id + ',' + base;
 }
 
@@ -559,8 +621,10 @@ module.exports = {
 // matched OpenSSL's perfectly when computed in a probe — which is what took
 // the time.
 function derFromPem(pem) {
+  log.debug("Entering derFromPem().");
   const buf = Buffer.from(String(pem).replace(/-----[^-]+-----/g, '')
     .replace(/\s+/g, ''), 'base64');
+  log.debug("Leaving derFromPem().");
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 }
 
@@ -569,6 +633,7 @@ function derFromPem(pem) {
 // initialisation, said again here because requiring that module for its side
 // effect would be a dependency nobody could see.
 (function initEngine() {
+  log.debug("Entering initEngine().");
   try {
     if (typeof crypto !== 'undefined' && crypto.subtle) {
       pkijs.setEngine('webcrypto',
@@ -576,9 +641,12 @@ function derFromPem(pem) {
                                                crypto: crypto }));
     }
   } catch (e) {
-    log.error(errorCodes.tag('STS-PKI-0062') + 'pki_revocation: the Web Crypto engine could not be installed: ' +
+    log.error(errorCodes.tag('STS-PKI-0062') + 'pki_revocation: the Web ' +
+                                               'Crypto engine could not be ' +
+                                               'installed: ' +
               e.message + '. CRLs and OCSP responses cannot be signed.');
   }
+  log.debug("Leaving initEngine().");
 })();
 
 // The signature algorithm identifier for an issuer's key, as pkijs wants it.
@@ -587,22 +655,28 @@ function derFromPem(pem) {
 // algorithm and actual signature disagree is reported by every validator as a
 // bad signature, naming neither.
 function signingParamsFor(tier) {
+  log.debug("Entering signingParamsFor().");
   const desc = keyMaterial.keyAlg(tier.keyAlg) || {};
   const sig = x509.sigAlg(tier.signatureAlg) || {};
   if (desc.kind === 'ec') {
+    log.debug("Leaving signingParamsFor().");
     return { name: 'ECDSA', hash: { name: sig.hash || 'SHA-256' } };
   }
   if (desc.kind === 'okp') {
+    log.debug("Leaving signingParamsFor().");
     return { name: 'Ed25519' };
   }
   if (sig.pss) {
+    log.debug("Leaving signingParamsFor().");
     return { name: 'RSA-PSS', hash: { name: sig.hash || 'SHA-256' },
              saltLength: 32 };
   }
+  log.debug("Leaving signingParamsFor().");
   return { name: 'RSASSA-PKCS1-v1_5', hash: { name: sig.hash || 'SHA-256' } };
 }
 
 async function importSigningKey(tier) {
+  log.debug("Entering importSigningKey().");
   const desc = keyMaterial.keyAlg(tier.keyAlg);
   const params = signingParamsFor(tier);
   const pkcs8 = derFromPem(tier.privateKeyPem);
@@ -611,6 +685,7 @@ async function importSigningKey(tier) {
     : (desc && desc.kind === 'okp'
         ? { name: 'Ed25519' }
         : { name: params.name, hash: params.hash });
+  log.debug("Leaving importSigningKey().");
   return crypto.subtle.importKey('pkcs8', pkcs8, algorithm, false, ['sign']);
 }
 
@@ -624,7 +699,9 @@ async function importSigningKey(tier) {
 // them accepted by `config.js` and drawn on the settings form as in force —
 // into an hour. The cases that setting exists for are exactly the short ones.
 function crlLifetimeMs() {
+  log.debug("Entering crlLifetimeMs().");
   const minutes = Number(config.value('pki.crlLifetimeMinutes'));
+  log.debug("Leaving crlLifetimeMs().");
   return Math.max(1, Number.isFinite(minutes) ? minutes : 60) * 60000;
 }
 
@@ -656,7 +733,8 @@ async function buildCrl(scopeId, caId) {
         valueHex: serialBytes(one.serialHex)
       });
       revoked.revocationDate = new pkijs.Time({ type: 0,
-                                                value: new Date(one.revokedAt) });
+                                                value: new Date(
+                                                    one.revokedAt) });
       // THE REASON CODE, OMITTED FOR `unspecified` — see the REASONS table.
       if (one.reasonCode) {
         revoked.crlEntryExtensions = new pkijs.Extensions({
@@ -710,19 +788,23 @@ async function buildCrl(scopeId, caId) {
     await crl.sign(key, signingParamsFor(tier).hash
       ? signingParamsFor(tier).hash.name : undefined);
   } catch (e) {
-    log.error(errorCodes.tag('STS-PKI-0063') + 'pki_revocation: the "' + caId + '" CRL in "' +
+    log.error(errorCodes.tag('STS-PKI-0063') + 'pki_revocation: the "' + caId +
+        '" ' +
+        'CRL in "' +
               (String(scopeId) || 'default') + '" could not be signed: ' +
               e.message);
     log.debug('Leaving buildCrl(). The signature failed.');
     return errorCodes.mark({ ok: false,
-             errors: ['That CRL could not be signed: ' + e.message] }, 'STS-PKI-0063');
+             errors: ['That CRL could not be signed: ' + e.message] },
+                           'STS-PKI-0063');
   }
   const der = Buffer.from(crl.toSchema(true).toBER(false));
   log.debug('Leaving buildCrl(). ' + entries.length + ' entry(ies), ' +
             der.length + ' bytes.');
   return { ok: true, der: der, count: entries.length, crlNumber: number,
            thisUpdate: now.toISOString(),
-           nextUpdate: new Date(now.getTime() + crlLifetimeMs()).toISOString() };
+           nextUpdate: new Date(now.getTime() +
+                                crlLifetimeMs()).toISOString() };
 }
 
 // A serial as DER integer bytes. **A LEADING ZERO IS ADDED WHERE THE TOP BIT
@@ -730,14 +812,17 @@ async function buildCrl(scopeId, caId) {
 // would otherwise encode as a negative number — which is a different serial,
 // and the certificate would be revoked in name only.
 function serialBytes(serialHex) {
+  log.debug("Entering serialBytes().");
   let hex = normalSerial(serialHex);
   if (hex.length % 2) {
     hex = '0' + hex;
   }
   const bytes = Buffer.from(hex, 'hex');
   if (bytes[0] & 0x80) {
+    log.debug("Leaving serialBytes().");
     return Buffer.concat([Buffer.from([0]), bytes]).buffer.slice(0);
   }
+  log.debug("Leaving serialBytes().");
   return bytes.buffer.slice(bytes.byteOffset,
                             bytes.byteOffset + bytes.byteLength);
 }
@@ -752,7 +837,9 @@ function serialBytes(serialHex) {
 // not be able to fail a revocation, and the register is the truth either way.
 // ---------------------------------------------------------------------------
 function publishSoon(scopeId, caId) {
+  log.debug("Entering publishSoon().");
   if (!directory) {
+    log.debug("Leaving publishSoon().");
     return;
   }
   setImmediate(function () {
@@ -761,10 +848,12 @@ function publishSoon(scopeId, caId) {
         directory.publishCrl(scopeId, caId, made.der);
       }
     }).catch(function (e) {
-      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the "' + caId + '" CRL could not be ' +
-                'published into the directory: ' + e.message);
+      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the "' +
+                caId + '" ' +
+                'CRL could not be published into the directory: ' + e.message);
     });
   });
+  log.debug("Leaving publishSoon().");
 }
 
 async function publishAll(scopeIds) {
@@ -783,7 +872,9 @@ async function publishAll(scopeIds) {
         done += 1;
       }
     } catch (e) {
-      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the "' + one.ca + '" CRL of "' +
+      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the "' +
+          one.ca + '" ' +
+          'CRL of "' +
                 (one.scope || 'default') + '" could not be published: ' +
                 e.message);
     }
@@ -817,12 +908,14 @@ module.exports.publishAll = publishAll;
 // mock holding every key in one process cannot have anyway.
 // ===========================================================================
 function hashAlgorithmName(oid) {
+  log.debug("Entering hashAlgorithmName().");
   const known = {
     '1.3.14.3.2.26': 'SHA-1',
     '2.16.840.1.101.3.4.2.1': 'SHA-256',
     '2.16.840.1.101.3.4.2.2': 'SHA-384',
     '2.16.840.1.101.3.4.2.3': 'SHA-512'
   };
+  log.debug("Leaving hashAlgorithmName().");
   return known[String(oid)] || null;
 }
 
@@ -832,8 +925,10 @@ function hashAlgorithmName(oid) {
 // because the requester picks the digest and a responder that only knew SHA-1
 // would answer `unknown` to every modern client.
 async function certIdMatches(certId, issuerCert) {
+  log.debug("Entering certIdMatches().");
   const hash = hashAlgorithmName(certId.hashAlgorithm.algorithmId);
   if (!hash) {
+    log.debug("Leaving certIdMatches().");
     return false;
   }
   const nameDer = issuerCert.subject.toSchema().toBER(false);
@@ -843,10 +938,13 @@ async function certIdMatches(certId, issuerCert) {
   const keyHash = Buffer.from(await crypto.subtle.digest(hash, keyDer));
   const gotName = Buffer.from(certId.issuerNameHash.valueBlock.valueHexView);
   const gotKey = Buffer.from(certId.issuerKeyHash.valueBlock.valueHexView);
+  log.debug("Leaving certIdMatches().");
   return nameHash.equals(gotName) && keyHash.equals(gotKey);
 }
 
 function serialOf(certId) {
+  log.debug("Entering serialOf().");
+  log.debug("Leaving serialOf().");
   return Buffer.from(certId.serialNumber.valueBlock.valueHexView)
     .toString('hex');
 }
@@ -855,8 +953,10 @@ function serialOf(certId) {
 // `OCSPResponse` wants a status and nothing else for them. RFC 6960 section
 // 4.2.1: `malformedRequest` is 1 and `unauthorized` is 6.
 function bareResponse(status) {
+  log.debug("Entering bareResponse().");
   const response = new pkijs.OCSPResponse();
   response.responseStatus.valueBlock.valueDec = status;
+  log.debug("Leaving bareResponse().");
   return Buffer.from(response.toSchema(true).toBER(false));
 }
 
@@ -868,7 +968,8 @@ async function answerOcsp(scopeId, caId, requestDer) {
     // `unauthorized` rather than `unknown`: there is no responder at this
     // address at all, which is a different thing from a responder that has not
     // heard of a certificate.
-    return errorCodes.mark({ ok: true, der: bareResponse(6), status: 'unauthorized' }, 'STS-PKI-0065');
+    return errorCodes.mark({ ok: true, der: bareResponse(6),
+                             status: 'unauthorized' }, 'STS-PKI-0065');
   }
   let request;
   try {
@@ -876,8 +977,10 @@ async function answerOcsp(scopeId, caId, requestDer) {
       requestDer.buffer.slice(requestDer.byteOffset,
                               requestDer.byteOffset + requestDer.byteLength));
   } catch (e) {
+    log.debug("Caught in answerOcsp(): " + ((e && e.message) || e));
     log.debug('Leaving answerOcsp(). Malformed request.');
-    return errorCodes.mark({ ok: true, der: bareResponse(1), status: 'malformedRequest' }, 'STS-PKI-0066');
+    return errorCodes.mark({ ok: true, der: bareResponse(1),
+                             status: 'malformedRequest' }, 'STS-PKI-0066');
   }
   const tier = authority.tier;
   const issuerCert = pkijs.Certificate.fromBER(derFromPem(tier.certificatePem));
@@ -981,10 +1084,12 @@ async function answerOcsp(scopeId, caId, requestDer) {
     const params = signingParamsFor(tier);
     await basic.sign(key, params.hash ? params.hash.name : undefined);
   } catch (e) {
-    log.error(errorCodes.tag('STS-PKI-0067') + 'pki_revocation: an OCSP response from the "' + caId +
+    log.error(errorCodes.tag('STS-PKI-0067') + 'pki_revocation: an OCSP ' +
+                                               'response from the "' + caId +
               '" authority could not be signed: ' + e.message);
     log.debug('Leaving answerOcsp(). The signature failed.');
-    return errorCodes.mark({ ok: true, der: bareResponse(2), status: 'internalError' }, 'STS-PKI-0067');
+    return errorCodes.mark({ ok: true, der: bareResponse(2),
+                             status: 'internalError' }, 'STS-PKI-0067');
   }
   const response = new pkijs.OCSPResponse();
   response.responseStatus.valueBlock.valueDec = 0;         // successful
@@ -1013,14 +1118,14 @@ async function answerOcsp(scopeId, caId, requestDer) {
 // responder comes to answer `unknown` about a certificate the console is
 // happily offering to revoke.
 //
-// **FOUR SOURCES, AND THE THREE AFTER THE FIRST ARE WHY IT IS NOT A ONE-LINER.**
-// An authority signs AUTHORITIES as well as leaves: an Intermediate issued
-// this scope's Issuing CAs and the Root issued every scope's Intermediate.
-// Without those two branches a perfectly valid Issuing CA reports `unknown` at
-// its own parent's responder — which is the most confusing answer available,
-// because the certificate verifies and the responder disowns it. The fourth is
-// the object store, where the Certificate & Key Configuration pane's leaves
-// live rather than in the certificate register.
+// **FOUR SOURCES, AND THE THREE AFTER THE FIRST ARE WHY IT IS NOT A
+// ONE-LINER.** An authority signs AUTHORITIES as well as leaves: an
+// Intermediate issued this scope's Issuing CAs and the Root issued every
+// scope's Intermediate. Without those two branches a perfectly valid Issuing CA
+// reports `unknown` at its own parent's responder — which is the most confusing
+// answer available, because the certificate verifies and the responder disowns
+// it. The fourth is the object store, where the Certificate & Key Configuration
+// pane's leaves live rather than in the certificate register.
 // ---------------------------------------------------------------------------
 function issuedList(scopeId, caId) {
   log.debug('Entering issuedList(). scope=' + scopeId + ' ca=' + caId);
@@ -1028,8 +1133,10 @@ function issuedList(scopeId, caId) {
   const out = [];
   const seen = Object.create(null);
   function add(serialHex, subject, notAfter, kind, label) {
+    log.debug("Entering add().");
     const key = normalSerial(serialHex);
     if (!key || key === '0' || seen[key]) {
+      log.debug("Leaving add().");
       return;
     }
     seen[key] = true;
@@ -1037,6 +1144,7 @@ function issuedList(scopeId, caId) {
                notAfter: notAfter || '', kind: kind, label: String(label || ''),
                expired: notAfter
                  ? new Date(notAfter).getTime() < Date.now() : false });
+    log.debug("Leaving add().");
   }
 
   // 1. The leaves this use case's Issuing CA certified — the signing keys of
@@ -1079,6 +1187,20 @@ function issuedList(scopeId, caId) {
         one.label || one.name || '');
   });
 
+  // 5. The RFC 7523 / RFC 7522 signing key pairs issued to applications and
+  //    people (2026-09-12). Their certificates name this authority's CRL and
+  //    OCSP responder, so a responder with no record of them would answer
+  //    `unknown` about a certificate that sends a relying party here to ask.
+  //    Guarded, because a `pki.js` without the accessor has no such records.
+  if (typeof pki.issuedKeyPairsFor === 'function') {
+    pki.issuedKeyPairsFor(scopeId, id).forEach(function (one) {
+      add(one.serialHex, one.subject, one.notAfter, 'key-pair',
+          one.identifier ? (one.subjectKind || 'application') + ' ' +
+                           one.identifier + ' (' + (one.purpose || 'jwt') + ')'
+                         : '');
+    });
+  }
+
   out.sort(function (a, b) {
     return String(a.subject).localeCompare(String(b.subject));
   });
@@ -1087,7 +1209,9 @@ function issuedList(scopeId, caId) {
 }
 
 function issuedHere(scopeId, caId, serialHex) {
+  log.debug("Entering issuedHere().");
   const wanted = normalSerial(serialHex);
+  log.debug("Leaving issuedHere().");
   return issuedList(scopeId, caId).some(function (one) {
     return one.serialHex === wanted;
   });

@@ -35,8 +35,8 @@
 //   sts_appconfig(key, value)
 //
 // **THE PRIMARY KEY IS (realm, dn_key) AND dn_key IS THE NORMALISED DN.** Not
-// the DN as written. Two clients may spell one DN four ways — `UID=Alice, OU=Users`
-// and `uid=alice,ou=users` name one entry — and `ldap_server.js`'s
+// the DN as written. Two clients may spell one DN four ways — `UID=Alice,
+// OU=Users` and `uid=alice,ou=users` name one entry — and `ldap_server.js`'s
 // `normalizeDn()` is the single function in this service that decides that. The
 // written spelling is kept beside it in `dn`, because it is what a client sees
 // in a search result and losing it would mean every restored entry came back
@@ -115,6 +115,10 @@ const errorCodes = require('../common/error_codes');
 
 // A CHANNEL NAME AND A SCHEMA VERSION, both spelt once here.
 const CHANNEL = 'sts_ldap_change';
+// How many change-log rows go in one INSERT. Four bind parameters a row, and
+// the protocol's limit is 65,535, so 5,000 leaves room and still makes a large
+// flush a handful of statements. See recordChanges().
+const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 2 SINCE 2026-09-06, when `sts_keys` joined the three tables this driver has
 // always had. Nothing reads this yet — it is here so that a future change has
 // something to look at other than the shape of the tables — but leaving it at 1
@@ -174,7 +178,8 @@ const SCHEMA_OBJECTS = [
   // The one index worth having beyond the primary key: every enumerator in
   // this service walks one realm.
   { name: 'sts_ldap_entries_realm', statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm)' },
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries ' +
+  '(realm)' },
   { name: 'sts_realms', statement:
   'CREATE TABLE IF NOT EXISTS sts_realms (' +
   '  id          text PRIMARY KEY,' +
@@ -239,7 +244,8 @@ const SCHEMA_OBJECTS = [
   '  written_at timestamptz NOT NULL DEFAULT now(),' +
   '  PRIMARY KEY (handle, realm, key))' },
   { name: 'sts_minted_handle', statement:
-  'CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, realm)' },
+  'CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, ' +
+  'realm)' },
   { name: 'sts_minted_written', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at)' },
   // -------------------------------------------------------------------------
@@ -287,7 +293,8 @@ const SCHEMA_OBJECTS = [
 // above existed and what `tests/postgres_schema.js` compares against
 // `postgres/schema.sql`. Derived rather than written twice, so the two cannot
 // come apart.
-const SCHEMA = SCHEMA_OBJECTS.map(function (object) { return object.statement; });
+const SCHEMA =
+    SCHEMA_OBJECTS.map(function (object) { return object.statement; });
 
 
 // ===========================================================================
@@ -350,19 +357,18 @@ const METRIC_PROBES = [
   { id: 'server', group: 'Server', shape: 'row',
     what: 'Which PostgreSQL this is, who this service is connected AS, and ' +
           'how long the server has been up.',
-    sql: 'SELECT version() AS version, ' +
-         '       current_setting(\'server_version_num\') AS version_num, ' +
-         '       current_database() AS database, ' +
-         '       current_user AS connected_as, ' +
-         '       session_user AS session_user, ' +
-         '       current_schema() AS search_schema, ' +
-         '       pg_backend_pid() AS backend_pid, ' +
-         '       pg_postmaster_start_time() AS started_at, ' +
-         '       date_trunc(\'second\', now() - pg_postmaster_start_time())::text AS uptime, ' +
-         '       pg_conf_load_time() AS config_loaded_at, ' +
-         '       pg_is_in_recovery() AS in_recovery, ' +
-         '       current_setting(\'server_encoding\') AS server_encoding, ' +
-         '       current_setting(\'TimeZone\') AS timezone' },
+    sql: 'SELECT version() AS version,        ' +
+         'current_setting(\'server_version_num\') AS version_num,        ' +
+         'current_database() AS database,        current_user AS ' +
+         'connected_as,        session_user AS session_user,        ' +
+         'current_schema() AS search_schema,        pg_backend_pid() AS ' +
+         'backend_pid,        pg_postmaster_start_time() AS ' +
+         'started_at,        date_trunc(\'second\', now() - ' +
+         'pg_postmaster_start_time())::text AS uptime,        ' +
+         'pg_conf_load_time() AS config_loaded_at,        ' +
+         'pg_is_in_recovery() AS in_recovery,        ' +
+         'current_setting(\'server_encoding\') AS server_encoding,        ' +
+         'current_setting(\'TimeZone\') AS timezone' },
 
   // THE SIZE, as a number AND as a string. `pg_size_pretty` is what a person
   // reads and the raw byte count is what anything comparing two of these
@@ -371,8 +377,8 @@ const METRIC_PROBES = [
   // beside postgres's.
   { id: 'size', group: 'Server', shape: 'row',
     what: 'How much disk this database occupies.',
-    sql: 'SELECT pg_database_size(current_database()) AS bytes, ' +
-         '       pg_size_pretty(pg_database_size(current_database())) AS pretty' },
+    sql: 'SELECT pg_database_size(current_database()) AS bytes,        ' +
+         'pg_size_pretty(pg_database_size(current_database())) AS pretty' },
 
   // -------------------------------------------------------------------------
   // WHAT IT HAS DONE. `pg_stat_database` is the densest view here — thirty
@@ -408,39 +414,39 @@ const METRIC_PROBES = [
   // -------------------------------------------------------------------------
   { id: 'connections', group: 'Activity', shape: 'row',
     what: 'How many backends this database has, against the server\'s limit.',
-    sql: 'SELECT count(*) AS visible, ' +
-         '       count(state) AS readable, ' +
-         '       count(*) FILTER (WHERE state = \'active\') AS active, ' +
-         '       count(*) FILTER (WHERE state = \'idle\') AS idle, ' +
-         '       count(*) FILTER (WHERE state = \'idle in transaction\') ' +
-         '         AS idle_in_transaction, ' +
-         '       count(*) FILTER (WHERE wait_event IS NOT NULL) AS waiting, ' +
-         '       current_setting(\'max_connections\')::int AS max_connections, ' +
-         '       (SELECT count(*) FROM pg_stat_activity) AS server_wide ' +
-         'FROM pg_stat_activity WHERE datname = current_database()' },
+    sql: 'SELECT count(*) AS visible,        count(state) AS ' +
+         'readable,        count(*) FILTER (WHERE state = \'active\') AS ' +
+         'active,        count(*) FILTER (WHERE state = \'idle\') AS ' +
+         'idle,        count(*) FILTER (WHERE state = \'idle in ' +
+         'transaction\')          AS idle_in_transaction,        count(*) ' +
+         'FILTER (WHERE wait_event IS NOT NULL) AS waiting,        ' +
+         'current_setting(\'max_connections\')::int AS ' +
+         'max_connections,        (SELECT count(*) FROM pg_stat_activity) AS ' +
+         'server_wide FROM pg_stat_activity WHERE datname = ' +
+         'current_database()' },
 
   { id: 'backends', group: 'Activity', shape: 'rows',
     what: 'One row per backend on this database. A backend belonging to ' +
           'another role shows as a row with its state and its query ' +
           'withheld, which is what a non-monitoring role is shown.',
-    sql: 'SELECT pid, usename, application_name, client_addr, backend_type, ' +
-         '       state, wait_event_type, wait_event, ' +
-         '       date_trunc(\'second\', now() - backend_start)::text AS connected_for, ' +
-         '       date_trunc(\'second\', now() - state_change)::text AS in_state_for, ' +
-         '       CASE WHEN xact_start IS NULL THEN NULL ' +
-         '            ELSE date_trunc(\'second\', now() - xact_start)::text END ' +
-         '         AS transaction_age ' +
-         'FROM pg_stat_activity WHERE datname = current_database() ' +
-         'ORDER BY backend_start' },
+    sql: 'SELECT pid, usename, application_name, client_addr, ' +
+         'backend_type,        state, wait_event_type, wait_event,        ' +
+         'date_trunc(\'second\', now() - backend_start)::text AS ' +
+         'connected_for,        date_trunc(\'second\', now() - ' +
+         'state_change)::text AS in_state_for,        CASE WHEN xact_start ' +
+         'IS NULL THEN NULL             ELSE date_trunc(\'second\', now() - ' +
+         'xact_start)::text END          AS transaction_age FROM ' +
+         'pg_stat_activity WHERE datname = current_database() ORDER BY ' +
+         'backend_start' },
 
   { id: 'locks', group: 'Activity', shape: 'rows',
     what: 'Locks held and waited for, by mode. A waiting lock on a mock is ' +
           'almost always this service contending with itself across the ' +
           'request-worker pool.',
-    sql: 'SELECT mode, granted, count(*) AS count FROM pg_locks ' +
-         'WHERE database IS NULL OR database = ' +
-         '      (SELECT oid FROM pg_database WHERE datname = current_database()) ' +
-         'GROUP BY mode, granted ORDER BY granted, mode' },
+    sql: 'SELECT mode, granted, count(*) AS count FROM pg_locks WHERE ' +
+         'database IS NULL OR database =       (SELECT oid FROM pg_database ' +
+         'WHERE datname = current_database()) GROUP BY mode, granted ORDER ' +
+         'BY granted, mode' },
 
   // -------------------------------------------------------------------------
   // THE BACKGROUND MACHINERY. Four views, three of them version-dependent,
@@ -514,21 +520,19 @@ const METRIC_PROBES = [
   { id: 'sizes', group: 'Schema', shape: 'rows',
     what: 'How much disk each table occupies, split into the heap, its ' +
           'indexes and its TOAST, with the planner\'s row estimate.',
-    sql: 'SELECT c.relname AS relname, ' +
-         '       pg_total_relation_size(c.oid) AS total_bytes, ' +
-         '       pg_size_pretty(pg_total_relation_size(c.oid)) AS total, ' +
-         '       pg_size_pretty(pg_relation_size(c.oid)) AS heap, ' +
-         '       pg_size_pretty(pg_indexes_size(c.oid)) AS indexes, ' +
-         '       CASE WHEN c.reltoastrelid = 0 THEN NULL ' +
-         '            ELSE pg_size_pretty(pg_total_relation_size(c.reltoastrelid)) ' +
-         '       END AS toast, ' +
-         '       CASE WHEN c.reltuples < 0 THEN NULL ' +
-         '            ELSE c.reltuples::bigint END AS estimated_rows, ' +
-         '       (SELECT count(*) FROM pg_index i WHERE i.indrelid = c.oid) ' +
-         '         AS index_count ' +
-         'FROM pg_class c ' +
-         'WHERE c.relnamespace = current_schema()::regnamespace ' +
-         '  AND c.relkind = \'r\' ORDER BY pg_total_relation_size(c.oid) DESC' },
+    sql: 'SELECT c.relname AS relname,        pg_total_relation_size(c.oid) ' +
+         'AS total_bytes,        ' +
+         'pg_size_pretty(pg_total_relation_size(c.oid)) AS total,        ' +
+         'pg_size_pretty(pg_relation_size(c.oid)) AS heap,        ' +
+         'pg_size_pretty(pg_indexes_size(c.oid)) AS indexes,        CASE ' +
+         'WHEN c.reltoastrelid = 0 THEN NULL             ELSE ' +
+         'pg_size_pretty(pg_total_relation_size(c.reltoastrelid))        END ' +
+         'AS toast,        CASE WHEN c.reltuples < 0 THEN NULL             ' +
+         'ELSE c.reltuples::bigint END AS estimated_rows,        (SELECT ' +
+         'count(*) FROM pg_index i WHERE i.indrelid = c.oid)          AS ' +
+         'index_count FROM pg_class c WHERE c.relnamespace = ' +
+         'current_schema()::regnamespace   AND c.relkind = \'r\' ORDER BY ' +
+         'pg_total_relation_size(c.oid) DESC' },
 
   // THE INDEXES, AND THE ONES NOTHING HAS EVER USED. `idx_scan = 0` on a
   // database that has been running is the most actionable number on this
@@ -586,18 +590,17 @@ const METRIC_PROBES = [
     what: 'Every setting an operator has changed from its built-in default, ' +
           'and where it was set — plus the handful that matter whether or ' +
           'not anybody touched them.',
-    sql: 'SELECT name, setting, unit, source, boot_val, pending_restart ' +
-         'FROM pg_settings ' +
-         'WHERE source NOT IN (\'default\', \'override\') ' +
-         '   OR name IN (\'max_connections\', \'shared_buffers\', ' +
-         '               \'work_mem\', \'maintenance_work_mem\', ' +
-         '               \'effective_cache_size\', \'wal_level\', ' +
-         '               \'synchronous_commit\', \'fsync\', ' +
-         '               \'full_page_writes\', \'autovacuum\', ' +
-         '               \'checkpoint_timeout\', \'max_wal_size\', ' +
-         '               \'ssl\', \'data_checksums\', ' +
-         '               \'default_transaction_isolation\', ' +
-         '               \'statement_timeout\', \'idle_in_transaction_session_timeout\') ' +
+    sql: 'SELECT name, setting, unit, source, boot_val, pending_restart FROM ' +
+         'pg_settings WHERE source NOT IN (\'default\', \'override\')    OR ' +
+         'name IN (\'max_connections\', \'shared_buffers\',                ' +
+         '\'work_mem\', \'maintenance_work_mem\',                ' +
+         '\'effective_cache_size\', \'wal_level\',                ' +
+         '\'synchronous_commit\', \'fsync\',                ' +
+         '\'full_page_writes\', \'autovacuum\',                ' +
+         '\'checkpoint_timeout\', \'max_wal_size\',                \'ssl\', ' +
+         '\'data_checksums\',                ' +
+         '\'default_transaction_isolation\',                ' +
+         '\'statement_timeout\', \'idle_in_transaction_session_timeout\') ' +
          'ORDER BY name' },
 
   { id: 'extensions', group: 'Configuration', shape: 'rows',
@@ -688,10 +691,11 @@ function create(options) {
     log.info('persistence: the database connection is TLS (sslmode in the ' +
              'connection string), and the server certificate is ' +
              (verify ? 'VERIFIED against this process\'s trust anchors.'
-                     : 'NOT verified — persistence.databaseTlsRejectUnauthorized ' +
-                       'is off, which is the honest setting for the ' +
-                       'self-signed pair the compose stack generates. The ' +
-                       'connection is encrypted either way.'));
+                     : 'NOT verified — ' +
+                       'persistence.databaseTlsRejectUnauthorized is off, ' +
+                       'which is the honest setting for the self-signed pair ' +
+                       'the compose stack generates. The connection is ' +
+                       'encrypted either way.'));
   } else {
     log.warn('persistence: the database connection string does not ask for ' +
              'TLS (no sslmode=require). The compose stack\'s database ' +
@@ -722,6 +726,7 @@ function create(options) {
       parsed.searchParams.delete('sslmode');
       return parsed.toString();
     } catch (e) {
+      log.debug("Caught in a callback in create(): " + ((e && e.message) || e));
       // A libpq keyword/value string rather than a URL. `pg` accepts those and
       // this cannot edit one safely, so it is passed through untouched and
       // whatever it says about ssl is what happens.
@@ -736,6 +741,8 @@ function create(options) {
   // quietly used different TLS settings from the pool would be a second,
   // weaker connection to the same store that nothing would ever report.
   function clientOptions() {
+    log.debug("Entering clientOptions().");
+    log.debug("Leaving clientOptions().");
     return {
       connectionString: dialled,
       ssl: wantsTls ? { rejectUnauthorized: verify } : undefined,
@@ -795,25 +802,43 @@ function create(options) {
   let written = 0;
 
   function recordChanges(client, rows) {
+    log.debug("Entering recordChanges().");
     if (!rows || !rows.length) {
+      log.debug("Leaving recordChanges().");
       return Promise.resolve();
     }
     written += rows.length;
-    // ONE STATEMENT FOR THE WHOLE BATCH. A directory flush can carry hundreds
-    // of moved entries and a round trip each would make the log more
-    // expensive than the write it describes.
-    const values = [];
-    const params = [];
-    rows.forEach(function (row, i) {
-      const base = i * 4;
-      values.push('($' + (base + 1) + ', $' + (base + 2) + ', $' +
-                  (base + 3) + ', $' + (base + 4) + ')');
-      params.push(processId, row.kind, row.realm || '', row.key || '');
-    });
-    return client.query(
-      'INSERT INTO sts_changes (origin, kind, realm, key) VALUES ' +
-      values.join(', '), params
-    ).then(function () {
+    // ONE STATEMENT PER CHUNK. A directory flush can carry hundreds of moved
+    // entries and a round trip each would make the log more expensive than
+    // the write it describes.
+    //
+    // **CHUNKED SINCE 2026-09-12**, because one statement for the whole batch
+    // has a ceiling: the wire protocol counts bind parameters in 16 bits, and
+    // at four per row a batch past 16,383 rows wrapped the count — `bind
+    // message has 63088 parameter formats but 0 parameters`. A minted flush
+    // that had failed for a while reached that size, and so can a directory
+    // flush after a large bulk load.
+    let chain = Promise.resolve();
+    for (let start = 0; start < rows.length; start +=
+        CHANGE_ROWS_PER_STATEMENT) {
+      const chunk = rows.slice(start, start + CHANGE_ROWS_PER_STATEMENT);
+      chain = chain.then(function () {
+        const values = [];
+        const params = [];
+        chunk.forEach(function (row, i) {
+          const base = i * 4;
+          values.push('($' + (base + 1) + ', $' + (base + 2) + ', $' +
+                      (base + 3) + ', $' + (base + 4) + ')');
+          params.push(processId, row.kind, row.realm || '', row.key || '');
+        });
+        return client.query(
+          'INSERT INTO sts_changes (origin, kind, realm, key) VALUES ' +
+          values.join(', '), params
+        );
+      });
+    }
+    log.debug("Leaving recordChanges().");
+    return chain.then(function () {
       // THE NUDGE. It carries the origin and the kinds and NOT the rows —
       // the receiver reads `sts_changes` for what actually moved, so this
       // can be lossy, can be truncated and can be missed entirely without
@@ -859,7 +884,9 @@ function create(options) {
   // would be reported twice.
   // ---------------------------------------------------------------------------
   function guardClient(client, what) {
+    log.debug("Entering guardClient().");
     const onError = function (err) {
+      log.debug("Entering onError().");
       log.error(errorCodes.tag('STS-STORE-0031') +
                 'persistence: the postgres connection held by ' + what +
                 ' errored: ' + err.message + '. It is being discarded; the ' +
@@ -867,8 +894,10 @@ function create(options) {
                 'because an unhandled error on a client is a process exit, ' +
                 'and this service must not die because its database ' +
                 'restarted.');
+      log.debug("Leaving onError().");
     };
     client.on('error', onError);
+    log.debug("Leaving guardClient().");
     return function () {
       client.removeListener('error', onError);
     };
@@ -876,6 +905,7 @@ function create(options) {
 
   function withTransaction(fn) {
     log.debug('Entering withTransaction().');
+    log.debug("Leaving withTransaction().");
     return pool.connect().then(function (client) {
       const unguard = guardClient(client, 'a transaction');
       return client.query('BEGIN').then(function () {
@@ -912,6 +942,7 @@ function create(options) {
     open: function () {
       log.debug('Entering the postgres driver open().');
       const created = [];
+      log.debug("Leaving open().");
       return withTransaction(function (client) {
         // -------------------------------------------------------------
         // WHAT IS ALREADY THERE. One query for the whole list — see the
@@ -1075,6 +1106,7 @@ function create(options) {
         max: pool.options && pool.options.max
       };
 
+      log.debug("Leaving metrics().");
       return pool.connect().then(function (client) {
         const unguard = guardClient(client, 'the metrics page');
         return client.query('SET statement_timeout = ' + timeoutMs)
@@ -1104,7 +1136,8 @@ function create(options) {
                     // A `row` probe that matched nothing answers null rather
                     // than an empty object, so "no such row" and "a row of
                     // zeroes" stay different facts.
-                    row: probe.shape === 'row' ? (result.rows[0] || null) : null,
+                    row: probe.shape === 'row' ? (result.rows[0] || null) :
+                         null,
                     rows: probe.shape === 'rows' ? result.rows : null,
                     count: result.rows.length,
                     tookMs: Date.now() - started
@@ -1143,14 +1176,15 @@ function create(options) {
               log.warn(errorCodes.tag('STS-STORE-0033') +
                        'persistence: a metrics connection could not be reset ' +
                        '(' + err.message + '); it is being discarded rather ' +
-                       'than returned to the pool with a statement timeout on ' +
-                       'it.');
+                       'than returned to the pool with a statement timeout ' +
+                       'on it.');
               out.resetFailed = true;
             });
           })
           .then(function () {
             unguard();
-            client.release(out.resetFailed ? new Error('not reset') : undefined);
+            client.release(out.resetFailed ? new Error('not reset') :
+                           undefined);
             out.tookMs = Date.now() - began;
             log.debug('Leaving the postgres driver metrics(). ' +
                       Object.keys(out.probes).length + ' probe(s), ' +
@@ -1174,6 +1208,7 @@ function create(options) {
 
     close: function () {
       log.debug('Entering the postgres driver close().');
+      log.debug("Leaving close().");
       return pool.end().then(function () {
         log.debug('Leaving the postgres driver close().');
       });
@@ -1181,6 +1216,7 @@ function create(options) {
 
     loadDirectory: function () {
       log.debug('Entering the postgres driver loadDirectory().');
+      log.debug("Leaving loadDirectory().");
       return pool.query(
         'SELECT realm, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries ORDER BY realm, dn_key'
@@ -1206,13 +1242,15 @@ function create(options) {
           log.info('persistence: read ' + out[realmId].length + ' entry/ies ' +
                    'for the realm "' + realmId + '" from postgres.');
         });
-        log.debug('Leaving loadDirectory(). ' + result.rows.length + ' row(s).');
+        log.debug('Leaving loadDirectory(). ' + result.rows.length +
+                  ' row(s).');
         return out;
       });
     },
 
     loadRealms: function () {
       log.debug('Entering the postgres driver loadRealms().');
+      log.debug("Leaving loadRealms().");
       return pool.query(
         'SELECT id, name, description, created_at, overrides FROM sts_realms ' +
         'ORDER BY created_at NULLS FIRST, id'
@@ -1240,6 +1278,7 @@ function create(options) {
 
     loadOverrides: function () {
       log.debug('Entering the postgres driver loadOverrides().');
+      log.debug("Leaving loadOverrides().");
       return pool.query('SELECT key, value FROM sts_appconfig')
         .then(function (result) {
           if (!result.rows.length) {
@@ -1268,14 +1307,15 @@ function create(options) {
     // the header for both.
     saveDirectory: function (change) {
       log.debug('Entering the postgres driver saveDirectory().');
+      log.debug("Leaving saveDirectory().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
         const moved = [];
 
         change.upserts.forEach(function (row) {
           chain = chain.then(function () {
-            // **`row.key` AND NOT `row.entry.dn` (2026-09-07).** A change row is
-            // a POINTER, and the receiver dereferences it with
+            // **`row.key` AND NOT `row.entry.dn` (2026-09-07).** A change row
+            // is a POINTER, and the receiver dereferences it with
             // `readEntry(realm, key)` — which is `WHERE dn_key = $2`, the
             // NORMALISED dn. `row.entry.dn` is the DN as written, so every
             // upsert pointed at a key that column never holds: the receiver
@@ -1384,6 +1424,7 @@ function create(options) {
     // row goes away when persistence.realms is on and the directory is not.
     saveRealms: function (rows) {
       log.debug('Entering the postgres driver saveRealms().');
+      log.debug("Leaving saveRealms().");
       return withTransaction(function (client) {
         const ids = rows.map(function (row) { return row.id; });
         // `= ANY($1)` with an empty array is valid and matches nothing, which
@@ -1395,12 +1436,11 @@ function create(options) {
           rows.forEach(function (row) {
             chain = chain.then(function () {
               return client.query(
-                'INSERT INTO sts_realms (id, name, description, created_at, overrides) ' +
-                'VALUES ($1, $2, $3, $4, $5::jsonb) ' +
-                'ON CONFLICT (id) DO UPDATE SET ' +
-                '  name = EXCLUDED.name, description = EXCLUDED.description, ' +
-                '  created_at = EXCLUDED.created_at, ' +
-                '  overrides = EXCLUDED.overrides',
+                'INSERT INTO sts_realms (id, name, description, created_at, ' +
+                'overrides) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT ' +
+                '(id) DO UPDATE SET   name = EXCLUDED.name, description = ' +
+                'EXCLUDED.description,   created_at = EXCLUDED.created_at,   ' +
+                'overrides = EXCLUDED.overrides',
                 [row.id, row.name, row.description, row.createdAt,
                  JSON.stringify(row.overrides || {})]);
             });
@@ -1421,6 +1461,7 @@ function create(options) {
 
     saveOverrides: function (map) {
       log.debug('Entering the postgres driver saveOverrides().');
+      log.debug("Leaving saveOverrides().");
       return withTransaction(function (client) {
         const keys = Object.keys(map);
         return client.query(
@@ -1430,8 +1471,9 @@ function create(options) {
           keys.forEach(function (key) {
             chain = chain.then(function () {
               return client.query(
-                'INSERT INTO sts_appconfig (key, value) VALUES ($1, $2::jsonb) ' +
-                'ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
+                'INSERT INTO sts_appconfig (key, value) VALUES ($1, ' +
+                '$2::jsonb) ON CONFLICT (key) DO UPDATE SET value = ' +
+                'EXCLUDED.value',
                 [key, JSON.stringify({ raw: map[key] })]);
             });
           });
@@ -1453,7 +1495,9 @@ function create(options) {
     // -----------------------------------------------------------------------
     loadKeys: function () {
       log.debug('Entering the postgres driver loadKeys().');
-      return pool.query('SELECT realm, material FROM sts_keys').then(function (r) {
+      log.debug("Leaving loadKeys().");
+      return pool.query('SELECT realm, material FROM sts_keys')
+                 .then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return { realm: row.realm, material: row.material };
         });
@@ -1469,6 +1513,7 @@ function create(options) {
     // The write itself is unchanged.
     saveKeys: function (realmId, ciphertext) {
       log.debug('Entering the postgres driver saveKeys(). realm=' + realmId);
+      log.debug("Leaving saveKeys().");
       return withTransaction(function (client) {
         return client.query(
           'INSERT INTO sts_keys (realm, material, written_at) ' +
@@ -1486,6 +1531,7 @@ function create(options) {
 
     deleteKeys: function (realmId) {
       log.debug('Entering the postgres driver deleteKeys(). realm=' + realmId);
+      log.debug("Leaving deleteKeys().");
       return pool.query('DELETE FROM sts_keys WHERE realm = $1', [realmId])
         .then(function () {
           log.debug('Leaving the postgres driver deleteKeys().');
@@ -1500,10 +1546,10 @@ function create(options) {
     // -----------------------------------------------------------------------
     loadMinted: function () {
       log.debug('Entering the postgres driver loadMinted().');
+      log.debug("Leaving loadMinted().");
       return pool.query(
-        'SELECT handle, realm, key, body, ' +
-        '       (extract(epoch from written_at) * 1000)::bigint AS written_ms ' +
-        'FROM sts_minted'
+        'SELECT handle, realm, key, body,        (extract(epoch from ' +
+        'written_at) * 1000)::bigint AS written_ms FROM sts_minted'
       ).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return {
@@ -1530,22 +1576,49 @@ function create(options) {
     // which `persistence.js` argues where it calls this.
     saveMinted: function (upserts, deletes) {
       log.debug('Entering the postgres driver saveMinted(). ' +
-                upserts.length + ' upsert(s), ' + deletes.length + ' delete(s).');
+                upserts.length + ' upsert(s), ' + deletes.length +
+                ' delete(s).');
+      // **IN ONE ORDER, BY PRIMARY KEY, UPSERTS AND DELETES INTERLEAVED
+      // (2026-09-12).** Each statement takes a row lock that is held to COMMIT,
+      // and every request worker flushes into this table at once. The
+      // statements went in journal order — upserts, then deletes — so two
+      // workers touching the same two rows could each lock one and wait on the
+      // other: `deadlock detected`, about a hundred and twelve times in one
+      // dispatched run. Every one of those failed the whole flush, put its keys
+      // back, and made the next flush bigger. Sorting on (handle, realm, key)
+      // gives every transaction the same lock order, which is what makes a
+      // cycle impossible rather than rare. Compared as code units rather than
+      // with `localeCompare()`, because the order has to be the same in every
+      // process whatever its locale.
+      const statements = upserts.map(function (row) {
+        return { row: row, upsert: true };
+      }).concat(deletes.map(function (row) {
+        return { row: row, upsert: false };
+      })).sort(function (a, b) {
+        const left = [a.row.handle, a.row.realm, a.row.key].map(String);
+        const right = [b.row.handle, b.row.realm, b.row.key].map(String);
+        for (let i = 0; i < 3; i++) {
+          if (left[i] !== right[i]) {
+            return left[i] < right[i] ? -1 : 1;
+          }
+        }
+        return 0;
+      });
+      log.debug("Leaving saveMinted().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
-        upserts.forEach(function (row) {
+        statements.forEach(function (one) {
+          const row = one.row;
           chain = chain.then(function () {
-            return client.query(
-              'INSERT INTO sts_minted (handle, realm, key, body, written_at) ' +
-              'VALUES ($1, $2, $3, $4, now()) ' +
-              'ON CONFLICT (handle, realm, key) DO UPDATE SET ' +
-              '  body = EXCLUDED.body, written_at = now()',
-              [row.handle, row.realm, row.key, row.body]
-            );
-          });
-        });
-        deletes.forEach(function (row) {
-          chain = chain.then(function () {
+            if (one.upsert) {
+              return client.query(
+                'INSERT INTO sts_minted (handle, realm, key, body, ' +
+                'written_at) VALUES ($1, $2, $3, $4, now()) ON CONFLICT ' +
+                '(handle, realm, key) DO UPDATE SET   body = EXCLUDED.body, ' +
+                'written_at = now()',
+                [row.handle, row.realm, row.key, row.body]
+              );
+            }
             return client.query(
               'DELETE FROM sts_minted WHERE handle = $1 AND realm = $2 ' +
               'AND key = $3',
@@ -1575,16 +1648,19 @@ function create(options) {
           // alphabet — same encoding as `storedKey()`, for the same reason, and
           // nothing to migrate because no row in the old shape was ever
           // committed.
-          return recordChanges(client, upserts.concat(deletes).map(function (row) {
+          return recordChanges(client,
+                               upserts.concat(deletes).map(function (row) {
             // `minted-own` IS A SECOND KIND AND NOT A FLAG, because the only
             // thing that reads it is a `WHERE kind <> …` on the barrier's
             // target — see latestBlockingChangeSeq(). A column would have had
             // to be added to `sts_changes` and indexed; a kind is already
             // there and already selected on.
             return { kind: row.own ? 'minted-own' : 'minted', realm: row.realm,
-                     key: Buffer.from(String(row.handle), 'utf8').toString('base64url') +
+                     key: Buffer.from(String(row.handle), 'utf8')
+                                .toString('base64url') +
                           '.' +
-                          Buffer.from(String(row.key), 'utf8').toString('base64url') };
+                          Buffer.from(String(row.key), 'utf8')
+                                .toString('base64url') };
           }));
         });
       });
@@ -1607,9 +1683,15 @@ function create(options) {
     // read; they simply do not hold a reader up.
     // -----------------------------------------------------------------------
     // See `written` above.
-    changeRowsWritten: function () { return written; },
+    changeRowsWritten: function () {
+      log.debug("Entering changeRowsWritten().");
+      log.debug("Leaving changeRowsWritten().");
+      return written;
+    },
 
     latestBlockingChangeSeq: function () {
+      log.debug("Entering latestBlockingChangeSeq().");
+      log.debug("Leaving latestBlockingChangeSeq().");
       // ---------------------------------------------------------------------
       // AND NOT THIS PROCESS'S OWN ROWS (2026-09-08). `changesSince()` above
       // filters `origin <> processId` — a process never re-applies what it
@@ -1651,7 +1733,8 @@ function create(options) {
     // before it gives up and serves what it has. So the barrier timed out, the
     // worker answered from a directory it had not caught up on, and a test that
     // had just created an application through /admin-api was told there was no
-    // such application. **The volume was not the defect; the round trips were.**
+    // such application. **The volume was not the defect; the round trips
+    // were.**
     //
     // A VALUES join rather than `IN (...)`: the key is a triple, and this keeps
     // one bind per column per row instead of building a composite string that
@@ -1662,6 +1745,7 @@ function create(options) {
                 (refs || []).length + ' ref(s).');
       const list = (refs || []);
       if (!list.length) {
+        log.debug("Leaving readMintedMany().");
         return Promise.resolve([]);
       }
       const values = [];
@@ -1671,6 +1755,7 @@ function create(options) {
                     '::text, $' + (i * 3 + 3) + '::text)');
         binds.push(String(ref.handle), String(ref.realm), String(ref.key));
       });
+      log.debug("Leaving readMintedMany().");
       return pool.query(
         'SELECT m.handle, m.realm, m.key, m.body, ' +
         '(extract(epoch from m.written_at) * 1000)::bigint AS written_ms ' +
@@ -1696,7 +1781,11 @@ function create(options) {
     // WHO THIS PROCESS IS. Every row this driver writes carries it, and the
     // replication layer skips its own — so this has to be readable from
     // outside the driver rather than only stamped inside it.
-    origin: function () { return processId; },
+    origin: function () {
+      log.debug("Entering origin().");
+      log.debug("Leaving origin().");
+      return processId;
+    },
 
     // The high-water mark at startup. A process that has just RESTORED the
     // whole store is, by definition, up to date with everything committed
@@ -1704,6 +1793,7 @@ function create(options) {
     // does not re-apply the entire history of the deployment on the way up.
     latestChangeSeq: function () {
       log.debug('Entering the postgres driver latestChangeSeq().');
+      log.debug("Leaving latestChangeSeq().");
       return pool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
         .then(function (r) {
           const seq = Number((r.rows[0] || {}).seq || 0);
@@ -1725,7 +1815,9 @@ function create(options) {
     // owns every socket in this service. The caller takes a page, applies it,
     // and comes straight back for the next.
     changesSince: function (afterSeq, limit) {
-      log.debug('Entering the postgres driver changesSince(). after=' + afterSeq);
+      log.debug('Entering the postgres driver changesSince(). after=' +
+                afterSeq);
+      log.debug("Leaving changesSince().");
       // ---------------------------------------------------------------------
       // EVERY ROW, INCLUDING THIS PROCESS'S OWN (2026-09-08).
       //
@@ -1768,6 +1860,8 @@ function create(options) {
     // tell "I read a full page and there is more" from "I am up to date"
     // without a second query per page.
     changeCeiling: function () {
+      log.debug("Entering changeCeiling().");
+      log.debug("Leaving changeCeiling().");
       return pool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
         .then(function (r) { return Number((r.rows[0] || {}).seq || 0); });
     },
@@ -1775,6 +1869,8 @@ function create(options) {
     // One directory entry, for the applier. It re-reads rather than being sent
     // the row, which is what lets the notification carry nothing.
     readEntry: function (realmId, dnKey) {
+      log.debug("Entering readEntry().");
+      log.debug("Leaving readEntry().");
       return pool.query(
         'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
@@ -1792,10 +1888,12 @@ function create(options) {
 
     // One minted row, same reason.
     readMinted: function (handle, realmId, key) {
+      log.debug("Entering readMinted().");
+      log.debug("Leaving readMinted().");
       return pool.query(
-        'SELECT handle, realm, key, body, ' +
-        '       (extract(epoch from written_at) * 1000)::bigint AS written_ms ' +
-        'FROM sts_minted WHERE handle = $1 AND realm = $2 AND key = $3',
+        'SELECT handle, realm, key, body,        (extract(epoch from ' +
+        'written_at) * 1000)::bigint AS written_ms FROM sts_minted WHERE ' +
+        'handle = $1 AND realm = $2 AND key = $3',
         [handle, realmId, key]
       ).then(function (r) {
         const row = (r.rows || [])[0];
@@ -1828,7 +1926,9 @@ function create(options) {
       let backoff = 1000;
 
       function connect() {
+        log.debug("Entering connect().");
         if (closed) {
+          log.debug("Leaving connect().");
           return;
         }
         client = new Client(clientOptions());
@@ -1837,6 +1937,8 @@ function create(options) {
           try {
             payload = JSON.parse(msg.payload || '{}');
           } catch (e) {
+            log.debug("Caught in a callback in connect(): " +
+                      ((e && e.message) || e));
             // Not JSON. Treated as a bare nudge rather than dropped: the
             // payload is advisory and the poll it triggers is what is
             // actually correct.
@@ -1861,6 +1963,8 @@ function create(options) {
           } catch (e) {
             // Ending a connection that is already gone. Nothing to do and
             // nothing to say: the reconnect below is the whole response.
+            log.debug("Caught in a callback in connect(): " +
+                      ((e && e.message) || e));
           }
           client = null;
           if (!closed) {
@@ -1895,6 +1999,7 @@ function create(options) {
             if (timer.unref) timer.unref();
           }
         });
+        log.debug("Leaving connect().");
       }
 
       connect();
@@ -1906,6 +2011,8 @@ function create(options) {
             client.end();
           } catch (e) {
             // Shutting down a connection that has already gone. See above.
+            log.debug("Caught in a callback in watchChanges(): " +
+                      ((e && e.message) || e));
           }
           client = null;
         }
@@ -1917,6 +2024,8 @@ function create(options) {
     // history nobody reads. Without this the log is the one table here that
     // grows for ever.
     purgeChanges: function (beforeSeq) {
+      log.debug("Entering purgeChanges().");
+      log.debug("Leaving purgeChanges().");
       return pool.query('DELETE FROM sts_changes WHERE seq < $1',
                         [Number(beforeSeq) || 0])
         .then(function (r) { return r.rowCount || 0; });
@@ -1926,7 +2035,9 @@ function create(options) {
     // caller logs it and a purge that reported nothing would leave an operator
     // unable to tell "it worked" from "there was nothing to do".
     purgeMinted: function (beforeMs) {
-      log.debug('Entering the postgres driver purgeMinted(). before=' + beforeMs);
+      log.debug('Entering the postgres driver purgeMinted(). before=' +
+                beforeMs);
+      log.debug("Leaving purgeMinted().");
       return pool.query(
         'DELETE FROM sts_minted WHERE written_at < to_timestamp($1 / 1000.0)',
         [Number(beforeMs)]

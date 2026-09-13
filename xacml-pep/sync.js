@@ -80,9 +80,12 @@ const log = engine.log;
 // the registry's own format, so a caller that built its options elsewhere
 // still gets a coded line rather than a TypeError out of a polling timer.
 function tag(options, code) {
+  log.debug("Entering tag().");
   if (options && typeof options.tag === 'function') {
+    log.debug("Leaving tag().");
     return options.tag(code);
   }
+  log.debug("Leaving tag().");
   return '[' + code + '] ';
 }
 
@@ -110,6 +113,8 @@ let registration = { registered: false, name: '', attempts: 0,
 const counters = { decisions: 0, allowed: 0, refused: 0, undischargeable: 0 };
 
 function state() {
+  log.debug("Entering state().");
+  log.debug("Leaving state().");
   return {
     held: {
       loaded: held.loaded,
@@ -132,6 +137,7 @@ function state() {
 }
 
 function countDecision(outcome) {
+  log.debug("Entering countDecision().");
   counters.decisions += 1;
   if (outcome.allowed) {
     counters.allowed += 1;
@@ -141,6 +147,7 @@ function countDecision(outcome) {
   if (outcome.undischargeable && outcome.undischargeable.length) {
     counters.undischargeable += 1;
   }
+  log.debug("Leaving countDecision().");
 }
 
 // ---------------------------------------------------------------------------
@@ -160,11 +167,15 @@ function countDecision(outcome) {
 // would expect to have to make.
 // ---------------------------------------------------------------------------
 function call(options, method, path, body) {
+  log.debug("Entering call().");
+  log.debug("Leaving call().");
   return new Promise(function (resolve) {
     let base;
     try {
       base = new URL(options.pdpUrl);
     } catch (error) {
+      log.debug("Caught in a callback in call(): " +
+                ((error && error.message) || error));
       resolve({ status: 0, body: null,
                 error: 'PEP_PDP_URL is not a URL: ' + options.pdpUrl });
       return;
@@ -209,6 +220,8 @@ function call(options, method, path, body) {
           try {
             parsed = JSON.parse(text);
           } catch (error) {
+            log.debug("Caught in a callback in call(): " +
+                      ((error && error.message) || error));
             // Not JSON; the raw text is what gets reported, which is what a
             // PDP answering an HTML error page or a proxy's message looks
             // like and is exactly what somebody debugging needs to see.
@@ -352,9 +365,12 @@ async function register(options) {
 // `created: false` — harmless, and still noise nobody asked for.
 // ---------------------------------------------------------------------------
 async function registerIfNeeded(options) {
+  log.debug("Entering registerIfNeeded().");
   if (registration.registered) {
+    log.debug("Leaving registerIfNeeded().");
     return registration;
   }
+  log.debug("Leaving registerIfNeeded().");
   return register(options);
 }
 
@@ -369,6 +385,7 @@ async function pull(options) {
     : '?pep=' + encodeURIComponent(options.name);
   const answer = await call(options, 'GET', '/xacml/pep/policies' + since);
   if (answer.error) {
+    log.debug("Leaving pull().");
     return keep('Could not reach the PDP: ' + answer.error,
                 tag(options, 'STS-XPEP-0017'));
   }
@@ -383,6 +400,7 @@ async function pull(options) {
     return state().held;
   }
   if (answer.status !== 200) {
+    log.debug("Leaving pull().");
     return keep('The PDP answered ' + answer.status +
                 ((answer.body && answer.body.error_description)
                   ? ': ' + answer.body.error_description : '') + '.',
@@ -390,6 +408,7 @@ async function pull(options) {
   }
   const said = answer.body;
   if (!said || !Array.isArray(said.policies)) {
+    log.debug("Leaving pull().");
     return keep('The PDP answered 200 with something that is not a policy ' +
                 'set. Keeping the previous one.',
                 tag(options, 'STS-XPEP-0019'));
@@ -435,6 +454,7 @@ async function pull(options) {
     try {
       root = engine.xml.parsePolicy(said.policies[0].document);
     } catch (error) {
+      log.debug("Caught in pull(): " + ((error && error.message) || error));
       // Already counted in `refused` above; nothing more to do here.
       root = null;
     }
@@ -477,6 +497,7 @@ async function pull(options) {
 // `lastPullWhy` is drawn on `GET /` and a code is never put in front of a
 // caller.
 function keep(why, prefix) {
+  log.debug("Entering keep().");
   // `lastPullAt` IS DELIBERATELY NOT TOUCHED. It means "when did this PEP last
   // confirm it was current", so a FAILED pull must leave it where it was —
   // that gap is precisely what `stale` is computed from, and stamping it here
@@ -494,6 +515,7 @@ function keep(why, prefix) {
       'NotApplicable and the bias decides. That is a different state from a ' +
       'stale copy and is reported as loaded: false.');
   log.warn((prefix || '') + 'xacml-pep: ' + held.lastPullWhy);
+  log.debug("Leaving keep().");
   return state().held;
 }
 
@@ -524,6 +546,7 @@ async function heartbeat(options) {
                             : tag(options, 'STS-XPEP-0023')) +
               'Leaving heartbeat(). Not delivered: ' +
               (answer.error || answer.status));
+    log.debug("Leaving heartbeat().");
     return { ok: false };
   }
   const said = answer.body || {};
@@ -539,6 +562,8 @@ async function heartbeat(options) {
 // a plain accessor rather than an exported variable so that a caller cannot be
 // holding last minute's object while a pull replaces it.
 function current() {
+  log.debug("Entering current().");
+  log.debug("Leaving current().");
   return { root: held.root, repository: held.repository,
            loaded: held.loaded };
 }

@@ -95,6 +95,8 @@ const errorCodes = require('./error_codes');
 // the direction that looks like the console is broken.
 // ---------------------------------------------------------------------------
 function maxEvents() {
+  log.debug("Entering maxEvents().");
+  log.debug("Leaving maxEvents().");
   return config.value('audit.maxEvents');
 }
 
@@ -105,6 +107,8 @@ function maxEvents() {
 // to turn the firehose off without losing the rest. Read here, per call, for
 // the same reason the cap is.
 function protocolCallsRecorded() {
+  log.debug("Entering protocolCallsRecorded().");
+  log.debug("Leaving protocolCallsRecorded().");
   return config.value('audit.protocolCalls');
 }
 
@@ -125,19 +129,19 @@ const CATEGORIES = [
   { category: 'authentication', label: 'Authentication',
     what: 'A credential was ACCEPTED, in any of the sixteen protocol ' +
           'families here. Recorded at the single funnel every one of them ' +
-          'already passes through, so this is one place and not sixteen. SCIM ' +
-          'joined late and SPIFFE later still. SCIM: three of the schemes its ' +
-          'endpoints accept — Basic, Digest and HOBA — present a credential on ' +
-          'every request, and accepting one is an authentication. Its other ' +
-          'three do not appear here, because each continues an authentication ' +
-          'recorded elsewhere: an access token was accepted when it was ' +
-          'issued, a session cookie when its session began, and a client ' +
-          'certificate once per CONNECTION rather than once per request. ' +
-          'SPIFFE is the sixteenth and reaches this in three ways: an ' +
-          'X509-SVID presented over mutual TLS at the SPIRE Server API (once ' +
-          'per connection, for the reason a client certificate is), an agent ' +
-          'attesting, and a JWT-SVID verified at ValidateJWTSVID. Being ' +
-          'ISSUED an SVID is not one of them.' },
+          'already passes through, so this is one place and not sixteen. ' +
+          'SCIM joined late and SPIFFE later still. SCIM: three of the ' +
+          'schemes its endpoints accept — Basic, Digest and HOBA — present a ' +
+          'credential on every request, and accepting one is an ' +
+          'authentication. Its other three do not appear here, because each ' +
+          'continues an authentication recorded elsewhere: an access token ' +
+          'was accepted when it was issued, a session cookie when its ' +
+          'session began, and a client certificate once per CONNECTION ' +
+          'rather than once per request. SPIFFE is the sixteenth and reaches ' +
+          'this in three ways: an X509-SVID presented over mutual TLS at the ' +
+          'SPIRE Server API (once per connection, for the reason a client ' +
+          'certificate is), an agent attesting, and a JWT-SVID verified at ' +
+          'ValidateJWTSVID. Being ISSUED an SVID is not one of them.' },
   { category: 'session', label: 'Sessions',
     what: 'A browser sign-on session was created or ended. Shared between ' +
           'OAuth 2.0 / OIDC and WS-Federation, so a WS-Federation sign-out ' +
@@ -170,15 +174,15 @@ const CATEGORIES = [
   // everywhere else.
   { category: 'spiffe', label: 'SPIFFE',
     what: 'The three server-side SPIFFE surfaces: an SVID minted, a ' +
-          'registration entry created, changed or deleted, an agent attesting, ' +
-          'and the trust bundle being fetched or federated. An SVID row is NOT ' +
-          'an authentication row — being ISSUED a credential is not presenting ' +
-          'one — so an issuance is here and never in `authentication`. What ' +
-          'IS in both is a credential PRESENTED to one of these surfaces and ' +
-          'accepted: an X509-SVID over mutual TLS, an agent attesting, a ' +
-          'JWT-SVID validated. Those write an authentication row as well, at ' +
-          'the funnel, the way one act writes rows at several layers ' +
-          'everywhere else here.' },
+          'registration entry created, changed or deleted, an agent ' +
+          'attesting, and the trust bundle being fetched or federated. An ' +
+          'SVID row is NOT an authentication row — being ISSUED a credential ' +
+          'is not presenting one — so an issuance is here and never in ' +
+          '`authentication`. What IS in both is a credential PRESENTED to ' +
+          'one of these surfaces and accepted: an X509-SVID over mutual TLS, ' +
+          'an agent attesting, a JWT-SVID validated. Those write an ' +
+          'authentication row as well, at the funnel, the way one act writes ' +
+          'rows at several layers everywhere else here.' },
   // SHARED SIGNALS IS ITS OWN CATEGORY FOR A REASON THAT IS ALMOST THE
   // OPPOSITE OF SPIFFE'S. Every other row in this log records something a
   // caller asked this service to do. An SSF row records something this
@@ -311,6 +315,14 @@ const ACTIONS = [
     label: 'A sign-on session was created' },
   { action: 'session.end', category: 'session',
     label: 'A sign-on session was ended' },
+  // THE CONSOLE'S OR THE PORTAL'S TOKENS, RENEWED WITH A REFRESH TOKEN
+  // (2026-09-12). Not `session.start`: the session is the same one, nobody
+  // authenticated, and a row that said a session started would make one
+  // sign-in look like several. A renewal the token endpoint REFUSED is this
+  // action too, `refused` and coded — the session is then ended, and that
+  // writes its own `session.end`.
+  { action: 'session.renew', category: 'session',
+    label: 'A hosted surface renewed its tokens within the same session' },
 
   // THE TWO THE PROTOCOL-INDEPENDENT LOGOUT WRITES, and they are `session`
   // rather than a seventh category because that is what they are ABOUT — even
@@ -326,7 +338,8 @@ const ACTIONS = [
   // moment — and the counts of what could NOT be ended, which is the half of a
   // global logout nothing else records anywhere.
   { action: 'logout.global', category: 'session',
-    label: 'Everything held for one identity was ended, across every protocol' },
+    label:
+      'Everything held for one identity was ended, across every protocol' },
   { action: 'logout.selective', category: 'session',
     label: 'Named sessions or credentials were ended for one identity' },
 
@@ -342,10 +355,14 @@ const ACTIONS = [
   { action: 'user.rename', category: 'directory', label: 'A user was renamed' },
   { action: 'user.query', category: 'directory',
     label: 'A search returned at least one user' },
-  { action: 'group.create', category: 'directory', label: 'A group was created' },
-  { action: 'group.delete', category: 'directory', label: 'A group was deleted' },
-  { action: 'group.update', category: 'directory', label: 'A group was updated' },
-  { action: 'group.rename', category: 'directory', label: 'A group was renamed' },
+  { action: 'group.create', category: 'directory',
+    label: 'A group was created' },
+  { action: 'group.delete', category: 'directory',
+    label: 'A group was deleted' },
+  { action: 'group.update', category: 'directory',
+    label: 'A group was updated' },
+  { action: 'group.rename', category: 'directory',
+    label: 'A group was renamed' },
   { action: 'entry.create', category: 'directory',
     label: 'An entry elsewhere in the tree was created' },
   { action: 'entry.delete', category: 'directory',
@@ -395,7 +412,8 @@ const ACTIONS = [
   { action: 'application.delete', category: 'application',
     label: 'An application was deleted from the registry' },
 
-  { action: 'admin.view', category: 'admin', label: 'A console page was viewed' },
+  { action: 'admin.view', category: 'admin',
+    label: 'A console page was viewed' },
   { action: 'admin.change', category: 'admin',
     label: 'A console form was posted' },
   // The SUBSTANCE of a claim-set change, as against the HTTP row that says a
@@ -484,8 +502,8 @@ const ACTIONS = [
   { action: 'admin.krb5.service.deleted', category: 'admin',
     label: 'A Kerberos service principal\'s stored key was deleted' },
   { action: 'admin.krb5.previous.dropped', category: 'admin',
-    label: 'An operator dropped the previous Kerberos key versions a person or ' +
-           'a service principal was still keeping' },
+    label: 'An operator dropped the previous Kerberos key versions a person ' +
+           'or a service principal was still keeping' },
 
   { action: 'api.read', category: 'api', label: 'A management API read' },
   { action: 'api.change', category: 'api', label: 'A management API write' },
@@ -535,7 +553,8 @@ const ACTIONS = [
   { action: 'spiffe.bundle.read', category: 'spiffe',
     label: 'The trust bundle was fetched' },
   { action: 'spiffe.bundle.change', category: 'spiffe',
-    label: 'An authority was rotated, or a federated bundle was set or removed' },
+    label:
+      'An authority was rotated, or a federated bundle was set or removed' },
   // The one SPIFFE row that records a REFUSAL rather than something happening.
   // It is here rather than folded into `protocol.call` because the question it
   // answers is different: "why could my agent not list entries" is asked of the
@@ -743,21 +762,30 @@ let dropped = 0;
 let actorResolver = null;
 
 function setActorResolver(fn) {
+  log.debug("Entering setActorResolver().");
   actorResolver = fn;
-  log.debug("An audit actor resolver was installed; HTTP events will now name " +
-            "the signed-in user where there is one.");
+  log.debug("An audit actor resolver was installed; HTTP events will now " +
+            "name the signed-in user where there is one.");
+  log.debug("Leaving setActorResolver().");
 }
 
 function actorOfRequest(req) {
-  if (!actorResolver) return '';
+  log.debug("Entering actorOfRequest().");
+  if (!actorResolver) {
+    log.debug("Leaving actorOfRequest().");
+    return '';
+  }
   try {
+    log.debug("Leaving actorOfRequest().");
     return String(actorResolver(req) || '');
   } catch (e) {
     // Swallowed with a reason: the actor is a nicety on an audit row and the
     // request it decorates is real work. A session store that throws must not
     // turn a working endpoint into a 500.
-    log.error(errorCodes.tag('STS-REG-0047') + 'the audit actor resolver threw and was ignored: ' +
+    log.error(errorCodes.tag('STS-REG-0047') + 'the audit actor resolver ' +
+                                               'threw and was ignored: ' +
               e.message);
+    log.debug("Leaving actorOfRequest().");
     return '';
   }
 }
@@ -782,8 +810,13 @@ const MAX_DETAIL_LENGTH = 200;
 const MAX_SUMMARY_LENGTH = 400;
 
 function trimmed(value, limit) {
+  log.debug("Entering trimmed().");
   const text = String(value == null ? '' : value);
-  if (text.length <= limit) return text;
+  if (text.length <= limit) {
+    log.debug("Leaving trimmed().");
+    return text;
+  }
+  log.debug("Leaving trimmed().");
   // Named rather than silently cut: a value that ends mid-word reads as data
   // that was always like that, which is how a truncation becomes a bug report.
   return text.slice(0, limit) + '… (' + text.length + ' characters)';
@@ -803,7 +836,8 @@ function detailOf(source) {
     out[key] = trimmed(value, MAX_DETAIL_LENGTH);
   });
   if (keys.length > MAX_DETAIL_KEYS) {
-    out['(more)'] = (keys.length - MAX_DETAIL_KEYS) + ' further field(s) not kept';
+    out['(more)'] = (keys.length - MAX_DETAIL_KEYS) + ' further field(s) not ' +
+                                                      'kept';
   }
   log.debug("Leaving detailOf().");
   return out;
@@ -811,21 +845,24 @@ function detailOf(source) {
 
 // Drop as many of the oldest events as the cap now requires. A LOOP rather than
 // a single shift, because `audit.maxEvents` is a runtime setting: lowering it
-// from 5,000 to 100 has to take effect on the next event rather than one row per
-// event for the next 4,900.
+// from 5,000 to 100 has to take effect on the next event rather than one row
+// per event for the next 4,900.
 function trimToCap() {
+  log.debug("Entering trimToCap().");
   const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
   while (events.length > cap) {
     events.shift();
     dropped++;
   }
+  log.debug("Leaving trimToCap().");
 }
 
 function record(event) {
   log.debug("Entering record().");
   const info = event || {};
   const action = String(info.action || 'protocol.call');
-  const category = CATEGORY_OF_ACTION[action] || String(info.category || 'protocol');
+  const category = CATEGORY_OF_ACTION[action] ||
+                   String(info.category || 'protocol');
   const now = Date.now();
   // THE ERROR CODE, and it changes one default. A row that names a failure
   // condition and says nothing about its outcome is a refusal rather than a
@@ -904,15 +941,18 @@ function record(event) {
 // already on the row, which carries no credential by construction.
 // ---------------------------------------------------------------------------
 function logFailure(row) {
+  log.debug("Entering logFailure().");
   const line = row.summary + (row.target ? ' (' + row.target + ')' : '') +
                (row.actor ? ' actor=' + row.actor : '') +
                ' action=' + row.action + ' outcome=' + row.outcome;
   if (row.outcome === 'error') {
     // error-code: none — the line IS the failure's record and leads with its code
     log.error(line);
+    log.debug("Leaving logFailure().");
     return;
   }
   log.info(line);
+  log.debug("Leaving logFailure().");
 }
 
 // ---------------------------------------------------------------------------
@@ -925,11 +965,13 @@ function logFailure(row) {
 // cannot throw, because it is audit().
 // ---------------------------------------------------------------------------
 function failure(code, event) {
+  log.debug("Entering failure().");
   const info = Object.assign({}, event || {});
   info.errorCode = code;
   if (!info.action) {
     info.action = 'protocol.failure';
   }
+  log.debug("Leaving failure().");
   return audit(info);
 }
 
@@ -937,14 +979,17 @@ function failure(code, event) {
 // in here — see the header. Every recording site in this service calls THIS and
 // not record() above.
 function audit(event) {
+  log.debug("Entering audit().");
   try {
+    log.debug("Leaving audit().");
     return record(event);
   } catch (e) {
     // Swallowed with a reason: the alternative is an audit log that can fail a
     // bind, revoke or token issuance, which is strictly worse than a missing
     // row. Logged at error so it is not invisible.
-    log.error(errorCodes.tag('STS-REG-0048') + 'an audit event could not be recorded and ' +
-              'was dropped: ' + e.message);
+    log.error(errorCodes.tag('STS-REG-0048') + 'an audit event could not be ' +
+              'recorded and was dropped: ' + e.message);
+    log.debug("Leaving audit().");
     return null;
   }
 }
@@ -988,10 +1033,13 @@ function actionOf(req) {
       return trimmed(parsed && parsed.action, MAX_ACTION_LENGTH);
     }
     log.debug("Leaving actionOf().");
-    return trimmed(new URLSearchParams(raw).get('action') || '', MAX_ACTION_LENGTH);
+    return trimmed(new URLSearchParams(raw).get('action') || '',
+                   MAX_ACTION_LENGTH);
   } catch (e) {
+    log.debug("Caught in actionOf(): " + ((e && e.message) || e));
     // Not a body this can read; the row simply has no action name on it. Not an
-    // error worth a line — an unparseable body is already a 400 the row records.
+    // error worth a line — an unparseable body is already a 400 the row
+    // records.
     log.debug("Leaving actionOf().");
     return '';
   }
@@ -1001,9 +1049,17 @@ function actionOf(req) {
 // What a status code means as an outcome. See OUTCOMES above for why 4xx and
 // 5xx are not one thing.
 function outcomeOfStatus(status) {
+  log.debug("Entering outcomeOfStatus().");
   const code = parseInt(status, 10) || 0;
-  if (code >= 500) return 'error';
-  if (code >= 400) return 'refused';
+  if (code >= 500) {
+    log.debug("Leaving outcomeOfStatus().");
+    return 'error';
+  }
+  if (code >= 400) {
+    log.debug("Leaving outcomeOfStatus().");
+    return 'refused';
+  }
+  log.debug("Leaving outcomeOfStatus().");
   return 'success';
 }
 
@@ -1013,13 +1069,17 @@ function outcomeOfStatus(status) {
 // so testing for the console first would file every management API call as
 // console access and the API category would be permanently empty.
 function httpActionFor(path, method) {
+  log.debug("Entering httpActionFor().");
   const write = method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
   if (path === '/admin-api' || path.indexOf('/admin-api/') === 0) {
+    log.debug("Leaving httpActionFor().");
     return write ? 'api.change' : 'api.read';
   }
   if (path === '/admin' || path.indexOf('/admin/') === 0) {
+    log.debug("Leaving httpActionFor().");
     return write ? 'admin.change' : 'admin.view';
   }
+  log.debug("Leaving httpActionFor().");
   return 'protocol.call';
 }
 
@@ -1077,12 +1137,14 @@ function recordHttp(req, res, detail) {
   // browser flow answers with 200 — and that row is then a refusal, which is
   // what it is.
   const marked = errorCodes.codeOf(res);
-  const errorCode = marked || errorCodes.fallbackFor(res.statusCode, !!info.matched);
+  const errorCode = marked ||
+                    errorCodes.fallbackFor(res.statusCode, !!info.matched);
   // A FAILURE IS RECORDED WITH THE FIREHOSE OFF. `audit.protocolCalls` exists
   // to silence the JWKS polls and metadata fetches; a refused request is the
   // row somebody turned the firehose off to be able to find.
   if (action === 'protocol.call' && !protocolCallsRecorded() && !errorCode) {
-    log.debug("Leaving recordHttp(). audit.protocolCalls is off; not recorded.");
+    log.debug("Leaving recordHttp(). audit.protocolCalls is off; not " +
+              "recorded.");
     return null;
   }
   const actor = actorOfRequest(req);
@@ -1091,7 +1153,8 @@ function recordHttp(req, res, detail) {
   const statusOutcome = outcomeOfStatus(res.statusCode);
   const row = audit({
     action: action,
-    outcome: (marked && statusOutcome === 'success') ? 'refused' : statusOutcome,
+    outcome: (marked && statusOutcome === 'success') ? 'refused' :
+              statusOutcome,
     errorCode: errorCode,
     actor: actor,
     target: path,
@@ -1126,6 +1189,7 @@ const REDACTED_QUERY_KEYS = ['code', 'id_token_hint', 'access_token', 'token',
                              'credential', 'vp_token', 'response'];
 
 function queryText(query) {
+  log.debug("Entering queryText().");
   const source = query || {};
   const parts = [];
   Object.keys(source).slice(0, MAX_DETAIL_KEYS).forEach(function (key) {
@@ -1133,6 +1197,7 @@ function queryText(query) {
     parts.push(key + '=' + (redact ? '(redacted)'
                                    : trimmed(source[key], 60)));
   });
+  log.debug("Leaving queryText().");
   return parts.join(' ');
 }
 
@@ -1155,11 +1220,13 @@ function objectKindOf(dn, containers) {
                   .replace(/\s*,\s*/g, ',');
   const groups = String((containers && containers.groups) || '').toLowerCase()
                    .replace(/\s*,\s*/g, ',');
-  if (users && lower !== users && lower.slice(-(users.length + 1)) === ',' + users) {
+  if (users && lower !== users &&
+      lower.slice(-(users.length + 1)) === ',' + users) {
     log.debug("Leaving objectKindOf().");
     return 'user';
   }
-  if (groups && lower !== groups && lower.slice(-(groups.length + 1)) === ',' + groups) {
+  if (groups && lower !== groups &&
+      lower.slice(-(groups.length + 1)) === ',' + groups) {
     log.debug("Leaving objectKindOf().");
     return 'group';
   }
@@ -1171,6 +1238,8 @@ function objectKindOf(dn, containers) {
 // does not come through here — those have one action each, since "a search of a
 // group" is not a thing anybody filters for.
 function directoryActionFor(operation, dn, containers) {
+  log.debug("Entering directoryActionFor().");
+  log.debug("Leaving directoryActionFor().");
   return objectKindOf(dn, containers) + '.' + operation;
 }
 
@@ -1204,7 +1273,8 @@ function recordDirectory(event) {
 function list() {
   log.debug("Entering list(). " + events.length + " event(s) held.");
   const out = merged().reverse();
-  log.debug("Leaving list(). " + out.length + " event(s) returned, newest first.");
+  log.debug("Leaving list(). " + out.length + " event(s) returned, newest " +
+                                              "first.");
   return out;
 }
 
@@ -1235,9 +1305,11 @@ function list() {
 //     still holds and would report.
 // ---------------------------------------------------------------------------
 function merged() {
+  log.debug("Entering merged().");
   const mine = events.slice(0);
   const others = replication.remoteRows('audit.events', undefined, '');
   if (!others.length) {
+    log.debug("Leaving merged().");
     // THE OVERWHELMINGLY COMMON CASE — one process — and it costs one array
     // copy and a length check rather than a sort of everything.
     return mine;
@@ -1261,6 +1333,7 @@ function merged() {
     }
     return (a.seq || 0) - (b.seq || 0);
   });
+  log.debug("Leaving merged().");
   return all;
 }
 
@@ -1283,7 +1356,8 @@ function summary() {
   // counter rather than a length — so it comes from the counter store's own
   // fan-in rather than from the list.
   let recorded = nums.recorded;
-  replication.remoteRows('audit.nums', undefined, '').forEach(function (theirs) {
+  replication.remoteRows('audit.nums', undefined, '')
+             .forEach(function (theirs) {
     recorded += Number((theirs || {}).recorded || 0);
   });
   all.forEach(function (row) {
@@ -1314,7 +1388,8 @@ function summary() {
     byAction: byAction,
     byOutcome: byOutcome
   };
-  log.debug("Leaving summary(). " + out.held + " held, " + out.dropped + " dropped.");
+  log.debug("Leaving summary(). " + out.held + " held, " + out.dropped + " " +
+      "dropped.");
   return out;
 }
 

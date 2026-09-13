@@ -49,12 +49,20 @@ const os = require('os');
 const path = require('path');
 const nodeCrypto = require('crypto');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'key_residency',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // `tests/keystore.js`'s two fixtures, deliberately repeated rather than
 // exported from it: a test file that requires another test file is one that
 // cannot be run alone, and these are eight lines each.
 async function withTempDir(fn) {
+  log.debug("Entering withTempDir().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-residency-'));
   try {
+    log.debug("Leaving withTempDir().");
     return await fn(dir);
   } finally {
     try {
@@ -68,20 +76,28 @@ async function withTempDir(fn) {
 }
 
 function fakeStore() {
+  log.debug("Entering fakeStore().");
   const rows = new Map();
+  log.debug("Leaving fakeStore().");
   return {
     rows: rows,
     loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
       return Promise.resolve(Array.from(rows.entries()).map(function (pair) {
         return { realm: pair[0], material: pair[1] };
       }));
     },
     saveKeys: function (realm, material) {
+      log.debug("Entering saveKeys().");
       rows.set(realm, material);
+      log.debug("Leaving saveKeys().");
       return Promise.resolve();
     },
     deleteKeys: function (realm) {
+      log.debug("Entering deleteKeys().");
       rows.delete(realm);
+      log.debug("Leaving deleteKeys().");
       return Promise.resolve();
     }
   };
@@ -89,10 +105,13 @@ function fakeStore() {
 
 // One turn of the event loop, which is the unit `per-use` purges on.
 function tick() {
+  log.debug("Entering tick().");
+  log.debug("Leaving tick().");
   return new Promise(function (r) { setImmediate(r); });
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   const config = require('../common/config');
   const crypto = require('../common/crypto');
 
@@ -179,9 +198,9 @@ async function run(t) {
             'and every curve key\'s public JWK reads — which is what the ' +
             'JWKS endpoint walks');
     t.equal(keystore.report().plaintextHeld.length, 0,
-            'AND NOTHING WAS DECRYPTED TO ANSWER ANY OF IT. The key set holds ' +
-            'the public half as ordinary properties and the private half as ' +
-            'getters, so discovery never touches a private key');
+            'AND NOTHING WAS DECRYPTED TO ANSWER ANY OF IT. The key set ' +
+            'holds the public half as ordinary properties and the private ' +
+            'half as getters, so discovery never touches a private key');
 
     // -------------------------------------------------------------------
     // 3. SIGNING DECRYPTS, AND THE SIGNATURE IS REAL.
@@ -280,6 +299,7 @@ async function run(t) {
             'and a development service generates and signs exactly as it did ' +
             'before any of this existed');
   });
+  log.debug("Leaving run().");
 }
 
 module.exports = {

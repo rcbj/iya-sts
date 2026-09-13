@@ -60,9 +60,17 @@
 const fs = require('fs');
 const path = require('path');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'teardown_bounds',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 
 function read(rel) {
+  log.debug("Entering read().");
+  log.debug("Leaving read().");
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
@@ -73,6 +81,7 @@ function read(rel) {
 // — which is the argument waitForStsHealthy() already makes about itself.
 // ---------------------------------------------------------------------------
 function checkTheBoundedHelperExists(t) {
+  log.debug("Entering checkTheBoundedHelperExists().");
   t.log.info('=== one bounded compose call, shared by both launchers ===');
   const helper = read('tests/tools/compose.sh');
 
@@ -93,7 +102,8 @@ function checkTheBoundedHelperExists(t) {
   // `env docker_compose`, one layer along, and it is how every mode of this
   // launcher failed on its first run.
   t.check(/timeoutCmd\}"?\s+--kill-after=30s\s+"\$\{seconds\}"\s*\\?\s*\n?\s*env\s/
-    .test(helper) || /--kill-after=30s "\$\{seconds\}" \\\n\s*env /.test(helper),
+    .test(helper) ||
+          /--kill-after=30s "\$\{seconds\}" \\\n\s*env /.test(helper),
           'the compose variables go through `env` and not as bare words',
           'a NAME=value word after `timeout` is a program name to the ' +
           'kernel, so this is the difference between a bounded compose call ' +
@@ -105,6 +115,7 @@ function checkTheBoundedHelperExists(t) {
           /docker_compose "\$@"/.test(helper),
           'and a machine with no `timeout` degrades to the unbounded call',
           'this is a net under a launcher, not a new dependency for one');
+  log.debug("Leaving checkTheBoundedHelperExists().");
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +125,7 @@ function checkTheBoundedHelperExists(t) {
 // trap. The last of those is the one the incident actually reached.
 // ---------------------------------------------------------------------------
 function checkTheLauncherIsBounded(t) {
+  log.debug("Entering checkTheLauncherIsBounded().");
   t.log.info('=== docker-run-tests.sh bounds every wait on docker ===');
   const launcher = read('docker-run-tests.sh');
 
@@ -172,6 +184,7 @@ function checkTheLauncherIsBounded(t) {
           'same helper, same trap, same failure — a `down` that never ' +
           'returns after the run has finished; found: ' +
           localUnbounded.join(' | '));
+  log.debug("Leaving checkTheLauncherIsBounded().");
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +192,7 @@ function checkTheLauncherIsBounded(t) {
 // to add at all.
 // ---------------------------------------------------------------------------
 function checkTheVerdictIsRecovered(t) {
+  log.debug("Entering checkTheVerdictIsRecovered().");
   t.log.info('=== a reached bound asks docker what the runner did ===');
   const launcher = read('docker-run-tests.sh');
 
@@ -237,6 +251,7 @@ function checkTheVerdictIsRecovered(t) {
           'this launcher\'s own doing rather than the suite\'s answer — and ' +
           'reporting it as the answer makes the recovery lie in exactly the ' +
           'case it cannot otherwise be checked in');
+  log.debug("Leaving checkTheVerdictIsRecovered().");
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +264,9 @@ function checkTheVerdictIsRecovered(t) {
 // otherwise the useful bound never gets to run.
 // ---------------------------------------------------------------------------
 function checkTheJobTimeoutIsAboveOurs(t) {
-  t.log.info('=== the CI job\'s timeout is the backstop, not the mechanism ===');
+  log.debug("Entering checkTheJobTimeoutIsAboveOurs().");
+  t.log.info('=== the CI job\'s timeout is the backstop, not the mechanism ' +
+             '===');
   const launcher = read('docker-run-tests.sh');
   const workflow = read('.github/workflows/tests.yml');
   const modes = read('tests/tools/modes.sh');
@@ -297,13 +314,16 @@ function checkTheJobTimeoutIsAboveOurs(t) {
             jobMinutes + 'm)',
           'without a number here a stuck job holds a runner for six hours, ' +
           'which is what the workflow header says this setting is for');
+  log.debug("Leaving checkTheJobTimeoutIsAboveOurs().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkTheBoundedHelperExists(t);
   checkTheLauncherIsBounded(t);
   checkTheVerdictIsRecovered(t);
   checkTheJobTimeoutIsAboveOurs(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

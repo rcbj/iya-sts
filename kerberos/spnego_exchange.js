@@ -104,21 +104,50 @@ const SPN = krb5Service.SERVICE_PRINCIPAL.join('/');
 // for the next round trip.
 // ---------------------------------------------------------------------------
 const OUTCOMES = {
-  'no-authorization':        { terminal: false, what: 'no Authorization header; the bare RFC 4559 challenge' },
-  'wrong-scheme':            { terminal: true,  what: 'an Authorization header naming some other scheme' },
-  'empty-token':             { terminal: true,  what: 'Negotiate with nothing after it' },
-  'undecodable':             { terminal: true,  what: 'the token is neither a NegToken nor a bare Kerberos one' },
-  'no-common-mechanism':     { terminal: true,  what: 'nothing the client offered is performed here' },
-  'no-mech-token':           { terminal: false, what: 'a pessimistic NegTokenInit; the mechanism token was asked for' },
-  'non-kerberos-mechanism':  { terminal: true,  what: 'the selected mechanism is not one this service performs' },
-  'acceptor-threw':          { terminal: true,  what: 'the Kerberos acceptor raised' },
-  'ticket-refused':          { terminal: true,  what: 'the AP-REQ did not pass one of krb5_service.js\'s checks' },
-  'bad-mech-list-mic':       { terminal: true,  what: 'the mechListMIC does not verify (RFC 4178 section 5)' },
-  'mic-required':            { terminal: true,  what: 'section 5 required a mechListMIC and none was sent' },
-  'request-mic':             { terminal: false, what: 'request-mic sent; awaiting the client MIC' },
-  'no-pending-continuation': { terminal: true,  what: 'a bare NegTokenResp with no negotiation in progress' },
-  'continuation-no-mic':     { terminal: true,  what: 'the continuation carried no mechListMIC' },
-  'accepted':               { terminal: true,  what: 'the context is established' }
+  'no-authorization':        { terminal: false, what: 'no Authorization ' +
+                                                      'header; the bare RFC ' +
+                                                      '4559 challenge' },
+  'wrong-scheme':            { terminal: true,  what: 'an Authorization ' +
+                                                      'header naming some ' +
+                                                      'other scheme' },
+  'empty-token':             { terminal: true,  what: 'Negotiate with ' +
+                                                      'nothing after it' },
+  'undecodable':             { terminal: true,  what: 'the token is neither ' +
+                                                      'a NegToken nor a bare ' +
+                                                      'Kerberos one' },
+  'no-common-mechanism':     { terminal: true,  what: 'nothing the client ' +
+                                                      'offered is performed ' +
+                                                      'here' },
+  'no-mech-token':           { terminal: false, what: 'a pessimistic ' +
+                                                      'NegTokenInit; the ' +
+                                                      'mechanism token was ' +
+                                                      'asked for' },
+  'non-kerberos-mechanism':  { terminal: true,  what: 'the selected ' +
+                                                      'mechanism is not one ' +
+                                                      'this service performs' },
+  'acceptor-threw':          { terminal: true,  what: 'the Kerberos acceptor ' +
+                                                      'raised' },
+  'ticket-refused':          { terminal: true,  what: 'the AP-REQ did not ' +
+                                                      'pass one of ' +
+                                                      'krb5_service.js\'s ' +
+                                                      'checks' },
+  'bad-mech-list-mic':       { terminal: true,  what: 'the mechListMIC does ' +
+                                                      'not verify (RFC 4178 ' +
+                                                      'section 5)' },
+  'mic-required':            { terminal: true,  what: 'section 5 required a ' +
+                                                      'mechListMIC and none ' +
+                                                      'was sent' },
+  'request-mic':             { terminal: false, what: 'request-mic sent; ' +
+                                                      'awaiting the client ' +
+                                                      'MIC' },
+  'no-pending-continuation': { terminal: true,  what: 'a bare NegTokenResp ' +
+                                                      'with no negotiation ' +
+                                                      'in progress' },
+  'continuation-no-mic':     { terminal: true,  what: 'the continuation ' +
+                                                      'carried no ' +
+                                                      'mechListMIC' },
+  'accepted':               { terminal: true,  what: 'the context is ' +
+                                                     'established' }
 };
 
 // ---------------------------------------------------------------------------
@@ -200,22 +229,29 @@ function applyVerdict(res, verdict) {
 // `krb5.spnegoMaxPending`, defaulting to the 120 seconds and 64 entries these
 // were written as — and functions, because both are runtime.
 function pendingTtlMs() {
+  log.debug("Entering pendingTtlMs().");
+  log.debug("Leaving pendingTtlMs().");
   return config.value('krb5.spnegoPendingTtlSeconds') * 1000;
 }
 
 function maxPending() {
+  log.debug("Entering maxPending().");
+  log.debug("Leaving maxPending().");
   return config.value('krb5.spnegoMaxPending');
 }
 // -------------------------------------------------------------------------
-// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
-// is a plain Map that reports its writes so product mode can write them down;
-// `scope: 'shared'` is what says the store deliberately has no realm in it,
-// which is the discriminator `tests/realm_isolation.js` checks against.
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06).
+// `realms.sharedMap()` is a plain Map that reports its writes so product mode
+// can write them down; `scope: 'shared'` is what says the store deliberately
+// has no realm in it, which is the discriminator `tests/realm_isolation.js`
+// checks against.
 // -------------------------------------------------------------------------
 const pending = realms.sharedMap({ persist: 'spnego.pending',
                                    scope: 'shared' });
 
 function whoIs(req) {
+  log.debug("Entering whoIs().");
+  log.debug("Leaving whoIs().");
   return (req.ip || req.connection.remoteAddress || 'unknown');
 }
 
@@ -286,6 +322,8 @@ function initiatorMicKey(result) {
 }
 
 function negotiateHeader(token) {
+  log.debug("Entering negotiateHeader().");
+  log.debug("Leaving negotiateHeader().");
   return 'Negotiate ' + Buffer.from(token).toString('base64');
 }
 
@@ -326,6 +364,8 @@ function bareVerdict(door, code, facts) {
 // structure has no field for one — so everything a caller prints about WHY is
 // out of band and a real server tells a client none of it.
 function rejection(door, code, facts) {
+  log.debug("Entering rejection().");
+  log.debug("Leaving rejection().");
   // error-code: none — the helper's own call; every caller puts its code in facts.errorCode
   return tokenVerdict(door, code,
     spnego.encodeNegTokenResp({ negState: spnego.NEG_STATE.REJECT }), facts);
@@ -375,7 +415,8 @@ async function negotiate(req, opts) {
     // A scheme this resource does not speak. Named, because "401" on its own
     // sends people to look at their ticket when they sent Basic.
     const scheme = header.split(/\s/)[0] || '(none)';
-    log.info('krb5-spnego: refusing Authorization scheme ' + scheme + ' at ' + door);
+    log.info('krb5-spnego: refusing Authorization scheme ' + scheme + ' at ' +
+             door);
     log.debug('Leaving negotiate(). Wrong scheme.');
     return bareVerdict(door, 'wrong-scheme',
       { reason: 'Authorization scheme ' + scheme, scheme: scheme,
@@ -468,7 +509,8 @@ async function negotiate(req, opts) {
       record: options.record !== false
     });
   } catch (e) {
-    log.error(errorCodes.tag('STS-KRB-0089') + 'krb5-spnego: the acceptor threw: ' +
+    log.error(errorCodes.tag('STS-KRB-0089') + 'krb5-spnego: the acceptor ' +
+                                               'threw: ' +
               (e.stack || e.message));
     log.debug('Leaving negotiate(). Acceptor threw.');
     return rejection(door, 'acceptor-threw',
@@ -723,5 +765,9 @@ module.exports = {
   negotiate: negotiate,
   applyVerdict: applyVerdict,
   volunteerTheSpn: volunteerTheSpn,
-  lastExchange: function () { return lastExchange; }
+  lastExchange: function () {
+    log.debug("Entering lastExchange().");
+    log.debug("Leaving lastExchange().");
+    return lastExchange;
+  }
 };

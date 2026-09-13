@@ -152,9 +152,9 @@ const DATA_CLASSES = [
     where: 'an attribute on the resource server’s application entry under ' +
            '`ou=applications`',
     sealed: true,
-    why: 'A macaroon is verified with its ROOT key, and the same key can mint ' +
-         'one: whoever holds it can issue tokens that resource server will ' +
-         'accept. The key is derived per resource server from the realm ' +
+    why: 'A macaroon is verified with its ROOT key, and the same key can ' +
+         'mint one: whoever holds it can issue tokens that resource server ' +
+         'will accept. The key is derived per resource server from the realm ' +
          'secret, and written onto the entry — sealed — only so the resource ' +
          'server’s operator has somewhere to collect it.'
   },
@@ -183,13 +183,14 @@ const DATA_CLASSES = [
     sealed: true,
     why: 'PASSWORD-EQUIVALENT: a Kerberos long-term key is what the password ' +
          'is turned into, and whoever holds it can obtain tickets as that ' +
-         'principal without knowing the password. So it is sealed wherever the ' +
-         'key-encryption key outlives the process, the name and a stamp of the ' +
-         'password hash are sealed WITH it so a value cannot be moved to ' +
-         'another entry or kept past a password change, and it is WITHHELD — ' +
-         'ciphertext included — from every page, every LDAP search and every ' +
-         '`/admin-api` reply. A service principal\'s key leaves this service ' +
-         'once, as the keytab its create or rotate hands over.'
+         'principal without knowing the password. So it is sealed wherever ' +
+         'the key-encryption key outlives the process, the name and a stamp ' +
+         'of the password hash are sealed WITH it so a value cannot be moved ' +
+         'to another entry or kept past a password change, and it is ' +
+         'WITHHELD — ciphertext included — from every page, every LDAP ' +
+         'search and every `/admin-api` reply. A service principal\'s key ' +
+         'leaves this service once, as the keytab its create or rotate hands ' +
+         'over.'
   },
   {
     label: 'totp-secret',
@@ -389,37 +390,38 @@ function encryptionJson() {
       perRealmKey: false,
       realms:
         'THERE IS ONE KEY-ENCRYPTION KEY FOR THIS SERVICE, NOT ONE PER TRUST ' +
-        'REALM. It is read once at startup and used for every sealed value in ' +
-        'every realm. Each record does get a key of its own — HKDF over a ' +
+        'REALM. It is read once at startup and used for every sealed value ' +
+        'in every realm. Each record does get a key of its own — HKDF over a ' +
         'random salt per record — but the derivation takes no realm, so the ' +
-        'separation is per RECORD and not per TENANT. What is per realm is the ' +
-        'material being sealed (each realm has its own signing keys and its ' +
-        'own branch of the certificate authority), not the key that seals it. ' +
-        'So a realm is NOT a cryptographic boundary at rest: whoever can read ' +
-        'this key can open every realm\'s sealed data, and rotating it rotates ' +
-        'every realm at once.',
+        'separation is per RECORD and not per TENANT. What is per realm is ' +
+        'the material being sealed (each realm has its own signing keys and ' +
+        'its own branch of the certificate authority), not the key that ' +
+        'seals it. So a realm is NOT a cryptographic boundary at rest: ' +
+        'whoever can read this key can open every realm\'s sealed data, and ' +
+        'rotating it rotates every realm at once.',
       storage:
         'EVERYTHING NOT IN THE TABLE ABOVE IS PLAINTEXT IN THE STORE — the ' +
         'directory entries, the groups, the applications, the realms and the ' +
-        'settings, and in development mode very nearly all of it. This service ' +
-        'seals credentials and private keys and nothing else, deliberately: ' +
-        'column-level encryption leaves the plaintext in the write-ahead log, ' +
-        'in temporary files when a sort spills, in a pg_dump, on replicas and ' +
-        'in query logs, so the layer that covers a whole store belongs UNDER ' +
-        'the database rather than inside it. That layer is the operator\'s — ' +
-        'LUKS or an encrypted ZFS dataset under PGDATA, a cloud disk with a ' +
-        'customer-managed key, or one of the PostgreSQL forks that has TDE, ' +
-        'since the community build has none. docs/encryption-at-rest.md is ' +
-        'this repository\'s write-up of the options.',
+        'settings, and in development mode very nearly all of it. This ' +
+        'service seals credentials and private keys and nothing else, ' +
+        'deliberately: column-level encryption leaves the plaintext in the ' +
+        'write-ahead log, in temporary files when a sort spills, in a ' +
+        'pg_dump, on replicas and in query logs, so the layer that covers a ' +
+        'whole store belongs UNDER the database rather than inside it. That ' +
+        'layer is the operator\'s — LUKS or an encrypted ZFS dataset under ' +
+        'PGDATA, a cloud disk with a customer-managed key, or one of the ' +
+        'PostgreSQL forks that has TDE, since the community build has none. ' +
+        'docs/encryption-at-rest.md is this repository\'s write-up of the ' +
+        'options.',
       // The one deployment mistake that makes everything above decorative, and
       // the one this repository's own compose stack invites by mounting a key
       // file beside the database volume.
       keyResidency:
-        'AND THE KEY MUST NOT LIVE ON THE DISK IT PROTECTS. A key file on the ' +
-        'same unencrypted volume as the store hands both halves to whoever ' +
-        'takes the volume; that is fine for a development stack and is why ' +
-        'the `file` provider is the default, and it is not a deployment. ' +
-        'keys.kekProvider selects a secret store instead.'
+        'AND THE KEY MUST NOT LIVE ON THE DISK IT PROTECTS. A key file on ' +
+        'the same unencrypted volume as the store hands both halves to ' +
+        'whoever takes the volume; that is fine for a development stack and ' +
+        'is why the `file` provider is the default, and it is not a ' +
+        'deployment. keys.kekProvider selects a secret store instead.'
     },
     store: store,
     classes: classes,
@@ -494,7 +496,8 @@ function describeStore() {
   try {
     active = typeof persistence.activeMode === 'function'
       ? String(persistence.activeMode() || '') : '';
-    mintedOn = typeof minted.enabled === 'function' ? !!minted.enabled() : false;
+    mintedOn = typeof minted.enabled === 'function' ? !!minted.enabled() :
+               false;
   } catch (e) {
     // Swallowed deliberately: a store that throws while describing itself is
     // still a store, and the page's subject is the encryption rather than the
@@ -523,17 +526,23 @@ function describeStore() {
 // THE PAGE.
 // ---------------------------------------------------------------------------
 function bytes(n) {
+  log.debug("Entering bytes().");
   const num = Number(n) || 0;
   if (num < 1024) {
+    log.debug("Leaving bytes().");
     return num + ' B';
   }
   if (num < 1024 * 1024) {
+    log.debug("Leaving bytes().");
     return (num / 1024).toFixed(1) + ' KB';
   }
+  log.debug("Leaving bytes().");
   return (num / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 function when(iso) {
+  log.debug("Entering when().");
+  log.debug("Leaving when().");
   return iso ? admin.esc(String(iso).replace('T', ' ').replace(/\..*$/, 'Z'))
              : '<span class="muted">never</span>';
 }
@@ -572,9 +581,12 @@ function classesTable(json) {
 }
 
 function unclassifiedBlock(json) {
+  log.debug("Entering unclassifiedBlock().");
   if (!json.unclassified.length) {
+    log.debug("Leaving unclassifiedBlock().");
     return '';
   }
+  log.debug("Leaving unclassifiedBlock().");
   return admin.warn(
     '<p><strong>' + json.unclassified.length + ' label(s) were counted that ' +
     'this page has no row for:</strong> ' +
@@ -606,21 +618,21 @@ function renderEncryption(req, res) {
 
   const what = admin.note(
     '<p>This page answers <strong>what this service encrypts at rest, with ' +
-    'which key, under which algorithm, and how much of it has happened</strong>. ' +
-    'It is under Monitoring rather than beside the other two cryptography ' +
-    'pages because of what it is: <a href="/admin/crypto-metadata">the ' +
-    'crypto report</a> says what this service <em>does</em> when it signs or ' +
-    'encrypts and reads the same on a service that started a second ago, and ' +
-    '<a href="/admin/keys">the keys page</a> says what one realm ' +
-    '<em>holds</em>. The numbers here go up while you watch.</p>' +
-    '<p><strong>Neither a sealed value nor an opened one appears on this ' +
-    'page.</strong> A sealed value is a private key, an authenticator&rsquo;s ' +
-    'shared secret or somebody&rsquo;s recovery codes, and printing either ' +
-    'half of one would hand over exactly what the sealing exists to protect. ' +
-    'There is no control here either: rotating the key-encryption key is a ' +
-    'deployment act &mdash; this service reads one and never writes one &mdash; ' +
-    'and a <em>decrypt this</em> button would be the one door onto material ' +
-    'no door is supposed to have.</p>',
+    'which key, under which algorithm, and how much of it has ' +
+    'happened</strong>. It is under Monitoring rather than beside the other ' +
+    'two cryptography pages because of what it is: <a ' +
+    'href="/admin/crypto-metadata">the crypto report</a> says what this ' +
+    'service <em>does</em> when it signs or encrypts and reads the same on a ' +
+    'service that started a second ago, and <a href="/admin/keys">the keys ' +
+    'page</a> says what one realm <em>holds</em>. The numbers here go up ' +
+    'while you watch.</p><p><strong>Neither a sealed value nor an opened one ' +
+    'appears on this page.</strong> A sealed value is a private key, an ' +
+    'authenticator&rsquo;s shared secret or somebody&rsquo;s recovery codes, ' +
+    'and printing either half of one would hand over exactly what the ' +
+    'sealing exists to protect. There is no control here either: rotating ' +
+    'the key-encryption key is a deployment act &mdash; this service reads ' +
+    'one and never writes one &mdash; and a <em>decrypt this</em> button ' +
+    'would be the one door onto material no door is supposed to have.</p>',
     'What this page is, and the two things it deliberately has not got');
 
   const keyBlock = admin.note(
@@ -724,5 +736,9 @@ module.exports = {
   // the call sites actually pass. Exported for `pki_authoring.js`'s reason: a
   // class described here and never sealed, or sealed and never described, is
   // an error nothing else in this service can see.
-  dataClasses: function () { return DATA_CLASSES.slice(); }
+  dataClasses: function () {
+    log.debug("Entering dataClasses().");
+    log.debug("Leaving dataClasses().");
+    return DATA_CLASSES.slice();
+  }
 };

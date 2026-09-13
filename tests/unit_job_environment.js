@@ -41,6 +41,12 @@ const path = require('path');
 
 const runner = require('./tools/run-report');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'unit_job_environment',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 const MODES_SH = path.join(__dirname, 'tools', 'modes.sh');
 const RUN_REPORT = path.join(__dirname, 'tools', 'run-report.js');
@@ -49,6 +55,7 @@ const RUN_REPORT = path.join(__dirname, 'tools', 'run-report.js');
 // that is not the bash array at the top of the file, grouped by the mode whose
 // block it is in. `case "$1" in` arms are what separate the blocks.
 function modesFromTheShell() {
+  log.debug("Entering modesFromTheShell().");
   const lines = fs.readFileSync(MODES_SH, 'utf8').split('\n');
   const byMode = {};
   let current = null;
@@ -68,10 +75,12 @@ function modesFromTheShell() {
       byMode[current].push(set[1]);
     }
   });
+  log.debug("Leaving modesFromTheShell().");
   return byMode;
 }
 
 function run(t) {
+  log.debug("Entering run().");
   const byMode = modesFromTheShell();
   const modes = Object.keys(byMode);
   t.check(modes.length === 3,
@@ -114,11 +123,11 @@ function run(t) {
           'the runner takes every one of them off a unit job\'s environment',
           notScrubbed.join(', ') || union.join(', '));
   t.check(scrubbed.indexOf('STS_KEYS_SOURCE') >= 0,
-          'including STS_KEYS_SOURCE, which is the one that cost eight jobs — ' +
-          'a keystore turned on in a process that has no store to open');
+          'including STS_KEYS_SOURCE, which is the one that cost eight jobs ' +
+          '— a keystore turned on in a process that has no store to open');
   t.check(scrubbed.indexOf('STS_ALL_MODES') < 0,
-          'and not STS_ALL_MODES, which is a bash array of the mode names and ' +
-          'was never an environment variable at all');
+          'and not STS_ALL_MODES, which is a bash array of the mode names ' +
+          'and was never an environment variable at all');
 
   // ---------------------------------------------------------------------
   // AND THE UNIT BRANCH ACTUALLY DELETES THEM. Source-coupled on purpose:
@@ -162,6 +171,7 @@ function run(t) {
 
   t.check(fs.existsSync(path.join(ROOT, 'tests', 'tools', 'modes.sh')),
           'modes.sh is still the one place the modes are defined');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

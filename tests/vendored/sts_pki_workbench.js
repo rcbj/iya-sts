@@ -100,17 +100,23 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_pki_workbench",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -138,13 +144,24 @@ const OPERATOR_PASSWORD = "pki-workbench-Passw0rd!-" + names.runStamp();
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
-function realmUrl(path) { return base + "/realm/" + REALM + path; }
-function api(path) { return realmUrl("/admin-api" + path); }
+function realmUrl(path) {
+  log.debug("Entering realmUrl().");
+  log.debug("Leaving realmUrl().");
+  return base + "/realm/" + REALM + path;
+}
+
+function api(path) {
+  log.debug("Entering api().");
+  log.debug("Leaving api().");
+  return realmUrl("/admin-api" + path);
+}
 
 // ---------------------------------------------------------------------------
 // THE VERBS.
@@ -157,6 +174,7 @@ async function fetchJson(url, options) {
   try {
     body = JSON.parse(text);
   } catch (e) {
+    log.debug("Caught in fetchJson(): " + ((e && e.message) || e));
     // Not JSON — an HTML page, or a file. The caller reports the status and
     // the raw text, which says more than a parse error would.
     body = null;
@@ -165,9 +183,15 @@ async function fetchJson(url, options) {
   return { status: r.status, body: body, text: text };
 }
 
-function get(url) { return fetchJson(url); }
+function get(url) {
+  log.debug("Entering get().");
+  log.debug("Leaving get().");
+  return fetchJson(url);
+}
 
 function postJson(url, payload) {
+  log.debug("Entering postJson().");
+  log.debug("Leaving postJson().");
   return fetchJson(url, { method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(payload || {}) });
@@ -187,9 +211,11 @@ function postJson(url, payload) {
 const jar = new Map();
 
 function rememberCookies(response) {
+  log.debug("Entering rememberCookies().");
   const raw = typeof response.headers.getSetCookie === "function"
     ? response.headers.getSetCookie()
-    : (response.headers.get("set-cookie") ? [response.headers.get("set-cookie")] : []);
+    : (response.headers.get("set-cookie") ?
+       [response.headers.get("set-cookie")] : []);
   raw.forEach(function (line) {
     const first = String(line).split(";")[0];
     const eq = first.indexOf("=");
@@ -197,9 +223,12 @@ function rememberCookies(response) {
       jar.set(first.slice(0, eq).trim(), first.slice(eq + 1).trim());
     }
   });
+  log.debug("Leaving rememberCookies().");
 }
 
 function cookieHeader() {
+  log.debug("Entering cookieHeader().");
+  log.debug("Leaving cookieHeader().");
   return Array.from(jar.entries()).map(function (pair) {
     return pair[0] + "=" + pair[1];
   }).join("; ");
@@ -231,6 +260,7 @@ async function browse(url, options) {
              disposition: r.headers.get("content-disposition") || "",
              response: r };
   }
+  log.debug("Leaving browse().");
   throw new Error("browse(): too many redirects starting at " + url);
 }
 
@@ -242,15 +272,20 @@ async function browse(url, options) {
 // Matching the bare path finds nothing, and the failure reads as "the pane is
 // not on the page".
 function form(page, action) {
+  log.debug("Entering form().");
   const at = page.search(new RegExp('action="[^"]*' +
     action.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '"'));
-  assert.ok(at >= 0, "no form posting to " + action + " on " + page.slice(0, 200));
+  assert.ok(at >= 0,
+            "no form posting to " + action + " on " + page.slice(0, 200));
   const start = page.lastIndexOf("<form", at);
   const end = page.indexOf("</form>", at);
+  log.debug("Leaving form().");
   return page.slice(start, end);
 }
 
 function unescapeHtml(value) {
+  log.debug("Entering unescapeHtml().");
+  log.debug("Leaving unescapeHtml().");
   return String(value).replace(/&quot;/g, '"').replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">").replace(/&#39;/g, "'").replace(/&amp;/g, "&");
 }
@@ -260,6 +295,7 @@ function unescapeHtml(value) {
 // option. **An unchecked box contributes nothing**, which is what makes the
 // service's present-or-absent reading of a flag correct.
 function fields(html) {
+  log.debug("Entering fields().");
   const out = [];
   let m;
   const inputs = /<input([^>]*)>/g;
@@ -273,7 +309,8 @@ function fields(html) {
     if ((type === "checkbox" || type === "radio") && !/checked/.test(attrs)) {
       continue;
     }
-    out.push([name, unescapeHtml((/value="([^"]*)"/.exec(attrs) || [])[1] || "")]);
+    out.push([name,
+              unescapeHtml((/value="([^"]*)"/.exec(attrs) || [])[1] || "")]);
   }
   const areas = /<textarea[^>]*name="([^"]*)"[^>]*>([\s\S]*?)<\/textarea>/g;
   while ((m = areas.exec(html)) !== null) {
@@ -284,39 +321,49 @@ function fields(html) {
     const chosen = /<option value="([^"]*)"[^>]*selected/.exec(m[2]);
     out.push([m[1], chosen ? chosen[1] : ""]);
   }
+  log.debug("Leaving fields().");
   return out;
 }
 
 function bodyOf(pairs, extra, drop) {
+  log.debug("Entering bodyOf().");
   const set = new Map(pairs);
   (drop || []).forEach(function (name) { set.delete(name); });
   Object.keys(extra || {}).forEach(function (name) {
     set.set(name, extra[name]);
   });
+  log.debug("Leaving bodyOf().");
   return Array.from(set.entries()).map(function (pair) {
     return encodeURIComponent(pair[0]) + "=" + encodeURIComponent(pair[1]);
   }).join("&");
 }
 
 function press(url, body) {
+  log.debug("Entering press().");
+  log.debug("Leaving press().");
   return browse(url, { method: "POST", body: body,
                        headers: { "Content-Type":
                                   "application/x-www-form-urlencoded" } });
 }
 
 function valueOf(page, name) {
+  log.debug("Entering valueOf().");
   const m = new RegExp('name="' + name + '"[^>]*value="([^"]*)"').exec(page);
   const n = new RegExp('<input[^>]*value="([^"]*)"[^>]*name="' + name + '"')
     .exec(page);
   const area = new RegExp('<textarea[^>]*name="' + name +
                           '"[^>]*>([\\s\\S]*?)<\\/textarea>').exec(page);
   if (area) {
+    log.debug("Leaving valueOf().");
     return unescapeHtml(area[1]);
   }
+  log.debug("Leaving valueOf().");
   return unescapeHtml((m || n || [])[1] || "");
 }
 
 function ticked(page, name) {
+  log.debug("Entering ticked().");
+  log.debug("Leaving ticked().");
   return new RegExp('name="' + name + '" value="1" checked').test(page);
 }
 
@@ -335,12 +382,14 @@ async function signIn() {
   const account = await postJson(api("/users/create"), {
     username: OPERATOR, invent: false,
     attributes: { cn: "PKI Workbench Operator", givenName: "PKI",
-                  sn: "Workbench Operator", displayName: "PKI Workbench Operator",
+                  sn: "Workbench Operator", displayName: "PKI Workbench " +
+                      "Operator",
                   mail: OPERATOR + "@pki-workbench.test" },
     credential: "password", password: OPERATOR_PASSWORD
   });
   assert.ok(account.status === 200 && account.body && account.body.ok,
-            "creating the operator " + OPERATOR + " in " + REALM + " answered " +
+            "creating the operator " + OPERATOR + " in " + REALM +
+            " answered " +
             account.status + " " + String(account.text).slice(0, 300));
   const screen = await browse(realmUrl("/admin/pki"));
   assert.ok(/name="authn_id"/.test(screen.text),
@@ -367,6 +416,7 @@ async function signIn() {
 // the state and a field the page forgets to re-render is a control that
 // silently resets itself on every button press.
 async function theFormRoundTrips(page) {
+  log.debug("Entering theFormRoundTrips().");
   log.info("=== 1. the form round-trips, which is the whole mechanism ===");
   const pane = form(page.text, "/admin/pki/certificate");
   const before = fields(pane);
@@ -414,7 +464,8 @@ async function theFormRoundTrips(page) {
     pki_validity_years: "3"
   };
   const back = await press(realmUrl("/admin/pki/certificate"),
-                           bodyOf(before, Object.assign({ defaults: "1" }, typed)));
+                           bodyOf(before,
+                                  Object.assign({ defaults: "1" }, typed)));
   check("pressing Apply the profile answers with a PAGE and not a redirect",
         function () {
           assert.strictEqual(back.status, 200,
@@ -430,7 +481,8 @@ async function theFormRoundTrips(page) {
     assert.strictEqual(valueOf(back.text, "pki_san"), typed.pki_san);
   });
   check("and a value with spaces in it, unescaped correctly", function () {
-    assert.strictEqual(valueOf(back.text, "pki_ns_comment"), typed.pki_ns_comment);
+    assert.strictEqual(valueOf(back.text, "pki_ns_comment"),
+                       typed.pki_ns_comment);
   });
   check("and a ticked box comes back ticked", function () {
     assert.ok(ticked(back.text, "pki_ext_ns_comment"));
@@ -450,11 +502,13 @@ async function theFormRoundTrips(page) {
           assert.deepStrictEqual(lost, [],
             "these fields did not come back: " + lost.join(", "));
         });
+  log.debug("Leaving theFormRoundTrips().");
   return back;
 }
 
 // 2. ISSUE, through the browser, and what the reply says.
 async function theBrowserIssues(page) {
+  log.debug("Entering theBrowserIssues().");
   log.info("=== 2. a certificate is issued through the form ===");
   const pane = form(page.text, "/admin/pki/certificate");
   const issued = await press(realmUrl("/admin/pki/certificate"),
@@ -490,6 +544,7 @@ async function theBrowserIssues(page) {
           assert.ok(issued.text.indexOf(CA_CN) >= 0,
             "the store table does not mention " + CA_CN);
         });
+  log.debug("Leaving theBrowserIssues().");
   return issued;
 }
 
@@ -497,6 +552,7 @@ async function theBrowserIssues(page) {
 // one line of a subjectAltName would not parse is not a refusal anybody can
 // act on.
 async function aRefusalKeepsTheForm(page) {
+  log.debug("Entering aRefusalKeepsTheForm().");
   log.info("=== 3. a refusal comes back with the form still in it ===");
   const pane = form(page.text, "/admin/pki/certificate");
   const refused = await press(realmUrl("/admin/pki/certificate"),
@@ -520,10 +576,12 @@ async function aRefusalKeepsTheForm(page) {
         "retyped", function () {
     assert.ok(valueOf(refused.text, "pki_san").indexOf("no type at all") >= 0);
   });
+  log.debug("Leaving aRefusalKeepsTheForm().");
 }
 
 // 4. THE STORE, THROUGH `/admin-api`, AND WHAT IS NOT IN IT.
 async function theStoreIsReported() {
+  log.debug("Entering theStoreIsReported().");
   log.info("=== 4. the store as the API reports it ===");
   const view = await get(api("/pki"));
   check("GET /admin-api/pki answers", function () {
@@ -563,11 +621,13 @@ async function theStoreIsReported() {
             return one.id === mine[0].id;
           }), "the CA is not in the issuer list");
         });
+  log.debug("Leaving theStoreIsReported().");
   return mine[0];
 }
 
 // 5. THE DOWNLOAD, which is the one form on this page whose answer is a FILE.
 async function theDownloadIsAFile(page, object) {
+  log.debug("Entering theDownloadIsAFile().");
   log.info("=== 5. Download answers with the file itself ===");
   const pane = form(page.text, "/admin/pki/certificate");
   const file = await press(realmUrl("/admin/pki/export"),
@@ -616,6 +676,7 @@ async function theDownloadIsAFile(page, object) {
           assert.ok(/password/i.test(refused.text),
             "the refusal does not mention the password");
         });
+  log.debug("Leaving theDownloadIsAFile().");
 }
 
 // 6. THE GATE. A caller holding nothing must not be handed a private key.
@@ -626,6 +687,7 @@ async function theDownloadIsAFile(page, object) {
 // role roster, which every other job in the run shares. What is asserted here
 // is the failure that would actually matter.
 async function theExportNeedsASession() {
+  log.debug("Entering theExportNeedsASession().");
   log.info("=== 6. the export is not open to a caller with no session ===");
   const r = await fetch(realmUrl("/admin/pki/export"),
     { method: "POST", redirect: "manual",
@@ -642,11 +704,13 @@ async function theExportNeedsASession() {
           assert.ok(String(text).indexOf("PRIVATE KEY") < 0,
             "a private key was returned to a caller with no session");
         });
+  log.debug("Leaving theExportNeedsASession().");
 }
 
 // 7. RULE 7: the console's controls and the API's operations are the same set,
 // and they reach the same functions.
 async function theApiMirrorsThePane(object) {
+  log.debug("Entering theApiMirrorsThePane().");
   log.info("=== 7. /admin-api mirrors the pane (rule 7) ===");
   const unknown = await postJson(api("/pki/nonsense"), {});
   check("the unknown-action sentence names every action", function () {
@@ -712,19 +776,24 @@ async function theApiMirrorsThePane(object) {
   check("and the CA it was issued FROM is untouched, because removing a leaf " +
         "is not removing an authority", function () {
           const left = after.body.workbench.objects;
-          assert.ok(!left.some(function (one) { return one.id === leaf.body.object.id; }),
+          assert.ok(!left.some(function (one) {
+            return one.id === leaf.body.object.id;
+          }),
             "the leaf is still in the store");
           assert.ok(left.some(function (one) { return one.id === object.id; }),
             "the CA went with it");
         });
+  log.debug("Leaving theApiMirrorsThePane().");
 }
 
 // 8. THE HIERARCHY AND THE STORE ARE TWO THINGS IN ONE REALM, and the two
 // buttons must not touch each other. This is a claim about `/admin-api`'s
 // `build` and `clear-store` meeting the pane's objects.
 async function theHierarchyAndTheStoreAreSeparate() {
+  log.debug("Entering theHierarchyAndTheStoreAreSeparate().");
   log.info("=== 8. building the hierarchy does not empty the store ===");
-  const built = await postJson(api("/pki/build"), { organisation: "Pane Test" });
+  const built = await postJson(api("/pki/build"),
+                               { organisation: "Pane Test" });
   check("the three-tier hierarchy builds in the same realm", function () {
     assert.strictEqual(built.status, 200, built.text.slice(0, 300));
     assert.strictEqual(built.body.chain.tiers.length, 3);
@@ -738,9 +807,11 @@ async function theHierarchyAndTheStoreAreSeparate() {
           }), "the pane's CA went when the hierarchy was built");
         });
   check("the three tiers are now offered as issuers beside it", function () {
-    const ids = after.body.workbench.issuers.map(function (one) { return one.id; });
+    const ids = after.body.workbench.issuers.map(
+        function (one) { return one.id; });
     ["tier:root", "tier:intermediate", "tier:issuing"].forEach(function (id) {
-      assert.ok(ids.indexOf(id) >= 0, "no issuer " + id + " in " + ids.join(", "));
+      assert.ok(ids.indexOf(id) >= 0,
+                "no issuer " + id + " in " + ids.join(", "));
     });
   });
 
@@ -755,6 +826,7 @@ async function theHierarchyAndTheStoreAreSeparate() {
           assert.ok(last.body.chain && last.body.chain.tiers.length === 3,
             "the hierarchy went with the store");
         });
+  log.debug("Leaving theHierarchyAndTheStoreAreSeparate().");
 }
 
 // ===========================================================================
@@ -782,6 +854,7 @@ async function theHierarchyAndTheStoreAreSeparate() {
 // realm's page must not be drawing.
 // ===========================================================================
 async function eachRealmSeesItsOwnAuthorities() {
+  log.debug("Entering eachRealmSeesItsOwnAuthorities().");
   log.info("=== 9. one realm's authorities, in the page and in the API ===");
 
   const mine = await get(api("/pki"));
@@ -791,7 +864,8 @@ async function eachRealmSeesItsOwnAuthorities() {
       "no tree in the reply: " + mine.text.slice(0, 200));
   });
 
-  const myScopes = mine.body.tree.scopes.map(function (one) { return one.scope; });
+  const myScopes = mine.body.tree.scopes.map(function (
+      one) { return one.scope; });
   check("and the tree it draws is EXACTLY two branches — the process one and " +
         "this realm's. The Root is above both and is reported as `root` " +
         "rather than as a scope, which is what makes this an exact count " +
@@ -854,7 +928,8 @@ async function eachRealmSeesItsOwnAuthorities() {
   check("GET /admin-api/pki answers in the DEFAULT realm too", function () {
     assert.strictEqual(theirs.status, 200, theirs.text.slice(0, 300));
   });
-  const theirScopes = theirs.body.tree.scopes.map(function (one) { return one.scope; });
+  const theirScopes = theirs.body.tree.scopes.map(
+      function (one) { return one.scope; });
   check("and it does NOT carry this job's realm — which is the whole " +
         "narrowing, and the assertion that was failing before it: section 8 " +
         "built a hierarchy in \"" + REALM + "\" and the default realm's page " +
@@ -923,7 +998,8 @@ async function eachRealmSeesItsOwnAuthorities() {
         function () {
           const why = String((foreign.body.errors || []).join(" ") +
                              " " + (foreign.body.why || ""));
-          assert.ok(/switch/i.test(why) && /realm/i.test(why), why.slice(0, 300));
+          assert.ok(/switch/i.test(why) && /realm/i.test(why),
+                    why.slice(0, 300));
         });
   check("the refusal came back in `errors` as well as `why` — the field a " +
         "test reads, which two other jobs match sentences out of",
@@ -938,7 +1014,8 @@ async function eachRealmSeesItsOwnAuthorities() {
           const before = mine.body.tree.scopes.filter(function (one) {
             return one.scope === REALM;
           })[0];
-          assert.ok(before && before.intermediate, "no Intermediate to compare");
+          assert.ok(before && before.intermediate,
+                    "no Intermediate to compare");
           return before;
         });
   const again = await get(api("/pki"));
@@ -986,6 +1063,7 @@ async function eachRealmSeesItsOwnAuthorities() {
                     /switch realms/i.test(page.text),
             "the page does not say what it is showing");
         });
+  log.debug("Leaving eachRealmSeesItsOwnAuthorities().");
 }
 
 // ---------------------------------------------------------------------------

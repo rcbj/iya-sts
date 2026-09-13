@@ -62,17 +62,23 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_second_factor_pages",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -87,26 +93,32 @@ var PERSON = usernameFor("second-factor");
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  ✓ " + what);
+  log.debug("Leaving check().");
 }
 
 async function get(path) {
+  log.debug("Entering get().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in get(): " + ((e && e.message) || e));
     // Not JSON — an HTML error page. Quoting it whole says more than a parse
     // failure would.
     body = raw;
   }
+  log.debug("Leaving get().");
   return { status: r.status, body: body, raw: raw };
 }
 
 async function post(path, payload) {
+  log.debug("Entering post().");
   const r = await fetch(api + path, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {})
@@ -116,16 +128,21 @@ async function post(path, payload) {
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in post(): " + ((e && e.message) || e));
     body = raw;
   }
+  log.debug("Leaving post().");
   return { status: r.status, body: body, raw: raw };
 }
 
 async function ok(path, payload, what) {
+  log.debug("Entering ok().");
   const r = await post(path, payload);
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
-    "POST " + path + " should have " + what + "; it answered " + r.status + " " +
+    "POST " + path + " should have " + what + "; it answered " + r.status +
+    " " +
     JSON.stringify((r.body && r.body.errors) || r.body).slice(0, 400));
+  log.debug("Leaving ok().");
   return r.body;
 }
 
@@ -134,14 +151,17 @@ async function ok(path, payload, what) {
 // there. Resetting a key nobody overrode is refused 400 by design — which is
 // the ordinary outcome when the section above failed before it wrote anything.
 async function resetQuietly(keys) {
+  log.debug("Entering resetQuietly().");
   for (const key of keys) {
     const r = await post("/config/reset", { key: key });
     if (r.status !== 200) {
       log.warn("  – " + key + " was not reset (" + r.status + "): " +
-               JSON.stringify((r.body && r.body.errors) || r.body).slice(0, 200) +
+               JSON.stringify((r.body && r.body.errors) || r.body)
+                   .slice(0, 200) +
                ". That is the expected answer where nothing overrode it.");
     }
   }
+  log.debug("Leaving resetQuietly().");
 }
 
 // The console page as a BROWSER would get it — HTML rather than `?format=json`
@@ -149,8 +169,10 @@ async function resetQuietly(keys) {
 // launchers run with the console reachable, and where it is not, the status
 // says so and the section reports it rather than pretending.
 async function page(path) {
+  log.debug("Entering page().");
   const r = await fetch(base + path, { redirect: "manual" });
   const text = await r.text();
+  log.debug("Leaving page().");
   return { status: r.status, location: r.headers.get("location") || "",
            text: text };
 }
@@ -174,12 +196,14 @@ async function page(path) {
 // list that has to be right.
 // ---------------------------------------------------------------------------
 async function theOldPageIsGone() {
+  log.debug("Entering theOldPageIsGone().");
   log.info("=== /admin/mfa is gone, and the console's page list says so ===");
   const gone = await page("/admin/mfa");
   const neverExisted = await page("/admin/no-such-page-has-ever-existed");
-  check("GET /admin/mfa answers exactly as a path nobody ever registered does " +
-        "— the console's gate, not a page. Asserting the status alone would " +
-        "say nothing here, because that gate is middleware on the whole prefix",
+  check("GET /admin/mfa answers exactly as a path nobody ever registered " +
+        "does — the console's gate, not a page. Asserting the status alone " +
+        "would say nothing here, because that gate is middleware on the " +
+        "whole prefix",
     function () {
       assert.strictEqual(gone.status, neverExisted.status,
         "/admin/mfa answered " + gone.status + " and an unregistered path " +
@@ -207,8 +231,8 @@ async function theOldPageIsGone() {
   // deleting it would be the tidy-looking mistake, and because a caller's
   // script is the thing that would find out.
   const roster = await get("/mfa");
-  check("GET /admin-api/mfa still answers, out of the view that absorbed it — " +
-        "an API operation that worked is not worth breaking to tidy a table",
+  check("GET /admin-api/mfa still answers, out of the view that absorbed it " +
+        "— an API operation that worked is not worth breaking to tidy a table",
     function () {
       assert.strictEqual(roster.status, 200,
         "GET /admin-api/mfa answered " + roster.status + " " +
@@ -217,6 +241,7 @@ async function theOldPageIsGone() {
         "it no longer carries a `people` array, which is the shape a caller " +
         "reads: " + JSON.stringify(roster.body).slice(0, 200));
     });
+  log.debug("Leaving theOldPageIsGone().");
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +254,7 @@ async function theOldPageIsGone() {
 // counts the rows rather than checking that the page renders.
 // ---------------------------------------------------------------------------
 async function theSettingsAreOnTheirPages() {
+  log.debug("Entering theSettingsAreOnTheirPages().");
   log.info("=== the settings are drawn on the mechanism pages ===");
 
   const totp = await get("/totp");
@@ -284,14 +310,17 @@ async function theSettingsAreOnTheirPages() {
              "), so the markup half is left to sts_admin_console.js. The " +
              "model half above is unaffected.");
   }
+  log.debug("Leaving theSettingsAreOnTheirPages().");
 }
 
 function keysOf(body) {
+  log.debug("Entering keysOf().");
   const groups = (body && body.settings && body.settings.groups) || [];
   const out = [];
   groups.forEach(function (group) {
     (group.settings || []).forEach(function (row) { out.push(row.key); });
   });
+  log.debug("Leaving keysOf().");
   return out;
 }
 
@@ -306,12 +335,14 @@ function keysOf(body) {
 // the crypto report, one page across.
 // ---------------------------------------------------------------------------
 async function theReportFollowsTheSettings() {
+  log.debug("Entering theReportFollowsTheSettings().");
   log.info("=== the mechanism report is DERIVED and not written down ===");
 
   const before = await get("/webauthn");
   check("with nothing changed, the report marks the offered algorithms among " +
-        "every algorithm the verifier knows — a page that listed only the two " +
-        "being offered could not answer WHAT ELSE COULD I ASK FOR", function () {
+        "every algorithm the verifier knows — a page that listed only the " +
+        "two being offered could not answer WHAT ELSE COULD I ASK " +
+        "FOR", function () {
     const status = before.body.status;
     assert.ok(status && Array.isArray(status.algorithms),
       "there is no algorithm table on the report: " +
@@ -336,9 +367,9 @@ async function theReportFollowsTheSettings() {
 
     const after = await get("/webauthn");
     check("USER VERIFICATION SET TO `required` FLIPS THE REPORT'S " +
-          "`userVerificationEnforced` — which is the one ceremony option this " +
-          "service CHECKS as well as asks for, because the UV flag is inside " +
-          "the bytes the authenticator signed", function () {
+          "`userVerificationEnforced` — which is the one ceremony option " +
+          "this service CHECKS as well as asks for, because the UV flag is " +
+          "inside the bytes the authenticator signed", function () {
       assert.strictEqual(after.body.status.userVerification, "required",
         "the report still says " + after.body.status.userVerification);
       assert.strictEqual(after.body.status.userVerificationEnforced, true,
@@ -391,8 +422,8 @@ async function theReportFollowsTheSettings() {
   }
 
   const totp = await get("/totp");
-  check("the TOTP page's digest table marks the one in use the same way, from " +
-        "common/totp.js", function () {
+  check("the TOTP page's digest table marks the one in use the same way, " +
+        "from common/totp.js", function () {
     const status = totp.body.status;
     assert.ok(status && Array.isArray(status.algorithms),
       "there is no digest table on the report.");
@@ -400,6 +431,7 @@ async function theReportFollowsTheSettings() {
     assert.strictEqual(inUse.length, 1,
       inUse.length + " digests are marked in use, which cannot be right.");
   });
+  log.debug("Leaving theReportFollowsTheSettings().");
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +444,7 @@ async function theReportFollowsTheSettings() {
 // in this section and fail this one.
 // ---------------------------------------------------------------------------
 async function theRosterIsOnTheUsersPage() {
+  log.debug("Entering theRosterIsOnTheUsersPage().");
   log.info("=== the roster is columns on /admin/users ===");
 
   // WITH THE ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12). Product mode
@@ -431,8 +464,8 @@ async function theRosterIsOnTheUsersPage() {
 
   const list = await get("/users?q=" + encodeURIComponent(PERSON));
   check("A PERSON WHO HAS NEVER AUTHENTICATED IS ON THE LIST, which the old " +
-        "population would not have shown — and the people most likely to hold " +
-        "no second factor are exactly the ones who have never signed in",
+        "population would not have shown — and the people most likely to " +
+        "hold no second factor are exactly the ones who have never signed in",
     function () {
       assert.strictEqual(list.status, 200,
         "GET /admin-api/users answered " + list.status + " " +
@@ -471,8 +504,8 @@ async function theRosterIsOnTheUsersPage() {
   });
   const any = await get("/users?factor=any&q=" + encodeURIComponent(PERSON));
   check("and `factor=any` does NOT — which is the half that makes the filter " +
-        "mean something, since a filter that matched everybody would pass the " +
-        "check above", function () {
+        "mean something, since a filter that matched everybody would pass " +
+        "the check above", function () {
     assert.ok(!(any.body.users || []).some(function (u) {
       return u.name === PERSON;
     }), PERSON + " holds no second factor and is in `factor=any`.");
@@ -495,9 +528,10 @@ async function theRosterIsOnTheUsersPage() {
       "the drill-down carries no `factors` block, so the MFA section is not " +
       "on it.");
     assert.ok(detail.body.factors.policy,
-      "and it does not say what the realm ALLOWS, which is half of the answer " +
-      "to `why can they not enrol one`.");
+      "and it does not say what the realm ALLOWS, which is half of the " +
+      "answer to `why can they not enrol one`.");
   });
+  log.debug("Leaving theRosterIsOnTheUsersPage().");
 }
 
 // ---------------------------------------------------------------------------
@@ -516,6 +550,7 @@ async function theRosterIsOnTheUsersPage() {
 // that succeeds, against an enrolment it made through the portal.
 // ---------------------------------------------------------------------------
 async function bothSpellingsOfTheClearActionsRoute() {
+  log.debug("Entering bothSpellingsOfTheClearActionsRoute().");
   log.info("=== both spellings of the two clears reach the same switch ===");
 
   for (const path of ["/mfa/clear-totp", "/users/clear-totp"]) {
@@ -527,7 +562,8 @@ async function bothSpellingsOfTheClearActionsRoute() {
         path + " answered " + r.status + " " + String(r.raw).slice(0, 200));
       assert.strictEqual(r.body.ok, false,
         "it answered 400 with ok:true, which is a shape nothing can read.");
-      assert.ok(/authenticator|enrol/i.test(JSON.stringify(r.body.errors || [])),
+      assert.ok(/authenticator|enrol/i.test(JSON.stringify(
+          r.body.errors || [])),
         "and the refusal is not about the authenticator app: " +
         JSON.stringify(r.body.errors));
     });
@@ -561,6 +597,7 @@ async function bothSpellingsOfTheClearActionsRoute() {
               /issue-activation/.test(said),
       "and the three that were already there are not: " + said);
   });
+  log.debug("Leaving bothSpellingsOfTheClearActionsRoute().");
 }
 
 // ---------------------------------------------------------------------------
@@ -574,6 +611,7 @@ async function bothSpellingsOfTheClearActionsRoute() {
 // to look for a bug in the other.
 // ---------------------------------------------------------------------------
 async function theRealmPolicyIsReportedBesideThePerson() {
+  log.debug("Entering theRealmPolicyIsReportedBesideThePerson().");
   log.info("=== what the realm allows is reported beside what they hold ===");
   try {
     await ok("/config/set-many",
@@ -581,8 +619,8 @@ async function theRealmPolicyIsReportedBesideThePerson() {
       "narrowed what a key may be");
 
     const detail = await get("/users?user=" + encodeURIComponent(PERSON));
-    check("the person's own page reports the realm's policy, so `why can they " +
-          "not enrol one` is answerable without opening a second page",
+    check("the person's own page reports the realm's policy, so `why can " +
+          "they not enrol one` is answerable without opening a second page",
       function () {
         const policy = detail.body.factors.policy;
         assert.strictEqual(policy.primaryAllowed, false,
@@ -592,8 +630,8 @@ async function theRealmPolicyIsReportedBesideThePerson() {
       });
 
     const report = await get("/webauthn");
-    check("and the mechanism page agrees with it — one setting, two pages, no " +
-          "second copy to disagree", function () {
+    check("and the mechanism page agrees with it — one setting, two pages, " +
+          "no second copy to disagree", function () {
       assert.strictEqual(report.body.status.primaryAllowed, false,
         "the mechanism page and the person's page disagree about whether a " +
         "key may be a primary credential.");
@@ -601,7 +639,8 @@ async function theRealmPolicyIsReportedBesideThePerson() {
         "and about how many keys a person may hold.");
     });
   } finally {
-    await resetQuietly(["webauthn.primaryAllowed", "webauthn.maxKeysPerPerson"]);
+    await resetQuietly(["webauthn.primaryAllowed",
+                        "webauthn.maxKeysPerPerson"]);
   }
 
   const restored = await get("/webauthn");
@@ -612,6 +651,7 @@ async function theRealmPolicyIsReportedBesideThePerson() {
     assert.strictEqual(restored.body.status.maxKeysPerPerson, 10,
       "the cap is still narrowed after the reset.");
   });
+  log.debug("Leaving theRealmPolicyIsReportedBesideThePerson().");
 }
 
 async function test() {

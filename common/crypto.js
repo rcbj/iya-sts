@@ -13,16 +13,16 @@
 // copies agreed on the day they were made.
 //
 // **THE COST WAS NOT ABSTRACT AND IT IS WORTH NAMING, BECAUSE IT IS THE WHOLE
-// ARGUMENT FOR THIS FILE.** `saml/CLAUDE.md` records the `Id="_0"` defect: every
-// SAML 1.1 assertion this service ever issued carried an attribute the schema
-// does not have, because xml-crypto invents one when it cannot find an id it
-// recognises. It verified anyway, so it survived for months, and the fix had to
-// be applied to EACH SIGNER SEPARATELY. A single signer would have been one
-// edit and one place to be wrong. The four verifiers had drifted the same way:
-// three of them took the FIRST <ds:Signature> in the document, which on a
-// SAML 1.1 Response carrying a signed assertion is the ASSERTION'S — so a caller
-// asking "is this Response signed by us" was answered about a different element
-// and told yes.
+// ARGUMENT FOR THIS FILE.** `saml/CLAUDE.md` records the `Id="_0"` defect:
+// every SAML 1.1 assertion this service ever issued carried an attribute the
+// schema does not have, because xml-crypto invents one when it cannot find an
+// id it recognises. It verified anyway, so it survived for months, and the fix
+// had to be applied to EACH SIGNER SEPARATELY. A single signer would have been
+// one edit and one place to be wrong. The four verifiers had drifted the same
+// way: three of them took the FIRST <ds:Signature> in the document, which on a
+// SAML 1.1 Response carrying a signed assertion is the ASSERTION'S — so a
+// caller asking "is this Response signed by us" was answered about a different
+// element and told yes.
 //
 // ---------------------------------------------------------------------------
 // WHERE THE XML CODE CAME FROM, AND WHY IT IS NOT WRITTEN HERE.
@@ -67,8 +67,8 @@
 // helpers.js's job and stays there.
 //
 // It also means `logArtifact()` is not reachable from here. That is on purpose:
-// the callers keep their own `logArtifact('SAML assertion', 'before signing', …)`
-// lines exactly where they were, so the debug log of a mock — which is the
+// the callers keep their own `logArtifact('SAML assertion', 'before signing',
+// …)` lines exactly where they were, so the debug log of a mock — which is the
 // point of a mock — is unchanged by this refactor. A hook back into helpers
 // would have been a sixth inverted slot, and the root CLAUDE.md's rule 3e is
 // explicit that a slot is for a require that would close a cycle or move a
@@ -185,18 +185,22 @@ const PLACEMENT = {
 // vendored findById() searches. SAML 1.1 gives every message type its own
 // spelling instead of one shared attribute, which is the whole reason the old
 // xml-crypto call sites had to be told the name and this one does not.
-const ID_ATTRIBUTES = ['ID', 'AssertionID', 'ResponseID', 'RequestID', 'Id', 'id'];
+const ID_ATTRIBUTES = ['ID', 'AssertionID', 'ResponseID', 'RequestID', 'Id',
+                       'id'];
 
 // The id an element carries, whatever it is called. Returns '' when there is
 // none, which is a legal signature reference (URI="" means the whole document)
 // rather than an error.
 function idOf(element) {
+  log.debug("Entering idOf().");
   for (let i = 0; i < ID_ATTRIBUTES.length; i++) {
     const value = element.getAttribute(ID_ATTRIBUTES[i]);
     if (value) {
+      log.debug("Leaving idOf().");
       return value;
     }
   }
+  log.debug("Leaving idOf().");
   return '';
 }
 
@@ -204,6 +208,7 @@ function idOf(element) {
 // would reach into descendants, and on a Response carrying a signed assertion
 // that is the difference between this element's signature and somebody else's.
 function directChildByLocal(parent, localName, namespaceUri) {
+  log.debug("Entering directChildByLocal().");
   for (let child = parent.firstChild; child; child = child.nextSibling) {
     if (child.nodeType !== 1 || child.localName !== localName) {
       continue;
@@ -211,8 +216,10 @@ function directChildByLocal(parent, localName, namespaceUri) {
     if (namespaceUri && child.namespaceURI !== namespaceUri) {
       continue;
     }
+    log.debug("Leaving directChildByLocal().");
     return child;
   }
+  log.debug("Leaving directChildByLocal().");
   return null;
 }
 
@@ -246,6 +253,7 @@ function directChildByLocal(parent, localName, namespaceUri) {
 // embedding. It is the default below and no caller overrides it.
 // ---------------------------------------------------------------------------
 function signXml(xml, opts) {
+  log.debug("Entering signXml().");
   const options = opts || {};
   const what = options.what || 'XML document';
   log.debug('Entering signXml(). what=' + what + ', placement=' +
@@ -311,10 +319,11 @@ function signXml(xml, opts) {
 //
 // So the target is chosen HERE, by policy: the first element with the wanted
 // local name that carries a ds:Signature as a DIRECT CHILD. The vendored engine
-// is then handed exactly two things — that one signature, serialized on its own,
-// and the target element with that signature removed as `referencedXml`. It has
-// no opportunity to choose differently, and it still brings its full algorithm
-// coverage: RSA, PSS, ECDSA, HMAC, every canonicalization, the transforms.
+// is then handed exactly two things — that one signature, serialized on its
+// own, and the target element with that signature removed as `referencedXml`.
+// It has no opportunity to choose differently, and it still brings its full
+// algorithm coverage: RSA, PSS, ECDSA, HMAC, every canonicalization, the
+// transforms.
 //
 // Removing the signature before handing over is not a trick; it is what the
 // enveloped-signature transform is DEFINED to do (XMLDSIG section 6.6.4 — the
@@ -336,6 +345,7 @@ function signXml(xml, opts) {
 // rather than being quietly wrong.
 // ---------------------------------------------------------------------------
 function verifyXmlSignature(xml, opts) {
+  log.debug("Entering verifyXmlSignature().");
   const options = opts || {};
   const wanted = options.element;
   log.debug('Entering verifyXmlSignature(). element=' + wanted);
@@ -351,7 +361,8 @@ function verifyXmlSignature(xml, opts) {
     doc = new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
   } catch (e) {
     // Not XML at all. The parser's own message is more use than one of ours,
-    // and this is somebody else's document being wrong rather than a fault here.
+    // and this is somebody else's document being wrong rather than a fault
+    // here.
     log.debug('Leaving verifyXmlSignature(). It did not parse: ' + e.message);
     return errorCodes.mark({ ok: false, present: false,
              why: 'the document is not well-formed XML: ' + e.message },
@@ -399,9 +410,11 @@ function verifyXmlSignature(xml, opts) {
   const referenceUri = reference ? (reference.getAttribute('URI') || '') : '';
   const targetId = idOf(target);
   if (referenceUri !== '' && referenceUri.replace(/^#/, '') !== targetId) {
-    log.debug('Leaving verifyXmlSignature(). The reference names something else.');
+    log.debug('Leaving verifyXmlSignature(). The reference names something ' +
+              'else.');
     return errorCodes.mark({ ok: false, present: true,
-             why: 'the signature on this <' + wanted + '> references "' + referenceUri +
+             why: 'the signature on this <' + wanted + '> references "' +
+                  referenceUri +
                   '" rather than the element it is attached to (' +
                   (targetId ? '#' + targetId : 'which carries no id') +
                   '), so it says nothing about this element' },
@@ -412,18 +425,20 @@ function verifyXmlSignature(xml, opts) {
   // out loud rather than attempted, because a wrong answer here reads as a
   // broken signature and would send somebody looking at the signer.
   const c14nEl = signedInfo
-    ? signedInfo.getElementsByTagNameNS('*', 'CanonicalizationMethod')[0] : null;
+    ? signedInfo.getElementsByTagNameNS('*', 'CanonicalizationMethod')[0] :
+                 null;
   const c14nAlg = c14nEl ? (c14nEl.getAttribute('Algorithm') || '') : '';
   const isNested = target !== doc.documentElement;
   if (isNested && c14nAlg && c14nAlg.indexOf('xml-exc-c14n') === -1) {
-    log.debug('Leaving verifyXmlSignature(). Inclusive c14n on a nested element.');
+    log.debug('Leaving verifyXmlSignature(). Inclusive c14n on a nested ' +
+              'element.');
     return errorCodes.mark({ ok: false, present: true,
              why: 'this nested <' + wanted + '> is signed with ' + c14nAlg +
                   ', an INCLUSIVE canonicalization whose digest depends on ' +
                   'namespace declarations inherited from its ancestors. This ' +
-                  'service verifies a nested element from its own subtree and ' +
-                  'cannot reproduce those octets, so it refuses rather than ' +
-                  'reporting a failure it did not really test' },
+                  'service verifies a nested element from its own subtree ' +
+                  'and cannot reproduce those octets, so it refuses rather ' +
+                  'than reporting a failure it did not really test' },
                            'STS-KEYS-0010');
   }
 
@@ -457,11 +472,12 @@ function verifyXmlSignature(xml, opts) {
     if (result.signatureValid === false) {
       whyCode = 'STS-KEYS-0012';
       why = 'the signature value does not verify against the expected ' +
-            'certificate' + (result.signatureError ? ': ' + result.signatureError : '');
+            'certificate' +
+            (result.signatureError ? ': ' + result.signatureError : '');
     } else if (firstRef.ok === false) {
       whyCode = 'STS-KEYS-0013';
-      why = 'the signature value is genuine but the digest does not match, so ' +
-            'the <' + wanted + '> was altered after it was signed' +
+      why = 'the signature value is genuine but the digest does not match, ' +
+            'so the <' + wanted + '> was altered after it was signed' +
             (firstRef.reason ? ' (' + firstRef.reason + ')' : '');
     } else {
       whyCode = 'STS-KEYS-0014';
@@ -488,6 +504,7 @@ function verifyXmlSignature(xml, opts) {
   if (whyCode) {
     errorCodes.mark(verdict, whyCode);
   }
+  log.debug("Leaving verifyXmlSignature().");
   return verdict;
 }
 
@@ -572,16 +589,20 @@ const KEY_TRANSPORTS = {
 };
 
 function cipherByUri(uri) {
+  log.debug("Entering cipherByUri().");
   const name = Object.keys(BLOCK_CIPHERS).filter(function (key) {
     return BLOCK_CIPHERS[key].uri === uri;
   })[0];
+  log.debug("Leaving cipherByUri().");
   return name ? Object.assign({ name: name }, BLOCK_CIPHERS[name]) : null;
 }
 
 function transportByUri(uri) {
+  log.debug("Entering transportByUri().");
   const name = Object.keys(KEY_TRANSPORTS).filter(function (key) {
     return KEY_TRANSPORTS[key].uri === uri;
   })[0];
+  log.debug("Leaving transportByUri().");
   return name ? Object.assign({ name: name }, KEY_TRANSPORTS[name]) : null;
 }
 
@@ -591,9 +612,12 @@ function transportByUri(uri) {
 // provider that can do that can do GCM too and this list exists for the ones
 // that cannot.
 function transportOptions(transport) {
+  log.debug("Entering transportOptions().");
   if (transport.scheme === 'RSA-OAEP') {
+    log.debug("Leaving transportOptions().");
     return { md: forge.md.sha1.create(), mgf1: { md: forge.md.sha1.create() } };
   }
+  log.debug("Leaving transportOptions().");
   return undefined;
 }
 
@@ -630,8 +654,10 @@ function transportOptions(transport) {
 // byte-for-byte what it was before this move.
 // ---------------------------------------------------------------------------
 function artifact(opts, what, stage, value) {
+  log.debug("Entering artifact().");
   const sink = opts && opts.logArtifact;
   if (typeof sink !== 'function') {
+    log.debug("Leaving artifact().");
     return;
   }
   try {
@@ -642,6 +668,7 @@ function artifact(opts, what, stage, value) {
     log.error(errorCodes.tag('STS-KEYS-0001') +
               'the artifact logger threw and was ignored: ' + e.message);
   }
+  log.debug("Leaving artifact().");
 }
 
 function encryptElement(xml, certPem, opts) {
@@ -649,7 +676,8 @@ function encryptElement(xml, certPem, opts) {
   opts = opts || {};
   const wrapper = opts.wrapper || 'saml:EncryptedAssertion';
   const cipher = BLOCK_CIPHERS[opts.algorithm] || BLOCK_CIPHERS['aes256-gcm'];
-  const transport = KEY_TRANSPORTS[opts.keyTransport] || KEY_TRANSPORTS['rsa-oaep-mgf1p'];
+  const transport = KEY_TRANSPORTS[opts.keyTransport] ||
+                    KEY_TRANSPORTS['rsa-oaep-mgf1p'];
   artifact(opts, 'SAML 2.0 ' + wrapper, 'before encryption', xml);
 
   const cert = forge.pki.certificateFromPem(certPem);
@@ -667,13 +695,15 @@ function encryptElement(xml, certPem, opts) {
   const body = cipher.tagBytes
     ? iv + c.output.getBytes() + c.mode.tag.getBytes()
     : iv + c.output.getBytes();
-  const wrapped = cert.publicKey.encrypt(key, transport.scheme, transportOptions(transport));
+  const wrapped = cert.publicKey.encrypt(key, transport.scheme,
+                                         transportOptions(transport));
   const certB64 = certPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
 
   const encrypted =
     '<' + wrapper + ' xmlns:saml="' + NS_SAML + '">' +
-    '<xenc:EncryptedData xmlns:xenc="' + XENC_NS + '" Type="' + XENC_NS + 'Element">' +
-      '<xenc:EncryptionMethod Algorithm="' + cipher.uri + '"/>' +
+    '<xenc:EncryptedData xmlns:xenc="' + XENC_NS + '" Type="' + XENC_NS +
+    'Element"><xenc:EncryptionMethod ' +
+      'Algorithm="' + cipher.uri + '"/>' +
       '<ds:KeyInfo xmlns:ds="' + DS_NS + '">' +
         '<xenc:EncryptedKey>' +
           '<xenc:EncryptionMethod Algorithm="' + transport.uri + '">' +
@@ -681,7 +711,8 @@ function encryptElement(xml, certPem, opts) {
             // RSA-1_5, so it is emitted only where it means something. A
             // service provider parsing strictly refuses the stray element.
             (transport.scheme === 'RSA-OAEP'
-              ? '<ds:DigestMethod xmlns:ds="' + DS_NS + '" Algorithm="' + DS_NS + 'sha1"/>'
+              ? '<ds:DigestMethod xmlns:ds="' + DS_NS + '" Algorithm="' +
+                DS_NS + 'sha1"/>'
               : '') +
           '</xenc:EncryptionMethod>' +
           '<ds:KeyInfo><ds:X509Data><ds:X509Certificate>' + certB64 +
@@ -695,15 +726,19 @@ function encryptElement(xml, certPem, opts) {
     '</xenc:EncryptedData></' + wrapper + '>';
 
   artifact(opts, 'SAML 2.0 ' + wrapper,
-           'after encryption (' + cipher.name + ', key wrapped with ' + transport.name + ')',
+           'after encryption (' + cipher.name + ', key wrapped with ' +
+           transport.name + ')',
            encrypted);
-  log.debug("Leaving encryptElement(). " + cipher.name + " / " + transport.name + ".");
+  log.debug("Leaving encryptElement(). " + cipher.name + " / " +
+            transport.name + ".");
   return encrypted;
 }
 
 // The original name, kept because WS-Trust calls it and its signature is part
 // of that module's contract. It is now one line over encryptElement().
 function encryptAssertion(assertionXml, certPem, opts) {
+  log.debug("Entering encryptAssertion().");
+  log.debug("Leaving encryptAssertion().");
   return encryptElement(assertionXml, certPem,
     Object.assign({}, opts, { wrapper: 'saml:EncryptedAssertion' }));
 }
@@ -742,22 +777,32 @@ function encryptAssertion(assertionXml, certPem, opts) {
 // subjectFor() in saml2_sso.js — but somebody else's document is not this
 // service's to dictate.
 function parsesAsFragment(xml) {
+  log.debug("Entering parsesAsFragment().");
   const ok = function (doc) {
+    log.debug("Entering ok().");
+    log.debug("Leaving ok().");
     return !!(doc && doc.documentElement &&
               !doc.getElementsByTagName('parsererror').length);
   };
   try {
-    if (ok(new DOMParser().parseFromString(xml, 'text/xml'))) return true;
+    if (ok(new DOMParser().parseFromString(xml, 'text/xml'))) {
+      log.debug("Leaving parsesAsFragment().");
+      return true;
+    }
   } catch (e) {
     // Not a failure yet: the wrapped attempt below is the one that matters for
     // a fragment, and a genuine syntax error fails that too.
+    log.debug("Caught in parsesAsFragment(): " + ((e && e.message) || e));
   }
   const wrapped = '<x xmlns:saml="' + NS_SAML +
     '" xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"' +
     ' xmlns:ds="' + DS_NS + '" xmlns:xenc="' + XENC_NS + '">' + xml + '</x>';
   try {
+    log.debug("Leaving parsesAsFragment().");
     return ok(new DOMParser().parseFromString(wrapped, 'text/xml'));
   } catch (e) {
+    log.debug("Caught in parsesAsFragment(): " + ((e && e.message) || e));
+    log.debug("Leaving parsesAsFragment().");
     return false;
   }
 }
@@ -770,41 +815,51 @@ function decryptElement(xml, privateKeyPem, opts) {
   } catch (e) {
     // Not XML at all. The message is the parser's and is more use than ours.
     log.debug("Leaving decryptElement(). It did not parse.");
-    return errorCodes.mark({ ok: false, why: 'the encrypted element is not well-formed XML: ' +
+    return errorCodes.mark({ ok: false, why: 'the encrypted element is not ' +
+                                             'well-formed XML: ' +
                              e.message }, 'STS-KEYS-0015');
   }
   const data = doc.getElementsByTagNameNS('*', 'EncryptedData')[0];
   if (!data) {
     log.debug("Leaving decryptElement(). No EncryptedData.");
-    return errorCodes.mark({ ok: false, why: 'there is no <xenc:EncryptedData> inside it' },
+    return errorCodes.mark({ ok: false, why: 'there is no ' +
+                                             '<xenc:EncryptedData> inside it' },
                            'STS-KEYS-0016');
   }
   const dataMethod = data.getElementsByTagNameNS('*', 'EncryptionMethod')[0];
-  const cipher = cipherByUri(dataMethod ? dataMethod.getAttribute('Algorithm') : '');
+  const cipher = cipherByUri(dataMethod ? dataMethod.getAttribute('Algorithm') :
+                             '');
   if (!cipher) {
     log.debug("Leaving decryptElement(). Unknown block cipher.");
     return errorCodes.mark({ ok: false, why: 'the data is encrypted with ' +
-             ((dataMethod && dataMethod.getAttribute('Algorithm')) || '(no algorithm stated)') +
-             ', and this service reads only ' + Object.keys(BLOCK_CIPHERS).join(', ') },
+             ((dataMethod && dataMethod.getAttribute('Algorithm')) || '(no ' +
+                 'algorithm stated)') +
+             ', and this service reads only ' +
+             Object.keys(BLOCK_CIPHERS).join(', ') },
                            'STS-KEYS-0017');
   }
   const keyEl = data.getElementsByTagNameNS('*', 'EncryptedKey')[0];
   if (!keyEl) {
     // A <RetrievalMethod> pointing at an EncryptedKey elsewhere in the document
-    // is legal and is not implemented: nothing this service issues produces one,
-    // and saying so is more useful than a null dereference three lines down.
+    // is legal and is not implemented: nothing this service issues produces
+    // one, and saying so is more useful than a null dereference three lines
+    // down.
     log.debug("Leaving decryptElement(). No EncryptedKey.");
-    return errorCodes.mark({ ok: false, why: 'there is no <xenc:EncryptedKey> inside the KeyInfo. A key ' +
-             'carried elsewhere and pointed at with <ds:RetrievalMethod> is legal and is ' +
-             'not implemented here' }, 'STS-KEYS-0018');
+    return errorCodes.mark({ ok: false, why: 'there is no ' +
+             '<xenc:EncryptedKey> inside the KeyInfo. A key carried ' +
+             'elsewhere and pointed at with <ds:RetrievalMethod> is legal ' +
+             'and is not implemented here' }, 'STS-KEYS-0018');
   }
   const keyMethod = keyEl.getElementsByTagNameNS('*', 'EncryptionMethod')[0];
-  const transport = transportByUri(keyMethod ? keyMethod.getAttribute('Algorithm') : '');
+  const transport = transportByUri(keyMethod ?
+                                   keyMethod.getAttribute('Algorithm') : '');
   if (!transport) {
     log.debug("Leaving decryptElement(). Unknown key transport.");
     return errorCodes.mark({ ok: false, why: 'the key is wrapped with ' +
-             ((keyMethod && keyMethod.getAttribute('Algorithm')) || '(no algorithm stated)') +
-             ', and this service unwraps only ' + Object.keys(KEY_TRANSPORTS).join(', ') },
+             ((keyMethod && keyMethod.getAttribute('Algorithm')) || '(no ' +
+                 'algorithm stated)') +
+             ', and this service unwraps only ' +
+             Object.keys(KEY_TRANSPORTS).join(', ') },
                            'STS-KEYS-0019');
   }
   // Two CipherValues: the wrapped key inside EncryptedKey, and the data. Read
@@ -820,13 +875,15 @@ function decryptElement(xml, privateKeyPem, opts) {
   }
   if (!keyCipher || !dataCipher) {
     log.debug("Leaving decryptElement(). A CipherValue is missing.");
-    return errorCodes.mark({ ok: false, why: 'the element is missing one of its two <xenc:CipherValue>s — ' +
-             'the wrapped key, or the data' }, 'STS-KEYS-0020');
+    return errorCodes.mark({ ok: false, why: 'the element is missing one of ' +
+             'its two <xenc:CipherValue>s — the wrapped key, or the ' +
+             'data' }, 'STS-KEYS-0020');
   }
 
   try {
     const priv = forge.pki.privateKeyFromPem(privateKeyPem);
-    const key = priv.decrypt(forge.util.decode64((keyCipher.textContent || '').trim()),
+    const key = priv.decrypt(forge.util.decode64(
+        (keyCipher.textContent || '').trim()),
                              transport.scheme, transportOptions(transport));
     if (!key || key.length !== cipher.keyBytes) {
       // A WRONG KEY IS THE ORDINARY FAILURE and it is worth naming: this
@@ -835,18 +892,23 @@ function decryptElement(xml, privateKeyPem, opts) {
       // longer exists. Under RSA-1_5 that unwraps to plausible-looking garbage
       // of the wrong length rather than failing, which is the whole reason the
       // length is checked here.
-      log.debug("Leaving decryptElement(). The unwrapped key is the wrong size.");
-      return errorCodes.mark({ ok: false, why: 'the wrapped key did not unwrap to a ' + cipher.keyBytes +
-               '-byte key, so it was encrypted to a different certificate. This service ' +
-               'regenerates its key on every start, so a stale copy of its metadata is the ' +
-               'usual cause — fetch /saml2/metadata again' }, 'STS-KEYS-0021');
+      log.debug("Leaving decryptElement(). The unwrapped key is the wrong " +
+                "size.");
+      return errorCodes.mark({ ok: false, why: 'the wrapped key did not ' +
+                                               'unwrap to ' +
+                                               'a ' + cipher.keyBytes +
+               '-byte key, so it was encrypted to a different certificate. ' +
+               'This service regenerates its key on every start, so a stale ' +
+               'copy of its metadata is the usual cause — fetch ' +
+               '/saml2/metadata again' }, 'STS-KEYS-0021');
     }
     const raw = forge.util.decode64((dataCipher.textContent || '').trim());
     const iv = raw.slice(0, cipher.ivBytes);
     const decipher = forge.cipher.createDecipher(cipher.mode, key);
     if (cipher.tagBytes) {
       const tag = raw.slice(raw.length - cipher.tagBytes);
-      decipher.start({ iv: iv, tag: forge.util.createBuffer(tag), tagLength: cipher.tagBytes * 8 });
+      decipher.start({ iv: iv, tag: forge.util.createBuffer(tag),
+                       tagLength: cipher.tagBytes * 8 });
       decipher.update(forge.util.createBuffer(
         raw.slice(cipher.ivBytes, raw.length - cipher.tagBytes)));
     } else {
@@ -860,9 +922,10 @@ function decryptElement(xml, privateKeyPem, opts) {
       // somebody looking at their key when the document was edited in transit.
       log.debug("Leaving decryptElement(). The cipher refused.");
       return errorCodes.mark({ ok: false, why: cipher.tagBytes
-        ? 'the AES-GCM authentication tag did not verify, so the ciphertext was altered ' +
-          'after it was encrypted'
-        : 'the AES-CBC padding is not valid, so the key or the ciphertext is wrong' },
+        ? 'the AES-GCM authentication tag did not verify, so the ciphertext ' +
+          'was altered after it was encrypted'
+        : 'the AES-CBC padding is not valid, so the key or the ciphertext is ' +
+          'wrong' },
                              'STS-KEYS-0022');
     }
     const plain = forge.util.decodeUtf8(decipher.output.getBytes());
@@ -886,16 +949,19 @@ function decryptElement(xml, privateKeyPem, opts) {
     // whatever they are is not a caller this function has.
     if (!parsesAsFragment(plain)) {
       log.debug("Leaving decryptElement(). The plaintext is not XML.");
-      return errorCodes.mark({ ok: false, why: 'the decryption produced something that is not well-formed ' +
-               'XML' + (cipher.tagBytes ? '' : ', and ' + cipher.name + ' is UNAUTHENTICATED — ' +
-               'an altered ciphertext can decrypt to rubbish with valid padding and no error, ' +
-               'which is what a GCM algorithm would have caught') }, 'STS-KEYS-0023');
+      return errorCodes.mark({ ok: false, why: 'the decryption produced ' +
+               'something that is not well-formed ' +
+               'XML' + (cipher.tagBytes ? '' : ', and ' + cipher.name + ' is ' +
+               'UNAUTHENTICATED — an altered ciphertext can decrypt to ' +
+               'rubbish with valid padding and no error, which is what a GCM ' +
+               'algorithm would have caught') }, 'STS-KEYS-0023');
     }
     artifact(opts, 'SAML 2.0 encrypted element',
              'after decryption (' + cipher.name + ', key unwrapped with ' +
              transport.name + ')', plain);
     log.debug("Leaving decryptElement(). " + plain.length + " characters.");
-    return { ok: true, xml: plain, algorithm: cipher.name, keyTransport: transport.name };
+    return { ok: true, xml: plain, algorithm: cipher.name,
+             keyTransport: transport.name };
   } catch (e) {
     // forge throws on a key that will not unwrap at all, which is the RSA-OAEP
     // equivalent of the length check above. Swallowed into an answer for the
@@ -910,10 +976,11 @@ function decryptElement(xml, privateKeyPem, opts) {
     const aboutTheKey = /oaep|padding|rsa|decrypt|key/i.test(e.message || '');
     log.debug("Leaving decryptElement(). " + e.message);
     return errorCodes.mark({ ok: false, why: aboutTheKey
-      ? 'the wrapped key could not be unwrapped with this service\'s private key (' +
-        e.message + '). It was encrypted to a different certificate — and this service ' +
-        'regenerates its key on every start, so a stale copy of its metadata is the usual ' +
-        'cause'
+      ? 'the wrapped key could not be unwrapped with this service\'s private ' +
+        'key (' +
+        e.message + '). It was encrypted to a different certificate — and ' +
+        'this service regenerates its key on every start, so a stale copy of ' +
+        'its metadata is the usual cause'
       : 'the encrypted element could not be read: ' + e.message },
                            aboutTheKey ? 'STS-KEYS-0024' : 'STS-KEYS-0025');
   }
@@ -946,7 +1013,8 @@ function decryptElement(xml, privateKeyPem, opts) {
 // over an object of its own cannot accidentally set `algorithm: 'none'` or
 // swap the key, and a reader can see from here exactly what a signature in this
 // service is allowed to vary by.
-const SIGN_OPTIONS = ['keyid', 'header', 'expiresIn', 'notBefore', 'noTimestamp',
+const SIGN_OPTIONS = ['keyid', 'header', 'expiresIn', 'notBefore',
+                      'noTimestamp',
                       'issuer', 'audience', 'subject', 'jwtid'];
 
 // ---------------------------------------------------------------------------
@@ -1115,6 +1183,7 @@ function pqSigningInput(payload, algorithm, options) {
 }
 
 function signJws(payload, key, opts) {
+  log.debug("Entering signJws().");
   const options = opts || {};
   log.debug('Entering signJws(). alg=' + (options.algorithm || 'RS256') +
             ', typ=' + (payload && payload.typ ? payload.typ : '(none)'));
@@ -1187,6 +1256,7 @@ function signJws(payload, key, opts) {
 // session to name simply omits it.
 // ---------------------------------------------------------------------------
 function signJwsAsync(payload, key, opts) {
+  log.debug("Entering signJwsAsync().");
   const options = opts || {};
   const algorithm = options.algorithm || 'RS256';
   log.debug('Entering signJwsAsync(). alg=' + algorithm);
@@ -1240,6 +1310,8 @@ function signJwsAsync(payload, key, opts) {
 // nothing could change.
 // ---------------------------------------------------------------------------
 function tokenClockSkew() {
+  log.debug("Entering tokenClockSkew().");
+  log.debug("Leaving tokenClockSkew().");
   return config.value('oauth2.clockSkewS');
 }
 
@@ -1411,6 +1483,7 @@ function finishVerification(prepared, ok) {
 }
 
 function verifyCompactJws(token, key, opts) {
+  log.debug("Entering verifyCompactJws().");
   const options = opts || {};
   log.debug('Entering verifyCompactJws().');
   const prepared = prepareVerification(token, key, options);
@@ -1429,6 +1502,7 @@ function verifyCompactJws(token, key, opts) {
 // reason signJwsAsync() gives: an RS256 check is microseconds, and an IPC round
 // trip to save that would be a cost with no saving.
 function verifyCompactJwsAsync(token, key, opts) {
+  log.debug("Entering verifyCompactJwsAsync().");
   const options = opts || {};
   log.debug('Entering verifyCompactJwsAsync().');
   let prepared;
@@ -1491,7 +1565,9 @@ function checkJwtClaims(claims, options) {
                                                    : [options.audience];
     const held = Array.isArray(claims.aud) ? claims.aud
                                            : [claims.aud];
-    const hit = wanted.some(function (one) { return held.indexOf(one) !== -1; });
+    const hit = wanted.some(function (one) {
+      return held.indexOf(one) !== -1;
+    });
     if (wanted.length && !hit) {
       log.debug('Leaving checkJwtClaims(). Wrong audience.');
       throw new Error('jwt audience invalid. expected: ' + wanted.join(' or '));
@@ -1502,6 +1578,7 @@ function checkJwtClaims(claims, options) {
 }
 
 function verifyJws(token, key, opts) {
+  log.debug("Entering verifyJws().");
   const options = opts || {};
   log.debug('Entering verifyJws().');
   // THE TWO ALGORITHMS `jsonwebtoken` CANNOT VERIFY GO THE OTHER WAY, and they
@@ -1514,6 +1591,7 @@ function verifyJws(token, key, opts) {
     peeked = JSON.parse(Buffer.from(String(token || '').split('.')[0],
       'base64url').toString('utf8'));
   } catch (e) {
+    log.debug("Caught in verifyJws(): " + ((e && e.message) || e));
     peeked = null;
   }
   if (peeked && JWS_ALGS[peeked.alg] && JWS_ALGS[peeked.alg].ownSigner) {
@@ -1554,6 +1632,7 @@ function verifyJws(token, key, opts) {
 // the same three steps rather than a second reading of them.
 // ---------------------------------------------------------------------------
 function verifyJwsAsync(token, key, opts) {
+  log.debug("Entering verifyJwsAsync().");
   const options = opts || {};
   log.debug('Entering verifyJwsAsync().');
   let peeked = null;
@@ -1561,6 +1640,7 @@ function verifyJwsAsync(token, key, opts) {
     peeked = JSON.parse(Buffer.from(String(token || '').split('.')[0],
       'base64url').toString('utf8'));
   } catch (e) {
+    log.debug("Caught in verifyJwsAsync(): " + ((e && e.message) || e));
     peeked = null;
   }
   if (peeked && JWS_ALGS[peeked.alg] && JWS_ALGS[peeked.alg].family === 'pq') {
@@ -1717,6 +1797,8 @@ const EC_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
                     'P-521': 'secp521r1' };
 
 function b64u(buf) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
   return Buffer.from(buf).toString('base64url');
 }
 
@@ -1740,14 +1822,18 @@ function b64u(buf) {
 // nothing.
 // ---------------------------------------------------------------------------
 function cbcHmacKeys(spec, cek) {
+  log.debug("Entering cbcHmacKeys().");
+  log.debug("Leaving cbcHmacKeys().");
   return { macKey: cek.subarray(0, spec.halfBytes),
            encKey: cek.subarray(spec.halfBytes) };
 }
 
 function cbcHmacTag(spec, cek, iv, aad, ciphertext) {
+  log.debug("Entering cbcHmacTag().");
   const keys = cbcHmacKeys(spec, cek);
   const al = Buffer.alloc(8);
   al.writeBigUInt64BE(BigInt(aad.length * 8));
+  log.debug("Leaving cbcHmacTag().");
   return nodeCrypto.createHmac(spec.hash, keys.macKey)
     .update(Buffer.concat([aad, iv, ciphertext, al]))
     .digest().subarray(0, spec.halfBytes);
@@ -1758,7 +1844,8 @@ function sealContent(spec, cek, iv, aad, plaintext) {
   if (spec.mode === 'cbc-hmac') {
     const keys = cbcHmacKeys(spec, cek);
     const cipher = nodeCrypto.createCipheriv(spec.cipher, keys.encKey, iv);
-    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    const ciphertext = Buffer.concat([cipher.update(plaintext),
+                                      cipher.final()]);
     log.debug('Leaving sealContent(). CBC-HMAC.');
     return { ciphertext: ciphertext,
              tag: cbcHmacTag(spec, cek, iv, aad, ciphertext) };
@@ -1811,8 +1898,10 @@ function openContent(spec, cek, iv, aad, ciphertext, tag) {
 function concatKdf(z, keyBytes, algId) {
   log.debug('Entering concatKdf(). algId=' + algId);
   const u32 = function (n) {
+    log.debug("Entering u32().");
     const b = Buffer.alloc(4);
     b.writeUInt32BE(n >>> 0);
+    log.debug("Leaving u32().");
     return b;
   };
   const alg = Buffer.from(algId, 'utf8');
@@ -1864,12 +1953,16 @@ function aesKeyUnwrap(kek, wrapped) {
 // the failure is an authentication tag that does not verify.
 // ---------------------------------------------------------------------------
 function secretBytes(secret) {
+  log.debug("Entering secretBytes().");
   if (Buffer.isBuffer(secret)) {
+    log.debug("Leaving secretBytes().");
     return secret;
   }
   if (secret && typeof secret === 'object' && secret.kty === 'oct') {
+    log.debug("Leaving secretBytes().");
     return Buffer.from(String(secret.k || ''), 'base64url');
   }
+  log.debug("Leaving secretBytes().");
   return Buffer.from(String(secret == null ? '' : secret), 'utf8');
 }
 
@@ -1907,8 +2000,9 @@ function symmetricKek(alg, secret, header, forEncrypt) {
       salt = Buffer.from(String(header.p2s), 'base64url');
       iterations = Math.floor(Number(header.p2c));
       if (!isFinite(iterations) || iterations < 1) {
-        throw new Error('a ' + alg + ' JWE carries its PBKDF2 iteration count ' +
-          'in the header as `p2c` and this one says "' + header.p2c + '".');
+        throw new Error('a ' + alg + ' JWE carries its PBKDF2 iteration ' +
+          'count in the header as `p2c` and this one says ' +
+          '"' + header.p2c + '".');
       }
       if (iterations > PBES2_MAX_ITERATIONS) {
         // Refused rather than performed: see PBES2_MAX_ITERATIONS.
@@ -1985,7 +2079,8 @@ function wrapCek(alg, recipientJwk, cek, header) {
     return { cek: cek, encryptedKey: aesKeyWrap(kek, cek) };
   }
 
-  const publicKey = nodeCrypto.createPublicKey({ key: recipientJwk, format: 'jwk' });
+  const publicKey = nodeCrypto.createPublicKey({ key: recipientJwk,
+                                                 format: 'jwk' });
 
   if (alg === 'RSA-OAEP' || alg === 'RSA-OAEP-256') {
     const wrapped = nodeCrypto.publicEncrypt({
@@ -2024,6 +2119,7 @@ function wrapCek(alg, recipientJwk, cek, header) {
 }
 
 function encryptJweCompact(plaintext, opts) {
+  log.debug("Entering encryptJweCompact().");
   const options = opts || {};
   log.debug('Entering encryptJweCompact(). alg=' + (options.alg || JWE_ALG) +
             ', enc=' + options.enc);
@@ -2093,7 +2189,8 @@ function unwrapCek(header, encryptedKey, options, spec) {
       throw new Error('alg "' + alg + '" is encrypted to a SHARED SECRET and ' +
         'this caller holds none for the sender. A client that encrypts to ' +
         'this service should use RSA-OAEP-256 against the key in its JWKS, ' +
-        'or one of the symmetric algorithms with the client_secret as the key.');
+        'or one of the symmetric algorithms with the client_secret as the ' +
+        'key.');
     }
     const kek = symmetricKek(alg, options.secret, header, false);
     if (alg === 'dir') {
@@ -2102,8 +2199,8 @@ function unwrapCek(header, encryptedKey, options, spec) {
     }
     if (JWE_AESGCMKW_ALGS.indexOf(alg) >= 0) {
       if (!header.iv || !header.tag) {
-        throw new Error('a ' + alg + ' JWE carries the key wrapping\'s IV and ' +
-          'authentication tag in the header as `iv` and `tag` (RFC 7518 ' +
+        throw new Error('a ' + alg + ' JWE carries the key wrapping\'s IV ' +
+          'and authentication tag in the header as `iv` and `tag` (RFC 7518 ' +
           'section 4.7.1); this one has ' +
           (header.iv ? 'no tag' : (header.tag ? 'no iv' : 'neither')) + '.');
       }
@@ -2122,8 +2219,8 @@ function unwrapCek(header, encryptedKey, options, spec) {
   }
 
   if (!options.privateKey) {
-    throw new Error('alg "' + alg + '" is encrypted to a PRIVATE KEY and this ' +
-      'caller was given none.');
+    throw new Error('alg "' + alg + '" is encrypted to a PRIVATE KEY and ' +
+      'this caller was given none.');
   }
 
   if (JWE_RSA_ALGS.indexOf(alg) >= 0) {
@@ -2143,14 +2240,17 @@ function unwrapCek(header, encryptedKey, options, spec) {
   // ECDH-ES, direct or with AES key wrapping. The sender's EPHEMERAL public
   // key is in the header and there is no agreement without it.
   if (!header.epk || !header.epk.crv) {
-    throw new Error('an ECDH-ES JWE carries the sender\'s ephemeral public key ' +
-      'in the header as `epk` (RFC 7518 section 4.6.1.1) and this one has none.');
+    throw new Error('an ECDH-ES JWE carries the sender\'s ephemeral public ' +
+      'key in the header as `epk` (RFC 7518 section 4.6.1.1) and this one ' +
+      'has none.');
   }
   if (!EC_CURVES[header.epk.crv]) {
     throw new Error('the ephemeral key names curve "' + header.epk.crv +
-      '", and this service agrees over ' + Object.keys(EC_CURVES).join(', ') + '.');
+      '", and this service agrees over ' + Object.keys(EC_CURVES).join(', ') +
+      '.');
   }
-  const senderKey = nodeCrypto.createPublicKey({ key: header.epk, format: 'jwk' });
+  const senderKey = nodeCrypto.createPublicKey({ key: header.epk,
+                                                 format: 'jwk' });
   const z = nodeCrypto.diffieHellman({ privateKey: options.privateKey,
                                        publicKey: senderKey });
   if (alg === 'ECDH-ES') {
@@ -2158,9 +2258,10 @@ function unwrapCek(header, encryptedKey, options, spec) {
     // WHOLE CEK — both halves for a CBC-HMAC enc, which is why this needs the
     // spec and the RSA branch does not.
     if (!spec) {
-      throw new Error('alg "ECDH-ES" derives the content encryption key at the ' +
-        'length `enc` names, and "' + header.enc + '" is not one this service ' +
-        'knows.');
+      throw new Error('alg "ECDH-ES" derives the content encryption key at ' +
+        'the length `enc` names, and ' +
+        '"' + header.enc + '" is not one this ' +
+        'service knows.');
     }
     const out = concatKdf(z, spec.cekBytes, header.enc);
     log.debug('Leaving unwrapCek(). ECDH-ES direct.');
@@ -2196,20 +2297,23 @@ function unwrapCek(header, encryptedKey, options, spec) {
 // responses quote the message directly.
 // ---------------------------------------------------------------------------
 function decryptJweCompact(compact, opts) {
+  log.debug("Entering decryptJweCompact().");
   const options = opts || {};
   log.debug('Entering decryptJweCompact().');
   const parts = String(compact || '').trim().split('.');
   if (parts.length !== 5) {
     log.debug('Leaving decryptJweCompact(). Not five parts.');
-    throw new Error('an encrypted request must be a JWE in compact serialization ' +
-      '(five dot-separated parts); this has ' + parts.length + '.');
+    throw new Error('an encrypted request must be a JWE in compact ' +
+      'serialization (five dot-separated parts); this ' +
+      'has ' + parts.length + '.');
   }
   let header;
   try {
     header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
   } catch (e) {
     log.debug('Leaving decryptJweCompact(). The header is not JSON.');
-    throw new Error('the JWE protected header is not valid base64url JSON: ' + e.message);
+    throw new Error('the JWE protected header is not valid base64url JSON: ' +
+                    e.message);
   }
   if (String(header.alg) === 'RSA1_5') {
     // Named rather than left to fall off the end of the list, because a caller
@@ -2224,15 +2328,18 @@ function decryptJweCompact(compact, opts) {
   }
   if (JWE_DECRYPT_ALGS.indexOf(header.alg) === -1) {
     log.debug('Leaving decryptJweCompact(). Wrong alg.');
-    throw new Error('this service decrypts with alg ' + JWE_DECRYPT_ALGS.join(', ') +
+    throw new Error('this service decrypts with alg ' +
+      JWE_DECRYPT_ALGS.join(', ') +
       '; the request used "' + header.alg + '".');
   }
   // The CALLER's own narrowing, checked after the table's. Two messages
   // because they are two different refusals: one says this service cannot,
   // the other says this endpoint will not.
   if (options.allowedAlg && options.allowedAlg.indexOf(header.alg) === -1) {
-    log.debug('Leaving decryptJweCompact(). The caller does not accept that alg.');
-    throw new Error('this endpoint accepts alg ' + options.allowedAlg.join(', ') +
+    log.debug('Leaving decryptJweCompact(). The caller does not accept that ' +
+              'alg.');
+    throw new Error('this endpoint accepts alg ' +
+      options.allowedAlg.join(', ') +
       '; the request used "' + header.alg + '".');
   }
   const allowed = options.allowedEnc || Object.keys(JWE_ENCS);
@@ -2245,15 +2352,17 @@ function decryptJweCompact(compact, opts) {
     // Refused rather than ignored: a compressed payload that is silently read
     // as though it were not compressed is a parse error three frames away.
     log.debug('Leaving decryptJweCompact(). Compressed.');
-    throw new Error('this service advertises no zip_values_supported, so a compressed ' +
-      'request cannot be read.');
+    throw new Error('this service advertises no zip_values_supported, so a ' +
+      'compressed request cannot be read.');
   }
   if (options.expectedKid && header.kid !== options.expectedKid) {
     log.debug('Leaving decryptJweCompact(). Wrong kid.');
-    throw new Error('the JWE kid "' + (header.kid || '(absent)') + '" is not this service\'s ' +
-      'current encryption key "' + options.expectedKid + '". Re-read the metadata — from ' +
-      'the same trust realm, since each realm has a key of its own: this key is ' +
-      'regenerated when the service restarts in development mode and when it is rotated.');
+    throw new Error('the JWE kid "' + (header.kid || '(absent)') + '" is not ' +
+      'this service\'s current encryption key ' +
+      '"' + options.expectedKid + '". Re-read the ' +
+      'metadata — from the same trust realm, since each realm has a key of ' +
+      'its own: this key is regenerated when the service restarts in ' +
+      'development mode and when it is rotated.');
   }
 
   const spec = JWE_ENCS[header.enc];
@@ -2272,7 +2381,9 @@ function decryptJweCompact(compact, opts) {
     // cipher error about a buffer size. Note a CBC-HMAC CEK is TWICE the AES
     // key size, which is why this reads cekBytes and not bits/8.
     log.debug('Leaving decryptJweCompact(). The key is the wrong size.');
-    throw new Error('the unwrapped content encryption key is ' + cek.length + ' bytes; ' +
+    throw new Error('the unwrapped content encryption key is ' + cek.length +
+        ' ' +
+        'bytes; ' +
       header.enc + ' needs ' + spec.cekBytes + '.');
   }
 
@@ -2285,10 +2396,11 @@ function decryptJweCompact(compact, opts) {
     // An authentication tag failure lands here, and it is the interesting case:
     // the ciphertext or the header was altered in flight.
     log.debug('Leaving decryptJweCompact(). The tag did not verify.');
-    throw new Error('the ciphertext did not decrypt or its authentication tag did not ' +
-      'verify: ' + e.message);
+    throw new Error('the ciphertext did not decrypt or its authentication ' +
+      'tag did not verify: ' + e.message);
   }
-  log.debug('Leaving decryptJweCompact(). ' + plaintext.length + ' characters.');
+  log.debug('Leaving decryptJweCompact(). ' + plaintext.length +
+            ' characters.');
   return { header: header, plaintext: plaintext };
 }
 
@@ -2376,9 +2488,12 @@ function certificateSerial(prefixHex) {
 // duplication, and `common/vendored/CLAUDE.md` records it.
 // ---------------------------------------------------------------------------
 function selfSignedRsaCertificate(opts) {
+  log.debug("Entering selfSignedRsaCertificate().");
   const options = opts || {};
-  log.debug('Entering selfSignedRsaCertificate(). cn=' + (options.commonName || '(none)'));
-  const pair = forge.pki.rsa.generateKeyPair({ bits: options.bits || 2048, e: 0x10001 });
+  log.debug('Entering selfSignedRsaCertificate(). cn=' +
+            (options.commonName || '(none)'));
+  const pair = forge.pki.rsa.generateKeyPair({ bits: options.bits || 2048,
+                                               e: 0x10001 });
   const cert = forge.pki.createCertificate();
   cert.publicKey = pair.publicKey;
   // `serialPrefix` is the caller's LEADING BYTE because it is how a person
@@ -2530,6 +2645,7 @@ const DN_TYPES = {
 };
 
 function selfSignedMlDsaCertificate(opts) {
+  log.debug("Entering selfSignedMlDsaCertificate().");
   const options = opts || {};
   const algorithm = String(options.algorithm || 'ml-dsa-65').toLowerCase();
   log.debug('Entering selfSignedMlDsaCertificate(). algorithm=' + algorithm +
@@ -2553,12 +2669,16 @@ function selfSignedMlDsaCertificate(opts) {
   const spkiDer = pair.publicKey.export({ type: 'spki', format: 'der' });
 
   function bufferOf(bytes) {
+    log.debug("Entering bufferOf().");
     const view = Uint8Array.from(bytes);
+    log.debug("Leaving bufferOf().");
     return view.buffer.slice(view.byteOffset, view.byteOffset +
         view.byteLength);
   }
 
   function algorithmIdentifier() {
+    log.debug("Entering algorithmIdentifier().");
+    log.debug("Leaving algorithmIdentifier().");
     // PARAMETERS ABSENT — RFC 9881 section 3 says MUST, and an explicit NULL
     // here (which is what an RSA identifier carries, so it is what a copied
     // line produces) makes a certificate OpenSSL refuses to load at all.
@@ -2568,6 +2688,8 @@ function selfSignedMlDsaCertificate(opts) {
   }
 
   function name(attributes) {
+    log.debug("Entering name().");
+    log.debug("Leaving name().");
     // An RDNSequence — a SEQUENCE OF one-element SETs — and not one SET
     // holding every attribute. The second is a multi-valued RDN, which is a
     // DIFFERENT NAME: it parses, it prints with + between the attributes, and
@@ -2588,14 +2710,18 @@ function selfSignedMlDsaCertificate(opts) {
   }
 
   function utcTime(date) {
+    log.debug("Entering utcTime().");
+    log.debug("Leaving utcTime().");
     return new asn1js.UTCTime({ valueDate: date });
   }
 
   function extension(extnOid, critical, valueAsn1) {
+    log.debug("Entering extension().");
     const der = new Uint8Array(valueAsn1.toBER(false));
     const value = [new asn1js.ObjectIdentifier({ value: extnOid })];
     if (critical) value.push(new asn1js.Boolean({ value: true }));
     value.push(new asn1js.OctetString({ valueHex: bufferOf(der) }));
+    log.debug("Leaving extension().");
     return new asn1js.Sequence({ value: value });
   }
 
@@ -2716,6 +2842,8 @@ function selfSignedMlDsaCertificate(opts) {
 // PEM armour off, whitespace out. What goes inside a <ds:X509Certificate>, and
 // what a DER digest is taken over.
 function stripPem(pem) {
+  log.debug("Entering stripPem().");
+  log.debug("Leaving stripPem().");
   return String(pem || '').replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
 }
 
@@ -2764,7 +2892,8 @@ function canonicalJwk(jwk) {
     return jwk[m] === undefined || jwk[m] === null || jwk[m] === '';
   });
   if (missing.length) {
-    throw new Error('this ' + jwk.kty + ' key is missing ' + missing.join(', ') + '.');
+    throw new Error('this ' + jwk.kty + ' key is missing ' +
+                    missing.join(', ') + '.');
   }
   log.debug('Leaving canonicalJwk().');
   return '{' + members.map(function (m) {
@@ -2778,9 +2907,11 @@ function canonicalJwk(jwk) {
 // never be truncated: it is compared byte for byte against a value the client
 // computed, so it takes the default.
 function jwkThumbprint(jwk, opts) {
+  log.debug("Entering jwkThumbprint().");
   const options = opts || {};
   const digest = nodeCrypto.createHash('sha256')
     .update(canonicalJwk(jwk), 'utf8').digest('base64url');
+  log.debug("Leaving jwkThumbprint().");
   return options.truncate ? digest.slice(0, options.truncate) : digest;
 }
 
@@ -2804,19 +2935,20 @@ function jwkThumbprint(jwk, opts) {
 // the one thing this function must not skip. `tls.certificateFile` has been
 // allowed to be a bundle since it started being supplied from outside, and the
 // stack that supplies it hands over a leaf, its issuing CA and the root, in
-// that order. stripPem() removes every `-----…-----` line, so a bundle came
-// out as three DERs joined end to end and the digest was over the join: a
-// value that is not the thumbprint of any certificate, that no tool will ever
-// print — not `openssl x509 -fingerprint -sha256`, not node's
-// `fingerprint256`, not `x5t#S256` at the far end — and that is nonetheless
-// perfectly stable, so it agrees with itself everywhere this service reports
-// it and disagrees only with the handshake. It was published on GET /admin/ldap/service and
-// in /tls's views as the certificate 636, 8443 and 9443 present.
+// that order. stripPem() removes every `-----…-----` line, so a bundle came out
+// as three DERs joined end to end and the digest was over the join: a value
+// that is not the thumbprint of any certificate, that no tool will ever print —
+// not `openssl x509 -fingerprint -sha256`, not node's `fingerprint256`, not
+// `x5t#S256` at the far end — and that is nonetheless perfectly stable, so it
+// agrees with itself everywhere this service reports it and disagrees only with
+// the handshake. It was published on GET /admin/ldap/service and in /tls's
+// views as the certificate 636, 8443 and 9443 present.
 //
 // The first certificate is the leaf, which is what those sockets present and
 // what every consumer of a chain reads; the rest are the path to it.
 // ---------------------------------------------------------------------------
 function certificateThumbprint(certificate, opts) {
+  log.debug("Entering certificateThumbprint().");
   const options = opts || {};
   let der;
   if (Buffer.isBuffer(certificate)) {
@@ -2836,11 +2968,15 @@ function certificateThumbprint(certificate, opts) {
   if (format === 'hex') {
     out = nodeCrypto.createHash('sha256').update(der).digest('hex');
   } else if (format === 'colon-hex') {
-    const hex = nodeCrypto.createHash('sha256').update(der).digest('hex').toUpperCase();
+    const hex = nodeCrypto.createHash('sha256')
+                          .update(der)
+                          .digest('hex')
+                          .toUpperCase();
     out = (hex.match(/.{2}/g) || []).join(':');
   } else {
     out = nodeCrypto.createHash('sha256').update(der).digest('base64url');
   }
+  log.debug("Leaving certificateThumbprint().");
   return options.truncate ? out.slice(0, options.truncate) : out;
 }
 
@@ -2856,11 +2992,14 @@ function certificateThumbprint(certificate, opts) {
 // two strings of different lengths to be had.
 // ---------------------------------------------------------------------------
 function constantTimeEquals(a, b) {
+  log.debug("Entering constantTimeEquals().");
   const left = Buffer.from(String(a == null ? '' : a), 'utf8');
   const right = Buffer.from(String(b == null ? '' : b), 'utf8');
   if (left.length !== right.length) {
+    log.debug("Leaving constantTimeEquals().");
     return false;
   }
+  log.debug("Leaving constantTimeEquals().");
   return nodeCrypto.timingSafeEqual(left, right);
 }
 
@@ -2918,10 +3057,10 @@ function constantTimeEquals(a, b) {
 // beside the setting rather than leaving somebody to discover it.
 const HOTP_ALGS = {
   SHA1: { hash: 'sha1', bytes: 20,
-          note: 'RFC 6238 section 1.2\'s default, and what every authenticator ' +
-                'app assumes. HMAC-SHA-1 here is a 30-second keyed MAC over a ' +
-                'counter and not a collision-resistant digest, which is why ' +
-                'SHA-1\'s weaknesses do not reach it.' },
+          note: 'RFC 6238 section 1.2\'s default, and what every ' +
+                'authenticator app assumes. HMAC-SHA-1 here is a 30-second ' +
+                'keyed MAC over a counter and not a collision-resistant ' +
+                'digest, which is why SHA-1\'s weaknesses do not reach it.' },
   SHA256: { hash: 'sha256', bytes: 32,
             note: 'RFC 6238 section 1.2. Interoperable with authenticators ' +
                   'that read the otpauth `algorithm` parameter and broken ' +
@@ -2931,12 +3070,14 @@ const HOTP_ALGS = {
 };
 
 function hotpSpec(algorithm) {
+  log.debug("Entering hotpSpec().");
   const name = String(algorithm || 'SHA1').toUpperCase();
   const spec = HOTP_ALGS[name];
   if (!spec) {
     throw new Error('hotp: "' + algorithm + '" is not one of ' +
                     Object.keys(HOTP_ALGS).join(', ') + '.');
   }
+  log.debug("Leaving hotpSpec().");
   return { name: name, hash: spec.hash };
 }
 
@@ -2948,14 +3089,17 @@ function hotpCode(key, counter, opts) {
   const options = opts || {};
   const spec = hotpSpec(options.algorithm);
   const digits = Math.max(6, Math.min(10, Number(options.digits || 6)));
-  const material = Buffer.isBuffer(key) ? key : Buffer.from(String(key), 'utf8');
+  const material = Buffer.isBuffer(key) ? key :
+                   Buffer.from(String(key), 'utf8');
   if (!material.length) {
     throw new Error('hotp: the shared secret is empty, so no code can be ' +
                     'derived from it.');
   }
   const message = Buffer.alloc(8);
   message.writeBigUInt64BE(BigInt(counter));
-  const digest = nodeCrypto.createHmac(spec.hash, material).update(message).digest();
+  const digest = nodeCrypto.createHmac(spec.hash, material)
+                           .update(message)
+                           .digest();
   // The dynamic truncation, step by step and named, because a one-liner here
   // is the version nobody can check against the RFC.
   const offset = digest[digest.length - 1] & 0x0f;
@@ -3050,20 +3194,25 @@ const SCRYPT_MIN_LOG_N = 14;
 const SCRYPT_MAX_LOG_N = 20;
 
 function clampInt(value, low, high, fallback) {
+  log.debug("Entering clampInt().");
   const n = Number(value);
   if (value === '' || value === null || value === undefined || !isFinite(n)) {
+    log.debug("Leaving clampInt().");
     return fallback;
   }
+  log.debug("Leaving clampInt().");
   return Math.max(low, Math.min(high, Math.floor(n)));
 }
 
 function scryptParameters() {
+  log.debug("Entering scryptParameters().");
   const logN = clampInt(config.value('security.passwordHashLogN'),
                         SCRYPT_MIN_LOG_N, SCRYPT_MAX_LOG_N,
                         Math.log2(SCRYPT_N));
   const r = clampInt(config.value('security.passwordHashR'), 8, 16, SCRYPT_R);
   const p = clampInt(config.value('security.passwordHashP'), 1, 8, SCRYPT_P);
   const n = Math.pow(2, logN);
+  log.debug("Leaving scryptParameters().");
   return { N: n, r: r, p: p, keylen: SCRYPT_KEYLEN,
            // RFC 7914's memory is 128 * N * r (plus 128 * r * p for the
            // parallel blocks); doubled for headroom exactly as the constant
@@ -3232,16 +3381,19 @@ const kekTally = {
 };
 
 function kekRow(label) {
+  log.debug("Entering kekRow().");
   const id = String(label || UNLABELLED);
   if (!kekTally.byLabel[id]) {
     kekTally.byLabel[id] = { label: id, encryptions: 0, decryptions: 0,
                              failures: 0, plaintextBytes: 0,
                              ciphertextBytes: 0, firstAt: 0, lastAt: 0 };
   }
+  log.debug("Leaving kekRow().");
   return kekTally.byLabel[id];
 }
 
 function countKek(label, what, plainBytes, cipherBytes) {
+  log.debug("Entering countKek().");
   const now = Date.now();
   const row = kekRow(label);
   kekTally[what] += 1;
@@ -3258,6 +3410,7 @@ function countKek(label, what, plainBytes, cipherBytes) {
   }
   kekTally.lastAt = now;
   row.lastAt = now;
+  log.debug("Leaving countKek().");
 }
 
 // What has been encrypted and decrypted under the key-encryption key, and how
@@ -3265,6 +3418,7 @@ function countKek(label, what, plainBytes, cipherBytes) {
 // make this service under-report its own cryptography — and the one caller is
 // a console page, which has no business holding a reference to a counter.
 function kekAccounting() {
+  log.debug("Entering kekAccounting().");
   const labels = Object.keys(kekTally.byLabel).map(function (id) {
     const row = kekTally.byLabel[id];
     return { label: row.label, encryptions: row.encryptions,
@@ -3276,6 +3430,7 @@ function kekAccounting() {
     return (b.encryptions + b.decryptions) - (a.encryptions + a.decryptions) ||
            a.label.localeCompare(b.label);
   });
+  log.debug("Leaving kekAccounting().");
   return {
     encryptions: kekTally.encryptions,
     decryptions: kekTally.decryptions,
@@ -3315,8 +3470,10 @@ function encryptWithKek(kek, plaintext, label) {
                                      Buffer.from(KEK_INFO, 'utf8'),
                                      KEK_KEY_BYTES);
   const iv = nodeCrypto.randomBytes(KEK_IV_BYTES);
-  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', Buffer.from(subkey), iv);
-  const body = Buffer.concat([cipher.update(Buffer.from(String(plaintext), 'utf8')),
+  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', Buffer.from(subkey),
+                                           iv);
+  const body = Buffer.concat([cipher.update(Buffer.from(String(plaintext),
+                                                        'utf8')),
                               cipher.final()]);
   const tag = cipher.getAuthTag();
   const out = '$aesgcm$1$' + salt.toString('base64') + '$' +
@@ -3324,11 +3481,14 @@ function encryptWithKek(kek, plaintext, label) {
               body.toString('base64');
   countKek(label, 'encryptions', Buffer.byteLength(String(plaintext), 'utf8'),
            body.length);
-  log.debug('Leaving encryptWithKek(). ' + body.length + ' byte(s) of ciphertext.');
+  log.debug('Leaving encryptWithKek(). ' + body.length + ' byte(s) of ' +
+      'ciphertext.');
   return out;
 }
 
 function isEncryptedWithKek(stored) {
+  log.debug("Entering isEncryptedWithKek().");
+  log.debug("Leaving isEncryptedWithKek().");
   return /^\$aesgcm\$/.test(String(stored || ''));
 }
 
@@ -3457,6 +3617,8 @@ function deriveSharedCredential(secret, label) {
 // the cost later does not invalidate what is already stored — see the block
 // above the parameters.
 function encodeStoredSecret(n, r, p, salt, derived) {
+  log.debug("Entering encodeStoredSecret().");
+  log.debug("Leaving encodeStoredSecret().");
   return '$scrypt$' + n + '$' + r + '$' + p + '$' +
          salt.toString('base64') + '$' + derived.toString('base64');
 }
@@ -3510,7 +3672,8 @@ function hashSecret(plaintext) {
   // names what was used, so a change here reaches the next hash and nothing
   // already written.
   const cost = scryptParameters();
-  const derived = nodeCrypto.scryptSync(String(plaintext == null ? '' : plaintext),
+  const derived = nodeCrypto.scryptSync(String(plaintext == null ? '' :
+                                               plaintext),
                                     salt, cost.keylen,
                                     { N: cost.N, r: cost.r, p: cost.p,
                                       maxmem: cost.maxmem });
@@ -3525,6 +3688,7 @@ function hashSecret(plaintext) {
 // correctness requirement, because a worker remembers nothing.
 function deriveAsync(plaintext, spec, opts) {
   log.debug('Entering deriveAsync(). N=' + spec.N);
+  log.debug("Leaving deriveAsync().");
   return workerPool.run('scrypt.derive', {
     plaintext: String(plaintext == null ? '' : plaintext),
     salt: Buffer.from(spec.salt), keylen: spec.keylen,
@@ -3553,8 +3717,8 @@ function hashSecretAsync(plaintext, opts) {
     // deriveAsync() below for why that is the right answer rather than a
     // fallback that hides something.
     log.warn(errorCodes.tag('STS-KEYS-0006') +
-             'crypto: the worker pool could not derive a password hash and it ' +
-             'is being computed in this process instead: ' + e.message);
+             'crypto: the worker pool could not derive a password hash and ' +
+             'it is being computed in this process instead: ' + e.message);
     return hashSecret(plaintext);
   });
 }
@@ -3564,6 +3728,8 @@ function hashSecretAsync(plaintext, opts) {
 // plaintext — and a verification that treated one of those as a scrypt string
 // would refuse a correct password rather than saying it cannot read the value.
 function isHashedSecret(stored) {
+  log.debug("Entering isHashedSecret().");
+  log.debug("Leaving isHashedSecret().");
   return /^\$scrypt\$/.test(String(stored || ''));
 }
 
@@ -3591,7 +3757,8 @@ function verifySecret(plaintext, stored) {
     return false;
   }
   const same = constantTimeEquals(derived, spec.expected);
-  log.debug('Leaving verifySecret(). ' + (same ? 'It matches.' : 'It does not.'));
+  log.debug('Leaving verifySecret(). ' +
+            (same ? 'It matches.' : 'It does not.'));
   return same;
 }
 
@@ -3630,8 +3797,8 @@ function verifySecretAsync(plaintext, stored, opts) {
     // being right.
     // ---------------------------------------------------------------------
     log.warn(errorCodes.tag('STS-KEYS-0006') +
-             'crypto: the worker pool could not recompute a stored secret, so ' +
-             'the comparison is being made in this process instead: ' +
+             'crypto: the worker pool could not recompute a stored secret, ' +
+             'so the comparison is being made in this process instead: ' +
              e.message);
     return verifySecret(plaintext, stored);
   });

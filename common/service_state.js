@@ -35,7 +35,12 @@ const realms = require('./realms');
 // `pki.js` — see the `keySetFor` note below.
 const helpers = require('./helpers');
 
+// The service's shared logger.
+const log = helpers.log;
+
 function start() {
+  log.debug("Entering start().");
+  log.debug("Leaving start().");
   return persistence.start().then(function (started) {
   // THE SIGNING KEYS, AFTER THE STORE AND BEFORE ANYTHING SIGNS.
   //
@@ -126,16 +131,22 @@ function start() {
         // at load time would put a certificate authority in front of every
         // in-process caller of helpers. This is the one place that knows both,
         // so this is where they meet.
-        keySetFor: function (realmId) { return helpers.stsKeysFor.of(realmId); },
-        // **AND THE ASK-DO-NOT-TAKE HALF OF IT (2026-09-12).** `.of()` MAKES
-        // a key set when this process has none, so the realm watcher in
-        // `pki.js` was creating a realm's signing keys in every process that
-        // saw the realm appear rather than certifying keys that existed —
-        // four processes, four key sets, arbitrated away afterwards. `.existing()`
-        // is the cache itself, so this answers the question without filling
-        // it. `pki.js`'s watcher carries the measurement.
+        keySetFor: function (realmId) {
+          log.debug("Entering keySetFor().");
+          log.debug("Leaving keySetFor().");
+          return helpers.stsKeysFor.of(realmId);
+        },
+        // **AND THE ASK-DO-NOT-TAKE HALF OF IT (2026-09-12).** `.of()` MAKES a
+        // key set when this process has none, so the realm watcher in `pki.js`
+        // was creating a realm's signing keys in every process that saw the
+        // realm appear rather than certifying keys that existed — four
+        // processes, four key sets, arbitrated away afterwards. `.existing()`
+        // is the cache itself, so this answers the question without filling it.
+        // `pki.js`'s watcher carries the measurement.
         keySetHeldFor: function (realmId) {
+          log.debug("Entering keySetHeldFor().");
           const held = helpers.stsKeysFor.existing();
+          log.debug("Leaving keySetHeldFor().");
           return !!(held && typeof held.has === 'function' &&
                     held.has(String(realmId || '')));
         }

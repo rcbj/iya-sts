@@ -108,6 +108,8 @@ const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
 let warnedAboutMissingPolicy = false;
 
 function issuancePolicyName() {
+  log.debug("Entering issuancePolicyName().");
+  log.debug("Leaving issuancePolicyName().");
   return String(config.value('xacml.issuancePolicy') || 'role-issuance');
 }
 
@@ -216,6 +218,8 @@ function issuancePolicy() {
 // that needed two.
 // ---------------------------------------------------------------------------
 function attribute(attributeId, values, type) {
+  log.debug("Entering attribute().");
+  log.debug("Leaving attribute().");
   return {
     attributeId: attributeId,
     issuer: null,
@@ -301,9 +305,11 @@ let dryRun = false;
 // THE DECISION.
 // ---------------------------------------------------------------------------
 function decide(asked) {
+  log.debug("Entering decide().");
   const outer = dryRun;
   dryRun = !!(asked && asked.preview);
   try {
+    log.debug("Leaving decide().");
     return decideNow(asked);
   } finally {
     dryRun = outer;
@@ -363,6 +369,7 @@ function decideNow(asked) {
         outcome: 'refused'
       });
     }
+    log.debug("Leaving decideNow().");
     return refused(
       'This application requires ' + required.join(' or ') + ', and ' +
       loaded.why + ' — so the restriction cannot be evaluated. It is refused ' +
@@ -420,16 +427,19 @@ function decideNow(asked) {
 }
 
 function reasonFor(answer, held, required, asked) {
+  log.debug("Entering reasonFor().");
   const who = asked.subject && asked.subject.name
     ? '"' + asked.subject.name + '"' : 'the caller';
   if (answer.decision === model.DECISION.DENY ||
       answer.decision === model.DECISION.NOT_APPLICABLE) {
+    log.debug("Leaving reasonFor().");
     return '"' + asked.application + '" requires ' +
       (required.length ? required.join(' or ') : 'a role nothing named') +
       ' and ' + who + ' holds ' +
       (held.length ? held.join(', ') : 'no role at all') + '.';
   }
   const status = (answer.status && answer.status.message) || '';
+  log.debug("Leaving reasonFor().");
   return 'the issuance policy could not be evaluated' +
     (status ? ': ' + status : '') + '. Nothing is issued on an ' +
     'Indeterminate, because the alternative is issuing on an error.';
@@ -450,6 +460,7 @@ function reasonFor(answer, held, required, asked) {
 // causing the outage it exists to show.
 // ---------------------------------------------------------------------------
 function allowed(why, held, required, answer) {
+  log.debug("Entering allowed().");
   const decision = answer ? answer.decision : model.DECISION.NOT_APPLICABLE;
   // NOT ON A DRY RUN. See the block above `decide()`: the monitor answers what
   // this service is actually deciding, and a page asking what WOULD happen is
@@ -458,6 +469,7 @@ function allowed(why, held, required, answer) {
   if (!dryRun) {
     monitor.record('issuance', { decision: decision, allowed: true });
   }
+  log.debug("Leaving allowed().");
   return { allowed: true,
            decision: decision,
            why: why, roles: held || [], required: required || [],
@@ -465,9 +477,11 @@ function allowed(why, held, required, answer) {
 }
 
 function refused(why, decision, held, required, answer) {
+  log.debug("Entering refused().");
   if (!dryRun) {
     monitor.record('issuance', { decision: decision, allowed: false });
   }
+  log.debug("Leaving refused().");
   return { allowed: false, decision: decision, why: why,
            roles: held || [], required: required || [],
            policy: issuancePolicyName(),

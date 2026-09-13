@@ -81,9 +81,17 @@ const applications = require('../common/applications');
 // wrong reason.
 const ldap = require('../ldap/ldap_server');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'rfc7523_person_issuer',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const AUD = ['https://localhost:8081/oauth2/token'];
 
 function b64u(buf) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
   return Buffer.from(buf).toString('base64url');
 }
 
@@ -93,6 +101,7 @@ function b64u(buf) {
 // interoperate with nobody. Three lines, RSA and EC alike through node's own
 // `sign()`.
 function signJws(header, payload, privateKeyPem) {
+  log.debug("Entering signJws().");
   const head = b64u(Buffer.from(JSON.stringify(header), 'utf8'));
   const body = b64u(Buffer.from(JSON.stringify(payload), 'utf8'));
   const signing = head + '.' + body;
@@ -104,21 +113,27 @@ function signJws(header, payload, privateKeyPem) {
   const options = /^ES/.test(header.alg)
     ? { key: privateKeyPem, dsaEncoding: 'ieee-p1363' } : privateKeyPem;
   const sig = nodeCrypto.sign(digest, Buffer.from(signing, 'ascii'), options);
+  log.debug("Leaving signJws().");
   return signing + '.' + b64u(sig);
 }
 
 function seconds() {
+  log.debug("Entering seconds().");
+  log.debug("Leaving seconds().");
   return Math.floor(Date.now() / 1000);
 }
 
 let counter = 0;
 function claimsFor(iss, sub) {
+  log.debug("Entering claimsFor().");
   counter += 1;
+  log.debug("Leaving claimsFor().");
   return { iss: iss, sub: sub, aud: AUD[0], iat: seconds(),
            exp: seconds() + 120, jti: 'person-assertions-' + counter };
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   // -------------------------------------------------------------------------
   // A. THE REGISTER, AND WHAT AN ISSUE PUTS ON THE ENTRY.
   // -------------------------------------------------------------------------
@@ -164,43 +179,47 @@ async function run(t) {
           'where "which attribute was it stored in" is an answer nobody ' +
           'holding a PEM file can get to');
   t.check(/^person-/.test(record.kid),
-          'the kid says so too, which is the half an operator reads', record.kid);
+          'the kid says so too, which is the half an operator reads',
+          record.kid);
 
   const appIssued = await pki.issueSigningKeyPair(undefined, {
     identifier: 'pa-app', purpose: 'jwt'
   });
   t.equal((appIssued.issued || {}).subjectUri, 'urn:sts:application:pa-app',
           'and an issue that names no subject kind is an APPLICATION\'s, ' +
-          'byte-for-byte what this function produced before people could hold ' +
-          'a key pair — a default that changed the shape of a certificate ' +
-          'would make this function\'s output depend on when it was called');
+          'byte-for-byte what this function produced before people could ' +
+          'hold a key pair — a default that changed the shape of a ' +
+          'certificate would make this function\'s output depend on when it ' +
+          'was called');
 
   const written = personAssertions.write(ALICE, record, {});
   t.check(written.ok, 'the key pair is written onto the person\'s own entry',
           (written.errors || []).join(' '));
   t.equal(written.written.length, 6,
-          'six attributes — the JWKS, the certificate, the chain, the private ' +
-          'key, the kid and the expiry. All six or none: common/pki.js hands a ' +
-          'key pair over once and keeps no copy, so a half-written entry is a ' +
-          'key pair that is gone with a certificate claiming otherwise');
+          'six attributes — the JWKS, the certificate, the chain, the ' +
+          'private key, the kid and the expiry. All six or none: ' +
+          'common/pki.js hands a key pair over once and keeps no copy, so a ' +
+          'half-written entry is a key pair that is gone with a certificate ' +
+          'claiming otherwise');
 
   const held = personAssertions.recordFor(ALICE);
   t.check(held && held.hasKeyPair, 'and it reads back');
   t.equal(JSON.stringify(held.effectiveIssuers), JSON.stringify([ALICE]),
           'with the person\'s own name as the issuer they assert under. ' +
           'Nothing was declared, and asking an operator to write a name down ' +
-          'twice is a configuration step with no decision in it — which is the ' +
-          'rule issuerEntry() already follows for an application\'s client_id');
+          'twice is a configuration step with no decision in it — which is ' +
+          'the rule issuerEntry() already follows for an application\'s ' +
+          'client_id');
   t.check(/BEGIN (RSA )?PRIVATE KEY/.test(held.stsAssertionPrivateKey),
           'the private half comes back through this module OPENED, whatever ' +
           'the store holds — the seal protects the store rather than the ' +
           'caller that owns the register');
   t.equal(personAssertions.SEALED_ATTRIBUTES.join(','),
           'stsAssertionPrivateKey',
-          'and exactly one of the seven is private key material. It is a LIST ' +
-          'rather than an `if` because "is this attribute a private key" is a ' +
-          'question somebody adding an attribute has to answer, and a list is ' +
-          'where they will look');
+          'and exactly one of the seven is private key material. It is a ' +
+          'LIST rather than an `if` because "is this attribute a private ' +
+          'key" is a question somebody adding an attribute has to answer, ' +
+          'and a list is where they will look');
 
   const drawn = personAssertions.holders().filter(function (one) {
     return one.username === ALICE;
@@ -217,6 +236,8 @@ async function run(t) {
   // -------------------------------------------------------------------------
   const alg = record.jwsAlg;
   const sign = function (claims, header) {
+    log.debug("Entering sign().");
+    log.debug("Leaving sign().");
     return signJws(Object.assign({ alg: alg, typ: 'JWT', kid: record.kid },
                                  header || {}),
                    claims, record.privateKeyPem);
@@ -225,9 +246,9 @@ async function run(t) {
   const self = await assertionGrant.verify({
     assertion: sign(claimsFor(ALICE, ALICE)), audiences: AUD });
   t.check(self.ok, 'B. a person\'s assertion about THEMSELVES is accepted — ' +
-          'RFC 7523 section 3 read literally: claim 1 asks only that `iss` be ' +
-          'a unique identifier for the issuer, and claim 2 says the `sub` of ' +
-          'an authorization grant typically identifies a resource owner',
+          'RFC 7523 section 3 read literally: claim 1 asks only that `iss` ' +
+          'be a unique identifier for the issuer, and claim 2 says the `sub` ' +
+          'of an authorization grant typically identifies a resource owner',
           self.description);
   t.equal(self.issuerKind, 'person',
           'and the result says which kind of party signed it, because ' +
@@ -241,25 +262,26 @@ async function run(t) {
           'path crosses them');
   t.equal(self.application, '',
           'and no application is reported, because none was involved. A ' +
-          'person reported as an application would be the delegation register ' +
-          'inventing a party');
+          'person reported as an application would be the delegation ' +
+          'register inventing a party');
 
   const other = await assertionGrant.verify({
     assertion: sign(claimsFor(ALICE, BOB)), audiences: AUD });
   t.check(!other.ok,
           '**AND AN ASSERTION FROM THAT PERSON ABOUT SOMEBODY ELSE IS ' +
-          'REFUSED.** This is the whole feature: a key issued to one resource ' +
-          'owner is that person\'s credential rather than permission to speak ' +
-          'for the others, and without the refusal anybody handed a key on ' +
-          '/admin/pki can get a token as anybody in the realm');
+          'REFUSED.** This is the whole feature: a key issued to one ' +
+          'resource owner is that person\'s credential rather than ' +
+          'permission to speak for the others, and without the refusal ' +
+          'anybody handed a key on /admin/pki can get a token as anybody in ' +
+          'the realm');
   t.equal(other.error, 'invalid_grant',
           'as invalid_grant, which is RFC 7523 section 3\'s own code for an ' +
           'assertion that will not do');
   t.check(/only be about themselves/.test(String(other.description)),
           'and the sentence says WHY rather than reporting a lookup that ' +
           'failed — the refusal names the difference between a person\'s key ' +
-          'and an application\'s declaration, because the operator reading it ' +
-          'has to know which one they wanted',
+          'and an application\'s declaration, because the operator reading ' +
+          'it has to know which one they wanted',
           String(other.description).slice(0, 120));
 
   // THE CONTROL FOR IT, and it is the assertion that stops the check above
@@ -287,8 +309,8 @@ async function run(t) {
   t.check(byBroker.ok,
           'while an APPLICATION that an operator declared as an issuer may ' +
           'assert about a third party exactly as it always could — which is ' +
-          'the control that keeps the refusal above from being satisfied by a ' +
-          'grant that has simply stopped working',
+          'the control that keeps the refusal above from being satisfied by ' +
+          'a grant that has simply stopped working',
           byBroker.description);
   t.equal(byBroker.issuerKind, 'application', 'and is reported as one');
 
@@ -299,10 +321,10 @@ async function run(t) {
   t.check(bobRecord && !bobRecord.hasKeyPair,
           'C. somebody who was never issued one holds no key pair');
   t.check(!personAssertions.issuerFor(BOB),
-          'and is NOT an issuer. Every person in the realm would otherwise be ' +
-          'one by the username fallback, so an assertion naming any of them ' +
-          'would get past the registered-issuer refusal and be judged on its ' +
-          'x5c alone. Holding a key pair is the thing an operator DID');
+          'and is NOT an issuer. Every person in the realm would otherwise ' +
+          'be one by the username fallback, so an assertion naming any of ' +
+          'them would get past the registered-issuer refusal and be judged ' +
+          'on its x5c alone. Holding a key pair is the thing an operator DID');
   t.check(!personAssertions.issuerFor('pa-nobody-at-all'),
           'and a name nobody has is nobody');
 
@@ -314,7 +336,8 @@ async function run(t) {
   // through the registry at all.
   // -------------------------------------------------------------------------
   const cleared = personAssertions.clear(ALICE);
-  t.check(cleared.ok, 'D. the key pair is taken off the entry', cleared.removed);
+  t.check(cleared.ok, 'D. the key pair is taken off the entry',
+          cleared.removed);
   t.check(!personAssertions.issuerFor(ALICE),
           'so nobody issues under that name any more');
 
@@ -329,18 +352,18 @@ async function run(t) {
           'anything', chainSelf.description);
   t.equal(chainSelf.keySource, 'x5c', 'on the chain and not on the registry');
   t.equal(chainSelf.issuerKind, 'person',
-          'and the CERTIFICATE is what says they are a person, since there is ' +
-          'nothing on the entry left to say it');
+          'and the CERTIFICATE is what says they are a person, since there ' +
+          'is nothing on the entry left to say it');
 
   const chainOther = await assertionGrant.verify({
     assertion: sign(claimsFor(ALICE, BOB), { x5c: x5c, kid: undefined }),
     audiences: AUD });
   t.check(!chainOther.ok,
           '**AND THE RULE HOLDS ON THE CERTIFICATE ALONE.** This is the hole ' +
-          'the URI subjectAltName exists to close: before people could hold a ' +
-          'key pair, "it chains here" and "it may assert about somebody" were ' +
-          'one sentence, and a check written only against the registry would ' +
-          'leave a person\'s leaf able to name anybody as `sub`',
+          'the URI subjectAltName exists to close: before people could hold ' +
+          'a key pair, "it chains here" and "it may assert about somebody" ' +
+          'were one sentence, and a check written only against the registry ' +
+          'would leave a person\'s leaf able to name anybody as `sub`',
           JSON.stringify(chainOther).slice(0, 120));
   t.check(/only be about themselves/.test(String(chainOther.description)),
           'refused with the same sentence, because it is the same rule');
@@ -361,6 +384,7 @@ async function run(t) {
           'away — so what this service issued the certificate TO is read off ' +
           'the certificate, which is a fact about the certificate',
           JSON.stringify(chainDeleted).slice(0, 120));
+  log.debug("Leaving run().");
 }
 
 module.exports = {

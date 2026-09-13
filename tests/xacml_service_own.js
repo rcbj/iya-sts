@@ -1,4 +1,10 @@
 'use strict';
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'xacml_service_own',
+  level: process.env.LOG_LEVEL || 'info' });
 //
 // File: xacml_service_own.js
 //
@@ -50,6 +56,7 @@
 delete process.env.CONFIG_FILE;
 
 function run(t) {
+  log.debug("Entering run().");
   const config = require('../common/config');
   require('../common/app');
   // The directory, which IS `ou=policies`. Without it both states report the
@@ -97,8 +104,13 @@ function run(t) {
   t.log.info('=== an enabled override wins ===');
 
   const write = function (name, template) {
+    log.debug("Entering write().");
     const built = templates.build(template, {}, { name: name });
-    if (!built.ok) return { ok: false, why: built.why };
+    if (!built.ok) {
+      log.debug("Leaving write().");
+      return { ok: false, why: built.why };
+    }
+    log.debug("Leaving write().");
     return store.write(name, xml.writePolicy(built.policy), { enabled: true });
   };
 
@@ -133,7 +145,11 @@ function run(t) {
   // -----------------------------------------------------------------------
   t.log.info('=== a disabled override: neither falls back ===');
 
-  const doc = function (name) { return store.read(name).document; };
+  const doc = function (name) {
+    log.debug("Entering doc().");
+    log.debug("Leaving doc().");
+    return store.read(name).document;
+  };
   store.write('role-issuance', doc('role-issuance'), { enabled: false });
   store.write('access-control', doc('access-control'), { enabled: false });
 
@@ -175,6 +191,7 @@ function run(t) {
   t.equal(issuance4.builtIn && issuance4.ok, true,
           'and deleting the override brings the built-in document back, ' +
           'which is the way out of the disabled state');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

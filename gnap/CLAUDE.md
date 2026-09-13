@@ -77,6 +77,14 @@ the SSF scope.
   formats throw.** Both mint callers only caught a throw, so a refused mint put
   a token with no value into the store and the response. `gnap_tokens.js`'s
   `mintedOrThrow()` turns a returned refusal into a throw.
+* **The JWT formats did not validate the model and could mint nothing.** The
+  library formats validate in their own `mint()`; the JWT branch signed whatever
+  it was handed, and a model with `nbf: null` (a minimal bearer token) put a
+  `null` claim in front of jsonwebtoken and came back as an empty value with no
+  error. Validation happens in the JWT branch now, a null time is omitted, and a
+  signer that produced no JWS throws. Found when the JWT formats were put through
+  `tests/gnap_token_formats.js`'s matrix — issuance always sets `nbf`, so no
+  over-HTTP job could have reached it.
 * **`applications.updateApplication()` refuses a derived attribute.**
   `gnapMacaroonKey` is written by this service, so it goes through
   `applications.seen()` — the door the service writes what it did through —
@@ -133,11 +141,11 @@ failure patterns.
 | File | What it holds |
 |---|---|
 | `tests/gnap_httpsig.js` | RFC 9421 / 9530 / 8941, including the Appendix B vectors |
-| `tests/gnap_token_formats.js` | mint, verify and attenuate for all five formats, and their refusals |
+| `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate |
 | `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
 | `tests/vendored/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code |
-| `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, introspection, registration, derivation, mutual TLS |
+| `tests/vendored/sts_gnap_rs.js` | RFC 9767: each token format verified by the job's OWN code, then each accepted, narrowed, rotated, revoked and expired at the demonstration RS; introspection, registration, derivation, mutual TLS |
 | `tests/vendored/sts_gnap_signals.js` | a GNAP-owned stream, CAEP on revoke/modify, and the scope, against an unscoped control stream |
 
 The three jobs share `tests/vendored/gnap_client.js` (an independent client

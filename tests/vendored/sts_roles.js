@@ -72,8 +72,9 @@
 //   3. `requiredRolesOf()` answering `[]` instead of `[EVERYBODY]` for an
 //      application that names none — caught by section 1, which is the section
 //      that looks like it is testing nothing;
-//   4. the roles claim built from `rolesOf()` rather than `configuredRolesOf()`,
-//      so it carries the built-in roles too — caught by section 2;
+//   4. the roles claim built from `rolesOf()` rather than
+//      `configuredRolesOf()`, so it carries the built-in roles too — caught by
+//      section 2;
 //   5. `rolesOf()` ignoring the group membership half — caught by section 6;
 //   6. the token endpoint's refusal answered 500 `server_error` rather than
 //      400 `access_denied` — caught by section 4, which reads the error CODE
@@ -104,17 +105,23 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_roles",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -161,13 +168,24 @@ const ROBOT = "roles-robot-client";
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
-function realmUrl(path) { return base + "/realm/" + REALM + path; }
-function api(path) { return realmUrl("/admin-api" + path); }
+function realmUrl(path) {
+  log.debug("Entering realmUrl().");
+  log.debug("Leaving realmUrl().");
+  return base + "/realm/" + REALM + path;
+}
+
+function api(path) {
+  log.debug("Entering api().");
+  log.debug("Leaving api().");
+  return realmUrl("/admin-api" + path);
+}
 
 // ---------------------------------------------------------------------------
 // THE VERBS.
@@ -180,6 +198,7 @@ async function fetchJson(url, options) {
   try {
     body = JSON.parse(text);
   } catch (e) {
+    log.debug("Caught in fetchJson(): " + ((e && e.message) || e));
     // Not JSON — an HTML page or a redirect with no body. The caller reports
     // the status and the raw text, which says more than a parse error would.
     body = null;
@@ -189,18 +208,26 @@ async function fetchJson(url, options) {
            location: r.headers.get("location") || "" };
 }
 
-function get(url) { return fetchJson(url); }
+function get(url) {
+  log.debug("Entering get().");
+  log.debug("Leaving get().");
+  return fetchJson(url);
+}
 
 function postJson(url, payload) {
+  log.debug("Entering postJson().");
+  log.debug("Leaving postJson().");
   return fetchJson(url, { method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(payload || {}) });
 }
 
 function postForm(url, fields) {
+  log.debug("Entering postForm().");
   const body = Object.keys(fields).map(function (k) {
     return encodeURIComponent(k) + "=" + encodeURIComponent(fields[k]);
   }).join("&");
+  log.debug("Leaving postForm().");
   return fetchJson(url, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -213,40 +240,48 @@ function postForm(url, fields) {
 // these handlers answer `errors` with a sentence naming what they wanted, and
 // a test reporting only the status would throw that away.
 async function act(resource, action, payload, what) {
+  log.debug("Entering act().");
   const r = await postJson(api("/" + resource + "/" + action), payload || {});
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "POST /admin-api/" + resource + "/" + action + " should have " + what +
     "; it answered " + r.status + " " +
     JSON.stringify((r.body && (r.body.errors || r.body.why)) ||
                    r.body || r.text).slice(0, 400));
+  log.debug("Leaving act().");
   return r.body;
 }
 
 async function setSetting(key, value) {
+  log.debug("Entering setSetting().");
   const r = await postJson(api("/config/set"), { key: key, value: value });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "setting " + key + " in the realm should have worked; it answered " +
     r.status + " " + String(r.text).slice(0, 300));
+  log.debug("Leaving setSetting().");
 }
 
 async function resetSetting(key) {
+  log.debug("Entering resetSetting().");
   // `reset` RATHER THAN WRITING THE OLD VALUE BACK, for the reason
   // tests/saml11_sso.js records: a `set` leaves `source: override` behind and
   // tests/vendored/admin_api.js reads that field.
   const r = await postJson(api("/config/reset"), { key: key });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "resetting " + key + " should have worked; it answered " + r.status);
+  log.debug("Leaving resetSetting().");
 }
 
 // A password grant, which is this file's workhorse: it is the one grant that
 // names a PERSON and needs no browser, so a refusal in it is a refusal of that
 // person and of nothing about a session.
 function tokenFor(username, clientId, scope) {
+  log.debug("Entering tokenFor().");
   const body = "grant_type=password&username=" + encodeURIComponent(username) +
     "&password=" + encodeURIComponent(PASSWORD) +
     "&client_id=" + encodeURIComponent(clientId) +
     "&client_secret=" + encodeURIComponent(CLIENT_SECRET) +
     "&scope=" + encodeURIComponent(scope || "openid");
+  log.debug("Leaving tokenFor().");
   return fetchJson(realmUrl("/oauth2/token"), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -255,7 +290,9 @@ function tokenFor(username, clientId, scope) {
 }
 
 function claimsOf(jwt) {
+  log.debug("Entering claimsOf().");
   const part = String(jwt).split(".")[1] || "";
+  log.debug("Leaving claimsOf().");
   return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
 }
 
@@ -267,14 +304,21 @@ function claimsOf(jwt) {
 // followed them would answer the question by hiding it. Copied in shape from
 // `sts_consent.js`, which needs the same thing for the same reason.
 // ---------------------------------------------------------------------------
-function form(o) { return new URLSearchParams(o).toString(); }
+function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
+  return new URLSearchParams(o).toString();
+}
 
 function absolute(location) {
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
 }
 
 function browser() {
+  log.debug("Entering browser().");
   const self = {
     cookie: "",
     async go(method, path, body) {
@@ -295,6 +339,7 @@ function browser() {
                text: text };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
@@ -305,6 +350,8 @@ const REDIRECT_URI = "https://example.test/roles-callback";
 // redirect URI every authorization request here names, and the secret every
 // token request here presents.
 function oauthApplication(identifier, name) {
+  log.debug("Entering oauthApplication().");
+  log.debug("Leaving oauthApplication().");
   return { identifier: identifier, kind: "oauth2-client", name: name,
            protocols: ["oauth2", "oidc"],
            fields: { oauthClientId: [identifier],
@@ -315,6 +362,7 @@ function oauthApplication(identifier, name) {
 
 // A person in this realm's directory, with a password and real attributes.
 async function createPerson(username) {
+  log.debug("Entering createPerson().");
   await act("users", "create", {
     username: username, invent: false,
     attributes: { cn: "Roles " + username, givenName: "Roles", sn: username,
@@ -322,9 +370,12 @@ async function createPerson(username) {
                   mail: username + "@roles-job.test" },
     credential: "password", password: PASSWORD
   }, "created " + username + " in the realm");
+  log.debug("Leaving createPerson().");
 }
 
 function authorizeUrl(clientId) {
+  log.debug("Entering authorizeUrl().");
+  log.debug("Leaving authorizeUrl().");
   return "/realm/" + REALM + "/oauth2/authorize?" + form({
     response_type: "code", client_id: clientId, redirect_uri: REDIRECT_URI,
     scope: "openid", state: "roles-" + REALM
@@ -335,6 +386,7 @@ function authorizeUrl(clientId) {
 // SETUP AND TEARDOWN.
 // ---------------------------------------------------------------------------
 async function createTheRealm() {
+  log.debug("Entering createTheRealm().");
   log.info("=== A throwaway trust realm ===");
   const r = await postJson(base + "/admin-api/realms/create",
                            { id: REALM, name: "roles under test" });
@@ -347,6 +399,7 @@ async function createTheRealm() {
   }
   await act("applications", "create", oauthApplication(OPEN, "Open"),
             "registered the unnarrowed application");
+  log.debug("Leaving createTheRealm().");
 }
 
 // THE REALM IS LEFT STANDING, DELIBERATELY (2026-09-06), AND THIS FUNCTION IS
@@ -368,11 +421,13 @@ async function createTheRealm() {
 // write this job makes is INSIDE the realm, so a realm left standing changes
 // nothing for the default realm or for any other job.
 async function theRealmIsLeftBehind() {
+  log.debug("Entering theRealmIsLeftBehind().");
   log.info("The throwaway realm " + REALM + " is LEFT IN PLACE on purpose — " +
            "it holds this job's role register, its applications and its " +
            "audit log, and it is where somebody debugging this run should " +
            "look. Read it at " + base + "/realm/" + REALM + "/admin, or " +
            "remove it by hand when you are done with it.");
+  log.debug("Leaving theRealmIsLeftBehind().");
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +442,7 @@ async function theRealmIsLeftBehind() {
 // working.
 // ---------------------------------------------------------------------------
 async function anUnconfiguredRealmRefusesNobody() {
+  log.debug("Entering anUnconfiguredRealmRefusesNobody().");
   log.info("=== An unconfigured realm refuses nobody ===");
 
   const register = await get(api("/roles"));
@@ -473,12 +529,14 @@ async function anUnconfiguredRealmRefusesNobody() {
       "service did before roles existed; it answered " + first.status + " " +
       String(first.text).slice(0, 300));
   });
+  log.debug("Leaving anUnconfiguredRealmRefusesNobody().");
 }
 
 // ---------------------------------------------------------------------------
 // 2. THE CLAIM: what a token carries, and what it must not.
 // ---------------------------------------------------------------------------
 async function theClaim() {
+  log.debug("Entering theClaim().");
   log.info("=== The roles claim ===");
 
   await act("roles", "create-role", { role: ROLE, description: "Works here" },
@@ -519,12 +577,14 @@ async function theClaim() {
       "that person. It is " +
       JSON.stringify(claimsOf(none.body.access_token).roles));
   });
+  log.debug("Leaving theClaim().");
 }
 
 // ---------------------------------------------------------------------------
 // 3. NARROWING AN APPLICATION, AND WHAT THE REGISTER THEN SAYS ABOUT IT.
 // ---------------------------------------------------------------------------
 async function narrowingAnApplication() {
+  log.debug("Entering narrowingAnApplication().");
   log.info("=== Narrowing an application ===");
 
   await act("applications", "create", oauthApplication(NARROWED, "Narrowed"),
@@ -566,6 +626,7 @@ async function narrowingAnApplication() {
   await act("applications", "remove",
             { application: NARROWED, attribute: "appRequiredRole",
               value: "no-such-role" }, "removed it again");
+  log.debug("Leaving narrowingAnApplication().");
 }
 
 // ---------------------------------------------------------------------------
@@ -574,6 +635,7 @@ async function narrowingAnApplication() {
 // The section the file exists for.
 // ---------------------------------------------------------------------------
 async function theTokenEndpointRefuses() {
+  log.debug("Entering theTokenEndpointRefuses().");
   log.info("=== The token endpoint ===");
 
   const refused = await tokenFor(OUTSIDER, NARROWED, "openid");
@@ -635,6 +697,7 @@ async function theTokenEndpointRefuses() {
   await act("applications", "add",
             { application: NARROWED, attribute: "appRequiredRole",
               value: ROLE }, "narrowed it again");
+  log.debug("Leaving theTokenEndpointRefuses().");
 }
 
 // ---------------------------------------------------------------------------
@@ -644,6 +707,7 @@ async function theTokenEndpointRefuses() {
 // they get is not a page on this service but a redirect the CLIENT can read.
 // ---------------------------------------------------------------------------
 async function theAuthorizationEndpointRefuses() {
+  log.debug("Entering theAuthorizationEndpointRefuses().");
   log.info("=== The authorization endpoint ===");
 
   // The preview is what says the decision WOULD be a refusal, asked through
@@ -714,12 +778,13 @@ async function theAuthorizationEndpointRefuses() {
         " the role");
     });
   // A REFUSED SIGN-IN MUST LEAVE THE BROWSER SIGNED IN TO NOTHING, and HOW that
-  // is asked changed on 2026-09-07. It used to be `refusedBrowser.cookie === ""`,
-  // which stopped being the same question when `authn.js` began minting an
-  // ARRIVAL SESSION for every cookie-less request at a protocol front door: this
-  // browser was handed one by the authorization request three steps above,
+  // is asked changed on 2026-09-07. It used to be `refusedBrowser.cookie ===
+  // ""`, which stopped being the same question when `authn.js` began minting an
+  // ARRIVAL SESSION for every cookie-less request at a protocol front door:
+  // this browser was handed one by the authorization request three steps above,
   // before it had typed anything, so the jar is not empty and never was — the
-  // refusal below it minted nothing, which is what the sentence actually claims.
+  // refusal below it minted nothing, which is what the sentence actually
+  // claims.
   //
   // **THE PROXY WENT STALE, NOT THE PROPERTY.** An arrival session names the
   // `anonymous` principal, carries `authenticated: false` and `chosen: false`,
@@ -731,8 +796,8 @@ async function theAuthorizationEndpointRefuses() {
   // the sign-in screen. A session that had been established would go straight
   // through with a code, which is exactly the failure the old line was for.
   const afterRefusal = await refusedBrowser.go("GET", authorizeUrl(NARROWED));
-  check("and no session was established — the same browser is sent BACK to the " +
-        "sign-in screen rather than through it", function () {
+  check("and no session was established — the same browser is sent BACK to " +
+        "the sign-in screen rather than through it", function () {
     assert.ok(/\/authn\/login\?authn=/.test(afterRefusal.location),
       "a refused sign-in must leave the browser signed in to nothing. This " +
       "one was answered " + afterRefusal.status + " -> " +
@@ -826,6 +891,7 @@ async function theAuthorizationEndpointRefuses() {
   // this costs nothing outside it — but a section that left a policy off would
   // make the next section's failures point at the wrong feature.
   await resetSetting("oauth2.consentRequired");
+  log.debug("Leaving theAuthorizationEndpointRefuses().");
 }
 
 // ---------------------------------------------------------------------------
@@ -834,6 +900,7 @@ async function theAuthorizationEndpointRefuses() {
 // The two halves of this register that no other register here has.
 // ---------------------------------------------------------------------------
 async function groupsAndApplicationsHoldRoles() {
+  log.debug("Entering groupsAndApplicationsHoldRoles().");
   log.info("=== A group and an application hold roles ===");
 
   // THE GROUP HALF. Nobody is added to the ROLE; a group is, and the person is
@@ -861,7 +928,8 @@ async function groupsAndApplicationsHoldRoles() {
   const scimAuth = "Basic " +
     Buffer.from(SCIM_CALLER + ":" + PASSWORD).toString("base64");
   const found = await fetchJson(realmUrl(
-    "/scim/v2/Users?filter=" + encodeURIComponent('userName eq "' + IN_GROUP + '"')), {
+    "/scim/v2/Users?filter=" +
+    encodeURIComponent('userName eq "' + IN_GROUP + '"')), {
     headers: { "Authorization": scimAuth } });
   const bob = (found.body && found.body.Resources || [])[0];
   assert.ok(bob && bob.id,
@@ -966,6 +1034,7 @@ async function groupsAndApplicationsHoldRoles() {
       "different questions; it answered " + asPerson.status + " " +
       String(asPerson.text).slice(0, 300));
   });
+  log.debug("Leaving groupsAndApplicationsHoldRoles().");
 }
 
 // ---------------------------------------------------------------------------
@@ -978,20 +1047,24 @@ async function groupsAndApplicationsHoldRoles() {
 // "fixed" into a refusal by somebody reading the table of nine kinds.
 // ---------------------------------------------------------------------------
 async function wsTrustWithNoAppliesTo() {
+  log.debug("Entering wsTrustWithNoAppliesTo().");
   log.info("=== WS-Trust ===");
 
   const rst = function (appliesTo) {
-    return '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">' +
-      '<soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/' +
-      '2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
-      '<wsse:UsernameToken><wsse:Username>' + OUTSIDER + '</wsse:Username>' +
-      '<wsse:Password>' + PASSWORD + '</wsse:Password></wsse:UsernameToken>' +
-      '</wsse:Security></soap:Header><soap:Body>' +
-      '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/' +
-      'ws-trust/200512">' +
-      '<wst:RequestType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/' +
-      'Issue</wst:RequestType>' +
+    log.debug("Entering rst().");
+    log.debug("Leaving rst().");
+    return '<?xml version="1.0" encoding="UTF-8"?><soap:Envelope ' +
+      'xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Header>' +
+      '<wsse:Security ' +
+      'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
+      '<wsse:UsernameToken>' +
+      '<wsse:Username>' + OUTSIDER + '</wsse:Username><wsse:Password>' +
+      PASSWORD + '</wsse:Password>' +
+      '</wsse:UsernameToken></wsse:Security></soap:Header><soap:Body>' +
+      '<wst:RequestSecurityToken ' +
+      'xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">' +
+      '<wst:RequestType>' +
+      'http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType>' +
       (appliesTo
         ? '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
           'policy"><wsa:EndpointReference xmlns:wsa="http://www.w3.org/2005/' +
@@ -1002,6 +1075,8 @@ async function wsTrustWithNoAppliesTo() {
   };
 
   async function rstFor(appliesTo) {
+    log.debug("Entering rstFor().");
+    log.debug("Leaving rstFor().");
     return fetchJson(realmUrl("/sts"), {
       method: "POST",
       headers: { "Content-Type": "application/soap+xml" },
@@ -1031,12 +1106,14 @@ async function wsTrustWithNoAppliesTo() {
       "the sentence should name the role required; the body is " +
       String(narrowed.text).slice(0, 400));
   });
+  log.debug("Leaving wsTrustWithNoAppliesTo().");
 }
 
 // ---------------------------------------------------------------------------
 // 8. THE OFF SWITCH, which is the way back if a policy edit locks somebody out.
 // ---------------------------------------------------------------------------
 async function turningItOff() {
+  log.debug("Entering turningItOff().");
   log.info("=== roles.enforceIssuance, off ===");
 
   await setSetting("roles.enforceIssuance", false);
@@ -1082,12 +1159,14 @@ async function turningItOff() {
         JSON.stringify(claimsOf(noClaim.body.access_token || "x.e30.y").roles));
     });
   await resetSetting("roles.claim");
+  log.debug("Leaving turningItOff().");
 }
 
 // ---------------------------------------------------------------------------
 // 9. THE REGISTER'S OWN REFUSALS.
 // ---------------------------------------------------------------------------
 async function theRegisterRefuses() {
+  log.debug("Entering theRegisterRefuses().");
   log.info("=== What the register will not do ===");
 
   const builtIn = await postJson(api("/roles/create-role"),
@@ -1159,6 +1238,7 @@ async function theRegisterRefuses() {
       "an unnarrowed application still requires EVERYBODY; it answered " +
       stillOpen.status);
   });
+  log.debug("Leaving theRegisterRefuses().");
 }
 
 // ---------------------------------------------------------------------------

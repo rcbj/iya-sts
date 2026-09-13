@@ -57,6 +57,16 @@ arrived" are the third.
    *Per application* table on that page says it per receiver: a row with no
    stream, or one whose *Takes* column is empty, is the answer.
 
+   **An application's entry can narrow it further (since 2026-09-12).**
+   `ssfAllowedEvents` on the application that owns the stream lists what it may
+   be sent — `caep`, `risc`, or individual event type URIs, one per line. Empty
+   means no limit. A stream is agreed only those types when it is created or
+   updated, and every delivery checks again, so removing a value stops existing
+   streams receiving it. Lifting a limit does not hand back a type that was
+   withheld when the stream was agreed: the receiver asks for it again. SSF's own
+   verification and stream-updated events are always allowed. The same rule
+   applies to RISC events.
+
 **What a session IS here — the browser sign-on session these events are about,
 and the two other things this service also calls a session — is
 [Sessions](sessions.md).**

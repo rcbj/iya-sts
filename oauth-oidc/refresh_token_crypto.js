@@ -38,10 +38,10 @@
 // **EVERY ALGORITHM `common/crypto.js` IMPLEMENTS, CHOSEN BY A SETTING.**
 // `oauth2.refreshTokenEncryptionAlg` and `…Enc` pick what a NEW token is sealed
 // under. The realm holds a key of every kind (`helpers.js`'s
-// makeRefreshTokenEncryptionKeys()), and `open()` reads which one to use off the
-// token's own header — so changing the setting never strands a token already in
-// a client's hands. The one algorithm refused on the way in is RSA1_5, which
-// `crypto.js` does not implement at all and argues why.
+// makeRefreshTokenEncryptionKeys()), and `open()` reads which one to use off
+// the token's own header — so changing the setting never strands a token
+// already in a client's hands. The one algorithm refused on the way in is
+// RSA1_5, which `crypto.js` does not implement at all and argues why.
 //
 // **THE SYMMETRIC KEY IS DERIVED, NOT STORED PER ALGORITHM.** A128KW needs
 // exactly 128 bits, A256KW exactly 256, `dir` exactly the content key's size
@@ -73,16 +73,26 @@ const PBES2_PASSWORD_BYTES = 32;
 // a caller can mark the response with it and nothing that serialises the error
 // sees the code.
 function refusal(code, message) {
+  log.debug("Entering refusal().");
   const err = new Error(message);
   err.name = 'RefreshTokenEncryptionError';
   errorCodes.mark(err, code);
+  log.debug("Leaving refusal().");
   return err;
 }
 
 // Which of the realm's three keys an algorithm uses.
 function kindOf(alg) {
-  if (/^RSA-OAEP/.test(alg)) return 'rsa';
-  if (/^ECDH-ES/.test(alg)) return 'ec';
+  log.debug("Entering kindOf().");
+  if (/^RSA-OAEP/.test(alg)) {
+    log.debug("Leaving kindOf().");
+    return 'rsa';
+  }
+  if (/^ECDH-ES/.test(alg)) {
+    log.debug("Leaving kindOf().");
+    return 'ec';
+  }
+  log.debug("Leaving kindOf().");
   return 'secret';
 }
 
@@ -92,7 +102,8 @@ function symmetricBytes(alg, enc) {
   if (alg === 'dir') {
     const spec = stsCrypto.JWE_ENCS[enc];
     if (!spec) {
-      throw refusal('STS-OAUTH-0238', 'the content encryption algorithm "' + enc +
+      throw refusal('STS-OAUTH-0238',
+                    'the content encryption algorithm "' + enc +
         '" is not one this service implements.');
     }
     log.debug('Leaving symmetricBytes(). The content key.');
@@ -114,9 +125,13 @@ function symmetricBytes(alg, enc) {
 // The realm secret narrowed to one (alg, enc) pair. HKDF rather than a slice,
 // so two algorithms never share key bytes and the derivation is one-way.
 function symmetricKeyFor(secret, alg, enc) {
+  log.debug("Entering symmetricKeyFor().");
   const length = symmetricBytes(alg, enc);
-  return Buffer.from(nodeCrypto.hkdfSync('sha256', Buffer.from(secret), Buffer.alloc(0),
-    Buffer.from('mock-sts refresh token v1|' + alg + '|' + enc, 'utf8'), length));
+  log.debug("Leaving symmetricKeyFor().");
+  return Buffer.from(nodeCrypto.hkdfSync('sha256', Buffer.from(secret),
+    Buffer.alloc(0),
+    Buffer.from('mock-sts refresh token v1|' + alg + '|' + enc,
+                'utf8'), length));
 }
 
 // The configured algorithm pair, each checked against the table that performs
@@ -127,18 +142,22 @@ function symmetricKeyFor(secret, alg, enc) {
 // the tail wagging the dog.
 function configured() {
   log.debug('Entering configured().');
-  let alg = String(config.value('oauth2.refreshTokenEncryptionAlg') || DEFAULT_ALG);
-  let enc = String(config.value('oauth2.refreshTokenEncryptionEnc') || DEFAULT_ENC);
+  let alg = String(config.value('oauth2.refreshTokenEncryptionAlg') ||
+                   DEFAULT_ALG);
+  let enc = String(config.value('oauth2.refreshTokenEncryptionEnc') ||
+                   DEFAULT_ENC);
   if (stsCrypto.JWE_ALGS.indexOf(alg) === -1) {
-    log.warn(errorCodes.tag('STS-OAUTH-0241') + 'oauth2.refreshTokenEncryptionAlg is "' +
-             alg + '", which common/crypto.js does not implement; refresh tokens are ' +
-             'being encrypted with ' + DEFAULT_ALG + ' instead.');
+    log.warn(errorCodes.tag('STS-OAUTH-0241') + 'oauth2.refreshTokenEncryptionAlg ' +
+                                                'is "' +
+             alg + '", which common/crypto.js does not implement; refresh ' +
+             'tokens are being encrypted with ' + DEFAULT_ALG + ' instead.');
     alg = DEFAULT_ALG;
   }
   if (!stsCrypto.JWE_ENCS[enc]) {
-    log.warn(errorCodes.tag('STS-OAUTH-0241') + 'oauth2.refreshTokenEncryptionEnc is "' +
-             enc + '", which common/crypto.js does not implement; refresh tokens are ' +
-             'being encrypted with ' + DEFAULT_ENC + ' instead.');
+    log.warn(errorCodes.tag('STS-OAUTH-0241') + 'oauth2.refreshTokenEncryptionEnc ' +
+                                                'is "' +
+             enc + '", which common/crypto.js does not implement; refresh ' +
+             'tokens are being encrypted with ' + DEFAULT_ENC + ' instead.');
     enc = DEFAULT_ENC;
   }
   log.debug('Leaving configured(). ' + alg + ' / ' + enc);
@@ -147,6 +166,8 @@ function configured() {
 
 // Compact JWE: five dot-separated parts. A compact JWS has three.
 function isEncrypted(token) {
+  log.debug("Entering isEncrypted().");
+  log.debug("Leaving isEncrypted().");
   return String(token || '').trim().split('.').length === 5;
 }
 
@@ -178,9 +199,10 @@ function seal(jws, keySet, choice) {
     log.debug('Leaving seal(). ' + pair.alg + ' / ' + pair.enc);
     return compact;
   } catch (e) {
-    log.error(errorCodes.tag('STS-OAUTH-0240') + 'a refresh token could not be ' +
-              'encrypted with ' + pair.alg + ' / ' + pair.enc + ', so none was ' +
-              'issued: ' + e.message);
+    log.error(errorCodes.tag('STS-OAUTH-0240') + 'a refresh token could not ' +
+              'be encrypted ' +
+              'with ' + pair.alg + ' / ' + pair.enc + ', so none ' +
+              'was issued: ' + e.message);
     log.debug('Leaving seal(). It failed.');
     throw errorCodes.mark(e, 'STS-OAUTH-0240');
   }
@@ -201,8 +223,8 @@ function open(token, keySet) {
   const parts = text.split('.');
   if (parts.length === 3) {
     log.debug('Leaving open(). An unencrypted JWT.');
-    throw refusal('STS-OAUTH-0237', 'refresh tokens issued by this service are ' +
-      'encrypted, and this one is not; sign in again to get a new one.');
+    throw refusal('STS-OAUTH-0237', 'refresh tokens issued by this service ' +
+      'are encrypted, and this one is not; sign in again to get a new one.');
   }
   if (parts.length !== 5) {
     log.debug('Leaving open(). Not a JWE.');
@@ -213,6 +235,7 @@ function open(token, keySet) {
   try {
     header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
   } catch (e) {
+    log.debug("Caught in open(): " + ((e && e.message) || e));
     log.debug('Leaving open(). The header is not JSON.');
     throw refusal('STS-OAUTH-0238', 'the refresh token is not a token this ' +
       'service issued.');
@@ -223,21 +246,22 @@ function open(token, keySet) {
   try {
     keys = refreshTokenKeysFor(keySet);
   } catch (e) {
-    log.error(errorCodes.tag('STS-OAUTH-0240') + 'the refresh-token encryption ' +
-              'keys could not be read: ' + e.message);
+    log.error(errorCodes.tag('STS-OAUTH-0240') + 'the refresh-token ' +
+              'encryption keys could not be read: ' + e.message);
     log.debug('Leaving open(). No keys.');
     throw errorCodes.mark(e, 'STS-OAUTH-0240');
   }
   const kind = kindOf(alg);
-  const expectedKid = kind === 'secret' ? keys.secretKid : keys[kind].publicJwk.kid;
+  const expectedKid = kind === 'secret' ? keys.secretKid :
+                      keys[kind].publicJwk.kid;
   // A token sealed under a DIFFERENT key names a different kid, and that is the
   // commonest real cause — another realm's token, or one issued before this
   // realm's keys were rotated — so it gets its own sentence rather than the
   // tag failure the decrypt would otherwise report.
   if (header.kid !== expectedKid) {
     log.debug('Leaving open(). Another key.');
-    throw refusal('STS-OAUTH-0238', 'the refresh token was not issued by this ' +
-      'realm, or was issued under keys that have since been rotated.');
+    throw refusal('STS-OAUTH-0238', 'the refresh token was not issued by ' +
+      'this realm, or was issued under keys that have since been rotated.');
   }
   let opened;
   try {
@@ -250,14 +274,14 @@ function open(token, keySet) {
     opened = stsCrypto.decryptJweCompact(text, options);
   } catch (e) {
     log.debug('Leaving open(). It did not decrypt: ' + e.message);
-    throw refusal('STS-OAUTH-0238', 'the refresh token could not be decrypted; ' +
-      'it has been altered, or was not issued by this realm.');
+    throw refusal('STS-OAUTH-0238', 'the refresh token could not be ' +
+      'decrypted; it has been altered, or was not issued by this realm.');
   }
   if (String(opened.header.cty || '').toUpperCase() !== 'JWT' ||
       String(opened.plaintext).split('.').length !== 3) {
     log.debug('Leaving open(). Not a nested JWT.');
-    throw refusal('STS-OAUTH-0239', 'the refresh token decrypted to something ' +
-      'that is not a signed JWT.');
+    throw refusal('STS-OAUTH-0239', 'the refresh token decrypted to ' +
+      'something that is not a signed JWT.');
   }
   log.debug('Leaving open(). ' + alg + ' / ' + enc);
   return String(opened.plaintext);
@@ -272,7 +296,8 @@ function claimsOfIssued(token) {
   log.debug('Entering claimsOfIssued().');
   try {
     const jws = isEncrypted(token) ? open(token) : String(token || '');
-    const claims = JSON.parse(Buffer.from(jws.split('.')[1], 'base64url').toString('utf8'));
+    const claims = JSON.parse(Buffer.from(jws.split('.')[1], 'base64url')
+                                    .toString('utf8'));
     log.debug('Leaving claimsOfIssued().');
     return claims;
   } catch (e) {
@@ -285,8 +310,10 @@ function claimsOfIssued(token) {
 
 // What is in force, for the crypto report and the console. No key material.
 function describe(keySet) {
+  log.debug("Entering describe().");
   const pair = configured();
   const keys = refreshTokenKeysFor(keySet);
+  log.debug("Leaving describe().");
   return {
     alg: pair.alg, enc: pair.enc,
     nested: 'a signed JWT (JWS) encrypted as a compact JWE with cty "JWT", ' +

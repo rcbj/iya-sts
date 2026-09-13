@@ -126,7 +126,8 @@ const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
 function base32Encode(buffer) {
   log.debug('Entering base32Encode(). bytes=' + (buffer && buffer.length));
-  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(String(buffer), 'utf8');
+  const bytes = Buffer.isBuffer(buffer) ? buffer :
+                Buffer.from(String(buffer), 'utf8');
   let bits = 0;
   let value = 0;
   let out = '';
@@ -179,6 +180,8 @@ function base32Decode(text) {
 // authenticator app's own setup screen shows and what a person transcribing
 // thirty-two characters needs in order not to lose their place.
 function grouped(secret) {
+  log.debug("Entering grouped().");
+  log.debug("Leaving grouped().");
   return String(secret || '').replace(/(.{4})/g, '$1 ').trim();
 }
 
@@ -196,31 +199,40 @@ function grouped(secret) {
 // after somebody enrolled must not silently invalidate the authenticator they
 // already configured.
 // ---------------------------------------------------------------------------
-// A setting as a number, or the fallback where it is not one. NOT `|| fallback`,
-// which is wrong for the one row here whose documented range starts at zero.
+// A setting as a number, or the fallback where it is not one. NOT `||
+// fallback`, which is wrong for the one row here whose documented range starts
+// at zero.
 function numberOr(value, fallback) {
+  log.debug("Entering numberOr().");
   const n = Number(value);
+  log.debug("Leaving numberOr().");
   return (value === '' || value === null || value === undefined || !isFinite(n))
     ? fallback : n;
 }
 
 function settings() {
-  const algorithm = String(config.value('totp.algorithm') || 'SHA1').toUpperCase();
+  log.debug("Entering settings().");
+  const algorithm = String(config.value('totp.algorithm') ||
+                           'SHA1').toUpperCase();
+  log.debug("Leaving settings().");
   return {
     enabled: config.value('totp.enabled') !== false,
     issuer: String(config.value('totp.issuer') || '').trim(),
     algorithm: crypto.HOTP_ALGS[algorithm] ? algorithm : 'SHA1',
     digits: Math.max(6, Math.min(8, Number(config.value('totp.digits') || 6))),
-    period: Math.max(15, Math.min(300, Number(config.value('totp.period') || 30))),
+    period: Math.max(15,
+                     Math.min(300, Number(config.value('totp.period') || 30))),
     // **ZERO IS A LEGAL WINDOW AND `|| 1` TURNED IT INTO ONE** (fixed
-    // 2026-09-12). The row's own description names zero as the setting to
-    // reach for when demonstrating a perfectly synchronised clock, and this line
+    // 2026-09-12). The row's own description names zero as the setting to reach
+    // for when demonstrating a perfectly synchronised clock, and this line
     // quietly forgave a step either side instead. `numberOr()` falls back only
     // where there is no number at all.
     window: Math.max(0, Math.min(10, numberOr(config.value('totp.window'), 1))),
     secretBytes: Math.max(16, Math.min(64,
       Number(config.value('totp.secretBytes') || 20))),
-    enrolmentTtlMs: Math.max(1, Number(config.value('totp.enrolmentTtlMinutes') || 10)) *
+    enrolmentTtlMs: Math.max(1,
+                             Number(config.value('totp.enrolmentTtlMinutes') ||
+                                    10)) *
                     60 * 1000
   };
 }
@@ -232,11 +244,13 @@ function settings() {
 //
 // **TURNING IT OFF DOES NOT DISABLE AN EXISTING SECRET**, and that is
 // deliberate. A person who enrolled while it was on still holds the second
-// factor their account is configured for, and a setting that silently DOWNGRADED
-// every one of those accounts to a password alone would be a security control
-// with an off switch that says something else. What it stops is new enrolments.
-// `/admin/totp` says so beside the setting.
+// factor their account is configured for, and a setting that silently
+// DOWNGRADED every one of those accounts to a password alone would be a
+// security control with an off switch that says something else. What it stops
+// is new enrolments. `/admin/totp` says so beside the setting.
 function offered() {
+  log.debug("Entering offered().");
+  log.debug("Leaving offered().");
   return settings().enabled;
 }
 
@@ -260,6 +274,8 @@ function generateSecret(opts) {
 // The step number RFC 6238 section 4.2 calls T. `at` is milliseconds, so that
 // callers pass `Date.now()` and the one division lives here.
 function counterAt(at, period) {
+  log.debug("Entering counterAt().");
+  log.debug("Leaving counterAt().");
   return Math.floor(Number(at) / 1000 / Number(period));
 }
 
@@ -270,10 +286,14 @@ function counterAt(at, period) {
 // mechanism a decoration.
 // ---------------------------------------------------------------------------
 function codeAt(secret, at, opts) {
+  log.debug("Entering codeAt().");
   const options = opts || {};
   const period = Number(options.period || settings().period);
-  return crypto.hotpCode(base32Decode(secret), counterAt(at || Date.now(), period),
-                         { digits: options.digits, algorithm: options.algorithm });
+  log.debug("Leaving codeAt().");
+  return crypto.hotpCode(base32Decode(secret),
+                         counterAt(at || Date.now(), period),
+                         { digits: options.digits,
+                           algorithm: options.algorithm });
 }
 
 // ---------------------------------------------------------------------------
@@ -314,7 +334,8 @@ function verify(record, presented, opts) {
   const now = Number(options.at || Date.now());
   const digits = Number((record && record.digits) || settings().digits);
   const period = Number((record && record.period) || settings().period);
-  const algorithm = String((record && record.algorithm) || settings().algorithm);
+  const algorithm = String((record &&
+                            record.algorithm) || settings().algorithm);
   // The window is a POLICY and not a property of the enrolment, so it is the
   // one parameter read live rather than off the record: how much clock skew
   // this deployment forgives is the operator's to change today, and changing
@@ -335,7 +356,8 @@ function verify(record, presented, opts) {
               'totp: the stored secret could not be decoded: ' + e.message);
     log.debug('Leaving verify(). The stored secret is unusable.');
     return errorCodes.mark({ ok: false, reason: 'store',
-             detail: 'The stored shared secret could not be read.' }, 'STS-AUTHN-0104');
+             detail: 'The stored shared secret could not be read.' },
+                           'STS-AUTHN-0104');
   }
   const centre = counterAt(now, period);
   // EVERY STEP IN THE WINDOW IS TRIED EVEN AFTER A MATCH, deliberately. An
@@ -356,7 +378,8 @@ function verify(record, presented, opts) {
   if (matched === null) {
     log.debug('Leaving verify(). No step in the window produced that code.');
     return errorCodes.mark({ ok: false, reason: 'mismatch',
-             detail: 'That code is not right, or it has expired.' }, 'STS-AUTHN-0105');
+             detail: 'That code is not right, or it has expired.' },
+                           'STS-AUTHN-0105');
   }
   // RFC 6238 SECTION 5.2: ONCE. The counter this service last accepted is on
   // the record, and anything at or below it has already been spent — which
@@ -373,7 +396,8 @@ function verify(record, presented, opts) {
     log.info('totp: a code was refused as already spent (step ' +
              matched.counter + ', last accepted ' + spent + ').');
     log.debug('Leaving verify(). Already spent.');
-    return errorCodes.mark({ ok: false, reason: 'replay', counter: matched.counter,
+    return errorCodes.mark({ ok: false, reason: 'replay',
+             counter: matched.counter,
              detail: 'That code has already been used. Wait for your ' +
                      'authenticator to show the next one.' }, 'STS-AUTHN-0106');
   }
@@ -409,11 +433,14 @@ function verify(record, presented, opts) {
 // showing two accounts both labelled `mock STS` is one a person cannot use.
 // ---------------------------------------------------------------------------
 function issuerFor(base) {
+  log.debug("Entering issuerFor().");
   const configured = settings().issuer;
   if (configured) {
+    log.debug("Leaving issuerFor().");
     return configured;
   }
-  let host = String(base || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+  let host = String(base || '').replace(/^https?:\/\//i, '')
+                               .replace(/\/.*$/, '');
   if (!host) {
     host = 'mock STS';
   }
@@ -421,6 +448,7 @@ function issuerFor(base) {
   // to tell two of them apart in a list of accounts on a phone.
   const realm = realms.current && realms.current();
   const id = realm && realm.id ? String(realm.id) : '';
+  log.debug("Leaving issuerFor().");
   return id ? host + ' (' + id + ')' : host;
 }
 
@@ -475,11 +503,13 @@ function qrSvgDataUri(uri) {
   // password verification in the service, including the ones in `npm test`
   // where no QR code is ever drawn.
   const qrcode = require('qrcode');
+  log.debug("Leaving qrSvgDataUri().");
   return qrcode.toString(String(uri), {
     type: 'svg', errorCorrectionLevel: 'M', margin: 2, width: 240
   }).then(function (svg) {
     log.debug('Leaving qrSvgDataUri(). ' + svg.length + ' bytes of SVG.');
-    return 'data:image/svg+xml;base64,' + Buffer.from(svg, 'utf8').toString('base64');
+    return 'data:image/svg+xml;base64,' +
+           Buffer.from(svg, 'utf8').toString('base64');
   });
 }
 
@@ -490,7 +520,9 @@ function qrSvgDataUri(uri) {
 // describe something this service does not do.
 // ---------------------------------------------------------------------------
 function report() {
+  log.debug("Entering report().");
   const live = settings();
+  log.debug("Leaving report().");
   return {
     offered: live.enabled,
     algorithms: Object.keys(crypto.HOTP_ALGS).map(function (name) {

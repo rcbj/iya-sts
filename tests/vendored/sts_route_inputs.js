@@ -32,8 +32,8 @@
 // WHY IT IS THIS REPOSITORY'S OWN (`local: true`).
 //
 // `tests/CLAUDE.md` asks first whether the thing under test is this service's
-// `/admin` console or its `/admin-api`, and second whether it can be asserted by
-// driving the running service over HTTP. This job is the whole router rather
+// `/admin` console or its `/admin-api`, and second whether it can be asserted
+// by driving the running service over HTTP. This job is the whole router rather
 // than the console, and it plainly can be driven over HTTP — so by those two
 // questions it would belong in the parent project's suite.
 //
@@ -54,12 +54,12 @@
 // Both are the mistake `tests/CLAUDE.md` keeps naming — a fixture that cannot
 // fail rather than an assertion that is wrong — and both are guarded below.
 //
-// 1. **EXTRACTING ONLY LITERAL PATHS MISSED FIFTY-NINE ROUTES.** `app.get('/x')`
-//    was found and `app.get(SSO_PATH, …)` was not, so every route registered
-//    through a constant was invisible — `/saml2/sso` among them, which is where
-//    four of the five defects were. The extractor resolves simple constants now,
-//    and `MINIMUM_ROUTES` below is the alarm on it ever silently narrowing
-//    again.
+// 1. **EXTRACTING ONLY LITERAL PATHS MISSED FIFTY-NINE ROUTES.**
+//    `app.get('/x')` was found and `app.get(SSO_PATH, …)` was not, so every
+//    route registered through a constant was invisible — `/saml2/sso` among
+//    them, which is where four of the five defects were. The extractor resolves
+//    simple constants now, and `MINIMUM_ROUTES` below is the alarm on it ever
+//    silently narrowing again.
 //
 // 2. **AND I BLAMED THE PAYLOAD FOR IT, WHICH IS THE MORE USEFUL HALF.** When
 //    the probe missed `/saml2/sso`, the payload was `base64("not xml")` and the
@@ -120,7 +120,8 @@ const ROOT = path.resolve(__dirname, "..", "..");
 const MINIMUM_ROUTES = 180;
 const MINIMUM_PROBES = 2000;
 
-// A document with a FATAL well-formedness error. Not "not xml" — see the header.
+// A document with a FATAL well-formedness error. Not "not xml" — see the
+// header.
 const MALFORMED_XML = "<a><b></a>";
 const MALFORMED_XML_B64 = Buffer.from(MALFORMED_XML, "utf8").toString("base64");
 const LONG = "a".repeat(9000);
@@ -145,7 +146,8 @@ const LONG = "a".repeat(9000);
 const CASES = [
   ["repeated parameter", "x=1&x=2&client_id=a&client_id=b&user=a&user=b", null],
   ["nested parameter", "client_id[evil]=1&user[evil]=1&id[a]=b", null],
-  ["over-long value", "client_id=" + LONG + "&q=" + LONG + "&user=" + LONG, null],
+  ["over-long value", "client_id=" + LONG + "&q=" + LONG + "&user=" + LONG,
+   null],
   ["empty values", "client_id=&redirect_uri=&user=&id=&sp=&rp=&format=", null],
   ["executable scheme",
    "redirect_uri=javascript%3Aalert(1)&to=data%3Atext%2Fhtml%2C1&wallet=javascript%3A1",
@@ -161,11 +163,14 @@ const CASES = [
    "SAMLRequest=" + encodeURIComponent(MALFORMED_XML_B64), null],
   ["malformed SAMLResponse",
    "SAMLResponse=" + encodeURIComponent(MALFORMED_XML_B64), null],
-  ["malformed SAMLart", "SAMLart=" + encodeURIComponent("%%%not-base64%%%"), null],
+  ["malformed SAMLart", "SAMLart=" + encodeURIComponent("%%%not-base64%%%"),
+   null],
   ["malformed wresult",
    "wa=wsignin1.0&wresult=" + encodeURIComponent(MALFORMED_XML), null],
-  ["malformed wreq", "wa=wsignin1.0&wreq=" + encodeURIComponent(MALFORMED_XML), null],
-  ["unreadable credential", "access_token=..&id_token_hint=..&token=..&code=..", null],
+  ["malformed wreq", "wa=wsignin1.0&wreq=" + encodeURIComponent(MALFORMED_XML),
+   null],
+  ["unreadable credential", "access_token=..&id_token_hint=..&token=..&code=..",
+   null],
   ["control characters", "state=%00%01&code=%0d%0a&q=%00", null],
 
   ["SAML in a form body", null,
@@ -206,8 +211,11 @@ function routesFrom(root) {
   dirs.forEach(function (dir) {
     let entries = [];
     try {
-      entries = fs.readdirSync(dir).filter(function (f) { return /\.js$/.test(f); });
+      entries = fs.readdirSync(dir)
+                  .filter(function (f) { return /\.js$/.test(f); });
     } catch (e) {
+      log.debug("Caught in a callback in routesFrom(): " +
+                ((e && e.message) || e));
       // A directory that is not readable is not a route module; nothing here
       // depends on it and the floors below catch a systematic loss.
       return;
@@ -218,6 +226,8 @@ function routesFrom(root) {
       try {
         text = fs.readFileSync(full, "utf8");
       } catch (e) {
+        log.debug("Caught in a callback in routesFrom(): " +
+                  ((e && e.message) || e));
         return;
       }
       const consts = {};
@@ -237,8 +247,10 @@ function routesFrom(root) {
         const named = /^([A-Z_][A-Z0-9_]*)$/.exec(arg);
         const cat = /^([A-Z_][A-Z0-9_]*)\s*\+\s*'([^']*)'$/.exec(arg);
         if (lit) { p = lit[1]; }
-        else if (named && consts[named[1]] !== undefined) { p = consts[named[1]]; }
-        else if (cat && consts[cat[1]] !== undefined) { p = consts[cat[1]] + cat[2]; }
+        else if (named &&
+                 consts[named[1]] !== undefined) { p = consts[named[1]]; }
+        else if (cat &&
+                 consts[cat[1]] !== undefined) { p = consts[cat[1]] + cat[2]; }
         else { unresolved = unresolved + 1; continue; }
         if (p.indexOf("*") >= 0) { continue; }
         // ------------------------------------------------------------------
@@ -279,15 +291,21 @@ function routesFrom(root) {
 // A path parameter filled with something harmless: what is under test is the
 // INPUT handling, not whether `probe` happens to name a real object.
 function fill(p) {
+  log.debug("Entering fill().");
+  log.debug("Leaving fill().");
   return p.replace(/:([A-Za-z_]+)\??/g, "probe");
 }
 
 function request(method, target, body, type) {
+  log.debug("Entering request().");
+  log.debug("Leaving request().");
   return new Promise(function (resolve) {
     let url;
     try {
       url = new URL(base + target);
     } catch (e) {
+      log.debug("Caught in a callback in request(): " +
+                ((e && e.message) || e));
       resolve({ status: 0, why: "the probe built an unusable URL" });
       return;
     }
@@ -327,7 +345,9 @@ function request(method, target, body, type) {
 }
 
 async function test() {
-  log.info("Probing every registered route with malformed input against " + base);
+  log.debug("Entering test().");
+  log.info("Probing every registered route with malformed input against " +
+           base);
 
   // -----------------------------------------------------------------------
   // 1. THE ROUTE LIST, AND THE FLOOR UNDER IT.
@@ -336,17 +356,17 @@ async function test() {
   const routes = discovered.routes;
   log.info("=== the router, read off this working tree ===");
   log.info("[routes] " + routes.length + " route(s) found, " +
-           discovered.unresolved + " registration(s) this extractor could not " +
-           "resolve.");
+           discovered.unresolved + " registration(s) this extractor could " +
+           "not resolve.");
 
   assert.ok(routes.length >= MINIMUM_ROUTES,
     "the extractor found only " + routes.length + " routes and this service " +
     "registers far more. It is not a service that shrank, it is an extractor " +
     "that broke — a new registration idiom, a move to a router table, a " +
     "constant it cannot follow. An earlier version of this job matched only " +
-    "LITERAL paths and missed fifty-nine routes, /saml2/sso among them, which " +
-    "is where four of the five defects this job was written for actually were. " +
-    "The floor is " + MINIMUM_ROUTES + ".");
+    "LITERAL paths and missed fifty-nine routes, /saml2/sso among them, " +
+    "which is where four of the five defects this job was written for " +
+    "actually were. The floor is " + MINIMUM_ROUTES + ".");
 
   const families = {};
   routes.forEach(function (r) {
@@ -397,15 +417,16 @@ async function test() {
   // -----------------------------------------------------------------------
   assert.deepStrictEqual(failures, [],
     "these answered 5xx or timed out. A 400, a 403, a 404 or a redirect are " +
-    "all fine — they mean a handler looked at the input and decided. A 5xx is " +
-    "an uncaught throw, and a timeout on this service means the event loop " +
-    "stopped, which takes the KDC, the directory and every TLS and SPIFFE " +
-    "socket with it:\n  " + failures.join("\n  "));
+    "all fine — they mean a handler looked at the input and decided. A 5xx " +
+    "is an uncaught throw, and a timeout on this service means the event " +
+    "loop stopped, which takes the KDC, the directory and every TLS and " +
+    "SPIFFE socket with it:\n  " + failures.join("\n  "));
 
   log.info("[inputs] OK — " + probes + " probes over " + routes.length +
            " routes; every one answered rather than threw.");
   log.info(probes + " checks passed.");
   log.info("Test completed successfully.");
+  log.debug("Leaving test().");
 }
 
 const program = new Command();

@@ -114,16 +114,23 @@ let started = false;
 // behave the same way.
 // ---------------------------------------------------------------------------
 function enabledIn(realm) {
+  log.debug("Entering enabledIn().");
   if (!realm || realm.id === realms.DEFAULT_ID) {
+    log.debug("Leaving enabledIn().");
     return !!realms.run(realms.DEFAULT_REALM, function () {
       return config.value('spiffe.enabled');
     });
   }
   const own = (realm.overrides || {})['spiffe.enabled'];
+  log.debug("Leaving enabledIn().");
   return own === true || String(own).toLowerCase() === 'true';
 }
 
-function enabled() { return enabledIn(realms.current()); }
+function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
+  return enabledIn(realms.current());
+}
 
 // ---------------------------------------------------------------------------
 // THE BUNDLE ENDPOINT.
@@ -206,12 +213,12 @@ app.get('/spiffe/federated/:trustDomain', function (req, res) {
 // ---------------------------------------------------------------------------
 // WHAT THIS IS, FOR A PERSON — and, with ?format=json, for a program.
 //
-// The same shape `GET /admin/ldap/service` and `GET /tls` have, and it carries the same kind
-// of thing: what the surfaces are, where they are, whether the sockets actually
-// bound, and — at length — what is NOT checked. That last part is most of the
-// page on purpose. A mock that quietly issued identities to anybody would teach
-// a client author something false about every SPIFFE deployment they will ever
-// meet.
+// The same shape `GET /admin/ldap/service` and `GET /tls` have, and it carries
+// the same kind of thing: what the surfaces are, where they are, whether the
+// sockets actually bound, and — at length — what is NOT checked. That last part
+// is most of the page on purpose. A mock that quietly issued identities to
+// anybody would teach a client author something false about every SPIFFE
+// deployment they will ever meet.
 // ---------------------------------------------------------------------------
 function description(req) {
   log.debug('Entering description().');
@@ -222,9 +229,9 @@ function description(req) {
           'and the SPIRE Server API. The SPIRE Server API authenticates its ' +
           'caller with mutual TLS and an X509-SVID and authorizes every ' +
           'method against SPIRE\'s own table; the Workload API authenticates ' +
-          'nobody, because its specification says it MUST NOT, and identifies ' +
-          'a caller only by what this service can see of the connection. ' +
-          'Nothing attests a workload or a node.',
+          'nobody, because its specification says it MUST NOT, and ' +
+          'identifies a caller only by what this service can see of the ' +
+          'connection. Nothing attests a workload or a node.',
     enabled: enabled(),
     trustDomain: state.trustDomain,
     trustDomainId: state.trustDomainId,
@@ -242,10 +249,10 @@ function description(req) {
                    'partner using this profile has to trust it explicitly: ' +
                    'fetch it from /tls/server-certificate.',
         https_spiffe: 'The partner verifies this URL with a SPIFFE ID and a ' +
-                      'bundle it already has. Supported in the sense that the ' +
-                      'endpoint serves the right document; the SPIFFE ID this ' +
-                      'service would present on that connection is the TLS ' +
-                      'certificate\'s, which is not an SVID.'
+                      'bundle it already has. Supported in the sense that ' +
+                      'the endpoint serves the right document; the SPIFFE ID ' +
+                      'this service would present on that connection is the ' +
+                      'TLS certificate\'s, which is not an SVID.'
       },
       scheme: config.value('global.https') ? 'https' : 'http',
       schemeNote: config.value('global.https')
@@ -253,9 +260,9 @@ function description(req) {
           'too.'
         : 'THE MAIN PORT IS PLAIN HTTP, so this bundle endpoint is http. A ' +
           'real federation partner will refuse it, and is right to: the ' +
-          'bundle is the root of trust for a whole trust domain, and fetching ' +
-          'it over a channel anybody can rewrite means trusting whoever is in ' +
-          'the middle. Set global.https to serve it over TLS.'
+          'bundle is the root of trust for a whole trust domain, and ' +
+          'fetching it over a channel anybody can rewrite means trusting ' +
+          'whoever is in the middle. Set global.https to serve it over TLS.'
     },
     authorities: {
       // WHERE THE AUTHORITY CAME FROM, first, because it decides what every
@@ -285,21 +292,21 @@ function description(req) {
       note: state.authoritySource === 'pki'
         ? 'The X.509 authority is this realm\'s SPIFFE Issuing CA under this ' +
           'service\'s own Root CA — see /admin/pki — so the trust anchor a ' +
-          'consumer installs is that Root, which every realm shares and which ' +
-          'also covers 8443, 9443, LDAPS 636, the main port and every token ' +
-          'this service signs. An SVID carries the Issuing CA and this ' +
+          'consumer installs is that Root, which every realm shares and ' +
+          'which also covers 8443, 9443, LDAPS 636, the main port and every ' +
+          'token this service signs. An SVID carries the Issuing CA and this ' +
           'realm\'s Intermediate in its own chain. In DEVELOPMENT mode the ' +
           'Root is generated per start like every other key here; in PRODUCT ' +
           'mode the keystore keeps it, so a bundle survives a restart. The ' +
           'JWT authority has no certificate and is generated per start in ' +
           'either mode.'
-        : 'This realm has NO certificate authority, so the X.509 authority is ' +
-          'SELF-SIGNED and IS the trust anchor — generated per start and held ' +
-          'in memory, exactly like the STS signing key and the TLS ' +
+        : 'This realm has NO certificate authority, so the X.509 authority ' +
+          'is SELF-SIGNED and IS the trust anchor — generated per start and ' +
+          'held in memory, exactly like the STS signing key and the TLS ' +
           'certificate. A workload holding a bundle from before a restart ' +
-          'will fail to verify every SVID minted after it. Build the realm\'s ' +
-          'certificate authority on /admin/pki to put this authority under ' +
-          'this service\'s Root instead.'
+          'will fail to verify every SVID minted after it. Build the ' +
+          'realm\'s certificate authority on /admin/pki to put this ' +
+          'authority under this service\'s Root instead.'
     },
     workloadApi: {
       service: 'SpiffeWorkloadAPI',
@@ -335,8 +342,8 @@ function description(req) {
       maxEntries: registry.maxEntries(),
       maxAgents: registry.maxAgents(),
       note: 'The store is the embedded LDAP directory. An ldapmodify under ' +
-            'ou=spiffe changes what the next SVID looks like, because nothing ' +
-            'caches these.'
+            'ou=spiffe changes what the next SVID looks like, because ' +
+            'nothing caches these.'
     },
     federated: state.federated,
     // The list every reader of this page needs most, and it is deliberately
@@ -356,9 +363,10 @@ function description(req) {
       'specification rather than this service being permissive. The SPIFFE ' +
       'Workload Endpoint specification says the endpoint "MUST NOT require ' +
       'any direct authentication of its clients" and that "Transport Layer ' +
-      'Security MUST NOT be required" — a workload has no root of trust until ' +
-      'this call gives it one. So the mutual TLS the SPIRE Server API requires ' +
-      'deliberately does not reach this surface, and no mode changes that.',
+      'Security MUST NOT be required" — a workload has no root of trust ' +
+      'until this call gives it one. So the mutual TLS the SPIRE Server API ' +
+      'requires deliberately does not reach this surface, and no mode ' +
+      'changes that.',
       'NOTHING VERIFIES AN ASSERTED SELECTOR. With ' +
       'spiffe.acceptAssertedSelectors on, a Workload API caller may send its ' +
       'own selectors in a metadata header and they are matched as though ' +
@@ -372,8 +380,8 @@ function description(req) {
       'value for exactly this reason. The ONE exception is a join token, ' +
       'which this server minted and therefore checks: see `refused` below.',
       'A CSR SIGNATURE IS NOT VERIFIED. Only the public key is read out of a ' +
-      'CSR — which is what stops a caller naming itself something it is not — ' +
-      'but proof of possession is not checked.',
+      'CSR — which is what stops a caller naming itself something it is not ' +
+      '— but proof of possession is not checked.',
       'NO REVOCATION, ANYWHERE. SPIFFE has none: the answer is a short ' +
       'lifetime and rotation. The CRL fields in the Workload API responses ' +
       'are empty because that is the conforming value, not because they are ' +
@@ -383,17 +391,17 @@ function description(req) {
       'record a `spiffeCredentialStatus` on an identity whose last ' +
       'registration entry was deleted or whose agent was banned or deleted, ' +
       'and THAT IS NOT A REVOCATION EITHER: nothing reads it back, no ' +
-      'certificate is refused because of it, and it says only that no FURTHER ' +
-      'SVID can be issued here. Read it as a note on the directory entry, ' +
-      'never as a check this service makes.'
+      'certificate is refused because of it, and it says only that no ' +
+      'FURTHER SVID can be issued here. Read it as a note on the directory ' +
+      'entry, never as a check this service makes.'
     ].concat(auth.authRequired() ? [] : [
       'AND, RIGHT NOW, NOTHING ON THE SPIRE SERVER API EITHER. ' +
       'Authentication is off there, so that port is plain gRPC, no caller is ' +
-      'identified, the per-method table below is not applied, and anybody who ' +
-      'can reach it can create a registration entry granting any identity in ' +
-      'this trust domain and then collect an SVID for it. The `admin` and ' +
-      '`downstream` flags on an entry are recorded and read by nothing while ' +
-      'it is off.'
+      'identified, the per-method table below is not applied, and anybody ' +
+      'who can reach it can create a registration entry granting any ' +
+      'identity in this trust domain and then collect an SVID for it. The ' +
+      '`admin` and `downstream` flags on an entry are recorded and read by ' +
+      'nothing while it is off.'
     ]),
     // WHO IS ASKING, on the surface that asks. The whole table comes from
     // spiffe_auth.js so that this page, /admin/spiffe and the management API
@@ -409,8 +417,8 @@ function description(req) {
       'a bug nothing else will tell them about.',
       'FetchJWTSVID and MintJWTSVID with no audience.',
       'ValidateJWTSVID on anything that does not really verify: signature, ' +
-      'expiry with no leeway, audience, and that the sub belongs to the trust ' +
-      'domain whose key verified it.',
+      'expiry with no leeway, audience, and that the sub belongs to the ' +
+      'trust domain whose key verified it.',
       'A registration entry whose SPIFFE ID is invalid, belongs to another ' +
       'trust domain, or sits under the reserved /spire path.',
       'AttestAgent for a banned agent, and a ' +
@@ -433,8 +441,8 @@ function description(req) {
       'on a port where nothing identifies a caller, is every caller, so the ' +
       'method answers Unimplemented there with the reason it used to give ' +
       'always.',
-      'Appending an authority to this trust domain\'s own bundle, which would ' +
-      'publish a signing key nothing here holds.',
+      'Appending an authority to this trust domain\'s own bundle, which ' +
+      'would publish a signing key nothing here holds.',
       'RefreshBundle, which would have this service fetch a URL somebody ' +
       'registered — the same refusal it gives WS-Federation\'s wreqptr and a ' +
       'client\'s jwks_uri.'
@@ -458,7 +466,9 @@ function description(req) {
 // is what these pages report: a reader comparing this page with the `.proto`
 // should see the same spelling.
 function protoNameOf(methodPath) {
+  log.debug("Entering protoNameOf().");
   const parts = String(methodPath || '').split('/');
+  log.debug("Leaving protoNameOf().");
   return parts[parts.length - 1] || '';
 }
 
@@ -476,7 +486,11 @@ app.get('/spiffe', function (req, res) {
   log.debug('Leaving the /spiffe view. HTML.');
 });
 
-function esc(value) { return xmlEscape(value == null ? '' : String(value)); }
+function esc(value) {
+  log.debug("Entering esc().");
+  log.debug("Leaving esc().");
+  return xmlEscape(value == null ? '' : String(value));
+}
 
 // A listener, and WHAT A CALLER HAS TO PRESENT ON IT. The third column is not
 // decoration: the four sockets have three different postures — plain, plain and
@@ -505,6 +519,8 @@ function listenerRows(bindings) {
 }
 
 function methodRows(methods) {
+  log.debug("Entering methodRows().");
+  log.debug("Leaving methodRows().");
   return methods.map(function (method) {
     return '<tr><td><code>' + esc(method.name) + '</code>' +
       (method.streaming ? ' <span class="note">(stream)</span>' : '') +
@@ -517,16 +533,16 @@ function page(document) {
   log.debug('Entering page().');
   const state = ca.state();
   log.debug('Leaving page().');
-  return '<!doctype html><html><head><meta charset="utf-8">' +
-    '<title>SPIFFE — mock STS</title><style>' +
-    'body{font-family:system-ui,sans-serif;margin:2rem;max-width:60rem;line-height:1.5}' +
-    'table{border-collapse:collapse;margin:1rem 0;width:100%}' +
-    'th,td{border:1px solid #ccc;padding:.4rem .6rem;text-align:left;vertical-align:top}' +
-    'th{background:#f4f4f4}code{background:#f4f4f4;padding:.1rem .3rem}' +
-    '.note{color:#666}.warn{background:#fff6e5;border-left:4px solid #e69500;padding:.6rem 1rem}' +
-    '</style></head><body>' +
-    '<h1>SPIFFE</h1>' +
-    '<p>This service is the issuing authority for the trust domain <code>' +
+  return '<!doctype html><html><head><meta charset="utf-8"><title>SPIFFE — ' +
+    'mock STS</title><style>body{font-family:system-ui,sans-serif;' +
+    'margin:2rem;max-width:60rem;line-height:1.5}' +
+    'table{border-collapse:collapse;margin:1rem ' +
+    '0;width:100%}th,td{border:1px solid #ccc;padding:.4rem .6rem;' +
+    'text-align:left;vertical-align:top}th{background:#f4f4f4}' +
+    'code{background:#f4f4f4;padding:.1rem ' +
+    '.3rem}.note{color:#666}.warn{background:#fff6e5;border-left:4px solid ' +
+    '#e69500;padding:.6rem 1rem}</style></head><body><h1>SPIFFE</h1><p>This ' +
+    'service is the issuing authority for the trust domain <code>' +
     esc(document.trustDomainId) + '</code>. Three server-side surfaces: the ' +
     'bundle endpoint below (plain HTTPS), the <strong>Workload API</strong> ' +
     'and the <strong>SPIRE Server API</strong> (both gRPC, on their own ' +
@@ -552,32 +568,32 @@ function page(document) {
     'credential another service will believe.</p>' +
     '<p class="' + (document.authentication.enforced ? 'note' : 'warn') + '">' +
     (document.authentication.enforced
-      ? '<strong>The SPIRE Server API is the exception, and it is on.</strong> ' +
-        'Its TCP port is mutual TLS, a caller presents an X509-SVID from this ' +
-        'trust domain, and every method is authorized against SPIRE\'s own ' +
-        'table — the whole of which is below. Its Unix socket is the ' +
-        '<code>local</code> entity and needs no credential. The Workload API ' +
-        'is deliberately untouched by this: its specification says a client ' +
-        'MUST NOT be required to authenticate.'
+      ? '<strong>The SPIRE Server API is the exception, and it is ' +
+        'on.</strong> Its TCP port is mutual TLS, a caller presents an ' +
+        'X509-SVID from this trust domain, and every method is authorized ' +
+        'against SPIRE\'s own table — the whole of which is below. Its Unix ' +
+        'socket is the <code>local</code> entity and needs no credential. ' +
+        'The Workload API is deliberately untouched by this: its ' +
+        'specification says a client MUST NOT be required to authenticate.'
       : '<strong>And the SPIRE Server API is not authenticating anybody ' +
-        'either.</strong> ' +
-        'That port is plain gRPC and anybody who can reach it can create a ' +
-        'registration entry granting any identity here and then collect an ' +
-        'SVID for it. Restart with it on — the socket is bound once, because it ' +
-        'decides how the socket is bound — to get the behaviour of a real ' +
-        'spire-server.') +
+        'either.</strong> That port is plain gRPC and anybody who can reach ' +
+        'it can create a registration entry granting any identity here and ' +
+        'then collect an SVID for it. Restart with it on — the socket is ' +
+        'bound once, because it decides how the socket is bound — to get the ' +
+        'behaviour of a real spire-server.') +
     '</p>' +
 
     '<h2>The bundle endpoint</h2>' +
     '<p><a href="' + esc(document.bundle.url) + '"><code>' +
     esc(document.bundle.url) + '</code></a> — a JWK Set with ' +
-    '<code>spiffe_sequence</code> (' + esc(document.bundle.sequence) + ') and ' +
-    '<code>spiffe_refresh_hint</code> (' + esc(document.bundle.refreshHint) +
-    ' seconds). Each key carries <code>use</code> of <code>x509-svid</code> or ' +
-    '<code>jwt-svid</code>; a consumer MUST IGNORE a key whose <code>use</code> ' +
-    'it does not recognise, which is why a bundle with the member missing ' +
-    'verifies nothing and reports no error.</p>' +
-    '<p class="' + (config.value('global.https') ? 'note' : 'warn') + '">' +
+    '<code>spiffe_sequence</code> (' + esc(document.bundle.sequence) + ') ' +
+    'and <code>spiffe_refresh_hint</code> ' +
+    '(' + esc(document.bundle.refreshHint) +
+    ' seconds). Each key carries <code>use</code> of <code>x509-svid</code> ' +
+    'or <code>jwt-svid</code>; a consumer MUST IGNORE a key whose ' +
+    '<code>use</code> it does not recognise, which is why a bundle with the ' +
+    'member missing verifies nothing and reports no error.</p><p ' +
+    'class="' + (config.value('global.https') ? 'note' : 'warn') + '">' +
     esc(document.bundle.schemeNote) + '</p>' +
 
     '<h2>The trust domain\'s authorities</h2>' +
@@ -590,8 +606,8 @@ function page(document) {
     '<table><tr><th>Kind</th><th>Id</th><th>Key</th><th>State</th></tr>' +
     document.authorities.x509.map(function (a) {
       return '<tr><td>X.509</td><td><code>' + esc(a.id) + '</code></td><td>' +
-        esc(a.keyType) + '</td><td>' + (a.active ? 'active' : 'retired, still ' +
-        'published') + ', until ' + esc(a.notAfter) + '</td></tr>';
+        esc(a.keyType) + '</td><td>' + (a.active ? 'active' : 'retired, ' +
+        'still published') + ', until ' + esc(a.notAfter) + '</td></tr>';
     }).join('') +
     document.authorities.jwt.map(function (a) {
       return '<tr><td>JWT</td><td><code>' + esc(a.kid) + '</code></td><td>' +
@@ -603,8 +619,8 @@ function page(document) {
       ? '<p>An X509-SVID travels with its chain: ' +
         document.authorities.chainSubjects.map(function (subject) {
           return '<code>' + esc(subject) + '</code>';
-        }).join(' &rarr; ') + '. The anchor below is NOT sent with it — it is ' +
-        'what the bundle publishes.</p>'
+        }).join(' &rarr; ') + '. The anchor below is NOT sent with it — it ' +
+        'is what the bundle publishes.</p>'
       : '') +
     '<h3>What a consumer trusts</h3>' +
     '<table><tr><th>Anchor</th><th>Subject</th><th>Until</th></tr>' +
@@ -636,8 +652,8 @@ function page(document) {
     '<th>What a caller presents</th></tr>' +
     listenerRows(document.serverApi.listeners) + '</table>' +
     document.serverApi.services.map(function (service) {
-      return '<h3>' + esc(service.name) + '</h3><p>' + esc(service.what) + '</p>' +
-        '<table><tr><th>Method</th><th>Implemented</th><th>What</th></tr>' +
+      return '<h3>' + esc(service.name) + '</h3><p>' + esc(service.what) +
+        '</p><table><tr><th>Method</th><th>Implemented</th><th>What</th></tr>' +
         methodRows(service.methods) + '</table>';
     }).join('') +
 
@@ -645,7 +661,8 @@ function page(document) {
     '<p>' + esc(document.authentication.what) + '</p>' +
     '<p class="note">' + esc(document.authentication.bootstrapping) + '</p>' +
     '<p class="note">' + esc(document.authentication.identityNote) + '</p>' +
-    '<p class="note">' + esc(document.authentication.credentialStatusNote || '') + '</p>' +
+    '<p class="note">' +
+    esc(document.authentication.credentialStatusNote || '') + '</p>' +
     (document.authentication.adminIds.length
       ? '<p>Administrators by configuration (<code>spiffe.adminIds</code>): ' +
         document.authentication.adminIds.map(function (id) {
@@ -679,17 +696,16 @@ function page(document) {
     '<h2>What is not checked</h2><ul>' +
     document.notChecked.map(function (line) {
       return '<li>' + esc(line) + '</li>';
-    }).join('') + '</ul>' +
-
-    '<h2>What is refused</h2>' +
-    '<p>A short list, and it is here because a page that only said "nothing is ' +
-    'checked" would be wrong.</p><ul>' +
+    }).join('') + '</ul><h2>What is refused</h2><p>A short list, and it is ' +
+    'here because a page that only said "nothing is checked" would be ' +
+    'wrong.</p><ul>' +
     document.refused.map(function (line) {
       return '<li>' + esc(line) + '</li>';
     }).join('') + '</ul>' +
 
     '<h2>The registry</h2>' +
-    '<p>' + esc(document.registry.entries) + ' registration entry/entries and ' +
+    '<p>' + esc(document.registry.entries) +
+    ' registration entry/entries and ' +
     esc(document.registry.agents) + ' agent(s). ' +
     esc(document.registry.note) + '</p>' +
 
@@ -736,6 +752,7 @@ function addressesFor(surface, realmId) {
   log.debug('Entering addressesFor(). surface=' + surface +
             ' realm=' + (realmId || 'default'));
   const read = function () {
+    log.debug("Entering read().");
     const out = [];
     if (surface === 'workload') {
       if (config.value('spiffe.workloadSocketEnabled')) {
@@ -756,6 +773,7 @@ function addressesFor(surface, realmId) {
         out.push({ address: config.value('spiffe.grpcHost') + ':' + port });
       }
     }
+    log.debug("Leaving read().");
     return out;
   };
   const realm = realms.get(String(realmId || ''));
@@ -916,8 +934,9 @@ async function bindAll(server, surface, realmId) {
           : 'None, and there must be none: the Workload Endpoint ' +
             'specification forbids requiring one.')
       : (tls
-          ? 'Mutual TLS. Verify this server against the trust bundle, present ' +
-            'your own X509-SVID, and expect to be authorized per method.'
+          ? 'Mutual TLS. Verify this server against the trust bundle, ' +
+            'present your own X509-SVID, and expect to be authorized per ' +
+            'method.'
           : (surface === 'server'
               ? 'None — authentication is off, so this port is plain ' +
                 'gRPC and every method is open to everybody.'
@@ -936,6 +955,7 @@ async function bindAll(server, surface, realmId) {
 // the empty string and `'' || 'nobody'` is the kind of bug this whole file is
 // written to avoid.
 function claimedBy(address, realmId) {
+  log.debug("Entering claimedBy().");
   let found = null;
   listeners.forEach(function (entry, id) {
     if (String(id) === String(realmId || '')) {
@@ -947,6 +967,7 @@ function claimedBy(address, realmId) {
       }
     });
   });
+  log.debug("Leaving claimedBy().");
   return found;
 }
 
@@ -971,23 +992,29 @@ function claimedBy(address, realmId) {
 // A Unix socket path is compared literally: there is no wildcard for one.
 // ---------------------------------------------------------------------------
 function overlaps(bound, wanted) {
+  log.debug("Entering overlaps().");
   if (bound === wanted) {
+    log.debug("Leaving overlaps().");
     return true;
   }
   if (bound.indexOf('unix://') === 0 || wanted.indexOf('unix://') === 0) {
+    log.debug("Leaving overlaps().");
     return false;
   }
   const boundCut = bound.lastIndexOf(':');
   const wantedCut = wanted.lastIndexOf(':');
   if (boundCut < 0 || wantedCut < 0) {
+    log.debug("Leaving overlaps().");
     return false;
   }
   if (bound.slice(boundCut) !== wanted.slice(wantedCut)) {
+    log.debug("Leaving overlaps().");
     return false;
   }
   const boundHost = bound.slice(0, boundCut);
   const wantedHost = wanted.slice(0, wantedCut);
   const WILDCARD = ['0.0.0.0', '::', '[::]', ''];
+  log.debug("Leaving overlaps().");
   return WILDCARD.indexOf(boundHost) >= 0 || WILDCARD.indexOf(wantedHost) >= 0;
 }
 
@@ -995,6 +1022,7 @@ function overlaps(bound, wanted) {
 // usually the same string; it is not when a wildcard is what overlaps, and
 // that is exactly the case a reader needs told.
 function addressHeldBy(realmId, wanted) {
+  log.debug("Entering addressHeldBy().");
   const entry = listeners.get(String(realmId || ''));
   let held = wanted;
   if (entry) {
@@ -1004,6 +1032,7 @@ function addressHeldBy(realmId, wanted) {
       }
     });
   }
+  log.debug("Leaving addressHeldBy().");
   return held;
 }
 
@@ -1011,7 +1040,9 @@ function addressHeldBy(realmId, wanted) {
 // an id, and `realms.get('')` is the default realm's record, so this is the
 // one place that conversion happens.
 function inRealm(realmId, fn) {
+  log.debug("Entering inRealm().");
   const realm = realms.get(String(realmId || ''));
+  log.debug("Leaving inRealm().");
   return realm ? realms.run(realm, fn) : fn();
 }
 
@@ -1033,6 +1064,7 @@ function inRealm(realmId, fn) {
 // the handlers would have had to be remembered at each of those points.
 // ---------------------------------------------------------------------------
 function handlersInRealm(realmId, table) {
+  log.debug("Entering handlersInRealm().");
   const realm = realms.get(String(realmId || ''));
   const out = {};
   Object.keys(table).forEach(function (name) {
@@ -1044,10 +1076,12 @@ function handlersInRealm(realmId, table) {
       });
     };
   });
+  log.debug("Leaving handlersInRealm().");
   return out;
 }
 
 async function startRealm(realm) {
+  log.debug("Entering startRealm().");
   const realmId = realm.id === realms.DEFAULT_ID ? '' : realm.id;
   log.debug('Entering startRealm(). realm=' + (realmId || 'default'));
   const workloadServer = rpc.buildServer([
@@ -1219,12 +1253,14 @@ function listen() {
 // `{ workload, api }`, and each row now says which realm it belongs to — the
 // alternative was a second shape everywhere and two things to keep in step.
 function bindingsNow() {
+  log.debug("Entering bindingsNow().");
   const workloadAll = [];
   const apiAll = [];
   listeners.forEach(function (entry) {
     entry.workload.forEach(function (b) { workloadAll.push(b); });
     entry.api.forEach(function (b) { apiAll.push(b); });
   });
+  log.debug("Leaving bindingsNow().");
   return { workload: workloadAll, api: apiAll };
 }
 
@@ -1262,6 +1298,8 @@ module.exports = {
   description: description,
   BUNDLE_PATH: BUNDLE_PATH,
   bindings: function () {
+    log.debug("Entering bindings().");
+    log.debug("Leaving bindings().");
     return bindingsNow();
   },
   // What a test and `/spiffe` need that the two flat lists cannot carry: which
@@ -1269,6 +1307,8 @@ module.exports = {
   // because a realm whose every binding FAILED is still a realm with SPIFFE
   // turned on, and the two states need telling apart.
   realmsListening: function () {
+    log.debug("Entering realmsListening().");
+    log.debug("Leaving realmsListening().");
     return Array.from(listeners.keys());
   },
   reconcile: reconcile

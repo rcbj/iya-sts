@@ -6,11 +6,11 @@
 // CRLs AND OCSP: THE REGISTER, THE TWO DOCUMENTS, AND THE ROTATION THAT FILLS
 // THEM (2026-09-11).
 //
-// **WHY THIS IS IN PROCESS RATHER THAN OVER HTTP**, which is `tests/CLAUDE.md`'s
-// question and the one that decides where a test goes. Most of it could be
-// driven over HTTP and one part could not, and the parts that could are here
-// anyway because they are cheaper here and because the part that cannot is
-// the half that matters:
+// **WHY THIS IS IN PROCESS RATHER THAN OVER HTTP**, which is
+// `tests/CLAUDE.md`'s question and the one that decides where a test goes. Most
+// of it could be driven over HTTP and one part could not, and the parts that
+// could are here anyway because they are cheaper here and because the part that
+// cannot is the half that matters:
 //
 //   * **A CRL AND AN OCSP RESPONSE ARE BINARY DOCUMENTS THIS SERVICE SIGNS**,
 //     and what is worth asserting about them is their STRUCTURE — the version,
@@ -54,6 +54,13 @@ const pki = require('../common/pki');
 const revocation = require('../common/pki_revocation');
 const keystore = require('../common/keystore');
 const helpers = require('../common/helpers');
+const x509 = require('../common/vendored/x509');
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'pki_revocation',
+  level: process.env.LOG_LEVEL || 'info' });
 
 // **THE DEFAULT REALM, AND THAT IS A FIXTURE DECISION RATHER THAN
 // LAZINESS.** The obvious thing is to make a realm of this file's own — and
@@ -95,19 +102,24 @@ let openSslMissing = '';
 let scratch = '';
 
 function haveOpenSsl() {
+  log.debug("Entering haveOpenSsl().");
   if (openSslMissing) {
+    log.debug("Leaving haveOpenSsl().");
     return false;
   }
   try {
     execFileSync('openssl', ['version'], { stdio: 'pipe' });
+    log.debug("Leaving haveOpenSsl().");
     return true;
   } catch (e) {
     openSslMissing = e.message;
+    log.debug("Leaving haveOpenSsl().");
     return false;
   }
 }
 
 function ocspRequestFor(issuerPem, serialHex, withNonce) {
+  log.debug("Entering ocspRequestFor().");
   const issuerFile = path.join(scratch, 'issuer.pem');
   const out = path.join(scratch, 'req.der');
   fs.writeFileSync(issuerFile, issuerPem);
@@ -121,6 +133,7 @@ function ocspRequestFor(issuerPem, serialHex, withNonce) {
   }
   args.push('-issuer', issuerFile, '-serial', '0x' + serialHex, '-reqout', out);
   execFileSync('openssl', args, { stdio: 'pipe' });
+  log.debug("Leaving ocspRequestFor().");
   return fs.readFileSync(out);
 }
 
@@ -130,8 +143,10 @@ function ocspRequestFor(issuerPem, serialHex, withNonce) {
 // pass — `successful` means the responder answered, and it answers
 // `successful` for `good`, `revoked` and `unknown` alike.
 async function ask(scope, caId, issuerPem, serialHex, withNonce) {
+  log.debug("Entering ask().");
   const answer = await revocation.answerOcsp(
     scope, caId, ocspRequestFor(issuerPem, serialHex, withNonce));
+  log.debug("Leaving ask().");
   return {
     responseStatus: answer.status,
     certStatus: ((answer.answers || [])[0] || {}).status || '',
@@ -143,13 +158,18 @@ async function ask(scope, caId, issuerPem, serialHex, withNonce) {
 // ===========================================================================
 
 async function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== A. the register, and what a revocation IS ===');
 
   scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-rev-'));
   await keystore.start();
   const started = await pki.start({
     realmIds: ['', UNCERTIFIED_REALM],
-    keySetFor: function (id) { return helpers.stsKeysFor.of(id); }
+    keySetFor: function (id) {
+      log.debug("Entering keySetFor().");
+      log.debug("Leaving keySetFor().");
+      return helpers.stsKeysFor.of(id);
+    }
   });
   t.check(started.ok && started.built, 'the hierarchy is built',
           JSON.stringify(started.errors || []));
@@ -167,7 +187,9 @@ async function run(t) {
             return (one.scope || 'default') + '/' + one.ca;
           }).join(' '));
   t.check(authorities.some(function (one) { return one.ca === 'root'; }) &&
-          authorities.some(function (one) { return one.ca === 'intermediate'; }) &&
+          authorities.some(function (one) {
+            return one.ca === 'intermediate';
+          }) &&
           authorities.some(function (one) { return one.ca === 'jose'; }),
           'and all three tiers are among them, because all three sign ' +
           'something and therefore all three can be asked about it');
@@ -177,7 +199,8 @@ async function run(t) {
   // that concatenated `PROCESS_SCOPE` onto it listed every process authority
   // twice. The console did exactly that for an hour and drew two sets of
   // Revoke buttons that both worked.
-  const roots = authorities.filter(function (one) { return one.ca === 'root'; });
+  const roots =
+      authorities.filter(function (one) { return one.ca === 'root'; });
   t.equal(roots.length, 1,
           'the Root appears ONCE however the scope list was assembled — it ' +
           'belongs to no scope, so a walk that treats it as one scope\'s ' +
@@ -427,7 +450,8 @@ async function run(t) {
             'because RFC 6960 section 4.2.1 has a place for it and a client ' +
             'that treats keyCompromise differently from superseded needs it');
 
-    const never = await ask(REALM, 'jose', issuerPem, 'deadbeefdeadbeef', false);
+    const never = await ask(REALM, 'jose', issuerPem, 'deadbeefdeadbeef',
+                            false);
     t.equal(never.certStatus, 'unknown',
             'a serial this authority never issued is UNKNOWN and not good — ' +
             'which is the answer that matters most: a responder that said ' +
@@ -594,6 +618,7 @@ async function run(t) {
   // `tests/CLAUDE.md` asks for any process-wide state a test touched: put back
   // exactly what was there.
   (function restoreRootList() {
+    log.debug("Entering restoreRootList().");
     const row = pki.rawRowFor(rootScope);
     if (row && row.revoked && Array.isArray(row.revoked.root)) {
       row.revoked = Object.assign({}, row.revoked, {
@@ -604,6 +629,7 @@ async function run(t) {
       });
       pki.saveRow(rootScope, row);
     }
+    log.debug("Leaving restoreRootList().");
   })();
   t.check(!revocation.isRevoked(rootScope, 'root', intermediates[0].serialHex),
           'and the live Intermediate this section revoked is off the Root\'s ' +
@@ -671,12 +697,64 @@ async function run(t) {
             'can finish building one');
   }
 
+  // AN APPLICATION'S OR A PERSON'S SIGNING KEY PAIR, which went through
+  // `issueSigningKeyPair()` rather than `certify()` and named no list at all
+  // until 2026-09-12 — the one certificate this hierarchy hands to something
+  // that is not this service.
+  const pointsFor = revocation.distributionPoints(REALM, 'assertions');
+  for (const kind of [{ purpose: 'jwt' }, { purpose: 'saml' },
+                      { purpose: 'jwt', subjectKind: 'person' }]) {
+    const pair = await pki.issueSigningKeyPair(REALM, Object.assign({
+      identifier: 'rev-pointers-' + (kind.subjectKind || 'app') + '-' +
+                  kind.purpose
+    }, kind));
+    const label = (kind.subjectKind || 'application') + ' ' + kind.purpose;
+    t.check(pair.ok, 'an ' + label + ' signing key pair is issued',
+            (pair.errors || []).join(' '));
+    if (!pair.ok) {
+      continue;
+    }
+    const cert = new nodeCrypto.X509Certificate(pair.issued.certificatePem);
+    const described = await x509.describeCertificate(
+        pair.issued.certificatePem);
+    const flat = JSON.stringify(described.extensions);
+    t.check(described.extensions.some(function (one) {
+              return one.oid === '2.5.29.31';
+            }) && flat.indexOf(pointsFor.http) >= 0 &&
+            flat.indexOf(pointsFor.ldap) >= 0 &&
+            flat.indexOf(pointsFor.ldaps) >= 0,
+            'and the ' + label + ' key pair carries cRLDistributionPoints ' +
+            '(2.5.29.31) naming the ASSERTIONS Issuing CA\'s list in all ' +
+            'three schemes — the authority that signed it, not the realm');
+    t.check(described.extensions.some(function (one) {
+              return one.oid === '1.3.6.1.5.5.7.1.1';
+            }) && flat.indexOf(pointsFor.ocsp) >= 0 &&
+            flat.indexOf(pointsFor.caIssuers) >= 0,
+            'and an Authority Information Access (1.3.6.1.5.5.7.1.1) naming ' +
+            'that CA\'s OCSP responder and caIssuers address');
+    t.check(revocation.issuedHere(REALM, 'assertions', cert.serialNumber),
+            'and the authority KNOWS it issued that serial, so the responder ' +
+            'the certificate points at answers `good` rather than disowning ' +
+            'it as `unknown` — a pointer to a responder with no record of ' +
+            'the certificate is worse than no pointer');
+  }
+  t.check(pki.issuedKeyPairsFor(REALM, 'assertions').every(function (one) {
+            return !Object.keys(one).some(function (key) {
+              return /private|public|pem|jwk/i.test(key);
+            });
+          }),
+          'and what is recorded about an issued key pair holds no key — ' +
+          'serial, subject, expiry and who it was for, which is what a CRL ' +
+          'entry and an OCSP answer are made of');
+
   try {
     fs.rmSync(scratch, { recursive: true, force: true });
   } catch (e) {
     // The scratch directory is in the OS temp space and is a few kilobytes of
     // DER. Failing to remove it must not fail a test run.
+    log.debug("Caught in run(): " + ((e && e.message) || e));
   }
+  log.debug("Leaving run().");
 }
 
 module.exports = {

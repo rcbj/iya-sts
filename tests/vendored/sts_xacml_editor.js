@@ -106,17 +106,23 @@ const browserFlags = require("./browser_flags.js");
 const names = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, the arrangement tests/wait_for.js has.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_xacml_editor",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -156,15 +162,34 @@ const STRING_EQUAL = "urn:oasis:names:tc:xacml:1.0:function:string-equal";
 var screenshotDir = "";
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
-function root(path) { return base + path; }
-function realmUrl(path) { return base + "/realm/" + REALM + path; }
-function api(path) { return realmUrl("/admin-api" + path); }
+function root(path) {
+  log.debug("Entering root().");
+  log.debug("Leaving root().");
+  return base + path;
+}
+
+function realmUrl(path) {
+  log.debug("Entering realmUrl().");
+  log.debug("Leaving realmUrl().");
+  return base + "/realm/" + REALM + path;
+}
+
+function api(path) {
+  log.debug("Entering api().");
+  log.debug("Leaving api().");
+  return realmUrl("/admin-api" + path);
+}
+
 function editorUrl(policy) {
+  log.debug("Entering editorUrl().");
+  log.debug("Leaving editorUrl().");
   return realmUrl("/admin/xacml/editor" +
                   (policy ? "?policy=" + encodeURIComponent(policy) : ""));
 }
@@ -217,6 +242,7 @@ async function mintTheCredential() {
 // two call sites read the same as every other read in this file.
 function certJson(url) {
   log.debug("Entering certJson(). url=" + url);
+  log.debug("Leaving certJson().");
   return new Promise(function (resolve, reject) {
     const target = new URL(url);
     const request = https.request({
@@ -233,6 +259,8 @@ function certJson(url) {
         try {
           body = JSON.parse(text);
         } catch (e) {
+          log.debug("Caught in a callback in certJson(): " +
+                    ((e && e.message) || e));
           body = null;
         }
         resolve({ status: response.statusCode, body: body, text: text });
@@ -244,20 +272,25 @@ function certJson(url) {
 }
 
 async function json(url, options) {
+  log.debug("Entering json().");
   const r = await fetch(url, options || {});
   const text = await r.text();
   let body;
   try {
     body = JSON.parse(text);
   } catch (e) {
+    log.debug("Caught in json(): " + ((e && e.message) || e));
     // Not JSON — an HTML page from a door that answers JSON, which is worth
     // reporting whole rather than as a parse failure.
     body = null;
   }
+  log.debug("Leaving json().");
   return { status: r.status, body: body, text: text };
 }
 
 function apiPost(path, payload) {
+  log.debug("Entering apiPost().");
+  log.debug("Leaving apiPost().");
   return json(base + path, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {})
@@ -265,15 +298,20 @@ function apiPost(path, payload) {
 }
 
 async function editorJson(policy) {
+  log.debug("Entering editorJson().");
   const r = await json(api("/xacml/editor" +
-                           (policy ? "?policy=" + encodeURIComponent(policy) : "")));
+                           (policy ? "?policy=" + encodeURIComponent(policy) :
+                            "")));
   assert.strictEqual(r.status, 200,
     "GET /admin-api/xacml/editor answered " + r.status + " " +
     String(r.text).slice(0, 200));
+  log.debug("Leaving editorJson().");
   return r.body;
 }
 
 async function storedDocument(policy) {
+  log.debug("Entering storedDocument().");
+  log.debug("Leaving storedDocument().");
   return (await editorJson(policy)).document;
 }
 
@@ -292,32 +330,41 @@ async function storedDocument(policy) {
 // parent's, which is what makes `under()` a string test rather than a parser.
 // ---------------------------------------------------------------------------
 async function treeOf(policy) {
+  log.debug("Entering treeOf().");
   const view = await editorJson(policy);
   assert.ok(Array.isArray(view.tree) && view.tree.length,
     "the editor view for " + policy + " carries no tree: " +
     JSON.stringify(view).slice(0, 300));
+  log.debug("Leaving treeOf().");
   return view.tree;
 }
 
 function under(row, parentPath) {
+  log.debug("Entering under().");
+  log.debug("Leaving under().");
   return parentPath === undefined || parentPath === null ||
          (row.path !== parentPath && row.path.indexOf(parentPath) === 0);
 }
 
 function firstOfKind(tree, kind, parentPath) {
+  log.debug("Entering firstOfKind().");
+  log.debug("Leaving firstOfKind().");
   return tree.filter(function (row) {
     return row.kind === kind && under(row, parentPath);
   })[0] || null;
 }
 
 function lastOfKind(tree, kind, parentPath) {
+  log.debug("Entering lastOfKind().");
   const all = tree.filter(function (row) {
     return row.kind === kind && under(row, parentPath);
   });
+  log.debug("Leaving lastOfKind().");
   return all[all.length - 1] || null;
 }
 
 function pathOfKind(tree, kind, parentPath) {
+  log.debug("Entering pathOfKind().");
   const row = firstOfKind(tree, kind, parentPath);
   assert.ok(row, "no " + kind + " row" +
     (parentPath !== undefined && parentPath !== null
@@ -326,6 +373,7 @@ function pathOfKind(tree, kind, parentPath) {
     JSON.stringify(tree.map(function (one) {
       return one.kind + "@" + one.path;
     })));
+  log.debug("Leaving pathOfKind().");
   return row.path;
 }
 
@@ -333,9 +381,11 @@ function pathOfKind(tree, kind, parentPath) {
 // endpoint rather than the console — and it is what makes an edit on the page
 // mean something.
 async function enforcementFor(subject, action) {
+  log.debug("Entering enforcementFor().");
   const r = await certJson(realmUrl("/xacml/protected?subject=" +
                                     encodeURIComponent(subject) + "&action=" +
                                     encodeURIComponent(action)));
+  log.debug("Leaving enforcementFor().");
   return r;
 }
 
@@ -343,6 +393,8 @@ async function enforcementFor(subject, action) {
 // THE BROWSER.
 // ---------------------------------------------------------------------------
 function pause(ms) {
+  log.debug("Entering pause().");
+  log.debug("Leaving pause().");
   return new Promise(function (resolve) { setTimeout(resolve, ms); });
 }
 
@@ -425,11 +477,13 @@ async function survey(driver) {
   return page;
 }
 
-// The `?notice=` / `?error=` the console puts in the query string of the page it
-// sends a reader back to. Read from the URL and not the markup, so that a page
-// drawing neither still fails the assertion that wanted one.
+// The `?notice=` / `?error=` the console puts in the query string of the page
+// it sends a reader back to. Read from the URL and not the markup, so that a
+// page drawing neither still fails the assertion that wanted one.
 function outcomeOf(url, which) {
+  log.debug("Entering outcomeOf().");
   const found = String(url).match(new RegExp("[?&]" + which + "=([^&]*)"));
+  log.debug("Leaving outcomeOf().");
   return found ? decodeURIComponent(found[1].replace(/\+/g, " ")) : "";
 }
 
@@ -446,6 +500,7 @@ function outcomeOf(url, which) {
 // with this action" would submit half the fields it meant to and be told
 // nothing.
 function formIndexFor(page, path, action, carrying) {
+  log.debug("Entering formIndexFor().");
   const candidates = page.forms.filter(function (f) {
     return f.named.path === path &&
            (!carrying || f.controls.some(function (c) {
@@ -456,6 +511,7 @@ function formIndexFor(page, path, action, carrying) {
     return f.named.action === action;
   })[0];
   if (hidden) {
+    log.debug("Leaving formIndexFor().");
     return hidden.index;
   }
   const menu = candidates.filter(function (f) {
@@ -464,6 +520,7 @@ function formIndexFor(page, path, action, carrying) {
              c.options.some(function (o) { return o.value === action; });
     });
   })[0];
+  log.debug("Leaving formIndexFor().");
   return menu ? menu.index : -1;
 }
 
@@ -472,6 +529,8 @@ function formIndexFor(page, path, action, carrying) {
 // form, and a heuristic that took the first one asserted against the wrong
 // control while looking entirely correct.
 function chooserOf(page) {
+  log.debug("Entering chooserOf().");
+  log.debug("Leaving chooserOf().");
   return page.forms.filter(function (f) {
     return f.method === "get" && f.controls.some(function (c) {
       return c.name === "policy";
@@ -511,7 +570,8 @@ async function submitForm(driver, index, values) {
       await field.sendKeys(String(wanted[name]));
     }
   }
-  const buttons = await form.findElements(By.css("button, input[type='submit']"));
+  const buttons = await form.findElements(By.css(
+      "button, input[type='submit']"));
   assert.ok(buttons.length, "form " + index + " has no submit button");
   await buttons[0].click();
   await driver.wait(async function () {
@@ -569,11 +629,12 @@ async function signIn(driver, username) {
     // whose URL is still the one that was asked for, which reads here as "no
     // gate" and then fails twenty assertions about markup that was never
     // fetched. Checked once, so that failure names itself.
-    const text = await driver.executeScript("return document.body.textContent;");
+    const text =
+        await driver.executeScript("return document.body.textContent;");
     assert.ok(String(text).length > 200 &&
               String(text).indexOf("ERR_") < 0,
-      "the browser is at " + url + " with no sign-in screen, but the document " +
-      "there does not look like this console — it reads: " +
+      "the browser is at " + url + " with no sign-in screen, but the " +
+      "document there does not look like this console — it reads: " +
       JSON.stringify(String(text).slice(0, 200)) + ". That is almost always " +
       "the browser refusing this service's certificate (its key is " +
       "regenerated on every start), which the launchers answer with " +
@@ -590,7 +651,8 @@ async function signIn(driver, username) {
   await secret.clear();
   await secret.sendKeys(CONSOLE_PASSWORD);
   const button = await driver.findElement(
-      By.xpath("//button[@type='submit'] | //input[@type='submit'] | //button"));
+      By.xpath("//button[@type='submit'] | //input[@type='submit'] | " +
+               "//button"));
   await button.click();
   await driver.wait(async function () {
     return (await driver.getCurrentUrl()).indexOf("/authn/login") < 0;
@@ -603,7 +665,9 @@ async function signIn(driver, username) {
 }
 
 async function keepAPicture(driver, what) {
+  log.debug("Entering keepAPicture().");
   if (!screenshotDir) {
+    log.debug("Leaving keepAPicture().");
     return;
   }
   try {
@@ -619,6 +683,7 @@ async function keepAPicture(driver, what) {
     // Swallowed on purpose: the failure being reported is the one worth seeing.
     log.warn("could not write a screenshot: " + e.message);
   }
+  log.debug("Leaving keepAPicture().");
 }
 
 // ===========================================================================
@@ -688,7 +753,8 @@ async function theTreeIsDrawn(driver) {
       "the tree should have more than six rows; it has " + page.rows.length);
   });
 
-  check("every form on the page posts to the editor IN THIS REALM", function () {
+  check("every form on the page posts to the editor IN THIS REALM",
+        function () {
     // THE SHELL'S SIGN OUT FORM IS NOT AN EDITOR CONTROL (2026-09-06). Every
     // page of this console draws it, it posts to `/admin/signout`, and it is
     // correctly realm-prefixed like every other root-relative action — it is
@@ -776,20 +842,25 @@ async function theMenusAreTheGrammar(driver) {
   const view = await editorJson(POLICY);
 
   function menuAt(path) {
+    log.debug("Entering menuAt().");
     const form = page.forms.filter(function (f) {
       return f.named.path === path && f.controls.some(function (c) {
         return c.name === "action" && c.options;
       });
     })[0];
     if (!form) {
+      log.debug("Leaving menuAt().");
       return null;
     }
+    log.debug("Leaving menuAt().");
     return form.controls.filter(function (c) {
       return c.name === "action";
     })[0].options.map(function (o) { return o.value; });
   }
 
   function hasRemove(path) {
+    log.debug("Entering hasRemove().");
+    log.debug("Leaving hasRemove().");
     return page.forms.some(function (f) {
       return f.named.path === path && f.named.action === "remove";
     });
@@ -887,7 +958,8 @@ async function theMenusAreTheGrammar(driver) {
       "string-equal is the commonest Match function and must be offered; the " +
       "menu offers " + offered.length + " function(s)");
     const illegal = offered.filter(function (uri) {
-      return /string-concatenate|integer-add|-bag$|-one-and-only$|-size$/.test(uri);
+      return /string-concatenate|integer-add|-bag$|-one-and-only$|-size$/.test(
+          uri);
     });
     assert.deepStrictEqual(illegal, [],
       "a Match takes a two-argument BOOLEAN predicate, so a constructor, an " +
@@ -899,7 +971,8 @@ async function theMenusAreTheGrammar(driver) {
       "library; it offers " + offered.length + " of the 275 functions");
   });
 
-  check("the category menu on a Match offers the XACML categories", function () {
+  check("the category menu on a Match offers the XACML categories",
+        function () {
     assert.ok(referenceForm,
       "the Match row should carry a second form for what the value is " +
       "compared against; the row carries " + JSON.stringify(page.forms
@@ -965,8 +1038,8 @@ async function aConditionMayBeAddedOnce(driver) {
   check("the policy still type-checks with the condition on it", function () {
     assert.ok(!after.warnings.some(function (t) {
       return t.indexOf("This policy does not type-check") === 0;
-    }), "the page warns that the policy does not type-check after an edit the " +
-        "editor itself offered: " + JSON.stringify(after.warnings));
+    }), "the page warns that the policy does not type-check after an edit " +
+        "the editor itself offered: " + JSON.stringify(after.warnings));
   });
 
   log.debug("Leaving aConditionMayBeAddedOnce().");
@@ -1027,8 +1100,8 @@ async function aRefusedEditStoresNothing(driver) {
   check("the edit is refused, and the refusal says why", function () {
     const error = outcomeOf(after.url, "error");
     assert.ok(error, "retyping the designator as an integer leaves " +
-      "string-is-in with an integer argument, which does not type-check — the " +
-      "store must refuse it. The page came back with " +
+      "string-is-in with an integer argument, which does not type-check — " +
+      "the store must refuse it. The page came back with " +
       (outcomeOf(after.url, "notice") || "no outcome at all") + " at " +
       after.url);
     assert.ok(error.indexOf("not saved") > 0 || error.indexOf("invalid") > 0,
@@ -1048,8 +1121,8 @@ async function aRefusedEditStoresNothing(driver) {
   check("the stored document is byte-for-byte what it was", function () {
     assert.strictEqual(now, before,
       "the stored policy changed despite the edit being refused. A LIVE " +
-      "editor whose refused edits still landed would break the policy the PDP " +
-      "is deciding with, at the moment somebody was trying to improve it.");
+      "editor whose refused edits still landed would break the policy the " +
+      "PDP is deciding with, at the moment somebody was trying to improve it.");
   });
 
   const stillGood = await editorJson(POLICY);
@@ -1080,7 +1153,8 @@ async function aRuleBuiltOnThePageDecides(driver) {
     assert.strictEqual(before.status, 403,
       SUBJECT + " is staff, and the template permits staff GET and HEAD only " +
       "— so DELETE must be refused before this section builds anything. The " +
-      "PEP answered " + before.status + " " + JSON.stringify(before.body).slice(0, 200));
+      "PEP answered " + before.status + " " +
+      JSON.stringify(before.body).slice(0, 200));
     assert.strictEqual(before.body.decision, "Deny");
   });
 
@@ -1120,7 +1194,9 @@ async function aRuleBuiltOnThePageDecides(driver) {
       return row.element.indexOf("urn:test:rule:" + SUBJECT) >= 0 &&
              row.element.indexOf("Permit") >= 0;
     }), "the redrawn tree should show the renamed Permit rule; it shows " +
-        JSON.stringify(page.rows.map(function (r) { return r.element.slice(0, 60); })));
+        JSON.stringify(page.rows.map(function (r) {
+          return r.element.slice(0, 60);
+        })));
   });
 
   // 3. A TARGET CLAUSE — ONE PRESS, THREE ELEMENTS.
@@ -1222,8 +1298,9 @@ async function aRuleBuiltOnThePageDecides(driver) {
   check("and it changed nothing for anybody else", function () {
     assert.strictEqual(others.status, 403,
       "the rule matches subject-id = " + SUBJECT + " and nobody else, so " +
-      OTHER_STAFF + " must still be refused DELETE. A rule that permitted everybody " +
-      "would pass the check above and be entirely wrong. The PEP answered " +
+      OTHER_STAFF + " must still be refused DELETE. A rule that permitted " +
+      "everybody would pass the check above and be entirely wrong. The PEP " +
+      "answered " +
       others.status);
   });
 
@@ -1269,8 +1346,8 @@ async function aRuleBuiltOnThePageDecides(driver) {
       " again; the PEP answered " + removed.status);
   });
 
-  log.info("[built] OK — a rule made of four form submissions, and a decision " +
-           "that follows it.");
+  log.info("[built] OK — a rule made of four form submissions, and a " +
+           "decision that follows it.");
   log.debug("Leaving aRuleBuiltOnThePageDecides().");
   return newRule;
 }
@@ -1366,7 +1443,8 @@ async function removingTheRuleTakesTheDecisionWithIt(driver, rulePath) {
   check("the PDP refuses " + SUBJECT + " again", function () {
     assert.strictEqual(enforcement.status, 403,
       "with the rule removed the PEP should be back to refusing; it answered " +
-      enforcement.status + " " + JSON.stringify(enforcement.body).slice(0, 200));
+      enforcement.status + " " +
+      JSON.stringify(enforcement.body).slice(0, 200));
     assert.strictEqual(enforcement.body.decision, "Deny");
   });
 
@@ -1404,7 +1482,8 @@ async function theChooserOpensAnotherPolicy(driver) {
     const wrong = opened.forms.filter(function (f) {
       return f.named.policy !== undefined && f.named.policy !== SECOND_POLICY;
     });
-    assert.deepStrictEqual(wrong.map(function (f) { return f.named.policy; }), [],
+    assert.deepStrictEqual(wrong.map(function (f) { return f.named.policy; }),
+      [],
       "a hidden `policy` field left pointing at the previous policy would " +
       "make an edit here silently change a DIFFERENT document — and the page " +
       "would redraw showing the one you are looking at, unchanged, which " +
@@ -1427,9 +1506,14 @@ async function theChooserOpensAnotherPolicy(driver) {
 // ===========================================================================
 async function theBrowserConsoleIsClean(driver) {
   log.debug("Entering theBrowserConsoleIsClean().");
-  const entries = await driver.manage().logs().get("browser").catch(function () {
+  const entries = await driver.manage()
+                              .logs()
+                              .get("browser")
+                              .catch(function (e) {
     // Not every driver serves the log; a job that failed here would be
     // reporting on the driver rather than on the console.
+    log.debug("Caught in theBrowserConsoleIsClean(): " +
+              ((e && e.message) || e));
     return [];
   });
   const severe = entries.filter(function (entry) {
@@ -1600,8 +1684,8 @@ async function test() {
     // stops being called takes its assertions with it and the run still says
     // "passed".
     assert.ok(checks >= 25,
-      "only " + checks + " checks ran. This file makes about thirty against a " +
-      "healthy console, so a count this low means a SECTION STOPPED BEING " +
+      "only " + checks + " checks ran. This file makes about thirty against " +
+      "a healthy console, so a count this low means a SECTION STOPPED BEING " +
       "CALLED rather than that the editor got simpler.");
     log.info(checks + " checks passed.");
     log.info("Test completed successfully.");

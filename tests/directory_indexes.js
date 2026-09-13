@@ -44,17 +44,33 @@
 
 const ldap = require('../ldap/ldap_server');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'directory_indexes',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A distinct prefix per run, because nothing in this suite deletes anything and
 // two runs in one process would otherwise meet each other's people.
 const RUN = 'idx' + Math.random().toString(36).slice(2, 8);
-const person = function (n) { return RUN + '-p' + n; };
-const team = function (n) { return RUN + '-g' + n; };
+const person = function (n) {
+  log.debug("Entering person().");
+  log.debug("Leaving person().");
+  return RUN + '-p' + n;
+};
+
+const team = function (n) {
+  log.debug("Entering team().");
+  log.debug("Leaving team().");
+  return RUN + '-g' + n;
+};
 
 // ---------------------------------------------------------------------------
 // THE USERNAME INDEX: one entry per person, however the name is spelled and
 // whatever else has been written since.
 // ---------------------------------------------------------------------------
 function checkTheUsernameIndex(t) {
+  log.debug("Entering checkTheUsernameIndex().");
   t.log.info('=== the username index still refuses a second entry ===');
 
   const first = ldap.createUser(person(1), { invent: false });
@@ -70,8 +86,8 @@ function checkTheUsernameIndex(t) {
 
   const shouted = ldap.createUser(person(1).toUpperCase(), { invent: false });
   t.check(shouted.ok === false,
-          'refused case-insensitively too, which the walk this index replaced ' +
-          'did by lower-casing both sides',
+          'refused case-insensitively too, which the walk this index ' +
+          'replaced did by lower-casing both sides',
           JSON.stringify(shouted.ok));
 
   // THE INTERLEAVING. Every one of these is a write, and each stamps the index
@@ -83,11 +99,12 @@ function checkTheUsernameIndex(t) {
     if (!made.ok) {
       t.check(false, 'person ' + (100 + i) + ' was created',
               JSON.stringify(made.errors));
+      log.debug("Leaving checkTheUsernameIndex().");
       return;
     }
   }
-  t.check(true, '25 more people were created, each one a write that keeps the ' +
-          'index rather than rebuilding it', '25');
+  t.check(true, '25 more people were created, each one a write that keeps ' +
+          'the index rather than rebuilding it', '25');
 
   const stillRefused = ldap.createUser(person(1), { invent: false });
   t.check(stillRefused.ok === false,
@@ -100,6 +117,7 @@ function checkTheUsernameIndex(t) {
           'and so is one created in the middle of the run, through the ' +
           '`invent: true` path that applyVcAttributes() writes to',
           middle.existing ? middle.existing.dn : JSON.stringify(middle.ok));
+  log.debug("Leaving checkTheUsernameIndex().");
 }
 
 // ---------------------------------------------------------------------------
@@ -111,6 +129,7 @@ function checkTheUsernameIndex(t) {
 // either side of it changes that.
 // ---------------------------------------------------------------------------
 function checkTheGroupIndex(t) {
+  log.debug("Entering checkTheGroupIndex().");
   t.log.info('=== a group write is visible to the very next read ===');
 
   const who = person(2);
@@ -178,7 +197,9 @@ function checkTheGroupIndex(t) {
           'and the person is now in BOTH — a group CREATE is also a write ' +
           'this index may not survive, which is a different case from the ' +
           'membership write above and fails separately',
-          JSON.stringify(both.groups.map(function (g) { return g.cn; }).sort()));
+          JSON.stringify(both.groups.map(function (g) { return g.cn; })
+                                    .sort()));
+  log.debug("Leaving checkTheGroupIndex().");
 }
 
 // ---------------------------------------------------------------------------
@@ -187,6 +208,7 @@ function checkTheGroupIndex(t) {
 // produce it — one shared "is it current" flag — is the tidy-looking mistake.
 // ---------------------------------------------------------------------------
 function checkTheyDoNotShareAnAnswer(t) {
+  log.debug("Entering checkTheyDoNotShareAnAnswer().");
   t.log.info('=== the two indexes answer separately ===');
 
   const who = person(4);
@@ -201,10 +223,11 @@ function checkTheyDoNotShareAnAnswer(t) {
           '1');
   const dup = ldap.createUser(who, { invent: false });
   t.check(dup.ok === false,
-          'and the username index is still right too — a group write must not ' +
-          'have been allowed to disturb it, nor to be taken as permission to ' +
-          'keep it when it should have been rebuilt',
+          'and the username index is still right too — a group write must ' +
+          'not have been allowed to disturb it, nor to be taken as ' +
+          'permission to keep it when it should have been rebuilt',
           JSON.stringify(dup.ok));
+  log.debug("Leaving checkTheyDoNotShareAnAnswer().");
 }
 
 // ---------------------------------------------------------------------------
@@ -220,7 +243,9 @@ function checkTheyDoNotShareAnAnswer(t) {
 // answers to must stop resolving to it.
 // ---------------------------------------------------------------------------
 function checkTheOverwriteShape(t) {
-  t.log.info('=== an entry rewritten in place, as a SCIM create rewrites it ===');
+  log.debug("Entering checkTheOverwriteShape().");
+  t.log.info('=== an entry rewritten in place, as a SCIM create rewrites it ' +
+             '===');
 
   const who = person(5);
   const made = ldap.createUser(who, { invent: true });
@@ -229,13 +254,15 @@ function checkTheOverwriteShape(t) {
   const before = ldap.readPerson(made.dn);
   const rewritten = ldap.writePerson(made.dn,
     Object.assign({}, before.attributes, { title: ['Engineer'] }));
-  t.check(rewritten.ok, 'and the entry was written again in place — the second ' +
-          'half of what a SCIM create does', rewritten.ok ? 'yes' : 'no');
+  t.check(rewritten.ok, 'and the entry was written again in place — the ' +
+          'second half of what a SCIM create ' +
+          'does', rewritten.ok ? 'yes' : 'no');
 
   const dup = ldap.createUser(who, { invent: false });
   t.check(dup.ok === false,
-          'they are STILL found by name afterwards. An overwrite that dropped ' +
-          'the entry out of the index would let the same person be created twice',
+          'they are STILL found by name afterwards. An overwrite that ' +
+          'dropped the entry out of the index would let the same person be ' +
+          'created twice',
           dup.existing ? dup.existing.dn : JSON.stringify(dup.ok));
 
   // AND THE HARDER HALF: a name it stops answering to must stop resolving.
@@ -244,7 +271,8 @@ function checkTheOverwriteShape(t) {
   const renamedTo = person(6);
   const changed = ldap.writePerson(made.dn,
     Object.assign({}, before.attributes, { uid: [renamedTo] }));
-  t.check(changed.ok, 'the uid on the entry was changed', changed.ok ? 'yes' : 'no');
+  t.check(changed.ok, 'the uid on the entry was changed',
+          changed.ok ? 'yes' : 'no');
 
   const byNew = ldap.createUser(renamedTo, { invent: false });
   t.check(byNew.ok === false,
@@ -258,8 +286,9 @@ function checkTheOverwriteShape(t) {
   const walked = ldap.existingUserEntry(who);
   const viaCreate = ldap.createUser(who, { invent: false });
   t.check((walked ? false : true) === viaCreate.ok,
-          'and the index and the create door agree about the old name — which ' +
-          'is the assertion that catches a stale mapping in either direction',
+          'and the index and the create door agree about the old name — ' +
+          'which is the assertion that catches a stale mapping in either ' +
+          'direction',
           JSON.stringify({ found: !!walked, createRefused: !viaCreate.ok }));
 
   // -------------------------------------------------------------------------
@@ -307,16 +336,19 @@ function checkTheOverwriteShape(t) {
   // the door rather than in the cache.
   const reclaim = ldap.createUser(RUN + '-uidone', { invent: false });
   t.check(reclaim.ok,
-          'and the departed name can be given to somebody else, which is what ' +
-          '"no longer resolves" has to MEAN at the create door',
+          'and the departed name can be given to somebody else, which is ' +
+          'what "no longer resolves" has to MEAN at the create door',
           reclaim.ok ? reclaim.dn : JSON.stringify(reclaim.errors));
+  log.debug("Leaving checkTheOverwriteShape().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkTheUsernameIndex(t);
   checkTheOverwriteShape(t);
   checkTheGroupIndex(t);
   checkTheyDoNotShareAnAnswer(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

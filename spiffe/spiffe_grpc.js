@@ -63,10 +63,10 @@ const realms = require('../common/realms');
 const audit = require('../common/audit');
 // THE ERROR CODES. A LEAF. A handler records which condition a refusal is by
 // marking the CALL on the line before it throws — `mark()` puts the code on the
-// object under a Symbol, which is never serialised — and the wrappers below read
-// it back into the one audit row the call already gets. The status the client
-// receives is unchanged: `errorToStatus()` builds `{ code, details }` and nothing
-// else.
+// object under a Symbol, which is never serialised — and the wrappers below
+// read it back into the one audit row the call already gets. The status the
+// client receives is unchanged: `errorToStatus()` builds `{ code, details }`
+// and nothing else.
 const errorCodes = require('../common/error_codes');
 const stats = require('../common/admin_stats');
 // WHO IS CALLING. A library that decides and never answers — see its header —
@@ -142,7 +142,8 @@ const SERVICES = {
   agent: DEFINITIONS.server['spire.api.server.agent.v1.Agent'],
   bundle: DEFINITIONS.server['spire.api.server.bundle.v1.Bundle'],
   svid: DEFINITIONS.server['spire.api.server.svid.v1.SVID'],
-  trustdomain: DEFINITIONS.server['spire.api.server.trustdomain.v1.TrustDomain'],
+  trustdomain:
+    DEFINITIONS.server['spire.api.server.trustdomain.v1.TrustDomain'],
   debug: DEFINITIONS.server['spire.api.server.debug.v1.Debug']
 };
 
@@ -162,7 +163,9 @@ Object.keys(SERVICES).forEach(function (name) {
 // prevent, and this is the only way to have the same property for a surface
 // Express knows nothing about.
 function methodsOf(serviceName) {
+  log.debug("Entering methodsOf().");
   const service = SERVICES[serviceName];
+  log.debug("Leaving methodsOf().");
   return Object.keys(service).map(function (key) {
     const method = service[key];
     return {
@@ -198,12 +201,20 @@ function methodsOf(serviceName) {
 const SECURITY_HEADER = 'workload.spiffe.io';
 
 function securityHeaderPresent(call) {
+  log.debug("Entering securityHeaderPresent().");
   const metadata = call && call.metadata;
-  if (!metadata) return false;
+  if (!metadata) {
+    log.debug("Leaving securityHeaderPresent().");
+    return false;
+  }
   const values = metadata.get(SECURITY_HEADER) || [];
   for (let i = 0; i < values.length; i++) {
-    if (String(values[i]).trim().toLowerCase() === 'true') return true;
+    if (String(values[i]).trim().toLowerCase() === 'true') {
+      log.debug("Leaving securityHeaderPresent().");
+      return true;
+    }
   }
+  log.debug("Leaving securityHeaderPresent().");
   return false;
 }
 
@@ -223,27 +234,37 @@ function securityHeaderPresent(call) {
 // ---------------------------------------------------------------------------
 // error-code: none — the constructor every refusal is built with; each caller marks its own condition
 function statusError(code, message) {
+  log.debug("Entering statusError().");
   const err = new Error(message);
   err.code = code;
+  log.debug("Leaving statusError().");
   return err;
 }
 
 function invalidArgument(message) {
+  log.debug("Entering invalidArgument().");
+  log.debug("Leaving invalidArgument().");
   // error-code: none — a constructor; the caller marks the condition
   return statusError(grpc.status.INVALID_ARGUMENT, message);
 }
 
 function notFound(message) {
+  log.debug("Entering notFound().");
+  log.debug("Leaving notFound().");
   // error-code: none — a constructor; the caller marks the condition
   return statusError(grpc.status.NOT_FOUND, message);
 }
 
 function permissionDenied(message) {
+  log.debug("Entering permissionDenied().");
+  log.debug("Leaving permissionDenied().");
   // error-code: none — a constructor; the caller marks the condition
   return statusError(grpc.status.PERMISSION_DENIED, message);
 }
 
 function unavailable(message) {
+  log.debug("Entering unavailable().");
+  log.debug("Leaving unavailable().");
   // error-code: none — a constructor; the caller marks the condition
   return statusError(grpc.status.UNAVAILABLE, message);
 }
@@ -255,20 +276,26 @@ function unavailable(message) {
 // own (an authorization refusal, a JWT-SVID refused at ValidateJWTSVID) and a
 // second coded row would count one refusal twice.
 function failureCodeOf(call, err) {
+  log.debug("Entering failureCodeOf().");
   if (!err || typeof err.code !== 'number') {
+    log.debug("Leaving failureCodeOf().");
     return 'STS-SPIFFE-0001';
   }
+  log.debug("Leaving failureCodeOf().");
   return errorCodes.codeOf(call);
 }
 
 function errorToStatus(err, where) {
+  log.debug("Entering errorToStatus().");
   if (err && typeof err.code === 'number') {
+    log.debug("Leaving errorToStatus().");
     return { code: err.code, details: err.message };
   }
   log.error(errorCodes.tag('STS-SPIFFE-0001') +
             'spiffe: ' + where + ' threw something that was not a status ' +
             'error, which is a defect in this service rather than in the ' +
             'call: ' + (err && err.stack ? err.stack : err));
+  log.debug("Leaving errorToStatus().");
   return { code: grpc.status.UNKNOWN,
            details: (err && err.message) || 'Something went wrong.' };
 }
@@ -299,10 +326,14 @@ function errorToStatus(err, where) {
 // treats the stream ending as an error and reconnects in a tight loop.
 // ---------------------------------------------------------------------------
 function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return !!config.value('spiffe.enabled');
 }
 
 function requireSecurityHeader() {
+  log.debug("Entering requireSecurityHeader().");
+  log.debug("Leaving requireSecurityHeader().");
   return !!config.value('spiffe.requireSecurityHeader');
 }
 
@@ -312,14 +343,17 @@ function requireSecurityHeader() {
 // and an unknown name becomes PERMISSION_DENIED rather than UNKNOWN: a
 // misspelt status in a refusal must still refuse.
 function fromDescriptor(descriptor) {
+  log.debug("Entering fromDescriptor().");
   const code = grpc.status[descriptor.status];
   if (typeof code !== 'number') {
     log.error(errorCodes.tag('STS-SPIFFE-0004') +
               'spiffe: spiffe_auth.js returned the status name "' +
               descriptor.status + '", which grpc-js does not have. Refusing ' +
               'with PERMISSION_DENIED; this is a defect in this service.');
+    log.debug("Leaving fromDescriptor().");
     return statusError(grpc.status.PERMISSION_DENIED, descriptor.message);
   }
+  log.debug("Leaving fromDescriptor().");
   // error-code: none — a translation; the descriptor's own errorCode was recorded by prepareCall()
   return statusError(code, descriptor.message);
 }
@@ -365,10 +399,10 @@ function fromDescriptor(descriptor) {
 // certificate would give it a second row and leave the first until it expired.
 // It is hashed because a session id is printed on `/admin/sessions`.
 //
-// **A CALLER THAT AUTHENTICATED NOBODY GETS NO SESSION.** The local Unix
-// socket is trusted by path and presents no credential, and a caller on a port
-// where nothing is checked presents none either. Both reach here with
-// `authenticated` false, and a session recording that somebody signed in would be untrue.
+// **A CALLER THAT AUTHENTICATED NOBODY GETS NO SESSION.** The local Unix socket
+// is trusted by path and presents no credential, and a caller on a port where
+// nothing is checked presents none either. Both reach here with `authenticated`
+// false, and a session recording that somebody signed in would be untrue.
 // ---------------------------------------------------------------------------
 function sessionForCaller(caller) {
   log.debug('Entering sessionForCaller().');
@@ -442,9 +476,9 @@ function policyRefusal(caller, method) {
   //
   // It also restored what `spiffe.authRequired` off was documented to mean,
   // while that setting existed. With it off `authorize()` returned null without
-  // consulting the table at all, so EVERY method reached this gate with an unauthenticated
-  // caller and was refused — turning the mock's own "nothing is checked"
-  // switch into the most closed configuration it has.
+  // consulting the table at all, so EVERY method reached this gate with an
+  // unauthenticated caller and was refused — turning the mock's own "nothing is
+  // checked" switch into the most closed configuration it has.
   // -----------------------------------------------------------------------
   if (!caller || !caller.authenticated || !caller.spiffeId) {
     log.debug('Leaving policyRefusal(). No subject to decide about.');
@@ -475,11 +509,13 @@ function policyRefusal(caller, method) {
            message: 'The access policy refused this call. ' + answer.why +
                     ' This is a POLICY decision rather than SPIRE\'s own ' +
                     'per-method rule, which allowed it. The document is on ' +
-                    '/admin/xacml and xacml.enforceAccess turns the layer off.' };
+                    '/admin/xacml and xacml.enforceAccess turns the layer ' +
+                    'off.' };
 }
 
 function prepareCall(call, surface, method) {
-  log.debug('Entering prepareCall(). surface=' + surface + ', method=' + method);
+  log.debug('Entering prepareCall(). surface=' + surface + ', method=' +
+            method);
   if (!enabled()) {
     log.debug('Leaving prepareCall(). SPIFFE is off.');
     return { caller: null, errorCode: 'STS-SPIFFE-0002',
@@ -557,7 +593,8 @@ function prepareCall(call, surface, method) {
         detail: { status: refusal.status, caller: auth.describeCaller(caller) }
       });
       log.debug('Leaving prepareCall(). Not authorized.');
-      return { caller: caller, refusal: fromDescriptor(refusal), errorCode: '' };
+      return { caller: caller, refusal: fromDescriptor(refusal),
+               errorCode: '' };
     }
   }
   // An accepted credential is an authentication, and this is where it is
@@ -584,7 +621,8 @@ function recordCall(surface, method, ok, detail, caller, errorCode) {
     // Statistics must never be able to fail a call — the same rule the JWT
     // recorder follows in helpers.js.
     log.error(errorCodes.tag('STS-SPIFFE-0008') +
-              'spiffe: recording a gRPC call threw and was ignored: ' + e.message);
+              'spiffe: recording a gRPC call threw and was ignored: ' +
+              e.message);
   }
   const code = ok ? '' : String(errorCode || '');
   audit.audit({
@@ -593,7 +631,8 @@ function recordCall(surface, method, ok, detail, caller, errorCode) {
     // anonymous or local caller, which is most of the Workload API — an audit
     // row must not imply an identity nothing established.
     actor: (caller && caller.authenticated) ? caller.spiffeId : '',
-    protocol: surface === 'workload' ? 'SPIFFE Workload API' : 'SPIRE Server API',
+    protocol: surface === 'workload' ? 'SPIFFE Workload API' : 'SPIRE Server ' +
+        'API',
     channel: 'grpc',
     target: method,
     errorCode: code,
@@ -667,6 +706,8 @@ const DISPATCHED_SURFACES = ['workload', 'server'];
 const LOCAL_METHODS = new Map();
 
 function methodKind(surface, method) {
+  log.debug("Entering methodKind().");
+  log.debug("Leaving methodKind().");
   return 'spiffe.' + surface + '.' + method;
 }
 
@@ -675,9 +716,13 @@ function methodKind(surface, method) {
 // require would be this family reaching up into the process's own bootstrap.
 // By the time a gRPC call arrives it is a cache hit.
 function requestPool() {
+  log.debug("Entering requestPool().");
   try {
+    log.debug("Leaving requestPool().");
     return require('../common/request_pool');
   } catch (e) {
+    log.debug("Caught in requestPool(): " + ((e && e.message) || e));
+    log.debug("Leaving requestPool().");
     // A process with no pool module cannot dispatch, which is the ordinary
     // state of every in-process loader of this tree.
     return null;
@@ -703,6 +748,8 @@ function requestPool() {
 // null` survived — the test was building the shape itself and therefore
 // asserting `structuredClone()` rather than this.
 function methodRequest(call) {
+  log.debug("Entering methodRequest().");
+  log.debug("Leaving methodRequest().");
   return {
     // THE REQUEST AS THE CODEC DECODED IT. It crosses by node's IPC advanced
     // serialization, so the `bytes` fields in it stay Buffers — see
@@ -740,10 +787,13 @@ function methodRequest(call) {
 }
 
 function dispatchUnary(surface, method, call) {
+  log.debug("Entering dispatchUnary().");
   const pool = requestPool();
   if (!pool || typeof pool.runOperation !== 'function') {
+    log.debug("Leaving dispatchUnary().");
     return Promise.resolve({ dispatched: false });
   }
+  log.debug("Leaving dispatchUnary().");
   return pool.runOperation(methodKind(surface, method), methodRequest(call));
 }
 
@@ -768,6 +818,7 @@ function performMethod(surface, method, args) {
   // what this file did before realms reached it and is the only answer
   // available when the registry disagrees.
   const realm = realms.get(String(args.realm || '')) || realms.DEFAULT_REALM;
+  log.debug("Leaving performMethod().");
   return Promise.resolve()
     .then(function () {
       return realms.run(realm, function () { return handler(call); });
@@ -785,9 +836,10 @@ function performMethod(surface, method, args) {
                code: (err && typeof err.code === 'number') ? err.code : null,
                message: (err && err.message) || '',
                stack: (err && err.stack) || '',
-               // THE CONDITION THE HANDLER MARKED, which lives under a Symbol on
-               // this process's call object and would not cross on its own. The
-               // front process marks its own call with it and records the row.
+               // THE CONDITION THE HANDLER MARKED, which lives under a Symbol
+               // on this process's call object and would not cross on its own.
+               // The front process marks its own call with it and records the
+               // row.
                errorCode: errorCodes.codeOf(call) };
     });
 }
@@ -797,7 +849,9 @@ function performMethod(surface, method, args) {
 // it is rebuilt as a plain Error and `errorToStatus()` logs it as the defect it
 // is — the same answer it would have reached had the handler run here.
 function errorFromResult(result) {
+  log.debug("Entering errorFromResult().");
   if (result && typeof result.code === 'number') {
+    log.debug("Leaving errorFromResult().");
     // error-code: none — a rebuild of the worker's refusal; its code travels as result.errorCode
     return statusError(result.code, result.message);
   }
@@ -806,16 +860,19 @@ function errorFromResult(result) {
   if (result && result.stack) {
     err.stack = result.stack;
   }
+  log.debug("Leaving errorFromResult().");
   return err;
 }
 
 function unary(surface, method, handler) {
+  log.debug("Entering unary().");
   // REGISTERED AT WRAP TIME, which is module load. `spiffe_workload.js` and
   // `spiffe_api.js` call this once per method as they load, so by the time
   // anything can arrive the table is complete — there is no later moment to
   // do it in, and no list anywhere that could disagree with the methods that
   // actually exist.
   registerWorkerMethod(surface, method, handler);
+  log.debug("Leaving unary().");
   return function (call, callback) {
     log.debug('Entering the ' + method + ' handler.');
     const prepared = prepareCall(call, surface, method);
@@ -852,7 +909,8 @@ function unary(surface, method, handler) {
       })
       .catch(function (err) {
         const status = errorToStatus(err, method);
-        recordCall(surface, method, false, { status: status.code }, prepared.caller,
+        recordCall(surface, method, false, { status: status.code },
+                   prepared.caller,
                    failureCodeOf(call, err));
         callback(status);
         log.debug('Leaving the ' + method + ' handler. ' + status.details);
@@ -894,29 +952,36 @@ function unary(surface, method, handler) {
 // forks a child with and the same one it uses itself to stop a worker proxying
 // to itself.
 function registerWorkerMethod(surface, method, handler) {
+  log.debug("Entering registerWorkerMethod().");
   if (DISPATCHED_SURFACES.indexOf(surface) < 0) {
+    log.debug("Leaving registerWorkerMethod().");
     return;
   }
   const kind = methodKind(surface, method);
   LOCAL_METHODS.set(kind, handler);
   if (!process.env.STS_REQUEST_WORKER) {
+    log.debug("Leaving registerWorkerMethod().");
     return;
   }
   let worker = null;
   try {
     worker = require('../common/request_worker');
   } catch (e) {
+    log.debug("Caught in registerWorkerMethod(): " + ((e && e.message) || e));
+    log.debug("Leaving registerWorkerMethod().");
     // A process with no worker module cannot be a worker. The local table
     // above is still filled, because it is also the fallback path's handler.
     return;
   }
   if (!worker || typeof worker.register !== 'function' ||
       (worker.OPERATIONS && worker.OPERATIONS.has(kind))) {
+    log.debug("Leaving registerWorkerMethod().");
     return;
   }
   worker.register(kind, function (args) {
     return performMethod(surface, method, args);
   });
+  log.debug("Leaving registerWorkerMethod().");
 }
 
 // ---------------------------------------------------------------------------
@@ -963,6 +1028,8 @@ function registerWorkerMethod(surface, method, handler) {
 // its `data`/`end` events belong to the connection.
 // ---------------------------------------------------------------------------
 function serverStream(surface, method, handler) {
+  log.debug("Entering serverStream().");
+  log.debug("Leaving serverStream().");
   return function (call) {
     log.debug('Entering the ' + method + ' stream handler.');
     const prepared = prepareCall(call, surface, method);
@@ -979,7 +1046,8 @@ function serverStream(surface, method, handler) {
     // reports as an unhandled error on the server.
     call.on('cancelled', function () {
       open = false;
-      log.debug('spiffe: the ' + method + ' stream was cancelled by the client.');
+      log.debug('spiffe: the ' + method +
+                ' stream was cancelled by the client.');
     });
     call.on('error', function (err) {
       open = false;
@@ -988,11 +1056,16 @@ function serverStream(surface, method, handler) {
     Promise.resolve()
       .then(function () {
         return handler(call, function push(message) {
+          log.debug("Entering push().");
           // The push callback a handler uses to send a later message — an SVID
           // that rotated, a bundle that changed. Guarded on `open`, because the
           // handler holds it across time and the client may be long gone.
-          if (!open) return false;
+          if (!open) {
+            log.debug("Leaving push().");
+            return false;
+          }
           call.write(message);
+          log.debug("Leaving push().");
           return true;
         });
       })
@@ -1005,11 +1078,13 @@ function serverStream(surface, method, handler) {
       })
       .catch(function (err) {
         const status = errorToStatus(err, method);
-        recordCall(surface, method, false, { status: status.code }, prepared.caller,
+        recordCall(surface, method, false, { status: status.code },
+                   prepared.caller,
                    failureCodeOf(call, err));
         open = false;
         call.emit('error', status);
-        log.debug('Leaving the ' + method + ' stream handler. ' + status.details);
+        log.debug('Leaving the ' + method + ' stream handler. ' +
+                  status.details);
       });
   };
 }
@@ -1020,6 +1095,8 @@ function serverStream(surface, method, handler) {
 // client sends, answer it", which is what those two do and is much easier to
 // get right than a general duplex.
 function bidiStream(surface, method, handler) {
+  log.debug("Entering bidiStream().");
+  log.debug("Leaving bidiStream().");
   return function (call) {
     log.debug('Entering the ' + method + ' bidi handler.');
     const prepared = prepareCall(call, surface, method);
@@ -1046,10 +1123,12 @@ function bidiStream(surface, method, handler) {
     call.on('end', function () {
       recordCall(surface, method, true, { streaming: true }, prepared.caller);
       call.end();
-      log.debug('Leaving the ' + method + ' bidi handler. The client ended it.');
+      log.debug('Leaving the ' + method +
+                ' bidi handler. The client ended it.');
     });
     call.on('error', function (err) {
-      log.debug('spiffe: the ' + method + ' bidi stream ended with ' + err.message);
+      log.debug('spiffe: the ' + method + ' bidi stream ended with ' +
+                err.message);
     });
   };
 }
@@ -1134,10 +1213,10 @@ function prepareSocketPath(socketPath, privateSocket) {
     const stat = fs.statSync(socketPath);
     if (stat.isSocket()) {
       fs.unlinkSync(socketPath);
-      log.warn('spiffe: a stale socket was at ' + socketPath + ' and has been ' +
-               'removed. That is the ordinary leftover of a killed process — ' +
-               'but if another copy of this service is running and listening ' +
-               'there, this one has just taken the path from it.');
+      log.warn('spiffe: a stale socket was at ' + socketPath + ' and has ' +
+               'been removed. That is the ordinary leftover of a killed ' +
+               'process — but if another copy of this service is running and ' +
+               'listening there, this one has just taken the path from it.');
     } else {
       // Something that is not a socket. NOT removed: this is a path from
       // configuration and deleting a regular file somebody named would be a
@@ -1159,6 +1238,7 @@ function prepareSocketPath(socketPath, privateSocket) {
 // A directory somebody else made, holding a socket that matters. Reported and
 // never changed: the path came from configuration and may be shared on purpose.
 function warnAboutDirectory(directory, privateSocket) {
+  log.debug("Entering warnAboutDirectory().");
   try {
     const bits = fs.statSync(directory).mode & 0o777;
     if (privateSocket && (bits & 0o077)) {
@@ -1171,15 +1251,16 @@ function warnAboutDirectory(directory, privateSocket) {
     } else if (!privateSocket && (bits & 0o022)) {
       log.warn('spiffe: ' + directory + ' (mode ' + bits.toString(8) + ') is ' +
                'WRITABLE by other users and holds the Workload API socket. ' +
-               'Anybody who can write there can unlink it and bind their own, ' +
-               'and every workload would then be answered by them. Remove the ' +
-               'group and world write bits.');
+               'Anybody who can write there can unlink it and bind their ' +
+               'own, and every workload would then be answered by them. ' +
+               'Remove the group and world write bits.');
     }
   } catch (e) {
     // Could not stat a directory mkdir just said exists. bindAsync reports
     // anything that matters about the path; this was only a warning.
     log.debug('warnAboutDirectory(): stat said ' + e.message);
   }
+  log.debug("Leaving warnAboutDirectory().");
 }
 
 // After a SPIRE Server API socket has bound: 0600, so that only this process's
@@ -1223,6 +1304,8 @@ function buildServer(services) {
 // and the fourteen other protocol families here are still useful when one
 // listener is not.
 function bindOne(server, address, credentials) {
+  log.debug("Entering bindOne().");
+  log.debug("Leaving bindOne().");
   return new Promise(function (resolve) {
     server.bindAsync(address, credentials, function (err, port) {
       if (err) {
@@ -1392,9 +1475,13 @@ module.exports = {
   // a second door onto forty-two handlers.
   // ---------------------------------------------------------------------
   dispatchedMethodKinds: function () {
+    log.debug("Entering dispatchedMethodKinds().");
+    log.debug("Leaving dispatchedMethodKinds().");
     return Array.from(LOCAL_METHODS.keys()).sort();
   },
   localMethod: function (surface, method) {
+    log.debug("Entering localMethod().");
+    log.debug("Leaving localMethod().");
     return LOCAL_METHODS.get(methodKind(surface, method));
   },
   methodKind: methodKind,

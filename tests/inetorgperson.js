@@ -51,7 +51,14 @@ const schema = require('../common/inetorgperson');
 // `admin_stats`) so requiring it here costs nothing and registers nothing.
 const vcClaims = require('../oid4vc/vc_claims');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'inetorgperson',
+  level: process.env.LOG_LEVEL || 'info' });
+
 function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== the union of three object classes, in inheritance order ===');
   const classes = schema.classes();
   t.equal(classes.map(function (k) { return k.name; }).join(' > '),
@@ -84,10 +91,10 @@ function run(t) {
   const names = all.map(function (row) { return row.ldap; });
   t.check(new Set(names.map(function (n) { return n.toLowerCase(); })).size ===
           names.length,
-          'no attribute is listed twice. `telephoneNumber` is on the MAY list ' +
-          'of BOTH person and organizationalPerson in the documents — X.521 ' +
-          'repeats it and RFC 4519 carries the repetition — and a page that ' +
-          'drew it twice would look like a bug in the page',
+          'no attribute is listed twice. `telephoneNumber` is on the MAY ' +
+          'list of BOTH person and organizationalPerson in the documents — ' +
+          'X.521 repeats it and RFC 4519 carries the repetition — and a page ' +
+          'that drew it twice would look like a bug in the page',
           names.length + ' name(s)');
   t.check(all.every(function (row) { return !!row.label && !!row.rfc; }),
           'every row names a label and the document it comes from, because ' +
@@ -122,11 +129,11 @@ function run(t) {
   t.check(!!schema.attribute('DepartmentNumber'),
           'and so does any other casing');
   t.equal(schema.attribute('departmentnumber').ldap, 'departmentNumber',
-          'and the row answers with the CANONICAL spelling, which is what the ' +
-          'page prints');
+          'and the row answers with the CANONICAL spelling, which is what ' +
+          'the page prints');
   t.check(schema.attribute('stsTotpCredential') === null,
-          'and a name that is not on the list resolves to nothing rather than ' +
-          'to something empty');
+          'and a name that is not on the list resolves to nothing rather ' +
+          'than to something empty');
 
   t.log.info('=== rowFor(): the two refusals ===');
   // A REAL-SHAPED STORED MAP: lower-cased keys, array values.
@@ -143,12 +150,12 @@ function run(t) {
   const password = schema.rowFor(schema.attribute('userPassword'), entry);
   t.check(password.present,
           'the password attribute is reported as PRESENT — it is on the ' +
-          '`person` MAY list and a page that left it out would be a page that ' +
-          'had quietly stopped being the schema');
+          '`person` MAY list and a page that left it out would be a page ' +
+          'that had quietly stopped being the schema');
   t.equal(password.values.length, 0,
           'AND IT CARRIES NO VALUE. This is the assertion the page cannot ' +
-          'make: that page has a branch of its own that words the cell, so it ' +
-          'passes with this refusal deleted');
+          'make: that page has a branch of its own that words the cell, so ' +
+          'it passes with this refusal deleted');
   t.check(password.secret, 'and the row says WHY, so the page can word it');
   t.check(JSON.stringify(password).indexOf('scrypt$') < 0,
           'and the hash is nowhere in the row at all — not in a field a ' +
@@ -210,10 +217,11 @@ function run(t) {
           all.length,
           'and the classes partition the list rather than overlapping it');
   t.check(described.classes.every(function (k) {
-            return k.held === k.rows.filter(function (r) { return r.present; }).length;
+            return k.held === k.rows.filter(function (
+                r) { return r.present; }).length;
           }),
-          'each class\'s count agrees with its own rows, so the page does not ' +
-          'have to walk them twice to draw a heading');
+          'each class\'s count agrees with its own rows, so the page does ' +
+          'not have to walk them twice to draw a heading');
 
   t.equal(schema.describe({}).held, 0,
           'a person with a bare entry holds none of them, and the page still ' +
@@ -287,10 +295,11 @@ function run(t) {
           'the two catalogues share enough attributes for the comparison to ' +
           'mean something', compared + ' compared');
   t.check(sections.length === 0,
-          'AND THEY CITE THE SAME SECTION FOR EVERY ONE. A citation exists so ' +
-          'that a reader can go and look the attribute up, which makes a ' +
+          'AND THEY CITE THE SAME SECTION FOR EVERY ONE. A citation exists ' +
+          'so that a reader can go and look the attribute up, which makes a ' +
           'wrong one worse than none — it gets followed',
           sections.join('; '));
+  log.debug("Leaving run().");
 }
 
 module.exports = {

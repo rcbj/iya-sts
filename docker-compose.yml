@@ -601,15 +601,16 @@ services:
       # disagree with the table in common/config.js that generates it.
       - ./env:/usr/src/sts/env:ro
     environment:
-      # The log level, and nothing else. debug is the point of a mock: every
-      # endpoint call, and every assertion, JWT and SD-JWT VC both before and
-      # after signing. Swap to ./env/test.js for a quiet run.
+      # The appconfig layer. It was chosen for its log level, and since
+      # 2026-09-12 every file in env/ is at `info` — every function logs its
+      # entry and exit at debug, so a debug stack writes all of it.
+      # STS_LOG_LEVEL=debug asks for the whole record.
       - CONFIG_FILE=${CONFIG_FILE:-./env/local.js}
       # The service's own bunyan level, passed through ONLY when the host
       # environment has it — see the note about the empty value in the
-      # header. Unset means the appconfig file decides, and that is
-      # `debug`: every request and every artifact before and after
-      # signing, which is the point of a mock and about half of its CPU.
+      # header. Unset means the appconfig file decides, and that is `info`
+      # since 2026-09-12; `debug` is every request, every artifact before
+      # and after signing, and every function's entry and exit.
       - STS_LOG_LEVEL
       # ---------------------------------------------------------------------
       # TLS ON THE MAIN PORT (2026-08-30). Until then this stack was the one

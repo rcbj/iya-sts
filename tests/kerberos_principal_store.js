@@ -57,15 +57,25 @@ const path = require('path');
 const realms = require('../common/realms');
 const principals = require('../kerberos/krb5_principals.js');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'kerberos_principal_store',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 
 // A deep copy through JSON, which is exactly what a stored row has been
 // through: a Date becomes a string and the non-enumerable key cache is gone.
 function asStored(record) {
+  log.debug("Entering asStored().");
+  log.debug("Leaving asStored().");
   return JSON.parse(JSON.stringify(record));
 }
 
 function store() {
+  log.debug("Entering store().");
+  log.debug("Leaving store().");
   return realms.handleFor('krb5.principals');
 }
 
@@ -73,12 +83,15 @@ function store() {
 // A. THE RULE, AT THE ACCESSORS BOTH DOORS CALL.
 // ---------------------------------------------------------------------------
 function theRuleAtTheBoundary(t) {
+  log.debug("Entering theRuleAtTheBoundary().");
   t.log.info('=== A. what a restored row may change, at the accessors ===');
   const handle = store();
   t.check(!!handle && typeof handle.restore === 'function' &&
           typeof handle.remove === 'function',
-          'krb5.principals is a declared store with restore and remove accessors');
+          'krb5.principals is a declared store with restore and remove ' +
+          'accessors');
   if (!handle) {
+    log.debug("Leaving theRuleAtTheBoundary().");
     return;
   }
   const spn = ['HTTP', 'web.example.com'];
@@ -87,6 +100,7 @@ function theRuleAtTheBoundary(t) {
   t.check(!!web && principals.isConfigured(spn),
           'the acceptor\'s account is a CONFIGURED principal here');
   if (!web) {
+    log.debug("Leaving theRuleAtTheBoundary().");
     return;
   }
   const before = asStored(web);
@@ -111,35 +125,41 @@ function theRuleAtTheBoundary(t) {
     handle.restore('', key, stale);
     const held = principals.find(spn);
     t.check(held === web,
-            'the configured record this process built is the one still held — ' +
-            'the row was not put in its place');
-    t.equal(JSON.stringify(Object.assign({}, asStored(held), { signedOutAt: null })),
+            'the configured record this process built is the one still held ' +
+            '— the row was not put in its place');
+    t.equal(JSON.stringify(Object.assign({}, asStored(held),
+                                         { signedOutAt: null })),
             JSON.stringify(Object.assign({}, before, { signedOutAt: null })),
-            'EVERY configuration field is what the settings built: password, salt, ' +
-            'etypes, kvno, type, delegation, description and PAC identity');
-    t.equal(principals.signedOutAt(spn) && principals.signedOutAt(spn).toISOString(),
+            'EVERY configuration field is what the settings built: password, ' +
+            'salt, etypes, kvno, type, delegation, description and PAC ' +
+            'identity');
+    t.equal(principals.signedOutAt(spn) &&
+            principals.signedOutAt(spn).toISOString(),
             '2026-01-02T03:04:05.000Z',
-            'AND THE RUNTIME STATE CAME FROM THE ROW — a sign-out made before the ' +
-            'restart is still in force after it');
+            'AND THE RUNTIME STATE CAME FROM THE ROW — a sign-out made ' +
+            'before the restart is still in force after it');
 
     // 2. A replicated clear of that sign-out reaches it too.
     const cleared = asStored(stale);
     cleared.signedOutAt = null;
     handle.restore('', key, cleared);
     t.equal(principals.signedOutAt(spn), null,
-            'a replicated clearSignOut() clears it — the runtime field is taken ' +
-            'both ways, not only when it is set');
+            'a replicated clearSignOut() clears it — the runtime field is ' +
+            'taken both ways, not only when it is set');
 
     // 3. A row the settings do not configure and nothing made at runtime.
     handle.restore('', retiredKey, {
-      name: ['HTTP', 'retired-' + suffix + '.example.com'], type: 3, realm: 'EXAMPLE.COM',
+      name: ['HTTP', 'retired-' + suffix + '.example.com'], type: 3,
+      realm: 'EXAMPLE.COM',
       password: 'retired-service-password', salt: 'x', etypes: [18], kvno: 3,
-      autoCreated: false, directoryKeys: false, pac: { rid: 1100 }, signedOutAt: null
+      autoCreated: false, directoryKeys: false, pac: {
+        rid: 1100 }, signedOutAt: null
     });
-    t.equal(principals.find(['HTTP', 'retired-' + suffix + '.example.com']), null,
-            'A ROW CLAIMING TO BE CONFIGURED THAT THESE SETTINGS DO NOT CONFIGURE ' +
-            'IS NOT RESTORED — the account a changed mode or a renamed SPN ' +
-            'removed does not come back with its old password');
+    t.equal(principals.find(['HTTP', 'retired-' + suffix + '.example.com']),
+            null,
+            'A ROW CLAIMING TO BE CONFIGURED THAT THESE SETTINGS DO NOT ' +
+            'CONFIGURE IS NOT RESTORED — the account a changed mode or a ' +
+            'renamed SPN removed does not come back with its old password');
 
     // 4. An auto-created row: restored whole, and removable.
     const auto = {
@@ -154,7 +174,8 @@ function theRuleAtTheBoundary(t) {
     t.check(!!restoredAuto && restoredAuto.kvno === 7 &&
             restoredAuto.password === 'whatever-it-was-made-with' &&
             restoredAuto.pac.rid === 99887766,
-            'an AUTO-CREATED row is restored whole — it exists nowhere but the store');
+            'an AUTO-CREATED row is restored whole — it exists nowhere but ' +
+            'the store');
     t.check(!!restoredAuto && restoredAuto.keys instanceof Map,
             'and it is given a key cache on the way in');
     handle.remove('', autoKey);
@@ -165,7 +186,8 @@ function theRuleAtTheBoundary(t) {
     handle.restore('', personKey, {
       name: ['store-probe-person-' + suffix], type: 1, realm: 'EXAMPLE.COM',
       password: null, salt: 'EXAMPLE.COMperson', etypes: [18], kvno: 5,
-      autoCreated: false, directoryKeys: true, pac: { rid: 99887755 }, signedOutAt: null
+      autoCreated: false, directoryKeys: true, pac: { rid: 99887755 },
+      signedOutAt: null
     });
     const person = principals.all().filter(function (one) {
       return one.name.join('/') === 'store-probe-person-' + suffix;
@@ -176,8 +198,8 @@ function theRuleAtTheBoundary(t) {
     // 6. A configured key may not be removed by a stored removal.
     handle.remove('', key);
     t.check(principals.find(spn) === web,
-            'A STORED REMOVAL OF A CONFIGURED PRINCIPAL IS REFUSED — the account ' +
-            'exists because the settings build it');
+            'A STORED REMOVAL OF A CONFIGURED PRINCIPAL IS REFUSED — the ' +
+            'account exists because the settings build it');
 
     // 7. An auto-created row for a CONFIGURED key: the settings still win.
     const imposter = asStored(web);
@@ -186,8 +208,9 @@ function theRuleAtTheBoundary(t) {
     handle.restore('', key, imposter);
     t.check(principals.find(spn) === web && web.password === before.password &&
             web.autoCreated === before.autoCreated,
-            'a row calling itself auto-created does not get to replace a configured ' +
-            'account — which rows are configured is this process\'s to say');
+            'a row calling itself auto-created does not get to replace a ' +
+            'configured account — which rows are configured is this ' +
+            'process\'s to say');
 
     // 8. Not a record at all.
     handle.restore('', key, null);
@@ -196,15 +219,19 @@ function theRuleAtTheBoundary(t) {
     // 9. A reconciler that throws applies nothing (common/realms.js's catch).
     const hostile = {};
     Object.defineProperty(hostile, 'name', {
-      enumerable: true, get: function () { throw new Error('unreadable'); }
+      enumerable: true, get: function () {
+        log.debug("Entering get().");
+        log.debug("Leaving get().");
+        throw new Error('unreadable');
+      }
     });
     const hostileKey = 'store-probe-hostile-' + suffix + '@EXAMPLE.COM';
     handle.restore('', hostileKey, hostile);
     t.equal(principals.all().filter(function (one) {
       return one === hostile;
     }).length, 0,
-    'A ROW THE RECONCILER CANNOT EVALUATE IS NOT APPLIED — fail closed, because ' +
-    'the rule exists for rows that must not be believed');
+    'A ROW THE RECONCILER CANNOT EVALUATE IS NOT APPLIED — fail closed, ' +
+    'because the rule exists for rows that must not be believed');
   } finally {
     web.signedOutAt = wasSignedOut;
     // Put back through the accessor's unguarded twin: remove() on keys this
@@ -215,6 +242,7 @@ function theRuleAtTheBoundary(t) {
   t.check(principals.all().every(function (one) {
     return one.name.join('/').indexOf('store-probe-') === -1;
   }), 'and everything the section added is gone again');
+  log.debug("Leaving theRuleAtTheBoundary().");
 }
 
 // ---------------------------------------------------------------------------
@@ -224,6 +252,7 @@ function theRuleAtTheBoundary(t) {
 // about what was LOGGED.
 // ---------------------------------------------------------------------------
 function inAChild(env, script) {
+  log.debug("Entering inAChild().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'krb5-store-'));
   const file = path.join(dir, 'child.js');
   const out = path.join(dir, 'report.json');
@@ -244,6 +273,7 @@ function inAChild(env, script) {
   try {
     report = JSON.parse(fs.readFileSync(out, 'utf8'));
   } catch (e) {
+    log.debug("Caught in inAChild(): " + ((e && e.message) || e));
     // No report: the child failed before writing one, which the caller reports
     // through `status` and `stderr`.
     report = null;
@@ -251,9 +281,12 @@ function inAChild(env, script) {
   try {
     fs.rmSync(dir, { recursive: true, force: true });
   } catch (e) {
+    log.debug("Caught in inAChild(): " + ((e && e.message) || e));
     // A temporary directory left behind is not a failed assertion.
-    process.stderr.write('kerberos_principal_store: could not remove ' + dir + '\n');
+    process.stderr.write('kerberos_principal_store: could not remove ' + dir +
+                         '\n');
   }
+  log.debug("Leaving inAChild().");
   return { status: result.status, stdout: result.stdout || '',
            stderr: result.stderr || '', report: report };
 }
@@ -383,7 +416,9 @@ function view(record) {
 `;
 
 function theDoorsInProductMode(t) {
-  t.log.info('=== B. minted.restore() and minted.applyChange(), in product mode ===');
+  log.debug("Entering theDoorsInProductMode().");
+  t.log.info('=== B. minted.restore() and minted.applyChange(), in product ' +
+             'mode ===');
   const run = inAChild({
     STS_MODE: 'product',
     STS_KEYS_SOURCE: 'persisted',
@@ -396,50 +431,60 @@ function theDoorsInProductMode(t) {
   t.check(r !== null, 'the product-mode child ran to the end',
           'exit ' + run.status + ': ' + run.stderr.slice(0, 600));
   if (!r) {
+    log.debug("Leaving theDoorsInProductMode().");
     return;
   }
   t.check(r.enabled === true && r.mode === 'product',
-          'minted persistence is on in that child, so both doors are the real ones');
+          'minted persistence is on in that child, so both doors are the ' +
+          'real ones');
   const now = r.configuredBefore.svc;
   const svc = r.afterRestore.svc;
-  t.check(r.afterRestore.svcSame, 'the restore kept the configured service record');
+  t.check(r.afterRestore.svcSame, 'the restore kept the configured service ' +
+                                  'record');
   t.check(!!svc && svc.password === 'svc-now-configured' &&
           svc.salt === 'EXAMPLE.COMsvc-now' && svc.kvno === now.kvno &&
           JSON.stringify(svc.etypes) === JSON.stringify(now.etypes) &&
           svc.description === now.description,
-          'A RESTART DOES NOT UNDO A CHANGED krb5.servicePassword OR krb5.serviceSalt: ' +
-          'the password, salt, kvno, etypes and description are the settings\'',
+          'A RESTART DOES NOT UNDO A CHANGED krb5.servicePassword OR ' +
+          'krb5.serviceSalt: the password, salt, kvno, etypes and ' +
+          'description are the settings\'',
           JSON.stringify(svc));
   t.equal(svc && svc.signedOutAt, '2026-01-02T03:04:05.000Z',
           'while the sign-out the stored row carried survives the restart');
-  t.equal(r.afterRestore.krbtgt && r.afterRestore.krbtgt.password, 'krbtgt-now-configured',
+  t.equal(r.afterRestore.krbtgt && r.afterRestore.krbtgt.password,
+          'krbtgt-now-configured',
           'and the krbtgt key is the configured one, not the one in the store');
   t.equal(r.afterRestore.alice, null,
-          'A DEVELOPMENT FIXTURE LEFT IN THE STORE IS NOT RESTORED INTO PRODUCT MODE — ' +
-          'alice with the published password does not come back');
+          'A DEVELOPMENT FIXTURE LEFT IN THE STORE IS NOT RESTORED INTO ' +
+          'PRODUCT MODE — alice with the published password does not come ' +
+          'back');
   t.check(!!r.afterRestore.dana && r.afterRestore.dana.kvno === 4 &&
           r.afterRestore.dana.signedOutAt === '2026-03-04T05:06:07.000Z',
           'a directory person is restored whole, sign-out included');
   t.check(!!r.afterRestore.erin && r.afterRestore.erin.rid === 777001,
-          'a restored person whose RID another holds is still restored — nothing ' +
-          'is renumbered');
+          'a restored person whose RID another holds is still restored — ' +
+          'nothing is renumbered');
   t.equal(r.afterReplicatedClear && r.afterReplicatedClear.signedOutAt, null,
           'ANOTHER PROCESS\'S clearSignOut() REACHES A CONFIGURED ACCOUNT');
-  t.equal(r.afterReplicatedClear && r.afterReplicatedClear.password, 'svc-now-configured',
+  t.equal(r.afterReplicatedClear && r.afterReplicatedClear.password,
+          'svc-now-configured',
           'without bringing that process\'s password with it');
   t.equal(r.afterReplicatedSignOut && r.afterReplicatedSignOut.signedOutAt,
           '2026-05-06T07:08:09.000Z',
           'and another process\'s signOut() reaches it too');
   t.check(!!r.krbtgtAfterRemoval,
-          'a replicated removal of krbtgt is refused, so this KDC still issues');
+          'a replicated removal of krbtgt is refused, so this KDC still ' +
+          'issues');
   t.equal(r.danaAfterRemoval, null,
           'while a replicated removal of a runtime-made principal is applied');
 
   t.check(run.stdout.indexOf('STS-KRB-0111') !== -1 &&
           /differs from what this process's settings build, in [^.]*password/
             .test(run.stdout),
-          'THE DRIFT IS LOGGED as STS-KRB-0111, naming the fields that differed');
-  t.check(run.stdout.indexOf('SECRET-VALUE') === -1 && run.stderr.indexOf('SECRET-VALUE') === -1,
+          'THE DRIFT IS LOGGED as STS-KRB-0111, naming the fields that ' +
+          'differed');
+  t.check(run.stdout.indexOf('SECRET-VALUE') === -1 &&
+          run.stderr.indexOf('SECRET-VALUE') === -1,
           'and naming them only — no stored password appears in any log line');
   t.check(run.stdout.indexOf('STS-KRB-0112') !== -1 &&
           run.stdout.indexOf('alice@') !== -1,
@@ -447,17 +492,22 @@ function theDoorsInProductMode(t) {
   t.check(run.stdout.indexOf('STS-KRB-0113') !== -1,
           'the refused removal is logged as STS-KRB-0113');
   t.check(run.stdout.indexOf('STS-KRB-0114') !== -1,
-          'and the two restored people sharing one RID are logged as STS-KRB-0114');
+          'and the two restored people sharing one RID are logged as ' +
+          'STS-KRB-0114');
+  log.debug("Leaving theDoorsInProductMode().");
 }
 
 // ---------------------------------------------------------------------------
 // C. THE RID IS THE NAME'S.
 // ---------------------------------------------------------------------------
 function theRidIsTheNames(t) {
+  log.debug("Entering theRidIsTheNames().");
   t.log.info('=== C. an on-demand RID is derived from the name ===');
   const suffix = String(process.pid) + Math.random().toString(36).slice(2, 6);
   const names = ['rid-a-' + suffix, 'rid-b-' + suffix, 'Rid-A-' + suffix];
-  const here = names.map(function (name) { return principals.autoRidFor([name]); });
+  const here = names.map(function (name) {
+    return principals.autoRidFor([name]);
+  });
   t.check(here.every(function (rid) {
     return Number.isInteger(rid) && rid >= principals.AUTO_RID_BASE &&
            rid < principals.AUTO_RID_LIMIT;
@@ -466,7 +516,9 @@ function theRidIsTheNames(t) {
           'the range ends at Active Directory\'s RID pool size');
   t.check(principals.AUTO_RID_BASE > 2104,
           'and starts above every configured RID, so none can be produced');
-  t.equal(JSON.stringify(names.map(function (name) { return principals.autoRidFor([name]); })),
+  t.equal(JSON.stringify(names.map(function (name) {
+    return principals.autoRidFor([name]);
+  })),
           JSON.stringify(here), 'asking twice gives the same answers');
   t.check(here[0] !== here[2],
           'names are case-sensitive here, so Alice and alice are two RIDs');
@@ -481,21 +533,22 @@ function theRidIsTheNames(t) {
     process.exit(0);
   `);
   t.equal(JSON.stringify(child.report), JSON.stringify(here),
-          'A SECOND PROCESS COMPUTES THE SAME RIDS FOR THE SAME NAMES, with no ' +
-          'coordination — the concurrent creation that collided before',
+          'A SECOND PROCESS COMPUTES THE SAME RIDS FOR THE SAME NAMES, with ' +
+          'no coordination — the concurrent creation that collided before',
           'exit ' + child.status + ': ' + child.stderr.slice(0, 300));
 
   const created = principals.findOrCreateUser([names[0]]);
   t.equal(created && created.pac.rid, here[0],
           'the account created on demand is given exactly that RID');
   t.equal(principals.autoRidFor([names[0]]), here[0],
-          'and an account holding its own slot does not push its own name off it — ' +
-          'a second process asking about a name the first has already replicated ' +
-          'still gets the same answer');
+          'and an account holding its own slot does not push its own name ' +
+          'off it — a second process asking about a name the first has ' +
+          'already replicated still gets the same answer');
   created.pac.rid = 7777;
   try {
     t.equal(principals.findOrCreateUser([names[0]]).pac.rid, 7777,
-            'AN EXISTING ACCOUNT KEEPS WHATEVER RID IT HAS — nothing renumbers');
+            'AN EXISTING ACCOUNT KEEPS WHATEVER RID IT HAS — nothing ' +
+            'renumbers');
   } finally {
     created.pac.rid = here[0];
   }
@@ -507,24 +560,29 @@ function theRidIsTheNames(t) {
   const slot = principals.autoRidFor([third]);
   holder.pac.rid = slot;
   try {
-    const next = slot + 1 === principals.AUTO_RID_LIMIT ? principals.AUTO_RID_BASE : slot + 1;
+    const next = slot + 1 === principals.AUTO_RID_LIMIT ?
+                 principals.AUTO_RID_BASE : slot + 1;
     t.equal(principals.autoRidFor([third]), next,
-            'A SLOT A DIFFERENT PRINCIPAL HOLDS IS PROBED PAST, to the next one');
+            'A SLOT A DIFFERENT PRINCIPAL HOLDS IS PROBED PAST, to the next ' +
+            'one');
     const made = principals.findOrCreateUser([third]);
     t.equal(made && made.pac.rid, next, 'and that is the RID the account gets');
     t.check(made.pac.rid !== holder.pac.rid, 'so the two do not share a SID');
   } finally {
     holder.pac.rid = wasRid;
   }
+  log.debug("Leaving theRidIsTheNames().");
 }
 
 module.exports = {
   name: 'kerberos_principal_store',
-  describe: 'a restored principal cannot override the settings, and a runtime ' +
-            'RID is the name\'s own',
+  describe: 'a restored principal cannot override the settings, and a ' +
+            'runtime RID is the name\'s own',
   run: function (t) {
+    log.debug("Entering run().");
     theRuleAtTheBoundary(t);
     theDoorsInProductMode(t);
     theRidIsTheNames(t);
+    log.debug("Leaving run().");
   }
 };

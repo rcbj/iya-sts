@@ -53,16 +53,22 @@ const config = require('./config');
 
 // The module's own logger, made the way common/crypto.js makes its own — NOT
 // taken from helpers.js, which requires crypto.js, which requires this file.
+let logLevelProblem = null;
 const log = bunyan.createLogger({
   name: 'pq_jose',
   level: (function () {
     try {
       return config.value('global.logLevel') || 'info';
     } catch (e) {
+      logLevelProblem = e;
       return 'info';
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug('No log level could be read, so info: ' +
+            logLevelProblem.message);
+}
 
 // ---------------------------------------------------------------------------
 // The traditional halves. `pubLen` is the length of the public key AS THE

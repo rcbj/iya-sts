@@ -69,6 +69,12 @@ const helpers = require('../common/helpers');
 const userGraph = require('../common/user_graph');
 const map = require('../admin-ui/delegation_map');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'user_graph_permissions',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The two clients this file mints tokens as. Names no other test and no seed
 // uses, because the identity register is shared by every file in this run and
 // an assertion about "the line into that resource" has to be about a person
@@ -93,10 +99,12 @@ const REFRESHER = 'ugp-refresher';
 // entry rather than the registry's.
 // ---------------------------------------------------------------------------
 function entry(identifier, attributes) {
+  log.debug("Entering entry().");
   const attrs = { appIdentifier: [identifier], cn: [identifier] };
   Object.keys(attributes || {}).forEach(function (name) {
     attrs[name] = attributes[name];
   });
+  log.debug("Leaving entry().");
   // `operational` is a real member of what the directory hands back — the
   // attributes an entry has because it is an entry — and `view()` reads it. An
   // empty array is what such an entry carries here, not the absence of one.
@@ -148,7 +156,9 @@ const REGISTRY = [
 // person's picture to reach it would make a failure here indistinguishable
 // from a failure in the fold.
 function reachEdge(permissions, options) {
+  log.debug("Entering reachEdge().");
   const opts = options || {};
+  log.debug("Leaving reachEdge().");
   return Object.assign({
     id: 'addressed | password | webapp1 > api', from: 'webapp1', to: 'api',
     fromRole: 'holder', toRole: 'target', relation: 'reaches',
@@ -164,6 +174,8 @@ function reachEdge(permissions, options) {
 }
 
 function graphOf(edges) {
+  log.debug("Entering graphOf().");
+  log.debug("Leaving graphOf().");
   return {
     realm: { id: 'default', name: 'Default', isDefault: true },
     issuer: 'urn:test',
@@ -182,12 +194,17 @@ function graphOf(edges) {
 // The words on the lines, with the SVG's escaping undone, so an assertion can
 // look for a label the way a reader sees it.
 function labels(svg) {
+  log.debug("Entering labels().");
+  log.debug("Leaving labels().");
   return (svg.match(/<text[^>]*>[^<]*<\/text>/g) || []).map(function (one) {
-    return one.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&#39;/g, "'");
+    return one.replace(/<[^>]*>/g, '')
+              .replace(/&amp;/g, '&')
+              .replace(/&#39;/g, "'");
   });
 }
 
 function run(t) {
+  log.debug("Entering run().");
   // WHAT WAS THERE, rather than `null`. It was `null` until 2026-09-04, which
   // is right only in a process where `ldap/ldap_server.js` was never required
   // — and whether that is true depends on which test file happened to require
@@ -196,7 +213,11 @@ function run(t) {
   // registry with no store.
   const before = applications.directoryInstalled();
   applications.setDirectory({
-    allApplications: function () { return REGISTRY; }
+    allApplications: function () {
+      log.debug("Entering allApplications().");
+      log.debug("Leaving allApplications().");
+      return REGISTRY;
+    }
   });
 
   // -----------------------------------------------------------------------
@@ -229,8 +250,8 @@ function run(t) {
   t.check(userGraph.permissionsAddressedTo('openid read write',
             'https://abcapp2.example1.com/').indexOf('openid') < 0,
           'AND `openid` IS NOT ONE OF THEM. A scope claim carries the ' +
-          'protocol\'s own words and anything else a client cared to send, so ' +
-          'a line drawn from the scope claim alone would label a resource ' +
+          'protocol\'s own words and anything else a client cared to send, ' +
+          'so a line drawn from the scope claim alone would label a resource ' +
           'with words that have nothing to do with it');
 
   // -----------------------------------------------------------------------
@@ -244,7 +265,8 @@ function run(t) {
           'THE ANSWER IS NONE, and it is an answer rather than a failure — ' +
           'the client named the resource and asked for none of its ' +
           'permissions, which the picture draws as `default permissions`');
-  t.equal(JSON.stringify(userGraph.permissionsAddressedTo('openid read', 'abcapp4')),
+  t.equal(JSON.stringify(userGraph.permissionsAddressedTo('openid read',
+                                                          'abcapp4')),
           JSON.stringify(['read']),
           'AND A BARE NAME THAT IS ONE OF THAT RESOURCE\'S PERMISSIONS IS ' +
           'STILL NAMED. The question is asked of the TOKEN and not of the ' +
@@ -329,12 +351,14 @@ function run(t) {
           'the tooltip carries them in full, because the label is capped and ' +
           'a resource exposing six of them would be cut there');
 
-  const none = map.render(graphOf([reachEdge([])]), { id: 'perm', label: 'reached' });
+  const none = map.render(graphOf([reachEdge([])]),
+                          { id: 'perm', label: 'reached' });
   t.check(labels(none.svg).indexOf('default permissions') >= 0,
-          'AN EMPTY LIST IS DRAWN AS `default permissions` AND NOT AS A BLANK ' +
-          'LINE. It is what the client_id spelling produces, so it is the ' +
-          'commonest state there is — and a blank would make it ' +
-          'indistinguishable from a line the renderer has not been taught about',
+          'AN EMPTY LIST IS DRAWN AS `default permissions` AND NOT AS A ' +
+          'BLANK LINE. It is what the client_id spelling produces, so it is ' +
+          'the commonest state there is — and a blank would make it ' +
+          'indistinguishable from a line the renderer has not been taught ' +
+          'about',
           JSON.stringify(labels(none.svg)));
 
   // -----------------------------------------------------------------------
@@ -344,12 +368,13 @@ function run(t) {
   // which has no scope claim anywhere behind it. The array's PRESENCE is what
   // tells the two apart, and an act line that said `default permissions` would
   // be the picture asserting something about a Kerberos ticket.
-  const act = map.render(graphOf([reachEdge(null)]), { id: 'perm', label: 'acts' });
+  const act = map.render(graphOf([reachEdge(null)]),
+                         { id: 'perm', label: 'acts' });
   t.check(labels(act.svg).indexOf('default permissions') < 0,
           'IT IS NOT LABELLED `default permissions`, because it is not a ' +
           'token: an act carries no scope claim, and saying anything here ' +
-          'would be this renderer inventing a fact about a mechanism that has ' +
-          'none',
+          'would be this renderer inventing a fact about a mechanism that ' +
+          'has none',
           JSON.stringify(labels(act.svg)));
   t.check(act.svg.indexOf('Carries the delegated permission') < 0 &&
           act.svg.indexOf('DEFAULT PERMISSIONS') < 0,
@@ -412,10 +437,10 @@ function run(t) {
   t.equal(JSON.stringify(byClientId && byClientId.permissions),
           JSON.stringify([]),
           'AND THE LINE INTO THE ONE NAMED BY ITS CLIENT_ID CARRIES AN EMPTY ' +
-          'LIST RATHER THAN NO MEMBER AT ALL. The member is what the renderer ' +
-          'tests to tell a token line from an act line, so an absent one here ' +
-          'would silently draw this line as though it came out of the ' +
-          'delegation register');
+          'LIST RATHER THAN NO MEMBER AT ALL. The member is what the ' +
+          'renderer tests to tell a token line from an act line, so an ' +
+          'absent one here would silently draw this line as though it came ' +
+          'out of the delegation register');
   t.check(byClientId && byClientId.scopes.indexOf('openid') >= 0,
           'the scope claim rides along for the tooltip, so a reader asking ' +
           'why a line says `default permissions` can see what the token did ' +
@@ -468,7 +493,8 @@ function run(t) {
     typ: 'Bearer', jti: 'ugp-token-5', sub: REFRESHER, iss: 'urn:test',
     client_id: REFRESHER, aud: 'https://abcapp2.example1.com/', scope: 'write'
   }, { grant: 'authorization_code' });
-  const refreshed = userGraph.graphFor(stats.identityKeyOf(REFRESHER)).graph.edges
+  const refreshed = userGraph.graphFor(stats.identityKeyOf(
+      REFRESHER)).graph.edges
     .filter(function (one) { return one.relation === 'reaches'; });
   t.equal(refreshed.length, 1,
           'two credentials out of one grant to one resource are ONE line — ' +
@@ -486,6 +512,7 @@ function run(t) {
   // through it — a fake left installed would answer every later question about
   // the registry with these four entries.
   applications.setDirectory(before);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

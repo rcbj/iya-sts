@@ -398,7 +398,27 @@ Four things about a relying-party session:
   one ends the sessions derived from it. `relyingPartySessionOf()` also checks
   the parent on every read, because a cascade reaches only the store it walks
   and "the person signed out" is exactly the case that matters.
-* **IT IS NOT EXTENDED BY USE** and expires when its parent would.
+* **IT IS NOT EXTENDED BY USE — BUT SINCE 2026-09-12 ONE HOLDING A REFRESH
+  TOKEN IS RENEWED, AND THAT IS A DIFFERENT THING.** This line read *expires
+  when its parent would*, and that is what sent an operator back through the
+  sign-in screen an hour after signing in: the console session died with its
+  sign-on session although it held a refresh token good for a day. Now
+  `startRelyingPartySession()` keeps the tokens on the session (`rpTokens`) and,
+  where there is a refresh token, sets `expires` to the end of the RENEWAL
+  WINDOW — the refresh token's lifetime from the sign-in — rather than to the
+  parent's. `common/oidc_rp.js`'s `renewIfDue()` redeems the refresh token when
+  the ID Token and access token run out and `renewRelyingPartySession()` writes
+  the new ones onto THE SAME RECORD: same id, same cookie, same `authTime`, no
+  `session.start`, no authentication, no CAEP event — one `session.renew` audit
+  row. A renewal never extends the window. A session with no refresh token is
+  exactly what this line used to describe.
+* **A PARENT THAT RAN OUT IS NOT A PARENT THAT SIGNED OUT**, and
+  `relyingPartySessionOf()` tells them apart by the clock rather than by a flag:
+  `derivedFromExpires` is when the parent would have expired, so a renewable
+  session whose parent is gone AFTER that instant carries on, and one whose
+  parent vanished BEFORE it — a cascade that did not reach — is ended as an
+  orphan exactly as before. A sign-out still ends it through the cascade, which
+  runs while the parent exists. `tests/oidc_rp_renewal.js` holds both halves.
 * **ENDING ONE DOES NOT END THE PARENT.** That is the direction a real relying
   party has: sign out of the application and the identity provider still knows
   you, so the next visit is silent. `/logout` is what ends everything for an

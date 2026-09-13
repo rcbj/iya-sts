@@ -125,17 +125,23 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_roles_builtin",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -190,13 +196,24 @@ const CLIENT_SECRET = "builtin-secret-not-a-real-one";
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
-function realmUrl(path) { return base + "/realm/" + REALM + path; }
-function api(path) { return realmUrl("/admin-api" + path); }
+function realmUrl(path) {
+  log.debug("Entering realmUrl().");
+  log.debug("Leaving realmUrl().");
+  return base + "/realm/" + REALM + path;
+}
+
+function api(path) {
+  log.debug("Entering api().");
+  log.debug("Leaving api().");
+  return realmUrl("/admin-api" + path);
+}
 
 // ---------------------------------------------------------------------------
 // THE VERBS. Copied in shape from sts_roles.js, which is the file this one
@@ -210,6 +227,7 @@ async function fetchJson(url, options) {
   try {
     body = JSON.parse(text);
   } catch (e) {
+    log.debug("Caught in fetchJson(): " + ((e && e.message) || e));
     // Not JSON — an HTML page or a redirect with no body. The caller reports
     // the status and the raw text, which says more than a parse error would.
     body = null;
@@ -219,33 +237,45 @@ async function fetchJson(url, options) {
            location: r.headers.get("location") || "" };
 }
 
-function get(url) { return fetchJson(url); }
+function get(url) {
+  log.debug("Entering get().");
+  log.debug("Leaving get().");
+  return fetchJson(url);
+}
 
 function postJson(url, payload) {
+  log.debug("Entering postJson().");
+  log.debug("Leaving postJson().");
   return fetchJson(url, { method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(payload || {}) });
 }
 
 async function act(resource, action, payload, what) {
+  log.debug("Entering act().");
   const r = await postJson(api("/" + resource + "/" + action), payload || {});
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "POST /admin-api/" + resource + "/" + action + " should have " + what +
     "; it answered " + r.status + " " +
     JSON.stringify((r.body && (r.body.errors || r.body.why)) ||
                    r.body || r.text).slice(0, 400));
+  log.debug("Leaving act().");
   return r.body;
 }
 
 async function setSetting(key, value) {
+  log.debug("Entering setSetting().");
   const r = await postJson(api("/config/set"), { key: key, value: value });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "setting " + key + " in the realm should have worked; it answered " +
     r.status + " " + String(r.text).slice(0, 300));
+  log.debug("Leaving setSetting().");
 }
 
 function claimsOf(jwt) {
+  log.debug("Entering claimsOf().");
   const part = String(jwt).split(".")[1] || "";
+  log.debug("Leaving claimsOf().");
   return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
 }
 
@@ -255,14 +285,21 @@ function claimsOf(jwt) {
 // about a refusal here is about WHICH redirect came back, and a fetch that
 // followed them would answer the question by hiding it.
 // ---------------------------------------------------------------------------
-function form(o) { return new URLSearchParams(o).toString(); }
+function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
+  return new URLSearchParams(o).toString();
+}
 
 function absolute(location) {
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
 }
 
 function browser() {
+  log.debug("Entering browser().");
   const self = {
     cookie: "",
     async go(method, path, body) {
@@ -283,12 +320,15 @@ function browser() {
                text: text };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
 const REDIRECT_URI = "https://example.test/builtin-callback";
 
 function authorizeUrl(clientId, state) {
+  log.debug("Entering authorizeUrl().");
+  log.debug("Leaving authorizeUrl().");
   return "/realm/" + REALM + "/oauth2/authorize?" + form({
     response_type: "code", client_id: clientId, redirect_uri: REDIRECT_URI,
     scope: "openid", state: state || ("builtin-" + REALM)
@@ -299,7 +339,9 @@ function authorizeUrl(clientId, state) {
 // guessed, because it is minted per request and is the only thing tying the
 // POST back to the flow that started it.
 function authnIdIn(html) {
+  log.debug("Entering authnIdIn().");
   const m = /name="authn_id"\s+value="([^"]+)"/.exec(String(html));
+  log.debug("Leaving authnIdIn().");
   return m ? m[1] : "";
 }
 
@@ -366,6 +408,8 @@ async function sessionVia(how, state) {
 // refuse them a second time, which is a loop. So a refusal here is a 200 that
 // is still the form, and the assertion has to be about the sentence.
 function refusedAtTheScreen(posted, requiredRole) {
+  log.debug("Entering refusedAtTheScreen().");
+  log.debug("Leaving refusedAtTheScreen().");
   return posted.status === 200 &&
          /name="authn_id"/.test(String(posted.text)) &&
          String(posted.text).indexOf(requiredRole) >= 0;
@@ -376,17 +420,22 @@ function refusedAtTheScreen(posted, requiredRole) {
 // the refusal this feature makes. Anything else — a sign-in screen, a 500 — is
 // neither, and saying which is what makes a failure readable.
 function verdictOf(r) {
+  log.debug("Entering verdictOf().");
   const loc = String(r.location || "");
   if (/[?&]code=/.test(loc)) {
-    return { permitted: true, code: /[?&]code=([^&]+)/.exec(loc)[1], where: loc };
+    log.debug("Leaving verdictOf().");
+    return { permitted: true, code: /[?&]code=([^&]+)/.exec(loc)[1],
+             where: loc };
   }
   if (/[?&]error=/.test(loc)) {
     const code = /[?&]error=([^&]+)/.exec(loc)[1];
     const why = /[?&]error_description=([^&]*)/.exec(loc);
+    log.debug("Leaving verdictOf().");
     return { permitted: false, error: decodeURIComponent(code),
              why: why ? decodeURIComponent(why[1].replace(/\+/g, " ")) : "",
              where: loc };
   }
+  log.debug("Leaving verdictOf().");
   return { permitted: false, error: "", why: "", where: loc ||
            ("status " + r.status) };
 }
@@ -397,6 +446,8 @@ function verdictOf(r) {
 // can still be redeemed by a token endpoint that lost track of who the session
 // belonged to. Only redeeming it covers both.
 function redeem(code, clientId) {
+  log.debug("Entering redeem().");
+  log.debug("Leaving redeem().");
   return fetchJson(realmUrl("/oauth2/token"), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -409,11 +460,13 @@ function redeem(code, clientId) {
 // which the CLIENT is the party the gate is asked about, which is what makes
 // the two application roles reachable at all.
 function clientCredentials(clientId, secret, resourceApp) {
+  log.debug("Entering clientCredentials().");
   const headers = { "Content-Type": "application/x-www-form-urlencoded" };
   if (secret) {
     headers.authorization = "Basic " +
       Buffer.from(clientId + ":" + secret).toString("base64");
   }
+  log.debug("Leaving clientCredentials().");
   // `client_id` in the body EVEN WHEN the secret is in the header, because
   // this service reads the identifier from the body and the credential from
   // wherever it arrived. A request that named the client only in the header
@@ -429,13 +482,16 @@ function clientCredentials(clientId, secret, resourceApp) {
 // SETUP AND TEARDOWN.
 // ---------------------------------------------------------------------------
 async function createTheRealm() {
+  log.debug("Entering createTheRealm().");
   log.info("=== A throwaway trust realm ===");
   const r = await postJson(base + "/admin-api/realms/create",
-                           { id: REALM, name: "the built-in roles under test" });
+                           { id: REALM,
+                             name: "the built-in roles under test" });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "creating the realm " + REALM + " should have worked; it answered " +
     r.status + " " + String(r.text).slice(0, 300));
   log.info("Created the throwaway realm " + REALM + ".");
+  log.debug("Leaving createTheRealm().");
 }
 
 // THE REALM IS LEFT STANDING, DELIBERATELY (2026-09-06). It used to be removed
@@ -447,16 +503,19 @@ async function createTheRealm() {
 // carries `names.runStamp()` and every write is inside the realm, so leaving it
 // meets neither a later run of this job nor anything else in the suite.
 async function theRealmIsLeftBehind() {
+  log.debug("Entering theRealmIsLeftBehind().");
   log.info("The throwaway realm " + REALM + " is LEFT IN PLACE on purpose — " +
            "it holds the six applications, the two clients and the settings " +
            "this job built, and it is where somebody debugging this run " +
            "should look. Read it at " + base + "/realm/" + REALM + "/admin, " +
            "or remove it by hand when you are done with it.");
+  log.debug("Leaving theRealmIsLeftBehind().");
 }
 
 // THE WORLD. Six applications, two clients, and the one setting this feature
 // needs — all of it in the realm, none of it anywhere else.
 async function buildTheWorld() {
+  log.debug("Entering buildTheWorld().");
   log.info("=== Building the world ===");
 
   // THE CONSENT SCREEN IS TURNED OFF, and that needs saying rather than doing
@@ -513,7 +572,8 @@ async function buildTheWorld() {
   // third state and one this file does not want to be accidentally in.
   await act("applications", "create",
             { identifier: CONFIDENTIAL, kind: "oauth2-client",
-              name: "a confidential client" }, "created the confidential client");
+              name: "a confidential client" },
+            "created the confidential client");
   await act("applications", "set",
             { application: CONFIDENTIAL, attribute: "oauthClientSecret",
               value: CLIENT_SECRET }, "gave it a secret");
@@ -535,12 +595,14 @@ async function buildTheWorld() {
               value: "none" }, "made it public");
 
   log.info("Six applications, two clients, two settings.");
+  log.debug("Leaving buildTheWorld().");
 }
 
 // ---------------------------------------------------------------------------
 // 1. EVERYBODY — TWO POSITIVES AND NO NEGATIVE, AND THE ABSENCE IS THE POINT.
 // ---------------------------------------------------------------------------
 async function everybody() {
+  log.debug("Entering everybody().");
   log.info("=== 1. EVERYBODY ===");
 
   const signedIn = await arriveAt(APP_EVERYBODY, "login", "e1");
@@ -592,16 +654,19 @@ async function everybody() {
       "which is why this section has no negative case: it refuses nobody. " +
       "It said: " + JSON.stringify(it.what).slice(0, 200));
   });
+  log.debug("Leaving everybody().");
 }
 
 // ---------------------------------------------------------------------------
 // 2. THE UNAUTHENTICATED SESSION ITSELF, before any role is asked about it.
 // ---------------------------------------------------------------------------
 async function theUnauthenticatedSession() {
+  log.debug("Entering theUnauthenticatedSession().");
   log.info("=== 2. The unauthenticated session ===");
 
   const declined = await arriveAt(APP_EVERYBODY, "anonymous", "u1");
-  check("declining returns to the caller rather than ending the flow", function () {
+  check("declining returns to the caller rather than ending the flow",
+        function () {
     assert.strictEqual(declined.posted.status, 303,
       "\"Continue without signing in\" should send the browser back to the " +
       "flow it interrupted; it answered " + declined.posted.status);
@@ -675,12 +740,14 @@ async function theUnauthenticatedSession() {
       byHand.location);
   });
   await setSetting("authn.unauthenticatedSessions", true);
+  log.debug("Leaving theUnauthenticatedSession().");
 }
 
 // ---------------------------------------------------------------------------
 // 3. ALL_AUTHENTICATED_USERS — positive and negative, AT BOTH DOORS.
 // ---------------------------------------------------------------------------
 async function allAuthenticatedUsers() {
+  log.debug("Entering allAuthenticatedUsers().");
   log.info("=== 3. ALL_AUTHENTICATED_USERS ===");
 
   // THE POSITIVE IS THE ONE THAT FOUND THE BUG. The sign-in gate asked with
@@ -718,7 +785,8 @@ async function allAuthenticatedUsers() {
   const declinedHere = await arriveAt(APP_AUTH_USERS, "anonymous", "a2");
   check("declining AT such an application is refused at the sign-in screen",
         function () {
-    assert.ok(refusedAtTheScreen(declinedHere.posted, "ALL_AUTHENTICATED_USERS"),
+    assert.ok(refusedAtTheScreen(declinedHere.posted,
+                                 "ALL_AUTHENTICATED_USERS"),
       "the SESSION door should refuse this before minting anything, and say " +
       "which role it wanted. It answered " + declinedHere.posted.status +
       " -> " + declinedHere.posted.location + " " +
@@ -757,12 +825,14 @@ async function allAuthenticatedUsers() {
       "and the roles the party actually holds, which is what makes it " +
       "actionable; it said " + JSON.stringify(no.why));
   });
+  log.debug("Leaving allAuthenticatedUsers().");
 }
 
 // ---------------------------------------------------------------------------
 // 4. ALL_UNAUTHENTICATED_USERS — positive and negative, the mirror of 3.
 // ---------------------------------------------------------------------------
 async function allUnauthenticatedUsers() {
+  log.debug("Entering allUnauthenticatedUsers().");
   log.info("=== 4. ALL_UNAUTHENTICATED_USERS ===");
 
   const declined = await arriveAt(APP_UNAUTH_USER, "anonymous", "n1");
@@ -771,7 +841,8 @@ async function allUnauthenticatedUsers() {
     assert.strictEqual(declined.posted.status, 303,
       "the party that declined to authenticate is who this role is about, so " +
       "the SESSION door must admit them; it answered " +
-      declined.posted.status + " " + String(declined.posted.text).slice(0, 300));
+      declined.posted.status + " " +
+      String(declined.posted.text).slice(0, 300));
   });
   const yes = verdictOf(await declined.browser.go("GET",
                           authorizeUrl(APP_UNAUTH_USER, "n1")));
@@ -794,7 +865,8 @@ async function allUnauthenticatedUsers() {
   // The same person section 3 admitted is refused here.
   const signedInHere = await arriveAt(APP_UNAUTH_USER, "login", "n2");
   check("somebody signing IN is refused at the screen", function () {
-    assert.ok(refusedAtTheScreen(signedInHere.posted, "ALL_UNAUTHENTICATED_USERS"),
+    assert.ok(refusedAtTheScreen(signedInHere.posted,
+                                 "ALL_UNAUTHENTICATED_USERS"),
       "a person who authenticates does not hold ALL_UNAUTHENTICATED_USERS, " +
       "and the SESSION door is where that is noticed. It answered " +
       signedInHere.posted.status + " " +
@@ -804,7 +876,8 @@ async function allUnauthenticatedUsers() {
   const carried = await sessionVia("login", "n3");
   const no = verdictOf(await carried.go("GET",
                          authorizeUrl(APP_UNAUTH_USER, "n3")));
-  check("and an authenticated session carried here is refused too", function () {
+  check("and an authenticated session carried here is refused too",
+        function () {
     assert.ok(!no.permitted,
       "the same person section 3 admitted must be refused by this " +
       "application; it issued " + no.where);
@@ -818,12 +891,14 @@ async function allUnauthenticatedUsers() {
       "here are the two that differ by one word — so a reader can see which " +
       "way round it went. It said " + JSON.stringify(no.why));
   });
+  log.debug("Leaving allUnauthenticatedUsers().");
 }
 
 // ---------------------------------------------------------------------------
 // 5. ALL_APPLICATIONS — two positives, and the negative that is a PERSON.
 // ---------------------------------------------------------------------------
 async function allApplications() {
+  log.debug("Entering allApplications().");
   log.info("=== 5. ALL_APPLICATIONS ===");
 
   // BOTH CLIENTS, because the role is about being an application at all and
@@ -883,6 +958,7 @@ async function allApplications() {
       "gate had lost track of the KIND of party it was asked about. It said " +
       JSON.stringify(held[1]));
   });
+  log.debug("Leaving allApplications().");
 }
 
 // ---------------------------------------------------------------------------
@@ -894,7 +970,9 @@ async function allApplications() {
 // fail both halves of this one.
 // ---------------------------------------------------------------------------
 async function theApplicationAuthenticationSplit() {
-  log.info("=== 6. ALL_AUTHENTICATED_APPLICATIONS / ALL_UNAUTHENTICATED_APPLICATIONS ===");
+  log.debug("Entering theApplicationAuthenticationSplit().");
+  log.info("=== 6. ALL_AUTHENTICATED_APPLICATIONS / " +
+           "ALL_UNAUTHENTICATED_APPLICATIONS ===");
 
   const mode = await get(realmUrl("/oauth2/rfc9700"));
   check("RFC 9700 mode is OFF, which is what makes this section worth having",
@@ -902,7 +980,8 @@ async function theApplicationAuthenticationSplit() {
     assert.ok(mode.body && mode.body.enabled === false,
       "this section asserts that client authentication is OBSERVED without " +
       "being ENFORCED, so the mode must be off for the assertion to mean " +
-      "that. /oauth2/rfc9700 said " + JSON.stringify(mode.body && mode.body.enabled));
+      "that. /oauth2/rfc9700 said " +
+      JSON.stringify(mode.body && mode.body.enabled));
   });
 
   // Each client now requires the role that is about ITS OWN nature.
@@ -996,7 +1075,8 @@ async function theApplicationAuthenticationSplit() {
             { application: CONFIDENTIAL, attribute: "appRequiredRole",
               value: "ALL_UNAUTHENTICATED_APPLICATIONS" },
             "required non-authentication of the confidential client");
-  const confidentialRefused = await clientCredentials(CONFIDENTIAL, CLIENT_SECRET);
+  const confidentialRefused = await clientCredentials(CONFIDENTIAL,
+                                                      CLIENT_SECRET);
   check("and an AUTHENTICATED client is refused by the unauthenticated role",
         function () {
     assert.ok(confidentialRefused.status >= 400,
@@ -1007,8 +1087,10 @@ async function theApplicationAuthenticationSplit() {
     assert.strictEqual(confidentialRefused.body &&
                        confidentialRefused.body.error, "access_denied",
       "it answered error=" +
-      JSON.stringify(confidentialRefused.body && confidentialRefused.body.error));
+      JSON.stringify(confidentialRefused.body &&
+                     confidentialRefused.body.error));
   });
+  log.debug("Leaving theApplicationAuthenticationSplit().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1016,6 +1098,7 @@ async function theApplicationAuthenticationSplit() {
 //    out — and the assertion that this feature is a MODE and not a rewrite.
 // ---------------------------------------------------------------------------
 async function turningItOff() {
+  log.debug("Entering turningItOff().");
   log.info("=== 7. roles.enforceIssuance off ===");
 
   // The confidential client is still narrowed to a role it does not hold from
@@ -1057,6 +1140,7 @@ async function turningItOff() {
       "the switch has to work both ways or the section above proved only " +
       "that something changed; it answered " + again.status);
   });
+  log.debug("Leaving turningItOff().");
 }
 
 // ---------------------------------------------------------------------------

@@ -50,17 +50,23 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_portal_signing_key",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -77,35 +83,47 @@ var OTHER = usernameFor("signkey-other");
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  [ok] " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
 // THIS FILE'S OWN JWS SIGNER. See the header.
 // ---------------------------------------------------------------------------
 function b64u(buf) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
   return Buffer.from(buf).toString("base64url");
 }
 
 function signJws(header, payload, privateKeyPem) {
+  log.debug("Entering signJws().");
   const head = b64u(Buffer.from(JSON.stringify(header), "utf8"));
   const body = b64u(Buffer.from(JSON.stringify(payload), "utf8"));
   const signing = head + "." + body;
-  const digest = { RS256: "sha256", RS384: "sha384", RS512: "sha512" }[header.alg];
+  const digest = { RS256: "sha256", RS384: "sha384",
+                   RS512: "sha512" }[header.alg];
   if (!digest) {
-    throw new Error("this file signs RS256/RS384/RS512; asked for " + header.alg);
+    throw new Error("this file signs RS256/RS384/RS512; asked for " +
+                    header.alg);
   }
+  log.debug("Leaving signJws().");
   return signing + "." +
     b64u(nodeCrypto.sign(digest, Buffer.from(signing, "ascii"), privateKeyPem));
 }
 
 function now() {
+  log.debug("Entering now().");
+  log.debug("Leaving now().");
   return Math.floor(Date.now() / 1000);
 }
 
 function jti() {
+  log.debug("Entering jti().");
+  log.debug("Leaving jti().");
   return nodeCrypto.randomUUID();
 }
 
@@ -115,31 +133,40 @@ function jti() {
 // redirects would answer the question by hiding it.
 // ---------------------------------------------------------------------------
 function formBody(o) {
+  log.debug("Entering formBody().");
+  log.debug("Leaving formBody().");
   return new URLSearchParams(o).toString();
 }
 
 function absolute(location) {
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
 }
 
 function browser(name) {
+  log.debug("Entering browser().");
   const self = {
     name: name,
     cookie: "",
     jar: {},
     cookieHeader: function () {
+      log.debug("Entering cookieHeader().");
+      log.debug("Leaving cookieHeader().");
       return Object.keys(self.jar).map(function (k) {
         return k + "=" + self.jar[k];
       }).join("; ");
     },
     async go(method, path, body) {
+      log.debug("Entering go().");
       const headers = {};
       if (self.cookie) headers.cookie = self.cookie;
       if (body !== undefined) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
-      const r = await fetch(absolute(path), { method: method, redirect: "manual",
+      const r = await fetch(absolute(path),
+                            { method: method, redirect: "manual",
                                               headers: headers, body: body });
       // KEYED BY NAME: a browser signed in to a hosted surface holds TWO
       // cookies — the sign-on session and the surface's own — and keeping only
@@ -156,14 +183,17 @@ function browser(name) {
         }
         self.cookie = self.cookieHeader();
       });
+      log.debug("Leaving go().");
       return { status: r.status, location: r.headers.get("location") || "",
                text: await r.text(), headers: r.headers };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
 async function apiPost(path, body) {
+  log.debug("Entering apiPost().");
   const r = await fetch(api + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -174,25 +204,31 @@ async function apiPost(path, body) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in apiPost(): " + ((e && e.message) || e));
     // An HTML error page from a door that answers JSON is worth quoting whole.
     parsed = raw;
   }
+  log.debug("Leaving apiPost().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 async function apiGet(path) {
+  log.debug("Entering apiGet().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in apiGet(): " + ((e && e.message) || e));
     parsed = raw;
   }
+  log.debug("Leaving apiGet().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 async function tokenRequest(fields) {
+  log.debug("Entering tokenRequest().");
   const r = await fetch(TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -202,18 +238,25 @@ async function tokenRequest(fields) {
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in tokenRequest(): " + ((e && e.message) || e));
     parsed = raw;
   }
+  log.debug("Leaving tokenRequest().");
   return { status: r.status, body: parsed, raw: raw };
 }
 
 function claimsOf(token) {
+  log.debug("Entering claimsOf().");
+  log.debug("Leaving claimsOf().");
   return JSON.parse(Buffer.from(String(token).split(".")[1], "base64url")
     .toString("utf8"));
 }
 
 function csrfOf(text) {
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
+  log.debug("Entering csrfOf().");
+  log.debug("Leaving csrfOf().");
+  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
+          [])[1] || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +270,8 @@ var PASSWORD = "portal-signing-key-Passw0rd!-" + String(Date.now()).slice(-6);
 var MAIL_DOMAIN = "portal-signing-key.test";
 
 function personAttributes(who) {
+  log.debug("Entering personAttributes().");
+  log.debug("Leaving personAttributes().");
   return { cn: "Signing Key Person " + who, givenName: "Signing", sn: who,
            displayName: "Signing Key Person " + who,
            mail: who + "@" + MAIL_DOMAIN };
@@ -237,13 +282,18 @@ function personAttributes(who) {
 // regex that matched any <pre> would read that one on the day the order
 // changed.
 function privateKeyOn(text) {
+  log.debug("Entering privateKeyOn().");
   const found = String(text).match(
     /(-----BEGIN (?:RSA |EC )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC )?PRIVATE KEY-----)/);
+  log.debug("Leaving privateKeyOn().");
   return found ? found[1] : "";
 }
 
 function kidOn(text) {
-  const found = String(text).match(/<th>Key<\/th><td><code>(person-[^<]+)<\/code>/);
+  log.debug("Entering kidOn().");
+  const found =
+      String(text).match(/<th>Key<\/th><td><code>(person-[^<]+)<\/code>/);
+  log.debug("Leaving kidOn().");
   return found ? found[1] : "";
 }
 
@@ -251,9 +301,11 @@ function kidOn(text) {
 // `sts_roles.js` records why — a gate that works and a handler that has fallen
 // over both produce a 400, and only the code tells them apart.
 function refused(r, code, what) {
+  log.debug("Entering refused().");
   assert.ok(r.status === 400 && r.body && r.body.error === code,
     what + " should be refused " + code + "; it answered " + r.status + " " +
     JSON.stringify(r.body).slice(0, 300));
+  log.debug("Leaving refused().");
   return String(r.body.error_description || "");
 }
 
@@ -284,7 +336,8 @@ async function signIn(door, who) {
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
     String(r.text).slice(0, 300));
-  r = await b.go("GET", r.location);   // the authorization endpoint, with a code
+  r = await b.go("GET",
+                 r.location);   // the authorization endpoint, with a code
   r = await b.go("GET", r.location);   // the callback, which mints the session
   assert.ok(b.cookie, "completing the flow should establish a session cookie.");
   log.debug("Leaving signIn().");
@@ -309,13 +362,15 @@ async function test() {
       credential: "password", password: PASSWORD });
   check("both people are created through the management API, with their " +
         "attributes and a password, and nothing invented", function () {
-    assert.strictEqual(made.status, 200, JSON.stringify(made.body).slice(0, 300));
+    assert.strictEqual(made.status, 200,
+                       JSON.stringify(made.body).slice(0, 300));
     assert.strictEqual(madeOther.status, 200,
       JSON.stringify(madeOther.body).slice(0, 300));
     assert.ok(made.body.passwordSet && madeOther.body.passwordSet,
       "a password was not set: " + JSON.stringify(made.body).slice(0, 300));
     assert.strictEqual(made.body.invented, false,
-      "the create invented attributes: " + JSON.stringify(made.body).slice(0, 300));
+      "the create invented attributes: " +
+      JSON.stringify(made.body).slice(0, 300));
   });
 
   // -------------------------------------------------------------------------
@@ -356,10 +411,10 @@ async function test() {
                                        csrf_token: csrfOf(empty.text) }));
   const pem = privateKeyOn(issued.text);
   const kid = kidOn(issued.text);
-  check("**the POST ANSWERS WITH A PAGE and the private key is on it.** A 303 " +
-        "has nowhere to put a credential, and a query string would write this " +
-        "key into a browser history entry and every log between here and the " +
-        "person", function () {
+  check("**the POST ANSWERS WITH A PAGE and the private key is on it.** A " +
+        "303 has nowhere to put a credential, and a query string would write " +
+        "this key into a browser history entry and every log between here " +
+        "and the person", function () {
           assert.strictEqual(issued.status, 200,
             "it answered " + issued.status + " -> " + issued.location + " " +
             String(issued.text).slice(0, 300));
@@ -429,8 +484,8 @@ async function test() {
   log.info("=== 4. what the page says afterwards ===");
   const after = await b.go("GET", "/portal/signing-key");
   check("**the private key is NOT on the page again** — the stored copy is " +
-        "sealed and nothing here opens it, so a person who closed the tab has " +
-        "to generate a new pair", function () {
+        "sealed and nothing here opens it, so a person who closed the tab " +
+        "has to generate a new pair", function () {
           assert.strictEqual(privateKeyOn(after.text), "",
             "a private key block is still on the page");
         });
@@ -470,9 +525,9 @@ async function test() {
             "it answered " + forged.status + " " +
             String(forged.text).slice(0, 200));
         });
-  check("and NOTHING was issued by the refusal: the key handle on the page is " +
-        "still the one from before, which is the half a status code cannot " +
-        "show", function () {
+  check("and NOTHING was issued by the refusal: the key handle on the page " +
+        "is still the one from before, which is the half a status code " +
+        "cannot show", function () {
           const still = kidOn(forged.text);
           assert.ok(!still || still === kid,
             "the refused post seems to have replaced the key: " + still +
@@ -506,8 +561,9 @@ async function test() {
         });
 
   const replacedKid = kidOn(smuggled.text);
-  check("generating again REPLACED the pair rather than adding one — a person " +
-        "holds one signing key, and two would mean a verifier trying both",
+  check("generating again REPLACED the pair rather than adding one — a " +
+        "person holds one signing key, and two would mean a verifier trying " +
+        "both",
         function () {
           assert.ok(replacedKid && replacedKid !== kid,
             "the key handle did not change: " + replacedKid);
@@ -516,8 +572,8 @@ async function test() {
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: kid },
       { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
         exp: now() + 120, jti: jti() }, pem) });
-  check("and the key it replaced stops working that moment, which is what the " +
-        "page warns before the button is pressed", function () {
+  check("and the key it replaced stops working that moment, which is what " +
+        "the page warns before the button is pressed", function () {
           refused(oldKey, "invalid_grant", "an assertion signed with the " +
                   "replaced key");
         });

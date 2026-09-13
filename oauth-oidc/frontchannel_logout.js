@@ -83,6 +83,8 @@ const applications = require('../common/applications');
 // which is what `runtime: true` on the setting claims — a `const` here is the
 // one thing /admin/config could not change.
 function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return !!config.value('oauth2.frontchannelLogout');
 }
 
@@ -116,7 +118,8 @@ function noteClient(session, clientId) {
       count: ((known && known.count) || 0) + 1
     };
   } catch (e) {
-    log.warn('front-channel logout: could not record the client on the session: ' + e.message);
+    log.warn('front-channel logout: could not record the client on the ' +
+             'session: ' + e.message);
   }
   log.debug("Leaving noteClient().");
 }
@@ -126,7 +129,9 @@ function noteClient(session, clientId) {
 // discard still gets the list — which is the whole reason `endSession()` and
 // `endSessionById()` RETURN the session rather than a boolean.
 function clientsOf(session) {
+  log.debug("Entering clientsOf().");
   const held = (session && session.oidcClients) || {};
+  log.debug("Leaving clientsOf().");
   return Object.keys(held).sort(function (a, b) {
     return (held[a].first || 0) - (held[b].first || 0);
   });
@@ -151,7 +156,8 @@ function notificationsFor(session, issuer) {
   const rows = clientsOf(session).map(function (clientId) {
     const client = applications.clientConfigOf(clientId);
     const uri = String((client && client.frontchannel_logout_uri) || '');
-    const wantsSession = !!(client && client.frontchannel_logout_session_required);
+    const wantsSession = !!(client &&
+                            client.frontchannel_logout_session_required);
     let url = '';
     if (uri) {
       // Section 2: iss and sid are added when the client required them, and
@@ -176,15 +182,18 @@ function notificationsFor(session, issuer) {
       // Stated here rather than worked out again by each renderer.
       why: uri ? ''
                 : (client && client.known
-                    ? 'this client has registered no frontchannel_logout_uri, so there is ' +
-                      'nowhere to tell it. Register one, or set ' +
-                      'oauthFrontchannelLogoutUri on its entry under ou=applications.'
-                    : 'this service has never been told anything about this client beyond ' +
-                      'its identifier, so it has no logout URI to be notified at.')
+                    ? 'this client has registered no ' +
+                      'frontchannel_logout_uri, so there is nowhere to tell ' +
+                      'it. Register one, or set oauthFrontchannelLogoutUri ' +
+                      'on its entry under ou=applications.'
+                    : 'this service has never been told anything about this ' +
+                      'client beyond its identifier, so it has no logout URI ' +
+                      'to be notified at.')
     };
   });
   log.debug("Leaving notificationsFor(). " + rows.length + " client(s), " +
-            rows.filter(function (r) { return !!r.url; }).length + " notifiable.");
+            rows.filter(function (r) { return !!r.url; }).length + " " +
+                "notifiable.");
   return rows;
 }
 
@@ -204,9 +213,11 @@ function frameOriginsOf(notifications) {
       // Not a URL this runtime will parse. Logged rather than swallowed: it is
       // almost always a value typed into the directory by hand, and it is worth
       // saying so once rather than leaving an iframe that never loads.
-      log.warn('front-channel logout: ' + row.clientId + '\'s frontchannel_logout_uri (' +
-               row.uri + ') is not a URL this runtime can parse, so it is left out of the ' +
-               'Content-Security-Policy and its iframe will not load: ' + e.message);
+      log.warn('front-channel logout: ' + row.clientId + '\'s ' +
+          'frontchannel_logout_uri (' +
+               row.uri + ') is not a URL this runtime can parse, so it is ' +
+               'left out of the Content-Security-Policy and its iframe will ' +
+               'not load: ' + e.message);
     }
   });
   const list = Object.keys(origins);
@@ -219,8 +230,13 @@ function frameOriginsOf(notifications) {
 // whatever this asks for — a caller cannot drop them, and this one must not
 // want to.
 function contentSecurityPolicyFor(notifications) {
+  log.debug("Entering contentSecurityPolicyFor().");
   const origins = frameOriginsOf(notifications);
-  if (!origins.length) return app.contentSecurityPolicy({});
+  if (!origins.length) {
+    log.debug("Leaving contentSecurityPolicyFor().");
+    return app.contentSecurityPolicy({});
+  }
+  log.debug("Leaving contentSecurityPolicyFor().");
   return app.contentSecurityPolicy({ 'frame-src': origins.join(' ') });
 }
 
@@ -240,21 +256,22 @@ function render(notifications) {
   log.debug("Entering render(). " + notifications.length + " notification(s).");
   if (!notifications.length) {
     log.debug("Leaving render(). Nothing to notify.");
-    return '<p>No OpenID Connect relying party was signed into on this session, so there is ' +
-           'nothing to notify.</p>';
+    return '<p>No OpenID Connect relying party was signed into on this ' +
+           'session, so there is nothing to notify.</p>';
   }
   const notifiable = notifications.filter(function (row) { return !!row.url; });
   const rows = notifications.map(function (row) {
     return '<tr><td><code>' + xmlEscape(row.clientId) + '</code></td>' +
       '<td>' + (row.url
-        ? '<a href="' + xmlEscape(row.url) + '" target="_blank" rel="noopener noreferrer">' +
+        ? '<a href="' + xmlEscape(row.url) + '" target="_blank" ' +
+                                             'rel="noopener noreferrer">' +
           xmlEscape(row.url) + '</a>' +
           (row.sessionRequired
-            ? '<br><span class="sub">iss and sid are on it: this client registered ' +
-              'frontchannel_logout_session_required.</span>'
-            : '<br><span class="sub">No iss or sid: this client did not register ' +
-              'frontchannel_logout_session_required, and section 2 says they are then ' +
-              'omitted.</span>')
+            ? '<br><span class="sub">iss and sid are on it: this client ' +
+              'registered frontchannel_logout_session_required.</span>'
+            : '<br><span class="sub">No iss or sid: this client did not ' +
+              'register frontchannel_logout_session_required, and section 2 ' +
+              'says they are then omitted.</span>')
         : '<span class="sub">' + xmlEscape(row.why) + '</span>') + '</td></tr>';
   }).join('');
   const frames = notifiable.map(function (row) {
@@ -262,18 +279,20 @@ function render(notifications) {
            'style="display:none" aria-hidden="true" title=""></iframe>';
   }).join('');
   const inner =
-    '<h2>' + notifiable.length + ' of ' + notifications.length + ' relying part' +
-      (notifications.length === 1 ? 'y' : 'ies') + ' notified</h2>' +
-    '<p class="sub">OpenID Connect Front-Channel Logout 1.0. Each URL below was loaded in a ' +
-    'hidden iframe as this page rendered, so each relying party\'s own logout ran in this ' +
-    'browser.</p>' +
-    '<table><thead><tr><th>Client</th><th>frontchannel_logout_uri</th></tr></thead>' +
-    '<tbody>' + rows + '</tbody></table>' +
-    '<p class="sub">The URLs are shown as links deliberately. A front-channel notification ' +
-    'has no answer this service can read — section 5 says the provider cannot know whether ' +
-    'the logout succeeded — so a dead relying party, a certificate this browser will not ' +
-    'accept and a URI somebody mistyped all look exactly like success. Clicking one is the ' +
-    'only way to see which happened.</p>' +
+    '<h2>' + notifiable.length + ' of ' + notifications.length +
+    ' relying part' +
+      (notifications.length === 1 ? 'y' : 'ies') + ' notified</h2><p ' +
+    'class="sub">OpenID Connect Front-Channel Logout 1.0. Each URL below was ' +
+    'loaded in a hidden iframe as this page rendered, so each relying ' +
+    'party\'s own logout ran in this browser.</p><table><thead><tr><th>' +
+    'Client</th><th>frontchannel_logout_uri</th></tr></thead>' +
+    '<tbody>' + rows + '</tbody></table><p ' +
+    'class="sub">The URLs are shown as links deliberately. A front-channel ' +
+    'notification has no answer this service can read — section 5 says the ' +
+    'provider cannot know whether the logout succeeded — so a dead relying ' +
+    'party, a certificate this browser will not accept and a URI somebody ' +
+    'mistyped all look exactly like success. Clicking one is the only way to ' +
+    'see which happened.</p>' +
     frames;
   log.debug("Leaving render(). " + notifiable.length + " iframe(s).");
   return inner;

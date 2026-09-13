@@ -95,11 +95,13 @@ async function signInToTheConsole() {
 
 // One read of the page, carrying the session when there is one.
 function withSession(session, options) {
+  log.debug("Entering withSession().");
   const opts = Object.assign({}, options || {});
   if (session) {
     opts.headers = Object.assign({}, opts.headers || {},
                                  { Cookie: session });
   }
+  log.debug("Leaving withSession().");
   return opts;
 }
 
@@ -206,7 +208,8 @@ function theConsoleChromeIsThere(page) {
   // console has no script to do that with. The assertion's INTENT survived
   // that change untouched: the active item is TEXT and not a link. So what is
   // asserted is the intent, and the attributes are free to grow.
-  assert.ok(/<li><span class="here"[^>]*>Service metadata<\/span><\/li>/.test(page),
+  assert.ok(/<li><span class="here"[^>]*>Service metadata<\/span><\/li>/.test(
+      page),
     "and it should mark THIS page as the one being read — the sidebar item " +
     "for the active page is drawn as text rather than as a link.");
   // AND THE TWO THINGS THAT MAKE THAT MARK REACHABLE, which are now part of
@@ -216,7 +219,8 @@ function theConsoleChromeIsThere(page) {
   // because both are invisible — nothing about the rendered page looks wrong
   // if either is dropped, and the sidebar would quietly go back to starting at
   // the top on every navigation.
-  const activeItem = /<li><span class="here"([^>]*)>Service metadata<\/span><\/li>/
+  const activeItem =
+      /<li><span class="here"([^>]*)>Service metadata<\/span><\/li>/
     .exec(page);
   assert.ok(activeItem && /aria-current="page"/.test(activeItem[1]),
     "the active sidebar item should carry aria-current=\"page\"; it had " +
@@ -432,8 +436,9 @@ function specificationsAreHonest(doc) {
   // A specification nothing references is either an overstatement or a missing
   // link on an endpoint. Both are worth knowing about.
   const referenced = new Set();
-  doc.endpoints.forEach(function (e) { (e.specs ||
-                        []).forEach(function (id) { referenced.add(id); }); });
+  doc.endpoints.forEach(function (e) {
+    (e.specs || []).forEach(function (id) { referenced.add(id); });
+  });
   const orphans =
       Array.from(ids).filter(function (id) { return !referenced.has(id); });
   assert.deepStrictEqual(orphans, [],
@@ -481,7 +486,8 @@ async function theMethodsShownActuallyAnswer(doc) {
   let skipped = 0;
   for (const e of doc.endpoints) {
     let path = e.path;
-    if (path === "*") continue;              // the CORS preflight answers every path
+    // the CORS preflight answers every path
+    if (path === "*") continue;
     // ---------------------------------------------------------------------
     // AND THE ONE ENDPOINT THAT IS UNGATED AND DESTRUCTIVE (2026-09-06).
     //

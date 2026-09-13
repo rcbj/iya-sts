@@ -59,20 +59,26 @@ const validate = require('./xacml_validate');
 // ---------------------------------------------------------------------------
 
 function localName(node) {
+  log.debug("Entering localName().");
   if (!node) {
+    log.debug("Leaving localName().");
     return '';
   }
   if (node.localName) {
+    log.debug("Leaving localName().");
     return node.localName;
   }
   const name = node.nodeName || '';
   const colon = name.indexOf(':');
+  log.debug("Leaving localName().");
   return colon < 0 ? name : name.slice(colon + 1);
 }
 
 function elementChildren(node) {
+  log.debug("Entering elementChildren().");
   const result = [];
   if (!node || !node.childNodes) {
+    log.debug("Leaving elementChildren().");
     return result;
   }
   for (let i = 0; i < node.childNodes.length; i += 1) {
@@ -81,35 +87,45 @@ function elementChildren(node) {
       result.push(child);
     }
   }
+  log.debug("Leaving elementChildren().");
   return result;
 }
 
 function childrenNamed(node, name) {
+  log.debug("Entering childrenNamed().");
+  log.debug("Leaving childrenNamed().");
   return elementChildren(node).filter(function (child) {
     return localName(child) === name;
   });
 }
 
 function firstNamed(node, name) {
+  log.debug("Entering firstNamed().");
   const found = childrenNamed(node, name);
+  log.debug("Leaving firstNamed().");
   return found.length ? found[0] : null;
 }
 
 function attribute(node, name) {
+  log.debug("Entering attribute().");
   if (!node || !node.getAttribute) {
+    log.debug("Leaving attribute().");
     return null;
   }
   const value = node.getAttribute(name);
+  log.debug("Leaving attribute().");
   return value === null || value === '' ? null : value;
 }
 
 function requiredAttribute(node, name) {
+  log.debug("Entering requiredAttribute().");
   const value = attribute(node, name);
   if (value === null) {
     throw model.syntaxError(
       '<' + localName(node) + '> is missing the required "' + name +
       '" attribute.');
   }
+  log.debug("Leaving requiredAttribute().");
   return value;
 }
 
@@ -117,8 +133,10 @@ function requiredAttribute(node, name) {
 // for a structured datatype, so this concatenates text nodes rather than
 // insisting on a single one.
 function textOf(node) {
+  log.debug("Entering textOf().");
   let text = '';
   if (!node || !node.childNodes) {
+    log.debug("Leaving textOf().");
     return text;
   }
   for (let i = 0; i < node.childNodes.length; i += 1) {
@@ -129,14 +147,18 @@ function textOf(node) {
       text += textOf(child);
     }
   }
+  log.debug("Leaving textOf().");
   return text;
 }
 
 function booleanAttribute(node, name, fallback) {
+  log.debug("Entering booleanAttribute().");
   const value = attribute(node, name);
   if (value === null) {
+    log.debug("Leaving booleanAttribute().");
     return fallback;
   }
+  log.debug("Leaving booleanAttribute().");
   return value === 'true' || value === '1';
 }
 
@@ -190,7 +212,9 @@ function namespacesInScope(node) {
 // wrote — the change nobody notices until they go looking for the reason a
 // rule is there.
 function descriptionOf(node) {
+  log.debug("Entering descriptionOf().");
   const found = firstNamed(node, 'Description');
+  log.debug("Leaving descriptionOf().");
   return found ? textOf(found).trim() : '';
 }
 
@@ -341,10 +365,13 @@ function readMatch(node) {
 // how the distinction gets lost at the point it matters.
 // ---------------------------------------------------------------------------
 function readExpressionHolders(parent, wrapper, item, idAttribute) {
+  log.debug("Entering readExpressionHolders().");
   const container = firstNamed(parent, wrapper);
   if (!container) {
+    log.debug("Leaving readExpressionHolders().");
     return [];
   }
+  log.debug("Leaving readExpressionHolders().");
   return childrenNamed(container, item).map(function (node) {
     return {
       id: requiredAttribute(node, idAttribute),
@@ -373,11 +400,15 @@ function readExpressionHolders(parent, wrapper, item, idAttribute) {
 }
 
 function readObligations(parent) {
+  log.debug("Entering readObligations().");
+  log.debug("Leaving readObligations().");
   return readExpressionHolders(parent, 'ObligationExpressions',
                                'ObligationExpression', 'ObligationId');
 }
 
 function readAdvice(parent) {
+  log.debug("Entering readAdvice().");
+  log.debug("Leaving readAdvice().");
   return readExpressionHolders(parent, 'AdviceExpressions',
                                'AdviceExpression', 'AdviceId');
 }
@@ -489,6 +520,8 @@ function readXPathVersion(node, wrapper) {
 // no meaning to lose.
 // ---------------------------------------------------------------------------
 function readCombinerParameterList(node) {
+  log.debug("Entering readCombinerParameterList().");
+  log.debug("Leaving readCombinerParameterList().");
   return childrenNamed(node, 'CombinerParameter').map(function (one) {
     const children = elementChildren(one);
     if (children.length !== 1) {
@@ -506,7 +539,8 @@ function readCombinerParameters(node) {
   childrenNamed(node, 'CombinerParameters').forEach(function (group) {
     out = out.concat(readCombinerParameterList(group));
   });
-  log.debug('Leaving readCombinerParameters(). ' + out.length + ' parameter(s).');
+  log.debug('Leaving readCombinerParameters(). ' + out.length +
+            ' parameter(s).');
   return out;
 }
 
@@ -621,6 +655,7 @@ function parseDocument(xml) {
   const errors = [];
   const parser = new DOMParser({
     onError: function (level, message) {
+      log.debug("Entering onError().");
       // Warnings are ignored deliberately. Several policies in the vendored
       // suite carry an `xsi:schemaLocation` pointing at the XACML 2.0 schema —
       // upstream's README lists it as a defect in the original AT&T files —
@@ -629,6 +664,7 @@ function parseDocument(xml) {
       if (level === 'error' || level === 'fatalError') {
         errors.push(String(message));
       }
+      log.debug("Leaving onError().");
     }
   });
   const document = parser.parseFromString(xml, 'text/xml');
@@ -779,10 +815,13 @@ function parseResponse(xml) {
 }
 
 function readResponseAssignments(parent, wrapper, item, idAttribute) {
+  log.debug("Entering readResponseAssignments().");
   const container = firstNamed(parent, wrapper);
   if (!container) {
+    log.debug("Leaving readResponseAssignments().");
     return [];
   }
+  log.debug("Leaving readResponseAssignments().");
   return childrenNamed(container, item).map(function (node) {
     return {
       id: attribute(node, idAttribute),
@@ -830,13 +869,18 @@ function readResponseAssignments(parent, wrapper, item, idAttribute) {
 // so the policy writer and the SAML writer cannot disagree about what escaping
 // is.
 function attr(name, value) {
+  log.debug("Entering attr().");
   if (value === null || value === undefined || value === '') {
+    log.debug("Leaving attr().");
     return '';
   }
+  log.debug("Leaving attr().");
   return ' ' + name + '="' + xmlEscape(String(value)) + '"';
 }
 
 function indent(depth) {
+  log.debug("Entering indent().");
+  log.debug("Leaving indent().");
   return new Array(depth + 1).join('  ');
 }
 
@@ -1000,7 +1044,9 @@ function writeTarget(target, depth) {
 }
 
 function writeHolders(holders, depth, wrapper, item, idAttr, onAttr) {
+  log.debug("Entering writeHolders().");
   if (!holders || !holders.length) {
+    log.debug("Leaving writeHolders().");
     return '';
   }
   const pad = indent(depth);
@@ -1018,6 +1064,7 @@ function writeHolders(holders, depth, wrapper, item, idAttr, onAttr) {
       (assignments ? '\n' + assignments + '\n' + indent(depth + 1) : '') +
       '</' + item + '>';
   }).join('\n');
+  log.debug("Leaving writeHolders().");
   return '\n' + pad + '<' + wrapper + '>\n' + body + '\n' + pad + '</' +
     wrapper + '>';
 }
@@ -1026,10 +1073,13 @@ function writeHolders(holders, depth, wrapper, item, idAttr, onAttr) {
 // to put in it, because an empty <PolicyDefaults/> is not schema-valid — the
 // element exists to hold the XPathVersion.
 function writeDefaults(xpathVersion, depth, wrapper) {
+  log.debug("Entering writeDefaults().");
   if (!xpathVersion) {
+    log.debug("Leaving writeDefaults().");
     return '';
   }
   const pad = indent(depth);
+  log.debug("Leaving writeDefaults().");
   return '\n' + pad + '<' + wrapper + '>\n' +
     indent(depth + 1) + '<XPathVersion>' + xmlEscape(xpathVersion) +
     '</XPathVersion>\n' + pad + '</' + wrapper + '>';
@@ -1039,6 +1089,8 @@ function writeDefaults(xpathVersion, depth, wrapper) {
 // they are carried at all: nothing here reads them, and the writer's job is to
 // make sure an edit does not delete them.
 function writeCombinerParameterList(parameters, depth) {
+  log.debug("Entering writeCombinerParameterList().");
+  log.debug("Leaving writeCombinerParameterList().");
   return (parameters || []).map(function (one) {
     return indent(depth) + '<CombinerParameter' +
       attr('ParameterName', one.name) + '>\n' +
@@ -1048,10 +1100,13 @@ function writeCombinerParameterList(parameters, depth) {
 }
 
 function writeCombinerParameters(parameters, depth) {
+  log.debug("Entering writeCombinerParameters().");
   if (!parameters || !parameters.length) {
+    log.debug("Leaving writeCombinerParameters().");
     return '';
   }
   const pad = indent(depth);
+  log.debug("Leaving writeCombinerParameters().");
   return '\n' + pad + '<CombinerParameters>\n' +
     writeCombinerParameterList(parameters, depth + 1) + '\n' +
     pad + '</CombinerParameters>';
@@ -1059,10 +1114,13 @@ function writeCombinerParameters(parameters, depth) {
 
 function writeReferencedCombinerParameters(groups, depth, element,
                                            idAttribute) {
+  log.debug("Entering writeReferencedCombinerParameters().");
   if (!groups || !groups.length) {
+    log.debug("Leaving writeReferencedCombinerParameters().");
     return '';
   }
   const pad = indent(depth);
+  log.debug("Leaving writeReferencedCombinerParameters().");
   return groups.map(function (group) {
     return '\n' + pad + '<' + element + attr(idAttribute, group.ref) + '>\n' +
       writeCombinerParameterList(group.parameters, depth + 1) + '\n' +
@@ -1094,6 +1152,7 @@ function writeRule(rule, depth) {
 }
 
 function writePolicyBody(policy, depth, withNamespace) {
+  log.debug("Entering writePolicyBody().");
   const pad = indent(depth);
   let body = '';
   if (policy.description) {
@@ -1125,6 +1184,7 @@ function writePolicyBody(policy, depth, withNamespace) {
                        'ObligationExpression', 'ObligationId', 'FulfillOn');
   body += writeHolders(policy.advice, depth + 1, 'AdviceExpressions',
                        'AdviceExpression', 'AdviceId', 'AppliesTo');
+  log.debug("Leaving writePolicyBody().");
   return pad + '<Policy' +
     (withNamespace ? ' xmlns="' + model.NS_XACML + '"' : '') +
     attr('PolicyId', policy.id) +
@@ -1144,6 +1204,7 @@ function writePolicyBody(policy, depth, withNamespace) {
 // namespace declaration reads as though it might be a DIFFERENT namespace, and
 // somebody will eventually change one of them.
 function writePolicySetBody(policySet, depth, withNamespace) {
+  log.debug("Entering writePolicySetBody().");
   const pad = indent(depth);
   let body = '';
   if (policySet.description) {
@@ -1177,6 +1238,7 @@ function writePolicySetBody(policySet, depth, withNamespace) {
                        'ObligationId', 'FulfillOn');
   body += writeHolders(policySet.advice, depth + 1, 'AdviceExpressions',
                        'AdviceExpression', 'AdviceId', 'AppliesTo');
+  log.debug("Leaving writePolicySetBody().");
   return pad + '<PolicySet' +
     (withNamespace ? ' xmlns="' + model.NS_XACML + '"' : '') +
     attr('PolicySetId', policySet.id) +

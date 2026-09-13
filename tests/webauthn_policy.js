@@ -3,14 +3,16 @@
 // File: webauthn_policy.js
 //
 // ===========================================================================
-// THE WEBAUTHN SETTINGS, AND THE FOUR THINGS THAT GO WRONG QUIETLY (2026-09-10).
+// THE WEBAUTHN SETTINGS, AND THE FOUR THINGS THAT GO WRONG QUIETLY
+// (2026-09-10).
 //
 // `authn/webauthn_policy.js` turned thirteen literals in a string into
 // settings. Twelve of them are values passed to a browser, and a browser is not
 // something a test can hold — so what this file asserts is not *does the
-// ceremony work* (that needs an authenticator, and `tests/webauthn_cross_impl.js`
-// in the debugger repository is where a real ceremony is verified) but the four
-// places where a settings layer over a ceremony fails SILENTLY.
+// ceremony work* (that needs an authenticator, and
+// `tests/webauthn_cross_impl.js` in the debugger repository is where a real
+// ceremony is verified) but the four places where a settings layer over a
+// ceremony fails SILENTLY.
 //
 // ---------------------------------------------------------------------------
 // WHY IN PROCESS, WHICH IS THE QUESTION tests/CLAUDE.md ASKS FIRST.
@@ -59,14 +61,22 @@ const policy = require('../authn/webauthn_policy');
 const ldap = require('../ldap/ldap_server');
 const authn = require('../authn/authn');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'webauthn_policy',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A setting for the duration of one call, put back afterwards. `reset` and not
 // a write of the old value back, which is the rule every test here follows: a
 // setting that had no override before must end with none, and writing the value
 // back would leave one behind that reads identically and behaves differently
 // the moment a layer under it changes.
 function withSetting(key, value, fn) {
+  log.debug("Entering withSetting().");
   config.setOverride(key, value);
   try {
+    log.debug("Leaving withSetting().");
     return fn();
   } finally {
     config.clearOverride(key);
@@ -74,14 +84,18 @@ function withSetting(key, value, fn) {
 }
 
 function aKey(id) {
+  log.debug("Entering aKey().");
+  log.debug("Leaving aKey().");
   return { credentialId: id,
            publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' },
            signCount: 0, label: id };
 }
 
 function run(t) {
+  log.debug("Entering run().");
   // -------------------------------------------------------------------------
-  t.log.info('=== the offer is derived from the verifier and cannot outrun it ===');
+  t.log.info('=== the offer is derived from the verifier and cannot outrun ' +
+             'it ===');
   // -------------------------------------------------------------------------
   const verifiable = Object.keys(webauthn.COSE_ALGS).map(function (id) {
     return webauthn.COSE_ALGS[id];
@@ -98,7 +112,8 @@ function run(t) {
       'sending it would enrol a credential that registers perfectly and then ' +
       'fails every assertion it is ever used for, at sign-in rather than at ' +
       'enrolment', offered.join(', '));
-    t.check(offered.length === 2 && offered[0] === 'ES256' && offered[1] === 'RS256',
+    t.check(offered.length === 2 && offered[0] === 'ES256' &&
+            offered[1] === 'RS256',
       'and the ones beside it survive IN THE ORDER THEY WERE GIVEN, because ' +
       'pubKeyCredParams is a preference list', offered.join(', '));
   });
@@ -106,9 +121,9 @@ function run(t) {
   withSetting('webauthn.algorithms', 'NOSUCHALG,ALSONOT', function () {
     const offered = policy.algorithmsOffered();
     t.check(offered.length > 0,
-      'A SETTING THAT NAMES NOTHING USABLE FALLS BACK RATHER THAN OFFERING AN ' +
-      'EMPTY LIST — an empty pubKeyCredParams is refused by the browser with ' +
-      'the same error it reports for a declined prompt, a missing ' +
+      'A SETTING THAT NAMES NOTHING USABLE FALLS BACK RATHER THAN OFFERING ' +
+      'AN EMPTY LIST — an empty pubKeyCredParams is refused by the browser ' +
+      'with the same error it reports for a declined prompt, a missing ' +
       'authenticator and a timeout, so one typo would look like broken ' +
       'hardware', offered.join(', '));
     t.check(policy.creationOptions('localhost').algorithms.length > 0,
@@ -117,8 +132,8 @@ function run(t) {
 
   withSetting('webauthn.algorithms', 'ES256,ES256', function () {
     t.check(policy.algorithmsOffered().length === 1,
-      'a name given twice is offered once — a repeated pubKeyCredParams entry ' +
-      'is not an error and is not a preference either');
+      'a name given twice is offered once — a repeated pubKeyCredParams ' +
+      'entry is not an error and is not a preference either');
   });
 
   t.check(Object.keys(policy.ALG_IDS).length === verifiable.length,
@@ -134,12 +149,14 @@ function run(t) {
     const opts = policy.creationOptions('localhost');
     t.check(!Object.prototype.hasOwnProperty
               .call(opts.authenticatorSelection, 'authenticatorAttachment'),
-      'WITH NO PREFERENCE THE MEMBER IS ABSENT AND NOT THE STRING "any" — the ' +
-      'options dictionary has no value meaning no preference, and sending one ' +
-      'is a validation error in the browser rather than a wide filter',
+      'WITH NO PREFERENCE THE MEMBER IS ABSENT AND NOT THE STRING "any" — ' +
+      'the options dictionary has no value meaning no preference, and ' +
+      'sending one is a validation error in the browser rather than a wide ' +
+      'filter',
       JSON.stringify(opts.authenticatorSelection));
   });
-  withSetting('webauthn.authenticatorAttachment', 'cross-platform', function () {
+  withSetting('webauthn.authenticatorAttachment', 'cross-platform',
+              function () {
     t.check(policy.creationOptions('localhost')
               .authenticatorSelection.authenticatorAttachment === 'cross-platform',
       'and a real preference IS sent');
@@ -150,8 +167,8 @@ function run(t) {
     t.check(sel.residentKey === 'required' && sel.requireResidentKey === true,
       'a REQUIRED resident key sets the Level 1 `requireResidentKey` too, ' +
       'which WebAuthn Level 3 says MUST be true exactly then — the browsers ' +
-      'that still read it are the ones that would otherwise ignore the modern ' +
-      'member entirely', JSON.stringify(sel));
+      'that still read it are the ones that would otherwise ignore the ' +
+      'modern member entirely', JSON.stringify(sel));
   });
   withSetting('webauthn.residentKey', 'preferred', function () {
     t.check(policy.creationOptions('localhost')
@@ -166,7 +183,8 @@ function run(t) {
   });
 
   // -------------------------------------------------------------------------
-  t.log.info('=== user verification is the ONE ceremony option this service checks ===');
+  t.log.info('=== user verification is the ONE ceremony option this service ' +
+             'checks ===');
   // -------------------------------------------------------------------------
   ['discouraged', 'preferred'].forEach(function (level) {
     withSetting('webauthn.userVerification', level, function () {
@@ -192,7 +210,8 @@ function run(t) {
   });
 
   // -------------------------------------------------------------------------
-  t.log.info('=== the RP ID may be WIDENED to a domain suffix and to nothing else ===');
+  t.log.info('=== the RP ID may be WIDENED to a domain suffix and to nothing ' +
+             'else ===');
   // -------------------------------------------------------------------------
   t.check(authn.rpIdOf('https://sts.example.com:8443/realm/acme') === 'sts.example.com',
     'with no setting it is the ORIGIN\'S HOST — never the base URL, which ' +
@@ -222,7 +241,8 @@ function run(t) {
   });
 
   // -------------------------------------------------------------------------
-  t.log.info('=== the POLICY rows refuse an ENROLMENT and never an authentication ===');
+  t.log.info('=== the POLICY rows refuse an ENROLMENT and never an ' +
+             'authentication ===');
   // -------------------------------------------------------------------------
   const who = 'webauthn-policy-probe';
   ldap.createUser(who, {});
@@ -280,7 +300,8 @@ function run(t) {
     'so none of the refusals above left an override behind');
 
   // -------------------------------------------------------------------------
-  t.log.info('=== an assertion is checked against the key that NAMED itself ===');
+  t.log.info('=== an assertion is checked against the key that NAMED itself ' +
+             '===');
   // -------------------------------------------------------------------------
   // **THIS SECTION EXISTS BECAUSE A MUTANT SURVIVED**, which is the lesson
   // `tests/CLAUDE.md` records three times about three other files. The
@@ -329,7 +350,8 @@ function run(t) {
     'says how many they DO hold — which is a different thing to fix from ' +
     'holding none', stranger.why);
 
-  const nobody = authn.keyForAssertion('webauthn-holds-nothing-at-all', 'mfa', 'x');
+  const nobody = authn.keyForAssertion('webauthn-holds-nothing-at-all', 'mfa',
+                                       'x');
   t.check(!nobody.key && /no security key is enrolled/.test(nobody.why),
     'and somebody who holds none is refused differently, because an account ' +
     'that reached that screen holding nothing is a different fault',
@@ -350,14 +372,15 @@ function run(t) {
             .length === policy.algorithmsOffered().length,
     'and the marked ones are exactly the offered ones, so the page and the ' +
     'ceremony cannot disagree');
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'webauthn policy',
-  describe: 'the WebAuthn ceremony settings: that the offer can never name an ' +
-            'algorithm the verifier cannot check, that an unusable setting ' +
-            'falls back rather than producing an empty offer, that the RP ID ' +
-            'may only be widened to a real domain suffix, and that the policy ' +
-            'rows refuse an enrolment and never an authentication',
+  describe: 'the WebAuthn ceremony settings: that the offer can never name ' +
+            'an algorithm the verifier cannot check, that an unusable ' +
+            'setting falls back rather than producing an empty offer, that ' +
+            'the RP ID may only be widened to a real domain suffix, and that ' +
+            'the policy rows refuse an enrolment and never an authentication',
   run: run
 };

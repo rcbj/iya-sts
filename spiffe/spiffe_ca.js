@@ -149,6 +149,7 @@ const PROCESS_TRUST_DOMAIN =
 // that a call arriving in `acme` cannot be answered with acme's name when it
 // asked about the default realm.
 function configuredTrustDomain(realmId) {
+  log.debug("Entering configuredTrustDomain().");
   const id = realmIdOf(realmId);
   const realm = realms.get(id);
   const raw = realm
@@ -156,6 +157,7 @@ function configuredTrustDomain(realmId) {
         return config.value('spiffe.trustDomain');
       })
     : PROCESS_TRUST_DOMAIN;
+  log.debug("Leaving configuredTrustDomain().");
   return String(raw || PROCESS_TRUST_DOMAIN).trim().toLowerCase();
 }
 
@@ -166,32 +168,42 @@ function configuredTrustDomain(realmId) {
 // realm, and a plain `config.value()` would answer with whichever realm the
 // request that triggered the work arrived in.
 function realmSettings(realmId) {
+  log.debug("Entering realmSettings().");
   const realm = realms.get(realmIdOf(realmId));
   const read = function () {
+    log.debug("Entering read().");
+    log.debug("Leaving read().");
     return { x509KeyType: config.value('spiffe.x509KeyType'),
              jwtKeyType: config.value('spiffe.jwtKeyType'),
              caTtl: config.value('spiffe.caTtl'),
              caSubject: config.value('spiffe.caSubject'),
              retained: config.value('spiffe.retainedAuthorities') };
   };
+  log.debug("Leaving realmSettings().");
   return realm ? realms.run(realm, read) : read();
 }
 
 // Run something inside a named realm. `realms.get('')` is the default realm's
 // record, so a missing id is the default realm here rather than no realm.
 function inRealmOf(realmId, fn) {
+  log.debug("Entering inRealmOf().");
   const realm = realms.get(realmIdOf(realmId));
+  log.debug("Leaving inRealmOf().");
   return realm ? realms.run(realm, fn) : fn();
 }
 
 function builtTrustDomain(realmId) {
+  log.debug("Entering builtTrustDomain().");
   const held = authoritiesIn(realmId).get('trustDomain');
+  log.debug("Leaving builtTrustDomain().");
   return held ? String(held) : null;
 }
 
 // THE ONE ANSWER EVERY OTHER FUNCTION IN THIS FILE USES. The built name wins
 // wherever there is one, for the reason the block above gives.
 function trustDomainOf(realmId) {
+  log.debug("Entering trustDomainOf().");
+  log.debug("Leaving trustDomainOf().");
   return builtTrustDomain(realmId) || configuredTrustDomain(realmId);
 }
 
@@ -200,19 +212,46 @@ function trustDomainOf(realmId) {
 // under — and it is exactly the state `config.js`'s header calls the silent
 // disagreement, so nothing here is allowed to be silent about it.
 function trustDomainDrift(realmId) {
+  log.debug("Entering trustDomainDrift().");
   const built = builtTrustDomain(realmId);
   const configured = configuredTrustDomain(realmId);
   if (!built || built === configured) {
+    log.debug("Leaving trustDomainDrift().");
     return null;
   }
+  log.debug("Leaving trustDomainDrift().");
   return { built: built, configured: configured };
 }
 
-function svidTtlSeconds() { return config.value('spiffe.svidTtl'); }
-function jwtSvidTtlSeconds() { return config.value('spiffe.jwtSvidTtl'); }
-function refreshHintSeconds() { return config.value('spiffe.refreshHint'); }
-function svidSubject() { return config.value('spiffe.svidSubject'); }
-function maxFederatedBundles() { return config.value('spiffe.maxFederatedBundles'); }
+function svidTtlSeconds() {
+  log.debug("Entering svidTtlSeconds().");
+  log.debug("Leaving svidTtlSeconds().");
+  return config.value('spiffe.svidTtl');
+}
+
+function jwtSvidTtlSeconds() {
+  log.debug("Entering jwtSvidTtlSeconds().");
+  log.debug("Leaving jwtSvidTtlSeconds().");
+  return config.value('spiffe.jwtSvidTtl');
+}
+
+function refreshHintSeconds() {
+  log.debug("Entering refreshHintSeconds().");
+  log.debug("Leaving refreshHintSeconds().");
+  return config.value('spiffe.refreshHint');
+}
+
+function svidSubject() {
+  log.debug("Entering svidSubject().");
+  log.debug("Leaving svidSubject().");
+  return config.value('spiffe.svidSubject');
+}
+
+function maxFederatedBundles() {
+  log.debug("Entering maxFederatedBundles().");
+  log.debug("Leaving maxFederatedBundles().");
+  return config.value('spiffe.maxFederatedBundles');
+}
 
 // ---------------------------------------------------------------------------
 // THE SUBJECT A CA THIS FILE BUILDS IS GIVEN (2026-09-12).
@@ -233,6 +272,7 @@ function maxFederatedBundles() { return config.value('spiffe.maxFederatedBundles
 // subject from `common/pki.js`, which owns it.
 // ---------------------------------------------------------------------------
 function caSubjectFor(template, kind, trustDomain) {
+  log.debug("Entering caSubjectFor().");
   const raw = String(template == null ? '' : template).trim();
   const rendered = raw.split('{kind}').join(kind)
                       .split('{trustDomain}').join(String(trustDomain || ''));
@@ -244,6 +284,7 @@ function caSubjectFor(template, kind, trustDomain) {
                     'subject. Set it to an X.501 name — the default is ' +
                     '`CN=sts SPIFFE {kind} ({trustDomain}),O=sts`.');
   }
+  log.debug("Leaving caSubjectFor().");
   return rendered;
 }
 
@@ -280,7 +321,8 @@ const KEY_TYPES = [
   { id: 'rsa-2048', label: 'RSA 2048', kind: 'rsa',
     sigAlg: 'sha256-rsa', jwtAlg: 'RS256',
     what: 'The floor the X509-SVID specification permits for RSA. Slower to ' +
-          'generate — noticeable at startup — and produces much larger SVIDs.' },
+          'generate — noticeable at startup — and produces much larger ' +
+          'SVIDs.' },
   { id: 'rsa-4096', label: 'RSA 4096', kind: 'rsa',
     sigAlg: 'sha256-rsa', jwtAlg: 'RS256',
     what: 'Several seconds to generate at startup, which is worth knowing ' +
@@ -293,10 +335,15 @@ const KEY_TYPES = [
 ];
 
 function keyTypeById(id) {
+  log.debug("Entering keyTypeById().");
   const wanted = String(id == null ? '' : id).trim();
   for (let i = 0; i < KEY_TYPES.length; i++) {
-    if (KEY_TYPES[i].id === wanted) return KEY_TYPES[i];
+    if (KEY_TYPES[i].id === wanted) {
+      log.debug("Leaving keyTypeById().");
+      return KEY_TYPES[i];
+    }
   }
+  log.debug("Leaving keyTypeById().");
   return null;
 }
 
@@ -359,18 +406,25 @@ const authorities = realms.map({ persist: 'spiffe.authorities' });
 // default realm without a line of code saying so: nothing enters a realm for
 // them, so `realms.current()` is the default.
 function realmIdOf(realmId) {
+  log.debug("Entering realmIdOf().");
   if (realmId !== undefined && realmId !== null) {
+    log.debug("Leaving realmIdOf().");
     return String(realmId);
   }
   const current = realms.current();
+  log.debug("Leaving realmIdOf().");
   return String((current && current.id) || '');
 }
 
 function authoritiesIn(realmId) {
+  log.debug("Entering authoritiesIn().");
+  log.debug("Leaving authoritiesIn().");
   return authorities.realmMap(realmIdOf(realmId));
 }
 
 function packX509(one) {
+  log.debug("Entering packX509().");
+  log.debug("Leaving packX509().");
   return Object.assign({}, one, {
     certificateDer: Buffer.isBuffer(one.certificateDer)
       ? one.certificateDer.toString('base64')
@@ -379,6 +433,8 @@ function packX509(one) {
 }
 
 function unpackX509(one) {
+  log.debug("Entering unpackX509().");
+  log.debug("Leaving unpackX509().");
   return Object.assign({}, one, {
     certificateDer: Buffer.isBuffer(one.certificateDer)
       ? one.certificateDer
@@ -403,25 +459,33 @@ function unpackX509(one) {
 const x509Unpacked = new Map();
 
 function x509List(realmId) {
+  log.debug("Entering x509List().");
   const id = realmIdOf(realmId);
   const raw = authoritiesIn(id).get('x509') || [];
   const held = x509Unpacked.get(id);
   if (!held || held.from !== raw) {
     x509Unpacked.set(id, { from: raw, list: raw.map(unpackX509) });
   }
+  log.debug("Leaving x509List().");
   return x509Unpacked.get(id).list;
 }
 
 function setX509List(realmId, list) {
+  log.debug("Entering setX509List().");
   authoritiesIn(realmId).set('x509', list.map(packX509));
+  log.debug("Leaving setX509List().");
 }
 
 function jwtList(realmId) {
+  log.debug("Entering jwtList().");
+  log.debug("Leaving jwtList().");
   return authoritiesIn(realmId).get('jwt') || [];
 }
 
 function setJwtList(realmId, list) {
+  log.debug("Entering setJwtList().");
   authoritiesIn(realmId).set('jwt', list.slice(0));
+  log.debug("Leaving setJwtList().");
 }
 
 // The foreign trust domains this one federates with, keyed by trust domain
@@ -435,10 +499,11 @@ function setJwtList(realmId, list) {
 // `sts_admin_api_operations` and `sts_admin_console` measured.
 //
 // **IT WAS `sharedMap` UNTIL 2026-09-12, AND THAT WAS A SECURITY DEFECT RATHER
-// THAN A STALE COMMENT.** The argument read: *SPIFFE is one trust domain for the
-// whole service — its four sockets have no path to put a realm segment in, so
-// its state is not per realm.* That stopped being true the day each realm got a
-// trust domain and a pair of sockets of its own, and this store was left behind:
+// THAN A STALE COMMENT.** The argument read: *SPIFFE is one trust domain for
+// the whole service — its four sockets have no path to put a realm segment in,
+// so its state is not per realm.* That stopped being true the day each realm
+// got a trust domain and a pair of sockets of its own, and this store was left
+// behind:
 //
 //   * realm `acme` could register a bundle NAMED `example.org` — the DEFAULT
 //     realm's own trust domain — because the "not your own domain" check below
@@ -454,8 +519,8 @@ function setJwtList(realmId, list) {
 // A realm is an isolated identity service in both modes (`common/mode.js`), so
 // that was a boundary one API call wide, and it is closed in every mode. Three
 // halves, and each is needed: the store is PER REALM (`realms.map()`, so a
-// bundle one realm federates with is invisible to every other); a bundle may not
-// be registered under ANY trust domain this process serves, whichever realm
+// bundle one realm federates with is invisible to every other); a bundle may
+// not be registered under ANY trust domain this process serves, whichever realm
 // serves it (`servedTrustDomains()`); and every reader skips a federated entry
 // whose name collides with a served one anyway, which is what protects a row
 // persisted by an older build.
@@ -463,19 +528,21 @@ function setJwtList(realmId, list) {
 // **WHAT THAT COSTS, SAID RATHER THAN DISCOVERED**: one realm can no longer be
 // told to trust another realm of THIS SERVICE by federating with its bundle.
 // Two realms here share one Root and one process, and the only thing a
-// federation between them could add is a way round the boundary the Intermediate
-// draws — which is the defect above, asked for deliberately.
+// federation between them could add is a way round the boundary the
+// Intermediate draws — which is the defect above, asked for deliberately.
 //
 // The values are plain JSON — strings, a document and a timestamp — so they
-// survive the `JSON.stringify` the journal writes, which is the trap three other
-// stores hit. A row persisted by the shared store restores into the DEFAULT
-// realm's partition, because a shared row carries the empty realm id.
+// survive the `JSON.stringify` the journal writes, which is the trap three
+// other stores hit. A row persisted by the shared store restores into the
+// DEFAULT realm's partition, because a shared row carries the empty realm id.
 const federated = realms.map({ persist: 'spiffe.federatedBundles' });
 
 // The realm's own partition of that store — the ambient realm's when no id is
 // given, which is how every gRPC handler reaches it (they run inside the realm
 // whose socket the call arrived on).
 function federatedIn(realmId) {
+  log.debug("Entering federatedIn().");
+  log.debug("Leaving federatedIn().");
   return federated.realmMap(realmIdOf(realmId));
 }
 
@@ -484,10 +551,10 @@ function federatedIn(realmId) {
 //
 // The default realm's and every defined realm's, read through `trustDomainOf()`
 // so a realm whose authorities were BUILT under an older name is counted under
-// the name it is actually issuing in. A realm with SPIFFE off is counted too: its
-// trust domain is still a name this service has claimed, and a bundle registered
-// under it today would be a second authority for that name the moment somebody
-// turned it on.
+// the name it is actually issuing in. A realm with SPIFFE off is counted too:
+// its trust domain is still a name this service has claimed, and a bundle
+// registered under it today would be a second authority for that name the
+// moment somebody turned it on.
 // ---------------------------------------------------------------------------
 function servedTrustDomains() {
   log.debug('Entering servedTrustDomains().');
@@ -509,6 +576,8 @@ function servedTrustDomains() {
 // of a row written before the refusal existed — and such a row must verify
 // nothing, anywhere, rather than wait for somebody to notice it.
 function shadowsServedDomain(name) {
+  log.debug("Entering shadowsServedDomain().");
+  log.debug("Leaving shadowsServedDomain().");
   return servedTrustDomains().has(String(name || ''));
 }
 
@@ -530,7 +599,9 @@ function shadowsServedDomain(name) {
 // realm acme that DID change what acme publishes, with a number that never
 // moved for a caller reading acme.
 function sequenceNow(realmId) {
+  log.debug("Entering sequenceNow().");
   const held = Number(authoritiesIn(realmId).get('sequence'));
+  log.debug("Leaving sequenceNow().");
   return held > 0 ? held : 1;
 }
 
@@ -540,10 +611,12 @@ let started = null;
 let startError = null;
 
 function bumpSequence(realmId, why) {
+  log.debug("Entering bumpSequence().");
   const id = realmIdOf(realmId);
   authoritiesIn(id).set('sequence', sequenceNow(id) + 1);
   log.debug('spiffe: the bundle sequence in "' + (id || 'default') +
             '" is now ' + sequenceNow(id) + ' (' + why + ').');
+  log.debug("Leaving bumpSequence().");
 }
 
 // ---------------------------------------------------------------------------
@@ -590,7 +663,8 @@ async function makeX509Authority(keyTypeId, ttlSeconds, pathLen, trustDomain,
     log.debug('Leaving makeX509Authority(). Unknown key type.');
     throw new Error('Unknown SPIFFE X.509 key type: ' + keyTypeId +
                     '. Known types are ' +
-                    KEY_TYPES.map(function (t) { return t.id; }).join(', ') + '.');
+                    KEY_TYPES.map(function (t) { return t.id; }).join(', ') +
+                    '.');
   }
   const pair = await keys.generateKeyPair(type.id);
   const notBefore = new Date();
@@ -601,7 +675,8 @@ async function makeX509Authority(keyTypeId, ttlSeconds, pathLen, trustDomain,
     // which trust domain it belongs to, which is what a person reading
     // `openssl x509 -text` on a bundle needs.
     subject: caSubjectFor(subjectTemplate === undefined
-                            ? config.value('spiffe.caSubject') : subjectTemplate,
+                            ? config.value('spiffe.caSubject') :
+                          subjectTemplate,
                           'CA', trustDomain),
     subjectPublicKey: pair.publicPem,
     signatureAlg: type.sigAlg,
@@ -620,7 +695,8 @@ async function makeX509Authority(keyTypeId, ttlSeconds, pathLen, trustDomain,
       // which trust domain it belongs to.
       subjectAltName: { present: true, critical: false,
                         names: [{ kind: 'uri',
-                                  value: spiffeId.trustDomainId(trustDomain) }] },
+                                  value: spiffeId.trustDomainId(
+                                      trustDomain) }] },
       subjectKeyIdentifier: { present: true }
     }
   });
@@ -682,6 +758,8 @@ async function makeJwtAuthority(keyTypeId) {
 // SPIRE's `local authority` ids are and what a person can compare with
 // `openssl x509 -fingerprint -sha256`.
 function authorityIdOf(pem) {
+  log.debug("Entering authorityIdOf().");
+  log.debug("Leaving authorityIdOf().");
   return stsCrypto.certificateThumbprint(pem, { format: 'hex', truncate: 16 });
 }
 
@@ -690,6 +768,8 @@ function authorityIdOf(pem) {
 // two implementations agree. Hashing the PEM instead would give a different
 // answer for the same key depending on line wrapping.
 function thumbprintOf(jwk) {
+  log.debug("Entering thumbprintOf().");
+  log.debug("Leaving thumbprintOf().");
   // RFC 7638, and it is still the only correct way to derive a kid from a key:
   // the members are ordered and the set of them is fixed per key type, so two
   // implementations agree. Hashing the PEM instead would give a different
@@ -708,12 +788,14 @@ function thumbprintOf(jwk) {
 // library, and there is nothing here for a second implementation to disagree
 // with.
 function publicJwkOf(publicPem) {
+  log.debug("Entering publicJwkOf().");
   const jwk = crypto.createPublicKey(publicPem).export({ format: 'jwk' });
   // `key_ops` and `ext` are Web Crypto members and are not part of a published
   // JWK. Deleted rather than left: a bundle is a document other software parses
   // strictly, and members it does not expect are members it may reject.
   delete jwk.key_ops;
   delete jwk.ext;
+  log.debug("Leaving publicJwkOf().");
   return jwk;
 }
 
@@ -789,6 +871,8 @@ const SPIFFE_USE_CASE = 'spiffe';
 // existed.
 // ---------------------------------------------------------------------------
 function pkiAuthorityFrom(issuer) {
+  log.debug("Entering pkiAuthorityFrom().");
+  log.debug("Leaving pkiAuthorityFrom().");
   return {
     source: 'pki',
     id: authorityIdOf(issuer.certificatePem),
@@ -818,6 +902,8 @@ function pkiAuthorityFrom(issuer) {
 }
 
 function selfSignedAuthorityFrom(one) {
+  log.debug("Entering selfSignedAuthorityFrom().");
+  log.debug("Leaving selfSignedAuthorityFrom().");
   return Object.assign({}, one, {
     source: 'self-signed',
     chainPem: [],
@@ -836,12 +922,15 @@ function selfSignedAuthorityFrom(one) {
 // store, and the only asynchronous thing here is BUILDING the fallback, which
 // `ensureTrustMaterial()` does.
 function activeX509Authority(realmId) {
+  log.debug("Entering activeX509Authority().");
   const id = realmIdOf(realmId);
   const issuer = pki.describeIssuer(id, SPIFFE_USE_CASE);
   if (issuer) {
+    log.debug("Leaving activeX509Authority().");
     return pkiAuthorityFrom(issuer);
   }
   const held = x509List(id)[0];
+  log.debug("Leaving activeX509Authority().");
   return held ? selfSignedAuthorityFrom(held) : null;
 }
 
@@ -850,9 +939,11 @@ function activeX509Authority(realmId) {
 // is not, because in that arrangement each retired authority is an anchor of
 // its own and dropping it is what makes a rotation look like an outage.
 function trustAnchorsIn(realmId) {
+  log.debug("Entering trustAnchorsIn().");
   const id = realmIdOf(realmId);
   const issuer = pki.describeIssuer(id, SPIFFE_USE_CASE);
   if (issuer) {
+    log.debug("Leaving trustAnchorsIn().");
     return [{ source: 'pki',
               id: authorityIdOf(issuer.root.certificatePem),
               subject: issuer.root.subject,
@@ -863,6 +954,7 @@ function trustAnchorsIn(realmId) {
               publicKeyPem: crypto.createPublicKey(issuer.root.certificatePem)
                 .export({ type: 'spki', format: 'pem' }) }];
   }
+  log.debug("Leaving trustAnchorsIn().");
   return x509List(id).map(function (one) {
     return Object.assign({ source: 'self-signed' }, one);
   });
@@ -993,8 +1085,9 @@ async function initialise() {
            'each realm is that realm\'s SPIFFE Issuing CA under this ' +
            'service\'s own Root — see /admin/pki — and the bundle at GET ' +
            config.value('spiffe.bundlePath') + ' publishes the Root. A realm ' +
-           'with no hierarchy falls back to a self-signed authority, which is ' +
-           'what this service did before 2026-09-11 and is reported as such.');
+           'with no hierarchy falls back to a self-signed authority, which ' +
+           'is what this service did before 2026-09-11 and is reported as ' +
+           'such.');
   log.debug('Leaving initialise().');
 }
 
@@ -1066,8 +1159,9 @@ async function buildTrustMaterial(realmId) {
     log.debug('Leaving buildTrustMaterial(). The realm\'s name is invalid.');
     throw new Error('the "' + (id || 'default') + '" realm\'s ' +
                     'spiffe.trustDomain is not a valid trust domain name: ' +
-                    named.reason + '. Nothing in this realm can issue an SVID ' +
-                    'until it is corrected; every other realm is unaffected.');
+                    named.reason + '. Nothing in this realm can issue an ' +
+                    'SVID until it is corrected; every other realm is ' +
+                    'unaffected.');
   }
   if (!builtTrustDomain(id)) {
     authoritiesIn(id).set('trustDomain', domain);
@@ -1106,10 +1200,10 @@ async function buildTrustMaterial(realmId) {
     log.warn('spiffe: the "' + (id || 'default') + '" realm has no SPIFFE ' +
              'Issuing CA, so its X.509 authority is SELF-SIGNED (' +
              x509Authority.id + ', ' + x509Authority.keyType + ', valid ' +
-             'until ' + x509Authority.notAfter + ') and IS the trust anchor — ' +
-             'a consumer has to fetch the bundle again after every restart. ' +
-             'Build the realm\'s certificate authority on /admin/pki to put ' +
-             'it under this service\'s Root instead.');
+             'until ' + x509Authority.notAfter + ') and IS the trust anchor ' +
+             '— a consumer has to fetch the bundle again after every ' +
+             'restart. Build the realm\'s certificate authority on ' +
+             '/admin/pki to put it under this service\'s Root instead.');
   } else {
     log.info('spiffe: another process had already established the "' +
              (id || 'default') + '" realm\'s self-signed X.509 authority (' +
@@ -1119,6 +1213,7 @@ async function buildTrustMaterial(realmId) {
 }
 
 function ensureTrustMaterial(realmId) {
+  log.debug("Entering ensureTrustMaterial().");
   const id = realmIdOf(realmId);
   if (!building.has(id)) {
     // The promise is kept whatever happens to it, and a FAILED one is dropped
@@ -1131,6 +1226,7 @@ function ensureTrustMaterial(realmId) {
     });
     building.set(id, run);
   }
+  log.debug("Leaving ensureTrustMaterial().");
   return building.get(id);
 }
 
@@ -1139,9 +1235,11 @@ function ensureTrustMaterial(realmId) {
 // module before the realm has trust material gets the right answer rather than
 // an empty bundle. `state()` is the single exception and says so.
 async function ready(realmId) {
+  log.debug("Entering ready().");
   await readyPromise;
   if (startError) throw new Error(startError);
   await ensureTrustMaterial(realmId);
+  log.debug("Leaving ready().");
   return true;
 }
 
@@ -1190,15 +1288,19 @@ async function ready(realmId) {
 // a trust domain is for.
 // ---------------------------------------------------------------------------
 function refuseForeignDomain(what, id, realmId) {
+  log.debug("Entering refuseForeignDomain().");
   const parsed = spiffeId.parse(id);
   const mine = trustDomainOf(realmId);
   if (!parsed.ok || parsed.trustDomain === mine) {
+    log.debug("Leaving refuseForeignDomain().");
     return;
   }
+  log.debug("Leaving refuseForeignDomain().");
   throw new Error('Cannot mint ' + what + ' for ' + id + ': this authority ' +
                   'issues in the trust domain ' + spiffeId.trustDomainId(mine) +
-                  ' — the "' + (realmIdOf(realmId) || 'default') + '" realm\'s ' +
-                  '— and ' + spiffeId.trustDomainId(parsed.trustDomain) +
+                  ' — the "' + (realmIdOf(realmId) || 'default') + '" ' +
+                  'realm\'s — ' +
+                  'and ' + spiffeId.trustDomainId(parsed.trustDomain) +
                   ' is not it. An SVID naming a domain this authority does ' +
                   'not own is one no bundle anywhere verifies.');
 }
@@ -1213,7 +1315,8 @@ async function mintX509Svid(id, options) {
   const parsed = spiffeId.parse(id);
   if (!parsed.ok) {
     log.debug('Leaving mintX509Svid(). Invalid SPIFFE ID.');
-    throw new Error('Cannot mint an X509-SVID for ' + id + ': ' + parsed.reason);
+    throw new Error('Cannot mint an X509-SVID for ' + id + ': ' +
+                    parsed.reason);
   }
   refuseForeignDomain('an X509-SVID', parsed.id, opts.realm);
   // ---------------------------------------------------------------------
@@ -1224,7 +1327,8 @@ async function mintX509Svid(id, options) {
   // behind it was a second default beside config.js's `dflt` — the one that
   // would quietly win if the row ever stopped answering.
   // ---------------------------------------------------------------------
-  const type = keyTypeById(opts.keyType || realmSettings(opts.realm).x509KeyType);
+  const type = keyTypeById(opts.keyType ||
+                           realmSettings(opts.realm).x509KeyType);
   if (!type) {
     log.debug('Leaving mintX509Svid(). Unknown key type.');
     throw new Error('Cannot mint an X509-SVID for ' + id + ': the key type ' +
@@ -1415,10 +1519,14 @@ async function issueLeaf(id, publicPem, options) {
 // edit to one function instead of four protocol handlers.
 // ---------------------------------------------------------------------------
 function chainPemOf(issued) {
+  log.debug("Entering chainPemOf().");
+  log.debug("Leaving chainPemOf().");
   return [issued.pem].concat(issued.issuerChainPem || []);
 }
 
 function chainDerOf(issued) {
+  log.debug("Entering chainDerOf().");
+  log.debug("Leaving chainDerOf().");
   return [issued.der].concat(issued.issuerChainDer || []);
 }
 
@@ -1476,8 +1584,8 @@ function certificateFacts(der) {
     // still swallowed, for the reason in the header: the SVID is minted and the
     // caller is owed it.
     log.error(errorCodes.tag('STS-SPIFFE-0044') +
-              'spiffe: the certificate just issued could not be read back for ' +
-              'the directory, and the SVID is unaffected: ' + e.message);
+              'spiffe: the certificate just issued could not be read back ' +
+              'for the directory, and the SVID is unaffected: ' + e.message);
     log.debug('Leaving certificateFacts(). Unreadable.');
     return null;
   }
@@ -1681,21 +1789,24 @@ async function validateJwtSvid(token, audience, options) {
   if (!wanted) {
     log.debug('Leaving validateJwtSvid(). No audience.');
     return { ok: false, reason: 'ValidateJWTSVID requires the audience the ' +
-                                'validating party goes by; a JWT-SVID is only ' +
-                                'meaningful against one.',
+                                'validating party goes by; a JWT-SVID is ' +
+                                'only meaningful against one.',
              errorCode: 'STS-SPIFFE-0032' };
   }
   let unverified;
   try {
     unverified = jwt.decode(text, { complete: true });
   } catch (e) {
+    log.debug("Caught in validateJwtSvid(): " + ((e && e.message) || e));
     // Not a JWS at all. The text is not logged: it is somebody's credential.
     log.debug('Leaving validateJwtSvid(). Not a JWT.');
-    return { ok: false, errorCode: 'STS-SPIFFE-0033', reason: 'That is not a JWT.' };
+    return { ok: false, errorCode: 'STS-SPIFFE-0033', reason: 'That is not a ' +
+        'JWT.' };
   }
   if (!unverified || !unverified.payload) {
     log.debug('Leaving validateJwtSvid(). Nothing decoded.');
-    return { ok: false, errorCode: 'STS-SPIFFE-0033', reason: 'That is not a JWT.' };
+    return { ok: false, errorCode: 'STS-SPIFFE-0033', reason: 'That is not a ' +
+        'JWT.' };
   }
   const subject = String((unverified.payload || {}).sub || '');
   const parsedSub = spiffeId.parse(subject);
@@ -1817,13 +1928,28 @@ function jwkSetFor(trustDomain) {
 }
 
 function algorithmsFor(jwk) {
-  if (jwk.alg) return [jwk.alg];
-  if (jwk.kty === 'RSA') return ['RS256', 'RS384', 'RS512', 'PS256'];
+  log.debug("Entering algorithmsFor().");
+  if (jwk.alg) {
+    log.debug("Leaving algorithmsFor().");
+    return [jwk.alg];
+  }
+  if (jwk.kty === 'RSA') {
+    log.debug("Leaving algorithmsFor().");
+    return ['RS256', 'RS384', 'RS512', 'PS256'];
+  }
   if (jwk.kty === 'EC') {
-    if (jwk.crv === 'P-384') return ['ES384'];
-    if (jwk.crv === 'P-521') return ['ES512'];
+    if (jwk.crv === 'P-384') {
+      log.debug("Leaving algorithmsFor().");
+      return ['ES384'];
+    }
+    if (jwk.crv === 'P-521') {
+      log.debug("Leaving algorithmsFor().");
+      return ['ES512'];
+    }
+    log.debug("Leaving algorithmsFor().");
     return ['ES256'];
   }
+  log.debug("Leaving algorithmsFor().");
   return ['EdDSA'];
 }
 
@@ -1891,8 +2017,10 @@ async function bundle(realmId) {
 // produces a field a workload parses as one certificate and then cannot verify
 // anything against after a rotation.
 async function x509BundleDer(realmId) {
+  log.debug("Entering x509BundleDer().");
   const id = realmIdOf(realmId);
   await ready(id);
+  log.debug("Leaving x509BundleDer().");
   return Buffer.concat(trustAnchorsIn(id).map(function (a) {
     return a.certificateDer;
   }));
@@ -1947,7 +2075,8 @@ function federatedX509BundleDer(trustDomain, realmId) {
 function setFederatedBundle(trustDomain, document, options) {
   log.debug('Entering setFederatedBundle(). trustDomain=' + trustDomain);
   const opts = options || {};
-  const name = String(trustDomain == null ? '' : trustDomain).trim().toLowerCase();
+  const name = String(trustDomain == null ? '' : trustDomain).trim()
+    .toLowerCase();
   const parsed = spiffeId.parse(spiffeId.trustDomainId(name));
   if (!parsed.ok) {
     log.debug('Leaving setFederatedBundle(). Bad trust domain.');
@@ -1968,22 +2097,24 @@ function setFederatedBundle(trustDomain, document, options) {
     // both sides are compared under one spelling.
     const mine = (owner || realms.DEFAULT_ID) ===
                  (realmIdOf(opts.realm) || realms.DEFAULT_ID);
-    log.debug('Leaving setFederatedBundle(). That trust domain is served here.');
+    log.debug('Leaving setFederatedBundle(). That trust domain is served ' +
+              'here.');
     return { ok: false, errorCode: 'STS-SPIFFE-0040', reason: mine
       ? name + ' is this realm\'s own trust domain. A trust domain does not ' +
         'federate with itself, and accepting this would give it two bundles ' +
         'that could disagree.'
-      : name + ' is the trust domain the "' + (owner || 'default') + '" realm ' +
-        'of this service issues in. A federated bundle is a FOREIGN trust ' +
-        'domain\'s anchors, and one registered under a name this process ' +
-        'serves would let this realm\'s certificates be believed as that ' +
-        'realm\'s identities. Realms here are isolated; name a trust domain ' +
-        'no realm of this service uses.' };
+      : name + ' is the trust domain the "' + (owner || 'default') + '" ' +
+        'realm of this service issues in. A federated bundle is a FOREIGN ' +
+        'trust domain\'s anchors, and one registered under a name this ' +
+        'process serves would let this realm\'s certificates be believed as ' +
+        'that realm\'s identities. Realms here are isolated; name a trust ' +
+        'domain no realm of this service uses.' };
   }
   const checked = checkBundleDocument(document);
   if (!checked.ok) {
     log.debug('Leaving setFederatedBundle(). Bad document.');
     checked.errorCode = 'STS-SPIFFE-0041';
+    log.debug("Leaving setFederatedBundle().");
     return checked;
   }
   const held = federatedIn(opts.realm);
@@ -2014,7 +2145,8 @@ function setFederatedBundle(trustDomain, document, options) {
   // carry them — so changing one changes the bundle a workload sees.
   bumpSequence(opts.realm,
                'a federated bundle was ' + (existing ? 'updated' : 'added'));
-  log.debug('Leaving setFederatedBundle(). ' + held.size + ' federated bundle(s).');
+  log.debug('Leaving setFederatedBundle(). ' + held.size + ' federated ' +
+      'bundle(s).');
   return { ok: true, trustDomain: name, created: !existing };
 }
 
@@ -2023,28 +2155,36 @@ function setFederatedBundle(trustDomain, document, options) {
 // process now serves is exactly the row somebody needs to be able to take off.
 function deleteFederatedBundle(trustDomain, realmId) {
   log.debug('Entering deleteFederatedBundle(). trustDomain=' + trustDomain);
-  const name = String(trustDomain == null ? '' : trustDomain).trim().toLowerCase();
+  const name = String(trustDomain == null ? '' : trustDomain).trim()
+    .toLowerCase();
   const had = federatedIn(realmId).delete(name);
   if (had) bumpSequence(realmId, 'a federated bundle was removed');
-  log.debug('Leaving deleteFederatedBundle(). ' + (had ? 'Removed.' : 'It was not here.'));
+  log.debug('Leaving deleteFederatedBundle(). ' + (had ? 'Removed.' : 'It ' +
+      'was not here.'));
   return had;
 }
 
 function federatedBundle(trustDomain, realmId) {
-  const name = String(trustDomain == null ? '' : trustDomain).trim().toLowerCase();
+  log.debug("Entering federatedBundle().");
+  const name = String(trustDomain == null ? '' : trustDomain).trim()
+    .toLowerCase();
   if (shadowsServedDomain(name)) {
+    log.debug("Leaving federatedBundle().");
     return null;
   }
+  log.debug("Leaving federatedBundle().");
   return federatedIn(realmId).get(name) || null;
 }
 
 // This realm's federated bundles, less any named after a served trust domain.
 // Every reader that TRUSTS a bundle — the SVID verifier, the Workload API's
 // bundle maps, the JWT-SVID validator — goes through here or through the two
-// lookups above, so a shadowing row written before the refusal verifies nothing.
+// lookups above, so a shadowing row written before the refusal verifies
+// nothing.
 const warnedShadows = new Set();
 
 function federatedBundles(realmId) {
+  log.debug("Entering federatedBundles().");
   const out = [];
   const served = servedTrustDomains();
   federatedIn(realmId).forEach(function (entry) {
@@ -2063,7 +2203,10 @@ function federatedBundles(realmId) {
     }
     out.push(entry);
   });
-  out.sort(function (a, b) { return a.trustDomain.localeCompare(b.trustDomain); });
+  out.sort(function (a, b) {
+    return a.trustDomain.localeCompare(b.trustDomain);
+  });
+  log.debug("Leaving federatedBundles().");
   return out;
 }
 
@@ -2104,7 +2247,8 @@ function checkBundleDocument(value) {
       log.debug('Leaving checkBundleDocument(). A key has no kty.');
       return { ok: false, reason: 'Key ' + i + ' has no `kty`.' };
     }
-    if (key.use !== 'x509-svid' && key.use !== 'jwt-svid' && key.use !== 'wit-svid') {
+    if (key.use !== 'x509-svid' && key.use !== 'jwt-svid' &&
+        key.use !== 'wit-svid') {
       // The specification says a consumer MUST ignore a JWK whose `use` is
       // missing or unknown — so a bundle full of them is a bundle that will
       // verify nothing, and accepting it silently is the worst of the three
@@ -2118,14 +2262,16 @@ function checkBundleDocument(value) {
                                   'not — so a bundle of these would verify ' +
                                   'nothing and report no error.' };
     }
-    if (key.use === 'x509-svid' && (!Array.isArray(key.x5c) || !key.x5c.length)) {
+    if (key.use === 'x509-svid' &&
+        (!Array.isArray(key.x5c) || !key.x5c.length)) {
       log.debug('Leaving checkBundleDocument(). An x509-svid key has no x5c.');
       return { ok: false, reason: 'Key ' + i + ' is an x509-svid key with no ' +
                                   '`x5c`; the certificate is what an X.509 ' +
                                   'authority IS.' };
     }
   }
-  log.debug('Leaving checkBundleDocument(). ' + document.keys.length + ' key(s).');
+  log.debug('Leaving checkBundleDocument(). ' + document.keys.length + ' ' +
+      'key(s).');
   return { ok: true, document: document };
 }
 
@@ -2164,6 +2310,8 @@ const MAX_RETAINED_AUTHORITIES = 4;
 // rotation-as-outage this section argues against: every SVID in the field
 // stops verifying the moment the button is pressed.
 function retainedAuthorities(realmId) {
+  log.debug("Entering retainedAuthorities().");
+  log.debug("Leaving retainedAuthorities().");
   return realmSettings(realmId).retained;
 }
 
@@ -2242,19 +2390,25 @@ async function rotateJwtAuthority(realmId) {
 // vendored and must stay byte-identical to the parent project's copy.
 // ---------------------------------------------------------------------------
 function pemToDer(pem) {
+  log.debug("Entering pemToDer().");
+  log.debug("Leaving pemToDer().");
   return Buffer.from(String(pem).replace(/-----[^-]+-----/g, '')
     .replace(/\s+/g, ''), 'base64');
 }
 
 function derToPem(der, label) {
+  log.debug("Entering derToPem().");
   const b64 = Buffer.from(der).toString('base64');
   const lines = b64.match(/.{1,64}/g) || [];
+  log.debug("Leaving derToPem().");
   return '-----BEGIN ' + label + '-----\n' + lines.join('\n') +
          '\n-----END ' + label + '-----\n';
 }
 
 function toArrayBuffer(buf) {
+  log.debug("Entering toArrayBuffer().");
   const view = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  log.debug("Leaving toArrayBuffer().");
   return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength);
 }
 
@@ -2272,9 +2426,11 @@ function toArrayBuffer(buf) {
 // its certificate and not its key.
 // ---------------------------------------------------------------------------
 function state(realmId) {
+  log.debug("Entering state().");
   const id = realmIdOf(realmId);
   const active = activeX509Authority(id);
   const anchors = trustAnchorsIn(id);
+  log.debug("Leaving state().");
   return {
     enabled: !!config.value('spiffe.enabled'),
     ready: !!started && !startError,
@@ -2396,19 +2552,33 @@ module.exports = {
   // A GETTER, so that `admin-core/admin_views.js` — which reads this member to
   // print the cap — reports the value `spiffe.retainedAuthorities` holds in the
   // ambient realm rather than the default it replaced.
-  get MAX_RETAINED_AUTHORITIES() { return retainedAuthorities(); },
+  get MAX_RETAINED_AUTHORITIES() {
+    log.debug("Entering MAX_RETAINED_AUTHORITIES().");
+    log.debug("Leaving MAX_RETAINED_AUTHORITIES().");
+    return retainedAuthorities();
+  },
   DEFAULT_RETAINED_AUTHORITIES: MAX_RETAINED_AUTHORITIES,
   // BOTH TAKE AN OPTIONAL REALM and fall back to the AMBIENT one, which is
   // the shape every per-realm reader in this module has. The gRPC handlers
   // run inside `realms.run()` for the realm whose socket the call arrived on
   // (see spiffe_server.js), so a caller that passes nothing still gets the
   // right trust domain rather than the process's.
-  trustDomain: function (realmId) { return trustDomainOf(realmId); },
+  trustDomain: function (realmId) {
+    log.debug("Entering trustDomain().");
+    log.debug("Leaving trustDomain().");
+    return trustDomainOf(realmId);
+  },
   trustDomainId: function (realmId) {
+    log.debug("Entering trustDomainId().");
+    log.debug("Leaving trustDomainId().");
     return spiffeId.trustDomainId(trustDomainOf(realmId));
   },
   trustDomainDrift: trustDomainDrift,
-  processTrustDomain: function () { return PROCESS_TRUST_DOMAIN; },
+  processTrustDomain: function () {
+    log.debug("Entering processTrustDomain().");
+    log.debug("Leaving processTrustDomain().");
+    return PROCESS_TRUST_DOMAIN;
+  },
   ready: ready,
   state: state,
   mintX509Svid: mintX509Svid,
@@ -2430,5 +2600,9 @@ module.exports = {
   // signed an SVID without drawing the whole of `state()`.
   activeX509Authority: activeX509Authority,
   trustAnchors: trustAnchorsIn,
-  sequence: function (realmId) { return sequenceNow(realmId); }
+  sequence: function (realmId) {
+    log.debug("Entering sequence().");
+    log.debug("Leaving sequence().");
+    return sequenceNow(realmId);
+  }
 };

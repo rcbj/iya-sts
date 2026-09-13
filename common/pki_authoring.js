@@ -371,10 +371,14 @@ function draftFrom(body) {
 }
 
 function textOf(draft, name) {
+  log.debug("Entering textOf().");
+  log.debug("Leaving textOf().");
   return String((draft && draft[name]) || '').trim();
 }
 
 function flagOf(draft, name) {
+  log.debug("Entering flagOf().");
+  log.debug("Leaving flagOf().");
   return !!(draft && draft[name]);
 }
 
@@ -382,6 +386,8 @@ function flagOf(draft, name) {
 // grammar below starts here, so `#` is a comment everywhere on this pane
 // rather than in some of the boxes.
 function linesOf(draft, name) {
+  log.debug("Entering linesOf().");
+  log.debug("Leaving linesOf().");
   return String((draft && draft[name]) || '').split(/\r?\n/)
     .map(function (line) { return line.trim(); })
     .filter(function (line) { return line && line.charAt(0) !== '#'; });
@@ -405,10 +411,10 @@ function parseAltNames(lines) {
   lines.forEach(function (line) {
     const colon = line.indexOf(':');
     if (colon < 0) {
-      throw errorCodes.mark(new Error('Alternative name "' + line + '" has no type. Write ' +
-                      'dns:example.com, ip:10.0.0.1, email:a@b, ' +
-                      'uri:https://…, upn:user@REALM, krb5:host/x@REALM, ' +
-                      'rid:1.2.3.4, dirname:CN=x, or ' +
+      throw errorCodes.mark(new Error('Alternative name "' + line + '" has ' +
+                      'no type. Write dns:example.com, ip:10.0.0.1, ' +
+                      'email:a@b, uri:https://…, upn:user@REALM, ' +
+                      'krb5:host/x@REALM, rid:1.2.3.4, dirname:CN=x, or ' +
                       'othername:<oid>:<base64 DER>.'), 'STS-PKI-0078');
     }
     const kind = line.slice(0, colon).trim().toLowerCase();
@@ -416,16 +422,18 @@ function parseAltNames(lines) {
     if (kind === 'othername') {
       const second = value.indexOf(':');
       if (second < 0) {
-        throw errorCodes.mark(new Error('othername needs an OID and a base64 DER value: ' +
-                        'othername:1.2.3.4:BASE64'), 'STS-PKI-0078');
+        throw errorCodes.mark(new Error('othername needs an OID and a base64 ' +
+                        'DER value: othername:1.2.3.4:BASE64'), 'STS-PKI-0078');
       }
       out.push({ kind: 'otherName', oid: value.slice(0, second).trim(),
                  value: value.slice(second + 1).trim() });
       return;
     }
     if (!GENERAL_NAME_KINDS[kind]) {
-      throw errorCodes.mark(new Error('Unknown alternative name type "' + kind + '". The ' +
-                      'types are ' + Object.keys(GENERAL_NAME_KINDS).join(', ') +
+      throw errorCodes.mark(new Error('Unknown alternative name type "' + kind +
+                      '". ' +
+                      'The types ' +
+                      'are ' + Object.keys(GENERAL_NAME_KINDS).join(', ') +
                       ' and othername.'), 'STS-PKI-0078');
     }
     out.push({ kind: GENERAL_NAME_KINDS[kind], value: value });
@@ -443,15 +451,17 @@ function parseAccessDescriptions(lines) {
   lines.forEach(function (line) {
     const colon = line.indexOf(':');
     if (colon < 0) {
-      throw errorCodes.mark(new Error('Access description "' + line + '" has no method. ' +
-                      'Write ocsp:http://… or caissuers:http://… — or ' +
-                      '<oid>:<url> for a method this page does not name.'), 'STS-PKI-0079');
+      throw errorCodes.mark(new Error('Access description "' + line + '" has ' +
+                      'no method. Write ocsp:http://… or caissuers:http://… ' +
+                      '— or <oid>:<url> for a method this page does not ' +
+                      'name.'), 'STS-PKI-0079');
     }
     const method = line.slice(0, colon).trim();
     out.push({ method: known[method.toLowerCase()] || method,
                url: line.slice(colon + 1).trim() });
   });
-  log.debug('Leaving parseAccessDescriptions(). ' + out.length + ' entry(ies).');
+  log.debug('Leaving parseAccessDescriptions(). ' + out.length +
+            ' entry(ies).');
   return out;
 }
 
@@ -489,7 +499,8 @@ function parsePolicyMappings(lines) {
   lines.forEach(function (line) {
     const eq = line.indexOf('=');
     if (eq < 0) {
-      throw errorCodes.mark(new Error('A policy mapping is <issuer oid>=<subject oid>; got "' +
+      throw errorCodes.mark(new Error('A policy mapping is <issuer ' +
+                                      'oid>=<subject oid>; got "' +
                       line + '".'), 'STS-PKI-0080');
     }
     out.push({ issuer: line.slice(0, eq).trim(),
@@ -510,8 +521,9 @@ function parseNameConstraints(lines) {
   lines.forEach(function (line) {
     const space = line.indexOf(' ');
     if (space < 0) {
-      throw errorCodes.mark(new Error('A name constraint is "permit <name>" or ' +
-                      '"exclude <name>"; got "' + line + '".'), 'STS-PKI-0081');
+      throw errorCodes.mark(new Error('A name constraint is "permit <name>" ' +
+                      'or "exclude <name>"; got ' +
+                      '"' + line + '".'), 'STS-PKI-0081');
     }
     const verb = line.slice(0, space).trim().toLowerCase();
     const names = parseAltNames([line.slice(space + 1).trim()]);
@@ -520,8 +532,9 @@ function parseNameConstraints(lines) {
     } else if (verb === 'exclude' || verb === 'excluded') {
       out.excluded = out.excluded.concat(names);
     } else {
-      throw errorCodes.mark(new Error('A name constraint starts with "permit" or "exclude"; ' +
-                      'got "' + verb + '".'), 'STS-PKI-0081');
+      throw errorCodes.mark(new Error('A name constraint starts with ' +
+                      '"permit" or "exclude"; got ' +
+                      '"' + verb + '".'), 'STS-PKI-0081');
     }
   });
   log.debug('Leaving parseNameConstraints(). ' + out.permitted.length +
@@ -536,8 +549,9 @@ function parseCustomExtensions(lines) {
   lines.forEach(function (line) {
     const parts = line.split('|');
     if (parts.length < 3) {
-      throw errorCodes.mark(new Error('A custom extension is <oid>|<critical or ->|<base64 ' +
-                      'DER>; got "' + line + '".'), 'STS-PKI-0082');
+      throw errorCodes.mark(new Error('A custom extension is <oid>|<critical ' +
+                      'or ->|<base64 DER>; got ' +
+                      '"' + line + '".'), 'STS-PKI-0082');
     }
     out.push({ oid: parts[0].trim(),
                critical: /^crit/i.test(parts[1].trim()),
@@ -568,8 +582,9 @@ function subjectFrom(draft) {
   linesOf(draft, 'pki_dn_extra').forEach(function (line) {
     const eq = line.indexOf('=');
     if (eq < 0) {
-      throw errorCodes.mark(new Error('An extra subject attribute is NAME=value or ' +
-                      'OID=value; got "' + line + '".'), 'STS-PKI-0083');
+      throw errorCodes.mark(new Error('An extra subject attribute is ' +
+                      'NAME=value or OID=value; got ' +
+                      '"' + line + '".'), 'STS-PKI-0083');
     }
     const name = line.slice(0, eq).trim();
     const value = line.slice(eq + 1).trim();
@@ -592,6 +607,8 @@ function subjectFrom(draft) {
 function extensionsFrom(draft) {
   log.debug('Entering extensionsFrom().');
   const ticked = function (prefix, names) {
+    log.debug("Entering ticked().");
+    log.debug("Leaving ticked().");
     return names.filter(function (name) {
       return flagOf(draft, prefix + name);
     });
@@ -722,6 +739,8 @@ function extensionsFrom(draft) {
 // THE PROFILES, AND WHAT PICKING ONE DOES.
 // ---------------------------------------------------------------------------
 function profiles() {
+  log.debug("Entering profiles().");
+  log.debug("Leaving profiles().");
   return x509.profileIds().map(function (id) {
     const p = x509.profile(id) || {};
     return { id: id, label: p.label || id, ca: !!p.ca,
@@ -734,10 +753,14 @@ function profiles() {
 }
 
 function profileFor(profileId) {
+  log.debug("Entering profileFor().");
+  log.debug("Leaving profileFor().");
   return x509.profile(String(profileId || '')) || null;
 }
 
 function defaultProfileId() {
+  log.debug("Entering defaultProfileId().");
+  log.debug("Leaving defaultProfileId().");
   return x509.profileIds()[0];
 }
 
@@ -834,7 +857,9 @@ function applyProfile(draft, profileId) {
 // profile field rather than remembered, because there is nowhere to remember
 // it — the form is the state.
 function lastProfileYears(draft) {
+  log.debug("Entering lastProfileYears().");
   const p = profileFor(textOf(draft, 'pki_profile'));
+  log.debug("Leaving lastProfileYears().");
   return p ? (p.years || 1) : -1;
 }
 
@@ -842,10 +867,14 @@ function lastProfileYears(draft) {
 // WHICH ALGORITHMS AN APPROACH ALLOWS.
 // ---------------------------------------------------------------------------
 function pqModes() {
+  log.debug("Entering pqModes().");
+  log.debug("Leaving pqModes().");
   return PQ_MODES.map(function (one) { return Object.assign({}, one); });
 }
 
 function pqModeFor(id) {
+  log.debug("Entering pqModeFor().");
+  log.debug("Leaving pqModeFor().");
   return PQ_MODES.filter(function (one) {
     return one.id === String(id || '');
   })[0] || PQ_MODES[0];
@@ -884,6 +913,8 @@ function keyAlgorithms(pqModeId) {
 // hybrid certificate whose second key is also RSA is a certificate signed
 // twice by the same century.
 function alternativeKeyAlgorithms() {
+  log.debug("Entering alternativeKeyAlgorithms().");
+  log.debug("Leaving alternativeKeyAlgorithms().");
   return keyAlgorithms('pure').filter(function (one) {
     return one.signs;
   });
@@ -950,8 +981,9 @@ async function generateKeys(draft, which) {
   try {
     pair = await keyMaterial.generateKeyPair(algId);
   } catch (e) {
-    log.error(errorCodes.tag('STS-PKI-0075') + 'pki_authoring: a ' + algId + ' key pair could not be ' +
-              'generated: ' + e.message);
+    log.error(errorCodes.tag('STS-PKI-0075') + 'pki_authoring: a ' + algId +
+              ' ' +
+              'key pair could not be generated: ' + e.message);
     log.debug('Leaving generateKeys(). The generator refused.');
     return errorCodes.mark({ ok: false,
              errors: ['A ' + desc.label + ' key pair could not be generated: ' +
@@ -960,7 +992,8 @@ async function generateKeys(draft, which) {
   const out = Object.assign({}, draft);
   out[algField] = algId;
   const shown = await asShown(draft, pair, desc);
-  out[alternative ? 'pki_alt_private_key' : 'pki_private_key'] = shown.privateText;
+  out[alternative ? 'pki_alt_private_key' :
+      'pki_private_key'] = shown.privateText;
   out[alternative ? 'pki_alt_public_key' : 'pki_public_key'] = shown.publicText;
   log.debug('Leaving generateKeys(). ' + desc.label + '.');
   return { ok: true, draft: out, algorithm: desc.label,
@@ -993,7 +1026,8 @@ async function asShown(draft, pair, desc) {
   } catch (e) {
     // Not fatal: the key exists and PEM is what this page's other half reads.
     // A pair that could not be shown as JWK is still a pair.
-    log.warn(errorCodes.tag('STS-PKI-0076') + 'pki_authoring: the key pair could not be rendered as JWK (' +
+    log.warn(errorCodes.tag('STS-PKI-0076') + 'pki_authoring: the key pair ' +
+                                              'could not be rendered as JWK (' +
              e.message + '), so it is shown as PEM.');
     log.debug('Leaving asShown(). PEM after a failed conversion.');
     return { privateText: pair.privatePem, publicText: pair.publicPem };
@@ -1076,11 +1110,12 @@ async function issue(realmId, draft) {
     if (!priv || !pub) {
       log.debug('Leaving issue(). Nothing to reuse.');
       return errorCodes.mark({ ok: false,
-               errors: ['"reuse the key pair below" is ticked and the two key ' +
-                        'boxes are not both filled in. Clear the box and the ' +
-                        'button generates a pair: the certificate certifies ' +
-                        'the public key, and a CA needs the private half to ' +
-                        'go on signing with afterwards.'] }, 'STS-PKI-0086');
+               errors: ['"reuse the key pair below" is ticked and the two ' +
+                        'key boxes are not both filled in. Clear the box and ' +
+                        'the button generates a pair: the certificate ' +
+                        'certifies the public key, and a CA needs the ' +
+                        'private half to go on signing with ' +
+                        'afterwards.'] }, 'STS-PKI-0086');
     }
     try {
       // The boxes may hold JWK — the format toggle — and everything below is
@@ -1101,8 +1136,9 @@ async function issue(realmId, draft) {
       privatePem = pair.privatePem;
       publicPem = pair.publicPem;
     } catch (e) {
-      log.error(errorCodes.tag('STS-PKI-0075') + 'pki_authoring: a ' + keyAlgId + ' key pair could not be ' +
-                'generated: ' + e.message);
+      log.error(errorCodes.tag('STS-PKI-0075') + 'pki_authoring: a ' +
+                keyAlgId + ' ' +
+                'key pair could not be generated: ' + e.message);
       log.debug('Leaving issue(). The generator refused.');
       return errorCodes.mark({ ok: false,
                errors: ['A ' + keyDesc.label + ' key pair could not be ' +
@@ -1161,16 +1197,21 @@ async function issue(realmId, draft) {
   const notBeforeText = textOf(draft, 'pki_not_before');
   const notBefore = notBeforeText ? new Date(notBeforeText) : new Date();
   if (isNaN(notBefore.getTime())) {
-    return errorCodes.mark({ ok: false, errors: ['Not Before is not a date this service can ' +
-                                 'read: "' + notBeforeText + '".'] }, 'STS-PKI-0090');
+    log.debug("Leaving issue().");
+    return errorCodes.mark({ ok: false, errors: ['Not Before is not a date ' +
+                                 'this service can read: ' +
+                                 '"' + notBeforeText + '".'] }, 'STS-PKI-0090');
   }
   const notAfterText = textOf(draft, 'pki_not_after');
   let notAfter;
   if (notAfterText) {
     notAfter = new Date(notAfterText);
     if (isNaN(notAfter.getTime())) {
-      return errorCodes.mark({ ok: false, errors: ['Not After is not a date this service can ' +
-                                   'read: "' + notAfterText + '".'] }, 'STS-PKI-0090');
+      log.debug("Leaving issue().");
+      return errorCodes.mark({ ok: false, errors: ['Not After is not a date ' +
+                                   'this service can read: ' +
+                                   '"' + notAfterText + '".'] },
+                             'STS-PKI-0090');
     }
   } else {
     let years = parseInt(textOf(draft, 'pki_validity_years'), 10);
@@ -1181,6 +1222,7 @@ async function issue(realmId, draft) {
     notAfter.setUTCFullYear(notAfter.getUTCFullYear() + years);
   }
   if (notAfter.getTime() <= notBefore.getTime()) {
+    log.debug("Leaving issue().");
     return errorCodes.mark({ ok: false,
              errors: ['Not After is not later than Not Before, so this ' +
                       'certificate would be expired the moment it was ' +
@@ -1245,12 +1287,14 @@ async function issue(realmId, draft) {
   try {
     result = await x509.issueCertificate(spec);
   } catch (e) {
-    log.error(errorCodes.tag('STS-PKI-0092') + 'pki_authoring: a certificate for "' +
+    log.error(errorCodes.tag('STS-PKI-0092') + 'pki_authoring: a certificate ' +
+                                               'for "' +
               textOf(draft, 'pki_dn_cn') + '" could not be issued: ' +
               e.message);
     log.debug('Leaving issue(). The encoder refused.');
     return errorCodes.mark({ ok: false,
-             errors: ['The certificate could not be issued: ' + e.message] }, 'STS-PKI-0092');
+             errors: ['The certificate could not be issued: ' + e.message] },
+                           'STS-PKI-0092');
   }
 
   // --- the certification request, which this page does not consume -------
@@ -1283,8 +1327,9 @@ async function issue(realmId, draft) {
       });
       csrPem = request.pem;
     } catch (e) {
-      log.warn(errorCodes.tag('STS-PKI-0093') + 'pki_authoring: the certificate was issued and the CSR could ' +
-               'not be built: ' + e.message);
+      log.warn(errorCodes.tag('STS-PKI-0093') + 'pki_authoring: the ' +
+               'certificate was issued and the CSR could not be ' +
+               'built: ' + e.message);
       csrNote = ' The certification request could NOT be built (' + e.message +
                 '), which has no effect on the certificate.';
     }
@@ -1398,7 +1443,8 @@ async function alternativePairFor(draft) {
       log.debug('Leaving alternativePairFor(). Half a pair.');
       return errorCodes.mark({ ok: false,
                errors: ['The alternative key pair is half filled in. Both ' +
-                        'boxes, or neither and one is generated.'] }, 'STS-PKI-0095');
+                        'boxes, or neither and one is generated.'] },
+                             'STS-PKI-0095');
     }
     log.debug('Leaving alternativePairFor(). Reused.');
     return { ok: true, pair: { algId: algId, privatePem: priv,
@@ -1421,6 +1467,8 @@ async function alternativePairFor(draft) {
 // into form values and into `/admin-api` replies, and a counter would make one
 // realm's third object and another's the same string.
 function newObjectId(prefix) {
+  log.debug("Entering newObjectId().");
+  log.debug("Leaving newObjectId().");
   return prefix + '-' + nodeCrypto.randomBytes(8).toString('hex');
 }
 
@@ -1437,8 +1485,8 @@ async function useStoredKey(realmId, draft, objectId) {
   if (!object) {
     log.debug('Leaving useStoredKey(). No such object.');
     return errorCodes.mark({ ok: false,
-             errors: ['There is no object "' + objectId + '" in this realm\'s ' +
-                      'store.'] }, 'STS-PKI-0029');
+             errors: ['There is no object "' + objectId + '" in this ' +
+                      'realm\'s store.'] }, 'STS-PKI-0029');
   }
   if (!object.privateKeyPem) {
     log.debug('Leaving useStoredKey(). No private key.');
@@ -1487,7 +1535,9 @@ function chainFor(realmId, object) {
   while (current && hops < 16) {
     hops += 1;
     if (seen[current.id || current.tier]) {
-      log.warn(errorCodes.tag('STS-PKI-0097') + 'pki_authoring: the chain above "' + object.subject + '" ' +
+      log.warn(errorCodes.tag('STS-PKI-0097') + 'pki_authoring: the chain ' +
+                                                'above ' +
+                                                '"' + object.subject + '" ' +
                'loops back on itself at "' + current.subject + '", so the ' +
                'walk stopped there. An issuer id was edited into a cycle.');
       break;
@@ -1507,7 +1557,8 @@ function chainFor(realmId, object) {
     }
     // A tier knows its own parent implicitly; `issuers()` answers tiers with
     // no `issuerId`, so the walk continues through the hierarchy by ORDER.
-    current = Object.assign({}, next, { issuerId: parentTierOf(realmId, next) });
+    current = Object.assign({}, next,
+                            { issuerId: parentTierOf(realmId, next) });
   }
   log.debug('Leaving chainFor(). ' + out.length + ' certificate(s) above it.');
   return out;
@@ -1516,13 +1567,17 @@ function chainFor(realmId, object) {
 // The id of the tier above this one, or null. The hierarchy is built root
 // first, so the parent of tier N is tier N-1 and the Root's parent is nothing.
 function parentTierOf(realmId, issuer) {
+  log.debug("Entering parentTierOf().");
   if (!issuer || !issuer.tier) {
+    log.debug("Leaving parentTierOf().");
     return issuer ? issuer.issuerId || null : null;
   }
   const index = pki.TIER_IDS.indexOf(issuer.tier);
   if (index <= 0) {
+    log.debug("Leaving parentTierOf().");
     return null;
   }
+  log.debug("Leaving parentTierOf().");
   return 'tier:' + pki.TIER_IDS[index - 1];
 }
 
@@ -1546,15 +1601,16 @@ async function exportKeys(realmId, draft, objectId) {
     log.debug('Leaving exportKeys(). Unknown format.');
     return errorCodes.mark({ ok: false,
              errors: ['"' + format + '" is not a keystore format. They are ' +
-                      keyMaterial.keystoreFormats().join(', ') + '.'] }, 'STS-PKI-0098');
+                      keyMaterial.keystoreFormats().join(', ') + '.'] },
+                           'STS-PKI-0098');
   }
   const password = String(draft.pki_ks_password || '');
   const object = objectId ? pki.objectFor(realmId, objectId) : null;
   if (objectId && !object) {
     log.debug('Leaving exportKeys(). No such object.');
     return errorCodes.mark({ ok: false,
-             errors: ['There is no object "' + objectId + '" in this realm\'s ' +
-                      'store.'] }, 'STS-PKI-0029');
+             errors: ['There is no object "' + objectId + '" in this ' +
+                      'realm\'s store.'] }, 'STS-PKI-0029');
   }
 
   // The SELECTED object if one was named, otherwise whatever is in the two key
@@ -1564,9 +1620,11 @@ async function exportKeys(realmId, draft, objectId) {
                                              config.value('pki.keyAlgorithm'));
   const desc = keyMaterial.keyAlg(keyAlgId);
   if (!desc) {
+    log.debug("Leaving exportKeys().");
     return errorCodes.mark({ ok: false,
-             errors: ['"' + keyAlgId + '" is not a key algorithm this service ' +
-                      'knows, so its key pair cannot be written out.'] }, 'STS-PKI-0002');
+             errors: ['"' + keyAlgId + '" is not a key algorithm this ' +
+                      'service knows, so its key pair cannot be written ' +
+                      'out.'] }, 'STS-PKI-0002');
   }
   const privateText = object ? object.privateKeyPem
                              : String(draft.pki_private_key || '').trim();
@@ -1576,7 +1634,8 @@ async function exportKeys(realmId, draft, objectId) {
     log.debug('Leaving exportKeys(). No key pair.');
     return errorCodes.mark({ ok: false,
              errors: ['There is no key pair to export. Generate one, or ' +
-                      'select an object in the store below.'] }, 'STS-PKI-0099');
+                      'select an object in the store below.'] },
+                           'STS-PKI-0099');
   }
 
   const certs = [];
@@ -1614,9 +1673,11 @@ async function exportKeys(realmId, draft, objectId) {
 // the algorithm where there is not, and nothing in it a file system will
 // argue with.
 function fileBaseFor(object, desc) {
+  log.debug("Entering fileBaseFor().");
   const from = object ? object.subject : (desc.label || 'key-pair');
   const cn = /CN=([^,]+)/.exec(from);
   const stem = (cn ? cn[1] : from).trim() || 'key-pair';
+  log.debug("Leaving fileBaseFor().");
   return stem.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 60);
 }
 
@@ -1671,6 +1732,8 @@ function view(realmId, draft) {
 // full because a certificate is the half of a key pair meant to be handed
 // around.
 function describeObject(one) {
+  log.debug("Entering describeObject().");
+  log.debug("Leaving describeObject().");
   return {
     id: one.id,
     ca: !!one.ca,

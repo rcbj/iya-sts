@@ -63,19 +63,33 @@ const realms = require('../common/realms');
 const authn = require('../authn/authn');
 const oidcRp = require('../common/oidc_rp');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'cross_surface_sso',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // The two things these functions want from express and nothing else: somewhere
 // to put a Set-Cookie, and somewhere to read one back from. A real response
 // would drag the whole app in for two header operations.
 // ---------------------------------------------------------------------------
 function fakeRes() {
+  log.debug("Entering fakeRes().");
   const headers = [];
+  log.debug("Leaving fakeRes().");
   return {
     headers: headers,
-    getHeader: function () { return headers.slice(); },
+    getHeader: function () {
+      log.debug("Entering getHeader().");
+      log.debug("Leaving getHeader().");
+      return headers.slice();
+    },
     setHeader: function (name, value) {
+      log.debug("Entering setHeader().");
       headers.length = 0;
       [].concat(value).forEach(function (v) { headers.push(v); });
+      log.debug("Leaving setHeader().");
     },
     // `startRelyingPartySession()` reads `res.req` for the CAEP observer's
     // issuer. There is no request here and null is what that path expects.
@@ -85,6 +99,7 @@ function fakeRes() {
 
 // The cookie value the response above was given, by name.
 function cookieFrom(res, name) {
+  log.debug("Entering cookieFrom().");
   let found = '';
   res.headers.forEach(function (line) {
     const pair = String(line).split(';')[0];
@@ -93,13 +108,17 @@ function cookieFrom(res, name) {
       found = pair.slice(i + 1).trim();
     }
   });
+  log.debug("Leaving cookieFrom().");
   return found;
 }
 
 // A request carrying one cookie. `cookiesOf()` parses `req.headers.cookie` and
 // wants nothing else.
 function reqWith(pairs) {
-  const bits = Object.keys(pairs).map(function (k) { return k + '=' + pairs[k]; });
+  log.debug("Entering reqWith().");
+  const bits = Object.keys(pairs)
+                     .map(function (k) { return k + '=' + pairs[k]; });
+  log.debug("Leaving reqWith().");
   return { headers: { cookie: bits.join('; ') } };
 }
 
@@ -107,13 +126,17 @@ function reqWith(pairs) {
 // table is process-wide, so a realm left behind changes what a later test in
 // the same run resolves. Same shape as realm_isolation.js's, deliberately.
 function withRealm(t, id, fn) {
+  log.debug("Entering withRealm().");
   const made = realms.create({ id: id, name: id,
                                description: 'Created by ' + __filename });
   if (!made.ok) {
-    t.bad('could not create the realm "' + id + '"', (made.errors || []).join(' '));
+    t.bad('could not create the realm "' + id + '"',
+          (made.errors || []).join(' '));
+    log.debug("Leaving withRealm().");
     return undefined;
   }
   try {
+    log.debug("Leaving withRealm().");
     return fn(made.realm);
   } finally {
     realms.remove(id);
@@ -124,12 +147,15 @@ function withRealm(t, id, fn) {
 // derived from it — which is what the code flow produces, with the parent in
 // the ambient realm and the session in the default one.
 function signOnIn(realm, username) {
+  log.debug("Entering signOnIn().");
+  log.debug("Leaving signOnIn().");
   return realms.run(realm, function () {
     return authn.startSession(fakeRes(), username, [], '1', 'Test', {});
   });
 }
 
 function consoleSessionFrom(parent, parentRealmId, username) {
+  log.debug("Entering consoleSessionFrom().");
   const res = fakeRes();
   const session = realms.run(realms.DEFAULT_REALM, function () {
     return authn.startRelyingPartySession({
@@ -139,6 +165,7 @@ function consoleSessionFrom(parent, parentRealmId, username) {
       clientId: 'sts-admin-console', cookie: 'sts_admin'
     });
   });
+  log.debug("Leaving consoleSessionFrom().");
   return { session: session, cookie: cookieFrom(res, 'sts_admin') };
 }
 
@@ -148,26 +175,31 @@ function consoleSessionFrom(parent, parentRealmId, username) {
 //    it, and by name rather than by behaviour.
 // ---------------------------------------------------------------------------
 function checkSurfaceTable(t) {
+  log.debug("Entering checkSurfaceTable().");
   t.log.info('the surface table: a FLOW realm and a SESSION realm');
 
   const admin = oidcRp.surfaceOf('admin');
   const portal = oidcRp.surfaceOf('portal');
 
   t.equal(admin.flowRealm, 'ambient',
-          'the console AUTHORIZES in the ambient realm — this is the single sign-on');
+          'the console AUTHORIZES in the ambient realm — this is the single ' +
+          'sign-on');
   t.equal(portal.flowRealm, 'ambient',
-          'and so does the portal, which is what makes them the same sign-on session');
+          'and so does the portal, which is what makes them the same sign-on ' +
+          'session');
   t.equal(admin.sessionRealm, 'default',
-          'the console\'s own session stays in the DEFAULT realm, so one console ' +
-          'session is readable from every realm and the role roster stays in one place');
+          'the console\'s own session stays in the DEFAULT realm, so one ' +
+          'console session is readable from every realm and the role roster ' +
+          'stays in one place');
   t.equal(portal.sessionRealm, 'ambient',
           'the portal\'s session is the realm\'s own — a person in acme is a ' +
           'different person from the one in the default realm');
 
   t.check(admin.cookie !== portal.cookie,
-          'and the two surfaces keep separate cookies: sharing a sign-on session ' +
-          'is not sharing a session',
+          'and the two surfaces keep separate cookies: sharing a sign-on ' +
+          'session is not sharing a session',
           admin.cookie + ' / ' + portal.cookie);
+  log.debug("Leaving checkSurfaceTable().");
 }
 
 // ---------------------------------------------------------------------------
@@ -179,6 +211,7 @@ function checkSurfaceTable(t) {
 // it would not be there, and the read would end the session as an orphan.
 // ---------------------------------------------------------------------------
 function checkParentAcrossRealms(t) {
+  log.debug("Entering checkParentAcrossRealms().");
   t.log.info('a console session whose sign-on session is in another realm');
 
   withRealm(t, 'sso-parent', function (realm) {
@@ -190,8 +223,8 @@ function checkParentAcrossRealms(t) {
     t.equal(made.session.derivedFrom, parent.id,
             'the console session names the sign-on session it came from');
     t.equal(made.session.derivedFromRealm, realm.id,
-            'AND NAMES THE REALM IT IS IN, which is the field the whole of this ' +
-            'file rests on');
+            'AND NAMES THE REALM IT IS IN, which is the field the whole of ' +
+            'this file rests on');
 
     // The read, from inside the realm — which is where the console is reached
     // when a person is looking at /realm/sso-parent/admin.
@@ -199,8 +232,9 @@ function checkParentAcrossRealms(t) {
       return authn.relyingPartySessionOf(
         reqWith({ sts_admin: made.cookie }), 'sts_admin', realms.DEFAULT_ID);
     });
-    t.check(!!read, 'and it is honoured when read from inside that realm — the ' +
-            'parent check looks in the parent\'s partition and not in this one',
+    t.check(!!read, 'and it is honoured when read from inside that realm — ' +
+            'the parent check looks in the parent\'s partition and not in ' +
+            'this one',
             read ? read.id : '(the session was refused or ended)');
 
     t.equal(read && read.user && read.user.username, 'cross-alice',
@@ -209,9 +243,11 @@ function checkParentAcrossRealms(t) {
     // The expiry is the parent's. Read out of the wrong partition the parent is
     // not found at all, and the session gets a full fresh lifetime instead.
     t.equal(made.session.expires, parent.expires,
-            'the console session expires WITH the sign-on session, which means ' +
-            'the parent was found in the right partition when it was created');
+            'the console session expires WITH the sign-on session, which ' +
+            'means the parent was found in the right partition when it was ' +
+            'created');
   });
+  log.debug("Leaving checkParentAcrossRealms().");
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +258,9 @@ function checkParentAcrossRealms(t) {
 // partition, and before 2026-09-11 the walk never looked there.
 // ---------------------------------------------------------------------------
 function checkCascadeAcrossRealms(t) {
-  t.log.info('ending a realm\'s sign-on session ends the console session it issued');
+  log.debug("Entering checkCascadeAcrossRealms().");
+  t.log.info('ending a realm\'s sign-on session ends the console session it ' +
+             'issued');
 
   withRealm(t, 'sso-cascade', function (realm) {
     const parent = signOnIn(realm, 'cross-bob');
@@ -240,7 +278,8 @@ function checkCascadeAcrossRealms(t) {
     t.check(!!realms.run(realms.DEFAULT_REALM, function () {
               return authn.sessionById(made.session.id);
             }),
-            'the console session is in the default realm\'s store before the sign-out');
+            'the console session is in the default realm\'s store before the ' +
+            'sign-out');
 
     realms.run(realm, function () {
       authn.endSessionById(parent.id, 'this test');
@@ -250,10 +289,11 @@ function checkCascadeAcrossRealms(t) {
               return authn.sessionById(made.session.id);
             }),
             'AND THE SIGN-OUT ITSELF TOOK IT. Walking only the parent\'s own ' +
-            'partition finds no children, so the sign-on session ends and the ' +
-            'console session it issued goes on working — a sign-out that ' +
+            'partition finds no children, so the sign-on session ends and ' +
+            'the console session it issued goes on working — a sign-out that ' +
             'visibly does nothing on the one surface an operator is looking at',
-            'the console session ' + made.session.id + ' is still in the store');
+            'the console session ' + made.session.id +
+            ' is still in the store');
 
     // And the reader agrees, which is the half a person actually meets. It is
     // asserted SECOND and never instead of the line above.
@@ -262,8 +302,10 @@ function checkCascadeAcrossRealms(t) {
         reqWith({ sts_admin: made.cookie }), 'sts_admin', realms.DEFAULT_ID);
     });
     t.check(!after, 'and the cookie no longer admits anybody',
-            after ? 'the console session ' + after.id + ' is still honoured' : '');
+            after ? 'the console session ' + after.id + ' is still honoured' :
+            '');
   });
+  log.debug("Leaving checkCascadeAcrossRealms().");
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +328,7 @@ function checkCascadeAcrossRealms(t) {
 // the same reason.
 // ---------------------------------------------------------------------------
 function checkOtherRealmsSignOutLeavesItAlone(t) {
+  log.debug("Entering checkOtherRealmsSignOutLeavesItAlone().");
   t.log.info('a sign-out in one realm leaves another realm\'s children alone');
 
   const parent = realms.run(realms.DEFAULT_REALM, function () {
@@ -314,6 +357,7 @@ function checkOtherRealmsSignOutLeavesItAlone(t) {
   realms.run(realms.DEFAULT_REALM, function () {
     authn.endSessionById(parent.id, 'this test cleaning up');
   });
+  log.debug("Leaving checkOtherRealmsSignOutLeavesItAlone().");
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +366,7 @@ function checkOtherRealmsSignOutLeavesItAlone(t) {
 //    behaves exactly as it did.
 // ---------------------------------------------------------------------------
 function checkDefaultRealmUnchanged(t) {
+  log.debug("Entering checkDefaultRealmUnchanged().");
   t.log.info('a service with no realms defined');
 
   t.equal(realms.count(), 1,
@@ -341,16 +386,16 @@ function checkDefaultRealmUnchanged(t) {
     });
   });
   t.equal(session.derivedFromRealm, realms.DEFAULT_ID,
-          'a caller that names no parent realm gets its own, which is what an ' +
-          'absent field has always meant');
+          'a caller that names no parent realm gets its own, which is what ' +
+          'an absent field has always meant');
 
   const cookie = cookieFrom(res, 'sts_portal');
   t.check(!!realms.run(realms.DEFAULT_REALM, function () {
             return authn.relyingPartySessionOf(
               reqWith({ sts_portal: cookie }), 'sts_portal');
           }),
-          'and it reads back with no realm named at all, which is every caller ' +
-          'in a service with no realms defined');
+          'and it reads back with no realm named at all, which is every ' +
+          'caller in a service with no realms defined');
 
   realms.run(realms.DEFAULT_REALM, function () {
     authn.endSessionById(parent.id, 'this test');
@@ -359,16 +404,19 @@ function checkDefaultRealmUnchanged(t) {
             return authn.relyingPartySessionOf(
               reqWith({ sts_portal: cookie }), 'sts_portal');
           }),
-          'and the cascade inside one realm still works, which is the case that ' +
-          'existed before any of this');
+          'and the cascade inside one realm still works, which is the case ' +
+          'that existed before any of this');
+  log.debug("Leaving checkDefaultRealmUnchanged().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkSurfaceTable(t);
   checkParentAcrossRealms(t);
   checkCascadeAcrossRealms(t);
   checkOtherRealmsSignOutLeavesItAlone(t);
   checkDefaultRealmUnchanged(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

@@ -43,25 +43,43 @@ delete process.env.CONFIG_FILE;
 const realms = require('../common/realms');
 const replication = require('../persistence/persistence_replication');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'replication',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // A DRIVER THAT IS A CHANGE LOG AND NOTHING ELSE. `changesSince()` does the
 // two things the real one does and that everything here depends on: it filters
 // out this process's own rows, and it pages.
 // ---------------------------------------------------------------------------
 function fakeDriver(me) {
+  log.debug("Entering fakeDriver().");
   const rows = [];
   let seq = 0;
+  log.debug("Leaving fakeDriver().");
   return {
     rows: rows,
-    origin: function () { return me; },
+    origin: function () {
+      log.debug("Entering origin().");
+      log.debug("Leaving origin().");
+      return me;
+    },
     // A row from somebody else, as `recordChanges()` would have written it.
     write: function (origin, kind, realm, key) {
+      log.debug("Entering write().");
       seq++;
       rows.push({ seq: seq, origin: origin, kind: kind,
                   realm: realm || '', key: key || '' });
+      log.debug("Leaving write().");
       return seq;
     },
-    latestChangeSeq: function () { return Promise.resolve(seq); },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(seq);
+    },
     // -----------------------------------------------------------------------
     // **IT DOES NOT FILTER BY ORIGIN, DELIBERATELY**, and the first version of
     // this file did. The real driver filters in SQL (`origin <> $2`), so a
@@ -72,6 +90,8 @@ function fakeDriver(me) {
     // places that protection lives.
     // -----------------------------------------------------------------------
     changesSince: function (after, limit) {
+      log.debug("Entering changesSince().");
+      log.debug("Leaving changesSince().");
       return Promise.resolve(rows.filter(function (row) {
         return row.seq > after;
       }).slice(0, limit));
@@ -79,7 +99,11 @@ function fakeDriver(me) {
     // No `watchChanges`: the nudge is deliberately absent here, because the
     // whole claim under test is that the POLL is the contract and everything
     // below has to hold without a notification ever arriving.
-    changeCeiling: function () { return Promise.resolve(seq); }
+    changeCeiling: function () {
+      log.debug("Entering changeCeiling().");
+      log.debug("Leaving changeCeiling().");
+      return Promise.resolve(seq);
+    }
   };
 }
 
@@ -97,14 +121,18 @@ function fakeDriver(me) {
 // wherever the default happens to be the value it wanted.
 // ---------------------------------------------------------------------------
 function coordinate(on) {
+  log.debug("Entering coordinate().");
   if (on === null) {
     delete process.env.STS_PERSISTENCE_COORDINATE;
+    log.debug("Leaving coordinate().");
     return;
   }
   process.env.STS_PERSISTENCE_COORDINATE = on ? 'true' : 'false';
+  log.debug("Leaving coordinate().");
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   coordinate(true);
 
   // -------------------------------------------------------------------------
@@ -118,15 +146,19 @@ async function run(t) {
   driver.write('them', 'directory', '', 'cn=theirs');
 
   await replication.start(driver, {
-    directory: function (change) { applied.push(change.key); }
+    directory: function (change) {
+      log.debug("Entering directory().");
+      applied.push(change.key);
+      log.debug("Leaving directory().");
+    }
   });
   await replication.pull();
 
   t.equal(applied.join(','), '',
-          'NOTHING WAS APPLIED YET — the high-water mark is taken at start(), ' +
-          'so a process that has just restored the whole store treats ' +
-          'everything already committed as seen rather than replaying the ' +
-          'entire history of the deployment on the way up');
+          'NOTHING WAS APPLIED YET — the high-water mark is taken at ' +
+          'start(), so a process that has just restored the whole store ' +
+          'treats everything already committed as seen rather than replaying ' +
+          'the entire history of the deployment on the way up');
 
   driver.write('me', 'directory', '', 'cn=mine-again');
   driver.write('them', 'directory', '', 'cn=theirs-again');
@@ -135,8 +167,8 @@ async function run(t) {
   t.equal(applied.join(','), 'cn=theirs-again',
           'ANOTHER PROCESS\'S WRITE IS APPLIED AND THIS PROCESS\'S IS NOT. ' +
           'Without the second half, two processes exchange one row for ever: ' +
-          'each applies its own write, journals it, flushes it, and wakes the ' +
-          'other');
+          'each applies its own write, journals it, flushes it, and wakes ' +
+          'the other');
 
   // -------------------------------------------------------------------------
   // 2. IN COMMIT ORDER.
@@ -146,7 +178,11 @@ async function run(t) {
   const ordered = fakeDriver('me');
   const order = [];
   await replication.start(ordered, {
-    minted: function (change) { order.push(change.key); }
+    minted: function (change) {
+      log.debug("Entering minted().");
+      order.push(change.key);
+      log.debug("Leaving minted().");
+    }
   });
   ordered.write('them', 'minted', '', 'first');
   ordered.write('them', 'minted', '', 'second');
@@ -165,7 +201,11 @@ async function run(t) {
   const noisy = fakeDriver('me');
   let reads = 0;
   await replication.start(noisy, {
-    directory: function () { reads++; }
+    directory: function () {
+      log.debug("Entering directory().");
+      reads++;
+      log.debug("Leaving directory().");
+    }
   });
   noisy.write('them', 'directory', '', 'cn=busy');
   noisy.write('them', 'directory', '', 'cn=busy');
@@ -185,19 +225,25 @@ async function run(t) {
   let attempts = 0;
   const got = [];
   await replication.start(flaky, {
-    directory: function (change) { got.push(change.key); }
+    directory: function (change) {
+      log.debug("Entering directory().");
+      got.push(change.key);
+      log.debug("Leaving directory().");
+    }
   });
   flaky.write('them', 'directory', '', 'cn=one');
   const realChanges = flaky.changesSince;
   flaky.changesSince = function () {
+    log.debug("Entering changesSince().");
     attempts++;
+    log.debug("Leaving changesSince().");
     return Promise.reject(new Error('the database went away'));
   };
   await replication.pull();
   t.equal(got.length, 0, 'a pull that could not read applied nothing');
   t.check(replication.status().lastError.indexOf('went away') >= 0,
-          'and the failure is REPORTED rather than swallowed — a process that ' +
-          'is behind and says it is coordinating is worse than one that ' +
+          'and the failure is REPORTED rather than swallowed — a process ' +
+          'that is behind and says it is coordinating is worse than one that ' +
           'admits it',
           replication.status().lastError);
 
@@ -217,10 +263,12 @@ async function run(t) {
   const survived = [];
   await replication.start(mixed, {
     directory: function (change) {
+      log.debug("Entering directory().");
       if (change.key === 'cn=poison') {
         throw new Error('this row cannot be applied here');
       }
       survived.push(change.key);
+      log.debug("Leaving directory().");
     }
   });
   mixed.write('them', 'directory', '', 'cn=poison');
@@ -239,7 +287,11 @@ async function run(t) {
   replication.reset();
   const future = fakeDriver('me');
   let known = 0;
-  await replication.start(future, { directory: function () { known++; } });
+  await replication.start(future, { directory: function () {
+    log.debug("Entering directory().");
+    known++;
+    log.debug("Leaving directory().");
+  } });
   future.write('them', 'something-this-build-has-never-heard-of', '', 'x');
   future.write('them', 'directory', '', 'cn=known');
   await replication.pull();
@@ -264,7 +316,11 @@ async function run(t) {
   const realmed = fakeDriver('me');
   let sawRealm = null;
   await replication.start(realmed, {
-    minted: function () { sawRealm = realms.currentId(); }
+    minted: function () {
+      log.debug("Entering minted().");
+      sawRealm = realms.currentId();
+      log.debug("Leaving minted().");
+    }
   });
   realmed.write('them', 'minted', 'repl-test', 'h\u0000k');
   await replication.pull();
@@ -282,10 +338,15 @@ async function run(t) {
   const ignored = fakeDriver('me');
   let touched = 0;
   const off = await replication.start(ignored,
-                                      { directory: function () { touched++; } });
+                                      { directory: function () {
+                                        log.debug("Entering directory().");
+                                        touched++;
+                                        log.debug("Leaving directory().");
+                                      } });
   ignored.write('them', 'directory', '', 'cn=nobody-is-listening');
   await replication.pull();
-  t.equal(off.coordinating, false, 'start() reports that it is not coordinating');
+  t.equal(off.coordinating, false,
+          'start() reports that it is not coordinating');
   t.equal(touched, 0,
           'AND NOTHING IS APPLIED — a process alone with its own copy, which ' +
           'is exactly what this service was before 2026-09-06 and is still a ' +
@@ -303,6 +364,7 @@ async function run(t) {
   coordinate(null);
   replication.reset();
   realms.remove('repl-test');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

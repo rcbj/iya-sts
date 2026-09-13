@@ -1,4 +1,11 @@
 "use strict";
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log =
+    require('bunyan').createLogger({ name: 'sts_directory_bulk_load_ldap_50k',
+  level: process.env.LOG_LEVEL || 'info' });
 //
 // File: sts_directory_bulk_load_ldap_50k.js
 //
@@ -89,9 +96,11 @@
 // ===========================================================================
 
 function setDefault(name, value) {
+  log.debug("Entering setDefault().");
   if (process.env[name] === undefined || process.env[name] === "") {
     process.env[name] = value;
   }
+  log.debug("Leaving setDefault().");
 }
 
 setDefault("BULK_USERS", "50000");

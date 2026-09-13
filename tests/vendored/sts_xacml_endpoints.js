@@ -47,18 +47,18 @@
 //
 // **A PDP WITH AN EMPTY REPOSITORY ANSWERS NotApplicable TO EVERYTHING.** There
 // is no interesting question to ask this surface until a policy exists, and the
-// only way to put one there over HTTP is `/admin-api/xacml/create-from-template`
-// — a door this repository owns, on the console this repository's own jobs
-// cover. So every section below is a CONSOLE CONTROL WITH A PROTOCOL
-// CONSEQUENCE: a template built through `/admin-api` decides at `/xacml/pdp`, a
-// policy disabled on `/admin/xacml/policies` disappears from what a remote PEP
-// pulls, an obligation added in the editor turns a Permit into a refusal at
-// `/xacml/protected`, and a PEP disabled on `/admin/xacml/peps` stays disabled
-// when it re-registers. That is exactly the argument `sts_consent.js` makes one
-// file over, and splitting these in two was refused for its reason: the
-// assertion that matters is that the authoring door changes what the DECIDING
-// door says, and a test with the two halves in two repositories could not make
-// it.
+// only way to put one there over HTTP is
+// `/admin-api/xacml/create-from-template` — a door this repository owns, on the
+// console this repository's own jobs cover. So every section below is a CONSOLE
+// CONTROL WITH A PROTOCOL CONSEQUENCE: a template built through `/admin-api`
+// decides at `/xacml/pdp`, a policy disabled on `/admin/xacml/policies`
+// disappears from what a remote PEP pulls, an obligation added in the editor
+// turns a Permit into a refusal at `/xacml/protected`, and a PEP disabled on
+// `/admin/xacml/peps` stays disabled when it re-registers. That is exactly the
+// argument `sts_consent.js` makes one file over, and splitting these in two was
+// refused for its reason: the assertion that matters is that the authoring door
+// changes what the DECIDING door says, and a test with the two halves in two
+// repositories could not make it.
 //
 // ---------------------------------------------------------------------------
 // IT RUNS IN A TRUST REALM OF ITS OWN, AND THAT IS NOT MERELY TIDINESS.
@@ -134,17 +134,23 @@ const forge = require("node-forge");
 const names = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_xacml_endpoints",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -209,13 +215,24 @@ const DISCHARGEABLE = "urn:sts:xacml:obligation:log";
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
-function realmUrl(path) { return base + "/realm/" + REALM + path; }
-function api(path) { return realmUrl("/admin-api" + path); }
+function realmUrl(path) {
+  log.debug("Entering realmUrl().");
+  log.debug("Leaving realmUrl().");
+  return base + "/realm/" + REALM + path;
+}
+
+function api(path) {
+  log.debug("Entering api().");
+  log.debug("Leaving api().");
+  return realmUrl("/admin-api" + path);
+}
 
 // ---------------------------------------------------------------------------
 // THE VERBS.
@@ -228,6 +245,7 @@ async function fetchJson(url, options) {
   try {
     body = JSON.parse(text);
   } catch (e) {
+    log.debug("Caught in fetchJson(): " + ((e && e.message) || e));
     // Not JSON — an HTML page or an empty 304. The caller reports the status
     // and the raw text, which says more than a parse error would.
     body = null;
@@ -239,10 +257,14 @@ async function fetchJson(url, options) {
 }
 
 function get(url) {
+  log.debug("Entering get().");
+  log.debug("Leaving get().");
   return fetchJson(url);
 }
 
 function postJson(url, payload) {
+  log.debug("Entering postJson().");
+  log.debug("Leaving postJson().");
   return fetchJson(url, { method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(payload || {}) });
@@ -251,6 +273,8 @@ function postJson(url, payload) {
 // A raw body, for the three malformed requests in section 3. `JSON.stringify`
 // cannot produce them, which is the point.
 function postRaw(url, raw) {
+  log.debug("Entering postRaw().");
+  log.debug("Leaving postRaw().");
   return fetchJson(url, { method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: raw });
@@ -260,35 +284,42 @@ function postRaw(url, raw) {
 // every one of these handlers answers `why` with a sentence naming what it
 // wanted, and a test that reported only the status would throw that away.
 async function act(action, payload, what) {
+  log.debug("Entering act().");
   const r = await postJson(api("/xacml/" + action), payload || {});
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "POST /admin-api/xacml/" + action + " should have " + what + "; it " +
     "answered " + r.status + " " +
     JSON.stringify((r.body && (r.body.why || r.body.error_description)) ||
                    r.body || r.text).slice(0, 400));
+  log.debug("Leaving act().");
   return r.body;
 }
 
 async function setSetting(key, value) {
+  log.debug("Entering setSetting().");
   const r = await postJson(api("/config/set"), { key: key, value: value });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "setting " + key + " in the realm should have worked; it answered " +
     r.status + " " + String(r.text).slice(0, 300));
+  log.debug("Leaving setSetting().");
 }
 
 async function resetSetting(key) {
+  log.debug("Entering resetSetting().");
   // `reset` RATHER THAN WRITING THE OLD VALUE BACK, for the reason
   // tests/saml11_sso.js records: a `set` leaves `source: override` behind, and
   // tests/vendored/admin_api.js reads that field.
   const r = await postJson(api("/config/reset"), { key: key });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "resetting " + key + " should have worked; it answered " + r.status);
+  log.debug("Leaving resetSetting().");
 }
 
 // ---------------------------------------------------------------------------
 // A JSON PROFILE REQUEST, built the way a PEP would.
 // ---------------------------------------------------------------------------
 function requestFor(subject, action, resource) {
+  log.debug("Entering requestFor().");
   const request = { Request: {} };
   if (subject !== null) {
     request.Request.AccessSubject = { Attribute: [
@@ -305,18 +336,21 @@ function requestFor(subject, action, resource) {
       Value: resource || "https://example.test/records",
       DataType: "anyURI" }
   ] };
+  log.debug("Leaving requestFor().");
   return request;
 }
 
 async function decisionFor(subject, action, resource) {
+  log.debug("Entering decisionFor().");
   const r = await xPost("/xacml/pdp", requestFor(subject, action, resource));
   assert.strictEqual(r.status, 200,
-    "POST /xacml/pdp should answer 200 with a JSON Profile response even when " +
-    "the answer is a refusal; it answered " + r.status + " " +
+    "POST /xacml/pdp should answer 200 with a JSON Profile response even " +
+    "when the answer is a refusal; it answered " + r.status + " " +
     String(r.text).slice(0, 300));
   assert.ok(r.body && Array.isArray(r.body.Response) && r.body.Response.length,
     "a JSON Profile response is an object with a Response ARRAY; this one is " +
     String(r.text).slice(0, 300));
+  log.debug("Leaving decisionFor().");
   return r.body.Response[0];
 }
 
@@ -365,7 +399,8 @@ var rogue = null;     // verified, and in no group
 // silently admit it to the endpoints publishing the documents this service
 // enforces its own access with.
 // ---------------------------------------------------------------------------
-var xacmlUser = null; // verified, in cn=xacml-users — XACML_USER and not REMOTE_PEPS
+// verified, in cn=xacml-users — XACML_USER and not REMOTE_PEPS
+var xacmlUser = null;
 
 async function mintTheCredentials() {
   log.debug("Entering mintTheCredentials().");
@@ -395,6 +430,7 @@ async function mintTheCredentials() {
 // above rather than replacing them.
 function pepRequest(method, url, identity, payload, rawBody) {
   log.debug("Entering pepRequest(). " + method + " " + url);
+  log.debug("Leaving pepRequest().");
   return new Promise(function (resolve, reject) {
     const target = new URL(url);
     // A RAW STRING WINS OVER A PAYLOAD, for the three malformed bodies in
@@ -421,6 +457,8 @@ function pepRequest(method, url, identity, payload, rawBody) {
         try {
           body = JSON.parse(text);
         } catch (e) {
+          log.debug("Caught in a callback in pepRequest(): " +
+                    ((e && e.message) || e));
           // A non-JSON answer from a door that answers JSON is worth reporting
           // whole rather than as a parse failure.
           body = null;
@@ -444,11 +482,15 @@ function pepRequest(method, url, identity, payload, rawBody) {
 }
 
 function pepGet(path, identity) {
+  log.debug("Entering pepGet().");
+  log.debug("Leaving pepGet().");
   return pepRequest("GET", realmUrl(path),
                     identity === undefined ? trusted : identity);
 }
 
 function pepPost(path, payload, identity) {
+  log.debug("Entering pepPost().");
+  log.debug("Leaving pepPost().");
   return pepRequest("POST", realmUrl(path),
                     identity === undefined ? trusted : identity, payload || {});
 }
@@ -465,11 +507,15 @@ function pepPost(path, payload, identity) {
 // else, or as nobody.
 // ---------------------------------------------------------------------------
 function xGet(path, identity) {
+  log.debug("Entering xGet().");
+  log.debug("Leaving xGet().");
   return pepRequest("GET", path.indexOf("http") === 0 ? path : realmUrl(path),
                     identity === undefined ? xacmlUser : identity);
 }
 
 function xPost(path, payload, identity) {
+  log.debug("Entering xPost().");
+  log.debug("Leaving xPost().");
   return pepRequest("POST", path.indexOf("http") === 0 ? path : realmUrl(path),
                     identity === undefined ? xacmlUser : identity,
                     payload || {});
@@ -478,6 +524,8 @@ function xPost(path, payload, identity) {
 // A raw body, for the malformed requests in section 3. `JSON.stringify` cannot
 // produce them, which is the point.
 function xPostRaw(path, raw, identity) {
+  log.debug("Entering xPostRaw().");
+  log.debug("Leaving xPostRaw().");
   return pepRequest("POST", path.indexOf("http") === 0 ? path : realmUrl(path),
                     identity === undefined ? xacmlUser : identity,
                     undefined, raw);
@@ -503,6 +551,7 @@ function selfSignedFor(commonName) {
 
 function postWithCertificate(url, payload, identity) {
   log.debug("Entering postWithCertificate(). url=" + url);
+  log.debug("Leaving postWithCertificate().");
   return new Promise(function (resolve, reject) {
     const target = new URL(url);
     const data = JSON.stringify(payload || {});
@@ -527,6 +576,8 @@ function postWithCertificate(url, payload, identity) {
         try {
           body = JSON.parse(text);
         } catch (e) {
+          log.debug("Caught in a callback in postWithCertificate(): " +
+                    ((e && e.message) || e));
           // As above: a non-JSON answer from a door that answers JSON is worth
           // reporting whole rather than as a parse failure.
           body = null;
@@ -665,8 +716,9 @@ async function theSurfaceDescribesItself() {
       policies.body.rootNote);
   });
 
-  log.info("[surface] OK — the document names eight endpoints, each with the role it wants, and its counts " +
-           "come from the repository rather than from itself.");
+  log.info("[surface] OK — the document names eight endpoints, each with the " +
+           "role it wants, and its counts come from the repository rather " +
+           "than from itself.");
   log.debug("Leaving theSurfaceDescribesItself().");
 }
 
@@ -696,7 +748,8 @@ async function anEmptyRepositoryDecidesNothing() {
       JSON.stringify(answer.Status));
   });
 
-  const denied = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
+  const denied = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                            "&action=GET");
   check("the deny-biased PEP refuses that with 403", function () {
     assert.strictEqual(denied.status, 403,
       "deny-biased means anything that is not Permit is a refusal; the " +
@@ -710,7 +763,8 @@ async function anEmptyRepositoryDecidesNothing() {
   });
 
   await setSetting("xacml.pepBias", "permit-biased");
-  const allowed = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
+  const allowed = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                             "&action=GET");
   check("the SAME decision is allowed by a permit-biased PEP", function () {
     assert.strictEqual(allowed.status, 200,
       "permit-biased means anything that is not Deny is allowed; the PEP " +
@@ -727,7 +781,8 @@ async function anEmptyRepositoryDecidesNothing() {
   });
   await resetSetting("xacml.pepBias");
 
-  const back = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
+  const back = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                          "&action=GET");
   check("resetting the setting puts the refusal back", function () {
     assert.strictEqual(back.status, 403,
       "after /admin-api/config/reset the PEP should be deny-biased again; " +
@@ -766,7 +821,8 @@ async function aPolicyBuiltThroughTheApiDecides() {
     p_readerActions: "GET, HEAD"
   }, "created the policy");
 
-  check("the first policy in an empty repository becomes the root", function () {
+  check("the first policy in an empty repository becomes the root",
+        function () {
     assert.ok(String(built.what).indexOf("root") > 0,
       "a repository with a policy and no root decides nothing, so the first " +
       "one created should say it became the root. It said: " + built.what);
@@ -828,7 +884,8 @@ async function aPolicyBuiltThroughTheApiDecides() {
       "answered " + anonymous.Decision);
     assert.strictEqual(anonymous.Status.StatusCode.Value,
                        "urn:oasis:names:tc:xacml:1.0:status:ok",
-      "and it is not an error; the status is " + JSON.stringify(anonymous.Status));
+      "and it is not an error; the status is " +
+      JSON.stringify(anonymous.Status));
   });
 
   log.info("[pdp] OK — five decisions, each resolved against an attribute " +
@@ -912,10 +969,12 @@ async function anUndischargeableObligationRefuses() {
   log.debug("Entering anUndischargeableObligationRefuses().");
   log.info("=== The embedded PEP and an obligation it cannot discharge ===");
 
-  const before = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
+  const before = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                            "&action=GET");
   check(ADMIN_PERSON + " is allowed before any obligation exists", function () {
     assert.strictEqual(before.status, 200,
-      ADMIN_PERSON + " is the admin and the policy permits them; the PEP answered " +
+      ADMIN_PERSON + " is the admin and the policy permits them; the PEP " +
+                     "answered " +
       before.status + " " + String(before.text).slice(0, 200));
     assert.deepStrictEqual(before.body.obligations, [],
       "and the decision carries no obligations yet; it carries " +
@@ -925,12 +984,14 @@ async function anUndischargeableObligationRefuses() {
   await act("add-policy-obligation", { policy: POLICY, path: "", on: "Permit" },
             "added an obligation to the policy");
 
-  const refused = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
+  const refused = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                             "&action=GET");
   check("an undischargeable obligation turns the Permit into a refusal",
         function () {
     assert.strictEqual(refused.status, 403,
       "section 7.2: a PEP that cannot discharge an obligation must refuse. " +
-      "It answered " + refused.status + " " + String(refused.text).slice(0, 300));
+      "It answered " + refused.status + " " +
+      String(refused.text).slice(0, 300));
     assert.strictEqual(refused.body.decision, "Permit",
       "AND THE DECISION IS STILL PERMIT, which is the whole point — the PDP " +
       "permitted and the PEP refused, and reporting the refusal as a Deny " +
@@ -965,7 +1026,8 @@ async function anUndischargeableObligationRefuses() {
               on: "Permit" },
             "renamed the obligation to the one this PEP knows");
 
-  const discharged = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
+  const discharged = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                                "&action=GET");
   check("the one obligation this PEP knows IS discharged, and access returns",
         function () {
     assert.strictEqual(discharged.status, 200,
@@ -982,7 +1044,8 @@ async function anUndischargeableObligationRefuses() {
   // subject here; leaving it would make every later Permit carry one.
   await act("remove", { policy: POLICY, path: obligation.path },
             "removed the obligation again");
-  const clean = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
+  const clean = await xGet("/xacml/protected?subject=" + ADMIN_PERSON +
+                           "&action=GET");
   check("removing the obligation leaves an ordinary Permit", function () {
     assert.strictEqual(clean.status, 200);
     assert.deepStrictEqual(clean.body.obligations, [],
@@ -1015,8 +1078,8 @@ async function aRemotePepPulls() {
     assert.ok(first.body.syncToken, "there is no syncToken on the answer: " +
       JSON.stringify(first.body).slice(0, 200));
     assert.strictEqual(first.etag, '"' + first.body.syncToken + '"',
-      "the token should be in an ETag as well, so an ordinary HTTP cache or a " +
-      "client library that already speaks conditional requests behaves " +
+      "the token should be in an ETag as well, so an ordinary HTTP cache or " +
+      "a client library that already speaks conditional requests behaves " +
       "correctly knowing nothing about XACML. The ETag is " + first.etag);
     assert.strictEqual((first.body.policies || []).length, 1,
       "one enabled policy should come back; " +
@@ -1188,8 +1251,8 @@ async function registeringAPep() {
         function () {
     assert.strictEqual(rogueTried.status, 403,
       "this certificate chains to an anchor in the truststore and names " +
-      ROGUE_CN + "; it is not a member of cn=remote-peps and must be refused. " +
-      "The door answered " + rogueTried.status + " " +
+      ROGUE_CN + "; it is not a member of cn=remote-peps and must be " +
+      "refused. The door answered " + rogueTried.status + " " +
       String(rogueTried.text).slice(0, 300));
     assert.ok(String(rogueTried.body.error_description)
                 .indexOf("VERIFIED") > 0,
@@ -1264,7 +1327,8 @@ async function registeringAPep() {
     assert.strictEqual(again.body.notify.usable, false,
       "xacml.pepNotifyAllowInsecure is off, so an http notify URL cannot be " +
       "dialled. The answer says " + JSON.stringify(again.body.notify));
-    assert.ok(String(again.body.notify.why).indexOf("pepNotifyAllowInsecure") > 0,
+    assert.ok(String(again.body.notify.why).indexOf(
+        "pepNotifyAllowInsecure") > 0,
       "AND IT IS SAID BACK IMMEDIATELY rather than discovered the first time " +
       "a nudge is not delivered — a PEP whose notify URL this service will " +
       "never dial should find out while somebody is still looking at the " +
@@ -1315,8 +1379,8 @@ async function registeringAPep() {
     assert.strictEqual(misfiled.body.name, PEP_CN,
       "the same rule as the registration and for the same reason: a PEP " +
       "holding a certificate must not be able to file its counters against " +
-      "somebody else's row. This one claimed to be \"somebody-elses-pep\" and " +
-      "was filed as \"" + misfiled.body.name + "\".");
+      "somebody else's row. This one claimed to be \"somebody-elses-pep\" " +
+      "and was filed as \"" + misfiled.body.name + "\".");
   });
   check("and it is TOLD it is behind rather than left to compare", function () {
     assert.strictEqual(misfiled.body.current, false,
@@ -1366,13 +1430,15 @@ async function registeringAPep() {
   // reconnecting.
   // ---------------------------------------------------------------------------
   await act("disable-pep", { name: PEP_CN }, "disabled the PEP");
-  const afterDisable = await postWithCertificate(realmUrl("/xacml/pep/register"),
+  const afterDisable = await postWithCertificate(
+      realmUrl("/xacml/pep/register"),
                                                  {}, identity);
   const rows = await get(api("/xacml/peps"));
   const still = (rows.body.peps || []).filter(function (one) {
     return one.name === PEP_CN;
   })[0];
-  check("a disabled PEP cannot re-enable itself by re-registering", function () {
+  check("a disabled PEP cannot re-enable itself by re-registering",
+        function () {
     assert.strictEqual(afterDisable.status, 200,
       "the re-registration itself is accepted; it answered " +
       afterDisable.status);
@@ -1399,11 +1465,11 @@ async function registeringAPep() {
   check("a re-registration keeps the counters and takes the address afresh",
         function () {
     assert.strictEqual(still.decisions, 7,
-      "the counters this PEP reported before it re-registered should still be " +
-      "on its row; it says decisions=" + still.decisions);
+      "the counters this PEP reported before it re-registered should still " +
+      "be on its row; it says decisions=" + still.decisions);
     assert.strictEqual(still.notifyUrl, "",
-      "and the notify URL should have gone with the registration that did not " +
-      "carry one; the row says " + JSON.stringify(still.notifyUrl));
+      "and the notify URL should have gone with the registration that did " +
+      "not carry one; the row says " + JSON.stringify(still.notifyUrl));
     assert.ok(String(still.registeredAt || "").length > 0,
       "while the original registration date survives; the row says " +
       JSON.stringify(still.registeredAt));
@@ -1553,7 +1619,8 @@ async function turningItOff() {
         method + " " + path + " answered " + r.status + " with remote PEPs " +
         "off. It must be 501 and not 404: the route is registered and the " +
         "feature is off, which is a different sentence from a wrong URL.");
-      assert.ok(String(r.body.error_description).indexOf("xacml.remotePeps") > 0,
+      assert.ok(String(r.body.error_description).indexOf(
+          "xacml.remotePeps") > 0,
         "and the 501 should name the setting AND say that the register is " +
         "untouched; it says: " + r.body.error_description);
     });
@@ -1598,9 +1665,9 @@ async function turningItOff() {
   check("the default realm goes on answering while this one is off",
         function () {
     assert.strictEqual(elsewhere.status, 200,
-      "xacml.enabled was set INSIDE " + REALM + ", so every other realm — and " +
-      "every later job in this run — must be untouched. The default realm's " +
-      "repository answered " + elsewhere.status);
+      "xacml.enabled was set INSIDE " + REALM + ", so every other realm — " +
+      "and every later job in this run — must be untouched. The default " +
+      "realm's repository answered " + elsewhere.status);
     assert.ok((elsewhere.body.policies || []).length >= 1,
       "and it should still hold its own seeded policy");
   });
@@ -1654,7 +1721,8 @@ async function theRepositoryIsPerRealm() {
       JSON.stringify(thereNames));
   });
 
-  check("and the default realm's seeded policy is not in this one", function () {
+  check("and the default realm's seeded policy is not in this one",
+        function () {
     assert.ok(thereNames.indexOf("seeded-rbac") >= 0,
       "the default realm should still hold its seeded policy; it holds " +
       JSON.stringify(thereNames));
@@ -1802,6 +1870,8 @@ async function theGateSplitsOnTheRole() {
                    ["POST", "/xacml/pip"]];
 
   async function drive(method, path, identity) {
+    log.debug("Entering drive().");
+    log.debug("Leaving drive().");
     return method === "GET" ? await xGet(path, identity)
                             : await xPost(path, {}, identity);
   }
@@ -1912,6 +1982,7 @@ async function theGateSplitsOnTheRole() {
 // meets them.
 // ===========================================================================
 function pipQuery(subject, designators) {
+  log.debug("Entering pipQuery().");
   const dz = designators.map(function (one) {
     return '  <AttributeDesignator xmlns="' + XACML_NS + '" Category="' +
            (one.category || SUBJECT_CATEGORY) + '" AttributeId="' + one.id +
@@ -1926,6 +1997,7 @@ function pipQuery(subject, designators) {
     '        <AttributeValue DataType="http://www.w3.org/2001/XMLSchema#' +
     'string">' + subject + '</AttributeValue>\n' +
     '      </Attribute>\n    </Attributes>\n';
+  log.debug("Leaving pipQuery().");
   return '<?xml version="1.0" encoding="UTF-8"?>\n' +
          '<PIPRequest xmlns="urn:sts:xacml:pip:1.0">\n' +
          '  <Request xmlns="' + XACML_NS + '" CombinedDecision="false" ' +
@@ -1941,7 +2013,8 @@ async function thePipAnswersInXacmlsOwnXml() {
     { id: "mail" }, { id: "employeeType" },
     { id: "urn:sts:xacml:attribute:sn" },
     { id: "noSuchAttributeAnywhere" },
-    { id: "mail", category: "urn:oasis:names:tc:xacml:3.0:attribute-category:resource" }
+    { id: "mail",
+      category: "urn:oasis:names:tc:xacml:3.0:attribute-category:resource" }
   ]), trusted);
 
   check("it answers XML and not JSON", function () {
@@ -2086,7 +2159,8 @@ async function thePipAnswersInXacmlsOwnXml() {
   // and app.js's body parser stops at five, so without the tighter cap a
   // caller chooses how much of this process's memory one request costs.
   const huge = '<?xml version="1.0"?><PIPRequest xmlns="urn:sts:xacml:' +
-               'pip:1.0"><Request/><!--' + "z".repeat(1100000) + '--></PIPRequest>';
+               'pip:1.0"><Request/><!--' + "z".repeat(1100000) +
+               '--></PIPRequest>';
   const oversizedBody = await xPostRaw("/xacml/pip", huge, trusted);
   check("and a body over the megabyte ceiling never reaches the parser",
         function () {
@@ -2103,7 +2177,8 @@ async function thePipAnswersInXacmlsOwnXml() {
   let entities = '<!ENTITY lol "aaaaaaaaaa">';
   let prev = "lol";
   for (let i = 1; i <= 6; i += 1) {
-    entities += '<!ENTITY lol' + i + ' "' + ('&' + prev + ';').repeat(10) + '">';
+    entities += '<!ENTITY lol' + i + ' "' + ('&' + prev + ';').repeat(10) +
+                '">';
     prev = "lol" + i;
   }
   const bomb = '<?xml version="1.0"?><!DOCTYPE PIPRequest [' + entities +

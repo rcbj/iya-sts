@@ -163,6 +163,7 @@ function urlProblem(raw) {
   try {
     parsed = new URL(String(raw));
   } catch (error) {
+    log.debug("Caught in urlProblem(): " + ((error && error.message) || error));
     // Not JSON and not a URL; the raw text is what gets shown, so the parse
     // failure itself carries no information worth keeping.
     log.debug('Leaving urlProblem(). Unparseable.');
@@ -207,16 +208,19 @@ function urlProblem(raw) {
 // One row per nudge that did not arrive. The TARGET is the notify URL's origin
 // and never its path or query, which a PEP may have put anything in.
 function recordUndelivered(code, origin, summary) {
+  log.debug("Entering recordUndelivered().");
   audit.failure(code, {
     action: 'service.failure', protocol: 'XACML', channel: 'http',
     // error-code: none — the code is this helper's parameter; every caller passes a literal
     target: origin || '', summary: summary, outcome: 'error'
   });
+  log.debug("Leaving recordUndelivered().");
 }
 
 function nudge(url, issuer, options) {
   log.debug('Entering nudge(). url=' + url);
   const settings = options || {};
+  log.debug("Leaving nudge().");
   return new Promise(function (resolve) {
     if (!notifyAllowed()) {
       log.debug('Leaving nudge(). Notification is off.');

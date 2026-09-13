@@ -13,12 +13,16 @@
 // Two consequences follow from where it runs, and both are exemptions from this
 // repository's code style rather than oversights:
 //
-//   * **No bunyan, and no Entering/Leaving logs.** There is no `require` here
-//     and no logger to reach. What a log line would have said is on the page
-//     instead: every call shows its status, its timing and its whole response
-//     body, and a failure shows the error where the response would have been.
-//     This is the same exemption the parent project grants to `extension/src/*`
-//     and to anything handed to `driver.executeScript`.
+//   * **No bunyan.** There is no `require` here and no logger to reach, so the
+//     `log` below is CONSOLE-BACKED and has bunyan's shape — which is what the
+//     parent project gives `extension/src/*` and every other file that cannot
+//     reach bunyan, and what lets the Entering/Leaving lines and the handled
+//     exceptions be written here the way they are everywhere else. Its level is
+//     info, as this service's is by default, so the debug lines are silent in a
+//     reader's console. What a log line would have said to a PERSON is on the
+//     page instead: every call shows its status, its timing and its whole
+//     response body, and a failure shows the error where the response would
+//     have been. Code handed to `driver.executeScript` is still exempt.
 //   * **It is served under a RELAXED Content-Security-Policy** — `script-src
 //     'self'` on this one page, where every other page in this service has
 //     `script-src 'none'`. That is why this is a separate resource and not an
@@ -33,6 +37,32 @@
 // ---------------------------------------------------------------------------
 (function () {
   'use strict';
+
+  // The console-backed logger the header describes. Its own four methods are
+  // the one place the Entering/Leaving convention cannot apply: a log line
+  // inside log.debug() would be infinite recursion.
+  var LEVELS = { debug: 20, info: 30, warn: 40, error: 50 };
+  var LOG_LEVEL = LEVELS.info;
+  var log = {
+    debug: function () {
+      if (LOG_LEVEL <= LEVELS.debug) {
+        console.debug.apply(console, arguments);
+      }
+    },
+    info: function () {
+      if (LOG_LEVEL <= LEVELS.info) {
+        console.info.apply(console, arguments);
+      }
+    },
+    warn: function () {
+      if (LOG_LEVEL <= LEVELS.warn) {
+        console.warn.apply(console, arguments);
+      }
+    },
+    error: function () {
+      console.error.apply(console, arguments);
+    }
+  };
 
   var root = document.getElementById('app');
   var SPEC_URL = root.getAttribute('data-spec');
@@ -69,6 +99,7 @@
 
   // --- small DOM helpers ----------------------------------------------------
   function el(tag, className, text) {
+    log.debug("Entering el().");
     var node = document.createElement(tag);
     if (className) {
       node.className = className;
@@ -76,11 +107,14 @@
     if (text !== undefined && text !== null) {
       node.textContent = String(text);
     }
+    log.debug("Leaving el().");
     return node;
   }
 
   function add(parent, child) {
+    log.debug("Entering add().");
     parent.appendChild(child);
+    log.debug("Leaving add().");
     return child;
   }
 
@@ -90,6 +124,7 @@
   // the whole page is written that way, and a "just this once" innerHTML is how
   // a page that renders a response body stops being safe.
   function inline(parent, text) {
+    log.debug("Entering inline().");
     var pattern = /(\*\*[^*]+\*\*|`[^`]+`)/g;
     var last = 0;
     var match = pattern.exec(text);
@@ -110,19 +145,23 @@
     if (last < text.length) {
       parent.appendChild(document.createTextNode(text.slice(last)));
     }
+    log.debug("Leaving inline().");
   }
 
   function prose(parent, text, className) {
+    log.debug("Entering prose().");
     String(text || '').split('\n\n').forEach(function (para) {
       if (!para.trim()) {
         return;
       }
       inline(add(parent, el('p', className || 'prose')), para.trim());
     });
+    log.debug("Leaving prose().");
   }
 
   // --- the spec -------------------------------------------------------------
   function operationsOf(spec) {
+    log.debug("Entering operationsOf().");
     var out = [];
     Object.keys(spec.paths).forEach(function (path) {
       Object.keys(spec.paths[path]).forEach(function (method) {
@@ -135,10 +174,12 @@
         });
       });
     });
+    log.debug("Leaving operationsOf().");
     return out;
   }
 
   function tagsOf(spec, operations) {
+    log.debug("Entering tagsOf().");
     // The document's own order, then anything an operation named that the tag
     // list did not — so a tag added to an operation and forgotten in the list
     // still gets a section rather than vanishing.
@@ -148,29 +189,36 @@
         order.push(row.tag);
       }
     });
+    log.debug("Leaving tagsOf().");
     return order;
   }
 
   function describedBy(spec, name) {
+    log.debug("Entering describedBy().");
     var found = (spec.tags || []).filter(function (t) {
       return t.name === name;
     })[0];
+    log.debug("Leaving describedBy().");
     return found ? found.description : '';
   }
 
   // --- one operation --------------------------------------------------------
   function bodyExampleOf(operation) {
+    log.debug("Entering bodyExampleOf().");
     var content = operation.requestBody && operation.requestBody.content;
     var schema = content && content['application/json'] &&
                  content['application/json'].schema;
     if (!schema) {
+      log.debug("Leaving bodyExampleOf().");
       return null;
     }
     var examples = schema.examples || [];
+    log.debug("Leaving bodyExampleOf().");
     return JSON.stringify(examples.length ? examples[0] : {}, null, 2);
   }
 
   function curlFor(method, url, body) {
+    log.debug("Entering curlFor().");
     var parts = ["curl -i -X " + method + " '" + url + "'"];
     // THE HEADER IS IN THE CURL LINE TOO, and it is the reason that line is
     // worth showing: a copied command that omitted the credential would fail
@@ -188,10 +236,12 @@
       // line that silently would not run is worse than a long one.
       parts.push("-d '" + String(body).replace(/'/g, "'\\''") + "'");
     }
+    log.debug("Leaving curlFor().");
     return parts.join(' \\\n  ');
   }
 
   function urlFor(row, inputs) {
+    log.debug("Entering urlFor().");
     var query = [];
     Object.keys(inputs).forEach(function (name) {
       var value = inputs[name].value;
@@ -200,10 +250,13 @@
       }
       query.push(encodeURIComponent(name) + '=' + encodeURIComponent(value));
     });
-    return REALM_PREFIX + row.path + (query.length ? '?' + query.join('&') : '');
+    log.debug("Leaving urlFor().");
+    return REALM_PREFIX + row.path +
+           (query.length ? '?' + query.join('&') : '');
   }
 
   function renderResult(into, status, ms, text) {
+    log.debug("Entering renderResult().");
     into.textContent = '';
     var head = add(into, el('div', 'resulthead'));
     var cls = status >= 200 && status < 300 ? 'ok'
@@ -216,12 +269,15 @@
     } catch (e) {
       // Not JSON — an HTML error page, or a script. Shown as it arrived, which
       // is the useful thing when the answer was not the expected shape.
+      log.debug('Caught in renderResult(): ' + ((e && e.message) || e));
       pretty = text;
     }
     add(into, el('pre', 'body', pretty));
+    log.debug("Leaving renderResult().");
   }
 
   function renderOperation(row, spec) {
+    log.debug("Entering renderOperation().");
     var wrap = el('div', 'op');
     var head = add(wrap, el('button', 'ophead'));
     head.setAttribute('type', 'button');
@@ -273,9 +329,11 @@
     var result = add(detail, el('div', 'result'));
 
     function refreshCurl() {
+      log.debug("Entering refreshCurl().");
       curlLine.textContent = curlFor(row.method,
                                      location.origin + urlFor(row, inputs),
                                      bodyBox ? bodyBox.value : null);
+      log.debug("Leaving refreshCurl().");
     }
     Object.keys(inputs).forEach(function (name) {
       inputs[name].addEventListener('input', refreshCurl);
@@ -309,11 +367,13 @@
         renderResult(result, 0, Date.now() - started, String(error));
       });
     });
+    log.debug("Leaving renderOperation().");
     return wrap;
   }
 
   // --- the page -------------------------------------------------------------
   function render(spec) {
+    log.debug("Entering render().");
     root.textContent = '';
     var operations = operationsOf(spec);
 
@@ -368,6 +428,7 @@
         entry.section.style.display = visible ? 'block' : 'none';
       });
     });
+    log.debug("Leaving render().");
   }
 
   // The document is read from the CONSOLE's own path rather than from

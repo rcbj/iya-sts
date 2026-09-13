@@ -141,17 +141,23 @@ const { Command, Option } = require("commander");
 const bulk = require("./bulk_load.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_directory_bulk_load_scim",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -200,6 +206,8 @@ var checks = bulk.checker(log);
 const check = checks.check;
 
 function scim(method, path, payload) {
+  log.debug("Entering scim().");
+  log.debug("Leaving scim().");
   return http.timed(base + "/scim/v2" + path, {
     method: method,
     headers: { "Content-Type": "application/scim+json",
@@ -287,6 +295,7 @@ async function readTheMapping(catalogue) {
 // written for any depth because a mapping row is data and a two-level
 // assumption would be this file knowing something about it that it read.
 function setPath(target, path, value) {
+  log.debug("Entering setPath().");
   const parts = String(path).split(".");
   let node = target;
   for (let n = 0; n < parts.length - 1; n += 1) {
@@ -296,6 +305,7 @@ function setPath(target, path, value) {
     node = node[parts[n]];
   }
   node[parts[parts.length - 1]] = value;
+  log.debug("Leaving setPath().");
 }
 
 // ---------------------------------------------------------------------------
@@ -312,6 +322,7 @@ function setPath(target, path, value) {
 //   bool        not reached: nothing bulk_load.js generates maps to one
 // ---------------------------------------------------------------------------
 function resourceFor(person, sendable, byLdap) {
+  log.debug("Entering resourceFor().");
   const resource = {
     schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
     userName: person.username
@@ -362,6 +373,7 @@ function resourceFor(person, sendable, byLdap) {
     // declaring a schema it sends nothing for.
     resource.schemas = resource.schemas.concat([ENTERPRISE]);
   }
+  log.debug("Leaving resourceFor().");
   return resource;
 }
 
@@ -580,7 +592,8 @@ async function itReadsBackWhatItWrote(people, groups, sendable, expected) {
   // entries, and that is precisely the failure this is here for.
   const step = Math.max(1, Math.floor(people.length / SIZES.SAMPLE));
   const sampled = [];
-  for (let i = 0; i < people.length && sampled.length < SIZES.SAMPLE; i += step) {
+  for (let i = 0; i < people.length &&
+                  sampled.length < SIZES.SAMPLE; i += step) {
     sampled.push(people[i]);
   }
 
@@ -600,9 +613,9 @@ async function itReadsBackWhatItWrote(people, groups, sendable, expected) {
   check("the sampled people are all in the directory", function () {
     assert.strictEqual(missing, 0,
       missing + " of " + sampled.length + " sampled people could not be read " +
-      "back at GET /scim/v2/Users/<dn>, spread across the whole run. A create " +
-      "that answered 201 and stored nothing is the defect that makes every " +
-      "timing above meaningless.");
+      "back at GET /scim/v2/Users/<dn>, spread across the whole run. A " +
+      "create that answered 201 and stored nothing is the defect that makes " +
+      "every timing above meaningless.");
     assert.deepStrictEqual(wrongValues, [],
       "and each must read back under the username it was created with.");
   });
@@ -682,10 +695,10 @@ async function itReadsBackWhatItWrote(people, groups, sendable, expected) {
         function () {
     assert.deepStrictEqual(wrongCounts, [],
       "these groups do not hold what was written into them. `memberCount` is " +
-      "the values on the entry, `presentCount` how many of them name an entry " +
-      "this directory holds, and a difference between the two is a dangling " +
-      "member — which is what a membership written from the wrong DN " +
-      "produces, silently, with a 200 on the way in:\n  " +
+      "the values on the entry, `presentCount` how many of them name an " +
+      "entry this directory holds, and a difference between the two is a " +
+      "dangling member — which is what a membership written from the wrong " +
+      "DN produces, silently, with a 200 on the way in:\n  " +
       wrongCounts.join("\n  "));
   });
 
@@ -704,8 +717,8 @@ async function test() {
   log.info("Filling the DEFAULT realm's directory at " + base + " with " +
            SIZES.USERS + " people, " + SIZES.GROUPS + " groups and " +
            (SIZES.GROUPS * SIZES.PER_GROUP) + " memberships, ALL OF IT OVER " +
-           "SCIM 2.0. NOTHING IS DELETED AFTERWARDS — that is deliberate, and " +
-           "tests/CLAUDE.md argues it.");
+           "SCIM 2.0. NOTHING IS DELETED AFTERWARDS — that is deliberate, " +
+           "and tests/CLAUDE.md argues it.");
 
   bulk.checkSizes(assert);
 

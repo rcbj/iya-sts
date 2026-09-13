@@ -34,8 +34,8 @@
 //     an operation cannot exist and be undocumented, and cannot be documented
 //     and not exist. What no code can check is the direction that matters — a
 //     new console control with no row here — and that is what the parent
-//     project's tests/vendored/admin_api.js asserts, by walking the console's own NAV
-//     and the action names each of its four handlers accepts.
+//     project's tests/vendored/admin_api.js asserts, by walking the console's
+//     own NAV and the action names each of its four handlers accepts.
 //
 // ---------------------------------------------------------------------------
 // **PROTECTED SINCE 2026-09-09, AND THIS HEADER SAID THE OPPOSITE UNTIL THEN.**
@@ -45,14 +45,14 @@
 //
 // What gates it is an **OAuth 2.0 access token** audienced to this API —
 // `admin:read` to read, `admin:write` to change anything — which become the
-// built-in ADMIN_READ and ADMIN_WRITE roles, so the requirement is stated in the
-// same `access-control` document every other access decision here is. One
+// built-in ADMIN_READ and ADMIN_WRITE roles, so the requirement is stated in
+// the same `access-control` document every other access decision here is. One
 // middleware on the base path covers every operation by construction.
 //
-// **It is a DIFFERENT credential from the console's, not the same gate widened**,
-// and that distinction is the whole design: the console takes a browser session,
-// this takes a token. `adminApi.authRequired` is the off switch and restores the
-// open API exactly.
+// **It is a DIFFERENT credential from the console's, not the same gate
+// widened**, and that distinction is the whole design: the console takes a
+// browser session, this takes a token. `adminApi.authRequired` is the off
+// switch and restores the open API exactly.
 //
 // **THE THREE REASONS IT WAS OPEN ARE KEPT VERBATIM IN `mgmt-api/CLAUDE.md`**
 // rather than here, because they are now the argument for that off switch and
@@ -65,8 +65,8 @@
 // as one: it said that if this ever changed it would be a SEPARATE setting with
 // a separate argument (`admin.apiAuthRequired` was the name considered) and
 // never a quiet extension of `admin.authRequired` to this path. It was —
-// `adminApi.authRequired`, in a group of its own. `admin.authRequired` itself no
-// longer exists: `global.mode` replaced it on 2026-09-06.
+// `adminApi.authRequired`, in a group of its own. `admin.authRequired` itself
+// no longer exists: `global.mode` replaced it on 2026-09-06.
 //
 // ---------------------------------------------------------------------------
 // Route order: this module must come AFTER admin.js, and that is a plain
@@ -261,10 +261,13 @@ addFormats(ajv);
 const NOT_ENFORCED_HERE = ['enum', 'required'];
 
 function structureOnly(node) {
+  log.debug("Entering structureOnly().");
   if (Array.isArray(node)) {
+    log.debug("Leaving structureOnly().");
     return node.map(structureOnly);
   }
   if (!node || typeof node !== 'object') {
+    log.debug("Leaving structureOnly().");
     return node;
   }
   const out = {};
@@ -274,12 +277,16 @@ function structureOnly(node) {
     }
     out[key] = structureOnly(node[key]);
   });
+  log.debug("Leaving structureOnly().");
   return out;
 }
 
 function compilable(schema) {
+  log.debug("Entering compilable().");
+  log.debug("Leaving compilable().");
   return Object.assign({}, structureOnly(schema),
-                       { components: { schemas: structureOnly(spec.SCHEMAS) } });
+                       { components: { schemas: structureOnly(
+                           spec.SCHEMAS) } });
 }
 
 // Compiled once at require time, keyed by the operation the request will reach.
@@ -290,6 +297,8 @@ function compilable(schema) {
 const validators = new Map();
 
 function validatorKeyOf(route, action) {
+  log.debug("Entering validatorKeyOf().");
+  log.debug("Leaving validatorKeyOf().");
   return route + '\u0000' + (action || '');
 }
 
@@ -320,11 +329,13 @@ function compileRequestSchemas() {
     });
     if (entry.requestBody) {
       try {
-        validators.set(validatorKeyOf(route, ''), ajv.compile(compilable(entry.requestBody)));
+        validators.set(validatorKeyOf(route, ''),
+                       ajv.compile(compilable(entry.requestBody)));
         built = built + 1;
       } catch (e) {
         log.error(errorCodes.tag('STS-API-0010') +
-                  'admin-api: the request schema for ' + (entry.operationId || route) +
+                  'admin-api: the request schema for ' +
+                  (entry.operationId || route) +
                   ' would not compile and that operation is unvalidated: ' +
                   e.message);
       }
@@ -345,20 +356,22 @@ function compileRequestSchemas() {
 function errorsFromAjv(errors) {
   log.debug("Entering errorsFromAjv().");
   const out = (errors || []).map(function (e) {
-    const where = String(e.instancePath || '').replace(/^\//, '').replace(/\//g, '.');
+    const where = String(e.instancePath || '').replace(/^\//, '')
+                                              .replace(/\//g, '.');
     const missing = e.params && e.params.missingProperty;
     const extra = e.params && e.params.additionalProperty;
     if (missing) {
       return '"' + missing + '" is required.';
     }
     if (extra) {
-      return '"' + extra + '" is not a member of this request. The operation\'s ' +
-             'schema in the OpenAPI document lists what is.';
+      return '"' + extra + '" is not a member of this request. The ' +
+             'operation\'s schema in the OpenAPI document lists what is.';
     }
     return (where ? '"' + where + '" ' : 'the request ') + e.message + '.';
   });
   log.debug("Leaving errorsFromAjv(). " + out.length + " message(s).");
-  return out.length ? out : ['The request body did not match this operation\'s schema.'];
+  return out.length ? out : ['The request body did not match this ' +
+                             'operation\'s schema.'];
 }
 
 // ---------------------------------------------------------------------------
@@ -443,6 +456,8 @@ function sendJson(res, status, body) {
 // — which does carry `action` — cannot mean something other than the URL it was
 // sent to.
 function withAction(req, body) {
+  log.debug("Entering withAction().");
+  log.debug("Leaving withAction().");
   return Object.assign({}, body, { action: String(req.params.action || '') });
 }
 
@@ -462,6 +477,8 @@ function namesOf(req, body, one, many) {
 // Written once because three lists page identically, and because a caller that
 // has learned to walk one of them has learned to walk all three.
 function pagingParameters() {
+  log.debug("Entering pagingParameters().");
+  log.debug("Leaving pagingParameters().");
   return [
     { name: 'page', in: 'query', required: false,
       schema: { type: 'integer', minimum: 1 },
@@ -479,18 +496,19 @@ function pagingParameters() {
 
 // The page parameters of a DRILL-DOWN, which is a different shape from a list
 // and has to be, because a drill-down answers with several lists at once — five
-// on /users, two on /groups. One `page` would move all of them together, so each
-// gets a parameter named after itself and `per` above stays shared.
+// on /users, two on /groups. One `page` would move all of them together, so
+// each gets a parameter named after itself and `per` above stays shared.
 //
 // Every one is clamped the way `page` is, and every one is answered: the reply
 // carries a `<name>Paging` object beside the array, with the same member names
 // the flat lists put at the top level. A caller walks these exactly as it walks
-// /tokens, one list at a time.
-// ONE NAME PER LIST: the parameter is the reply array's own name with `Page` on
-// the end, and the object answering it is that name with `Paging` on the end. A
-// caller that can read the reply can therefore write the request without a table
-// mapping one set of names onto the other.
+// /tokens, one list at a time. ONE NAME PER LIST: the parameter is the reply
+// array's own name with `Page` on the end, and the object answering it is that
+// name with `Paging` on the end. A caller that can read the reply can therefore
+// write the request without a table mapping one set of names onto the other.
 function detailPagingParameters(lists) {
+  log.debug("Entering detailPagingParameters().");
+  log.debug("Leaving detailPagingParameters().");
   return lists.map(function (list) {
     return { name: list.name + 'Page', in: 'query', required: false,
              schema: { type: 'integer', minimum: 1 },
@@ -544,9 +562,9 @@ const JWT_CLAIM_FAMILY = {
 
 // The third family, and the one that made the two above it a PATTERN rather
 // than a pair. Nothing in claimSetActions() changed to add it — which is the
-// test that the parameterisation was real: `sets`, `noun`, `carrier`, `example`,
-// `reserved` and the operationIds were the whole of what varied between the
-// first two, and they were the whole of what varied for the third.
+// test that the parameterisation was real: `sets`, `noun`, `carrier`,
+// `example`, `reserved` and the operationIds were the whole of what varied
+// between the first two, and they were the whole of what varied for the third.
 //
 // `reserved: true` is the one row a reader coming from SAML_CLAIM_FAMILY would
 // get wrong. The reserved list is not a JWT rule with a JWT exception — it is
@@ -588,19 +606,19 @@ function claimSetActions(family) {
   const rows = [
     { action: 'add', operationId: family.ids.add,
       summary: 'Add one ' + noun + ' to one set',
-      description: 'Every ' + family.carrier + ' of that kind issued from now ' +
-                   'on carries it; nothing already issued changes.\n\n' +
-                   'ADDITIVE ONLY. What the protocol puts in is never ' +
-                   'displaced — an ID Token\'s `sub`, a SAML 2.0 assertion\'s ' +
-                   '`name`, a WS-Federation assertion\'s whole identity claim ' +
-                   'list.' +
+      description: 'Every ' + family.carrier + ' of that kind issued from ' +
+                   'now on carries it; nothing already issued ' +
+                   'changes.\n\nADDITIVE ONLY. What the protocol puts in is ' +
+                   'never displaced — an ID Token\'s `sub`, a SAML 2.0 ' +
+                   'assertion\'s `name`, a WS-Federation assertion\'s whole ' +
+                   'identity claim list.' +
                    (family.reserved
                      ? ' A name this service sets itself is REFUSED rather ' +
                        'than allowed to win, because every one of those is ' +
                        'load-bearing — a settable `exp` would produce tokens ' +
-                       'that fail to verify with nothing pointing back at the ' +
-                       'call that caused it. `GET /admin-api/claims` lists the ' +
-                       'refused names.'
+                       'that fail to verify with nothing pointing back at ' +
+                       'the call that caused it. `GET /admin-api/claims` ' +
+                       'lists the refused names.'
                      : ' There is NO reserved list here: those names are ' +
                        'load-bearing in a JWT, and an assertion attribute ' +
                        'called `exp` collides with nothing. An entry with no ' +
@@ -828,40 +846,41 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'token idle timeout, whether a sign-out revokes refresh ' +
                  'tokens, the client assertion clock skew, the four ' +
                  'lifetimes `GET /token-lifetimes` also reports — and ' +
-                 '`oauth2.breakIdTokenNonce`, which makes this service return ' +
-                 'an ID Token whose `nonce` is WRONG so that a client can be ' +
-                 'shown to check it.\n\n`oauth2.rfc9700` is restart-only and ' +
-                 'says so in `restartReason`: `global.https` derives from it ' +
-                 'and a listener\'s scheme is settled when the socket is ' +
-                 'bound. A TRUST REALM can carry it while the process does ' +
-                 'not, which is how one process answers permissively at ' +
-                 '/oauth2/authorize and enforces the BCP under a realm ' +
-                 'prefix.' },
+                 '`oauth2.breakIdTokenNonce`, which makes this service ' +
+                 'return an ID Token whose `nonce` is WRONG so that a client ' +
+                 'can be shown to check it.\n\n`oauth2.rfc9700` is ' +
+                 'restart-only and says so in `restartReason`: ' +
+                 '`global.https` derives from it and a listener\'s scheme is ' +
+                 'settled when the socket is bound. A TRUST REALM can carry ' +
+                 'it while the process does not, which is how one process ' +
+                 'answers permissively at /oauth2/authorize and enforces the ' +
+                 'BCP under a realm prefix.' },
   { path: '/oid4vci-settings', console: '/admin/oid4vci', tag: 'OpenID4VCI',
     operationId: 'getOid4vciSettings',
     summary: 'The credential issuer\'s own settings',
     description: 'The nine `oid4vci.*` settings: the wallet an offer sends a ' +
-                 'holder to, the authorization server the credential endpoint ' +
-                 'will take a token from, the batch size, the deferred ' +
-                 'issuance timings, the offer username, whether a credential ' +
-                 'request must be encrypted, and the two that decide whether ' +
-                 'the SD-JWT VC and `ldp_vc` issuers name themselves by ' +
-                 '`did:web` or by URL.\n\nThose two are restart-only and they ' +
-                 'change what a VERIFIER has to resolve — a key fetched from ' +
-                 'a DID document rather than from JWKS. What a credential ' +
-                 'CONTAINS is `GET /credential-claims`.' },
+                 'holder to, the authorization server the credential ' +
+                 'endpoint will take a token from, the batch size, the ' +
+                 'deferred issuance timings, the offer username, whether a ' +
+                 'credential request must be encrypted, and the two that ' +
+                 'decide whether the SD-JWT VC and `ldp_vc` issuers name ' +
+                 'themselves by `did:web` or by URL.\n\nThose two are ' +
+                 'restart-only and they change what a VERIFIER has to ' +
+                 'resolve — a key fetched from a DID document rather than ' +
+                 'from JWKS. What a credential CONTAINS is `GET ' +
+                 '/credential-claims`.' },
   { path: '/oid4vp-settings', console: '/admin/oid4vp', tag: 'OpenID4VP',
     operationId: 'getOid4vpSettings',
     summary: 'The mock Verifier\'s own settings',
     description: 'The four `oid4vp.*` settings: the client identifier the ' +
                  'verifier presents as, where it sends a holder to present, ' +
                  'the Key Binding JWT\'s maximum age, and the claims asked ' +
-                 'for when nothing else has been chosen.\n\n' +
-                 '`oid4vp.walletUrl` is DERIVED: with no value of its own it ' +
-                 'is the OID4VCI wallet, since it is the same wallet in every ' +
-                 'arrangement this service is used in. Its `source` is ' +
-                 '`default` for that reason and for no other. The DCQL query ' +
-                 'itself is `GET /verifier-request`.' },
+                 'for when nothing else has been ' +
+                 'chosen.\n\n`oid4vp.walletUrl` is DERIVED: with no value of ' +
+                 'its own it is the OID4VCI wallet, since it is the same ' +
+                 'wallet in every arrangement this service is used in. Its ' +
+                 '`source` is `default` for that reason and for no other. ' +
+                 'The DCQL query itself is `GET /verifier-request`.' },
   // THE TWO SECOND FACTORS (2026-09-10). Rule 7: `/admin/totp` and
   // `/admin/webauthn` arrived on the console and owe an operation in the same
   // change. Both replies carry the page's `status` block — the MECHANISM, read
@@ -875,84 +894,87 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'the shared secret length, the label an app shows, whether ' +
                  'new enrolments are offered at all, and how long an ' +
                  'unconfirmed one lives — with the RFC 6238 algorithm table ' +
-                 'in `status`, read from `common/totp.js` rather than written ' +
-                 'down here.\n\n**CHANGING THE DIGEST, THE DIGITS OR THE ' +
-                 'PERIOD AFFECTS NEW ENROLMENTS ONLY.** An existing secret is ' +
-                 'verified with the parameters it was enrolled under — the ' +
-                 'ones the QR code told the app — because this service cannot ' +
-                 'change them retrospectively. `totp.window` is the exception ' +
-                 'and applies to everybody.\n\n**Codes are verified FOR REAL ' +
-                 'in both modes**, which almost nothing else in this service ' +
-                 'is. Who holds an enrolment is `GET /users` (or `GET /mfa`), ' +
-                 'and clearing one is `POST /users/clear-totp`.\n\nThese eight ' +
-                 'were on `GET /admin-api/mfa` until 2026-09-10, when the ' +
-                 'console page that drew them split into a mechanism page and ' +
-                 'a roster.' },
+                 'in `status`, read from `common/totp.js` rather than ' +
+                 'written down here.\n\n**CHANGING THE DIGEST, THE DIGITS OR ' +
+                 'THE PERIOD AFFECTS NEW ENROLMENTS ONLY.** An existing ' +
+                 'secret is verified with the parameters it was enrolled ' +
+                 'under — the ones the QR code told the app — because this ' +
+                 'service cannot change them retrospectively. `totp.window` ' +
+                 'is the exception and applies to everybody.\n\n**Codes are ' +
+                 'verified FOR REAL in both modes**, which almost nothing ' +
+                 'else in this service is. Who holds an enrolment is `GET ' +
+                 '/users` (or `GET /mfa`), and clearing one is `POST ' +
+                 '/users/clear-totp`.\n\nThese eight were on `GET ' +
+                 '/admin-api/mfa` until 2026-09-10, when the console page ' +
+                 'that drew them split into a mechanism page and a roster.' },
   // THE THIRD MECHANISM (2026-09-10). Rule 7 again: `/admin/backup-codes`
   // arrived on the console and owes an operation in the same change.
   { path: '/backup-codes', console: '/admin/backup-codes',
     tag: 'Recovery codes', operationId: 'getBackupCodesSettings',
     summary: 'The recovery-code mechanism\'s settings, and what a code is',
-    description: 'The four `backupCodes.*` settings — whether a set is issued ' +
-                 'at all, how many codes are in one, how long each is, and ' +
-                 'how it is broken up for reading — with the mechanism itself ' +
-                 'in `status`, read from `common/backup_codes.js` rather than ' +
-                 'written down here.\n\n**THIS IS THE ONLY MECHANISM IN THIS ' +
-                 'SERVICE THAT NO SPECIFICATION DEFINES.** There is no RFC for ' +
-                 'a recovery code, so `status` has no specification column: ' +
-                 'every field in it is a decision this service made, and ' +
-                 '`bitsPerCode` is the one worth reading first.\n\n**A SET ' +
-                 'IS ISSUED AUTOMATICALLY AND ONCE**, by the act of enrolling ' +
-                 'a second factor. Nothing on this API issues one on request ' +
-                 'and nothing on it reads a code back; `POST ' +
-                 '/users/clear-backup-codes` deletes a set, which is the only ' +
-                 'route to a second one.\n\n**CHANGING THESE AFFECTS NEW SETS ' +
-                 'ONLY, AND NO EXISTING SET IS INVALIDATED** — unlike ' +
-                 '`totp.*`, this needs no paragraph about enrolments, because ' +
-                 'nothing here was told to an app this service cannot reach. A ' +
-                 'recovery code is a string compared against a stored string.\n\n' +
-                 'Who holds a set is `GET /users`, which reports the counts ' +
-                 'and never the codes.' },
+    description: 'The four `backupCodes.*` settings — whether a set is ' +
+                 'issued at all, how many codes are in one, how long each ' +
+                 'is, and how it is broken up for reading — with the ' +
+                 'mechanism itself in `status`, read from ' +
+                 '`common/backup_codes.js` rather than written down ' +
+                 'here.\n\n**THIS IS THE ONLY MECHANISM IN THIS SERVICE THAT ' +
+                 'NO SPECIFICATION DEFINES.** There is no RFC for a recovery ' +
+                 'code, so `status` has no specification column: every field ' +
+                 'in it is a decision this service made, and `bitsPerCode` ' +
+                 'is the one worth reading first.\n\n**A SET IS ISSUED ' +
+                 'AUTOMATICALLY AND ONCE**, by the act of enrolling a second ' +
+                 'factor. Nothing on this API issues one on request and ' +
+                 'nothing on it reads a code back; `POST ' +
+                 '/users/clear-backup-codes` deletes a set, which is the ' +
+                 'only route to a second one.\n\n**CHANGING THESE AFFECTS ' +
+                 'NEW SETS ONLY, AND NO EXISTING SET IS INVALIDATED** — ' +
+                 'unlike `totp.*`, this needs no paragraph about enrolments, ' +
+                 'because nothing here was told to an app this service ' +
+                 'cannot reach. A recovery code is a string compared against ' +
+                 'a stored string.\n\nWho holds a set is `GET /users`, which ' +
+                 'reports the counts and never the codes.' },
   { path: '/webauthn', console: '/admin/webauthn', tag: 'WebAuthn',
     operationId: 'getWebauthnSettings',
-    summary: 'The security-key ceremony\'s settings, and what a key may be here',
+    summary:
+      'The security-key ceremony\'s settings, and what a key may be here',
     description: 'The thirteen `webauthn.*` settings, in three kinds. **THE ' +
-                 'CEREMONY**: the RP name, the RP ID override, the algorithms ' +
-                 'offered, the user verification requirement, the attestation ' +
-                 'conveyance and the timeout — handed to the browser in the ' +
-                 '`PublicKeyCredential` options. **CTAP2**: the authenticator ' +
-                 'attachment, whether the credential is discoverable (a ' +
-                 'resident key), and whether `credProps` is asked for. ' +
-                 '**POLICY**: whether a key may be a primary credential, ' +
-                 'whether it may be a second factor, and how many one person ' +
-                 'may hold — which are not WebAuthn at all but what THIS ' +
-                 'service does with a key.\n\n**NOT ONE OF THESE EXISTED ' +
-                 'UNTIL 2026-09-10.** Every ceremony parameter was a literal ' +
-                 'in a string in `authn/authn.js`, and this service said ' +
-                 'there was nothing an operator could usefully turn — true of ' +
-                 'the cryptography and false of the ceremony.\n\n**ONE IS ' +
-                 'ENFORCED AND THE REST ARE REQUESTS.** ' +
-                 '`webauthn.userVerification` is sent to the browser AND ' +
-                 'checked against the UV flag when the ceremony returns, ' +
-                 'because that flag is inside the bytes the authenticator ' +
-                 'signed. Nothing signed says what the browser was asked ' +
-                 'about attestation, the resident key or the attachment, so a ' +
-                 'check on those would compare against a value this service ' +
-                 'itself supplied — what it does instead is RECORD what came ' +
-                 'back.\n\n**NO ATTESTATION STATEMENT IS VERIFIED** whatever ' +
-                 'is asked for: there is no metadata service here, no vendor ' +
-                 'trust anchor and no model allow-list. `status` carries the ' +
-                 'COSE algorithm table, read from `authn/webauthn.js` — the ' +
-                 'module that checks the signature — with the offered ones ' +
-                 'marked.\n\nWho holds a key is `GET /users`, and removing ' +
-                 'one is `POST /users/clear-key`.' },
+                 'CEREMONY**: the RP name, the RP ID override, the ' +
+                 'algorithms offered, the user verification requirement, the ' +
+                 'attestation conveyance and the timeout — handed to the ' +
+                 'browser in the `PublicKeyCredential` options. **CTAP2**: ' +
+                 'the authenticator attachment, whether the credential is ' +
+                 'discoverable (a resident key), and whether `credProps` is ' +
+                 'asked for. **POLICY**: whether a key may be a primary ' +
+                 'credential, whether it may be a second factor, and how ' +
+                 'many one person may hold — which are not WebAuthn at all ' +
+                 'but what THIS service does with a key.\n\n**NOT ONE OF ' +
+                 'THESE EXISTED UNTIL 2026-09-10.** Every ceremony parameter ' +
+                 'was a literal in a string in `authn/authn.js`, and this ' +
+                 'service said there was nothing an operator could usefully ' +
+                 'turn — true of the cryptography and false of the ' +
+                 'ceremony.\n\n**ONE IS ENFORCED AND THE REST ARE ' +
+                 'REQUESTS.** `webauthn.userVerification` is sent to the ' +
+                 'browser AND checked against the UV flag when the ceremony ' +
+                 'returns, because that flag is inside the bytes the ' +
+                 'authenticator signed. Nothing signed says what the browser ' +
+                 'was asked about attestation, the resident key or the ' +
+                 'attachment, so a check on those would compare against a ' +
+                 'value this service itself supplied — what it does instead ' +
+                 'is RECORD what came back.\n\n**NO ATTESTATION STATEMENT IS ' +
+                 'VERIFIED** whatever is asked for: there is no metadata ' +
+                 'service here, no vendor trust anchor and no model ' +
+                 'allow-list. `status` carries the COSE algorithm table, ' +
+                 'read from `authn/webauthn.js` — the module that checks the ' +
+                 'signature — with the offered ones marked.\n\nWho holds a ' +
+                 'key is `GET /users`, and removing one is `POST ' +
+                 '/users/clear-key`.' },
   { path: '/kerberos', console: '/admin/kerberos', tag: 'Kerberos',
     operationId: 'getKerberosSettings',
     summary: 'The KDC\'s own settings',
     description: 'The nineteen `krb5.*` settings: the realm, the two raw ' +
                  'ports, the clock skew and the deliberate clock OFFSET, the ' +
-                 'one password every user account shares, the names that stay ' +
-                 'unknown, the long-term keys behind krbtgt and the ' +
+                 'one password every user account shares, the names that ' +
+                 'stay unknown, the long-term keys behind krbtgt and the ' +
                  'inter-realm trust, `s2kparams`, and the two that decide ' +
                  'whether a ticket presented at /authn/spnego may start a ' +
                  'browser session.\n\nMOST OF THEM ARE RESTART-ONLY, and one ' +
@@ -983,77 +1005,75 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
   // The newest of these, 2026-08-27, and the only one whose reply carries a
   // `status` member: a persistence setting that is SET and a persistence store
   // that is WORKING are two different facts, and the gap between them is the
-  // whole failure mode this feature has. See admin.js's persistenceStatusBlock().
+  // whole failure mode this feature has. See admin.js's
+  // persistenceStatusBlock().
   { path: '/persistence', console: '/admin/persistence', tag: 'Persistence',
     operationId: 'getPersistenceSettings',
     summary: 'What survives a restart, where it is written, and whether that ' +
              'is working',
     description: 'The `persistence.*` settings AND — unlike every other ' +
-                 'operation in this group — a `status` member saying what the ' +
-                 'store is actually doing: which mode is in force, whether it ' +
-                 'FELL BACK to memory because it could not be opened, where ' +
-                 'it writes, how many entries and realms it holds, when it ' +
-                 'last wrote, and the error if the last write failed.\n\n' +
-                 'THREE THINGS PERSIST when a store is on: the embedded LDAP ' +
-                 'directory (which is also the applications registry, the ' +
-                 'federation register and the SPIFFE registry — they are ' +
-                 'directory entries and nothing else), the trust realm ' +
-                 'registry, and the runtime appconfig overrides that ' +
-                 '`POST /admin-api/config/set` writes.\n\n' +
-                 'AND, IN PRODUCT MODE ON A POSTGRES STORE SINCE ' +
-                 '2026-09-06, WHAT THIS SERVICE MINTS: sessions, access ' +
-                 'tokens, ID Tokens, refresh tokens, authorization codes, ' +
-                 'pre-authorized codes, SAML artifacts, Kerberos ' +
-                 'principals and tickets, the replay caches, the ' +
-                 'statistics and the audit log — each row encrypted under ' +
-                 'the same key-encryption key that protects the signing ' +
-                 'keys, so a dump of the table is not a set of usable ' +
-                 'credentials. `status.minted` reports it.\n\n' +
-                 'IN DEVELOPMENT MODE NONE OF THAT PERSISTS, and the ' +
-                 'reason is the one the rule always rested on: the ' +
-                 'signing key is regenerated on every start there, so a ' +
-                 'token restored from a disk would verify against ' +
-                 'nothing. Product mode keeps its keys — which is why it ' +
-                 'requires a store — and that single fact is what makes ' +
-                 'restoring the rest of it honest. The ldif store holds ' +
-                 'no minted state in either mode: it writes whole files ' +
-                 'per flush, which is right for a directory somebody ' +
-                 'types into and wrong for a session table that changes ' +
-                 'on every request.\n\n' +
-                 'PROCESSES AGAINST ONE POSTGRES STORE COORDINATE SINCE ' +
-                 '2026-09-06, and this paragraph said the opposite before ' +
-                 'it. Every change is written to a monotonic log inside ' +
-                 'the transaction that made it, and each process applies ' +
-                 'what the others committed — the directory, the realms, ' +
-                 'the settings and the minted rows alike. A LISTEN/NOTIFY ' +
-                 'nudge only makes that prompt: the LOG is the contract, ' +
-                 'so a missed notification costs latency and never a ' +
-                 'change. `status.coordinates` and `status.replication` ' +
-                 'report it; `persistence.coordinate` turns it off.\n\n' +
-                 'THE DATABASE PASSWORD NEED NOT BE IN THE CONNECTION ' +
-                 'STRING SINCE 2026-09-12. ' +
-                 '`persistence.databasePasswordProvider` reads it from the ' +
-                 'five places the key-encryption key comes from — a mounted ' +
-                 'file, AWS Secrets Manager, Google Secret Manager, Azure ' +
-                 'Key Vault, HashiCorp Vault — and by default out of the ' +
-                 'SAME file or secret, told apart by a field. ' +
+                 'operation in this group — a `status` member saying what ' +
+                 'the store is actually doing: which mode is in force, ' +
+                 'whether it FELL BACK to memory because it could not be ' +
+                 'opened, where it writes, how many entries and realms it ' +
+                 'holds, when it last wrote, and the error if the last write ' +
+                 'failed.\n\nTHREE THINGS PERSIST when a store is on: the ' +
+                 'embedded LDAP directory (which is also the applications ' +
+                 'registry, the federation register and the SPIFFE registry ' +
+                 '— they are directory entries and nothing else), the trust ' +
+                 'realm registry, and the runtime appconfig overrides that ' +
+                 '`POST /admin-api/config/set` writes.\n\nAND, IN PRODUCT ' +
+                 'MODE ON A POSTGRES STORE SINCE 2026-09-06, WHAT THIS ' +
+                 'SERVICE MINTS: sessions, access tokens, ID Tokens, refresh ' +
+                 'tokens, authorization codes, pre-authorized codes, SAML ' +
+                 'artifacts, Kerberos principals and tickets, the replay ' +
+                 'caches, the statistics and the audit log — each row ' +
+                 'encrypted under the same key-encryption key that protects ' +
+                 'the signing keys, so a dump of the table is not a set of ' +
+                 'usable credentials. `status.minted` reports it.\n\nIN ' +
+                 'DEVELOPMENT MODE NONE OF THAT PERSISTS, and the reason is ' +
+                 'the one the rule always rested on: the signing key is ' +
+                 'regenerated on every start there, so a token restored from ' +
+                 'a disk would verify against nothing. Product mode keeps ' +
+                 'its keys — which is why it requires a store — and that ' +
+                 'single fact is what makes restoring the rest of it honest. ' +
+                 'The ldif store holds no minted state in either mode: it ' +
+                 'writes whole files per flush, which is right for a ' +
+                 'directory somebody types into and wrong for a session ' +
+                 'table that changes on every request.\n\nPROCESSES AGAINST ' +
+                 'ONE POSTGRES STORE COORDINATE SINCE 2026-09-06, and this ' +
+                 'paragraph said the opposite before it. Every change is ' +
+                 'written to a monotonic log inside the transaction that ' +
+                 'made it, and each process applies what the others ' +
+                 'committed — the directory, the realms, the settings and ' +
+                 'the minted rows alike. A LISTEN/NOTIFY nudge only makes ' +
+                 'that prompt: the LOG is the contract, so a missed ' +
+                 'notification costs latency and never a change. ' +
+                 '`status.coordinates` and `status.replication` report it; ' +
+                 '`persistence.coordinate` turns it off.\n\nTHE DATABASE ' +
+                 'PASSWORD NEED NOT BE IN THE CONNECTION STRING SINCE ' +
+                 '2026-09-12. `persistence.databasePasswordProvider` reads ' +
+                 'it from the five places the key-encryption key comes from ' +
+                 '— a mounted file, AWS Secrets Manager, Google Secret ' +
+                 'Manager, Azure Key Vault, HashiCorp Vault — and by default ' +
+                 'out of the SAME file or secret, told apart by a field. ' +
                  '`status.database.passwordFrom` says WHERE it came from and ' +
                  'never what it is, which is the rule this whole reply ' +
                  'follows about the connection string: the host, port, ' +
                  'database and user are parsed out of it and the string ' +
-                 'itself is never returned.\n\n' +
-                 'IT SHARES STATE AND NOT SOCKETS. The KDC, both LDAP ' +
-                 'listeners, the two TLS ports and SPIFFE\'s four are ' +
-                 'bound per process. And the replay caches and DPoP jti ' +
-                 'sets CONVERGE rather than synchronise: between a write ' +
-                 'in one process and its arrival in another there is a ' +
-                 'window the size of persistence.pollInterval in which a ' +
-                 'proof one process refused is accepted by another.\n\n' +
-                 'FIVE OF THE SIX SETTINGS ARE RESTART-ONLY, because the ' +
-                 'store is opened and read before the HTTP listener binds. ' +
-                 '`persistence.databaseUrl` is never echoed back in `status` ' +
-                 '— it carries a password, so the host, port, database and ' +
-                 'user are parsed out of it and reported instead.' },
+                 'itself is never returned.\n\nIT SHARES STATE AND NOT ' +
+                 'SOCKETS. The KDC, both LDAP listeners, the two TLS ports ' +
+                 'and SPIFFE\'s four are bound per process. And the replay ' +
+                 'caches and DPoP jti sets CONVERGE rather than synchronise: ' +
+                 'between a write in one process and its arrival in another ' +
+                 'there is a window the size of persistence.pollInterval in ' +
+                 'which a proof one process refused is accepted by ' +
+                 'another.\n\nFIVE OF THE SIX SETTINGS ARE RESTART-ONLY, ' +
+                 'because the store is opened and read before the HTTP ' +
+                 'listener binds. `persistence.databaseUrl` is never echoed ' +
+                 'back in `status` — it carries a password, so the host, ' +
+                 'port, database and user are parsed out of it and reported ' +
+                 'instead.' },
   { path: '/wstrust', console: '/admin/wstrust', tag: 'WS-Trust',
     operationId: 'getWsTrustSettings',
     summary: 'The security token service\'s own setting',
@@ -1069,37 +1089,36 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
     summary: 'The passive requestor profile\'s own setting',
     description: 'One setting — the entity ID this service names itself by ' +
                  'in the WS-Federation metadata and in a sign-in ' +
-                 'response.\n\nThe assertion it carries is a SAML 1.1 one, so ' +
-                 'its Issuer is `saml.issuer` (on `GET /saml2` and ' +
-                 '`GET /saml11`) and its contents are ' +
-                 '`GET /saml-attributes`. `wauth` is recorded and not ' +
-                 'honoured and `wreqptr` is never dereferenced; neither is a ' +
-                 'setting, and the page says so rather than implying a ' +
-                 'missing one.' },
+                 'response.\n\nThe assertion it carries is a SAML 1.1 one, ' +
+                 'so its Issuer is `saml.issuer` (on `GET /saml2` and `GET ' +
+                 '/saml11`) and its contents are `GET /saml-attributes`. ' +
+                 '`wauth` is recorded and not honoured and `wreqptr` is ' +
+                 'never dereferenced; neither is a setting, and the page ' +
+                 'says so rather than implying a missing one.' },
   { path: '/tls', console: '/admin/tls', tag: 'TLS',
     operationId: 'getTlsSettings',
     summary: 'The two TLS listeners\' own settings',
-    description: 'The four `tls.*` settings: the two ports, and the hostnames ' +
-                 'and IP addresses that go into the self-signed certificate ' +
-                 'this service mints on every start.\n\nALL FOUR ARE ' +
-                 'RESTART-ONLY: the certificate is minted and the sockets are ' +
-                 'bound before anything is listening. One certificate serves ' +
-                 '8443, 9443, LDAPS 636 and — when `global.https` is on — the ' +
-                 'main port, so a caller trusts this service once rather than ' +
-                 'four times.\n\nWhether the MAIN port is HTTPS is ' +
-                 '`global.https`, which is on `GET /config` with the rest of ' +
-                 'the process\'s own settings: it is a fact about the process ' +
-                 'rather than about these listeners, and it defaults to ' +
-                 'whatever `oauth2.rfc9700` is.' }
+    description: 'The four `tls.*` settings: the two ports, and the ' +
+                 'hostnames and IP addresses that go into the self-signed ' +
+                 'certificate this service mints on every start.\n\nALL FOUR ' +
+                 'ARE RESTART-ONLY: the certificate is minted and the ' +
+                 'sockets are bound before anything is listening. One ' +
+                 'certificate serves 8443, 9443, LDAPS 636 and — when ' +
+                 '`global.https` is on — the main port, so a caller trusts ' +
+                 'this service once rather than four times.\n\nWhether the ' +
+                 'MAIN port is HTTPS is `global.https`, which is on `GET ' +
+                 '/config` with the rest of the process\'s own settings: it ' +
+                 'is a fact about the process rather than about these ' +
+                 'listeners, and it defaults to whatever `oauth2.rfc9700` is.' }
 ].map(function (row) {
   return { method: 'GET', path: BASE + row.path, tag: row.tag,
            operationId: row.operationId,
            summary: row.summary,
            description: row.description +
              '\n\nTHERE IS NO POST BESIDE THIS ONE and that is not a gap: ' +
-             'every form on the console page this mirrors posts `set-many` to ' +
-             '/admin/config, so `POST /admin-api/config/set-many` is already ' +
-             'the operation for it. One store, one action, two doors.',
+             'every form on the console page this mirrors posts `set-many` ' +
+             'to /admin/config, so `POST /admin-api/config/set-many` is ' +
+             'already the operation for it. One store, one action, two doors.',
            mirrors: 'GET ' + row.console,
            responseDescription: 'What the page says, and the settings it ' +
                                 'draws — described rows carrying each ' +
@@ -1107,9 +1126,11 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                                 'changed while the service runs.',
            responseSchema: { $ref: '#/components/schemas/PageSettings' },
            handler: function (req, res) {
-             log.debug("Entering the management API " + row.console + " endpoint.");
+             log.debug("Entering the management API " + row.console + " " +
+                 "endpoint.");
              sendJson(res, 200, admin.protocolSettingsJsonFor(row.console));
-             log.debug("Leaving the management API " + row.console + " endpoint.");
+             log.debug("Leaving the management API " + row.console + " " +
+                 "endpoint.");
            } };
 });
 
@@ -1177,15 +1198,16 @@ function familyScopeNote() {
   }).join(', ');
   log.debug("Leaving familyScopeNote(). " + scoped.length + " attribute(s).");
   return '**' + (scoped.length === 1 ? 'One attribute is' : scoped.length +
-         ' attributes are') + ' scoped to a PROTOCOL FAMILY and REFUSED on an ' +
-         'application declared for none of them: ' + listed + '.** That is ' +
-         'unlike every other attribute here, which is inert rather than wrong ' +
-         'on an entry that never reaches the protocol it belongs to — these ' +
-         'decide what an ENDPOINT does for an identifier, so on an entry no ' +
-         'request could ever name they would read as a policy that was in ' +
-         'force. Declare the family first (`protocols` on the create, or add ' +
-         'to `appAllowedProtocol`). Clearing one is never refused, and ' +
-         '`ldapmodify` reaches them like every other attribute.\n\n';
+         ' attributes are') + ' scoped to a PROTOCOL FAMILY and REFUSED on ' +
+         'an application declared for none of ' +
+         'them: ' + listed + '.** That is ' +
+         'unlike every other attribute here, which is inert rather than ' +
+         'wrong on an entry that never reaches the protocol it belongs to — ' +
+         'these decide what an ENDPOINT does for an identifier, so on an ' +
+         'entry no request could ever name they would read as a policy that ' +
+         'was in force. Declare the family first (`protocols` on the create, ' +
+         'or add to `appAllowedProtocol`). Clearing one is never refused, ' +
+         'and `ldapmodify` reaches them like every other attribute.\n\n';
 }
 
 const ROUTES = [
@@ -1262,8 +1284,8 @@ const ROUTES = [
     } },
 
   // ---------------------------------------------------------------------
-  // THE CRYPTO REPORT. It calls `adminViews.cryptoView()` and computes nothing of
-  // its own, which is rule 7 read strictly: the page and this operation must
+  // THE CRYPTO REPORT. It calls `adminViews.cryptoView()` and computes nothing
+  // of its own, which is rule 7 read strictly: the page and this operation must
   // not be able to disagree about what this service's cryptography is, and the
   // way to make that impossible is for there to be one function.
   //
@@ -1280,14 +1302,14 @@ const ROUTES = [
                  'identity service it advertises: which digest, which ' +
                  'signature algorithm, which cipher, which key, and which ' +
                  'higher-level envelope each is wrapped in — JOSE, XMLDSIG ' +
-                 'and XML Encryption, WS-Security, COSE, X.509, Kerberos.\n\n' +
-                 'EVERY ALGORITHM LIST IN THE REPLY IS READ FROM THE MODULE ' +
-                 'THAT PERFORMS THE ALGORITHM, the way GET ' +
+                 'and XML Encryption, WS-Security, COSE, X.509, ' +
+                 'Kerberos.\n\nEVERY ALGORITHM LIST IN THE REPLY IS READ ' +
+                 'FROM THE MODULE THAT PERFORMS THE ALGORITHM, the way GET ' +
                  '/admin/sts-metadata reads its endpoint list off the live ' +
                  'express router — so it cannot claim something this service ' +
                  'does not do, and it reports drift against that page\'s own ' +
-                 'family list in both directions.\n\nThe `postQuantum` member ' +
-                 'is the one to read before quoting this reply: the ' +
+                 'family list in both directions.\n\nThe `postQuantum` ' +
+                 'member is the one to read before quoting this reply: the ' +
                  'signatures are partly post-quantum and the key ' +
                  'establishment is entirely classical, and those are ' +
                  'reported separately because a signature is checked when it ' +
@@ -1295,8 +1317,8 @@ const ROUTES = [
                  'opened later.\n\nNOTHING HERE IS A SECRET: key types, key ' +
                  'identifiers, curve names, certificate fingerprints and ' +
                  'validity dates only, all of them already readable from ' +
-                 '/oauth2/jwks, /tls/server-certificate and the SPIFFE bundle ' +
-                 'endpoint. Nothing changes anything.',
+                 '/oauth2/jwks, /tls/server-certificate and the SPIFFE ' +
+                 'bundle endpoint. Nothing changes anything.',
     mirrors: 'GET /admin/crypto-metadata',
     responseDescription: 'The whole report.',
     responseSchema: { $ref: '#/components/schemas/CryptoMetadata' },
@@ -1360,10 +1382,10 @@ const ROUTES = [
                  'answer "is X encrypted" by silence.\n\nTHE COUNTERS ARE ' +
                  'PROCESS-WIDE AND NOT PER REALM — a key-encryption key ' +
                  'belongs to the process — and they are in memory, so a ' +
-                 'restart is how you get an empty one. Under `workers.' +
-                 'requestCount` each request worker keeps its own, so a ' +
-                 'dispatched service answers this from whichever worker took ' +
-                 'the call.\n\nNO CIPHERTEXT AND NO PLAINTEXT IS IN THE ' +
+                 'restart is how you get an empty one. Under ' +
+                 '`workers.requestCount` each request worker keeps its own, ' +
+                 'so a dispatched service answers this from whichever worker ' +
+                 'took the call.\n\nNO CIPHERTEXT AND NO PLAINTEXT IS IN THE ' +
                  'REPLY, and there is no operation anywhere that opens a ' +
                  'sealed value on request: a sealed value is a private key, ' +
                  'an authenticator\'s shared secret or somebody\'s recovery ' +
@@ -1372,19 +1394,18 @@ const ROUTES = [
                  'THE PART TO READ BEFORE ACTING ON THE REST**, and it is in ' +
                  'this reply rather than in a document because a machine ' +
                  'reader has no page to have read it on. Two limits and one ' +
-                 'deployment mistake: there is ONE key-encryption key for the ' +
-                 'service and NOT one per trust realm (`perRealmKey: false`), ' +
-                 'so a realm is not a cryptographic boundary at rest and ' +
-                 'rotating the key rotates every realm; everything NOT in ' +
-                 '`classes` is plaintext in the store, because the layer that ' +
-                 'covers a whole database belongs under it rather than inside ' +
-                 'it (a column-level answer leaves plaintext in the WAL, in ' +
-                 'spilled sorts, in a pg_dump, on replicas and in query logs) ' +
-                 '— that layer is the operator\'s and ' +
+                 'deployment mistake: there is ONE key-encryption key for ' +
+                 'the service and NOT one per trust realm (`perRealmKey: ' +
+                 'false`), so a realm is not a cryptographic boundary at ' +
+                 'rest and rotating the key rotates every realm; everything ' +
+                 'NOT in `classes` is plaintext in the store, because the ' +
+                 'layer that covers a whole database belongs under it rather ' +
+                 'than inside it (a column-level answer leaves plaintext in ' +
+                 'the WAL, in spilled sorts, in a pg_dump, on replicas and ' +
+                 'in query logs) — that layer is the operator\'s and ' +
                  'docs/encryption-at-rest.md is the write-up; and the key ' +
                  'must not live on the volume it protects, which is what the ' +
-                 '`file` provider invites and why every other provider ' +
-                 'exists.',
+                 '`file` provider invites and why every other provider exists.',
     mirrors: 'GET /admin/encryption',
     responseDescription: 'The whole report.',
     responseSchema: { type: 'object',
@@ -1440,19 +1461,19 @@ const ROUTES = [
                  '`code` carries PostgreSQL\'s SQLSTATE, because 42P01 (no ' +
                  'such relation — an older server) and 42501 (insufficient ' +
                  'privilege — this service does not hold `pg_monitor`) are ' +
-                 'completely different things to do something about. `failed` ' +
-                 'lists them.\n\n`derived` carries four RATIOS PostgreSQL ' +
-                 'deliberately does not keep — cache hit, rollback share, ' +
-                 'dead-tuple share, and indexes nothing has ever scanned — ' +
-                 'all of them cumulative since `stats_reset`, which is in ' +
-                 'the reply beside them. `schemaDrift` is the one ASSERTION ' +
-                 'here rather than a measurement: the objects the driver ' +
-                 'declares against the ones the server actually has, a check ' +
-                 'nothing else in this service makes.\n\n**IT ANSWERS 200 ' +
-                 'WITH `available: false` WHEN THERE IS NO DATABASE**, which ' +
-                 'is the ordinary case: `persistence.mode` defaults to ' +
-                 '`memory`. That is not an error — the question was ' +
-                 'answerable and the answer is that there is nothing to ' +
+                 'completely different things to do something about. ' +
+                 '`failed` lists them.\n\n`derived` carries four RATIOS ' +
+                 'PostgreSQL deliberately does not keep — cache hit, ' +
+                 'rollback share, dead-tuple share, and indexes nothing has ' +
+                 'ever scanned — all of them cumulative since `stats_reset`, ' +
+                 'which is in the reply beside them. `schemaDrift` is the ' +
+                 'one ASSERTION here rather than a measurement: the objects ' +
+                 'the driver declares against the ones the server actually ' +
+                 'has, a check nothing else in this service makes.\n\n**IT ' +
+                 'ANSWERS 200 WITH `available: false` WHEN THERE IS NO ' +
+                 'DATABASE**, which is the ordinary case: `persistence.mode` ' +
+                 'defaults to `memory`. That is not an error — the question ' +
+                 'was answerable and the answer is that there is nothing to ' +
                  'report — and `why` says which of three reasons it ' +
                  'is.\n\nNOTHING HERE CHANGES ANYTHING and no connection ' +
                  'string is in the reply: `target` names the host, port, ' +
@@ -1483,8 +1504,10 @@ const ROUTES = [
         sendJson(res, 500, { ok: false, errors: [
           'The database report could not be built: ' +
           (e && e.message ? e.message : String(e))] });
-        log.debug("Leaving the management API database report endpoint. It threw.");
+        log.debug("Leaving the management API database report endpoint. It " +
+                  "threw.");
       });
+      log.debug("Leaving handler().");
     } },
 
   // ---------------------------------------------------------------------
@@ -1525,15 +1548,15 @@ const ROUTES = [
                  'it expires, the token the login produced, **what that ' +
                  'identity may actually do — asked of the store rather than ' +
                  'quoted from a policy file** — and the engines it can see; ' +
-                 '`aws`, `gcp` and `azure` publish their metadata against the ' +
-                 'secret itself.\n\n**NO PROBE FETCHES A SECRET VALUE AND ' +
-                 'NONE IS IN THE REPLY.** Every one is a metadata read, and ' +
-                 'the module they live in deletes a deny-list of member names ' +
-                 '— `value`, `data`, `token`, `id` among them — from ' +
-                 'whatever a provider answers before it leaves.\n\n**A ' +
-                 'PROBE THAT FAILED IS A MEMBER AND NOT AN ABSENCE**, with ' +
-                 '`ok: false` and, where the store gave one, the HTTP status ' +
-                 'in `status`. Here half of them are SUPPOSED to fail: the ' +
+                 '`aws`, `gcp` and `azure` publish their metadata against ' +
+                 'the secret itself.\n\n**NO PROBE FETCHES A SECRET VALUE ' +
+                 'AND NONE IS IN THE REPLY.** Every one is a metadata read, ' +
+                 'and the module they live in deletes a deny-list of member ' +
+                 'names — `value`, `data`, `token`, `id` among them — from ' +
+                 'whatever a provider answers before it leaves.\n\n**A PROBE ' +
+                 'THAT FAILED IS A MEMBER AND NOT AN ABSENCE**, with `ok: ' +
+                 'false` and, where the store gave one, the HTTP status in ' +
+                 '`status`. Here half of them are SUPPOSED to fail: the ' +
                  'identity this service holds is bound to two read paths, so ' +
                  'a 403 against anything else is the policy working. Each is ' +
                  'bounded by `keys.storeProbeTimeoutMs` and they run in ' +
@@ -1564,6 +1587,7 @@ const ROUTES = [
         log.debug("Leaving the management API secret store report endpoint. " +
                   "It threw.");
       });
+      log.debug("Leaving handler().");
     } },
 
   // ---------------------------------------------------------------------
@@ -1572,16 +1596,17 @@ const ROUTES = [
   // ---------------------------------------------------------------------
   { method: 'GET', path: BASE + '/keys', tag: 'Service',
     operationId: 'getKeys',
-    summary: 'Every key pair this process generated at start, and what it is for',
+    summary: 'Every key pair this process generated at start, and what it is ' +
+             'for',
     description: 'A LIST and never key material. The signing keys are per ' +
-                 'trust realm and the TLS certificate belongs to the process, ' +
-                 'and each row says which. `formats` is what that key can be ' +
-                 'exported as, computed rather than listed: a key with no ' +
-                 'certificate cannot be a PKCS#12, and a post-quantum key has ' +
-                 'no PKCS#8 encoding at all, so the answer differs per key for ' +
-                 'two different reasons.\n\nNothing here is key material. ' +
-                 'POST /admin-api/keys/export is the operation that hands one ' +
-                 'over.',
+                 'trust realm and the TLS certificate belongs to the ' +
+                 'process, and each row says which. `formats` is what that ' +
+                 'key can be exported as, computed rather than listed: a key ' +
+                 'with no certificate cannot be a PKCS#12, and a ' +
+                 'post-quantum key has no PKCS#8 encoding at all, so the ' +
+                 'answer differs per key for two different ' +
+                 'reasons.\n\nNothing here is key material. POST ' +
+                 '/admin-api/keys/export is the operation that hands one over.',
     mirrors: 'GET /admin/keys',
     responseDescription: 'The key pairs.',
     responseSchema: { $ref: '#/components/schemas/KeyList' },
@@ -1634,7 +1659,8 @@ const ROUTES = [
         errorCodes.mark(res, 'STS-API-0011');
         sendJson(res, 503, { ok: false, errors: [
           'The crypto reporter is not installed in this process.'] });
-        log.debug("Leaving the management API key export endpoint. No reporter.");
+        log.debug("Leaving the management API key export endpoint. No " +
+                  "reporter.");
         return;
       }
       pending.then(function (result) {
@@ -1665,21 +1691,22 @@ const ROUTES = [
                                                  e.message] });
         log.debug("Leaving the management API key export endpoint. Threw.");
       });
+      log.debug("Leaving handler().");
     },
     actions: [
       { action: 'export', operationId: 'exportKey',
         summary: 'Hand over one key pair, in a chosen keystore format',
-        description: 'THIS OPERATION RETURNS PRIVATE KEY MATERIAL. It is the API ' +
-                 'half of the one page in this console where reading is ' +
+        description: 'THIS OPERATION RETURNS PRIVATE KEY MATERIAL. It is the ' +
+                 'API half of the one page in this console where reading is ' +
                  'taking.\n\nIt is defensible because of what these keys ' +
-                 'are: generated at start, held only in memory, dead when the ' +
-                 'process exits, and protecting nothing — this service checks ' +
-                 'no password and validates no token it did not mint. **This ' +
-                 'API is not gated at all**, so anybody who can reach this ' +
-                 'port can call it; that is the same honest consequence every ' +
-                 'other operation here has, stated again because this one ' +
-                 'returns a key.\n\n`format` is one of `pem`, `der`, `jwk` ' +
-                 'or `pkcs12`. A password is REQUIRED for `pkcs12` and ' +
+                 'are: generated at start, held only in memory, dead when ' +
+                 'the process exits, and protecting nothing — this service ' +
+                 'checks no password and validates no token it did not mint. ' +
+                 '**This API is not gated at all**, so anybody who can reach ' +
+                 'this port can call it; that is the same honest consequence ' +
+                 'every other operation here has, stated again because this ' +
+                 'one returns a key.\n\n`format` is one of `pem`, `der`, ' +
+                 '`jwk` or `pkcs12`. A password is REQUIRED for `pkcs12` and ' +
                  'optional for the rest, where it encrypts the private half. ' +
                  'The reply carries the file base64-encoded rather than raw, ' +
                  'because this API answers JSON everywhere else and a caller ' +
@@ -1696,8 +1723,8 @@ const ROUTES = [
                                    'service holds a certificate for — the ' +
                                    'signing key and the TLS key.' },
             password: { type: 'string',
-                        description: 'REQUIRED for `pkcs12`; optional for the ' +
-                                     'other three, where it encrypts the ' +
+                        description: 'REQUIRED for `pkcs12`; optional for ' +
+                                     'the other three, where it encrypts the ' +
                                      'private half. Empty means the private ' +
                                      'key comes out in the clear.' }
           },
@@ -1744,22 +1771,22 @@ const ROUTES = [
     summary: 'What the console\'s API explorer reads, and what you may drive',
     description: 'The explorer is a page of the ADMIN CONSOLE at ' +
                  '`/admin/api-explorer` — it was `/admin-api/docs` until ' +
-                 '2026-09-09, when this API began requiring an access token a ' +
-                 'browser cannot carry. This operation reports where the ' +
+                 '2026-09-09, when this API began requiring an access token ' +
+                 'a browser cannot carry. This operation reports where the ' +
                  'document is, how many paths and operations it describes, ' +
                  'and the audience a token for this API must name. It does ' +
                  'NOT repeat the document: `GET ' + BASE + '/openapi.json` ' +
-                 'is the document.\n\nThe `scope` member is what the ' +
-                 'CONSOLE SESSION\'s roles would grant — it is what the page ' +
-                 'puts in the token it mints for the person reading it, so a ' +
-                 'reader holding Admin Read alone sees `admin:read` and knows ' +
+                 'is the document.\n\nThe `scope` member is what the CONSOLE ' +
+                 'SESSION\'s roles would grant — it is what the page puts in ' +
+                 'the token it mints for the person reading it, so a reader ' +
+                 'holding Admin Read alone sees `admin:read` and knows ' +
                  'before pressing anything that a write would be refused. ' +
                  '**It is EMPTY when this operation is called with an access ' +
-                 'token rather than read off the page**, which is the ordinary ' +
-                 'case here: there is no console session on such a request, ' +
-                 'and reporting the token\'s own scopes back to the caller ' +
-                 'that sent them would be telling somebody what they just ' +
-                 'said.',
+                 'token rather than read off the page**, which is the ' +
+                 'ordinary case here: there is no console session on such a ' +
+                 'request, and reporting the token\'s own scopes back to the ' +
+                 'caller that sent them would be telling somebody what they ' +
+                 'just said.',
     mirrors: 'GET /admin/api-explorer',
     responseDescription: 'Where the explorer reads from, and what the caller ' +
                          'may drive.',
@@ -1776,9 +1803,9 @@ const ROUTES = [
       scope: { type: 'string',
                description: 'The scopes this caller\'s roles grant.' },
       audience: { type: 'string',
-                  description: 'What a token for this API must name in `aud`. ' +
-                               'Computed outside any realm, because the ' +
-                               'credential is service-wide.' },
+                  description: 'What a token for this API must name in ' +
+                               '`aud`. Computed outside any realm, because ' +
+                               'the credential is service-wide.' },
       tokenInReply: { type: 'boolean',
                       description: 'Always false, and named so that its ' +
                                    'absence is a statement rather than an ' +
@@ -1848,16 +1875,17 @@ const ROUTES = [
                  'naming nobody.\n\nONE PAGE PARAMETER IS NOT IN THE LIST ' +
                  'BELOW, because its name is data: each session\'s own token ' +
                  'list is moved by `session-<the session id>Page`, so ' +
-                 '`?user=alice&session-8Qk3...Page=2` moves that block and no ' +
-                 'other, and each session in the reply answers with its own ' +
-                 '`tokensPaging`. It is named after the session rather than ' +
-                 'numbered so that the link still moves the same session after ' +
-                 'the list around it has changed, and it is paged at all ' +
-                 'because one browser session can hold most of the tokens this ' +
-                 'service remembers. OpenAPI cannot spell a parameter whose ' +
-                 'name is built at runtime, and a `session-{id}Page` in the ' +
-                 'list would generate a client that sends a literal `{id}` — ' +
-                 'so it is here in words instead.',
+                 '`?user=alice&session-8Qk3...Page=2` moves that block and ' +
+                 'no other, and each session in the reply answers with its ' +
+                 'own `tokensPaging`. It is named after the session rather ' +
+                 'than numbered so that the link still moves the same ' +
+                 'session after the list around it has changed, and it is ' +
+                 'paged at all because one browser session can hold most of ' +
+                 'the tokens this service remembers. OpenAPI cannot spell a ' +
+                 'parameter whose name is built at runtime, and a ' +
+                 '`session-{id}Page` in the list would generate a client ' +
+                 'that sends a literal `{id}` — so it is here in words ' +
+                 'instead.',
     mirrors: 'GET /admin/users',
     parameters: [
       { name: 'user', in: 'query', required: false,
@@ -1916,32 +1944,32 @@ const ROUTES = [
   // act behind it.
   { method: 'GET', path: BASE + '/users/new', tag: 'Users',
     operationId: 'getNewUserForm',
-    summary: 'Every attribute a person may be created with, and the four ways ' +
-             'they can be given a way in',
-    description: 'The ATTRIBUTE CATALOGUE a create takes in `attributes` — one ' +
-                 'row per attribute a person in this directory may carry, each ' +
-                 'naming the claim it reaches in an issued token or credential ' +
-                 'and the document its name comes from — plus the container DN ' +
-                 'the entry would land in, the realm, and the four `credential` ' +
-                 'options.\n\n**It creates nobody**: the create is `POST ' +
-                 '/admin-api/users/create`. This is the list that call ' +
-                 'validates against, and an attribute name that is not on it is ' +
-                 'REFUSED rather than dropped — so a caller that reads this ' +
-                 'first cannot be told afterwards that half of what it sent was ' +
-                 'ignored.\n\n**`uid` and `userPassword` are deliberately not ' +
-                 'on it.** `uid` is the username, sent as `username`, and a ' +
-                 'second way to set it would allow an entry at `uid=alice` ' +
-                 'whose uid attribute says `bob`. A password goes through ' +
-                 '`credential`, so that `credentials.js` hashes it — an ' +
-                 'attribute door that took `userPassword` would write one in ' +
-                 'the clear.\n\n**The container is THIS REALM\'S.** The ' +
-                 'embedded directory is per trust realm, so ' +
-                 '`/realm/acme/admin-api/users/new` answers with acme\'s ' +
-                 '`ou=users` and a person created there is invisible to every ' +
-                 'other realm.',
+    summary: 'Every attribute a person may be created with, and the four ' +
+             'ways they can be given a way in',
+    description: 'The ATTRIBUTE CATALOGUE a create takes in `attributes` — ' +
+                 'one row per attribute a person in this directory may ' +
+                 'carry, each naming the claim it reaches in an issued token ' +
+                 'or credential and the document its name comes from — plus ' +
+                 'the container DN the entry would land in, the realm, and ' +
+                 'the four `credential` options.\n\n**It creates nobody**: ' +
+                 'the create is `POST /admin-api/users/create`. This is the ' +
+                 'list that call validates against, and an attribute name ' +
+                 'that is not on it is REFUSED rather than dropped — so a ' +
+                 'caller that reads this first cannot be told afterwards ' +
+                 'that half of what it sent was ignored.\n\n**`uid` and ' +
+                 '`userPassword` are deliberately not on it.** `uid` is the ' +
+                 'username, sent as `username`, and a second way to set it ' +
+                 'would allow an entry at `uid=alice` whose uid attribute ' +
+                 'says `bob`. A password goes through `credential`, so that ' +
+                 '`credentials.js` hashes it — an attribute door that took ' +
+                 '`userPassword` would write one in the clear.\n\n**The ' +
+                 'container is THIS REALM\'S.** The embedded directory is ' +
+                 'per trust realm, so `/realm/acme/admin-api/users/new` ' +
+                 'answers with acme\'s `ou=users` and a person created there ' +
+                 'is invisible to every other realm.',
     mirrors: 'GET /admin/users/new',
-    responseDescription: 'The attribute catalogue, the credential options, the ' +
-                         'container and the realm.',
+    responseDescription: 'The attribute catalogue, the credential options, ' +
+                         'the container and the realm.',
     responseSchema: { $ref: '#/components/schemas/NewUserForm' },
     handler: function (req, res) {
       log.debug("Entering the management API new-user endpoint.");
@@ -1978,32 +2006,33 @@ const ROUTES = [
     actions: [
       { action: 'issue-activation', operationId: 'issueActivationLink',
         summary: 'Issue a one-time activation link for a provisioned person',
-        description: 'How somebody created through POST /admin-api/users/create, ' +
-                     'SCIM or an LDAP add comes to have a way in. They are ' +
-                     'provisioned with no credential; this mints a single-use, ' +
-                     'time-limited URL at which they choose a password, a ' +
-                     'security key, or both.\n\n**THE URL IS RETURNED ONCE ' +
-                     'AND NEVER AGAIN.** What is stored is a scrypt hash, so ' +
-                     'this service cannot produce it a second time — only ' +
-                     'replace it, which is what calling this again does. Treat ' +
-                     'it as the credential it is: anybody holding it can ' +
-                     'complete the account setup, so a leaked link is an ' +
-                     'account takeover.\n\nIt expires after ' +
-                     '`security.activationTtlMinutes` and is spent the moment ' +
-                     'the setup FINISHES — not when the link is opened, ' +
-                     'because a link burned by a mail scanner or a browser ' +
-                     'prefetch would strand the person it was for.\n\nThere ' +
-                     'is deliberately no self-service version: with no mail ' +
-                     'channel here it would have to show the link on screen, ' +
-                     'which is an account takeover with a username as the ' +
-                     'only input.',
+        description: 'How somebody created through POST ' +
+                     '/admin-api/users/create, SCIM or an LDAP add comes to ' +
+                     'have a way in. They are provisioned with no ' +
+                     'credential; this mints a single-use, time-limited URL ' +
+                     'at which they choose a password, a security key, or ' +
+                     'both.\n\n**THE URL IS RETURNED ONCE AND NEVER AGAIN.** ' +
+                     'What is stored is a scrypt hash, so this service ' +
+                     'cannot produce it a second time — only replace it, ' +
+                     'which is what calling this again does. Treat it as the ' +
+                     'credential it is: anybody holding it can complete the ' +
+                     'account setup, so a leaked link is an account ' +
+                     'takeover.\n\nIt expires after ' +
+                     '`security.activationTtlMinutes` and is spent the ' +
+                     'moment the setup FINISHES — not when the link is ' +
+                     'opened, because a link burned by a mail scanner or a ' +
+                     'browser prefetch would strand the person it was ' +
+                     'for.\n\nThere is deliberately no self-service version: ' +
+                     'with no mail channel here it would have to show the ' +
+                     'link on screen, which is an account takeover with a ' +
+                     'username as the only input.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             user: { type: 'string',
-                    description: 'The person, as /admin-api/users names them. ' +
-                                 'They must already exist.' },
+                    description: 'The person, as /admin-api/users names ' +
+                                 'them. They must already exist.' },
             username: { type: 'string', description: 'Accepted for `user`.' }
           },
           required: ['user'],
@@ -2015,121 +2044,127 @@ const ROUTES = [
       { action: 'create', operationId: 'createUser',
         summary: 'Put a person in the directory before they authenticate',
         description: 'An entry under `ou=users` usually appears because ' +
-                     'somebody AUTHENTICATED — at either sign-in screen, on a ' +
-                     'password grant, with a `UsernameToken`, in a Kerberos ' +
-                     'AS-REQ. This is how to get one in ahead of that, which ' +
-                     'is what a client testing claims from the directory ' +
-                     'needs: the entry carries the invented person behind that ' +
-                     'name, so a credential issued for them and an ' +
-                     '`ldapsearch` for the entry say the same thing from the ' +
-                     'start.\n\n**One entry per person, and this is one of ' +
-                     'three doors onto that rule.** A username already here is ' +
-                     'refused with the DN that holds it — whatever protocol ' +
-                     'brought them, and whichever attribute their entry is ' +
-                     'named by, since a person whose entry was created by a ' +
-                     'client certificate is at `cn=<name>,ou=users` rather ' +
-                     'than `uid=<name>,ou=users`. An `ldapadd` under ' +
-                     '`ou=users` gets the same refusal as ' +
-                     'LDAP_ENTRY_ALREADY_EXISTS (68), because all three call ' +
-                     'one function.\n\n**No password is set unless one is ' +
-                     'ASKED FOR** through `credential` below. That default is ' +
-                     'what this operation has always done and is right in ' +
-                     'development mode, where no password is checked here in ' +
-                     'this protocol or any other; in product mode a person ' +
-                     'with no credential cannot sign in, and `activation` is ' +
-                     'how they are given one. Creating ' +
-                     'the entry does not put the name in `GET ' +
-                     '/admin-api/users`: that lists identities this service ' +
-                     'has SEEN authenticate, and this writes what the ' +
-                     'directory HOLDS.\n\n**SINCE 2026-09-06 IT TAKES THE ' +
-                     'PERSON\'S DETAILS AND A CREDENTIAL**, which is what the ' +
-                     'console\'s /admin/users/new form posts. `attributes` are ' +
-                     'checked against the catalogue `GET /admin-api/users/new` ' +
+                     'somebody AUTHENTICATED — at either sign-in screen, on ' +
+                     'a password grant, with a `UsernameToken`, in a ' +
+                     'Kerberos AS-REQ. This is how to get one in ahead of ' +
+                     'that, which is what a client testing claims from the ' +
+                     'directory needs: the entry carries the invented person ' +
+                     'behind that name, so a credential issued for them and ' +
+                     'an `ldapsearch` for the entry say the same thing from ' +
+                     'the start.\n\n**One entry per person, and this is one ' +
+                     'of three doors onto that rule.** A username already ' +
+                     'here is refused with the DN that holds it — whatever ' +
+                     'protocol brought them, and whichever attribute their ' +
+                     'entry is named by, since a person whose entry was ' +
+                     'created by a client certificate is at ' +
+                     '`cn=<name>,ou=users` rather than ' +
+                     '`uid=<name>,ou=users`. An `ldapadd` under `ou=users` ' +
+                     'gets the same refusal as LDAP_ENTRY_ALREADY_EXISTS ' +
+                     '(68), because all three call one function.\n\n**No ' +
+                     'password is set unless one is ASKED FOR** through ' +
+                     '`credential` below. That default is what this ' +
+                     'operation has always done and is right in development ' +
+                     'mode, where no password is checked here in this ' +
+                     'protocol or any other; in product mode a person with ' +
+                     'no credential cannot sign in, and `activation` is how ' +
+                     'they are given one. Creating the entry does not put ' +
+                     'the name in `GET /admin-api/users`: that lists ' +
+                     'identities this service has SEEN authenticate, and ' +
+                     'this writes what the directory HOLDS.\n\n**SINCE ' +
+                     '2026-09-06 IT TAKES THE PERSON\'S DETAILS AND A ' +
+                     'CREDENTIAL**, which is what the console\'s ' +
+                     '/admin/users/new form posts. `attributes` are checked ' +
+                     'against the catalogue `GET /admin-api/users/new` ' +
                      'publishes and an unknown name is REFUSED rather than ' +
-                     'dropped; `invent` decides whether the rest are made up, ' +
-                     'and it DEFAULTS TO TRUE so that a caller written before ' +
-                     'this gets exactly what it always got.',
+                     'dropped; `invent` decides whether the rest are made ' +
+                     'up, and it DEFAULTS TO TRUE so that a caller written ' +
+                     'before this gets exactly what it always got.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             username: { type: 'string',
-                        description: 'The name they will authenticate under — ' +
-                                     'the same string that appears in a ' +
-                                     'token\'s `sub` and on /admin/users. Not ' +
-                                     'a DN and not a `did:`, and it may not ' +
-                                     'carry a character RFC 4514 reserves in ' +
-                                     'a DN: those name entries that get here ' +
-                                     'by being presented rather than by being ' +
-                                     'created.' },
+                        description: 'The name they will authenticate under ' +
+                                     '— the same string that appears in a ' +
+                                     'token\'s `sub` and on /admin/users. ' +
+                                     'Not a DN and not a `did:`, and it may ' +
+                                     'not carry a character RFC 4514 ' +
+                                     'reserves in a DN: those name entries ' +
+                                     'that get here by being presented ' +
+                                     'rather than by being created.' },
             note: { type: 'string',
                     description: 'Optional. What the entry\'s `description` ' +
                                  'says about why it exists; the default says ' +
                                  'it was created by hand rather than by ' +
-                                 'authenticating. An `attributes.description` ' +
-                                 'wins over it, because an operator\'s own ' +
-                                 'sentence about a person is the more useful ' +
-                                 'one and two values would be the entry ' +
-                                 'answering the question twice.' },
+                                 'authenticating. An ' +
+                                 '`attributes.description` wins over it, ' +
+                                 'because an operator\'s own sentence about ' +
+                                 'a person is the more useful one and two ' +
+                                 'values would be the entry answering the ' +
+                                 'question twice.' },
             attributes: {
               type: 'object',
-              description: 'What is known about them, as `{attribute: value}`. ' +
-                           'The names are the catalogue `GET ' +
-                           '/admin-api/users/new` publishes, in that document\'s ' +
-                           'own spelling, and they are the names the entry ' +
-                           'carries — so an `ldapsearch` shows exactly what was ' +
-                           'sent.\n\n**A NAME THAT IS NOT ON THE CATALOGUE IS ' +
-                           'REFUSED and the whole create fails**, rather than ' +
-                           'the value being ignored: silently dropping it would ' +
-                           'answer "created" to a request asking for something ' +
-                           'this did not do. `userPassword` is refused by that ' +
-                           'rule — use `credential` — and so is `uid`, which is ' +
+              description: 'What is known about them, as `{attribute: ' +
+                           'value}`. The names are the catalogue `GET ' +
+                           '/admin-api/users/new` publishes, in that ' +
+                           'document\'s own spelling, and they are the names ' +
+                           'the entry carries — so an `ldapsearch` shows ' +
+                           'exactly what was sent.\n\n**A NAME THAT IS NOT ' +
+                           'ON THE CATALOGUE IS REFUSED and the whole create ' +
+                           'fails**, rather than the value being ignored: ' +
+                           'silently dropping it would answer "created" to a ' +
+                           'request asking for something this did not do. ' +
+                           '`userPassword` is refused by that rule — use ' +
+                           '`credential` — and so is `uid`, which is ' +
                            '`username`.\n\nAn empty string is the same as ' +
-                           'sending nothing: the attribute is absent from the ' +
-                           'entry rather than present and empty.',
+                           'sending nothing: the attribute is absent from ' +
+                           'the entry rather than present and empty.',
               additionalProperties: true
             },
             invent: {
               type: 'boolean',
               description: 'Whether to MAKE UP the attributes not sent. ' +
-                           '**Defaults to TRUE**, which is what this operation ' +
-                           'has always done and what its own description above ' +
-                           'promises: `vc_claims.js` invents a consistent ' +
-                           'person per username, so the entry and any ' +
-                           'credential issued for them agree from the ' +
-                           'start.\n\nSend `false` for an entry carrying ' +
-                           'ONLY what you sent — its object classes, its uid, a ' +
-                           'description and your attributes. That is what the ' +
-                           'console\'s form does. It is not a promise the ' +
-                           'entry stays that way: the Populate button on ' +
-                           '/admin/vc fills every missing SELECTED attribute on ' +
-                           'every person, and does not know which were typed.'
+                           '**Defaults to TRUE**, which is what this ' +
+                           'operation has always done and what its own ' +
+                           'description above promises: `vc_claims.js` ' +
+                           'invents a consistent person per username, so the ' +
+                           'entry and any credential issued for them agree ' +
+                           'from the start.\n\nSend `false` for an entry ' +
+                           'carrying ONLY what you sent — its object ' +
+                           'classes, its uid, a description and your ' +
+                           'attributes. That is what the console\'s form ' +
+                           'does. It is not a promise the entry stays that ' +
+                           'way: the Populate button on /admin/vc fills ' +
+                           'every missing SELECTED attribute on every ' +
+                           'person, and does not know which were typed.'
             },
             credential: {
               type: 'string',
               description: 'How they first get in. **`generate` is the ' +
                            'DEFAULT since 2026-09-12**: a password drawn to ' +
-                           'satisfy this realm\'s password policy ' +
-                           '(`GET /admin-api/policies`), set, and RETURNED ONCE ' +
-                           'in `password` — this service stores a scrypt hash ' +
-                           'and cannot produce it again. It costs one hash per ' +
-                           'create, about 70ms, so a bulk load that wants ' +
-                           'nobody holding anything sends `none`. `none` was ' +
-                           'the default before, and in development mode it is ' +
-                           'enough to sign in, since no password is checked ' +
-                           'there; `password`, hashing the `password` field ' +
-                           'onto the entry, and refused by the password policy ' +
-                           'in product mode when it does not meet it; ' +
-                           '`activation`, issuing a single-use link and ' +
-                           'returning it ONCE in `activationUrl` for you to ' +
-                           'send them, at which they choose a password, a ' +
-                           'security key or both.\n\n**A CREDENTIAL STEP THAT ' +
-                           'FAILS DOES NOT UNDO THE CREATE.** A password can ' +
-                           'only be written onto an entry that exists, so the ' +
-                           'person is there either way; the reply is `ok: true` ' +
+                           'satisfy this realm\'s password policy (`GET ' +
+                           '/admin-api/policies`), set, and RETURNED ONCE in ' +
+                           '`password` — this service stores a scrypt hash ' +
+                           'and cannot produce it again. It costs one hash ' +
+                           'per create, about 70ms, so a bulk load that ' +
+                           'wants nobody holding anything sends `none`. ' +
+                           '`none` was the default before, and in ' +
+                           'development mode it is enough to sign in, since ' +
+                           'no password is checked there; `password`, ' +
+                           'hashing the `password` field onto the entry, and ' +
+                           'refused by the password policy in product mode ' +
+                           'when it does not meet it; `activation`, issuing ' +
+                           'a single-use link and returning it ONCE in ' +
+                           '`activationUrl` for you to send them, at which ' +
+                           'they choose a password, a security key or ' +
+                           'both.\n\n**A CREDENTIAL STEP THAT FAILS DOES NOT ' +
+                           'UNDO THE CREATE.** A password can only be ' +
+                           'written onto an entry that exists, so the person ' +
+                           'is there either way; the reply is `ok: true` ' +
                            'with `credentialError` set and says so, because ' +
-                           'answering `ok: false` would send a caller to create ' +
-                           'them again and meet "that username is taken".',
+                           'answering `ok: false` would send a caller to ' +
+                           'create them again and meet "that username is ' +
+                           'taken".',
               enum: ['none', 'password', 'generate', 'activation']
             },
             password: { type: 'string',
@@ -2139,14 +2174,15 @@ const ROUTES = [
                                      'logged in the clear; nothing in this ' +
                                      'service can show it again.' },
             passwordConfirm: { type: 'string',
-                               description: 'Optional, and CHECKED WHERE SENT: ' +
-                                            'the console\'s form always sends ' +
-                                            'it, because a mistyped password ' +
-                                            'nobody can read back is a person ' +
-                                            'who cannot sign in and nobody who ' +
+                               description: 'Optional, and CHECKED WHERE ' +
+                                            'SENT: the console\'s form ' +
+                                            'always sends it, because a ' +
+                                            'mistyped password nobody can ' +
+                                            'read back is a person who ' +
+                                            'cannot sign in and nobody who ' +
                                             'can say why. An API caller with ' +
-                                            'one value has nothing to mistype ' +
-                                            'against and may omit it.' }
+                                            'one value has nothing to ' +
+                                            'mistype against and may omit it.' }
           },
           required: ['username'],
           examples: [{ username: 'rcbj' },
@@ -2157,13 +2193,14 @@ const ROUTES = [
                        credential: 'activation' }],
           additionalProperties: false
         },
-        responseDescription: 'The entry as created, in `entry`, with its `dn`; ' +
-                             '`typed` naming the attributes you sent and ' +
-                             '`invented` whether the rest were made up. A ' +
-                             'generated password is in `password` and an ' +
+        responseDescription: 'The entry as created, in `entry`, with its ' +
+                             '`dn`; `typed` naming the attributes you sent ' +
+                             'and `invented` whether the rest were made up. ' +
+                             'A generated password is in `password` and an ' +
                              'activation link in `activationUrl` — EACH ' +
-                             'RETURNED ONCE, because what is stored is a hash ' +
-                             'and this service cannot produce either again.' },
+                             'RETURNED ONCE, because what is stored is a ' +
+                             'hash and this service cannot produce either ' +
+                             'again.' },
 
       // THE OPERATION THAT WAS DOCUMENTED BEFORE IT EXISTED (2026-09-06).
       // `common/credentials.js` names `POST /admin-api/users/set-password`
@@ -2174,30 +2211,30 @@ const ROUTES = [
       // this service documents.
       { action: 'set-password', operationId: 'setUserPassword',
         summary: 'Set or replace somebody\'s password',
-        description: 'Hashed with scrypt by `credentials.js`, which is the one ' +
-                     'place in this service a password is ever verified or ' +
-                     'set, and written to `userPassword` on their directory ' +
-                     'entry. **It cannot be read back by anything** — not this ' +
-                     'API, not the console, not an `ldapsearch`, which sees the ' +
-                     'hash — so a lost password is replaced rather than ' +
-                     'recovered.\n\nSend `password`, or `generate: true` to ' +
-                     'have one made up and RETURNED ONCE. The person must ' +
-                     'already exist; this creates nobody.\n\n**IN ' +
-                     'DEVELOPMENT MODE THIS CHANGES ALMOST NOTHING AND IS ' +
-                     'STILL WORTH DOING.** Nothing here checks a password in ' +
-                     'development — every one is accepted — so setting one ' +
-                     'does not make a sign-in work that would otherwise fail. ' +
-                     'What it does is put the attribute on the entry, which is ' +
-                     'what an LDAP client reads, what `hasPassword()` counts, ' +
-                     'and what product mode would need. In PRODUCT mode it is ' +
-                     'the credential.',
+        description: 'Hashed with scrypt by `credentials.js`, which is the ' +
+                     'one place in this service a password is ever verified ' +
+                     'or set, and written to `userPassword` on their ' +
+                     'directory entry. **It cannot be read back by ' +
+                     'anything** — not this API, not the console, not an ' +
+                     '`ldapsearch`, which sees the hash — so a lost password ' +
+                     'is replaced rather than recovered.\n\nSend `password`, ' +
+                     'or `generate: true` to have one made up and RETURNED ' +
+                     'ONCE. The person must already exist; this creates ' +
+                     'nobody.\n\n**IN DEVELOPMENT MODE THIS CHANGES ALMOST ' +
+                     'NOTHING AND IS STILL WORTH DOING.** Nothing here ' +
+                     'checks a password in development — every one is ' +
+                     'accepted — so setting one does not make a sign-in work ' +
+                     'that would otherwise fail. What it does is put the ' +
+                     'attribute on the entry, which is what an LDAP client ' +
+                     'reads, what `hasPassword()` counts, and what product ' +
+                     'mode would need. In PRODUCT mode it is the credential.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             user: { type: 'string',
-                    description: 'The person, as /admin-api/users names them. ' +
-                                 'They must already exist.' },
+                    description: 'The person, as /admin-api/users names ' +
+                                 'them. They must already exist.' },
             username: { type: 'string', description: 'Accepted for `user`.' },
             password: { type: 'string',
                         description: 'The password to set. Required unless ' +
@@ -2217,8 +2254,9 @@ const ROUTES = [
         },
         responseDescription: 'Whether it was set, and — only where it was ' +
                              'GENERATED — the password, once. A password you ' +
-                             'sent is never echoed back: you already hold it, ' +
-                             'and returning it would put it in a second place.' },
+                             'sent is never echoed back: you already hold ' +
+                             'it, and returning it would put it in a second ' +
+                             'place.' },
 
       // -----------------------------------------------------------------
       // THE TWO SECOND-FACTOR REMOVALS (2026-09-10). They are `POST
@@ -2239,22 +2277,23 @@ const ROUTES = [
         summary: 'Clear somebody\'s authenticator app enrolment',
         description: '**THE ONLY WAY BACK FOR SOMEBODY WHO HAS LOST THEIR ' +
                      'PHONE.** The shared secret lives on that device and ' +
-                     'this service cannot reach it, and there is deliberately ' +
-                     'no self-service reset anywhere — a second factor ' +
-                     'anybody can remove is not a second factor.\n\nIt ' +
-                     'CANNOT lock anybody out: a one-time code is never a ' +
-                     'primary credential here, so clearing one drops the ' +
-                     'account to one factor rather than to none. The person ' +
-                     'sets a new one up at `/portal/mfa`.\n\nClearing an ' +
-                     'enrolment nobody holds answers 400 rather than 200: the ' +
-                     'caller asked to clear a specific thing and it was not ' +
-                     'there.',
+                     'this service cannot reach it, and there is ' +
+                     'deliberately no self-service reset anywhere — a second ' +
+                     'factor anybody can remove is not a second ' +
+                     'factor.\n\nIt CANNOT lock anybody out: a one-time code ' +
+                     'is never a primary credential here, so clearing one ' +
+                     'drops the account to one factor rather than to none. ' +
+                     'The person sets a new one up at ' +
+                     '`/portal/mfa`.\n\nClearing an enrolment nobody holds ' +
+                     'answers 400 rather than 200: the caller asked to clear ' +
+                     'a specific thing and it was not there.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             user: { type: 'string',
-                    description: 'The person, as /admin-api/users names them.' },
+                    description:
+                      'The person, as /admin-api/users names them.' },
             username: { type: 'string', description: 'Accepted for `user`.' }
           },
           required: ['user'],
@@ -2298,7 +2337,8 @@ const ROUTES = [
           type: 'object',
           properties: {
             user: { type: 'string',
-                    description: 'The person, as /admin-api/users names them.' },
+                    description:
+                      'The person, as /admin-api/users names them.' },
             username: { type: 'string', description: 'Accepted for `user`.' }
           },
           required: ['user'],
@@ -2354,34 +2394,34 @@ const ROUTES = [
     operationId: 'getSessions',
     summary: 'Every session this service is holding right now, across the ' +
              'three protocols that have one',
-    description: 'WHAT IS LIVE, as opposed to what has been ISSUED — which is ' +
-                 '`GET /admin-api/tokens`, and everything in that list ' +
+    description: 'WHAT IS LIVE, as opposed to what has been ISSUED — which ' +
+                 'is `GET /admin-api/tokens`, and everything in that list ' +
                  'outlives everything in this one.\n\nA session is state ' +
                  'THIS SERVICE holds that makes somebody currently ' +
                  'authenticated. Three protocols here have one and the other ' +
                  'seven do not:\n\n* the **browser sign-on session** from ' +
-                 '`/authn/login`, which OAuth 2.0 / OIDC, WS-Federation, SAML ' +
-                 '2.0, SAML 1.1 and the admin console all share — so one row ' +
-                 'may be carrying relying parties, realms and service ' +
-                 'providers at once, and `protocol` says which protocol the ' +
-                 'sign-in came THROUGH while `carries` says what is riding ' +
-                 'on it;\n* the **Kerberos ticket-granting ticket**, because ' +
-                 'a TGT is the Kerberos session and a service ticket is one ' +
-                 'use of it;\n* the **LDAP connection**, because RFC 4511 ' +
-                 'section 4.2 makes a Bind the authorization state of a ' +
-                 'CONNECTION.\n\n**THE EXPIRY IS WORKED OUT DIFFERENTLY IN ' +
-                 'EACH AND `expiryRule` SAYS HOW.** A browser session expires ' +
-                 'at an absolute instant fixed when it was created ' +
-                 '(`authn.sessionLifetimeS`) and is NOT extended by use; ' +
-                 '`authn.sessionIdleTimeoutS`, off by default, ends one ' +
-                 'earlier when it goes unused. A TGT ' +
+                 '`/authn/login`, which OAuth 2.0 / OIDC, WS-Federation, ' +
+                 'SAML 2.0, SAML 1.1 and the admin console all share — so ' +
+                 'one row may be carrying relying parties, realms and ' +
+                 'service providers at once, and `protocol` says which ' +
+                 'protocol the sign-in came THROUGH while `carries` says ' +
+                 'what is riding on it;\n* the **Kerberos ticket-granting ' +
+                 'ticket**, because a TGT is the Kerberos session and a ' +
+                 'service ticket is one use of it;\n* the **LDAP ' +
+                 'connection**, because RFC 4511 section 4.2 makes a Bind ' +
+                 'the authorization state of a CONNECTION.\n\n**THE EXPIRY ' +
+                 'IS WORKED OUT DIFFERENTLY IN EACH AND `expiryRule` SAYS ' +
+                 'HOW.** A browser session expires at an absolute instant ' +
+                 'fixed when it was created (`authn.sessionLifetimeS`) and ' +
+                 'is NOT extended by use; `authn.sessionIdleTimeoutS`, off ' +
+                 'by default, ends one earlier when it goes unused. A TGT ' +
                  'expires at the `endtime` the KDC sealed into the ticket, ' +
                  'which nothing can move. An LDAP connection has NO EXPIRY ' +
                  'and answers `expiresAt: 0`, which is not an expiry of the ' +
-                 'epoch.\n\nEvery row carries the `key` and `id` that ' +
-                 '`POST /admin-api/sessions/revoke` takes, and — for a ' +
-                 'browser session — the `sessionId` that ' +
-                 '`GET /admin-api/tokens?session=` takes.',
+                 'epoch.\n\nEvery row carries the `key` and `id` that `POST ' +
+                 '/admin-api/sessions/revoke` takes, and — for a browser ' +
+                 'session — the `sessionId` that `GET ' +
+                 '/admin-api/tokens?session=` takes.',
     mirrors: 'GET /admin/sessions',
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -2462,15 +2502,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             key: { type: 'string',
-                   description: 'Whose session it is: the normalised identity ' +
-                                'key, which every row of ' +
-                                'GET /admin-api/sessions carries as `key`. ' +
-                                'The termination is keyed on an identity, ' +
-                                'which is why this is needed beside the id.' },
+                   description: 'Whose session it is: the normalised ' +
+                                'identity key, which every row of GET ' +
+                                '/admin-api/sessions carries as `key`. The ' +
+                                'termination is keyed on an identity, which ' +
+                                'is why this is needed beside the id.' },
             select: { type: 'string',
-                      description: 'Which session, in the form the list gives ' +
-                                   'it as `id`: `session:…`, `ldap:…` or ' +
-                                   '`krb5:…@REALM`. It is the identifier ' +
+                      description: 'Which session, in the form the list ' +
+                                   'gives it as `id`: `session:…`, `ldap:…` ' +
+                                   'or `krb5:…@REALM`. It is the identifier ' +
                                    'POST /admin-api/logout/selective takes ' +
                                    'too, because both go through one ' +
                                    'termination.' }
@@ -2503,8 +2543,8 @@ const ROUTES = [
                  '`why`. A SAML assertion already issued, a Kerberos service ' +
                  'ticket already in a cache and an X509-SVID already minted ' +
                  'cannot be recalled by this service or by a real one — ' +
-                 'nothing consults the issuer when they are presented — and a ' +
-                 'reply that omitted them would make a global logout look ' +
+                 'nothing consults the issuer when they are presented — and ' +
+                 'a reply that omitted them would make a global logout look ' +
                  'complete when it is not.\n\nThe identity is a QUERY ' +
                  'PARAMETER and not a path segment for the reason ' +
                  '/admin-api/users gives: the identities here contain the ' +
@@ -2512,10 +2552,12 @@ const ROUTES = [
     mirrors: 'GET /admin/logout',
     parameters: [
       { name: 'user', in: 'query', required: false, schema: { type: 'string' },
-        description: 'The identity to look at, as typed. It is normalised the ' +
-                     'way every other door here normalises one, so `alice`, ' +
-                     '`alice@REALM` and a `urn:` subject are one answer.' },
-      { name: 'family', in: 'query', required: false, schema: { type: 'string' },
+        description: 'The identity to look at, as typed. It is normalised ' +
+                     'the way every other door here normalises one, so ' +
+                     '`alice`, `alice@REALM` and a `urn:` subject are one ' +
+                     'answer.' },
+      { name: 'family', in: 'query', required: false,
+        schema: { type: 'string' },
         description: 'Only rows of this family. The `families` member of the ' +
                      'reply says which values there are; it is read off the ' +
                      'same table the endpoint acts on, so a family that ' +
@@ -2559,9 +2601,9 @@ const ROUTES = [
                      'notification is an iframe in the signed-out person\'s ' +
                      'own browser and a WS-Federation cleanup is an image in ' +
                      'it; neither is something this process performs. They ' +
-                     'come back in `notifications` and `cleanups` so a caller ' +
-                     'can load them, and `/logout` is the page where a ' +
-                     'browser does it by itself.',
+                     'come back in `notifications` and `cleanups` so a ' +
+                     'caller can load them, and `/logout` is the page where ' +
+                     'a browser does it by itself.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -2575,8 +2617,8 @@ const ROUTES = [
           additionalProperties: false
         },
         responseDescription: 'The act, in `result`: `terminated`, `skipped`, ' +
-                             '`unknown`, and the three fan-outs a browser has ' +
-                             'to perform.' },
+                             '`unknown`, and the three fan-outs a browser ' +
+                             'has to perform.' },
       { action: 'end', operationId: 'endLiveSessions',
         summary: 'End named items and nothing else',
         description: 'The selective half. `select` carries row ids from the ' +
@@ -2585,20 +2627,22 @@ const ROUTES = [
                      '`select` is REFUSED here and is a global logout at ' +
                      '`POST /logout`**, which is the one place the two doors ' +
                      'differ and is deliberate: an empty selection arriving ' +
-                     'at this operation is a caller that built a list and got ' +
-                     'nothing, where an empty body at /logout is a caller ' +
-                     'asking for everything. Same absence, opposite intent.\n' +
-                     '\nIds are re-resolved against what is live NOW rather ' +
-                     'than trusted, so an id that has since been redeemed or ' +
-                     'expired ends nothing and is answered in `unknown` or ' +
-                     '`skipped` rather than ending something else.',
+                     'at this operation is a caller that built a list and ' +
+                     'got nothing, where an empty body at /logout is a ' +
+                     'caller asking for everything. Same absence, opposite ' +
+                     'intent.\n\nIds are re-resolved against what is live ' +
+                     'NOW rather than trusted, so an id that has since been ' +
+                     'redeemed or expired ends nothing and is answered in ' +
+                     '`unknown` or `skipped` rather than ending something ' +
+                     'else.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             user: { type: 'string', description: 'The identity to act on.' },
             select: { type: 'array', items: { type: 'string' },
-                      description: 'Row ids from `GET /admin-api/logout?user=`.' }
+                      description:
+                        'Row ids from `GET /admin-api/logout?user=`.' }
           },
           required: ['user', 'select'],
           examples: [{ user: 'alice', select: ['session:8Qk3', 'token:abc'] }],
@@ -2613,14 +2657,15 @@ const ROUTES = [
                      'have cached the refusal. It is here for the reason ' +
                      '`POST /admin-api/tokens/restore` is — it is the same ' +
                      'function against the same revocation set — and that ' +
-                     'reason is that restarting this service to get back to a ' +
-                     'working token turns a two-second test into a ' +
+                     'reason is that restarting this service to get back to ' +
+                     'a working token turns a two-second test into a ' +
                      'two-minute one.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
-            user: { type: 'string', description: 'The identity, for the audit row.' },
+            user: { type: 'string', description: 'The identity, for the ' +
+                                                 'audit row.' },
             jti: { type: 'string', description: 'The token to restore.' }
           },
           required: ['user', 'jti'],
@@ -2666,11 +2711,11 @@ const ROUTES = [
                  'case rather than a routing problem.\n\nA GROUP HERE GRANTS ' +
                  'NOTHING, with two exceptions: no endpoint in this service ' +
                  'decides anything on a group, and the only two that do are ' +
-                 '`admin.readGroup` and `admin.writeGroup`, which say who may ' +
-                 'use the console. A token CAN carry one — `groups.claim` is ' +
-                 'on by default and puts the subject\'s groups in every access ' +
-                 'token, ID Token and SAML assertion — and carrying a fact is ' +
-                 'not acting on one.',
+                 '`admin.readGroup` and `admin.writeGroup`, which say who ' +
+                 'may use the console. A token CAN carry one — ' +
+                 '`groups.claim` is on by default and puts the subject\'s ' +
+                 'groups in every access token, ID Token and SAML assertion ' +
+                 '— and carrying a fact is not acting on one.',
     mirrors: 'GET /admin/groups',
     parameters: [
       { name: 'group', in: 'query', required: false,
@@ -2721,9 +2766,9 @@ const ROUTES = [
   // fifty groups on a service whose own management API creates users five
   // thousand at a time.
   //
-  // THE ACTION SWITCH IS IN `adminActions.groupsAction()` and not here, exactly as the
-  // users one is: two doors onto one action must not be two readings of what
-  // was sent.
+  // THE ACTION SWITCH IS IN `adminActions.groupsAction()` and not here, exactly
+  // as the users one is: two doors onto one action must not be two readings of
+  // what was sent.
   // ---------------------------------------------------------------------------
   { method: 'POST', route: BASE + '/groups/:action', tag: 'Groups',
     mirrors: 'POST /admin/groups',
@@ -2740,37 +2785,38 @@ const ROUTES = [
     actions: [
       { action: 'create', operationId: 'createGroup',
         summary: 'Put a group in the directory',
-        description: 'An entry under `ou=groups`, as a `groupOfNames` — so it ' +
-                     'is counted as a group by BOTH of the rules ' +
+        description: 'An entry under `ou=groups`, as a `groupOfNames` — so ' +
+                     'it is counted as a group by BOTH of the rules ' +
                      '/admin/groups applies, its placement and its object ' +
                      'class, and stays one if a client moves it.\n\n**The ' +
                      'name becomes the `cn` AND the RDN**, so it is refused ' +
-                     'if it carries a character RFC 4514 section 2.4 reserves ' +
-                     'in a DN (one of `, = + < > # ; " \\`) — the same rule ' +
-                     'a username is refused by, and refused rather than ' +
-                     'escaped for the same reason: an `ldapadd` can still ' +
-                     'create such an entry with the escaping written out. A ' +
-                     'DN sent here is refused too, because what it would ' +
-                     'create is a group whose name is another group\'s ' +
+                     'if it carries a character RFC 4514 section 2.4 ' +
+                     'reserves in a DN (one of `, = + < > # ; " \\`) — the ' +
+                     'same rule a username is refused by, and refused rather ' +
+                     'than escaped for the same reason: an `ldapadd` can ' +
+                     'still create such an entry with the escaping written ' +
+                     'out. A DN sent here is refused too, because what it ' +
+                     'would create is a group whose name is another group\'s ' +
                      'DN.\n\n**A member that names nothing is WRITTEN, not ' +
-                     'refused.** This directory does no referential integrity ' +
-                     'in either direction — deleting a person leaves their DN ' +
-                     'in every group that listed them — so a create that ' +
-                     'refused a dangling member would make the state ' +
-                     '/admin/groups exists to report impossible to produce ' +
-                     'from this door. They come back in `dangling`.\n\n**An ' +
-                     'empty group is allowed and RFC 4519 says it should not ' +
-                     'be** (`member` is MUST on `groupOfNames`). SCIM already ' +
-                     'creates one; a management API stricter than SCIM about ' +
-                     'the same store would be two doors disagreeing about ' +
-                     'what this directory holds.\n\n**IT GRANTS NOTHING.** ' +
-                     'No endpoint here decides anything on a group. The two ' +
-                     'that do are `admin.readGroup` and `admin.writeGroup`, ' +
-                     'and they are granted at POST /admin-api/rbac rather ' +
-                     'than by creating a group with the right name — though ' +
-                     'creating one with the right name and adding somebody ' +
-                     'to it does the same thing, because those two ARE ' +
-                     'ordinary groups in this directory.',
+                     'refused.** This directory does no referential ' +
+                     'integrity in either direction — deleting a person ' +
+                     'leaves their DN in every group that listed them — so a ' +
+                     'create that refused a dangling member would make the ' +
+                     'state /admin/groups exists to report impossible to ' +
+                     'produce from this door. They come back in ' +
+                     '`dangling`.\n\n**An empty group is allowed and RFC ' +
+                     '4519 says it should not be** (`member` is MUST on ' +
+                     '`groupOfNames`). SCIM already creates one; a ' +
+                     'management API stricter than SCIM about the same store ' +
+                     'would be two doors disagreeing about what this ' +
+                     'directory holds.\n\n**IT GRANTS NOTHING.** No endpoint ' +
+                     'here decides anything on a group. The two that do are ' +
+                     '`admin.readGroup` and `admin.writeGroup`, and they are ' +
+                     'granted at POST /admin-api/rbac rather than by ' +
+                     'creating a group with the right name — though creating ' +
+                     'one with the right name and adding somebody to it does ' +
+                     'the same thing, because those two ARE ordinary groups ' +
+                     'in this directory.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -2791,8 +2837,8 @@ const ROUTES = [
               description: 'Who is in it, as an array of user names or DNs — ' +
                            'a group can hold another group, and no user name ' +
                            'names one. A form sends one string, split on ' +
-                           'newlines and commas. A bare name resolves to that ' +
-                           'person\'s OWN entry wherever it is, because ' +
+                           'newlines and commas. A bare name resolves to ' +
+                           'that person\'s OWN entry wherever it is, because ' +
                            'somebody seeded by a client certificate is at ' +
                            '`cn=<name>,ou=users` and a value written in the ' +
                            '`uid=` form would dangle beside the entry it ' +
@@ -2806,8 +2852,9 @@ const ROUTES = [
                        members: ['alice', 'bob'] }],
           additionalProperties: false
         },
-        responseDescription: 'The DN it was created at, the membership values ' +
-                             'written, and which of them name nothing.' },
+        responseDescription: 'The DN it was created at, the membership ' +
+                             'values written, and which of them name ' +
+                             'nothing.' },
 
       { action: 'add-member', operationId: 'addGroupMember',
         summary: 'Put somebody in a group that already exists',
@@ -2819,23 +2866,24 @@ const ROUTES = [
                      'not fail on its second one. Membership is asked across ' +
                      '`member`, `uniqueMember` and `memberUid` together, ' +
                      'which is how /admin/groups and the groups claim ask it ' +
-                     '— an add that could not see a `memberUid` would write a ' +
-                     'second value for one membership.\n\n**It writes onto ' +
-                     '`member`** whatever else the entry carries, rather than ' +
-                     'extending whichever convention the group already uses: ' +
-                     'this service\'s groups claim, the console and RFC 4519 ' +
-                     'all read `member` first, and guessing which of three ' +
-                     'attributes was meant would be this operation deciding ' +
-                     'something the caller did not say.\n\n**It does not ' +
-                     'create the group as a side effect.** A typo in the name ' +
-                     'would then be a new group rather than an error. And it ' +
-                     'writes nothing onto the PERSON: `memberOf` is ' +
-                     'maintained by nothing here — it is not even a standard ' +
-                     'attribute — and a value written there is one no other ' +
-                     'door in this service can take away.\n\n**Removing one ' +
-                     'is not here.** It is an `ldapmodify` or a SCIM `PATCH`, ' +
-                     'and POST /admin-api/rbac for the two groups that grant ' +
-                     'the console.',
+                     '— an add that could not see a `memberUid` would write ' +
+                     'a second value for one membership.\n\n**It writes onto ' +
+                     '`member`** whatever else the entry carries, rather ' +
+                     'than extending whichever convention the group already ' +
+                     'uses: this service\'s groups claim, the console and ' +
+                     'RFC 4519 all read `member` first, and guessing which ' +
+                     'of three attributes was meant would be this operation ' +
+                     'deciding something the caller did not say.\n\n**It ' +
+                     'does not create the group as a side effect.** A typo ' +
+                     'in the name would then be a new group rather than an ' +
+                     'error. And it writes nothing onto the PERSON: ' +
+                     '`memberOf` is maintained by nothing here — it is not ' +
+                     'even a standard attribute — and a value written there ' +
+                     'is one no other door in this service can take ' +
+                     'away.\n\n**Removing one is not here.** It is an ' +
+                     '`ldapmodify` or a SCIM `PATCH`, and POST ' +
+                     '/admin-api/rbac for the two groups that grant the ' +
+                     'console.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -2880,8 +2928,8 @@ const ROUTES = [
   // client can be driven through 302 / 401 / 403.
   //
   // EVERY ONE OF THEM CALLS THE FUNCTION THAT DRAWS THE PAGE, through
-  // `adminViews.directoryPageJson()` and the slot `ldap/ldap_server.js` fills — see
-  // the block above `setDirectoryPages()` in `admin-ui/admin.js` for why it
+  // `adminViews.directoryPageJson()` and the slot `ldap/ldap_server.js` fills —
+  // see the block above `setDirectoryPages()` in `admin-ui/admin.js` for why it
   // cannot be a plain require from here. So a page and its operation cannot
   // come to disagree about what is in the directory: there is one function and
   // it is in the module that owns the store.
@@ -2893,22 +2941,24 @@ const ROUTES = [
                  'attribute with every value.\n\nIT IS NOT AN LDAP SEARCH. ' +
                  'This is the service showing its own store, which is how a ' +
                  'caller tells an empty directory from a filter that matched ' +
-                 'nothing, and it is why the operational attributes are here: ' +
-                 'a search withholds `createTimestamp` and `modifyTimestamp` ' +
-                 'unless they are asked for by name (RFC 4511 §4.5.1.8) and ' +
-                 'this is not a search.\n\n`q` matches the DN, any attribute ' +
-                 'NAME and any attribute VALUE, case-insensitively — values ' +
-                 'because the caller who needs this most often has a ' +
-                 'thumbprint or a secret in hand and no idea which entry ' +
-                 'carries it.\n\nTHE REPLY IS THIS REALM\'S DIRECTORY AND NO ' +
-                 'OTHER. Since 2026-08-25 each trust realm has a subtree of ' +
-                 'its own; reach another realm\'s through its own path prefix.',
+                 'nothing, and it is why the operational attributes are ' +
+                 'here: a search withholds `createTimestamp` and ' +
+                 '`modifyTimestamp` unless they are asked for by name (RFC ' +
+                 '4511 §4.5.1.8) and this is not a search.\n\n`q` matches ' +
+                 'the DN, any attribute NAME and any attribute VALUE, ' +
+                 'case-insensitively — values because the caller who needs ' +
+                 'this most often has a thumbprint or a secret in hand and ' +
+                 'no idea which entry carries it.\n\nTHE REPLY IS THIS ' +
+                 'REALM\'S DIRECTORY AND NO OTHER. Since 2026-08-25 each ' +
+                 'trust realm has a subtree of its own; reach another ' +
+                 'realm\'s through its own path prefix.',
     mirrors: 'GET /admin/ldap/directory',
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
         description: 'Substring of the DN, of an attribute name, or of an ' +
                      'attribute value. Case-insensitive.' },
-      { name: 'origin', in: 'query', required: false, schema: { type: 'string' },
+      { name: 'origin', in: 'query', required: false,
+        schema: { type: 'string' },
         description: 'Only entries that came from here. The values actually ' +
                      'present are in `origins`.' }
     ].concat(pagingParameters()),
@@ -2922,24 +2972,25 @@ const ROUTES = [
 
   { method: 'GET', path: BASE + '/ldap/applications', tag: 'LDAP',
     operationId: 'getDirectoryApplications',
-    summary: 'The application registry as the directory holds it, and its schema',
+    summary: 'The application registry as the directory holds it, and its ' +
+             'schema',
     description: 'One entry per identifier under `ou=applications`, every ' +
                  'attribute on it, and the published SCHEMA — the object ' +
-                 'classes and every attribute name with what sets ' +
-                 'it.\n\nTHE SCHEMA IS WHY THIS IS NOT `GET ' +
-                 '/admin-api/applications`. That operation is the registry as ' +
-                 'the console works with it: the counters, the drill-down, ' +
-                 'the writes. This is the registry as the DIRECTORY holds it, ' +
-                 'and the vocabulary is the half a client reading an entry ' +
-                 'back over 389 actually needs — this directory is ' +
-                 'schemaless, so an entry carrying thirty invented attribute ' +
-                 'names is otherwise guesswork.\n\nTHESE ENTRIES ARE THE ' +
-                 'REGISTRY rather than a copy of one. Nothing caches them, so ' +
-                 'an `ldapmodify` of `oauthRedirectUri` changes which ' +
-                 'redirect URI RFC 9700 mode accepts on the next ' +
-                 'request.\n\nTwo attributes hold CREDENTIALS in the clear, ' +
-                 'for the reason `/krb5/principals` prints the Kerberos ' +
-                 'passwords. They are never written to the audit log.',
+                 'classes and every attribute name with what sets it.\n\nTHE ' +
+                 'SCHEMA IS WHY THIS IS NOT `GET /admin-api/applications`. ' +
+                 'That operation is the registry as the console works with ' +
+                 'it: the counters, the drill-down, the writes. This is the ' +
+                 'registry as the DIRECTORY holds it, and the vocabulary is ' +
+                 'the half a client reading an entry back over 389 actually ' +
+                 'needs — this directory is schemaless, so an entry carrying ' +
+                 'thirty invented attribute names is otherwise ' +
+                 'guesswork.\n\nTHESE ENTRIES ARE THE REGISTRY rather than a ' +
+                 'copy of one. Nothing caches them, so an `ldapmodify` of ' +
+                 '`oauthRedirectUri` changes which redirect URI RFC 9700 ' +
+                 'mode accepts on the next request.\n\nTwo attributes hold ' +
+                 'CREDENTIALS in the clear, for the reason ' +
+                 '`/krb5/principals` prints the Kerberos passwords. They are ' +
+                 'never written to the audit log.',
     mirrors: 'GET /admin/ldap/applications',
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -2956,21 +3007,23 @@ const ROUTES = [
 
   { method: 'GET', path: BASE + '/ldap/federations', tag: 'LDAP',
     operationId: 'getDirectoryFederations',
-    summary: 'The federation register as the directory holds it, and its schema',
+    summary:
+      'The federation register as the directory holds it, and its schema',
     description: 'The application registry\'s twin, for `ou=federations` — ' +
-                 'and THE ONE CONTAINER IN THIS DIRECTORY WHERE AN LDAPMODIFY ' +
-                 'IS A SECURITY CHANGE. Everywhere else an edit changes what ' +
-                 'this service HANDS OUT; `fedSigningCertificate` decides ' +
-                 'whose assertions it will BELIEVE and `fedEnabled` turns a ' +
-                 'partner on.\n\nIt is a container of its own rather than a ' +
-                 'corner of `ou=applications` because half its entries are ' +
-                 'FOREIGN IDENTITY PROVIDERS, which ask this service for ' +
-                 'nothing at all.\n\nThe schema carries a column the ' +
-                 'applications one has no need of: which DIRECTION each ' +
-                 'attribute is for.\n\n`fedClientSecret` is REDACTED in ' +
-                 '`relationships` and present in the entry\'s own attributes, ' +
-                 'which is the same split the page makes: what a script reads ' +
-                 'is redacted, and a page claiming to say what the directory ' +
+                 'and THE ONE CONTAINER IN THIS DIRECTORY WHERE AN ' +
+                 'LDAPMODIFY IS A SECURITY CHANGE. Everywhere else an edit ' +
+                 'changes what this service HANDS OUT; ' +
+                 '`fedSigningCertificate` decides whose assertions it will ' +
+                 'BELIEVE and `fedEnabled` turns a partner on.\n\nIt is a ' +
+                 'container of its own rather than a corner of ' +
+                 '`ou=applications` because half its entries are FOREIGN ' +
+                 'IDENTITY PROVIDERS, which ask this service for nothing at ' +
+                 'all.\n\nThe schema carries a column the applications one ' +
+                 'has no need of: which DIRECTION each attribute is ' +
+                 'for.\n\n`fedClientSecret` is REDACTED in `relationships` ' +
+                 'and present in the entry\'s own attributes, which is the ' +
+                 'same split the page makes: what a script reads is ' +
+                 'redacted, and a page claiming to say what the directory ' +
                  'holds may not hide a value an `ldapsearch` shows.',
     mirrors: 'GET /admin/ldap/federations',
     parameters: [
@@ -2978,8 +3031,8 @@ const ROUTES = [
         description: 'Substring of the relationship id, the DN, the protocol ' +
                      'or the direction. Case-insensitive.' }
     ].concat(pagingParameters()),
-    responseDescription: 'The page of relationships, the roles, the protocols ' +
-                         'and the schema.',
+    responseDescription: 'The page of relationships, the roles, the ' +
+                         'protocols and the schema.',
     responseSchema: { $ref: '#/components/schemas/DirectoryFederationList' },
     handler: function (req, res) {
       log.debug("Entering the management API directory federations endpoint.");
@@ -2989,26 +3042,29 @@ const ROUTES = [
 
   { method: 'GET', path: BASE + '/ldap/spiffe', tag: 'LDAP',
     operationId: 'getDirectorySpiffe',
-    summary: 'The two SPIFFE containers as the directory holds them, and their schema',
+    summary: 'The two SPIFFE containers as the directory holds them, and ' +
+             'their schema',
     description: 'THE TWO CONTAINERS HOLD DIFFERENT KINDS OF THING, which is ' +
                  'why they are two. `ou=entries` is CONFIGURATION — which ' +
                  'SPIFFE ID a workload gets, under which parent, matching ' +
                  'which selectors — and `ou=agents` is a RECORD of what has ' +
                  'attested, which is why nothing about an agent is editable ' +
                  'anywhere.\n\nTHE ENTRIES ARE THE REGISTRY: nothing caches ' +
-                 'them, so an `ldapmodify` of `spiffeX509SvidTtl` changes the ' +
-                 'lifetime of the next SVID the Workload API hands ' +
+                 'them, so an `ldapmodify` of `spiffeX509SvidTtl` changes ' +
+                 'the lifetime of the next SVID the Workload API hands ' +
                  'out.\n\nTHIS IS THE ONE DIRECTORY OPERATION WITH TWO LISTS ' +
                  'IN IT, so it pages the way the console\'s drill-downs do: ' +
-                 '`entriesPage` and `agentsPage` move one list each and `per` ' +
-                 'is shared, with an `entriesPaging` and an `agentsPaging` ' +
-                 'object in the reply. `entries` and `agents` at the top ' +
-                 'level are the TOTALS and not the page.',
+                 '`entriesPage` and `agentsPage` move one list each and ' +
+                 '`per` is shared, with an `entriesPaging` and an ' +
+                 '`agentsPaging` object in the reply. `entries` and `agents` ' +
+                 'at the top level are the TOTALS and not the page.',
     mirrors: 'GET /admin/ldap/spiffe',
     parameters: [
-      { name: 'entryq', in: 'query', required: false, schema: { type: 'string' },
+      { name: 'entryq', in: 'query', required: false,
+        schema: { type: 'string' },
         description: 'Substring of a registration entry\'s SPIFFE ID or DN.' },
-      { name: 'agentq', in: 'query', required: false, schema: { type: 'string' },
+      { name: 'agentq', in: 'query', required: false,
+        schema: { type: 'string' },
         description: 'Substring of an attested agent\'s id or DN.' }
     ].concat(pagingParameters()).concat(detailPagingParameters([
       { name: 'entries', description: 'The registration entries.' },
@@ -3036,22 +3092,23 @@ const ROUTES = [
     operationId: 'getDirectoryRoles',
     summary: 'The role entries as the directory holds them, and their schema',
     description: 'THIS CONTAINER IS HALF THE FEATURE. A role has two ' +
-                 'relations and they are stored apart on purpose: ' +
-                 'MEMBERSHIP — who holds it — is here on the role entry, and ' +
-                 'the REQUIREMENT — which roles an application demands before ' +
+                 'relations and they are stored apart on purpose: MEMBERSHIP ' +
+                 '— who holds it — is here on the role entry, and the ' +
+                 'REQUIREMENT — which roles an application demands before ' +
                  'anything is issued for it — is `appRequiredRole` on the ' +
                  'APPLICATION entry, under a different container. So nothing ' +
                  'in this reply refuses anybody by itself, and a caller ' +
                  'looking for the reason somebody was turned away wants `GET ' +
-                 '/admin-api/roles`, which resolves both halves.\n\n**THE SIX ' +
-                 'BUILT-IN ROLES ARE IN NO CONTAINER.** They are computed ' +
-                 'from the context of the decision being made, so `EVERYBODY` ' +
-                 'has no entry here and never will — which is why an empty ' +
-                 '`roles` array is the ORDINARY state of a service refusing ' +
-                 'nobody rather than a sign that the feature is not ' +
-                 'loaded.\n\nTHE ENTRIES ARE THE REGISTER: nothing caches ' +
-                 'them, so an `ldapmodify` adding a value to `roleMemberUser` ' +
-                 'is answered by the very next issuance decision.',
+                 '/admin-api/roles`, which resolves both halves.\n\n**THE ' +
+                 'SIX BUILT-IN ROLES ARE IN NO CONTAINER.** They are ' +
+                 'computed from the context of the decision being made, so ' +
+                 '`EVERYBODY` has no entry here and never will — which is ' +
+                 'why an empty `roles` array is the ORDINARY state of a ' +
+                 'service refusing nobody rather than a sign that the ' +
+                 'feature is not loaded.\n\nTHE ENTRIES ARE THE REGISTER: ' +
+                 'nothing caches them, so an `ldapmodify` adding a value to ' +
+                 '`roleMemberUser` is answered by the very next issuance ' +
+                 'decision.',
     mirrors: 'GET /admin/ldap/roles',
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -3074,8 +3131,8 @@ const ROUTES = [
     description: '`ou=policies` IS the XACML policy repository, the way ' +
                  '`ou=federations` is the federation register. One entry per ' +
                  'policy or policy set, holding the document itself, with ' +
-                 'exactly one of them the root — a PDP evaluates one document ' +
-                 'and reaches the rest through ' +
+                 'exactly one of them the root — a PDP evaluates one ' +
+                 'document and reaches the rest through ' +
                  'PolicyIdReference.\n\n**A WRITE HERE SKIPS THE ' +
                  'TYPECHECKER, and that is the one thing this operation says ' +
                  'that `GET /admin-api/xacml/policies` does not.** Every ' +
@@ -3090,8 +3147,8 @@ const ROUTES = [
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
         description: 'Substring of a policy name, a DN, or any value on the ' +
-                     'entry — the DOCUMENT included, so this finds the policy ' +
-                     'that names a particular resource.' }
+                     'entry — the DOCUMENT included, so this finds the ' +
+                     'policy that names a particular resource.' }
     ].concat(pagingParameters()),
     responseDescription: 'The page of policy entries and the schema.',
     responseSchema: { $ref: '#/components/schemas/DirectoryPolicyList' },
@@ -3109,16 +3166,16 @@ const ROUTES = [
                  'than configuration, which is what it has in common with ' +
                  '`ou=agents` next door. A PEP registers itself, and its ' +
                  'identity is taken from the CLIENT CERTIFICATE it presented ' +
-                 'and never from the body it sent.\n\nTwo attributes are ' +
-                 'not a record and an `ldapmodify` of either is a real ' +
-                 'change: `xacmlPepEnabled` is an administrator\'s decision ' +
-                 'and a PEP that reconnects does not clear it, and ' +
+                 'and never from the body it sent.\n\nTwo attributes are not ' +
+                 'a record and an `ldapmodify` of either is a real change: ' +
+                 '`xacmlPepEnabled` is an administrator\'s decision and a ' +
+                 'PEP that reconnects does not clear it, and ' +
                  '`xacmlPepNotifyUrl` is one of the three addresses this ' +
                  'service will dial.\n\n**AN EMPTY `peps` ARRAY IS NOT A ' +
                  'FEATURE THAT IS OFF.** A remote PEP pulls `GET ' +
                  '/xacml/pep/policies` and converges without registering at ' +
-                 'all; registering is what buys it the change nudge and a row ' +
-                 'on the console.',
+                 'all; registering is what buys it the change nudge and a ' +
+                 'row on the console.',
     mirrors: 'GET /admin/ldap/peps',
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -3156,9 +3213,9 @@ const ROUTES = [
                  'makes the two disagree, and nothing else in this service ' +
                  'can report that: `/admin/sts-metadata` is built by walking ' +
                  'the express router and a raw TCP listener is not on ' +
-                 'it.\n\nNO BIND IS EVER REFUSED here, by any setting, except ' +
-                 'the one literal password named in `refusedPassword` — which ' +
-                 'exists so a negative test has something to fail on.',
+                 'it.\n\nNO BIND IS EVER REFUSED here, by any setting, ' +
+                 'except the one literal password named in `refusedPassword` ' +
+                 '— which exists so a negative test has something to fail on.',
     mirrors: 'GET /admin/ldap/service',
     parameters: [],
     responseDescription: 'The directory as it is right now.',
@@ -3208,10 +3265,11 @@ const ROUTES = [
                  'rather than closes. `admin.openWhenEmpty` turns that off, ' +
                  'and `closedToEveryone` reports the state it produces: a ' +
                  'console no browser can reach, which is what this resource ' +
-                 'is the way out of.\n\n`enforced` reports whether the roster ' +
-                 'decides anything. It is always true now — the console gate ' +
-                 'became unconditional on 2026-09-06 — and the field is kept ' +
-                 'because a client reading it should not have to know that.',
+                 'is the way out of.\n\n`enforced` reports whether the ' +
+                 'roster decides anything. It is always true now — the ' +
+                 'console gate became unconditional on 2026-09-06 — and the ' +
+                 'field is kept because a client reading it should not have ' +
+                 'to know that.',
     mirrors: 'GET /admin/rbac',
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -3337,8 +3395,9 @@ const ROUTES = [
   // operation whose page moved, and deleting a working one to tidy a table
   // would be a regression dressed as consistency — the same argument `GET
   // /admin-api/users/new` is kept on. So this stays, `mirrors` points at the
-  // page that absorbed it, and `adminViews.mfaRosterJson()` answers OUT OF THAT VIEW so
-  // there is one tally rather than two scans that agree until they do not.
+  // page that absorbed it, and `adminViews.mfaRosterJson()` answers OUT OF THAT
+  // VIEW so there is one tally rather than two scans that agree until they do
+  // not.
   //
   // **THE READ IS A REPORT AND THE WRITE IS A RESET**, and there is
   // deliberately no ENROL operation here. Enrolling means being shown a shared
@@ -3361,20 +3420,20 @@ const ROUTES = [
                  'is asked for it at the sign-in screen and a password alone ' +
                  'will not sign them in; `secondFactor` says which one they ' +
                  'will be asked for, and somebody holding both is asked for ' +
-                 'the key with the code offered as the alternative.\n\n' +
-                 '**`totpUsable: false` IS THE ROW TO LOOK FOR.** It means ' +
-                 'an enrolment exists that this process cannot read — almost ' +
-                 'always a shared secret sealed under a key-encryption key ' +
-                 'that has since been rotated. Those people are REFUSED at ' +
-                 'the code step rather than let through on one factor, so ' +
-                 'they cannot sign in at all until the enrolment is ' +
-                 'cleared.\n\n**CODES ARE VERIFIED FOR REAL IN BOTH MODES**, ' +
-                 'which almost nothing else in this service is. `totp` ' +
-                 'carries the algorithm table, read from the module that ' +
-                 'performs the algorithm.\n\nThe scan stops at 5,000 people ' +
-                 '(`capped`), because reading a credential per person happens ' +
-                 'on the one thread that answers every socket this service ' +
-                 'holds.',
+                 'the key with the code offered as the ' +
+                 'alternative.\n\n**`totpUsable: false` IS THE ROW TO LOOK ' +
+                 'FOR.** It means an enrolment exists that this process ' +
+                 'cannot read — almost always a shared secret sealed under a ' +
+                 'key-encryption key that has since been rotated. Those ' +
+                 'people are REFUSED at the code step rather than let ' +
+                 'through on one factor, so they cannot sign in at all until ' +
+                 'the enrolment is cleared.\n\n**CODES ARE VERIFIED FOR REAL ' +
+                 'IN BOTH MODES**, which almost nothing else in this service ' +
+                 'is. `totp` carries the algorithm table, read from the ' +
+                 'module that performs the algorithm.\n\nThe scan stops at ' +
+                 '5,000 people (`capped`), because reading a credential per ' +
+                 'person happens on the one thread that answers every socket ' +
+                 'this service holds.',
     mirrors: 'GET /admin/users',
     parameters: [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -3415,17 +3474,18 @@ const ROUTES = [
         summary: 'Clear somebody\'s authenticator app enrolment',
         description: '**THE ONLY WAY BACK FOR SOMEBODY WHO HAS LOST THEIR ' +
                      'PHONE.** The shared secret lives on that device and ' +
-                     'this service cannot reach it, and there is deliberately ' +
-                     'no self-service reset anywhere — a second factor ' +
-                     'anybody can remove is not a second factor.\n\nIt ' +
-                     'CANNOT lock anybody out: a one-time code is never a ' +
-                     'primary credential here, so clearing one drops the ' +
-                     'account to one factor rather than to none. The person ' +
-                     'sets a new one up at `/portal/mfa`.\n\nClearing an ' +
-                     'enrolment nobody holds answers 400 rather than 200, ' +
-                     'because unlike a role grant there is no idempotent ' +
-                     'reading of it that is useful: the caller asked to ' +
-                     'clear a specific thing and it was not there.',
+                     'this service cannot reach it, and there is ' +
+                     'deliberately no self-service reset anywhere — a second ' +
+                     'factor anybody can remove is not a second ' +
+                     'factor.\n\nIt CANNOT lock anybody out: a one-time code ' +
+                     'is never a primary credential here, so clearing one ' +
+                     'drops the account to one factor rather than to none. ' +
+                     'The person sets a new one up at ' +
+                     '`/portal/mfa`.\n\nClearing an enrolment nobody holds ' +
+                     'answers 400 rather than 200, because unlike a role ' +
+                     'grant there is no idempotent reading of it that is ' +
+                     'useful: the caller asked to clear a specific thing and ' +
+                     'it was not there.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -3549,11 +3609,11 @@ const ROUTES = [
   { method: 'GET', path: BASE + '/tokens/set', tag: 'Tokens',
     operationId: 'getIssuedSet',
     summary: 'One issuance, and every credential it carried',
-    description: 'What `GET /admin-api/tokens` groups, opened up. Every entry ' +
-                 'in that reply\'s `sets` carries the `setKey` this takes, ' +
-                 'so a caller walks the list and opens one entry without ' +
-                 'having to know whether it holds three credentials or ' +
-                 'one.\n\nIt is addressed by `setKey` and never by the ' +
+    description: 'What `GET /admin-api/tokens` groups, opened up. Every ' +
+                 'entry in that reply\'s `sets` carries the `setKey` this ' +
+                 'takes, so a caller walks the list and opens one entry ' +
+                 'without having to know whether it holds three credentials ' +
+                 'or one.\n\nIt is addressed by `setKey` and never by the ' +
                  'issuer\'s `setId`: a set of one has no issuance id at all, ' +
                  'and its key is `one:<row handle>` so that the key space ' +
                  'covers every row of that table. A key nothing holds ' +
@@ -3640,27 +3700,27 @@ const ROUTES = [
 
       { action: 'revoke-artifact', operationId: 'revokeIssuedArtifact',
         summary: 'Disown one assertion, ticket or SVID (RECORD ONLY)',
-        description: '**THIS CHANGES NOTHING OUTSIDE THIS SERVICE AND THAT IS ' +
-                     'NOT A DEFECT.** A relying party validates a SAML ' +
+        description: '**THIS CHANGES NOTHING OUTSIDE THIS SERVICE AND THAT ' +
+                     'IS NOT A DEFECT.** A relying party validates a SAML ' +
                      'assertion\'s signature and its Conditions and asks ' +
-                     'nobody; a Kerberos service decrypts a ticket with a key ' +
-                     'it already holds; an X509-SVID chains to a bundle. None ' +
-                     'of them will ever consult this service, so the ' +
+                     'nobody; a Kerberos service decrypts a ticket with a ' +
+                     'key it already holds; an X509-SVID chains to a bundle. ' +
+                     'None of them will ever consult this service, so the ' +
                      'credential goes on working until it expires and the ' +
                      'holder is not told.\n\nWhat it does is record that ' +
                      'THIS IDENTITY PROVIDER HAS DISOWNED the credential, ' +
-                     'which is a different claim and a useful one: it is what ' +
-                     'a global sign-out can report, what CAEP transmits to a ' +
-                     'receiver that subscribed, and what SAML Single Logout ' +
-                     'carries for an assertion issued through a browser ' +
-                     'profile. A WS-Trust assertion has neither channel and ' +
-                     'the mark is the whole of what exists for it.\n\nUntil ' +
-                     '2026-09-05 this was impossible and every surface said ' +
-                     'so. What changed is the recognition that what this ' +
-                     'service KNOWS and what a relying party will HONOUR are ' +
-                     'two claims, and only the second was ever out of reach. ' +
-                     'Every row of GET /admin-api/tokens carries ' +
-                     '`revocationReach` to keep them apart.',
+                     'which is a different claim and a useful one: it is ' +
+                     'what a global sign-out can report, what CAEP transmits ' +
+                     'to a receiver that subscribed, and what SAML Single ' +
+                     'Logout carries for an assertion issued through a ' +
+                     'browser profile. A WS-Trust assertion has neither ' +
+                     'channel and the mark is the whole of what exists for ' +
+                     'it.\n\nUntil 2026-09-05 this was impossible and every ' +
+                     'surface said so. What changed is the recognition that ' +
+                     'what this service KNOWS and what a relying party will ' +
+                     'HONOUR are two claims, and only the second was ever ' +
+                     'out of reach. Every row of GET /admin-api/tokens ' +
+                     'carries `revocationReach` to keep them apart.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -3683,10 +3743,10 @@ const ROUTES = [
 
       { action: 'restore-artifact', operationId: 'restoreIssuedArtifact',
         summary: 'Stop disowning one assertion, ticket or SVID (NON-SPEC)',
-        description: 'The opposite of `revoke-artifact`, and NON-SPEC for the ' +
-                     'reason every restore here is. It is a smaller act than ' +
-                     'the others, because what it takes back never reached ' +
-                     'anybody: the credential was working throughout.',
+        description: 'The opposite of `revoke-artifact`, and NON-SPEC for ' +
+                     'the reason every restore here is. It is a smaller act ' +
+                     'than the others, because what it takes back never ' +
+                     'reached anybody: the credential was working throughout.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -3876,37 +3936,35 @@ const ROUTES = [
                  'sessions, authorization codes, tokens, credential offers, ' +
                  'service providers, statistics and audit log — answering on ' +
                  'the same sockets as every other realm and told apart by a ' +
-                 'segment at the front of the path.\n\n' +
-                 'The DEFAULT realm has no prefix, cannot be removed and ' +
-                 'cannot be renamed: every URL this service published before ' +
-                 'realms existed is a URL in it. A process with no realms ' +
-                 'defined behaves exactly as it did before this feature ' +
-                 'existed, which is a property of one predicate rather than a ' +
-                 'claim.\n\n' +
-                 'Each row carries the realm\'s `pathPrefix`, its `baseUrl`, ' +
-                 'the `kid` of its signing key — two realms showing one kid ' +
-                 'would be two names for one authorization server — the ' +
-                 'settings it sets, and the four discovery documents a client ' +
-                 'asks for first.\n\n' +
-                 '`support` is the part answered nowhere else: WHICH ' +
-                 'protocol families a realm actually separates, which is not ' +
-                 'a tidy answer. A realm separates what this service ISSUES ' +
-                 'and everything it holds while issuing it — keys, sessions, ' +
-                 'codes, tokens, offers, artifacts, statistics and the audit ' +
-                 'log. It does NOT separate the embedded directory: LDAP ' +
-                 'answers on a socket with no path to put a segment in, so ' +
-                 'there is one set of people, groups and applications for the ' +
-                 'whole process — which means OAuth client registrations, ' +
-                 'SAML service provider entries, the SPIFFE registry and the ' +
-                 'two admin console roles are shared. Kerberos, the two TLS ' +
-                 'listeners and SPIFFE\'s four sockets are shared for the ' +
-                 'same reason.\n\n' +
-                 '`reserved` is the list of ids a realm may not be called, ' +
-                 'read off the live router: they are the first segments of ' +
-                 'paths this service already serves, and the refusal stands ' +
-                 'whatever `realms.pathSegment` is set to precisely so that ' +
-                 'clearing that setting cannot turn an existing realm into a ' +
-                 'shadow over the console or the authorization server.',
+                 'segment at the front of the path.\n\nThe DEFAULT realm has ' +
+                 'no prefix, cannot be removed and cannot be renamed: every ' +
+                 'URL this service published before realms existed is a URL ' +
+                 'in it. A process with no realms defined behaves exactly as ' +
+                 'it did before this feature existed, which is a property of ' +
+                 'one predicate rather than a claim.\n\nEach row carries the ' +
+                 'realm\'s `pathPrefix`, its `baseUrl`, the `kid` of its ' +
+                 'signing key — two realms showing one kid would be two ' +
+                 'names for one authorization server — the settings it sets, ' +
+                 'and the four discovery documents a client asks for ' +
+                 'first.\n\n`support` is the part answered nowhere else: ' +
+                 'WHICH protocol families a realm actually separates, which ' +
+                 'is not a tidy answer. A realm separates what this service ' +
+                 'ISSUES and everything it holds while issuing it — keys, ' +
+                 'sessions, codes, tokens, offers, artifacts, statistics and ' +
+                 'the audit log. It does NOT separate the embedded ' +
+                 'directory: LDAP answers on a socket with no path to put a ' +
+                 'segment in, so there is one set of people, groups and ' +
+                 'applications for the whole process — which means OAuth ' +
+                 'client registrations, SAML service provider entries, the ' +
+                 'SPIFFE registry and the two admin console roles are ' +
+                 'shared. Kerberos, the two TLS listeners and SPIFFE\'s four ' +
+                 'sockets are shared for the same reason.\n\n`reserved` is ' +
+                 'the list of ids a realm may not be called, read off the ' +
+                 'live router: they are the first segments of paths this ' +
+                 'service already serves, and the refusal stands whatever ' +
+                 '`realms.pathSegment` is set to precisely so that clearing ' +
+                 'that setting cannot turn an existing realm into a shadow ' +
+                 'over the console or the authorization server.',
     mirrors: 'GET /admin/realms',
     responseDescription: 'The realms, and the support table.',
     handler: function (req, res) {
@@ -3964,19 +4022,20 @@ const ROUTES = [
                   description: 'Lower-case letters, digits and hyphens. It ' +
                                'is the path segment.' },
             name: { type: 'string',
-                    description: 'What a person calls it. Free text; defaults ' +
-                                 'to the id.' },
+                    description: 'What a person calls it. Free text; ' +
+                                 'defaults to the id.' },
             description: { type: 'string' },
             overrides: { type: 'object',
-                         description: 'Settings to set on the realm, named by ' +
-                                      'the dot paths GET /admin-api/config ' +
-                                      'lists. They win over the six seeded ' +
-                                      'names. `realms.enabled` and ' +
+                         description: 'Settings to set on the realm, named ' +
+                                      'by the dot paths GET ' +
+                                      '/admin-api/config lists. They win ' +
+                                      'over the six seeded names. ' +
+                                      '`realms.enabled` and ' +
                                       '`realms.pathSegment` are refused: a ' +
-                                      'realm that could switch realms off, or ' +
-                                      'move the prefix it was found under, ' +
-                                      'would be doing it half way through the ' +
-                                      'request that found it.' }
+                                      'realm that could switch realms off, ' +
+                                      'or move the prefix it was found ' +
+                                      'under, would be doing it half way ' +
+                                      'through the request that found it.' }
           },
           required: ['id'],
           examples: [{ id: 'acme', name: 'Acme Corporation',
@@ -4007,15 +4066,15 @@ const ROUTES = [
         summary: 'Set one setting on one realm',
         description: 'The value applies to the next request that arrives ' +
                      'under that realm\'s prefix and to nothing else — above ' +
-                     'whatever the process as a whole is configured with, and ' +
-                     'below nothing.\n\n' +
-                     'This is the same store `POST /realm/<id>/admin-api/' +
-                     'config/set` writes to, and either is fine; the ' +
-                     'difference is only which realm you have to be in to ' +
-                     'make the call. A setting whose `editable` is false is ' +
-                     'refused with the reason, exactly as it is on the ' +
-                     'service-wide resource, and `realms.enabled` and ' +
-                     '`realms.pathSegment` are refused outright.',
+                     'whatever the process as a whole is configured with, ' +
+                     'and below nothing.\n\nThis is the same store `POST ' +
+                     '/realm/<id>/admin-api/config/set` writes to, and ' +
+                     'either is fine; the difference is only which realm you ' +
+                     'have to be in to make the call. A setting whose ' +
+                     '`editable` is false is refused with the reason, ' +
+                     'exactly as it is on the service-wide resource, and ' +
+                     '`realms.enabled` and `realms.pathSegment` are refused ' +
+                     'outright.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -4054,20 +4113,19 @@ const ROUTES = [
                      'families, its credential offers, its service ' +
                      'providers, its statistics, its audit log and its ' +
                      'signing key. That is deliberate rather than thorough — ' +
-                     'a realm re-created with the same id inheriting the last ' +
-                     'one\'s sessions and tokens would be the single most ' +
-                     'surprising thing a re-created realm could do.\n\n' +
-                     'NOTHING IS REMOVED FROM THE DIRECTORY, because nothing ' +
-                     'there belongs to a realm: `ou=users`, `ou=groups` and ' +
-                     '`ou=applications` are shared by every realm in this ' +
-                     'process.\n\n' +
-                     'A realm cannot remove ITSELF — a call to ' +
-                     '`/realm/acme/admin-api/realms/remove` naming `acme` is ' +
-                     'refused. Everything about the removal would work; what ' +
-                     'would not is the caller, which would be talking to a ' +
-                     'prefix that had stopped existing. Call it from another ' +
-                     'realm, or from the default one.\n\n' +
-                     'The DEFAULT realm cannot be removed at all.',
+                     'a realm re-created with the same id inheriting the ' +
+                     'last one\'s sessions and tokens would be the single ' +
+                     'most surprising thing a re-created realm could ' +
+                     'do.\n\nNOTHING IS REMOVED FROM THE DIRECTORY, because ' +
+                     'nothing there belongs to a realm: `ou=users`, ' +
+                     '`ou=groups` and `ou=applications` are shared by every ' +
+                     'realm in this process.\n\nA realm cannot remove ITSELF ' +
+                     '— a call to `/realm/acme/admin-api/realms/remove` ' +
+                     'naming `acme` is refused. Everything about the removal ' +
+                     'would work; what would not is the caller, which would ' +
+                     'be talking to a prefix that had stopped existing. Call ' +
+                     'it from another realm, or from the default one.\n\nThe ' +
+                     'DEFAULT realm cannot be removed at all.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -4091,12 +4149,11 @@ const ROUTES = [
                  'that?" used to be a grep. There is no fifth source: a ' +
                  'setting with a value in none of them stops this service ' +
                  'from STARTING rather than falling back to a constant in a ' +
-                 'module.\n\n' +
-                 'It also says which settings can be CHANGED while the ' +
-                 'service runs. The ones that cannot were consumed at ' +
-                 'startup — a bound socket, the TLS certificate\'s names, the ' +
-                 'Kerberos principal database and its long-term keys, the ' +
-                 'directory\'s base DN — and each carries the reason.',
+                 'module.\n\nIt also says which settings can be CHANGED ' +
+                 'while the service runs. The ones that cannot were consumed ' +
+                 'at startup — a bound socket, the TLS certificate\'s names, ' +
+                 'the Kerberos principal database and its long-term keys, ' +
+                 'the directory\'s base DN — and each carries the reason.',
     mirrors: 'GET /admin/config',
     responseDescription: 'The whole table.',
     responseSchema: { $ref: '#/components/schemas/Config' },
@@ -4125,21 +4182,21 @@ const ROUTES = [
                      'layers. Whether it outlives the process is ' +
                      '`persistence.appconfig`: in the default memory mode it ' +
                      'is gone on restart, and with a store on it is written ' +
-                     'down and re-applied at the next start through this same ' +
-                     'function, which is why it adds no sixth layer. See ' +
-                     '`GET /admin-api/persistence`.\n\nNOTHING HERE WRITES ' +
-                     'TO THE APPCONFIG FILE in either mode, and that is ' +
-                     'deliberate rather than unfinished: a service that ' +
+                     'down and re-applied at the next start through this ' +
+                     'same function, which is why it adds no sixth layer. ' +
+                     'See `GET /admin-api/persistence`.\n\nNOTHING HERE ' +
+                     'WRITES TO THE APPCONFIG FILE in either mode, and that ' +
+                     'is deliberate rather than unfinished: a service that ' +
                      'edited a file checked into a repository would leave a ' +
                      'test\'s forgotten change behind permanently. The ' +
-                     'durable copy goes to the persistent store, which is not ' +
-                     'a place anything is checked in from.\n\nThe change ' +
-                     'applies to the next token, assertion, ticket or search. ' +
-                     'Nothing already issued changes, because a token is a ' +
-                     'signed document.\n\nA setting whose `editable` is false ' +
-                     'is REFUSED with the reason rather than accepted, and a ' +
-                     'value that does not fit the setting\'s type is refused ' +
-                     'by name.',
+                     'durable copy goes to the persistent store, which is ' +
+                     'not a place anything is checked in from.\n\nThe change ' +
+                     'applies to the next token, assertion, ticket or ' +
+                     'search. Nothing already issued changes, because a ' +
+                     'token is a signed document.\n\nA setting whose ' +
+                     '`editable` is false is REFUSED with the reason rather ' +
+                     'than accepted, and a value that does not fit the ' +
+                     'setting\'s type is refused by name.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -4147,11 +4204,11 @@ const ROUTES = [
             key: { type: 'string',
                    description: 'The dot path, as GET /admin-api/config ' +
                                 'lists it.' },
-            value: { description: 'A string is always accepted and is coerced ' +
-                                  'to the setting\'s type, so the environment ' +
-                                  'spelling works here too; a JSON number, ' +
-                                  'boolean or array of strings is accepted ' +
-                                  'where the type takes one.' }
+            value: { description: 'A string is always accepted and is ' +
+                                  'coerced to the setting\'s type, so the ' +
+                                  'environment spelling works here too; a ' +
+                                  'JSON number, boolean or array of strings ' +
+                                  'is accepted where the type takes one.' }
           },
           required: ['key', 'value'],
           examples: [{ key: 'saml.issuer', value: 'urn:example:idp' }],
@@ -4170,8 +4227,9 @@ const ROUTES = [
                      'one bad field changes nothing and names it. A key this ' +
                      'service does not know is ignored rather than refused, ' +
                      'because a form posts fields this resource never ' +
-                     'declared; `applied` says which were taken and `changed` ' +
-                     'which actually differed from what was already in force.',
+                     'declared; `applied` says which were taken and ' +
+                     '`changed` which actually differed from what was ' +
+                     'already in force.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -4375,10 +4433,10 @@ const ROUTES = [
   // Rule 7 is satisfied the same way /token-lifetimes satisfies it, and the
   // parallel is exact: /admin/saml-assertions grew a form, so it gets its
   // operations. It gets no second store either — the handler calls
-  // adminActions.samlAssertionsAction, which writes through config.setOverride()
-  // against the same override map POST /config/set writes to, and the same
-  // map the two identity provider pages' own forms write to. Four doors, one
-  // thing.
+  // adminActions.samlAssertionsAction, which writes through
+  // config.setOverride() against the same override map POST /config/set writes
+  // to, and the same map the two identity provider pages' own forms write to.
+  // Four doors, one thing.
   //
   // What the narrow door buys a CALLER is what it buys there: POST
   // /config/set-many ignores a key it does not know, which is right for a
@@ -4395,8 +4453,8 @@ const ROUTES = [
                  'settings and appear in `GET /config` too; `settings` here ' +
                  'is the same row shape, carrying each one\'s bounds, its ' +
                  'source and its default. `assertions` beside it is the ' +
-                 'numbers, and includes `saml2WindowS` and `saml11WindowS` ' +
-                 '— the WHOLE width of the stated window, which is the ' +
+                 'numbers, and includes `saml2WindowS` and `saml11WindowS` — ' +
+                 'the WHOLE width of the stated window, which is the ' +
                  'lifetime plus TWICE the skew and is the figure a caller ' +
                  'actually has to reason about. No single setting states ' +
                  'it.\n\nTHE LIFETIMES ARE PER PROFILE AND THE SKEW IS NOT. ' +
@@ -4407,17 +4465,17 @@ const ROUTES = [
                  'reach WS-Trust and WS-Federation as well — their ' +
                  'assertions come out of the same two builders — and a ' +
                  'WS-Federation sign-in carries a SAML 1.1 assertion, so ' +
-                 '`saml11.assertionLifetimeMin` governs it.\n\n`saml.clockSkewS` ' +
-                 'IS NOT `oauth2.clockSkewS`. This one is written INTO a ' +
-                 'document this service issues. That one is the tolerance ' +
-                 'applied wherever this service READS one back, including an ' +
-                 'inbound federation partner\'s assertion, and it is on ' +
-                 '`GET /token-lifetimes`.\n\nIt also reports what has ' +
-                 'already been issued, per profile, counted against this ' +
-                 'service\'s own clock with no allowance applied.\n\nA ' +
-                 'WINDOW IS STAMPED INTO AN ASSERTION WHEN IT IS SIGNED, so ' +
-                 'changing one reaches the next assertion and nothing ' +
-                 'already issued.',
+                 '`saml11.assertionLifetimeMin` governs ' +
+                 'it.\n\n`saml.clockSkewS` IS NOT `oauth2.clockSkewS`. This ' +
+                 'one is written INTO a document this service issues. That ' +
+                 'one is the tolerance applied wherever this service READS ' +
+                 'one back, including an inbound federation partner\'s ' +
+                 'assertion, and it is on `GET /token-lifetimes`.\n\nIt also ' +
+                 'reports what has already been issued, per profile, counted ' +
+                 'against this service\'s own clock with no allowance ' +
+                 'applied.\n\nA WINDOW IS STAMPED INTO AN ASSERTION WHEN IT ' +
+                 'IS SIGNED, so changing one reaches the next assertion and ' +
+                 'nothing already issued.',
     mirrors: 'GET /admin/saml-assertions',
     responseDescription: 'The three settings, and what has been issued ' +
                          'under them.',
@@ -4563,7 +4621,8 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/ClaimSets' },
     handler: function (req, res) {
       log.debug("Entering the management API claims endpoint.");
-      sendJson(res, 200, adminViews.claimsJson(adminViews.claimsPreviewUser(req.query)));
+      sendJson(res, 200,
+               adminViews.claimsJson(adminViews.claimsPreviewUser(req.query)));
       log.debug("Leaving the management API claims endpoint.");
     } },
 
@@ -4608,56 +4667,58 @@ const ROUTES = [
                  'only one whose subject is not something this service ' +
                  'ISSUES.\n\n**A UserInfo response is built on EVERY call.** ' +
                  'An access token, an ID Token and both SAML assertions are ' +
-                 'signed documents: a claim added to one of those sets reaches ' +
-                 'a client at its next sign-in and never reaches what it ' +
-                 'already holds. A claim added here reaches the next ' +
-                 '`GET /oauth2/userinfo` from a client that signed in an hour ' +
-                 'ago and has done nothing since. That is the whole reason it ' +
-                 'is configured separately from the ID Token set rather than ' +
-                 'being the same list under two names.\n\nThe set has the same ' +
-                 'TWO HALVES as every other and they are configured by ' +
-                 'different operations. `claims` are TYPED: a name and a value ' +
-                 'somebody wrote, the same for everybody except where a ' +
-                 '${placeholder} carries the sign-in. `attributes` are LDAP ' +
-                 'ATTRIBUTE TYPES chosen from `attributeCatalogue`, whose ' +
-                 'value is read off that person\'s entry under ou=users — so ' +
-                 'an `ldapmodify` changes the next response, with no new ' +
-                 'sign-in at all.\n\n`reservedJwtClaims` IS here, unlike ' +
-                 'GET /admin-api/saml-attributes, and the reason is worth ' +
+                 'signed documents: a claim added to one of those sets ' +
+                 'reaches a client at its next sign-in and never reaches ' +
+                 'what it already holds. A claim added here reaches the next ' +
+                 '`GET /oauth2/userinfo` from a client that signed in an ' +
+                 'hour ago and has done nothing since. That is the whole ' +
+                 'reason it is configured separately from the ID Token set ' +
+                 'rather than being the same list under two names.\n\nThe ' +
+                 'set has the same TWO HALVES as every other and they are ' +
+                 'configured by different operations. `claims` are TYPED: a ' +
+                 'name and a value somebody wrote, the same for everybody ' +
+                 'except where a ${placeholder} carries the sign-in. ' +
+                 '`attributes` are LDAP ATTRIBUTE TYPES chosen from ' +
+                 '`attributeCatalogue`, whose value is read off that ' +
+                 'person\'s entry under ou=users — so an `ldapmodify` ' +
+                 'changes the next response, with no new sign-in at ' +
+                 'all.\n\n`reservedJwtClaims` IS here, unlike GET ' +
+                 '/admin-api/saml-attributes, and the reason is worth ' +
                  'reading before assuming it is a copy-paste: `sub` is ' +
                  'REQUIRED in this response (OIDC Core 5.3.2, and a client ' +
                  'MUST check it against the ID Token\'s), and when a client ' +
                  'has registered a `userinfo_signed_response_alg` the whole ' +
-                 'response is a JWT carrying `iss`, `aud` and `exp`.\n\n' +
-                 '`claimsRequest` is the half no operation here sets: OIDC ' +
-                 'Core section 5.5 lets a CLIENT name individual claims in the ' +
-                 '`claims` request parameter, and this service answers them ' +
-                 'off the same catalogue. It lists every name a request may ' +
-                 'use, the four layers of precedence, what is carried and NOT ' +
-                 'enforced (`essential`, `value`, `values`), and the non-spec ' +
-                 'way to send one straight to the endpoint.',
+                 'response is a JWT carrying `iss`, `aud` and ' +
+                 '`exp`.\n\n`claimsRequest` is the half no operation here ' +
+                 'sets: OIDC Core section 5.5 lets a CLIENT name individual ' +
+                 'claims in the `claims` request parameter, and this service ' +
+                 'answers them off the same catalogue. It lists every name a ' +
+                 'request may use, the four layers of precedence, what is ' +
+                 'carried and NOT enforced (`essential`, `value`, `values`), ' +
+                 'and the non-spec way to send one straight to the endpoint.',
     mirrors: 'GET /admin/userinfo-claims',
     parameters: [
       { name: 'user', in: 'query', required: false,
         schema: { type: 'string', default: 'alice' },
         description: 'Whose attribute values to preview. The same parameter, ' +
-                     'the same cap and the same default GET /admin-api/claims ' +
-                     'takes, deliberately: the three replies preview one ' +
-                     'person unless asked otherwise. `preview.entryFound` says ' +
-                     'whether the directory holds them or the values were ' +
-                     'invented from the username.' },
+                     'the same cap and the same default GET ' +
+                     '/admin-api/claims takes, deliberately: the three ' +
+                     'replies preview one person unless asked otherwise. ' +
+                     '`preview.entryFound` says whether the directory holds ' +
+                     'them or the values were invented from the username.' },
       { name: 'request', in: 'query', required: false,
         schema: { type: 'string' },
-        description: 'A section 5.5 claims request, as the JSON a client would ' +
-                     'send — for example ' +
+        description: 'A section 5.5 claims request, as the JSON a client ' +
+                     'would send — for example ' +
                      '`{"userinfo":{"birthdate":null,"address":null}}`. The ' +
-                     'reply\'s `claimsRequest.preview` then says exactly what ' +
-                     'that request would return for `user`, computed by the ' +
-                     'two functions the UserInfo endpoint itself calls. A ' +
-                     'MALFORMED one is reported in `claimsRequest.preview.' +
-                     'error` and does NOT fail this call: what it shows is the ' +
-                     '`invalid_request` a client would be given, which is the ' +
-                     'thing a caller is asking about.' }
+                     'reply\'s `claimsRequest.preview` then says exactly ' +
+                     'what that request would return for `user`, computed by ' +
+                     'the two functions the UserInfo endpoint itself calls. ' +
+                     'A MALFORMED one is reported in ' +
+                     '`claimsRequest.preview.error` and does NOT fail this ' +
+                     'call: what it shows is the `invalid_request` a client ' +
+                     'would be given, which is the thing a caller is asking ' +
+                     'about.' }
     ],
     responseDescription: 'The UserInfo set, the attribute catalogue, the ' +
                          'preview and the section 5.5 vocabulary.',
@@ -4665,8 +4726,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API UserInfo claims endpoint.");
       sendJson(res, 200,
-               adminViews.userinfoClaimsJson(adminViews.claimsPreviewUser(req.query),
-                                        adminViews.claimsRequestParameter(req.query)));
+               adminViews.userinfoClaimsJson(adminViews.claimsPreviewUser(
+                   req.query),
+                                        adminViews.claimsRequestParameter(
+                                            req.query)));
       log.debug("Leaving the management API UserInfo claims endpoint.");
     } },
 
@@ -4694,7 +4757,8 @@ const ROUTES = [
   // an API that answered for it under a name promising tokens would leave a
   // caller reading `getClaims` to find out what an assertion will carry.
   // -------------------------------------------------------------------------
-  { method: 'GET', path: BASE + '/saml-attributes', tag: 'Custom SAML attributes',
+  { method: 'GET', path: BASE + '/saml-attributes', tag: 'Custom SAML ' +
+      'attributes',
     operationId: 'getSamlAttributes',
     summary: 'The custom attributes every new SAML assertion will carry',
     description: 'The two SAML sets — SAML 2.0 Attribute and SAML 1.1 ' +
@@ -4713,13 +4777,14 @@ const ROUTES = [
                  'changes the next assertion, and an LDAP client and a SAML ' +
                  'relying party pointed at this service are shown the same ' +
                  'person.\n\nTHERE IS NO `reservedJwtClaims` HERE and the ' +
-                 'absence is the answer rather than an omission: that list is ' +
-                 'enforced for a JWT set only, because an assertion attribute ' +
-                 'called `exp` collides with nothing. `defaultSaml11Namespace` ' +
-                 'is the rule that IS this family\'s — the namespace a 1.1 ' +
-                 'attribute gets when the call does not name one.\n\nThe two ' +
-                 'JWT sets are at GET /admin-api/claims. One store behind ' +
-                 'both, and one audit row per change whichever door made it.',
+                 'absence is the answer rather than an omission: that list ' +
+                 'is enforced for a JWT set only, because an assertion ' +
+                 'attribute called `exp` collides with nothing. ' +
+                 '`defaultSaml11Namespace` is the rule that IS this ' +
+                 'family\'s — the namespace a 1.1 attribute gets when the ' +
+                 'call does not name one.\n\nThe two JWT sets are at GET ' +
+                 '/admin-api/claims. One store behind both, and one audit ' +
+                 'row per change whichever door made it.',
     mirrors: 'GET /admin/saml-attributes',
     parameters: [
       { name: 'user', in: 'query', required: false,
@@ -4729,8 +4794,8 @@ const ROUTES = [
                      'preview shows real values on a fresh process. Somebody ' +
                      'with no entry gets generated values — the same ' +
                      'invented person every time, seeded from the name — and ' +
-                     '`preview.entryFound` says which of the two happened. It ' +
-                     'is the same parameter, the same cap and the same ' +
+                     '`preview.entryFound` says which of the two happened. ' +
+                     'It is the same parameter, the same cap and the same ' +
                      'default GET /admin-api/claims takes, deliberately: the ' +
                      'two replies preview one person unless asked otherwise.' }
     ],
@@ -4740,7 +4805,8 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API SAML attributes endpoint.");
       sendJson(res, 200,
-               adminViews.samlAttributesJson(adminViews.claimsPreviewUser(req.query)));
+               adminViews.samlAttributesJson(adminViews.claimsPreviewUser(
+                   req.query)));
       log.debug("Leaving the management API SAML attributes endpoint.");
     } },
 
@@ -4783,7 +4849,8 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/CredentialClaims' },
     handler: function (req, res) {
       log.debug("Entering the management API credential-claims endpoint.");
-      sendJson(res, 200, adminViews.vcJson(adminViews.vcPreviewUser(req.query)));
+      sendJson(res, 200,
+               adminViews.vcJson(adminViews.vcPreviewUser(req.query)));
       log.debug("Leaving the management API credential-claims endpoint.");
     } },
 
@@ -4846,10 +4913,10 @@ const ROUTES = [
           properties: {
             attribute: { type: 'string' },
             name: { type: 'string',
-                    description: 'An alias for `attribute`; `vcAction()` reads ' +
-                                 '`body.attribute || body.name`, so both ' +
-                                 'spellings have always worked and only one ' +
-                                 'was published.' }
+                    description: 'An alias for `attribute`; `vcAction()` ' +
+                                 'reads `body.attribute || body.name`, so ' +
+                                 'both spellings have always worked and only ' +
+                                 'one was published.' }
           },
           anyOf: [{ required: ['attribute'] }, { required: ['name'] }],
           examples: [{ attribute: 'title' }],
@@ -4869,10 +4936,10 @@ const ROUTES = [
           properties: {
             attribute: { type: 'string' },
             name: { type: 'string',
-                    description: 'An alias for `attribute`; `vcAction()` reads ' +
-                                 '`body.attribute || body.name`, so both ' +
-                                 'spellings have always worked and only one ' +
-                                 'was published.' }
+                    description: 'An alias for `attribute`; `vcAction()` ' +
+                                 'reads `body.attribute || body.name`, so ' +
+                                 'both spellings have always worked and only ' +
+                                 'one was published.' }
           },
           anyOf: [{ required: ['attribute'] }, { required: ['name'] }],
           examples: [{ attribute: 'title' }],
@@ -4980,9 +5047,10 @@ const ROUTES = [
           properties: {
             claim: { type: 'string' },
             name: { type: 'string',
-                    description: 'An alias for `claim`; `vpConfigAction()` reads ' +
-                                 '`body.claim || body.name`, so both spellings ' +
-                                 'have always worked and only one was published.' }
+                    description: 'An alias for `claim`; `vpConfigAction()` ' +
+                                 'reads `body.claim || body.name`, so both ' +
+                                 'spellings have always worked and only one ' +
+                                 'was published.' }
           },
           anyOf: [{ required: ['claim'] }, { required: ['name'] }],
           examples: [{ claim: 'birthdate' }],
@@ -5000,9 +5068,10 @@ const ROUTES = [
           properties: {
             claim: { type: 'string' },
             name: { type: 'string',
-                    description: 'An alias for `claim`; `vpConfigAction()` reads ' +
-                                 '`body.claim || body.name`, so both spellings ' +
-                                 'have always worked and only one was published.' }
+                    description: 'An alias for `claim`; `vpConfigAction()` ' +
+                                 'reads `body.claim || body.name`, so both ' +
+                                 'spellings have always worked and only one ' +
+                                 'was published.' }
           },
           anyOf: [{ required: ['claim'] }, { required: ['name'] }],
           examples: [{ claim: 'birthdate' }],
@@ -5038,9 +5107,15 @@ const ROUTES = [
                                    '/admin-api/verifier-request` lists them ' +
                                    'under `formats`.' },
             name: { type: 'string',
-                  description: 'An alias for `claim`; `vpConfigAction()` reads `body.claim || body.name`, so both spellings have always worked and only one was published.' },
+                  description: 'An alias for `claim`; `vpConfigAction()` ' +
+                               'reads `body.claim || body.name`, so both ' +
+                               'spellings have always worked and only one ' +
+                               'was published.' },
             name: { type: 'string',
-                  description: 'An alias for `claim`; `vpConfigAction()` reads `body.claim || body.name`, so both spellings have always worked and only one was published.' }
+                  description: 'An alias for `claim`; `vpConfigAction()` ' +
+                               'reads `body.claim || body.name`, so both ' +
+                               'spellings have always worked and only one ' +
+                               'was published.' }
           },
           required: ['format'],
           examples: [{ format: 'dc+sd-jwt' }],
@@ -5091,27 +5166,29 @@ const ROUTES = [
     summary: 'Every federation relationship, in either direction',
     description: 'This service can be EITHER END of a federation ' +
                  'relationship, in five protocols: SAML 2.0, SAML 1.1, ' +
-                 'WS-Federation 1.2, OpenID Connect and OAuth 2.0.\n\n' +
-                 '**This is the one feature here that has to be configured ' +
-                 'before it will do anything.** Everywhere else this service ' +
-                 'accepts what it is given — any username, any client_id, any ' +
-                 'entityID, any LDAP bind. It cannot do that at an assertion ' +
-                 'consumer service: what arrives there is an unauthenticated ' +
-                 'HTTP request claiming to be a person, and the session it ' +
-                 'produces is the same one `/oauth2/authorize`, `/wsfed`, ' +
-                 '`/saml2` and the admin console all read. So a relationship ' +
-                 'is created DISABLED, and an assertion is refused unless it ' +
-                 'verifies against the certificate configured on it.\n\n' +
-                 '**The gate is on the SIGNER, not on the subject.** Once a ' +
-                 'relationship is enabled and configured, everything ' +
-                 'downstream is as permissive as the rest of this service: ' +
-                 'any username in the assertion is accepted, any attribute is ' +
-                 'mapped, and a directory entry is created for the person.\n\n' +
-                 '`?relationship=<id>` returns one of them, with everything it ' +
-                 'holds and the URLs to configure at the partner. It answers ' +
-                 '200 with `found: false` for an id that is not registered.\n\n' +
-                 'This resource holds nothing: every row is an entry under ' +
-                 '`ou=federations`, the same one an `ldapsearch` reads.',
+                 'WS-Federation 1.2, OpenID Connect and OAuth 2.0.\n\n**This ' +
+                 'is the one feature here that has to be configured before ' +
+                 'it will do anything.** Everywhere else this service ' +
+                 'accepts what it is given — any username, any client_id, ' +
+                 'any entityID, any LDAP bind. It cannot do that at an ' +
+                 'assertion consumer service: what arrives there is an ' +
+                 'unauthenticated HTTP request claiming to be a person, and ' +
+                 'the session it produces is the same one ' +
+                 '`/oauth2/authorize`, `/wsfed`, `/saml2` and the admin ' +
+                 'console all read. So a relationship is created DISABLED, ' +
+                 'and an assertion is refused unless it verifies against the ' +
+                 'certificate configured on it.\n\n**The gate is on the ' +
+                 'SIGNER, not on the subject.** Once a relationship is ' +
+                 'enabled and configured, everything downstream is as ' +
+                 'permissive as the rest of this service: any username in ' +
+                 'the assertion is accepted, any attribute is mapped, and a ' +
+                 'directory entry is created for the ' +
+                 'person.\n\n`?relationship=<id>` returns one of them, with ' +
+                 'everything it holds and the URLs to configure at the ' +
+                 'partner. It answers 200 with `found: false` for an id that ' +
+                 'is not registered.\n\nThis resource holds nothing: every ' +
+                 'row is an entry under `ou=federations`, the same one an ' +
+                 '`ldapsearch` reads.',
     mirrors: 'GET /admin/federation',
     parameters: [
       { name: 'relationship', in: 'query', required: false,
@@ -5122,9 +5199,9 @@ const ROUTES = [
       { name: 'role', in: 'query', required: false,
         schema: { type: 'string',
                   enum: ['service-provider', 'identity-provider'] },
-        description: 'Only the relationships in which this service takes that ' +
-                     'role. `service-provider` is the direction that CONSUMES ' +
-                     'somebody else\'s assertions.' }
+        description: 'Only the relationships in which this service takes ' +
+                     'that role. `service-provider` is the direction that ' +
+                     'CONSUMES somebody else\'s assertions.' }
     ].concat(pagingParameters()),
     responseDescription: 'The relationships with the paging that found them, ' +
                          'or one of them with its endpoints, its fields and ' +
@@ -5152,37 +5229,37 @@ const ROUTES = [
     actions: [
       { action: 'create', operationId: 'createFederationRelationship',
         summary: 'Register a federation relationship',
-        description: 'It is created **DISABLED**, whatever this request says, ' +
-                     'and nothing about it does anything until `enable` is ' +
-                     'called. That is the one place this operation overrides ' +
-                     'its input, and it is deliberate: a partner that ' +
-                     'half-exists and silently accepts assertions is the ' +
-                     'failure this whole register is arranged to prevent, so ' +
-                     'enabling is a second act that says the configuration is ' +
-                     'finished.\n\n' +
-                     '**ONE RELATIONSHIP IS ONE DIRECTION.** A partner this ' +
+        description: 'It is created **DISABLED**, whatever this request ' +
+                     'says, and nothing about it does anything until ' +
+                     '`enable` is called. That is the one place this ' +
+                     'operation overrides its input, and it is deliberate: a ' +
+                     'partner that half-exists and silently accepts ' +
+                     'assertions is the failure this whole register is ' +
+                     'arranged to prevent, so enabling is a second act that ' +
+                     'says the configuration is finished.\n\n**ONE ' +
+                     'RELATIONSHIP IS ONE DIRECTION.** A partner this ' +
                      'service both consumes from and asserts to is two ' +
                      'relationships with two ids, because everything that ' +
-                     'configures one differs by direction.\n\n' +
-                     'The reply carries `readiness.missing` — the fields this ' +
-                     'protocol and role still need — so a caller can go ' +
-                     'straight on to `set` for each of them without knowing ' +
-                     'the schema in advance.',
+                     'configures one differs by direction.\n\nThe reply ' +
+                     'carries `readiness.missing` — the fields this protocol ' +
+                     'and role still need — so a caller can go straight on ' +
+                     'to `set` for each of them without knowing the schema ' +
+                     'in advance.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             id: { type: 'string',
-                  description: 'The key, the RDN and a URL segment. It has to ' +
-                               'start with a letter or a digit and hold only ' +
-                               'letters, digits, dot, dash and underscore, up ' +
-                               'to 63 characters.' },
+                  description: 'The key, the RDN and a URL segment. It has ' +
+                               'to start with a letter or a digit and hold ' +
+                               'only letters, digits, dot, dash and ' +
+                               'underscore, up to 63 characters.' },
             role: { type: 'string',
                     enum: ['service-provider', 'identity-provider'],
                     description: 'Which end THIS SERVICE is. ' +
-                                 '`service-provider` means a foreign identity ' +
-                                 'provider authenticates the person and this ' +
-                                 'service consumes what it issues.' },
+                                 '`service-provider` means a foreign ' +
+                                 'identity provider authenticates the person ' +
+                                 'and this service consumes what it issues.' },
             protocol: { type: 'string',
                         enum: ['saml2', 'saml11', 'wsfed', 'oidc', 'oauth2'],
                         description: 'The protocol the relationship runs in.' },
@@ -5199,8 +5276,8 @@ const ROUTES = [
                                  'signature verifies.' },
             application: { type: 'string',
                            description: 'On an identity-provider-side ' +
-                                        'relationship only: the identifier of ' +
-                                        'the partner\'s entry in ' +
+                                        'relationship only: the identifier ' +
+                                        'of the partner\'s entry in ' +
                                         '`ou=applications`. Its entityID, ' +
                                         'redirect URIs and certificate stay ' +
                                         'THERE, where every protocol module ' +
@@ -5218,21 +5295,21 @@ const ROUTES = [
 
       { action: 'set', operationId: 'setFederationField',
         summary: 'Set one single-valued field on a relationship',
-        description: 'The field must be one of this relationship\'s — a field ' +
-                     'belonging to the other ROLE is refused by name rather ' +
-                     'than written and ignored, and so is one that records ' +
-                     'what HAPPENED (the counters, the last error).\n\n' +
-                     '`fedId`, `fedRole` and `fedProtocol` are refused too, ' +
-                     'and that is a third category rather than an oversight: ' +
-                     'they are the relationship\'s identity, and changing one ' +
-                     'would leave a SAML relationship carrying a token ' +
-                     'endpoint. Delete it and make another — there is no ' +
-                     'state to lose but the counters.\n\n' +
-                     '`GET /admin-api/federation?relationship=<id>` returns ' +
+        description: 'The field must be one of this relationship\'s — a ' +
+                     'field belonging to the other ROLE is refused by name ' +
+                     'rather than written and ignored, and so is one that ' +
+                     'records what HAPPENED (the counters, the last ' +
+                     'error).\n\n`fedId`, `fedRole` and `fedProtocol` are ' +
+                     'refused too, and that is a third category rather than ' +
+                     'an oversight: they are the relationship\'s identity, ' +
+                     'and changing one would leave a SAML relationship ' +
+                     'carrying a token endpoint. Delete it and make another ' +
+                     '— there is no state to lose but the counters.\n\n`GET ' +
+                     '/admin-api/federation?relationship=<id>` returns ' +
                      '`editable`, which is exactly the list this operation ' +
-                     'accepts, so a caller need not guess.\n\n' +
-                     'The reply always carries `readiness`, so setting the ' +
-                     'last missing field tells you it was the last one.',
+                     'accepts, so a caller need not guess.\n\nThe reply ' +
+                     'always carries `readiness`, so setting the last ' +
+                     'missing field tells you it was the last one.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -5259,22 +5336,22 @@ const ROUTES = [
       { action: 'add-value', operationId: 'addFederationValue',
         summary: 'Add a value to a multi-valued field',
         description: 'Two fields take values: `fedAttributeMap` on a ' +
-                     'service-provider-side relationship, and `fedRelease` on ' +
-                     'an identity-provider-side one.\n\n' +
-                     '**`fedAttributeMap`** is written `<incoming ' +
-                     'name>=<LDAP attribute>` and is split at the FIRST equals ' +
-                     'sign — which matters, because an incoming name can be a ' +
-                     'URL and a URL can hold one. It is only needed for a ' +
-                     'partner\'s own inventions: the ordinary OpenID Connect ' +
-                     'claims, the SAML `urn:oid:` names and the AD FS claim ' +
-                     'URIs are mapped already.\n\n' +
-                     '**`fedRelease`** names an attribute or claim released to ' +
-                     'that partner, and it can only REMOVE — from what ' +
-                     '/admin/claims, /admin/saml-attributes and the groups ' +
-                     'claim would add, and from nothing else. It cannot touch ' +
-                     '`sub`, `iss`, `exp` or a NameID. **NO VALUES MEANS NO ' +
-                     'POLICY, not release nothing**: adding the first value ' +
-                     'here is what starts the filtering.',
+                     'service-provider-side relationship, and `fedRelease` ' +
+                     'on an identity-provider-side ' +
+                     'one.\n\n**`fedAttributeMap`** is written `<incoming ' +
+                     'name>=<LDAP attribute>` and is split at the FIRST ' +
+                     'equals sign — which matters, because an incoming name ' +
+                     'can be a URL and a URL can hold one. It is only needed ' +
+                     'for a partner\'s own inventions: the ordinary OpenID ' +
+                     'Connect claims, the SAML `urn:oid:` names and the AD ' +
+                     'FS claim URIs are mapped already.\n\n**`fedRelease`** ' +
+                     'names an attribute or claim released to that partner, ' +
+                     'and it can only REMOVE — from what /admin/claims, ' +
+                     '/admin/saml-attributes and the groups claim would add, ' +
+                     'and from nothing else. It cannot touch `sub`, `iss`, ' +
+                     '`exp` or a NameID. **NO VALUES MEANS NO POLICY, not ' +
+                     'release nothing**: adding the first value here is what ' +
+                     'starts the filtering.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -5322,30 +5399,33 @@ const ROUTES = [
                      'would mean configuring everything in one request with ' +
                      'no way back. What happens in that state is that every ' +
                      'endpoint for the relationship REFUSES and says which ' +
-                     'fields are missing — it never half-works — and the reply ' +
-                     'to this operation says so too.',
+                     'fields are missing — it never half-works — and the ' +
+                     'reply to this operation says so too.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { id: { type: 'string', description: 'The relationship.' } },
+          properties: { id: { type: 'string',
+                              description: 'The relationship.' } },
           required: ['id'],
           examples: [{ id: 'partner-a' }],
           additionalProperties: false
         },
-        responseDescription: 'The relationship, and whether it is now usable.' },
+        responseDescription:
+          'The relationship, and whether it is now usable.' },
 
       { action: 'disable', operationId: 'disableFederationRelationship',
         summary: 'Turn a relationship off',
         description: 'A response arriving for a disabled relationship is ' +
-                     'refused without being looked at, which is what disabling ' +
-                     'is for. Nothing else is lost: the configuration, the ' +
-                     'counters and the mappings all stay, and the people it ' +
-                     'authenticated keep their directory entries and their ' +
-                     'sessions.',
+                     'refused without being looked at, which is what ' +
+                     'disabling is for. Nothing else is lost: the ' +
+                     'configuration, the counters and the mappings all stay, ' +
+                     'and the people it authenticated keep their directory ' +
+                     'entries and their sessions.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { id: { type: 'string', description: 'The relationship.' } },
+          properties: { id: { type: 'string',
+                              description: 'The relationship.' } },
           required: ['id'],
           additionalProperties: false
         },
@@ -5355,14 +5435,15 @@ const ROUTES = [
         summary: 'Delete a relationship',
         description: 'The entry goes and takes its recorded sign-ins with ' +
                      'it. **The PEOPLE it authenticated keep their entries ' +
-                     'under `ou=users`** — nothing is ever deleted from there ' +
-                     '— and any session they hold is unaffected until it ' +
-                     'expires or is ended, which is what `POST ' +
+                     'under `ou=users`** — nothing is ever deleted from ' +
+                     'there — and any session they hold is unaffected until ' +
+                     'it expires or is ended, which is what `POST ' +
                      '/admin-api/logout` is for.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { id: { type: 'string', description: 'The relationship.' } },
+          properties: { id: { type: 'string',
+                              description: 'The relationship.' } },
           required: ['id'],
           additionalProperties: false
         },
@@ -5372,23 +5453,25 @@ const ROUTES = [
 
   { method: 'GET', path: BASE + '/saml2', tag: 'SAML 2.0',
     operationId: 'getSaml2ServiceProviders',
-    summary: 'Every SAML 2.0 service provider, and the endpoints each is configured from',
+    summary: 'Every SAML 2.0 service provider, and the endpoints each is ' +
+             'configured from',
     description: 'A full SAML 2.0 identity provider: HTTP Redirect and HTTP ' +
                  'POST for the AuthnRequest, and HTTP POST, HTTP Redirect or ' +
                  'HTTP Artifact for the Response, with a SOAP artifact ' +
                  'resolution service behind the third.\n\n**Every service ' +
                  'provider gets its own identity provider metadata** — a ' +
                  'distinct entityID and its own endpoints — and **a document ' +
-                 'is minted for any entityID asked for**, so nothing has to be ' +
-                 'provisioned before a service provider can be pointed at this ' +
-                 'service. That is why `metadataUrl` is on every row rather ' +
-                 'than being one constant.\n\nThis resource holds nothing: ' +
-                 'every row is an entry in `ou=applications`, the same one ' +
-                 '`GET /admin-api/applications` reports.\n\n`?sp=<entityID>` ' +
-                 'returns one of them, with what has been recorded about it — ' +
-                 'and answers 200 with `found: false` for an entityID that is ' +
-                 'not registered, whose metadata is still served and whose ' +
-                 'AuthnRequest would still be answered.',
+                 'is minted for any entityID asked for**, so nothing has to ' +
+                 'be provisioned before a service provider can be pointed at ' +
+                 'this service. That is why `metadataUrl` is on every row ' +
+                 'rather than being one constant.\n\nThis resource holds ' +
+                 'nothing: every row is an entry in `ou=applications`, the ' +
+                 'same one `GET /admin-api/applications` ' +
+                 'reports.\n\n`?sp=<entityID>` returns one of them, with ' +
+                 'what has been recorded about it — and answers 200 with ' +
+                 '`found: false` for an entityID that is not registered, ' +
+                 'whose metadata is still served and whose AuthnRequest ' +
+                 'would still be answered.',
     mirrors: 'GET /admin/saml2',
     parameters: [
       { name: 'sp', in: 'query', required: false,
@@ -5396,7 +5479,8 @@ const ROUTES = [
         description: 'One service provider, by its entityID.' }
     ].concat(pagingParameters()),
     responseDescription: 'The service providers with the paging that found ' +
-                         'them, or one of them with its endpoints and its record.',
+                         'them, or one of them with its endpoints and its ' +
+                         'record.',
     responseSchema: { $ref: '#/components/schemas/Saml2ServiceProviderList' },
     handler: function (req, res) {
       log.debug("Entering the management API SAML 2.0 endpoint.");
@@ -5421,45 +5505,49 @@ const ROUTES = [
     actions: [
       { action: 'register', operationId: 'registerSaml2ServiceProvider',
         summary: 'Register a service provider by entityID',
-        description: 'OPTIONAL, and it changes nothing about whether a request ' +
-                     'is accepted: this identity provider accepts any ' +
-                     'entityID, and the first AuthnRequest or metadata fetch ' +
-                     'creates the entry anyway. What registering early buys is ' +
-                     'a metadata document to hand somebody before they have ' +
-                     'sent anything.\n\nIt is refused for an entityID that is ' +
-                     'already in the registry — an identifier names ONE ' +
-                     'application here whatever protocol brought it, so the ' +
-                     'answer to "it is already there" is to change what it ' +
-                     'holds rather than to create it twice.',
+        description: 'OPTIONAL, and it changes nothing about whether a ' +
+                     'request is accepted: this identity provider accepts ' +
+                     'any entityID, and the first AuthnRequest or metadata ' +
+                     'fetch creates the entry anyway. What registering early ' +
+                     'buys is a metadata document to hand somebody before ' +
+                     'they have sent anything.\n\nIt is refused for an ' +
+                     'entityID that is already in the registry — an ' +
+                     'identifier names ONE application here whatever ' +
+                     'protocol brought it, so the answer to "it is already ' +
+                     'there" is to change what it holds rather than to ' +
+                     'create it twice.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
-            sp: { type: 'string', description: 'The service provider\'s entityID.' }
+            sp: { type: 'string', description: 'The service provider\'s ' +
+                                               'entityID.' }
           },
           required: ['sp'],
           examples: [{ sp: 'https://sp.example.com/saml' }],
           additionalProperties: false
         },
-        responseDescription: 'The application entry, and where its metadata is served.' },
+        responseDescription: 'The application entry, and where its metadata ' +
+                             'is served.' },
 
       { action: 'set-logout-service', operationId: 'addSaml2LogoutService',
         summary: 'Declare where this service provider\'s LogoutResponse goes',
         description: 'A `<samlp:LogoutRequest>` CARRIES NO RETURN ADDRESS — ' +
-                     'only SP metadata does, and this service does not consume ' +
-                     'SP metadata. With nothing declared the profile falls ' +
-                     'back to `saml2.defaultSingleLogoutService` and then to ' +
-                     'the assertion consumer service URL that service provider ' +
-                     'last used, WHICH IS A GUESS and is logged as one. This ' +
-                     'is how to remove the guess.\n\nIt writes ' +
-                     '`samlSingleLogoutService` on the application entry, so ' +
-                     'an `ldapmodify` of the same attribute does exactly this ' +
-                     '— two doors onto one value, not two stores.',
+                     'only SP metadata does, and this service does not ' +
+                     'consume SP metadata. With nothing declared the profile ' +
+                     'falls back to `saml2.defaultSingleLogoutService` and ' +
+                     'then to the assertion consumer service URL that ' +
+                     'service provider last used, WHICH IS A GUESS and is ' +
+                     'logged as one. This is how to remove the guess.\n\nIt ' +
+                     'writes `samlSingleLogoutService` on the application ' +
+                     'entry, so an `ldapmodify` of the same attribute does ' +
+                     'exactly this — two doors onto one value, not two stores.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
-            sp: { type: 'string', description: 'The service provider\'s entityID.' },
+            sp: { type: 'string', description: 'The service provider\'s ' +
+                                               'entityID.' },
             value: { type: 'string', description: 'An absolute URL.' }
           },
           required: ['sp', 'value'],
@@ -5469,7 +5557,8 @@ const ROUTES = [
         },
         responseDescription: 'The application entry as it now stands.' },
 
-      { action: 'remove-logout-service', operationId: 'removeSaml2LogoutService',
+      { action: 'remove-logout-service',
+        operationId: 'removeSaml2LogoutService',
         summary: 'Take a logout return address off a service provider',
         description: 'The attribute holds a LIST, so values are removed by ' +
                      'name rather than the list being replaced. Removing the ' +
@@ -5488,27 +5577,29 @@ const ROUTES = [
         },
         responseDescription: 'The application entry as it now stands.' },
 
-      { action: 'set-signing-certificate', operationId: 'setSaml2SigningCertificate',
+      { action: 'set-signing-certificate',
+        operationId: 'setSaml2SigningCertificate',
         summary: 'Record the certificate this service provider signs with',
         description: 'Base64 DER — PEM armour and whitespace are stripped, ' +
                      'because what the attribute holds is what a ' +
                      '`ds:X509Certificate` carries, and a PEM stored there ' +
-                     'would be something no reader of it expects with nothing ' +
-                     'to say so until the day one tried to use it.\n\n**IT IS ' +
-                     'NOT CHECKED AGAINST ANYTHING.** This service records ' +
-                     'whether an AuthnRequest was signed and verifies no ' +
-                     'signature, which is the same posture it takes to every ' +
-                     'credential — see `saml/CLAUDE.md`. This is the material ' +
-                     'a verification would read the day one is wanted, and it ' +
-                     'is public key material, so unlike a client secret it is ' +
-                     'worth nothing to whoever reads this directory. An empty ' +
-                     'value clears it.',
+                     'would be something no reader of it expects with ' +
+                     'nothing to say so until the day one tried to use ' +
+                     'it.\n\n**IT IS NOT CHECKED AGAINST ANYTHING.** This ' +
+                     'service records whether an AuthnRequest was signed and ' +
+                     'verifies no signature, which is the same posture it ' +
+                     'takes to every credential — see `saml/CLAUDE.md`. This ' +
+                     'is the material a verification would read the day one ' +
+                     'is wanted, and it is public key material, so unlike a ' +
+                     'client secret it is worth nothing to whoever reads ' +
+                     'this directory. An empty value clears it.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             sp: { type: 'string' },
-            value: { type: 'string', description: 'Base64 DER, or a PEM to be stripped.' }
+            value: { type: 'string', description: 'Base64 DER, or a PEM to ' +
+                                                  'be stripped.' }
           },
           required: ['sp'],
           examples: [{ sp: 'https://sp.example.com/saml', value: 'MIIC...' }],
@@ -5519,7 +5610,8 @@ const ROUTES = [
 
   { method: 'GET', path: BASE + '/saml11', tag: 'SAML 1.1',
     operationId: 'getSaml11RelyingParties',
-    summary: 'Every SAML 1.1 relying party, and the endpoints each is configured from',
+    summary: 'Every SAML 1.1 relying party, and the endpoints each is ' +
+             'configured from',
     description: 'A full SAML 1.1 identity provider: both browser profiles — ' +
                  'Browser/POST and Browser/Artifact — and the SAML responder ' +
                  'behind the second, which also answers AttributeQuery and ' +
@@ -5528,26 +5620,27 @@ const ROUTES = [
                  '`GET /admin-api/saml2`.** SAML 1.1 has no request message, ' +
                  'so a relying party cannot identify itself in the protocol: ' +
                  '`identifier` comes from Shibboleth\'s `providerId` ' +
-                 'parameter, from a scoped endpoint\'s path segment, or it is ' +
-                 'GUESSED from the origin of the TARGET. It has no Single ' +
+                 'parameter, from a scoped endpoint\'s path segment, or it ' +
+                 'is GUESSED from the origin of the TARGET. It has no Single ' +
                  'Logout, so there is no logout service to declare, and no ' +
-                 'request signature to record. It has an attribute authority, ' +
-                 'which the 2.0 profile does not.\n\n**Every relying party ' +
-                 'gets its own metadata document** and one is minted for any ' +
-                 'identifier asked for, so nothing has to be provisioned ' +
-                 'before a relying party can be pointed at this service.\n\n' +
-                 'This resource holds nothing: every row is an entry in ' +
-                 '`ou=applications`, the same one `GET /admin-api/applications` ' +
-                 'reports — and the KIND is shared with WS-Federation, because ' +
-                 'a relying party handed the same assertion through the ' +
-                 'passive requestor profile is the same application. ' +
-                 '`profiles` says which of the two browser profiles it has ' +
-                 'actually used, and an empty list means it has only ever been ' +
-                 'handed a 1.1 assertion through another door.\n\n' +
-                 '`?rp=<identifier>` returns one of them, with what has been ' +
-                 'recorded about it — and answers 200 with `found: false` for ' +
-                 'an identifier that is not registered, whose metadata is ' +
-                 'still served and whose flow would still be answered.',
+                 'request signature to record. It has an attribute ' +
+                 'authority, which the 2.0 profile does not.\n\n**Every ' +
+                 'relying party gets its own metadata document** and one is ' +
+                 'minted for any identifier asked for, so nothing has to be ' +
+                 'provisioned before a relying party can be pointed at this ' +
+                 'service.\n\nThis resource holds nothing: every row is an ' +
+                 'entry in `ou=applications`, the same one `GET ' +
+                 '/admin-api/applications` reports — and the KIND is shared ' +
+                 'with WS-Federation, because a relying party handed the ' +
+                 'same assertion through the passive requestor profile is ' +
+                 'the same application. `profiles` says which of the two ' +
+                 'browser profiles it has actually used, and an empty list ' +
+                 'means it has only ever been handed a 1.1 assertion through ' +
+                 'another door.\n\n`?rp=<identifier>` returns one of them, ' +
+                 'with what has been recorded about it — and answers 200 ' +
+                 'with `found: false` for an identifier that is not ' +
+                 'registered, whose metadata is still served and whose flow ' +
+                 'would still be answered.',
     mirrors: 'GET /admin/saml11',
     parameters: [
       { name: 'rp', in: 'query', required: false,
@@ -5555,7 +5648,8 @@ const ROUTES = [
         description: 'One relying party, by its identifier.' }
     ].concat(pagingParameters()),
     responseDescription: 'The relying parties with the paging that found ' +
-                         'them, or one of them with its endpoints and its record.',
+                         'them, or one of them with its endpoints and its ' +
+                         'record.',
     responseSchema: { $ref: '#/components/schemas/Saml11RelyingPartyList' },
     handler: function (req, res) {
       log.debug("Entering the management API SAML 1.1 endpoint.");
@@ -5579,54 +5673,59 @@ const ROUTES = [
     actions: [
       { action: 'register', operationId: 'registerSaml11RelyingParty',
         summary: 'Register a relying party by identifier',
-        description: 'OPTIONAL, and it changes nothing about whether a flow is ' +
-                     'accepted: this identity provider accepts any identifier, ' +
-                     'and the first flow or metadata fetch creates the entry ' +
-                     'anyway.\n\nIt buys two things here rather than the one ' +
-                     'it buys on the SAML 2.0 side. A metadata document to ' +
-                     'hand somebody before they have sent anything — and **a ' +
-                     'NAME to put in `providerId`**, which matters more in ' +
-                     'this protocol than in any other here: with no name sent, ' +
-                     'the audience of the assertion is guessed from the origin ' +
-                     'of the TARGET, and a relying party expecting a different ' +
-                     'audience refuses the assertion inside a signature check ' +
-                     'with nothing saying why.\n\nIt is refused for an ' +
-                     'identifier already in the registry — an identifier names ' +
-                     'ONE application here whatever protocol brought it, and a ' +
-                     'WS-Federation relying party taking 1.1 assertions is ' +
-                     'already one of these.',
+        description: 'OPTIONAL, and it changes nothing about whether a flow ' +
+                     'is accepted: this identity provider accepts any ' +
+                     'identifier, and the first flow or metadata fetch ' +
+                     'creates the entry anyway.\n\nIt buys two things here ' +
+                     'rather than the one it buys on the SAML 2.0 side. A ' +
+                     'metadata document to hand somebody before they have ' +
+                     'sent anything — and **a NAME to put in `providerId`**, ' +
+                     'which matters more in this protocol than in any other ' +
+                     'here: with no name sent, the audience of the assertion ' +
+                     'is guessed from the origin of the TARGET, and a ' +
+                     'relying party expecting a different audience refuses ' +
+                     'the assertion inside a signature check with nothing ' +
+                     'saying why.\n\nIt is refused for an identifier already ' +
+                     'in the registry — an identifier names ONE application ' +
+                     'here whatever protocol brought it, and a WS-Federation ' +
+                     'relying party taking 1.1 assertions is already one of ' +
+                     'these.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
-            rp: { type: 'string', description: 'The relying party\'s identifier.' }
+            rp: { type: 'string', description: 'The relying party\'s ' +
+                                               'identifier.' }
           },
           required: ['rp'],
           examples: [{ rp: 'urn:example:app' }],
           additionalProperties: false
         },
-        responseDescription: 'The application entry, and where its metadata is served.' }
+        responseDescription: 'The application entry, and where its metadata ' +
+                             'is served.' }
     ] },
 
-  { method: 'GET', path: BASE + '/authorization-servers', tag: 'Authorization servers',
+  { method: 'GET', path: BASE + '/authorization-servers',
+    tag: 'Authorization ' +
+      'servers',
     operationId: 'getAuthorizationServers',
     summary: 'Every authorization server profile, and what its document says',
     description: 'One process, several authorization servers. The path ' +
-                 'component the two discovery shapes already carry — RFC 8414 ' +
-                 'section 3.1 INSERTS it after the well-known segment, OpenID ' +
-                 'Connect Discovery section 4 APPENDS the well-known segment ' +
-                 'to it — now selects a CONFIGURATION as well as an issuer ' +
-                 'identifier.\n\n**A path nobody has configured publishes the ' +
-                 'document this service always published**, so nothing that ' +
-                 'worked before behaves differently.\n\nEvery reply carries ' +
-                 '`drift`: the members whose published value disagrees with ' +
-                 'what this service would publish, and the removals that hide ' +
-                 'something real. A profile that lies is often exactly what is ' +
-                 'wanted — it is how you find out whether a client reads the ' +
-                 'metadata — but a mock that let somebody publish a misleading ' +
-                 'document QUIETLY would be a trap.\n\n`?profile=<id>` returns ' +
-                 'one of them with every override, every removal and its ' +
-                 'drift.',
+                 'component the two discovery shapes already carry — RFC ' +
+                 '8414 section 3.1 INSERTS it after the well-known segment, ' +
+                 'OpenID Connect Discovery section 4 APPENDS the well-known ' +
+                 'segment to it — now selects a CONFIGURATION as well as an ' +
+                 'issuer identifier.\n\n**A path nobody has configured ' +
+                 'publishes the document this service always published**, so ' +
+                 'nothing that worked before behaves differently.\n\nEvery ' +
+                 'reply carries `drift`: the members whose published value ' +
+                 'disagrees with what this service would publish, and the ' +
+                 'removals that hide something real. A profile that lies is ' +
+                 'often exactly what is wanted — it is how you find out ' +
+                 'whether a client reads the metadata — but a mock that let ' +
+                 'somebody publish a misleading document QUIETLY would be a ' +
+                 'trap.\n\n`?profile=<id>` returns one of them with every ' +
+                 'override, every removal and its drift.',
     mirrors: 'GET /admin/authorization-servers',
     parameters: [
       { name: 'profile', in: 'query', required: false,
@@ -5636,8 +5735,8 @@ const ROUTES = [
                      'configured — whose discovery URLs still answer, with ' +
                      'this service\'s own document.' }
     ].concat(pagingParameters()),
-    responseDescription: 'The profiles with the paging that found them, or one ' +
-                         'profile with its overrides and drift.',
+    responseDescription: 'The profiles with the paging that found them, or ' +
+                         'one profile with its overrides and drift.',
     responseSchema: { $ref: '#/components/schemas/AuthorizationServerList' },
     handler: function (req, res) {
       log.debug("Entering the management API authorization servers endpoint.");
@@ -5649,66 +5748,75 @@ const ROUTES = [
     tag: 'Authorization servers',
     mirrors: 'POST /admin/authorization-servers',
     handler: function (req, res) {
-      log.debug("Entering the management API authorization servers action endpoint.");
+      log.debug("Entering the management API authorization servers action " +
+                "endpoint.");
       const body = parseBody(req);
       const result = adminActions.asAction(withAction(req, body));
       if (!result.ok) {
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0049');
       }
       sendJson(res, result.ok ? 200 : 400, result);
-      log.debug("Leaving the management API authorization servers action endpoint.");
+      log.debug("Leaving the management API authorization servers action " +
+                "endpoint.");
     },
     actions: [
       { action: 'create', operationId: 'createAuthorizationServer',
         summary: 'Add an authorization server profile',
-        description: 'The `id` is a single URL path segment, because it has to ' +
-                     'appear in a discovery URL without being escaped — one ' +
-                     'that had to be escaped would be one nobody could find ' +
-                     'again. A new profile has no overrides, so both its ' +
-                     'documents say exactly what this service says about ' +
+        description: 'The `id` is a single URL path segment, because it has ' +
+                     'to appear in a discovery URL without being escaped — ' +
+                     'one that had to be escaped would be one nobody could ' +
+                     'find again. A new profile has no overrides, so both ' +
+                     'its documents say exactly what this service says about ' +
                      'itself, which is the right place to start from.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             id: { type: 'string',
-                  description: '1-64 characters of letters, digits, dot, dash, ' +
-                               'underscore or tilde, starting with a letter or ' +
-                               'a digit.' },
+                  description: '1-64 characters of letters, digits, dot, ' +
+                               'dash, underscore or tilde, starting with a ' +
+                               'letter or a digit.' },
             label: { type: 'string', description: 'Optional display name.' },
             description: { type: 'string', description: 'Optional note.' }
           },
           required: ['id'],
           examples: [{ id: 'tenant1', label: 'Tenant One',
-                       description: 'advertises plain PKCE, to see what a client does' }],
+                       description: 'advertises plain PKCE, to see what a ' +
+                                    'client does' }],
           additionalProperties: false
         },
-        responseDescription: 'The profile and the two URLs it is published at.' },
+        responseDescription:
+          'The profile and the two URLs it is published at.' },
 
       { action: 'set', operationId: 'setAuthorizationServerMember',
         summary: 'Publish a metadata member with a chosen value',
-        description: 'The value is read as JSON first and as a plain string if ' +
-                     'that fails, so `["S256"]` is a list, `false` is a boolean ' +
-                     'and `https://example.com/token` is a string.\n\n**Any ' +
-                     'member name is accepted**, including one this service has ' +
-                     'never heard of; the catalogue in the GET reply is help ' +
-                     'for whoever fills the form rather than a constraint. A ' +
-                     'member that is also removed stops being removed, or the ' +
-                     'call would appear to do nothing.\n\nWhat this does NOT ' +
-                     'change is what the endpoints do. Advertise ' +
+        description: 'The value is read as JSON first and as a plain string ' +
+                     'if that fails, so `["S256"]` is a list, `false` is a ' +
+                     'boolean and `https://example.com/token` is a ' +
+                     'string.\n\n**Any member name is accepted**, including ' +
+                     'one this service has never heard of; the catalogue in ' +
+                     'the GET reply is help for whoever fills the form ' +
+                     'rather than a constraint. A member that is also ' +
+                     'removed stops being removed, or the call would appear ' +
+                     'to do nothing.\n\nWhat this does NOT change is what ' +
+                     'the endpoints do. Advertise ' +
                      '`code_challenge_methods_supported: ["plain"]` and the ' +
-                     'token endpoint still verifies S256 — which is the point, ' +
-                     'and is reported as drift rather than left to be ' +
+                     'token endpoint still verifies S256 — which is the ' +
+                     'point, and is reported as drift rather than left to be ' +
                      'discovered.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             profile: { type: 'string', description: 'The profile id.' },
-            member: { type: 'string', description: 'Any metadata member name.' },
-            value: { description: 'JSON if it parses as JSON, otherwise the string.' },
+            member: { type: 'string',
+                      description: 'Any metadata member name.' },
+            value: { description: 'JSON if it parses as JSON, otherwise the ' +
+                                  'string.' },
             id: { type: 'string',
-                description: 'An alias for `profile`; `asAction()` reads `body.profile || body.id`, so both spellings have always worked and only one was published.' }
+                description: 'An alias for `profile`; `asAction()` reads ' +
+                             '`body.profile || body.id`, so both spellings ' +
+                             'have always worked and only one was published.' }
           },
           required: ['member'],
           anyOf: [{ required: ['profile'] }, { required: ['id'] }],
@@ -5721,9 +5829,9 @@ const ROUTES = [
 
       { action: 'remove', operationId: 'removeAuthorizationServerMember',
         summary: 'Stop publishing a member at all',
-        description: 'DIFFERENT FROM `reset`, and the difference is the reason ' +
-                     'both exist: reset undoes an override and this publishes ' +
-                     'an ABSENCE. A client that cannot find ' +
+        description: 'DIFFERENT FROM `reset`, and the difference is the ' +
+                     'reason both exist: reset undoes an override and this ' +
+                     'publishes an ABSENCE. A client that cannot find ' +
                      '`code_challenge_methods_supported` does not learn that ' +
                      'PKCE is unavailable — it learns nothing, and RFC 9700 ' +
                      'section 2.6 is entirely about that difference.',
@@ -5734,7 +5842,9 @@ const ROUTES = [
             profile: { type: 'string' },
             member: { type: 'string' },
             id: { type: 'string',
-                description: 'An alias for `profile`; `asAction()` reads `body.profile || body.id`, so both spellings have always worked and only one was published.' }
+                description: 'An alias for `profile`; `asAction()` reads ' +
+                             '`body.profile || body.id`, so both spellings ' +
+                             'have always worked and only one was published.' }
           },
           required: ['member'],
           anyOf: [{ required: ['profile'] }, { required: ['id'] }],
@@ -5755,7 +5865,9 @@ const ROUTES = [
             profile: { type: 'string' },
             member: { type: 'string' },
             id: { type: 'string',
-                description: 'An alias for `profile`; `asAction()` reads `body.profile || body.id`, so both spellings have always worked and only one was published.' }
+                description: 'An alias for `profile`; `asAction()` reads ' +
+                             '`body.profile || body.id`, so both spellings ' +
+                             'have always worked and only one was published.' }
           },
           required: ['member'],
           anyOf: [{ required: ['profile'] }, { required: ['id'] }],
@@ -5768,8 +5880,8 @@ const ROUTES = [
         summary: 'Delete a profile',
         description: 'The two discovery URLs go on answering — with this ' +
                      'service\'s own document and the issuer taken from the ' +
-                     'path — because an unconfigured path component has always ' +
-                     'been served that way rather than 404\'d.',
+                     'path — because an unconfigured path component has ' +
+                     'always been served that way rather than 404\'d.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -5778,7 +5890,8 @@ const ROUTES = [
             id: { type: 'string',
                   description: 'An alias for `profile`; `asAction()` reads ' +
                                '`body.profile || body.id`, so both spellings ' +
-                               'have always worked and only one was published.' }
+                               'have always worked and only one was ' +
+                               'published.' }
           },
           anyOf: [{ required: ['profile'] }, { required: ['id'] }],
           examples: [{ profile: 'tenant1' }],
@@ -5792,54 +5905,55 @@ const ROUTES = [
   // The write half is NOT a third store beside the protocol endpoints and LDAP:
   // every action below calls a function in applications.js which does the same
   // read-modify-write against the same ou=applications entries, so a form post
-  // and an ldapmodify are one act arriving by two routes. That is what keeps the
-  // one-store rule intact with three ways in.
+  // and an ldapmodify are one act arriving by two routes. That is what keeps
+  // the one-store rule intact with three ways in.
   //
   // What may be changed is DECLARED and not DERIVED — configuration, which is
-  // what RFC 9700 mode reads, but never the counters or the sightings, which are
-  // what happened. The line is drawn by applications.js's EDITABLE table, so
-  // this file offers no opinion about it and the console's selects are built
+  // what RFC 9700 mode reads, but never the counters or the sightings, which
+  // are what happened. The line is drawn by applications.js's EDITABLE table,
+  // so this file offers no opinion about it and the console's selects are built
   // from the same rows these actions validate against.
   { method: 'GET', path: BASE + '/applications', tag: 'Applications',
     operationId: 'getApplications',
-    summary: 'Every application this service has been asked about, filtered and paged',
+    summary: 'Every application this service has been asked about, filtered ' +
+             'and paged',
     description: 'The other side of /admin-api/users. That resource lists ' +
-                 'every identity that has authenticated here; this lists what ' +
-                 'they authenticated TO — every OAuth client, OpenID Connect ' +
-                 'relying party, SAML 2.0 or 1.1 service provider, ' +
+                 'every identity that has authenticated here; this lists ' +
+                 'what they authenticated TO — every OAuth client, OpenID ' +
+                 'Connect relying party, SAML 2.0 or 1.1 service provider, ' +
                  'WS-Federation application, WS-Trust relying party, ' +
                  'OpenID4VP verifier and Kerberos service.\n\n**The entries ' +
-                 'ARE the registry.** They live under `ou=applications` in the ' +
-                 'embedded LDAP directory and nothing caches them, so an ' +
-                 '`ldapmodify` is visible here on the next call — and changes ' +
-                 'what RFC 9700 mode enforces at the same moment. The RFC 7591 ' +
-                 'client registrations are those entries too.\n\n**One entry ' +
-                 'per identifier, whatever protocol brought it.** The key is ' +
-                 'the identifier exactly as it arrived, so an application ' +
-                 'appearing under one name in two protocols is one row with ' +
-                 'two `kinds` rather than two rows.\n\n`?application=<id>` ' +
-                 'returns ONE of them with every attribute of its directory ' +
-                 'entry and what the published schema says each attribute is; ' +
-                 'that reply pages its attribute list under `attributesPage` ' +
-                 'rather than `page`, which is the convention for a reply ' +
-                 'holding a list that is not the top-level one.\n\n**Two ' +
-                 'attributes hold credentials in the clear** — ' +
-                 '`oauthClientSecret` and `appRegistrationAccessToken` — for ' +
-                 'the reason GET /krb5/principals prints the Kerberos ' +
-                 'passwords. In RFC 9700 mode that secret is CHECKED, so ' +
-                 'anyone who can reach this endpoint can authenticate as that ' +
-                 'client.',
+                 'ARE the registry.** They live under `ou=applications` in ' +
+                 'the embedded LDAP directory and nothing caches them, so an ' +
+                 '`ldapmodify` is visible here on the next call — and ' +
+                 'changes what RFC 9700 mode enforces at the same moment. ' +
+                 'The RFC 7591 client registrations are those entries ' +
+                 'too.\n\n**One entry per identifier, whatever protocol ' +
+                 'brought it.** The key is the identifier exactly as it ' +
+                 'arrived, so an application appearing under one name in two ' +
+                 'protocols is one row with two `kinds` rather than two ' +
+                 'rows.\n\n`?application=<id>` returns ONE of them with ' +
+                 'every attribute of its directory entry and what the ' +
+                 'published schema says each attribute is; that reply pages ' +
+                 'its attribute list under `attributesPage` rather than ' +
+                 '`page`, which is the convention for a reply holding a list ' +
+                 'that is not the top-level one.\n\n**Two attributes hold ' +
+                 'credentials in the clear** — `oauthClientSecret` and ' +
+                 '`appRegistrationAccessToken` — for the reason GET ' +
+                 '/krb5/principals prints the Kerberos passwords. In RFC ' +
+                 '9700 mode that secret is CHECKED, so anyone who can reach ' +
+                 'this endpoint can authenticate as that client.',
     mirrors: 'GET /admin/applications',
     parameters: [
       { name: 'application', in: 'query', required: false,
         schema: { type: 'string' },
         description: 'One application, by its identifier exactly — the ' +
                      'client_id, wtrealm, AppliesTo, entityID or service ' +
-                     'principal name. Answers 200 with `found: false` for one ' +
-                     'this service has never accepted, which is a different ' +
-                     'fact from one it has refused: an entry appears when an ' +
-                     'identifier is ACCEPTED, so a client whose every request ' +
-                     'was turned away has none.' },
+                     'principal name. Answers 200 with `found: false` for ' +
+                     'one this service has never accepted, which is a ' +
+                     'different fact from one it has refused: an entry ' +
+                     'appears when an identifier is ACCEPTED, so a client ' +
+                     'whose every request was turned away has none.' },
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
         description: 'Substring of the identifier or the name, ' +
                      'case-insensitive. Ignored when `application` is given.' },
@@ -5888,33 +6002,36 @@ const ROUTES = [
   // trying to prevent rather than an instance of it.
   { method: 'GET', path: BASE + '/applications/new', tag: 'Applications',
     operationId: 'getNewApplicationForm',
-    summary: 'The vocabulary a new application may be created with, and where it would land',
-    description: 'The eight KINDS and the fourteen PROTOCOL FAMILIES a create ' +
-                 'takes, each with what it means, the FIELDS the console\'s form ' +
-                 'is drawn from (`declarations` — the per-protocol identifiers ' +
-                 'and the redirect URIs, deduped by attribute and each naming ' +
-                 'the families it serves), plus the container DN a new ' +
-                 'entry would be created under and how many that container will ' +
-                 'hold.\n\n**It creates nothing** — the create is `POST ' +
-                 '/admin-api/applications/create`. This is the list that call ' +
-                 'validates against, published so that a caller learns what it ' +
-                 'may send from the service rather than from a copy of the list ' +
-                 'in a document.\n\n**The container is THIS REALM\'S.** The ' +
-                 'embedded directory is per trust realm, so `/realm/acme/' +
-                 'admin-api/applications/new` answers with acme\'s ' +
-                 '`ou=applications` and an application created there is ' +
-                 'invisible to every other realm — including in an `ldapsearch`, ' +
-                 'which reaches it only under that realm\'s base DN.\n\n' +
-                 '**Declaring a protocol family grants and refuses nothing.** No ' +
-                 'endpoint in this service reads `appAllowedProtocol`: an ' +
-                 'application declared for SAML 2.0 alone is still issued an ' +
-                 'access token. It is a record of intent on the entry, and it is ' +
-                 'deliberately not a permission — a mock that refused a protocol ' +
-                 'would remove a test case rather than add one. The ' +
-                 'configuration that DOES take effect is in `editable`.',
+    summary: 'The vocabulary a new application may be created with, and ' +
+             'where it would land',
+    description: 'The eight KINDS and the fourteen PROTOCOL FAMILIES a ' +
+                 'create takes, each with what it means, the FIELDS the ' +
+                 'console\'s form is drawn from (`declarations` — the ' +
+                 'per-protocol identifiers and the redirect URIs, deduped by ' +
+                 'attribute and each naming the families it serves), plus ' +
+                 'the container DN a new entry would be created under and ' +
+                 'how many that container will hold.\n\n**It creates ' +
+                 'nothing** — the create is `POST ' +
+                 '/admin-api/applications/create`. This is the list that ' +
+                 'call validates against, published so that a caller learns ' +
+                 'what it may send from the service rather than from a copy ' +
+                 'of the list in a document.\n\n**The container is THIS ' +
+                 'REALM\'S.** The embedded directory is per trust realm, so ' +
+                 '`/realm/acme/admin-api/applications/new` answers with ' +
+                 'acme\'s `ou=applications` and an application created there ' +
+                 'is invisible to every other realm — including in an ' +
+                 '`ldapsearch`, which reaches it only under that realm\'s ' +
+                 'base DN.\n\n**Declaring a protocol family grants and ' +
+                 'refuses nothing.** No endpoint in this service reads ' +
+                 '`appAllowedProtocol`: an application declared for SAML 2.0 ' +
+                 'alone is still issued an access token. It is a record of ' +
+                 'intent on the entry, and it is deliberately not a ' +
+                 'permission — a mock that refused a protocol would remove a ' +
+                 'test case rather than add one. The configuration that DOES ' +
+                 'take effect is in `editable`.',
     mirrors: 'GET /admin/applications/new',
-    responseDescription: 'The two vocabularies, the fields a create may carry, ' +
-                         'the container and the realm.',
+    responseDescription: 'The two vocabularies, the fields a create may ' +
+                         'carry, the container and the realm.',
     responseSchema: { $ref: '#/components/schemas/NewApplicationForm' },
     handler: function (req, res) {
       log.debug("Entering the management API new-application endpoint.");
@@ -5939,7 +6056,8 @@ const ROUTES = [
       // Ignored by every action but `create`, which is where the vocabulary is
       // validated.
       const protocols = namesOf(req, body, 'protocol', 'protocols');
-      const result = adminActions.applicationsAction(withAction(req, body), protocols);
+      const result = adminActions.applicationsAction(withAction(req, body),
+                                                     protocols);
       // `refresh-metadata` is asynchronous — it dials the service provider's
       // metadata URL — and every other action is not. See that action's comment
       // in admin.js for why one promise is cheaper than forty awaits.
@@ -5949,8 +6067,10 @@ const ROUTES = [
             errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-API-0050');
           }
           sendJson(res, answer.ok ? 200 : 400, answer);
-          log.debug("Leaving the management API applications action endpoint. Fetched.");
+          log.debug("Leaving the management API applications action " +
+                    "endpoint. Fetched.");
         });
+        log.debug("Leaving handler().");
         return;
       }
       if (!result.ok) {
@@ -5963,11 +6083,11 @@ const ROUTES = [
       { action: 'create', operationId: 'createApplication',
         summary: 'Put an application in the registry before it connects',
         description: 'An entry usually appears because an identifier was ' +
-                     'ACCEPTED — a client_id at the token endpoint, a wtrealm ' +
-                     'on a sign-in response, an SPN on a TGS-REP. This is how ' +
-                     'to get one in ahead of that, which is what RFC 9700 mode ' +
-                     'needs if a client is to be judged against its OWN ' +
-                     'redirect URIs rather than against the ' +
+                     'ACCEPTED — a client_id at the token endpoint, a ' +
+                     'wtrealm on a sign-in response, an SPN on a TGS-REP. ' +
+                     'This is how to get one in ahead of that, which is what ' +
+                     'RFC 9700 mode needs if a client is to be judged ' +
+                     'against its OWN redirect URIs rather than against the ' +
                      '`oauth2.redirectUris` setting.\n\nIt is created with ' +
                      'zero counters and a description saying it was created ' +
                      'by hand, so it cannot be mistaken for an application ' +
@@ -5991,80 +6111,89 @@ const ROUTES = [
                                  'refused rather than recorded.\n\n**No ' +
                                  'console form offers this any more** and it ' +
                                  'is still taken here. It was a select on ' +
-                                 '/admin/applications/new beside the protocol ' +
-                                 'families, which is two vocabularies for one ' +
-                                 'question — eight kinds against fourteen ' +
-                                 'families, five of them with no kind at all — ' +
-                                 'and it is DERIVED rather than declared: a ' +
-                                 'kind is written when a protocol actually ' +
+                                 '/admin/applications/new beside the ' +
+                                 'protocol families, which is two ' +
+                                 'vocabularies for one question — eight ' +
+                                 'kinds against fourteen families, five of ' +
+                                 'them with no kind at all — and it is ' +
+                                 'DERIVED rather than declared: a kind is ' +
+                                 'written when a protocol actually ' +
                                  'recognises the identifier, so a form ' +
                                  'choosing one asserted a sighting that had ' +
                                  'not happened. Prefer `protocols`.' },
             protocols: {
-              type: 'array', items: { type: 'string', enum: applications.PROTOCOL_IDS },
-              description: 'THE PROTOCOL FAMILIES THIS APPLICATION IS DECLARED ' +
-                           'FOR, as ids from the closed vocabulary GET ' +
-                           '/admin-api/applications/new publishes. They land on ' +
-                           '`appAllowedProtocol`, and one that is not in that ' +
-                           'list is REFUSED rather than recorded — a typo that ' +
-                           'silently became a new family is how one application ' +
-                           'comes to be declared for two spellings of one ' +
-                           'thing.\n\n**IT GRANTS AND REFUSES NOTHING.** ' +
-                           'Nothing in this service reads the attribute: an ' +
-                           'application declared for `saml2` alone is still ' +
-                           'issued an access token at /oauth2/token, and one ' +
-                           'declared for nothing is treated exactly as it would ' +
-                           'have been. It is a record of INTENT, kept apart from ' +
-                           '`appProtocol` — which is what has actually happened ' +
-                           'and is not editable — so the two lists on an entry ' +
-                           'can be read against each other.\n\nA ' +
-                           'form-encoded body may repeat `protocol` instead, ' +
-                           'which is how the console\'s checkbox column posts ' +
-                           'it, and a single string may carry several separated ' +
-                           'by spaces or commas.' },
+              type: 'array',
+              items: { type: 'string', enum: applications.PROTOCOL_IDS },
+              description: 'THE PROTOCOL FAMILIES THIS APPLICATION IS ' +
+                           'DECLARED FOR, as ids from the closed vocabulary ' +
+                           'GET /admin-api/applications/new publishes. They ' +
+                           'land on `appAllowedProtocol`, and one that is ' +
+                           'not in that list is REFUSED rather than recorded ' +
+                           '— a typo that silently became a new family is ' +
+                           'how one application comes to be declared for two ' +
+                           'spellings of one thing.\n\n**IT GRANTS AND ' +
+                           'REFUSES NOTHING.** Nothing in this service reads ' +
+                           'the attribute: an application declared for ' +
+                           '`saml2` alone is still issued an access token at ' +
+                           '/oauth2/token, and one declared for nothing is ' +
+                           'treated exactly as it would have been. It is a ' +
+                           'record of INTENT, kept apart from `appProtocol` ' +
+                           '— which is what has actually happened and is not ' +
+                           'editable — so the two lists on an entry can be ' +
+                           'read against each other.\n\nA form-encoded body ' +
+                           'may repeat `protocol` instead, which is how the ' +
+                           'console\'s checkbox column posts it, and a ' +
+                           'single string may carry several separated by ' +
+                           'spaces or commas.' },
             fields: {
               type: 'object', additionalProperties: true,
-              description: 'THE ATTRIBUTES THE ENTRY IS CREATED WITH, keyed by ' +
-                           'the schema\'s own attribute name and valued with a ' +
-                           'string or an array of strings. This is where the ' +
-                           'per-protocol identifiers and the redirect URIs go — ' +
-                           '`oauthClientId`, `samlEntityId`, `wsfedRealm`, ' +
+              description: 'THE ATTRIBUTES THE ENTRY IS CREATED WITH, keyed ' +
+                           'by the schema\'s own attribute name and valued ' +
+                           'with a string or an array of strings. This is ' +
+                           'where the per-protocol identifiers and the ' +
+                           'redirect URIs go — `oauthClientId`, ' +
+                           '`samlEntityId`, `wsfedRealm`, ' +
                            '`krb5ServicePrincipalName`, `oauthRedirectUri`, ' +
-                           '`samlAssertionConsumerService`, `wsfedReplyUrl` and ' +
-                           'the rest.\n\nGET /admin-api/applications/new ' +
+                           '`samlAssertionConsumerService`, `wsfedReplyUrl` ' +
+                           'and the rest.\n\nGET /admin-api/applications/new ' +
                            'publishes the list as `declarations`, with the ' +
-                           'families each attribute serves and whether it holds ' +
-                           'a list; it is the same walk of the protocol table ' +
-                           'the console\'s form is drawn from, so this document ' +
-                           'and that page cannot offer different fields. GET ' +
-                           '/admin/ldap/applications publishes every attribute in the ' +
-                           'schema with an `editable` member.\n\n**Only ' +
-                           'DECLARED attributes may be given.** A derived one — ' +
-                           'a counter, a sighting, `appProtocol`, ' +
-                           '`appRedirectUriObserved` — is REFUSED by name rather ' +
-                           'than written, because an entry created with one ' +
-                           'would be asserting a past it does not have. A ' +
-                           'single-valued attribute given several values is ' +
-                           'refused as well, rather than truncated to the first: ' +
-                           'the only one you are likely to meet is ' +
+                           'families each attribute serves and whether it ' +
+                           'holds a list; it is the same walk of the ' +
+                           'protocol table the console\'s form is drawn ' +
+                           'from, so this document and that page cannot ' +
+                           'offer different fields. GET ' +
+                           '/admin/ldap/applications publishes every ' +
+                           'attribute in the schema with an `editable` ' +
+                           'member.\n\n**Only DECLARED attributes may be ' +
+                           'given.** A derived one — a counter, a sighting, ' +
+                           '`appProtocol`, `appRedirectUriObserved` — is ' +
+                           'REFUSED by name rather than written, because an ' +
+                           'entry created with one would be asserting a past ' +
+                           'it does not have. A single-valued attribute ' +
+                           'given several values is refused as well, rather ' +
+                           'than truncated to the first: the only one you ' +
+                           'are likely to meet is ' +
                            '`oauthTlsClientAuthSubjectDn`, which an RFC 8705 ' +
-                           'check compares by exact string equality, and quietly ' +
-                           'keeping one of two is exactly the wrong answer ' +
-                           'there.\n\n**Nothing given here is CHECKED except ' +
-                           'the OAuth redirect URIs, and those only in RFC 9700 ' +
-                           'mode.** The rest are recorded, in the way being in ' +
-                           'this registry at all is a record.\n\n' +
+                           'check compares by exact string equality, and ' +
+                           'quietly keeping one of two is exactly the wrong ' +
+                           'answer there.\n\n**Nothing given here is CHECKED ' +
+                           'except the OAuth redirect URIs, and those only ' +
+                           'in RFC 9700 mode.** The rest are recorded, in ' +
+                           'the way being in this registry at all is a ' +
+                           'record.\n\n' +
                            familyScopeNote() }
           },
           required: ['identifier'],
           examples: [{ identifier: 'urn:example:crm', name: 'CRM',
                        protocols: ['wsfed', 'saml11'],
                        fields: { wsfedRealm: 'urn:example:crm',
-                                 wsfedReplyUrl: ['https://crm.example.com/wsfed'],
+                                 wsfedReplyUrl: [
+                                   'https://crm.example.com/wsfed'],
                                  samlEntityId: 'urn:example:crm' } }],
           additionalProperties: false
         },
-        responseDescription: 'The application as it now stands, in `application`.' },
+        responseDescription: 'The application as it now stands, in ' +
+                             '`application`.' },
 
       { action: 'set', operationId: 'setApplicationAttribute',
         summary: 'Set a single-valued attribute',
@@ -6078,20 +6207,20 @@ const ROUTES = [
         description: 'For the attributes that hold ONE value — ' +
                      applications.editableAttributes('set').map(function (row) {
                        return '`' + row.name + '`';
-                     }).join(', ') + '. ' +
-                     'An empty `value` CLEARS the attribute.\n\n**What may be ' +
-                     'changed is DECLARED and not DERIVED.** Configuration — ' +
-                     'what this application is allowed to do, which is what ' +
-                     'RFC 9700 mode reads — is editable. The counters, the ' +
-                     'sightings, the kinds and the protocols are what ' +
-                     'HAPPENED, and are refused with a list of what is not: a ' +
-                     'call that could rewrite them would make this registry ' +
-                     'lie about the service\'s own behaviour, in a way ' +
-                     'indistinguishable from the recording being broken. ' +
-                     '`ldapmodify` still reaches every attribute, which is a ' +
-                     'deliberate difference — refusing them HERE is the ' +
-                     'difference between offering an operation and merely not ' +
-                     'preventing it.\n\n' + familyScopeNote() +
+                     }).join(', ') + '. An empty `value` CLEARS the ' +
+                     'attribute.\n\n**What may be changed is DECLARED and ' +
+                     'not DERIVED.** Configuration — what this application ' +
+                     'is allowed to do, which is what RFC 9700 mode reads — ' +
+                     'is editable. The counters, the sightings, the kinds ' +
+                     'and the protocols are what HAPPENED, and are refused ' +
+                     'with a list of what is not: a call that could rewrite ' +
+                     'them would make this registry lie about the service\'s ' +
+                     'own behaviour, in a way indistinguishable from the ' +
+                     'recording being broken. `ldapmodify` still reaches ' +
+                     'every attribute, which is a deliberate difference — ' +
+                     'refusing them HERE is the difference between offering ' +
+                     'an operation and merely not preventing ' +
+                     'it.\n\n' + familyScopeNote() +
                      'This writes the same entry LDAP ' +
                      'writes, through the same functions, so it takes effect ' +
                      'on the very next authorization request.',
@@ -6104,9 +6233,10 @@ const ROUTES = [
                                         'registry holds it.' },
             attribute: { type: 'string',
                          description: 'One of the editable single-valued ' +
-                                      'attributes. GET /admin/ldap/applications ' +
-                                      'publishes the schema with an ' +
-                                      '`editable` member on every row.' },
+                                      'attributes. GET ' +
+                                      '/admin/ldap/applications publishes ' +
+                                      'the schema with an `editable` member ' +
+                                      'on every row.' },
             value: { type: 'string',
                      description: 'The new value; empty clears the attribute.' }
           },
@@ -6116,24 +6246,26 @@ const ROUTES = [
                        value: 'none' }],
           additionalProperties: false
         },
-        responseDescription: 'The application as it now stands, with `changed` ' +
-                             'saying whether anything actually differed.' },
+        responseDescription: 'The application as it now stands, with ' +
+                             '`changed` saying whether anything actually ' +
+                             'differed.' },
 
       { action: 'add', operationId: 'addApplicationValue',
         summary: 'Add a value to a multi-valued attribute',
         // Read off the schema, for the reason `set` above gives.
         description: 'For the attributes that hold a LIST — ' +
-                     applications.editableAttributes('multi').map(function (row) {
+                     applications.editableAttributes('multi')
+                                 .map(function (row) {
                        return '`' + row.name + '`';
-                     }).join(', ') + '.\n\nThis ' +
-                     'is the one that matters most: a value added to ' +
-                     '`oauthRedirectUri` is a redirect URI RFC 9700 mode ' +
-                     'accepts by exact string match on the next authorization ' +
-                     'request. Note that it is the REGISTERED list — ' +
-                     '`appRedirectUriObserved`, which records what a client ' +
-                     'actually used, is not editable, because "registered" and ' +
-                     '"used" are different facts and section 2.1 is entirely ' +
-                     'about not confusing them.',
+                     }).join(', ') + '.\n\nThis is the one that matters ' +
+                     'most: a value added to `oauthRedirectUri` is a ' +
+                     'redirect URI RFC 9700 mode accepts by exact string ' +
+                     'match on the next authorization request. Note that it ' +
+                     'is the REGISTERED list — `appRedirectUriObserved`, ' +
+                     'which records what a client actually used, is not ' +
+                     'editable, because "registered" and "used" are ' +
+                     'different facts and section 2.1 is entirely about not ' +
+                     'confusing them.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -6151,10 +6283,11 @@ const ROUTES = [
 
       { action: 'remove', operationId: 'removeApplicationValue',
         summary: 'Remove a value from a multi-valued attribute',
-        description: 'The inverse of `add`. Removing the LAST value takes the ' +
-                     'attribute with it, which is what the LDAP modify handler ' +
-                     'does for every other entry in this directory and what an ' +
-                     'operator reading it with an LDAP client will expect.',
+        description: 'The inverse of `add`. Removing the LAST value takes ' +
+                     'the attribute with it, which is what the LDAP modify ' +
+                     'handler does for every other entry in this directory ' +
+                     'and what an operator reading it with an LDAP client ' +
+                     'will expect.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -6176,29 +6309,33 @@ const ROUTES = [
       // operation here, and both call the one action function that page posts
       // to. `applications.returnAddressesOf()` is the rule they change the
       // answer of.
-      { action: 'confirm-address', operationId: 'confirmApplicationReturnAddress',
+      { action: 'confirm-address',
+        operationId: 'confirmApplicationReturnAddress',
         summary: 'Confirm a return address a development-mode request recorded',
         description: 'A return address — a SAML ACS URL or `shire` on ' +
-                     '`samlAssertionConsumerService`, a WS-Federation `wreply` on ' +
-                     '`wsfedReplyUrl`, or a callback this service learnt for its ' +
-                     'own console or portal on `oauthRedirectUri` — that a ' +
-                     'request NAMED while the realm was in DEVELOPMENT mode is ' +
-                     'written onto the entry and MARKED on ' +
-                     '`appReturnAddressObserved` (`<attribute> <address>`). ' +
-                     '**PRODUCT mode refuses a marked address** exactly as it ' +
-                     'refuses one that is not on the entry, so a realm switched ' +
-                     'from development to product does not trust what ' +
-                     'development learnt.\n\nThis takes the mark OFF and keeps ' +
-                     'the address, so product believes it from the next request. ' +
-                     'An address that is not marked is REFUSED by name rather ' +
-                     'than confirmed silently — it is already registered, or it ' +
-                     'is not on the entry. `add` of the same address confirms it ' +
-                     'too, because an explicit write is a registration.\n\n' +
-                     'GET /admin-api/applications?application=… lists the marked ' +
-                     'addresses as `returnAddressesObserved`, each with `trusted` ' +
-                     'saying whether THIS realm\'s mode believes it. Addresses ' +
-                     'recorded before this service marked sightings carry no ' +
-                     'mark and cannot be told apart from registered ones.',
+                     '`samlAssertionConsumerService`, a WS-Federation ' +
+                     '`wreply` on `wsfedReplyUrl`, or a callback this ' +
+                     'service learnt for its own console or portal on ' +
+                     '`oauthRedirectUri` — that a request NAMED while the ' +
+                     'realm was in DEVELOPMENT mode is written onto the ' +
+                     'entry and MARKED on `appReturnAddressObserved` ' +
+                     '(`<attribute> <address>`). **PRODUCT mode refuses a ' +
+                     'marked address** exactly as it refuses one that is not ' +
+                     'on the entry, so a realm switched from development to ' +
+                     'product does not trust what development ' +
+                     'learnt.\n\nThis takes the mark OFF and keeps the ' +
+                     'address, so product believes it from the next request. ' +
+                     'An address that is not marked is REFUSED by name ' +
+                     'rather than confirmed silently — it is already ' +
+                     'registered, or it is not on the entry. `add` of the ' +
+                     'same address confirms it too, because an explicit ' +
+                     'write is a registration.\n\nGET ' +
+                     '/admin-api/applications?application=… lists the marked ' +
+                     'addresses as `returnAddressesObserved`, each with ' +
+                     '`trusted` saying whether THIS realm\'s mode believes ' +
+                     'it. Addresses recorded before this service marked ' +
+                     'sightings carry no mark and cannot be told apart from ' +
+                     'registered ones.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -6206,11 +6343,13 @@ const ROUTES = [
             application: { type: 'string',
                            description: 'The identifier, exactly as the ' +
                                         'registry holds it.' },
-            attribute: { type: 'string', enum: applications.RETURN_ADDRESS_ATTRIBUTES,
-                         description: 'The return-address attribute the address ' +
-                                      'is on.' },
+            attribute: { type: 'string',
+                         enum: applications.RETURN_ADDRESS_ATTRIBUTES,
+                         description: 'The return-address attribute the ' +
+                                      'address is on.' },
             value: { type: 'string',
-                     description: 'The address, exactly as the entry holds it.' }
+                     description:
+                       'The address, exactly as the entry holds it.' }
           },
           required: ['application', 'attribute', 'value'],
           examples: [{ application: 'https://sp.example.com',
@@ -6218,53 +6357,59 @@ const ROUTES = [
                        value: 'https://sp.example.com/acs' }],
           additionalProperties: false
         },
-        responseDescription: 'The application as it now stands, with the mark ' +
-                             'gone from `returnAddressesObserved`.' },
+        responseDescription: 'The application as it now stands, with the ' +
+                             'mark gone from `returnAddressesObserved`.' },
 
-      { action: 'discard-address', operationId: 'discardApplicationReturnAddress',
+      { action: 'discard-address',
+        operationId: 'discardApplicationReturnAddress',
         summary: 'Discard a return address a development-mode request recorded',
-        description: 'The opposite answer to `confirm-address`: the address was ' +
-                     'recorded from a request in DEVELOPMENT mode and is NOT this ' +
-                     'application\'s, so the mark on `appReturnAddressObserved` ' +
-                     'AND the address itself are taken off the entry. Product ' +
-                     'mode then refuses it as an address that is not there; ' +
-                     'development records it again, marked, if a request names ' +
-                     'it again.\n\nAn address that is not marked is REFUSED rather ' +
-                     'than removed — discarding is not the door for taking a ' +
-                     'REGISTERED address off an entry, and `remove` is, which ' +
-                     'says so.',
+        description: 'The opposite answer to `confirm-address`: the address ' +
+                     'was recorded from a request in DEVELOPMENT mode and is ' +
+                     'NOT this application\'s, so the mark on ' +
+                     '`appReturnAddressObserved` AND the address itself are ' +
+                     'taken off the entry. Product mode then refuses it as ' +
+                     'an address that is not there; development records it ' +
+                     'again, marked, if a request names it again.\n\nAn ' +
+                     'address that is not marked is REFUSED rather than ' +
+                     'removed — discarding is not the door for taking a ' +
+                     'REGISTERED address off an entry, and `remove` is, ' +
+                     'which says so.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             application: { type: 'string' },
-            attribute: { type: 'string', enum: applications.RETURN_ADDRESS_ATTRIBUTES },
+            attribute: { type: 'string',
+                         enum: applications.RETURN_ADDRESS_ATTRIBUTES },
             value: { type: 'string' }
           },
           required: ['application', 'attribute', 'value'],
-          examples: [{ application: 'urn:example:crm', attribute: 'wsfedReplyUrl',
+          examples: [{ application: 'urn:example:crm',
+                       attribute: 'wsfedReplyUrl',
                        value: 'https://evil.example/wsfed' }],
           additionalProperties: false
         },
         responseDescription: 'The application as it now stands, without the ' +
                              'address or its mark.' },
 
-      { action: 'revoke-registration', operationId: 'revokeApplicationRegistration',
+      { action: 'revoke-registration',
+        operationId: 'revokeApplicationRegistration',
         summary: 'Withdraw an RFC 7591 registration, keeping the entry',
-        description: 'RFC 7592\'s delete reached from here instead of from the ' +
-                     'client that holds the registration access token — the ' +
-                     'same function, so the outcome is the same one rather ' +
-                     'than a second reading of what "unregistered" means.' +
-                     '\n\n**The ENTRY stays**, with everything it had ' +
+        description: 'RFC 7592\'s delete reached from here instead of from ' +
+                     'the client that holds the registration access token — ' +
+                     'the same function, so the outcome is the same one ' +
+                     'rather than a second reading of what "unregistered" ' +
+                     'means.\n\n**The ENTRY stays**, with everything it had ' +
                      'recorded; the `client_secret`, the registration access ' +
                      'token and the registration document go. Losing that an ' +
                      'application was ever here because its registration was ' +
                      'withdrawn would be losing the fact rather than the ' +
-                     'configuration.\n\nAfterwards RFC 9700 mode treats it as ' +
-                     'an unregistered, PUBLIC client: PKCE is required of it, ' +
-                     'its secret is no longer checked, and its redirect_uri is ' +
-                     'judged against the `oauth2.redirectUris` setting rather ' +
-                     'than against its own list.',
+                     'configuration.\n\nAfterwards RFC 9700 mode treats it ' +
+                     'as an unregistered, PUBLIC client: PKCE is required of ' +
+                     'it, its secret is no longer checked, and its ' +
+                     'redirect_uri is judged against the ' +
+                     '`oauth2.redirectUris` setting rather than against its ' +
+                     'own list.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -6279,28 +6424,30 @@ const ROUTES = [
       { action: 'refresh-metadata', operationId: 'refreshApplicationMetadata',
         summary: 'Fetch this service provider\'s SAML metadata and store its ' +
                  'encryption certificate',
-        description: 'Dials the `samlSpMetadataUrl` ON THE ENTRY — never a URL ' +
-                     'in the request body — parses the document, and writes ' +
-                     '`samlSpMetadata` and `samlEncryptionCertificate` back. ' +
-                     'That certificate is what an assertion for this service ' +
-                     'provider is encrypted to when `saml2.encryptAssertion` ' +
-                     '(or `saml2EncryptAssertion` on the entry) is on.\n\n' +
-                     'IT IS THE ONLY OPERATION IN THIS API THAT MAKES AN ' +
-                     'OUTBOUND REQUEST, and the second surface in this service ' +
-                     'that makes one at all — federation is the other. The same ' +
+        description: 'Dials the `samlSpMetadataUrl` ON THE ENTRY — never a ' +
+                     'URL in the request body — parses the document, and ' +
+                     'writes `samlSpMetadata` and ' +
+                     '`samlEncryptionCertificate` back. That certificate is ' +
+                     'what an assertion for this service provider is ' +
+                     'encrypted to when `saml2.encryptAssertion` (or ' +
+                     '`saml2EncryptAssertion` on the entry) is on.\n\nIT IS ' +
+                     'THE ONLY OPERATION IN THIS API THAT MAKES AN OUTBOUND ' +
+                     'REQUEST, and the second surface in this service that ' +
+                     'makes one at all — federation is the other. The same ' +
                      'refusals apply: https only unless ' +
                      '`federation.outboundAllowInsecure` is on, a timeout of ' +
                      '`federation.outboundTimeoutMs`, no redirects followed, ' +
                      'and a size cap.\n\nISSUING NEVER FETCHES. This writes ' +
-                     'the certificate onto the entry and an assertion reads the ' +
-                     'entry, so no sign-in waits on somebody else\'s web ' +
+                     'the certificate onto the entry and an assertion reads ' +
+                     'the entry, so no sign-in waits on somebody else\'s web ' +
                      'server.\n\nA FAILURE CHANGES NOTHING — not the ' +
                      'document, not the certificate — so an application that ' +
-                     'was working does not stop working because a metadata host ' +
-                     'was down.\n\nThe `use="encryption"` KeyDescriptor is ' +
-                     'taken, falling back to one with no `use` at all; a ' +
-                     '`use="signing"` descriptor is deliberately NOT taken. The ' +
-                     'endpoints in the document are REPORTED and not applied.',
+                     'was working does not stop working because a metadata ' +
+                     'host was down.\n\nThe `use="encryption"` KeyDescriptor ' +
+                     'is taken, falling back to one with no `use` at all; a ' +
+                     '`use="signing"` descriptor is deliberately NOT taken. ' +
+                     'The endpoints in the document are REPORTED and not ' +
+                     'applied.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -6311,8 +6458,8 @@ const ROUTES = [
           additionalProperties: false
         },
         responseDescription: 'What the document said: its entityID, which ' +
-                             'KeyDescriptor the certificate came from, and the ' +
-                             'endpoints it describes.' },
+                             'KeyDescriptor the certificate came from, and ' +
+                             'the endpoints it describes.' },
 
       { action: 'forget', operationId: 'deleteApplication',
         summary: 'Delete an application entry entirely',
@@ -6485,14 +6632,18 @@ const ROUTES = [
   // by construction rather than by a reading of today's require graph.
   // -------------------------------------------------------------------------
   { method: 'GET', path: BASE + '/gnap', tag: 'GNAP', operationId: 'getGnap',
-    summary: 'The GNAP authorization server: endpoints, capabilities, grants, resource sets, settings',
-    description: 'Everything /admin/gnap draws. The endpoints of this realm\'s GNAP authorization ' +
-                 'server (RFC 9635) and its RS-facing API (RFC 9767); the section 9 capabilities of ' +
-                 'the default authorization server and of every named one, after that profile\'s ' +
-                 'GNAP overrides — which are what each grant endpoint ENFORCES; the five token ' +
-                 'formats and the public material that verifies the self-contained ones; the grants ' +
-                 'this realm holds (paged, `grantsPage`, and filtered by `state`); the registered ' +
-                 'resource sets (paged, `resourcesPage`); and the `gnap.*` settings, which are ' +
+    summary: 'The GNAP authorization server: endpoints, capabilities, ' +
+             'grants, resource sets, settings',
+    description: 'Everything /admin/gnap draws. The endpoints of this ' +
+                 'realm\'s GNAP authorization server (RFC 9635) and its ' +
+                 'RS-facing API (RFC 9767); the section 9 capabilities of ' +
+                 'the default authorization server and of every named one, ' +
+                 'after that profile\'s GNAP overrides — which are what each ' +
+                 'grant endpoint ENFORCES; the five token formats and the ' +
+                 'public material that verifies the self-contained ones; the ' +
+                 'grants this realm holds (paged, `grantsPage`, and filtered ' +
+                 'by `state`); the registered resource sets (paged, ' +
+                 '`resourcesPage`); and the `gnap.*` settings, which are ' +
                  'written through POST /admin-api/config/set-many.',
     mirrors: 'GET /admin/gnap',
     responseDescription: 'The authorization server as the page draws it.',
@@ -6503,15 +6654,19 @@ const ROUTES = [
       log.debug("Leaving the management API GNAP endpoint.");
     } },
 
-  { method: 'GET', path: BASE + '/gnap/monitor', tag: 'GNAP', operationId: 'getGnapMonitor',
+  { method: 'GET', path: BASE + '/gnap/monitor', tag: 'GNAP',
+    operationId: 'getGnapMonitor',
     summary: 'Every application that uses GNAP, and what each has done',
-    description: 'Everything /admin/gnap/monitor draws: one row per application declared for GNAP, ' +
-                 'seen speaking it, or counted — client instances and resource servers — with the ' +
-                 'grants it holds by state, its live tokens, and its counters since the process ' +
-                 'started: grants requested, approved and denied, tokens issued by format, ' +
-                 'rotations, revocations, failed key proofs, introspections, registrations, ' +
-                 'derivations, and the GNAP error codes it was answered with. Per trust realm, and ' +
-                 'with no reset: the durable record is GET /admin-api/audit.',
+    description: 'Everything /admin/gnap/monitor draws: one row per ' +
+                 'application declared for GNAP, seen speaking it, or ' +
+                 'counted — client instances and resource servers — with the ' +
+                 'grants it holds by state, its live tokens, and its ' +
+                 'counters since the process started: grants requested, ' +
+                 'approved and denied, tokens issued by format, rotations, ' +
+                 'revocations, failed key proofs, introspections, ' +
+                 'registrations, derivations, and the GNAP error codes it ' +
+                 'was answered with. Per trust realm, and with no reset: the ' +
+                 'durable record is GET /admin-api/audit.',
     mirrors: 'GET /admin/gnap/monitor',
     responseDescription: 'The totals, and one row per application.',
     responseSchema: { $ref: '#/components/schemas/GnapMonitor' },
@@ -6525,8 +6680,10 @@ const ROUTES = [
     mirrors: 'POST /admin/gnap',
     handler: function (req, res) {
       log.debug("Entering the management API GNAP action endpoint.");
-      const result = require('../gnap/gnap_console').gnapAction(withAction(req, parseBody(req)),
-                                                                 { via: 'api', req: req });
+      const result = require('../gnap/gnap_console').gnapAction(
+          withAction(req, parseBody(req)),
+                                                                 { via: 'api',
+                                                                   req: req });
       if (!result.ok) {
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-GNAP-0665');
       }
@@ -6535,16 +6692,20 @@ const ROUTES = [
     },
     actions: [
       { action: 'revoke-grant', operationId: 'revokeGnapGrant',
-        summary: 'Revoke a GNAP grant, as its client could (RFC 9635 section 5.4)',
-        description: 'Finalizes the grant and revokes every access token issued under it, through the ' +
-                     'same path the client\'s own DELETE on the continuation URI takes — so the client ' +
-                     'sees exactly what it would have seen had it revoked the grant itself, and a CAEP ' +
-                     'session-revoked is sent to every stream that takes it. A grant already finalized ' +
-                     'is reported unchanged rather than refused.',
+        summary: 'Revoke a GNAP grant, as its client could (RFC 9635 section ' +
+                 '5.4)',
+        description: 'Finalizes the grant and revokes every access token ' +
+                     'issued under it, through the same path the client\'s ' +
+                     'own DELETE on the continuation URI takes — so the ' +
+                     'client sees exactly what it would have seen had it ' +
+                     'revoked the grant itself, and a CAEP session-revoked ' +
+                     'is sent to every stream that takes it. A grant already ' +
+                     'finalized is reported unchanged rather than refused.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { grant: { type: 'string', description: 'The grant identifier, from GET /admin-api/gnap.' } },
+          properties: { grant: { type: 'string', description: 'The grant ' +
+              'identifier, from GET /admin-api/gnap.' } },
           required: ['grant'],
           examples: [{ grant: 'no-such-grant-example' }],
           additionalProperties: false
@@ -6552,12 +6713,14 @@ const ROUTES = [
         responseDescription: 'The grant as it now stands.' },
       { action: 'delete-resource-set', operationId: 'deleteGnapResourceSet',
         summary: 'Delete a registered resource set (RFC 9767 section 3.4)',
-        description: 'Removes the resource set, after which its reference no longer resolves in a grant ' +
-                     'request. Tokens already issued keep the rights they carry.',
+        description: 'Removes the resource set, after which its reference no ' +
+                     'longer resolves in a grant request. Tokens already ' +
+                     'issued keep the rights they carry.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
-          properties: { reference: { type: 'string', description: 'The resource reference, from GET /admin-api/gnap.' } },
+          properties: { reference: { type: 'string', description: 'The ' +
+              'resource reference, from GET /admin-api/gnap.' } },
           required: ['reference'],
           examples: [{ reference: 'no-such-reference' }],
           additionalProperties: false
@@ -6689,8 +6852,8 @@ const ROUTES = [
           properties: {
             template: { type: 'string',
                       description: 'Which template. GET ' +
-                                   '/admin-api/xacml/policies lists them with ' +
-                                   'the parameters each takes.' },
+                                   '/admin-api/xacml/policies lists them ' +
+                                   'with the parameters each takes.' },
             name: { type: 'string',
                       description: 'Names the DIRECTORY ENTRY. The PolicyId ' +
                                    'inside the document is a separate ' +
@@ -6730,8 +6893,8 @@ const ROUTES = [
           properties: {
             alfa: { type: 'string',
                       description: 'The ALFA source. Parsed, converted and ' +
-                                   'stored as XACML XML — the repository holds ' +
-                                   'ONE representation.' },
+                                   'stored as XACML XML — the repository ' +
+                                   'holds ONE representation.' },
             name: { type: 'string',
                       description: 'Names the directory entry.' }
           },
@@ -6839,24 +7002,24 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             id: { type: 'string',
                       description: 'A new PolicySetId or PolicyId. Any URI.' },
             description: { type: 'string',
                       description: 'The document\'s own <Description>.' },
             combiningAlgId: { type: 'string',
-                      description: 'One of the rule-combining algorithms this ' +
-                                   'editor offers; anything else is refused ' +
-                                   'rather than written. THE SINGLE MOST ' +
-                                   'CONSEQUENTIAL LINE IN A POLICY.' }
+                      description: 'One of the rule-combining algorithms ' +
+                                   'this editor offers; anything else is ' +
+                                   'refused rather than written. THE SINGLE ' +
+                                   'MOST CONSEQUENTIAL LINE IN A POLICY.' }
           },
           required: ['policy'],
           examples: [{
@@ -6879,15 +7042,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             effect: { type: 'string',
                       description: 'Permit or Deny. Defaults to Permit.' }
           },
@@ -6911,15 +7074,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             matchId: { type: 'string',
                       description: 'The match function. Defaults to ' +
                                    'string-equal. THE DATATYPE FOLLOWS IT on ' +
@@ -6932,14 +7095,14 @@ const ROUTES = [
                       description: 'The attribute category. Defaults to ' +
                                    'access-subject.' },
             attributeId: { type: 'string',
-                      description: 'The attribute to read. A bare name or the ' +
-                                   '`urn:sts:xacml:attribute:` prefix ' +
+                      description: 'The attribute to read. A bare name or ' +
+                                   'the `urn:sts:xacml:attribute:` prefix ' +
                                    'reaches the directory through the PIP; ' +
                                    'anything else must be in the request.' },
             mustBePresent: { type: 'boolean',
                       description: 'Whether an absent attribute is an empty ' +
-                                   'bag (false) or makes the whole expression ' +
-                                   'Indeterminate (true).' }
+                                   'bag (false) or makes the whole ' +
+                                   'expression Indeterminate (true).' }
           },
           required: ['policy', 'path'],
           examples: [{
@@ -6963,15 +7126,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' }
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' }
           },
           required: ['policy', 'path'],
           examples: [{
@@ -7019,15 +7182,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             matchId: { type: 'string',
                       description: 'The match function. Defaults to ' +
                                    'string-equal. THE DATATYPE FOLLOWS IT on ' +
@@ -7040,8 +7203,8 @@ const ROUTES = [
                       description: 'The attribute category. Defaults to ' +
                                    'access-subject.' },
             attributeId: { type: 'string',
-                      description: 'The attribute to read. A bare name or the ' +
-                                   '`urn:sts:xacml:attribute:` prefix ' +
+                      description: 'The attribute to read. A bare name or ' +
+                                   'the `urn:sts:xacml:attribute:` prefix ' +
                                    'reaches the directory through the PIP; ' +
                                    'anything else must be in the request.' }
           },
@@ -7051,7 +7214,8 @@ const ROUTES = [
             path: '',
             matchId: 'urn:oasis:names:tc:xacml:1.0:function:string-equal',
             value: 'staff',
-            category: 'urn:oasis:names:tc:xacml:1.0:subject-category:access-subject',
+            category:
+              'urn:oasis:names:tc:xacml:1.0:subject-category:access-subject',
             attributeId: 'employeeType'
           }],
           additionalProperties: false
@@ -7066,15 +7230,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             matchId: { type: 'string',
                       description: 'The match function. Defaults to ' +
                                    'string-equal. THE DATATYPE FOLLOWS IT on ' +
@@ -7087,8 +7251,8 @@ const ROUTES = [
                       description: 'The attribute category. Defaults to ' +
                                    'access-subject.' },
             attributeId: { type: 'string',
-                      description: 'The attribute to read. A bare name or the ' +
-                                   '`urn:sts:xacml:attribute:` prefix ' +
+                      description: 'The attribute to read. A bare name or ' +
+                                   'the `urn:sts:xacml:attribute:` prefix ' +
                                    'reaches the directory through the PIP; ' +
                                    'anything else must be in the request.' }
           },
@@ -7116,15 +7280,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             matchId: { type: 'string',
                       description: 'The match function. Defaults to ' +
                                    'string-equal. THE DATATYPE FOLLOWS IT on ' +
@@ -7137,8 +7301,8 @@ const ROUTES = [
                       description: 'The attribute category. Defaults to ' +
                                    'access-subject.' },
             attributeId: { type: 'string',
-                      description: 'The attribute to read. A bare name or the ' +
-                                   '`urn:sts:xacml:attribute:` prefix ' +
+                      description: 'The attribute to read. A bare name or ' +
+                                   'the `urn:sts:xacml:attribute:` prefix ' +
                                    'reaches the directory through the PIP; ' +
                                    'anything else must be in the request.' }
           },
@@ -7164,15 +7328,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             id: { type: 'string',
                       description: 'A new RuleId.' },
             effect: { type: 'string',
@@ -7206,15 +7370,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' }
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' }
           },
           required: ['policy', 'path'],
           examples: [{
@@ -7236,20 +7400,20 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             functionId: { type: 'string',
                       description: 'The function to apply. Its arguments are ' +
-                                   'PRE-BUILT to the declared arity and types, ' +
-                                   'so the expression typechecks the moment it ' +
-                                   'exists.' }
+                                   'PRE-BUILT to the declared arity and ' +
+                                   'types, so the expression typechecks the ' +
+                                   'moment it exists.' }
           },
           required: ['policy', 'path'],
           examples: [{
@@ -7271,15 +7435,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             type: { type: 'string',
                       description: 'The datatype URI. Defaults to xs:string.' },
             lexical: { type: 'string',
@@ -7313,15 +7477,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             category: { type: 'string',
                       description: 'The attribute category. Defaults to ' +
                                    'access-subject.' },
@@ -7334,7 +7498,8 @@ const ROUTES = [
           examples: [{
             policy: 'my-policy',
             path: 'rules.0.condition.args.1',
-            category: 'urn:oasis:names:tc:xacml:1.0:subject-category:access-subject',
+            category:
+              'urn:oasis:names:tc:xacml:1.0:subject-category:access-subject',
             attributeId: 'employeeType',
             dataType: 'http://www.w3.org/2001/XMLSchema#string'
           }],
@@ -7351,15 +7516,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             variableId: { type: 'string',
                       description: 'The VariableDefinition to reference. It ' +
                                    'must exist in the same policy — the ' +
@@ -7385,15 +7550,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' }
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' }
           },
           required: ['policy', 'path'],
           examples: [{
@@ -7414,15 +7579,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             functionId: { type: 'string',
                       description: 'The function to apply instead. The ' +
                                    'arguments are reshaped to the new ' +
@@ -7446,15 +7611,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             type: { type: 'string',
                       description: 'A new datatype URI.' },
             lexical: { type: 'string',
@@ -7482,15 +7647,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             category: { type: 'string',
                       description: 'A new category.' },
             attributeId: { type: 'string',
@@ -7501,8 +7666,8 @@ const ROUTES = [
                       description: 'False makes an absent attribute an empty ' +
                                    'bag; true makes the whole expression ' +
                                    'Indeterminate, which the combining ' +
-                                   'algorithms treat quite differently from a ' +
-                                   'Deny.' }
+                                   'algorithms treat quite differently from ' +
+                                   'a Deny.' }
           },
           required: ['policy', 'path'],
           examples: [{
@@ -7528,20 +7693,20 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             on: { type: 'string',
-                      description: 'Permit or Deny — the effect this fires on. ' +
-                                   'Defaults to Permit. An obligation attached ' +
-                                   'to the wrong effect is silently never ' +
-                                   'discharged.' }
+                      description: 'Permit or Deny — the effect this fires ' +
+                                   'on. Defaults to Permit. An obligation ' +
+                                   'attached to the wrong effect is silently ' +
+                                   'never discharged.' }
           },
           required: ['policy', 'path'],
           examples: [{
@@ -7562,15 +7727,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             on: { type: 'string',
                       description: 'Permit or Deny. Defaults to Permit.' }
           },
@@ -7594,15 +7759,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             on: { type: 'string',
                       description: 'Permit or Deny. Defaults to Permit.' }
           },
@@ -7624,15 +7789,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             on: { type: 'string',
                       description: 'Permit or Deny. Defaults to Permit.' }
           },
@@ -7655,15 +7820,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             id: { type: 'string',
                       description: 'A new obligation or advice identifier.' },
             on: { type: 'string',
@@ -7689,15 +7854,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' }
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' }
           },
           required: ['policy', 'path'],
           examples: [{
@@ -7736,15 +7901,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
           },
           required: ['policy', 'path'],
           examples: [{ policy: 'my-policy-set', path: '' }],
@@ -7761,15 +7926,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
           },
           required: ['policy', 'path'],
           examples: [{ policy: 'my-policy-set', path: '' }],
@@ -7794,15 +7959,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             ref: { type: 'string',
                       description: 'The PolicyId being referenced. Any URI.' },
             version: { type: 'string',
@@ -7826,15 +7991,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             ref: { type: 'string',
                       description: 'The PolicySetId being referenced.' },
             version: { type: 'string',
@@ -7855,15 +8020,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             ref: { type: 'string',
                       description: 'The PolicyId or PolicySetId to name.' },
             version: { type: 'string',
@@ -7891,15 +8056,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             variableId: { type: 'string',
                       description: 'The name. Defaults to the next free ' +
                                    '`v<n>`. A duplicate is refused — the ' +
@@ -7928,15 +8093,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             variableId: { type: 'string',
                       description: 'The new name.' }
           },
@@ -7962,15 +8127,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             category: { type: 'string',
                       description: 'The request category whose content the ' +
                                    'path runs over. Defaults to resource.' },
@@ -8002,15 +8167,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             path_xpath: { type: 'string',
                       description: 'Sent as `path` collides with the node ' +
                                    'address; this operation reads the XPath ' +
@@ -8056,15 +8221,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             functionId: { type: 'string',
                       description: 'The function to name. Defaults to ' +
                                    'string-equal.' }
@@ -8085,15 +8250,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             functionId: { type: 'string',
                       description: 'Any identifier in the function library.' }
           },
@@ -8119,15 +8284,15 @@ const ROUTES = [
           type: 'object',
           properties: {
             policy: { type: 'string',
-                      description: 'The directory entry name of the policy to ' +
-                                   'edit — the `cn` under ou=policies, not the ' +
-                                   'PolicyId inside the document.' },
+                      description: 'The directory entry name of the policy ' +
+                                   'to edit — the `cn` under ou=policies, ' +
+                                   'not the PolicyId inside the document.' },
             path: { type: 'string',
                       description: 'The node\'s address, from GET ' +
                                    '/admin-api/xacml/editor. ONLY VALID ' +
                                    'AGAINST THE DOCUMENT IT WAS READ FROM: ' +
-                                   'remove rule 0 and every path naming rule 1 ' +
-                                   'now means rule 0.' },
+                                   'remove rule 0 and every path naming rule ' +
+                                   '1 now means rule 0.' },
             attributeId: { type: 'string',
                       description: 'The name the PEP receives it under.' },
             category: { type: 'string',
@@ -8271,6 +8436,7 @@ const ROUTES = [
         log.debug("Leaving the management API Shared Signals action " +
                   "endpoint. Threw.");
       });
+      log.debug("Leaving handler().");
     },
     actions: [
       { action: 'status', operationId: 'setSsfStreamStatus',
@@ -8296,9 +8462,9 @@ const ROUTES = [
             status: { type: 'string', enum: ['enabled', 'paused', 'disabled'],
                       description: 'The new status.' },
             reason: { type: 'string',
-                      description: 'Optional. Why, in words — it rides in the ' +
-                                   'stream-updated event\'s `reason` member, ' +
-                                   'which nothing parses.' }
+                      description: 'Optional. Why, in words — it rides in ' +
+                                   'the stream-updated event\'s `reason` ' +
+                                   'member, which nothing parses.' }
           },
           required: ['stream_id', 'status'],
           examples: [{ stream_id: 'ssf-0123456789ab', status: 'paused',
@@ -8335,15 +8501,15 @@ const ROUTES = [
                                  'transmitter supports — and a refusal lists ' +
                                  'what that is.' },
             payload: { type: 'object',
-                       description: 'The event\'s own members. A verification ' +
-                                    'event takes an optional `state`; a ' +
-                                    'stream-updated event takes a required ' +
-                                    '`status` and an optional `reason`. An ' +
-                                    'unrecognised member is CARRIED with a ' +
-                                    'warning rather than refused: an event ' +
-                                    'vocabulary extends, and a receiver is ' +
-                                    'expected to ignore what it does not ' +
-                                    'know.' },
+                       description: 'The event\'s own members. A ' +
+                                    'verification event takes an optional ' +
+                                    '`state`; a stream-updated event takes a ' +
+                                    'required `status` and an optional ' +
+                                    '`reason`. An unrecognised member is ' +
+                                    'CARRIED with a warning rather than ' +
+                                    'refused: an event vocabulary extends, ' +
+                                    'and a receiver is expected to ignore ' +
+                                    'what it does not know.' },
             subject: { type: 'object',
                        description: 'Optional `sub_id` (RFC 9493), simple or ' +
                                     'complex. Neither SSF event takes one — ' +
@@ -8466,16 +8632,17 @@ const ROUTES = [
              'session with everything that has been said about it',
     description: 'What /admin/caep-sessions draws. Without `session` it is ' +
                  'the register: one row per session this service has HELD, ' +
-                 'including the ones it no longer holds, with its CAEP state, ' +
-                 'assurance, device compliance, risk and a count per event ' +
-                 'type — searched with `sessq` and paged with `sessionsPage` ' +
-                 'and `per`. Beside it, `applications`: what this transmitter ' +
-                 'has said to each RECEIVER across every session, searched ' +
-                 'with `appq` and paged with `applicationsPage`. That is the ' +
-                 'third question this page answers and the one somebody ' +
-                 'arrives with once more than one receiver exists — the ' +
-                 'sessions are per SESSION, the streams are per STREAM, and ' +
-                 'this is per APPLICATION.\n\nWith `session` it is that one session ' +
+                 'including the ones it no longer holds, with its CAEP ' +
+                 'state, assurance, device compliance, risk and a count per ' +
+                 'event type — searched with `sessq` and paged with ' +
+                 '`sessionsPage` and `per`. Beside it, `applications`: what ' +
+                 'this transmitter has said to each RECEIVER across every ' +
+                 'session, searched with `appq` and paged with ' +
+                 '`applicationsPage`. That is the third question this page ' +
+                 'answers and the one somebody arrives with once more than ' +
+                 'one receiver exists — the sessions are per SESSION, the ' +
+                 'streams are per STREAM, and this is per ' +
+                 'APPLICATION.\n\nWith `session` it is that one session ' +
                  'opened out: the events actually sent about it, in order, ' +
                  'with the jti and the stream each went out on and what the ' +
                  'register noticed as it was applied, paged with ' +
@@ -8483,13 +8650,13 @@ const ROUTES = [
                  'THAT IS THE POINT.** The session store forgets one the ' +
                  'moment it is signed out, so a row saying `revoked` is the ' +
                  'only remaining evidence that it existed and was revoked — ' +
-                 'and it is why this is not the same list as ' +
-                 'GET /admin-api/sessions, which is what is LIVE.\n\nA ' +
-                 '`session` that names nothing answers 200 with ' +
-                 '`session: null` rather than 404: this register is capped at ' +
+                 'and it is why this is not the same list as GET ' +
+                 '/admin-api/sessions, which is what is LIVE.\n\nA `session` ' +
+                 'that names nothing answers 200 with `session: null` rather ' +
+                 'than 404: this register is capped at ' +
                  '`caep.maxSessionsTracked` and drops the oldest, so an old ' +
-                 'identifier coming back empty is an ordinary outcome and not ' +
-                 'a missing resource.',
+                 'identifier coming back empty is an ordinary outcome and ' +
+                 'not a missing resource.',
     mirrors: 'GET /admin/caep-sessions',
     parameters: [
       { name: 'sessq', in: 'query', required: false, schema: { type: 'string' },
@@ -8549,6 +8716,7 @@ const ROUTES = [
           errors: ['The action failed: ' + e.message] });
         log.debug("Leaving the management API CAEP action endpoint. Threw.");
       });
+      log.debug("Leaving handler().");
     },
     actions: [
       { action: 'emit', operationId: 'emitCaepEvent',
@@ -8791,6 +8959,7 @@ const ROUTES = [
           errors: ['The action failed: ' + e.message] });
         log.debug("Leaving the management API RISC action endpoint. Threw.");
       });
+      log.debug("Leaving handler().");
     },
     actions: [
       { action: 'emit', operationId: 'emitRiscEvent',
@@ -8915,7 +9084,8 @@ const ROUTES = [
 
   { method: 'GET', path: BASE + '/scim', tag: 'SCIM',
     operationId: 'getScim',
-    summary: 'The SCIM 2.0 provisioning surface, and what it has been asked to do',
+    summary: 'The SCIM 2.0 provisioning surface, and what it has been asked ' +
+             'to do',
     description: 'Counters and capabilities in one reply. The counters say ' +
                  'which SCIM operation was performed how many times, on ' +
                  'which resource type, and what was refused with which ' +
@@ -8927,14 +9097,14 @@ const ROUTES = [
                  'is.\n\nTHERE IS NO POST BESIDE THIS ONE and that is not a ' +
                  'gap: everything about SCIM that can be changed is a ' +
                  'configuration row — `scim.enabled`, the three limits and ' +
-                 'the authentication settings — ' +
-                 'so POST /admin-api/config/set is already the operation for ' +
-                 'it. The console page has no form on it either, which is ' +
-                 'the parity rule holding rather than being broken.\n\nWHAT ' +
-                 'SCIM WROTE is not here: it went into the embedded ' +
-                 'directory, so a person provisioned over SCIM is on ' +
-                 '/admin-api/users and their groups are on /admin-api/groups. ' +
-                 'There is no second store to report.',
+                 'the authentication settings — so POST ' +
+                 '/admin-api/config/set is already the operation for it. The ' +
+                 'console page has no form on it either, which is the parity ' +
+                 'rule holding rather than being broken.\n\nWHAT SCIM WROTE ' +
+                 'is not here: it went into the embedded directory, so a ' +
+                 'person provisioned over SCIM is on /admin-api/users and ' +
+                 'their groups are on /admin-api/groups. There is no second ' +
+                 'store to report.',
     mirrors: 'GET /admin/scim',
     responseDescription: 'The counters and the capabilities.',
     responseSchema: { $ref: '#/components/schemas/Scim' },
@@ -8978,46 +9148,46 @@ const ROUTES = [
     description: 'Everything /admin/pki draws: the three CA tiers with their ' +
                  'subjects, serials, validity, key and signature algorithms, ' +
                  'thumbprints and CERTIFICATES; the key and signature ' +
-                 'algorithms a build may ask for; the two assertion ' +
-                 'PROFILES a key pair may be issued for, with the attributes ' +
-                 'each one writes; and every application in this realm that ' +
-                 'holds an issued key pair or declares an assertion issuer — ' +
-                 '**ONE ROW PER APPLICATION AND PER PROFILE**, so an ' +
-                 'application holding both an RFC 7523 and an RFC 7522 key ' +
-                 'pair appears twice. A single row with a pair of columns was ' +
-                 'the first shape of this and was wrong for a reason worth ' +
-                 'keeping: every fact on it — the key handle, the expiry, the ' +
+                 'algorithms a build may ask for; the two assertion PROFILES ' +
+                 'a key pair may be issued for, with the attributes each one ' +
+                 'writes; and every application in this realm that holds an ' +
+                 'issued key pair or declares an assertion issuer — **ONE ' +
+                 'ROW PER APPLICATION AND PER PROFILE**, so an application ' +
+                 'holding both an RFC 7523 and an RFC 7522 key pair appears ' +
+                 'twice. A single row with a pair of columns was the first ' +
+                 'shape of this and was wrong for a reason worth keeping: ' +
+                 'every fact on it — the key handle, the expiry, the ' +
                  'declared issuer, whether there is a key pair to take off — ' +
                  'is per profile.\n\n**NO PRIVATE KEY IS EVER IN THIS ' +
-                 'REPLY.** `common/pki.js` drops every one of them on the way ' +
-                 'out, so a caller here could not leak the Root\'s key by ' +
-                 'forgetting. The CERTIFICATES are in full, because a ' +
+                 'REPLY.** `common/pki.js` drops every one of them on the ' +
+                 'way out, so a caller here could not leak the Root\'s key ' +
+                 'by forgetting. The CERTIFICATES are in full, because a ' +
                  'certificate is the half of a key pair that is meant to be ' +
-                 'handed around and the Root is the one thing a relying party ' +
-                 'has to be given out of band. An application\'s own private ' +
-                 'key is on its directory entry as ' +
+                 'handed around and the Root is the one thing a relying ' +
+                 'party has to be given out of band. An application\'s own ' +
+                 'private key is on its directory entry as ' +
                  '`oauthAssertionPrivateKey`, sealed under the same ' +
                  'key-encryption key as the hierarchy wherever that key ' +
-                 'outlives the process, and opened for a caller that holds ' +
-                 'a credential.\n\n**IT IS PER ' +
-                 'REALM.** A trust realm is a logical identity service with ' +
-                 'its own signing key and its own applications, so a CA ' +
-                 'shared across realms would be one authority vouching for ' +
-                 'several services. Reach this under a realm prefix for that ' +
-                 'realm\'s hierarchy.\n\n**AND SO IS `tree`, SINCE ' +
-                 '2026-09-11 — IT NARROWED AND THIS IS THE RECORD OF IT.** ' +
-                 'It carried the Root, the process branch and EVERY REALM\'S ' +
-                 'Intermediate for a day; it now carries the Root, the ' +
-                 'process branch (TLS and SPIFFE, which certify sockets ' +
-                 'every realm answers on) and the Intermediate of the realm ' +
-                 'THIS REQUEST WAS REACHED IN, with its Issuing CAs. ' +
-                 '`revocation` narrowed with it, so a Revoke here can only ' +
-                 'name an authority this realm is under. Reach the resource ' +
-                 'under another realm\'s prefix for that realm\'s branch — ' +
-                 'which is the same answer the console gives, because this ' +
-                 'reply and that page are one function.\n\n**REVOCATION IS PUBLISHED AND ' +
-                 'NEVER CONSULTED, SINCE 2026-09-11.** Every authority signs ' +
-                 'a CRL (/pki/crl/{scope}/{ca}) and answers OCSP ' +
+                 'outlives the process, and opened for a caller that holds a ' +
+                 'credential.\n\n**IT IS PER REALM.** A trust realm is a ' +
+                 'logical identity service with its own signing key and its ' +
+                 'own applications, so a CA shared across realms would be ' +
+                 'one authority vouching for several services. Reach this ' +
+                 'under a realm prefix for that realm\'s hierarchy.\n\n**AND ' +
+                 'SO IS `tree`, SINCE 2026-09-11 — IT NARROWED AND THIS IS ' +
+                 'THE RECORD OF IT.** It carried the Root, the process ' +
+                 'branch and EVERY REALM\'S Intermediate for a day; it now ' +
+                 'carries the Root, the process branch (TLS and SPIFFE, ' +
+                 'which certify sockets every realm answers on) and the ' +
+                 'Intermediate of the realm THIS REQUEST WAS REACHED IN, ' +
+                 'with its Issuing CAs. `revocation` narrowed with it, so a ' +
+                 'Revoke here can only name an authority this realm is ' +
+                 'under. Reach the resource under another realm\'s prefix ' +
+                 'for that realm\'s branch — which is the same answer the ' +
+                 'console gives, because this reply and that page are one ' +
+                 'function.\n\n**REVOCATION IS PUBLISHED AND NEVER ' +
+                 'CONSULTED, SINCE 2026-09-11.** Every authority signs a CRL ' +
+                 '(/pki/crl/{scope}/{ca}) and answers OCSP ' +
                  '(/pki/ocsp/{scope}/{ca}); `revocation` in the reply is the ' +
                  'REGISTER — one entry per authority with what it issued, ' +
                  'what is on its list, and its addresses in three schemes — ' +
@@ -9026,13 +9196,13 @@ const ROUTES = [
                  'included, so a certificate revoked here still ' +
                  'authenticates here. **AND `revoke` BELOW IS A DIFFERENT ' +
                  'ACT WITH THE SAME WORD IN IT**: it takes a key pair off an ' +
-                 'application and puts nothing on any list. ' +
-                 '`revocationNote` and `residency` are the durable ' +
-                 'statement of what each means.',
+                 'application and puts nothing on any list. `revocationNote` ' +
+                 'and `residency` are the durable statement of what each ' +
+                 'means.',
     mirrors: 'GET /admin/pki',
     responseDescription: 'The hierarchy, the algorithm vocabularies, the two ' +
-                         'assertion profiles, and one row per application per ' +
-                         'profile for those holding an issued key pair.',
+                         'assertion profiles, and one row per application ' +
+                         'per profile for those holding an issued key pair.',
     handler: function (req, res) {
       log.debug("Entering the management API PKI endpoint.");
       sendJson(res, 200, pkiAdmin.pkiView(req));
@@ -9046,7 +9216,8 @@ const ROUTES = [
     // posting somewhere other than its list page has to be named here or that
     // check quietly stops covering it — which is what /admin/users/new
     // records.
-    mirrors: 'POST /admin/pki, POST /admin/pki/certificate and POST /admin/pki/person',
+    mirrors: 'POST /admin/pki, POST /admin/pki/certificate and POST ' +
+             '/admin/pki/person',
     handler: function (req, res) {
       log.debug("Entering the management API PKI action endpoint.");
       const body = parseBody(req);
@@ -9070,15 +9241,16 @@ const ROUTES = [
                              errors: ['That action failed: ' +
                                       (e && e.message ? e.message : e)] });
       });
+      log.debug("Leaving handler().");
     },
     actions: [
       { action: 'build', operationId: 'buildPkiChain',
         summary: 'Build this realm\'s certificate authority — all three tiers',
         description: 'Root CA, Intermediate CA and Issuing CA, generated and ' +
-                     'signed in one act.\n\n**ALL THREE OR NONE, and that ' +
-                     'is not laziness.** A trust chain is only worth anything ' +
-                     'whole: an Issuing CA with no Intermediate above it is a ' +
-                     'two-tier chain wearing a three-tier name, and a ' +
+                     'signed in one act.\n\n**ALL THREE OR NONE, and that is ' +
+                     'not laziness.** A trust chain is only worth anything ' +
+                     'whole: an Issuing CA with no Intermediate above it is ' +
+                     'a two-tier chain wearing a three-tier name, and a ' +
                      'half-built hierarchy is exactly the state in which ' +
                      'somebody issues a certificate that verifies here and ' +
                      'nowhere else. A failure at any tier stores ' +
@@ -9092,8 +9264,8 @@ const ROUTES = [
                      'SURVIVES A RESTART depends on the mode.** In product ' +
                      'mode the hierarchy is written to `sts_keys`, sealed ' +
                      'under the same key-encryption key as the signing keys. ' +
-                     'In development — the default — it lives exactly as long ' +
-                     'as the process, which is the rule the signing key ' +
+                     'In development — the default — it lives exactly as ' +
+                     'long as the process, which is the rule the signing key ' +
                      'follows and for the same reason.',
         requestBodyRequired: false,
         requestBody: {
@@ -9114,18 +9286,18 @@ const ROUTES = [
                                          '`signatureAlgorithms`. OMIT IT for ' +
                                          '"the right one for the key ' +
                                          'algorithm", which is almost always ' +
-                                         'what is wanted: an EC key\'s digest ' +
-                                         'is decided by its CURVE, so naming ' +
-                                         'one here can hand a P-521 key ' +
-                                         'SHA-256 — legal, verifying, and ' +
-                                         'nobody\'s intention. A pair whose ' +
-                                         'families disagree is refused with ' +
-                                         'the list beside it.' },
+                                         'what is wanted: an EC key\'s ' +
+                                         'digest is decided by its CURVE, so ' +
+                                         'naming one here can hand a P-521 ' +
+                                         'key SHA-256 — legal, verifying, ' +
+                                         'and nobody\'s intention. A pair ' +
+                                         'whose families disagree is refused ' +
+                                         'with the list beside it.' },
             organisation: { type: 'string',
-                            description: 'The O= every tier carries, and what ' +
-                                         'the tiers are named after when no ' +
-                                         'common name is given. Defaults to ' +
-                                         '`pki.organisation`.' },
+                            description: 'The O= every tier carries, and ' +
+                                         'what the tiers are named after ' +
+                                         'when no common name is given. ' +
+                                         'Defaults to `pki.organisation`.' },
             country: { type: 'string',
                        description: 'The C=, two letters, optional. It is ' +
                                     'encoded as a PrintableString, which is ' +
@@ -9133,9 +9305,11 @@ const ROUTES = [
                                     'several validators refuse a UTF8String ' +
                                     'country and report it as a signature ' +
                                     'problem.' },
-            cn_root: { type: 'string', description: 'The Root CA\'s common name.' },
+            cn_root: { type: 'string', description: 'The Root CA\'s common ' +
+                                                    'name.' },
             cn_intermediate: { type: 'string',
-                               description: 'The Intermediate CA\'s common name.' },
+                               description: 'The Intermediate CA\'s common ' +
+                                            'name.' },
             cn_issuing: { type: 'string',
                           description: 'The Issuing CA\'s common name.' },
             years_root: { type: 'integer',
@@ -9146,7 +9320,8 @@ const ROUTES = [
                                   description: 'Ten by default.' },
             years_issuing: { type: 'integer', description: 'Five by default.' }
           },
-          examples: [{ keyAlg: 'ec-p384', organisation: 'Acme', country: 'US' }],
+          examples: [{ keyAlg: 'ec-p384', organisation: 'Acme',
+                       country: 'US' }],
           additionalProperties: false
         },
         responseDescription: 'The hierarchy that was built, without its ' +
@@ -9157,32 +9332,31 @@ const ROUTES = [
                  'target=person, to somebody in ou=users — from the ' +
                  'Issuing CA',
         description: 'Generates a key pair, signs a leaf certificate for it ' +
-                     'with this realm\'s Issuing CA, and writes the whole lot ' +
-                     'onto that application\'s directory entry.\n\n**WHICH ' +
-                     'ATTRIBUTES DEPENDS ON `purpose`, AND THE TWO SETS SHARE ' +
-                     'NONE.** `jwt` (the default, RFC 7523) writes six — ' +
-                     '`oauthAssertionPrivateKey`, ' +
+                     'with this realm\'s Issuing CA, and writes the whole ' +
+                     'lot onto that application\'s directory ' +
+                     'entry.\n\n**WHICH ATTRIBUTES DEPENDS ON `purpose`, AND ' +
+                     'THE TWO SETS SHARE NONE.** `jwt` (the default, RFC ' +
+                     '7523) writes six — `oauthAssertionPrivateKey`, ' +
                      '`oauthAssertionCertificate`, ' +
-                     '`oauthAssertionCertificateChain`, ' +
-                     '`oauthAssertionJwks` (with `x5c` and `x5t#S256` on the ' +
-                     'key), `oauthAssertionKid` and ' +
-                     '`oauthAssertionExpiresAt`. `saml` (RFC 7522) writes ' +
-                     'five under `oauthSamlAssertion*`, with no JWKS among ' +
-                     'them because SAML has none — what a party registers for ' +
-                     'that profile IS a certificate — and with a ' +
+                     '`oauthAssertionCertificateChain`, `oauthAssertionJwks` ' +
+                     '(with `x5c` and `x5t#S256` on the key), ' +
+                     '`oauthAssertionKid` and `oauthAssertionExpiresAt`. ' +
+                     '`saml` (RFC 7522) writes five under ' +
+                     '`oauthSamlAssertion*`, with no JWKS among them because ' +
+                     'SAML has none — what a party registers for that ' +
+                     'profile IS a certificate — and with a ' +
                      '`oauthSamlAssertionThumbprint` where the other has a ' +
                      '`kid`, because those are the handles the two formats ' +
                      'actually carry.\n\n**AN APPLICATION MAY HOLD BOTH KEY ' +
-                     'PAIRS AND NEITHER CAN SIGN FOR THE OTHER\'S ' +
-                     'PROFILE.** No verifier reads the other set, so issuing ' +
-                     'one leaves the other untouched and taking one off ' +
-                     'leaves the other working. The SAML leaf also carries ' +
-                     'the RFC 7522 grant-type URI as a second URI ' +
-                     'subjectAltName, so a certificate read out of context ' +
-                     'says which profile it was issued for.\n\n**THIS ' +
-                     'SERVICE KEEPS NO ' +
-                     'SECOND COPY OF THE PRIVATE KEY.** `common/pki.js` hands ' +
-                     'it over once and forgets it, so the entry is where it ' +
+                     'PAIRS AND NEITHER CAN SIGN FOR THE OTHER\'S PROFILE.** ' +
+                     'No verifier reads the other set, so issuing one leaves ' +
+                     'the other untouched and taking one off leaves the ' +
+                     'other working. The SAML leaf also carries the RFC 7522 ' +
+                     'grant-type URI as a second URI subjectAltName, so a ' +
+                     'certificate read out of context says which profile it ' +
+                     'was issued for.\n\n**THIS SERVICE KEEPS NO SECOND COPY ' +
+                     'OF THE PRIVATE KEY.** `common/pki.js` hands it over ' +
+                     'once and forgets it, so the entry is where it ' +
                      'lives.\n\n**AND IT IS SEALED THERE.** AES-256-GCM ' +
                      'under the key-encryption key, through ' +
                      '`common/keystore.js` — the same mechanism and the same ' +
@@ -9191,13 +9365,13 @@ const ROUTES = [
                      'key outlives the process, which is product mode. So an ' +
                      'ldapsearch on TCP 389 where every bind succeeds, an ' +
                      'ldif file, a database row and a backup of either hold ' +
-                     '`$aesgcm$…`. `GET /admin-api/applications` opens it for ' +
-                     'you, because it comes through `common/applications.js` ' +
-                     'and you are holding an `admin:read` token; in ' +
-                     'development mode it is in the clear, where the ' +
-                     'key-encryption key is ephemeral and would not survive ' +
-                     'the restart the entry does. Issuing again ' +
-                     'replaces.\n\n**THE LEAF IS A `digital-signature` ' +
+                     '`$aesgcm$…`. `GET /admin-api/applications` opens it ' +
+                     'for you, because it comes through ' +
+                     '`common/applications.js` and you are holding an ' +
+                     '`admin:read` token; in development mode it is in the ' +
+                     'clear, where the key-encryption key is ephemeral and ' +
+                     'would not survive the restart the entry does. Issuing ' +
+                     'again replaces.\n\n**THE LEAF IS A `digital-signature` ' +
                      'CERTIFICATE and deliberately carries no extended key ' +
                      'usage.** What it signs is a JWT, not a TLS handshake; ' +
                      'giving it `clientAuth` would make it usable for RFC ' +
@@ -9206,49 +9380,50 @@ const ROUTES = [
                      'quietly doing both is how a deployment ends up unable ' +
                      'to revoke either.\n\n**A KEY PAIR IS NOT A TRUST ' +
                      'DECISION.** It lets the application SIGN, which is all ' +
-                     'RFC 7523 section 2.2 (client authentication) needs. For ' +
-                     'section 2.1 — the authorization grant — the `iss` it ' +
-                     'will use must also be declared on ' +
+                     'RFC 7523 section 2.2 (client authentication) needs. ' +
+                     'For section 2.1 — the authorization grant — the `iss` ' +
+                     'it will use must also be declared on ' +
                      '`oauthAssertionIssuer`, through POST ' +
                      '/admin-api/applications/add. RFC 7522 is the same two ' +
                      'acts with its own declaration, ' +
                      '`oauthSamlAssertionIssuer`.\n\n**THE LIFETIME IS ' +
                      'CLAMPED to the Issuing CA\'s own expiry** rather than ' +
-                     'refused where it would overshoot: the ordinary cause is ' +
-                     'a five-year Issuing CA in its fifth year.\n\n**AND ' +
+                     'refused where it would overshoot: the ordinary cause ' +
+                     'is a five-year Issuing CA in its fifth year.\n\n**AND ' +
                      'SINCE 2026-09-11 THE SUBJECT MAY BE A PERSON.** ' +
                      '`target=person` issues to somebody in `ou=users` ' +
-                     'instead: the same hierarchy, the same profile, the same ' +
-                     'certificate, written onto their own entry as ' +
+                     'instead: the same hierarchy, the same profile, the ' +
+                     'same certificate, written onto their own entry as ' +
                      '`stsAssertionJwks`, `stsAssertionCertificate`, ' +
                      '`stsAssertionCertificateChain`, `stsAssertionKid`, ' +
                      '`stsAssertionExpiresAt` and a SEALED ' +
-                     '`stsAssertionPrivateKey` — an attribute set that shares ' +
-                     'no name with the application\'s and is read by nothing ' +
-                     'else, which is the same rule the two profiles above ' +
-                     'follow. RFC 7523 section 3 asks only that `iss` be a ' +
-                     'unique identifier for the issuer and says the `sub` of ' +
-                     'an authorization grant typically identifies a resource ' +
-                     'owner, so a person signing for themselves is the ' +
-                     'profile read literally.\n\n**A PERSON MAY ONLY ' +
+                     '`stsAssertionPrivateKey` — an attribute set that ' +
+                     'shares no name with the application\'s and is read by ' +
+                     'nothing else, which is the same rule the two profiles ' +
+                     'above follow. RFC 7523 section 3 asks only that `iss` ' +
+                     'be a unique identifier for the issuer and says the ' +
+                     '`sub` of an authorization grant typically identifies a ' +
+                     'resource owner, so a person signing for themselves is ' +
+                     'the profile read literally.\n\n**A PERSON MAY ONLY ' +
                      'ASSERT ABOUT THEMSELVES**, and the grant refuses ' +
                      'anything else: a key issued to one resource owner is ' +
                      'that person\'s credential rather than permission to ' +
                      'speak for the others, and the certificate carries ' +
                      '`urn:sts:person:<name>` as a URI subjectAltName so ' +
                      'that the rule holds for an assertion presented on its ' +
-                     '`x5c` alone. A party that may assert about OTHER people ' +
-                     'is an application with `oauthAssertionIssuer` declared ' +
-                     'on it.\n\n**AND THIS REPLY CARRIES THE PRIVATE KEY, ' +
-                     'WHICH THE APPLICATION\'S DOES NOT.** An application\'s ' +
-                     'is readable through `GET /admin-api/applications`, ' +
-                     'which opens the seal for an `admin:read` token; a ' +
-                     'person\'s entry is not drawn through any module that ' +
-                     'would open it, so the alternatives were a page that ' +
-                     'prints somebody\'s private key on every visit or a key ' +
-                     'nobody can ever obtain. `privateKeyPem` is in the reply ' +
-                     'to `target=person` and in no other answer this API ' +
-                     'gives, and it is not shown again. `target=person` also ' +
+                     '`x5c` alone. A party that may assert about OTHER ' +
+                     'people is an application with `oauthAssertionIssuer` ' +
+                     'declared on it.\n\n**AND THIS REPLY CARRIES THE ' +
+                     'PRIVATE KEY, WHICH THE APPLICATION\'S DOES NOT.** An ' +
+                     'application\'s is readable through `GET ' +
+                     '/admin-api/applications`, which opens the seal for an ' +
+                     '`admin:read` token; a person\'s entry is not drawn ' +
+                     'through any module that would open it, so the ' +
+                     'alternatives were a page that prints somebody\'s ' +
+                     'private key on every visit or a key nobody can ever ' +
+                     'obtain. `privateKeyPem` is in the reply to ' +
+                     '`target=person` and in no other answer this API gives, ' +
+                     'and it is not shown again. `target=person` also ' +
                      'refuses `purpose=saml`: RFC 7522\'s verifier reads ' +
                      'nothing off a person, so that key pair would be one ' +
                      'nothing here can use.',
@@ -9261,8 +9436,8 @@ const ROUTES = [
                                        'USERNAME, with `target=person`. It ' +
                                        'must ALREADY EXIST in this realm — ' +
                                        'creating one here would be this ' +
-                                       'endpoint inventing an application, or ' +
-                                       'a person, in order to give it a ' +
+                                       'endpoint inventing an application, ' +
+                                       'or a person, in order to give it a ' +
                                        'credential.' },
             target: { type: 'string', enum: ['application', 'person'],
                       description: 'WHO the key pair is for. Defaults to ' +
@@ -9286,37 +9461,38 @@ const ROUTES = [
                                     'for: `jwt` for RFC 7523 and `saml` for ' +
                                     'RFC 7522. Defaults to `jwt`, which is ' +
                                     'what every caller written before this ' +
-                                    'field existed sends and is why it is the ' +
-                                    'default rather than a required field. A ' +
-                                    'value this service does not know is ' +
-                                    'REFUSED rather than defaulted — a caller ' +
-                                    'that asked for a profile wants a ' +
-                                    'certificate for something, and quietly ' +
-                                    'handing back the other one would put a ' +
-                                    'key pair on the wrong attribute set with ' +
-                                    'nothing saying so.' },
+                                    'field existed sends and is why it is ' +
+                                    'the default rather than a required ' +
+                                    'field. A value this service does not ' +
+                                    'know is REFUSED rather than defaulted — ' +
+                                    'a caller that asked for a profile wants ' +
+                                    'a certificate for something, and ' +
+                                    'quietly handing back the other one ' +
+                                    'would put a key pair on the wrong ' +
+                                    'attribute set with nothing saying so.' },
             commonName: { type: 'string',
                           description: 'The leaf\'s CN. Defaults to the ' +
                                        'identifier. The identifier also goes ' +
-                                       'into a URI subjectAltName either way, ' +
-                                       'because a CN is a display name and a ' +
-                                       'SAN is the machine-readable one.' },
+                                       'into a URI subjectAltName either ' +
+                                       'way, because a CN is a display name ' +
+                                       'and a SAN is the machine-readable ' +
+                                       'one.' },
             keyAlg: { type: 'string',
                       description: 'The LEAF\'s key algorithm. Defaults to ' +
                                    'the Issuing CA\'s, which is the chain a ' +
                                    'client library is least likely to be ' +
                                    'surprised by.' },
             days: { type: 'integer',
-                    description: 'How long the certificate is valid. Defaults ' +
-                                 'to `pki.leafLifetimeDays`.' }
+                    description: 'How long the certificate is valid. ' +
+                                 'Defaults to `pki.leafLifetimeDays`.' }
           },
           required: ['identifier'],
           examples: [{ identifier: 'webapp1', days: 90 },
                      { identifier: 'webapp1', purpose: 'saml', days: 90 }],
           additionalProperties: false
         },
-        responseDescription: 'The `purpose`, the attributes it wrote, the key ' +
-                             'handle (`kid` and `thumbprint` — both are ' +
+        responseDescription: 'The `purpose`, the attributes it wrote, the ' +
+                             'key handle (`kid` and `thumbprint` — both are ' +
                              'returned whichever profile was asked for, ' +
                              'because both are computed at issuance), the ' +
                              'expiry and the JWS algorithm the issued key ' +
@@ -9329,24 +9505,23 @@ const ROUTES = [
         description: 'Clears the attributes the issue wrote FOR ONE PROFILE ' +
                      '— six for `jwt` and five for `saml`. An application ' +
                      'commonly holds both key pairs and this takes ONE off; ' +
-                     'clearing both would be an operation whose name said one ' +
-                     'thing and did two.\n\n**THIS OPERATION IS NOT THE ' +
+                     'clearing both would be an operation whose name said ' +
+                     'one thing and did two.\n\n**THIS OPERATION IS NOT THE ' +
                      'ONE THAT REVOKES A CERTIFICATE, AND SINCE 2026-09-11 ' +
                      'THERE IS ONE.** `revoke-certificate` puts a serial on ' +
                      'an issuer\'s revocation list; this takes a key pair ' +
                      'off an application entry and puts nothing on any list. ' +
                      'After it the certificate is still valid, still chains ' +
-                     'to this ' +
-                     'realm\'s Root, and would still verify anywhere that ' +
-                     'trusts that Root. What changes is that THIS service ' +
-                     'will no longer accept an assertion signed with that ' +
-                     'key, because the key is no longer registered against ' +
-                     'the application. The name is `revoke` because that is ' +
-                     'the word on the button; the description is where the ' +
-                     'claim is kept honest.\n\n**`target=person` TAKES A ' +
-                     'PERSON\'S KEY PAIR OFF INSTEAD**, and it clears the ' +
-                     '`stsAssertionIssuer` DECLARATION with it where the ' +
-                     'application arm deliberately leaves ' +
+                     'to this realm\'s Root, and would still verify anywhere ' +
+                     'that trusts that Root. What changes is that THIS ' +
+                     'service will no longer accept an assertion signed with ' +
+                     'that key, because the key is no longer registered ' +
+                     'against the application. The name is `revoke` because ' +
+                     'that is the word on the button; the description is ' +
+                     'where the claim is kept honest.\n\n**`target=person` ' +
+                     'TAKES A PERSON\'S KEY PAIR OFF INSTEAD**, and it ' +
+                     'clears the `stsAssertionIssuer` DECLARATION with it ' +
+                     'where the application arm deliberately leaves ' +
                      '`oauthAssertionIssuer` alone. The difference is a fact ' +
                      'about the two: an application may hold a JWKS it ' +
                      'registered itself beside the one this service issued, ' +
@@ -9364,10 +9539,10 @@ const ROUTES = [
                                        '`target=person`.' },
             target: { type: 'string', enum: ['application', 'person'],
                       description: 'WHOSE key pair. Defaults to ' +
-                                   '`application`, which is what every caller ' +
-                                   'written before this field existed sends. ' +
-                                   '`person` clears `stsAssertion*` off a ' +
-                                   '`ou=users` entry, the declaration ' +
+                                   '`application`, which is what every ' +
+                                   'caller written before this field existed ' +
+                                   'sends. `person` clears `stsAssertion*` ' +
+                                   'off a `ou=users` entry, the declaration ' +
                                    'included, and ignores `purpose` — a ' +
                                    'person holds one key pair, because RFC ' +
                                    '7522\'s verifier reads nothing off a ' +
@@ -9610,15 +9785,15 @@ const ROUTES = [
         description: 'One Root, shared by every realm and by the process ' +
                      'branch — which is what lets an operator install ONE ' +
                      'anchor and have it cover 8443, 9443, LDAPS 636, the ' +
-                     'main port and every token this service signs.\n\n' +
-                     '**REPLACING IT RE-ISSUES EVERY BRANCH IN THE SAME ' +
-                     'ACT**, because an Intermediate still hanging from the ' +
-                     'old Root chains to nothing — a new Root with the old ' +
-                     'branches under it is a service whose tree does not ' +
+                     'main port and every token this service ' +
+                     'signs.\n\n**REPLACING IT RE-ISSUES EVERY BRANCH IN THE ' +
+                     'SAME ACT**, because an Intermediate still hanging from ' +
+                     'the old Root chains to nothing — a new Root with the ' +
+                     'old branches under it is a service whose tree does not ' +
                      'reach its own anchor, and every path check fails while ' +
                      'the page looks right.\n\n**ANYTHING TRUSTING THE OLD ' +
-                     'ROOT STOPS TRUSTING THIS SERVICE.** That is the cost of ' +
-                     'one anchor covering everything. The signing keys ' +
+                     'ROOT STOPS TRUSTING THIS SERVICE.** That is the cost ' +
+                     'of one anchor covering everything. The signing keys ' +
                      'themselves are untouched, so nothing that verifies ' +
                      'against the published JWKS is affected.',
         requestBodyRequired: false,
@@ -9643,28 +9818,28 @@ const ROUTES = [
       { action: 'build-scope', operationId: 'buildPkiScope',
         summary: 'Build or rebuild one scope’s branch — its Intermediate and ' +
                  'every Issuing CA under it',
-        description: 'A scope is a trust realm or the process. **ALL OF IT OR ' +
-                     'NONE OF IT**: a branch with an Intermediate and two of ' +
-                     'its three Issuing CAs is the state in which one use ' +
+        description: 'A scope is a trust realm or the process. **ALL OF IT ' +
+                     'OR NONE OF IT**: a branch with an Intermediate and two ' +
+                     'of its three Issuing CAs is the state in which one use ' +
                      'case silently has no authority and its keys come out ' +
-                     'uncertified, so a failure anywhere stores nothing.\n\n' +
-                     '**THE ROOT IS NOT TOUCHED** — every other scope hangs ' +
-                     'from it — and an IMPORTED authority in this branch is ' +
-                     'left alone unless `replaceImported` says otherwise: ' +
-                     'somebody who pasted a corporate CA in did not press ' +
-                     'this to have it thrown away.\n\nEverything the old ' +
-                     'authorities had certified is re-minted from the new ' +
-                     'ones in the same act.',
+                     'uncertified, so a failure anywhere stores ' +
+                     'nothing.\n\n**THE ROOT IS NOT TOUCHED** — every other ' +
+                     'scope hangs from it — and an IMPORTED authority in ' +
+                     'this branch is left alone unless `replaceImported` ' +
+                     'says otherwise: somebody who pasted a corporate CA in ' +
+                     'did not press this to have it thrown ' +
+                     'away.\n\nEverything the old authorities had certified ' +
+                     'is re-minted from the new ones in the same act.',
         requestBodyRequired: false,
         requestBody: {
           type: 'object',
           properties: {
             scope: { type: 'string',
-                     description: 'A realm id, `*process`, or omitted for the ' +
-                                  'realm this request arrived in.' },
+                     description: 'A realm id, `*process`, or omitted for ' +
+                                  'the realm this request arrived in.' },
             keyAlg: { type: 'string',
-                      description: 'The key algorithm every CA in this branch ' +
-                                   'is generated with.' },
+                      description: 'The key algorithm every CA in this ' +
+                                   'branch is generated with.' },
             replaceImported: { type: 'boolean',
                                description: 'Replace an imported authority ' +
                                             'too. Default false.' }
@@ -9704,16 +9879,18 @@ const ROUTES = [
                              'new authority.' },
 
       { action: 'recertify', operationId: 'recertifyPkiUseCase',
-        summary: 'Renew the certificates under one Issuing CA, keeping the keys',
+        summary:
+          'Renew the certificates under one Issuing CA, keeping the keys',
         description: 'Re-issues every certificate that authority has minted, ' +
-                     'from the SAME authority, with fresh serials and a fresh ' +
-                     'validity window.\n\n**THE KEYS ARE UNTOUCHED, WHICH IS ' +
-                     'WHAT MAKES THIS A RENEWAL**: the subject public key is ' +
-                     'read back out of the certificate being replaced, so ' +
-                     'nothing that verifies against the published JWKS stops ' +
-                     'verifying. `reissue-use-case` is the other one — it ' +
-                     'replaces the authority, and everything it had signed ' +
-                     'chains to nothing until it is re-minted.',
+                     'from the SAME authority, with fresh serials and a ' +
+                     'fresh validity window.\n\n**THE KEYS ARE UNTOUCHED, ' +
+                     'WHICH IS WHAT MAKES THIS A RENEWAL**: the subject ' +
+                     'public key is read back out of the certificate being ' +
+                     'replaced, so nothing that verifies against the ' +
+                     'published JWKS stops verifying. `reissue-use-case` is ' +
+                     'the other one — it replaces the authority, and ' +
+                     'everything it had signed chains to nothing until it is ' +
+                     're-minted.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -9731,31 +9908,33 @@ const ROUTES = [
         description: 'Paste a CA certificate and its private key. With ' +
                      '`useCase: "root"` it becomes the service Root and ' +
                      '**every branch must then be rebuilt under it**; ' +
-                     'otherwise it becomes one scope’s Issuing CA for one use ' +
-                     'case, and everything under that authority is re-minted ' +
-                     'from it.\n\n**THREE CHECKS HAPPEN BEFORE ANYTHING IS ' +
-                     'STORED**, and the middle one is the one that matters: ' +
-                     'both halves must be present (a certificate with no key ' +
-                     'is a trust anchor rather than an authority), the KEY ' +
-                     'MUST BELONG TO THE CERTIFICATE (an authority whose key ' +
-                     'is somebody else’s issues certificates that verify ' +
-                     'nowhere, and the failure arrives at a relying party ' +
-                     'rather than here), and the certificate must be a CA at ' +
-                     'all — `cA:FALSE` means nothing it signs is accepted by ' +
-                     'a path validator.\n\n**THE KEY IS STORED AS THIS ' +
-                     'SERVICE STORES ITS OWN**: in the keystore row, sealed ' +
-                     'under the key-encryption key wherever that key outlives ' +
-                     'the process.',
+                     'otherwise it becomes one scope’s Issuing CA for one ' +
+                     'use case, and everything under that authority is ' +
+                     're-minted from it.\n\n**THREE CHECKS HAPPEN BEFORE ' +
+                     'ANYTHING IS STORED**, and the middle one is the one ' +
+                     'that matters: both halves must be present (a ' +
+                     'certificate with no key is a trust anchor rather than ' +
+                     'an authority), the KEY MUST BELONG TO THE CERTIFICATE ' +
+                     '(an authority whose key is somebody else’s issues ' +
+                     'certificates that verify nowhere, and the failure ' +
+                     'arrives at a relying party rather than here), and the ' +
+                     'certificate must be a CA at all — `cA:FALSE` means ' +
+                     'nothing it signs is accepted by a path ' +
+                     'validator.\n\n**THE KEY IS STORED AS THIS SERVICE ' +
+                     'STORES ITS OWN**: in the keystore row, sealed under ' +
+                     'the key-encryption key wherever that key outlives the ' +
+                     'process.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             scope: { type: 'string',
-                     description: '`*service` for the Root, otherwise a realm ' +
-                                  'id or `*process`.' },
+                     description: '`*service` for the Root, otherwise a ' +
+                                  'realm id or `*process`.' },
             useCase: { type: 'string',
                        description: '`root`, or one of the use cases.' },
-            certificatePem: { type: 'string', description: 'The CA certificate.' },
+            certificatePem: { type: 'string',
+                              description: 'The CA certificate.' },
             privateKeyPem: { type: 'string', description: 'Its private key.' }
           },
           required: ['useCase', 'certificatePem', 'privateKeyPem'],
@@ -9771,9 +9950,9 @@ const ROUTES = [
         description: 'A SLOT is a use case and an algorithm — `jose` / ' +
                      '`ES256:P-256`, say — which is the granularity an ' +
                      'operator actually wants: *what signs my ES384*, not ' +
-                     '*the key that happened to be there on Tuesday*. A `kid` ' +
-                     'would not do, because it changes whenever the key ' +
-                     'does.\n\n**WITH NO CERTIFICATE THIS SERVICE ISSUES ' +
+                     '*the key that happened to be there on Tuesday*. A ' +
+                     '`kid` would not do, because it changes whenever the ' +
+                     'key does.\n\n**WITH NO CERTIFICATE THIS SERVICE ISSUES ' +
                      'ONE** from that use case’s Issuing CA, so your key ' +
                      'chains to this service’s Root exactly as a generated ' +
                      'one would — which is what somebody who wants their own ' +
@@ -9956,14 +10135,14 @@ const ROUTES = [
     summary: 'How many SCIM calls there have been, from whom, of what kind, ' +
              'and how many failed',
     description: 'Everything /admin/scim/monitor draws: the call totals, one ' +
-                 'row per operation with its successes, failures, latency and ' +
-                 'bytes returned, one row per resource type, one row per ' +
+                 'row per operation with its successes, failures, latency ' +
+                 'and bytes returned, one row per resource type, one row per ' +
                  'authenticated client, the authentication schemes with the ' +
                  'ones at zero included, what went back by status class, ' +
                  'status and `scimType`, and the last fifty requests ' +
-                 'individually.\n\n**A CLIENT IS AN AUTHENTICATED ' +
-                 'PRINCIPAL, NOT A CONNECTION.** SCIM is stateless HTTP — no ' +
-                 'session, no registration, nothing to be connected — so ' +
+                 'individually.\n\n**A CLIENT IS AN AUTHENTICATED PRINCIPAL, ' +
+                 'NOT A CONNECTION.** SCIM is stateless HTTP — no session, ' +
+                 'no registration, nothing to be connected — so ' +
                  '`authentication.distinct` is how many different names have ' +
                  'successfully authenticated since this process started. It ' +
                  'never goes down: a provisioning client that has stopped ' +
@@ -9971,22 +10150,22 @@ const ROUTES = [
                  'calls.\n\n**A REFUSED CALLER IS NOT A CLIENT.** Calls the ' +
                  'gate turned away are counted in `authentication.refused` ' +
                  'and appear in no `clients` row, even when the credential ' +
-                 'carried a name — Basic and Digest both put one on the wire. ' +
-                 'Attributing traffic to an identity this service declined to ' +
-                 'believe is the one mistake this reply could make that would ' +
-                 'matter.\n\n**THE OPERATION COUNTS DO NOT SUM TO ' +
-                 '`calls`.** One `POST /scim/v2/Bulk` carrying five creates ' +
-                 'is one `bulk` AND five `create`s, because each of the five ' +
-                 'really is performed.\n\n**AN ABSENT MEASUREMENT IS NULL ' +
-                 'AND NOT ZERO.** `averageMs`, `maxMs` and `successRate` are ' +
-                 'null where nothing has been called: an average over no ' +
-                 'samples is absent, and a 100% success rate on zero requests ' +
-                 'is the most misleading number here.\n\nThe counters are ' +
-                 'IN MEMORY, start with the process (`since`) and are PER ' +
-                 'TRUST REALM, like the directory SCIM writes into. The ' +
-                 'durable record of what SCIM was asked to do is GET ' +
-                 '/admin-api/audit, which has the actor and the target as ' +
-                 'well as the count.',
+                 'carried a name — Basic and Digest both put one on the ' +
+                 'wire. Attributing traffic to an identity this service ' +
+                 'declined to believe is the one mistake this reply could ' +
+                 'make that would matter.\n\n**THE OPERATION COUNTS DO NOT ' +
+                 'SUM TO `calls`.** One `POST /scim/v2/Bulk` carrying five ' +
+                 'creates is one `bulk` AND five `create`s, because each of ' +
+                 'the five really is performed.\n\n**AN ABSENT MEASUREMENT ' +
+                 'IS NULL AND NOT ZERO.** `averageMs`, `maxMs` and ' +
+                 '`successRate` are null where nothing has been called: an ' +
+                 'average over no samples is absent, and a 100% success rate ' +
+                 'on zero requests is the most misleading number ' +
+                 'here.\n\nThe counters are IN MEMORY, start with the ' +
+                 'process (`since`) and are PER TRUST REALM, like the ' +
+                 'directory SCIM writes into. The durable record of what ' +
+                 'SCIM was asked to do is GET /admin-api/audit, which has ' +
+                 'the actor and the target as well as the count.',
     mirrors: 'GET /admin/scim/monitor',
     responseDescription: 'The call totals, the per-operation, per-resource, ' +
                          'per-client and per-scheme breakdowns, and the ' +
@@ -10015,18 +10194,18 @@ const ROUTES = [
     description: 'This service\'s own admin console is a registered Shared ' +
                  'Signals receiver: it has a stream of its own ' +
                  '(`sts-admin-console`), seeded in EVERY trust realm, asking ' +
-                 'for every CAEP and every RISC event type, and each event is ' +
-                 'POSTed to it over RFC 8935 push at /admin/signals/receive ' +
-                 'with that stream\'s own bearer token. This is what ' +
-                 'arrived.\n\n**IT IS SEEDED IN EVERY REALM AND THE ' +
-                 'CONSOLE\'S CLIENT ENTRY IS IN ONE**, and the disagreement ' +
-                 'is deliberate: a client entry is about signing somebody IN, ' +
-                 'and this console\'s gate reads the DEFAULT realm\'s ' +
-                 'session wherever it is reached; a stream is about what ' +
-                 'HAPPENED, and events happen in the realm they happen ' +
-                 'in.\n\n**READ `status.why` BEFORE CONCLUDING NOTHING HAS ' +
-                 'HAPPENED.** An empty `received` has five causes and only ' +
-                 'one of them is that: `ssf.enabled` off, ' +
+                 'for every CAEP and every RISC event type, and each event ' +
+                 'is POSTed to it over RFC 8935 push at ' +
+                 '/admin/signals/receive with that stream\'s own bearer ' +
+                 'token. This is what arrived.\n\n**IT IS SEEDED IN EVERY ' +
+                 'REALM AND THE CONSOLE\'S CLIENT ENTRY IS IN ONE**, and the ' +
+                 'disagreement is deliberate: a client entry is about ' +
+                 'signing somebody IN, and this console\'s gate reads the ' +
+                 'DEFAULT realm\'s session wherever it is reached; a stream ' +
+                 'is about what HAPPENED, and events happen in the realm ' +
+                 'they happen in.\n\n**READ `status.why` BEFORE CONCLUDING ' +
+                 'NOTHING HAS HAPPENED.** An empty `received` has five ' +
+                 'causes and only one of them is that: `ssf.enabled` off, ' +
                  '`ssf.internalReceivers` off, the stream deleted (it is an ' +
                  'ORDINARY stream — delete it here or at /admin/ssf and it ' +
                  'stays deleted until a restart), `ssf.pushDelivery` off, or ' +
@@ -10138,14 +10317,14 @@ const ROUTES = [
                  'whether it was written down.\n\n**A RUNTIME ANCHOR IS ' +
                  'PERSISTED** in `ou=trustAnchors` in the default realm\'s ' +
                  'directory, so it survives a restart wherever the directory ' +
-                 'does (`persistence.mode` ldif or postgres) and reaches every ' +
-                 'other process against the same store. A `file` anchor is ' +
-                 'not stored there and comes back at the next start however ' +
-                 'it was removed.\n\n**ONE TRUSTSTORE FOR THE PROCESS, NOT PER ' +
-                 'REALM.** The listeners are shared by every trust realm, so ' +
-                 'this answers the same list under every realm prefix.\n\n' +
-                 '**NO PRIVATE KEY IS IN THIS REPLY** — the truststore holds ' +
-                 'certificates and nothing else.',
+                 'does (`persistence.mode` ldif or postgres) and reaches ' +
+                 'every other process against the same store. A `file` ' +
+                 'anchor is not stored there and comes back at the next ' +
+                 'start however it was removed.\n\n**ONE TRUSTSTORE FOR THE ' +
+                 'PROCESS, NOT PER REALM.** The listeners are shared by ' +
+                 'every trust realm, so this answers the same list under ' +
+                 'every realm prefix.\n\n**NO PRIVATE KEY IS IN THIS REPLY** ' +
+                 '— the truststore holds certificates and nothing else.',
     mirrors: 'GET /admin/tls/trust',
     parameters: pagingParameters(),
     responseDescription: 'The anchors on this page with their paging, the ' +
@@ -10180,25 +10359,26 @@ const ROUTES = [
       { action: 'add', operationId: 'addTrustAnchors',
         summary: 'Trust client certificates issued by one or more CAs',
         description: 'Adds every `-----BEGIN CERTIFICATE-----` block in ' +
-                     '`certificates` — the root, or the whole chain above the ' +
-                     'leaf — and applies the new truststore to every listener ' +
-                     'with `setSecureContext()`. The next handshake is judged ' +
-                     'against it; connections already open keep the ' +
-                     'truststore they were made under.\n\n**ALL OR NOTHING ON ' +
-                     'A BLOCK OPENSSL CANNOT READ.** If any block does not ' +
-                     'parse, none is added: an anchor the listener cannot ' +
-                     'parse makes the next truststore change throw on every ' +
-                     'listener. A certificate already held is counted in ' +
-                     '`duplicates` and not added twice. The truststore holds ' +
-                     'at most 32 anchors; an add that fills it keeps what went ' +
-                     'in and says why the rest did not in `warning`.\n\n' +
-                     '**PERSISTED** in `ou=trustAnchors` wherever the ' +
-                     'directory is; `persisted` in the reply says whether ' +
-                     'every anchor this call added was written down.\n\n**THIS IS THE GATED TWIN OF ' +
-                     '`POST /tls/trust`**, which needs no credential and is ' +
-                     'refused in product mode. This operation answers in both ' +
-                     'modes. The reply names what was added and carries no ' +
-                     'private key, because none is involved.',
+                     '`certificates` — the root, or the whole chain above ' +
+                     'the leaf — and applies the new truststore to every ' +
+                     'listener with `setSecureContext()`. The next handshake ' +
+                     'is judged against it; connections already open keep ' +
+                     'the truststore they were made under.\n\n**ALL OR ' +
+                     'NOTHING ON A BLOCK OPENSSL CANNOT READ.** If any block ' +
+                     'does not parse, none is added: an anchor the listener ' +
+                     'cannot parse makes the next truststore change throw on ' +
+                     'every listener. A certificate already held is counted ' +
+                     'in `duplicates` and not added twice. The truststore ' +
+                     'holds at most 32 anchors; an add that fills it keeps ' +
+                     'what went in and says why the rest did not in ' +
+                     '`warning`.\n\n**PERSISTED** in `ou=trustAnchors` ' +
+                     'wherever the directory is; `persisted` in the reply ' +
+                     'says whether every anchor this call added was written ' +
+                     'down.\n\n**THIS IS THE GATED TWIN OF `POST ' +
+                     '/tls/trust`**, which needs no credential and is ' +
+                     'refused in product mode. This operation answers in ' +
+                     'both modes. The reply names what was added and carries ' +
+                     'no private key, because none is involved.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -10215,8 +10395,8 @@ const ROUTES = [
           additionalProperties: false
         },
         responseDescription: 'How many anchors were added, how many were ' +
-                             'already held, the new total, and the subject and ' +
-                             'fingerprint of each one added.' },
+                             'already held, the new total, and the subject ' +
+                             'and fingerprint of each one added.' },
 
       { action: 'remove', operationId: 'removeTrustAnchor',
         summary: 'Stop trusting one anchor, named by its fingerprint',
@@ -10228,11 +10408,11 @@ const ROUTES = [
                      'reach is every client certificate every other caller ' +
                      'relies on; `POST /tls/trust/clear` exists as a ' +
                      'development test control and is refused in product ' +
-                     'mode. Remove the rows you mean.\n\n**A `file` ANCHOR MAY ' +
-                     'BE REMOVED AND COMES BACK AT THE NEXT START**, when ' +
-                     '`tls.trustAnchorsFile` is read again; the reply says so. ' +
-                     'A fingerprint this truststore does not hold is refused ' +
-                     'and removes nothing.',
+                     'mode. Remove the rows you mean.\n\n**A `file` ANCHOR ' +
+                     'MAY BE REMOVED AND COMES BACK AT THE NEXT START**, ' +
+                     'when `tls.trustAnchorsFile` is read again; the reply ' +
+                     'says so. A fingerprint this truststore does not hold ' +
+                     'is refused and removes nothing.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -10248,24 +10428,24 @@ const ROUTES = [
                        '5A:C3:77:B0' }],
           additionalProperties: false
         },
-        responseDescription: 'The anchor that was removed, where it came from, ' +
-                             'and the new total.' }
+        responseDescription: 'The anchor that was removed, where it came ' +
+                             'from, and the new total.' }
     ] },
 
   // ---------------------------------------------------------------------------
   // THE STORED KERBEROS KEYS (2026-09-12).
   //
-  // Rule 7: `/admin/kerberos/principals` has six controls — the two "Drop previous
-  // versions" buttons joined the four on 2026-09-12 — so this resource has
-  // the same six, through `kerberosPrincipalsAction()` and
+  // Rule 7: `/admin/kerberos/principals` has six controls — the two "Drop
+  // previous versions" buttons joined the four on 2026-09-12 — so this resource
+  // has the same six, through `kerberosPrincipalsAction()` and
   // `kerberosPrincipalsJson()` in `admin-core/`, which reach
   // `kerberos/krb5_person_keys.js` by a plain require.
   //
   // **NO KEY IS IN ANY REPLY BUT TWO**, and those two are the whole reason a
   // service principal can be created from a machine: `create-service` and
-  // `rotate-service` return the KEYTAB, base64, ONCE. Nothing reads a stored key
-  // back out afterwards — a lost keytab is replaced by rotating. The GET is built
-  // from the public half of each pair of attributes and opens nothing.
+  // `rotate-service` return the KEYTAB, base64, ONCE. Nothing reads a stored
+  // key back out afterwards — a lost keytab is replaced by rotating. The GET is
+  // built from the public half of each pair of attributes and opens nothing.
   //
   // **ONE KDC FOR THE PROCESS**, so every realm prefix reads and writes the
   // DEFAULT trust realm's principals, and each reply says `trustRealm`.
@@ -10275,19 +10455,20 @@ const ROUTES = [
     summary: 'Who the KDC holds a stored long-term key for',
     description: 'Two lists, paged separately with `?peoplePage=` and ' +
                  '`?servicesPage=` and one `?per=`.\n\n`people` — the ' +
-                 'directory people whose Kerberos keys were derived from their ' +
-                 'own password when it was set or verified (PRODUCT MODE): the ' +
-                 'principal, the kvno, the enctypes, when and on what event the ' +
-                 'keys were derived, whether they are sealed, and `current` — ' +
-                 'whether they still match the password the entry holds. A ' +
-                 'person whose keys are not current is refused by the KDC until ' +
-                 'their next verified sign-in derives new ones.\n\n`services` — ' +
-                 'the service principals created with a RANDOM key: the ' +
-                 'principal, the kvno, the enctypes, when created and last ' +
-                 'rotated.\n\n**NO KEY MATERIAL IS IN THIS REPLY**, sealed or ' +
-                 'otherwise — both lists are built from the public info ' +
-                 'attributes. The KDC is the process\'s, so this answers the ' +
-                 'default trust realm\'s principals under every realm prefix.',
+                 'directory people whose Kerberos keys were derived from ' +
+                 'their own password when it was set or verified (PRODUCT ' +
+                 'MODE): the principal, the kvno, the enctypes, when and on ' +
+                 'what event the keys were derived, whether they are sealed, ' +
+                 'and `current` — whether they still match the password the ' +
+                 'entry holds. A person whose keys are not current is ' +
+                 'refused by the KDC until their next verified sign-in ' +
+                 'derives new ones.\n\n`services` — the service principals ' +
+                 'created with a RANDOM key: the principal, the kvno, the ' +
+                 'enctypes, when created and last rotated.\n\n**NO KEY ' +
+                 'MATERIAL IS IN THIS REPLY**, sealed or otherwise — both ' +
+                 'lists are built from the public info attributes. The KDC ' +
+                 'is the process\'s, so this answers the default trust ' +
+                 'realm\'s principals under every realm prefix.',
     mirrors: 'GET /admin/kerberos/principals',
     parameters: pagingParameters(),
     responseDescription: 'Both lists with their paging, whether this is a ' +
@@ -10301,36 +10482,42 @@ const ROUTES = [
       log.debug("Leaving the management API Kerberos principals endpoint.");
     } },
 
-  { method: 'POST', route: BASE + '/kerberos/principals/:action', tag: 'Kerberos',
+  { method: 'POST', route: BASE + '/kerberos/principals/:action',
+    tag: 'Kerberos',
     mirrors: 'POST /admin/kerberos/principals',
     handler: function (req, res) {
-      log.debug("Entering the management API Kerberos principals action endpoint.");
+      log.debug("Entering the management API Kerberos principals action " +
+                "endpoint.");
       const body = parseBody(req);
-      const result = adminActions.kerberosPrincipalsAction(withAction(req, body),
+      const result = adminActions.kerberosPrincipalsAction(
+          withAction(req, body),
                                                            { via: 'api' });
       if (!result.ok) {
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0065');
       }
       sendJson(res, result.ok ? 200 : 400, result);
-      log.debug("Leaving the management API Kerberos principals action endpoint.");
+      log.debug("Leaving the management API Kerberos principals action " +
+                "endpoint.");
     },
     actions: [
       { action: 'create-service', operationId: 'createKerberosServicePrincipal',
-        summary: 'Create a service principal with a random key, and get its keytab once',
-        description: 'Makes a RANDOM key for every enctype in `krb5.enctypes`, at ' +
-                     'kvno `krb5.kvno`, for `spn` in this KDC\'s realm, stores ' +
-                     'them SEALED on the application entry for `<spn>@<realm>` ' +
-                     '(creating that entry if it is not there), and answers with ' +
-                     'an MIT keytab (format 0x502) in `keytab`, base64.\n\n' +
-                     '**THE KEYTAB IS IN THIS REPLY AND NOWHERE ELSE**: it cannot ' +
+        summary: 'Create a service principal with a random key, and get its ' +
+                 'keytab once',
+        description: 'Makes a RANDOM key for every enctype in ' +
+                     '`krb5.enctypes`, at kvno `krb5.kvno`, for `spn` in ' +
+                     'this KDC\'s realm, stores them SEALED on the ' +
+                     'application entry for `<spn>@<realm>` (creating that ' +
+                     'entry if it is not there), and answers with an MIT ' +
+                     'keytab (format 0x502) in `keytab`, base64.\n\n**THE ' +
+                     'KEYTAB IS IN THIS REPLY AND NOWHERE ELSE**: it cannot ' +
                      'be downloaded again. A lost one is replaced by ' +
-                     '`rotate-service`.\n\nThe KDC issues tickets for that SPN ' +
-                     'under the stored key from the next request, in both modes, ' +
-                     'and this service\'s own acceptor prefers it when the SPN is ' +
-                     '`krb5.servicePrincipal`. Refused for an SPN that already ' +
-                     'holds a stored key, for `krbtgt/*`, for another realm, and ' +
-                     'for anything that is not two or more `/`-separated ' +
-                     'components.',
+                     '`rotate-service`.\n\nThe KDC issues tickets for that ' +
+                     'SPN under the stored key from the next request, in ' +
+                     'both modes, and this service\'s own acceptor prefers ' +
+                     'it when the SPN is `krb5.servicePrincipal`. Refused ' +
+                     'for an SPN that already holds a stored key, for ' +
+                     '`krbtgt/*`, for another realm, and for anything that ' +
+                     'is not two or more `/`-separated components.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -10344,20 +10531,22 @@ const ROUTES = [
           examples: [{ spn: 'HTTP/app.example.com' }],
           additionalProperties: false
         },
-        responseDescription: 'The principal, kvno, enctypes, the keytab (base64) ' +
-                             'and a file name for it.' },
+        responseDescription: 'The principal, kvno, enctypes, the keytab ' +
+                             '(base64) and a file name for it.' },
 
       { action: 'rotate-service', operationId: 'rotateKerberosServicePrincipal',
-        summary: 'Replace a service principal\'s key, and get the new keytab once',
-        description: 'New random keys at the stored kvno PLUS ONE, and the new ' +
-                     'keytab in `keytab`, base64.\n\n**THE VERSION IT REPLACES ' +
-                     'IS KEPT** — at most `krb5.retainedKeyVersions` previous ' +
-                     'versions, each for `krb5.retainedKeyTtlS` (by default the ' +
-                     'ticket lifetime plus the clock skew) — and **the keytab ' +
-                     'carries them too**, as MIT\'s `ktadd` leaves one: ' +
-                     '`keytabKvnos` lists every version in it and `retained` ' +
-                     'says until when each is accepted. A ticket already issued ' +
-                     'under a kept version is still accepted by this KDC and its ' +
+        summary: 'Replace a service principal\'s key, and get the new keytab ' +
+                 'once',
+        description: 'New random keys at the stored kvno PLUS ONE, and the ' +
+                     'new keytab in `keytab`, base64.\n\n**THE VERSION IT ' +
+                     'REPLACES IS KEPT** — at most ' +
+                     '`krb5.retainedKeyVersions` previous versions, each for ' +
+                     '`krb5.retainedKeyTtlS` (by default the ticket lifetime ' +
+                     'plus the clock skew) — and **the keytab carries them ' +
+                     'too**, as MIT\'s `ktadd` leaves one: `keytabKvnos` ' +
+                     'lists every version in it and `retained` says until ' +
+                     'when each is accepted. A ticket already issued under a ' +
+                     'kept version is still accepted by this KDC and its ' +
                      'acceptor; nothing new is issued under it, and past its ' +
                      'window it is refused KRB_AP_ERR_BADKEYVER. ' +
                      '`drop-previous-service-keys` ends the window at once. ' +
@@ -10372,17 +10561,17 @@ const ROUTES = [
           examples: [{ spn: 'HTTP/app.example.com' }],
           additionalProperties: false
         },
-        responseDescription: 'The principal, the new kvno, the enctypes and the ' +
-                             'new keytab (base64).' },
+        responseDescription: 'The principal, the new kvno, the enctypes and ' +
+                             'the new keytab (base64).' },
 
       { action: 'delete-service', operationId: 'deleteKerberosServicePrincipal',
         summary: 'Delete a service principal\'s stored key',
-        description: 'Removes the stored key and its info from the application ' +
-                     'entry. The entry itself stays, as every entry this registry ' +
-                     'records does. A ticket for that SPN is then keyed as it was ' +
-                     'before a key was stored: from `krb5.servicePassword` if it is ' +
-                     'the acceptor\'s own name, and not at all in product mode ' +
-                     'otherwise.',
+        description: 'Removes the stored key and its info from the ' +
+                     'application entry. The entry itself stays, as every ' +
+                     'entry this registry records does. A ticket for that ' +
+                     'SPN is then keyed as it was before a key was stored: ' +
+                     'from `krb5.servicePassword` if it is the acceptor\'s ' +
+                     'own name, and not at all in product mode otherwise.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -10398,12 +10587,13 @@ const ROUTES = [
       { action: 'clear-person-keys', operationId: 'clearKerberosPersonKeys',
         summary: 'Clear a directory person\'s Kerberos keys',
         description: 'Removes the Kerberos keys derived from `username`\'s ' +
-                     'password. Their next AS-REQ is refused with "sign in once"; ' +
-                     'their next verified sign-in derives new keys at the next ' +
-                     'kvno. Somebody with no keys answers `cleared: false` rather ' +
-                     'than a refusal, so a script may clear on every run. There is ' +
-                     'no operation that SETS a person\'s keys: they come from the ' +
-                     'person\'s password and from nothing else.',
+                     'password. Their next AS-REQ is refused with "sign in ' +
+                     'once"; their next verified sign-in derives new keys at ' +
+                     'the next kvno. Somebody with no keys answers `cleared: ' +
+                     'false` rather than a refusal, so a script may clear on ' +
+                     'every run. There is no operation that SETS a person\'s ' +
+                     'keys: they come from the person\'s password and from ' +
+                     'nothing else.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -10420,16 +10610,18 @@ const ROUTES = [
 
       { action: 'drop-previous-service-keys',
         operationId: 'dropKerberosServicePreviousKeys',
-        summary: 'Stop accepting tickets under a service principal\'s previous key versions, now',
-        description: 'Removes the PREVIOUS key versions a rotation kept for `spn`, ' +
-                     'leaving the current key and its keytab untouched. A ticket ' +
-                     'issued under a dropped version is refused ' +
-                     'KRB_AP_ERR_BADKEYVER from the next request, rather than when ' +
-                     '`krb5.retainedKeyTtlS` would have ended its window — which is ' +
-                     'what an operator wants after a keytab is compromised. ' +
-                     'Nothing kept answers `dropped: 0` rather than a refusal. ' +
-                     'Refused for an SPN with no stored key, and for a key this ' +
-                     'service cannot open.',
+        summary: 'Stop accepting tickets under a service principal\'s ' +
+                 'previous key versions, now',
+        description: 'Removes the PREVIOUS key versions a rotation kept for ' +
+                     '`spn`, leaving the current key and its keytab ' +
+                     'untouched. A ticket issued under a dropped version is ' +
+                     'refused KRB_AP_ERR_BADKEYVER from the next request, ' +
+                     'rather than when `krb5.retainedKeyTtlS` would have ' +
+                     'ended its window — which is what an operator wants ' +
+                     'after a keytab is compromised. Nothing kept answers ' +
+                     '`dropped: 0` rather than a refusal. Refused for an SPN ' +
+                     'with no stored key, and for a key this service cannot ' +
+                     'open.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -10445,15 +10637,16 @@ const ROUTES = [
 
       { action: 'drop-previous-person-keys',
         operationId: 'dropKerberosPersonPreviousKeys',
-        summary: 'Stop accepting tickets under a person\'s previous key versions, now',
-        description: 'Removes the PREVIOUS key versions a password change kept for ' +
-                     '`username`, leaving their current keys — and so their ' +
-                     'sign-in — untouched. A ticket sealed under a dropped version ' +
-                     'is refused KRB_AP_ERR_BADKEYVER from the next request. A ' +
-                     'previous version was never a way in: pre-authentication ' +
-                     'uses the current keys only, so an old password is refused ' +
-                     'whether or not this is called. Nothing kept answers ' +
-                     '`dropped: 0`.',
+        summary: 'Stop accepting tickets under a person\'s previous key ' +
+                 'versions, now',
+        description: 'Removes the PREVIOUS key versions a password change ' +
+                     'kept for `username`, leaving their current keys — and ' +
+                     'so their sign-in — untouched. A ticket sealed under a ' +
+                     'dropped version is refused KRB_AP_ERR_BADKEYVER from ' +
+                     'the next request. A previous version was never a way ' +
+                     'in: pre-authentication uses the current keys only, so ' +
+                     'an old password is refused whether or not this is ' +
+                     'called. Nothing kept answers `dropped: 0`.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -10477,25 +10670,25 @@ const ROUTES = [
                  'console interaction, management API call and protocol ' +
                  'endpoint call, newest first.\n\nThis is HISTORY where the ' +
                  'rest of this API is STATE. /admin-api/metrics can say the ' +
-                 'directory holds eleven entries; only this can say a twelfth ' +
-                 'was created at 14:02 and deleted at 14:03 by somebody bound ' +
-                 'as `uid=carol`, over LDAPS.\n\n**NO CREDENTIAL IS EVER IN ' +
-                 'A ROW.** Not a password, not a bearer token, not an ' +
-                 'assertion, and no request or response body. A modify names ' +
-                 'the attributes it changed and never their values, because a ' +
-                 'modify is where a `userPassword` gets set; a compare says ' +
-                 'whether it matched and not what was tried; an ' +
-                 'authorization code in a query string is replaced with ' +
-                 '`(redacted)`.\n\n**One act usually produces several ' +
-                 'events.** A sign-in writes three — the HTTP call, the ' +
-                 'credential being accepted, and the session that came out of ' +
-                 'it. They are three facts at three layers, and a Kerberos ' +
-                 'AS-REQ authenticates somebody and starts no session at all.' +
-                 '\n\nWALK IT BY `seq`, not by page. That number is ' +
-                 'monotonic and never reused, including across a drop, so ' +
-                 '"everything after 4102" is exact; a gap between the last ' +
-                 'one you saw and `oldestSeq` is precisely how many events ' +
-                 'you missed while the cap discarded them.',
+                 'directory holds eleven entries; only this can say a ' +
+                 'twelfth was created at 14:02 and deleted at 14:03 by ' +
+                 'somebody bound as `uid=carol`, over LDAPS.\n\n**NO ' +
+                 'CREDENTIAL IS EVER IN A ROW.** Not a password, not a ' +
+                 'bearer token, not an assertion, and no request or response ' +
+                 'body. A modify names the attributes it changed and never ' +
+                 'their values, because a modify is where a `userPassword` ' +
+                 'gets set; a compare says whether it matched and not what ' +
+                 'was tried; an authorization code in a query string is ' +
+                 'replaced with `(redacted)`.\n\n**One act usually produces ' +
+                 'several events.** A sign-in writes three — the HTTP call, ' +
+                 'the credential being accepted, and the session that came ' +
+                 'out of it. They are three facts at three layers, and a ' +
+                 'Kerberos AS-REQ authenticates somebody and starts no ' +
+                 'session at all.\n\nWALK IT BY `seq`, not by page. That ' +
+                 'number is monotonic and never reused, including across a ' +
+                 'drop, so "everything after 4102" is exact; a gap between ' +
+                 'the last one you saw and `oldestSeq` is precisely how many ' +
+                 'events you missed while the cap discarded them.',
     mirrors: 'GET /admin/audit',
     parameters: [
       { name: 'category', in: 'query', required: false,
@@ -10523,18 +10716,18 @@ const ROUTES = [
         description: 'Substring of either spelling of the actor, ' +
                      'case-insensitive — the normalised key (`alice`) or the ' +
                      'form it was presented in (a bind DN, `alice@REALM`, an ' +
-                     'X.509 subject). A substring because the collapse to one ' +
-                     'key can only be done where an identity is normalised, ' +
-                     'and a directory row\'s actor is a DN.' },
+                     'X.509 subject). A substring because the collapse to ' +
+                     'one key can only be done where an identity is ' +
+                     'normalised, and a directory row\'s actor is a DN.' },
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
         description: 'Substring of the summary, the target or the action, ' +
                      'case-insensitive.' },
       { name: 'code', in: 'query', required: false, schema: { type: 'string' },
         description: 'The FRONT of an error code: a whole code is one ' +
-                     'failure condition and `STS-OAUTH` every failure in that ' +
-                     'subsystem. docs/error-codes.md lists them. Every refused ' +
-                     'or failed request carries a code; no code is ever sent ' +
-                     'to the client that made the request.' }
+                     'failure condition and `STS-OAUTH` every failure in ' +
+                     'that subsystem. docs/error-codes.md lists them. Every ' +
+                     'refused or failed request carries a code; no code is ' +
+                     'ever sent to the client that made the request.' }
     ].concat(pagingParameters()),
     responseDescription: 'The matching events, with the paging that found ' +
                          'them and the vocabulary the filters take.',
@@ -10551,23 +10744,24 @@ const ROUTES = [
   // alert rule written against it a statement about something else.
   { method: 'GET', path: BASE + '/error-codes', tag: 'Audit log',
     operationId: 'getErrorCodes',
-    summary: 'Every failure condition this service can produce, and how often ' +
-             'each is on the held audit log',
-    description: 'The central table of error codes, `STS-<SUBSYSTEM>-<NNNN>`, ' +
-                 'filtered and paged: each code with the subsystem it belongs ' +
-                 'to, what failed, and what the CLIENT is told in its ' +
-                 'protocol\'s own vocabulary (`spec`).\n\n**A CODE IS NEVER ' +
-                 'SENT TO A CLIENT.** It is recorded on the audit row ' +
-                 '(`errorCode` on GET /admin-api/audit, filterable there with ' +
-                 '`?code=`) and at the front of the service log line; every ' +
-                 'protocol response is exactly what it was.\n\n`seen` counts ' +
-                 'the rows the audit log holds IN THIS REALM right now, so it ' +
-                 'falls as the log\'s cap discards the oldest, and it is zero ' +
-                 'for a failure recorded only as a log line — a startup refusal, ' +
+    summary: 'Every failure condition this service can produce, and how ' +
+             'often each is on the held audit log',
+    description: 'The central table of error codes, ' +
+                 '`STS-<SUBSYSTEM>-<NNNN>`, filtered and paged: each code ' +
+                 'with the subsystem it belongs to, what failed, and what ' +
+                 'the CLIENT is told in its protocol\'s own vocabulary ' +
+                 '(`spec`).\n\n**A CODE IS NEVER SENT TO A CLIENT.** It is ' +
+                 'recorded on the audit row (`errorCode` on GET ' +
+                 '/admin-api/audit, filterable there with `?code=`) and at ' +
+                 'the front of the service log line; every protocol response ' +
+                 'is exactly what it was.\n\n`seen` counts the rows the ' +
+                 'audit log holds IN THIS REALM right now, so it falls as ' +
+                 'the log\'s cap discards the oldest, and it is zero for a ' +
+                 'failure recorded only as a log line — a startup refusal, ' +
                  'or anything the remote PEP container records. ' +
                  '`unregisteredSeen` lists codes found on held rows that the ' +
-                 'table does not hold, each a failure site whose code was never ' +
-                 'registered.\n\nThe same table is published as ' +
+                 'table does not hold, each a failure site whose code was ' +
+                 'never registered.\n\nThe same table is published as ' +
                  'docs/error-codes.md, generated from common/error_codes.js.',
     mirrors: 'GET /admin/error-codes',
     parameters: [
@@ -10578,20 +10772,21 @@ const ROUTES = [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
         description: 'Substring of the code, the summary or what the client ' +
                      'sees, case-insensitive — a code pasted out of a log ' +
-                     'line, or a protocol error name such as `invalid_grant`.' },
+                     'line, or a protocol error name such as ' +
+                     '`invalid_grant`.' },
       { name: 'seen', in: 'query', required: false, schema: { type: 'string' },
         description: '`1` for only the codes on at least one held audit row.' }
     ].concat(pagingParameters()),
-    responseDescription: 'The matching codes, the subsystems with their counts, ' +
-                         'and the paging that found them.',
+    responseDescription: 'The matching codes, the subsystems with their ' +
+                         'counts, and the paging that found them.',
     responseSchema: { type: 'object',
-      description: 'The error code table: `codes` (this page, each with `code`, ' +
-                   '`subsystem`, `summary`, `spec`, `retired`, `seen` and ' +
-                   '`lastSeenAt`), `subsystems` (each with `id`, `prefix`, ' +
-                   '`label`, `where`, `what`, `codes` and `seen`), ' +
+      description: 'The error code table: `codes` (this page, each with ' +
+                   '`code`, `subsystem`, `summary`, `spec`, `retired`, ' +
+                   '`seen` and `lastSeenAt`), `subsystems` (each with `id`, ' +
+                   '`prefix`, `label`, `where`, `what`, `codes` and `seen`), ' +
                    '`unregisteredSeen`, `registered`, `retired`, ' +
-                   '`auditRowsHeld`, `auditRowsWithCode`, `distinctCodesSeen`, ' +
-                   '`filter` and the paging members.' },
+                   '`auditRowsHeld`, `auditRowsWithCode`, ' +
+                   '`distinctCodesSeen`, `filter` and the paging members.' },
     handler: function (req, res) {
       log.debug("Entering the management API error codes endpoint.");
       sendJson(res, 200, adminViews.errorCodesView(req.query).json);
@@ -10610,44 +10805,45 @@ const ROUTES = [
     summary: 'Who acted on whose behalf, through what, to reach what',
     description: 'Every delegation this service has performed or REFUSED, in ' +
                  'one model across three protocol families, plus the ' +
-                 'configured policy that decides the Kerberos ones.\n\n' +
-                 'Eight mechanisms: Kerberos S4U2Self, S4U2Proxy (classic and ' +
+                 'configured policy that decides the Kerberos ones.\n\nEight ' +
+                 'mechanisms: Kerberos S4U2Self, S4U2Proxy (classic and ' +
                  'resource-based) and a forwarded ticket-granting ticket; ' +
                  'WS-Trust `OnBehalfOf` and `ActAs`; RFC 8693 token exchange ' +
                  'in both its shapes. They are recorded against ONE model ' +
                  'because the question is protocol-independent: which hop ' +
-                 'invented which identity.\n\n**The axis worth filtering on is ' +
-                 '`mode`.** Under a `delegation` the credential CARRIES the ' +
-                 'chain — an `act` claim, a composite `ActAs`, ' +
+                 'invented which identity.\n\n**The axis worth filtering on ' +
+                 'is `mode`.** Under a `delegation` the credential CARRIES ' +
+                 'the chain — an `act` claim, a composite `ActAs`, ' +
                  '`S4U_DELEGATION_INFO` in the PAC — so the far end can see ' +
-                 'who is really asking. Under an `impersonation` nothing does, ' +
-                 'which means this endpoint is the ONLY place that fact is ' +
-                 'ever visible: no reading of the token afterwards can recover ' +
-                 'it.\n\n**Refusals are here and are most of the value.** A ' +
-                 'refused act carries `reason` — the KDC\'s own words, the ' +
-                 'same sentence the client was sent — naming the two accounts ' +
-                 'and the two attributes and which was missing. A refused ' +
-                 'delegation appears in NO other resource here: nothing was ' +
-                 'accepted, so /admin-api/audit and /admin-api/users have ' +
-                 'nothing to say about it.\n\n**Nothing checks who may ' +
-                 'delegate except the KDC.** WS-Trust and token exchange are ' +
-                 'unpoliced here, and each act says so in the field that names ' +
-                 'an attribute for a Kerberos one.\n\nBesides the paged acts ' +
-                 'the reply carries `chains` — the distinct (mechanism, ' +
-                 'initial, intermediary, target) tuples among what MATCHED, ' +
-                 'one per edge of the picture — `applications`, every ' +
-                 'application an act named in WHATEVER ROLE it played (the ' +
-                 'console draws one of them in full at ' +
-                 '/admin/delegation/application) — and `policy`, which is who ' +
-                 'may delegate to whom before anybody has tried.\n\n**THIS IS ' +
-                 'THE DELEGATION REGISTER AND NOT EVERYTHING A PERSON WAS ' +
-                 'ISSUED.** An ordinary grant is not a delegation act and is ' +
-                 'not here: for one identity END TO END — every credential ' +
-                 'with the exact grant or flow that produced it, beside the ' +
-                 'acts naming them — the console unions this register with the ' +
-                 'issued one at /admin/delegation/user?user=…&format=json, and ' +
-                 'the tokens alone are in GET /admin-api/users.\n\nWALK IT BY ' +
-                 '`seq`: monotonic and never reused, including across a drop.',
+                 'who is really asking. Under an `impersonation` nothing ' +
+                 'does, which means this endpoint is the ONLY place that ' +
+                 'fact is ever visible: no reading of the token afterwards ' +
+                 'can recover it.\n\n**Refusals are here and are most of the ' +
+                 'value.** A refused act carries `reason` — the KDC\'s own ' +
+                 'words, the same sentence the client was sent — naming the ' +
+                 'two accounts and the two attributes and which was missing. ' +
+                 'A refused delegation appears in NO other resource here: ' +
+                 'nothing was accepted, so /admin-api/audit and ' +
+                 '/admin-api/users have nothing to say about ' +
+                 'it.\n\n**Nothing checks who may delegate except the KDC.** ' +
+                 'WS-Trust and token exchange are unpoliced here, and each ' +
+                 'act says so in the field that names an attribute for a ' +
+                 'Kerberos one.\n\nBesides the paged acts the reply carries ' +
+                 '`chains` — the distinct (mechanism, initial, intermediary, ' +
+                 'target) tuples among what MATCHED, one per edge of the ' +
+                 'picture — `applications`, every application an act named ' +
+                 'in WHATEVER ROLE it played (the console draws one of them ' +
+                 'in full at /admin/delegation/application) — and `policy`, ' +
+                 'which is who may delegate to whom before anybody has ' +
+                 'tried.\n\n**THIS IS THE DELEGATION REGISTER AND NOT ' +
+                 'EVERYTHING A PERSON WAS ISSUED.** An ordinary grant is not ' +
+                 'a delegation act and is not here: for one identity END TO ' +
+                 'END — every credential with the exact grant or flow that ' +
+                 'produced it, beside the acts naming them — the console ' +
+                 'unions this register with the issued one at ' +
+                 '/admin/delegation/user?user=…&format=json, and the tokens ' +
+                 'alone are in GET /admin-api/users.\n\nWALK IT BY `seq`: ' +
+                 'monotonic and never reused, including across a drop.',
     mirrors: 'GET /admin/delegation',
     parameters: [
       { name: 'type', in: 'query', required: false,
@@ -10666,8 +10862,8 @@ const ROUTES = [
                      'does not match the mechanism matches nothing.' },
       { name: 'outcome', in: 'query', required: false,
         schema: { type: 'string', enum: ['issued', 'refused'] },
-        description: 'Two rather than the audit log\'s three: a delegation is ' +
-                     'DECIDED rather than performed, so there is no third ' +
+        description: 'Two rather than the audit log\'s three: a delegation ' +
+                     'is DECIDED rather than performed, so there is no third ' +
                      'answer between issuing the credential and refusing to.' },
       { name: 'protocol', in: 'query', required: false,
         schema: { type: 'string' },
@@ -10678,9 +10874,9 @@ const ROUTES = [
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
         description: 'Substring of ANY party of the chain (normalised name, ' +
                      'presented form or application) or of either ' +
-                     'explanation, case-insensitive. One box over six fields, ' +
-                     'because the fact a caller has names one of them and not ' +
-                     'which column it is in.' }
+                     'explanation, case-insensitive. One box over six ' +
+                     'fields, because the fact a caller has names one of ' +
+                     'them and not which column it is in.' }
     ].concat(pagingParameters()),
     responseDescription: 'The matching acts, the distinct chains among them, ' +
                          'the configured Kerberos policy, and the vocabulary ' +
@@ -10729,49 +10925,49 @@ const ROUTES = [
                  'evidence, one row per exchange — and this one is INTENT, ' +
                  'typed in before anybody asked for anything.\n\n**How it ' +
                  'works.** A RESOURCE application is given a base URI ' +
-                 '(`oauthPermissionBaseUri`; Entra calls it the Application ID ' +
-                 'URI and spells it `api://<guid>`, and anything absolute ' +
+                 '(`oauthPermissionBaseUri`; Entra calls it the Application ' +
+                 'ID URI and spells it `api://<guid>`, and anything absolute ' +
                  'works here) and permissions on it (`oauthPermission`). A ' +
                  'permission is identified by the two joined — ' +
                  '`https://example.com/` + `write` = ' +
                  '`https://example.com/write` — and a CLIENT application is ' +
-                 'granted some of them (`oauthDelegatedPermission`). All three ' +
-                 'are ordinary attributes on ordinary entries in ' +
+                 'granted some of them (`oauthDelegatedPermission`). All ' +
+                 'three are ordinary attributes on ordinary entries in ' +
                  '`ou=applications`, so an `ldapmodify` is a configuration ' +
-                 'change here exactly as it is for a redirect ' +
-                 'URI.\n\n**What the token then says.** A client asks for a ' +
-                 'permission as an ordinary OAuth `scope`, and the access ' +
-                 'token comes back AUDIENCED to the base URI with the ' +
-                 'permission NAME on its scope claim: ' +
-                 '`scope=openid https://example.com/write` produces ' +
-                 '`aud: https://example.com/` and `scope: openid write`. Each ' +
-                 'grant row spells that out, because it is two facts a caller ' +
-                 'would otherwise have to compose.\n\n**It refuses nothing ' +
-                 'by default.** An ungranted permission is honoured exactly as ' +
-                 'a granted one is and marked here; only ' +
+                 'change here exactly as it is for a redirect URI.\n\n**What ' +
+                 'the token then says.** A client asks for a permission as ' +
+                 'an ordinary OAuth `scope`, and the access token comes back ' +
+                 'AUDIENCED to the base URI with the permission NAME on its ' +
+                 'scope claim: `scope=openid https://example.com/write` ' +
+                 'produces `aud: https://example.com/` and `scope: openid ' +
+                 'write`. Each grant row spells that out, because it is two ' +
+                 'facts a caller would otherwise have to compose.\n\n**It ' +
+                 'refuses nothing by default.** An ungranted permission is ' +
+                 'honoured exactly as a granted one is and marked here; only ' +
                  '`oauth2.delegatedPermissionsEnforced` turns it into ' +
                  '`invalid_scope`, at the authorization endpoint where the ' +
                  'client can still be told.\n\n`grants[].dangling` is a ' +
-                 'grant naming a permission no application defines — a deleted ' +
-                 'resource, a permission removed from under it, or an ' +
-                 '`ldapmodify`, since both console doors refuse to create one. ' +
-                 '`grants[].asked` is whether the client has ever requested ' +
-                 'that scope, read off its own `oauthScope`: evidence rather ' +
-                 'than proof, and the one thing here that comes from what ' +
-                 'happened.\n\nThe `graph` member is the same picture ' +
-                 '/admin/delegation/allowed draws, in the shape ' +
+                 'grant naming a permission no application defines — a ' +
+                 'deleted resource, a permission removed from under it, or ' +
+                 'an `ldapmodify`, since both console doors refuse to create ' +
+                 'one. `grants[].asked` is whether the client has ever ' +
+                 'requested that scope, read off its own `oauthScope`: ' +
+                 'evidence rather than proof, and the one thing here that ' +
+                 'comes from what happened.\n\nThe `graph` member is the ' +
+                 'same picture /admin/delegation/allowed draws, in the shape ' +
                  '`GET /admin-api/delegation`\'s `graph` uses.',
     mirrors: 'GET /admin/delegation',
-    responseDescription: 'Every application exposing an API, every permission ' +
-                         'defined, every grant between two applications, and ' +
-                         'the graph of them.',
+    responseDescription: 'Every application exposing an API, every ' +
+                         'permission defined, every grant between two ' +
+                         'applications, and the graph of them.',
     responseSchema: { type: 'object',
                       description: 'The configured delegated permission ' +
                                    'register, both directions.' },
     handler: function (req, res) {
       log.debug("Entering the management API permissions endpoint.");
       const view = adminViews.permissionsView();
-      sendJson(res, 200, Object.assign({}, view.register, { graph: view.graph }));
+      sendJson(res, 200,
+               Object.assign({}, view.register, { graph: view.graph }));
       log.debug("Leaving the management API permissions endpoint.");
     } },
 
@@ -10800,7 +10996,8 @@ const ROUTES = [
   // -------------------------------------------------------------------------
   { method: 'GET', path: BASE + '/permissions/groups', tag: 'Delegation',
     operationId: 'getPermissionGroups',
-    summary: 'Which applications are joined to each other by delegated permissions',
+    summary: 'Which applications are joined to each other by delegated ' +
+             'permissions',
     description: 'The configured register PARTITIONED: a group is a set of ' +
                  'applications that can be reached from one another by ' +
                  'following grants, **ignoring which way each grant ' +
@@ -10809,50 +11006,52 @@ const ROUTES = [
                  'answer *what can this client eventually reach*, which is a ' +
                  'question about a chain, and a permission register has no ' +
                  'chains in it: holding a permission on an API grants nobody ' +
-                 'that API\'s own permissions. Following a grant either way is ' +
-                 'the only reading under which an API and the three front ends ' +
-                 'holding permissions on it come out as ONE group rather than ' +
-                 'as four.\n\n**The membership universe is what the ' +
-                 'CONFIGURED register touches**: every application carrying a ' +
-                 'base URI or a permission of its own, and every application ' +
-                 'holding a grant. An entry in `ou=applications` that is ' +
-                 'neither is in no group, because this register has nothing to ' +
-                 'say about it.\n\nThree states join no two applications, and ' +
-                 'each produces a group of ONE rather than being left out: a ' +
-                 'DANGLING grant (no application defines the permission, so ' +
-                 'there is no far end), a grant an application made to ITSELF ' +
-                 '(one application however it is drawn), and a resource nobody ' +
-                 'holds anything on — which is the most interesting group of ' +
-                 'one there is, since somebody described an API and nothing ' +
-                 'may reach it.\n\nA group is NAMED after the identifier of ' +
-                 'its members that sorts first. That is a property of the SET, ' +
-                 'so adding a grant inside a group does not rename it.\n\n' +
-                 'With no `application`, every group with its counts and no ' +
-                 'rows, biggest first and paged on `groupsPage` — the shape ' +
-                 '/admin/delegation/allowed lists. With `application`, the ONE ' +
-                 'group that application is in, with its permissions paged ' +
-                 'on `groupPermissionsPage`, its ' +
-                 'grants paged on `groupGrantsPage`, and the `graph` ' +
+                 'that API\'s own permissions. Following a grant either way ' +
+                 'is the only reading under which an API and the three front ' +
+                 'ends holding permissions on it come out as ONE group ' +
+                 'rather than as four.\n\n**The membership universe is what ' +
+                 'the CONFIGURED register touches**: every application ' +
+                 'carrying a base URI or a permission of its own, and every ' +
+                 'application holding a grant. An entry in `ou=applications` ' +
+                 'that is neither is in no group, because this register has ' +
+                 'nothing to say about it.\n\nThree states join no two ' +
+                 'applications, and each produces a group of ONE rather than ' +
+                 'being left out: a DANGLING grant (no application defines ' +
+                 'the permission, so there is no far end), a grant an ' +
+                 'application made to ITSELF (one application however it is ' +
+                 'drawn), and a resource nobody holds anything on — which is ' +
+                 'the most interesting group of one there is, since somebody ' +
+                 'described an API and nothing may reach it.\n\nA group is ' +
+                 'NAMED after the identifier of its members that sorts ' +
+                 'first. That is a property of the SET, so adding a grant ' +
+                 'inside a group does not rename it.\n\nWith no ' +
+                 '`application`, every group with its counts and no rows, ' +
+                 'biggest first and paged on `groupsPage` — the shape ' +
+                 '/admin/delegation/allowed lists. With `application`, the ' +
+                 'ONE group that application is in, with its permissions ' +
+                 'paged on `groupPermissionsPage`, its grants paged on ' +
+                 '`groupGrantsPage`, and the `graph` ' +
                  '/admin/delegation/cluster draws, in the shape `GET ' +
                  '/admin-api/delegation`\'s `graph` uses. An application the ' +
                  'configured register has never heard of answers 200 with ' +
-                 '`group: null`, not 404: having no permissions configured is ' +
-                 'the ordinary state of most entries in this registry, and it ' +
-                 'is a fact rather than an error. **The identifier is matched ' +
-                 'EXACTLY** — nothing in this service case-folds one, so ' +
-                 '`WebApp1` and `webapp1` are two applications.',
+                 '`group: null`, not 404: having no permissions configured ' +
+                 'is the ordinary state of most entries in this registry, ' +
+                 'and it is a fact rather than an error. **The identifier is ' +
+                 'matched EXACTLY** — nothing in this service case-folds ' +
+                 'one, so `WebApp1` and `webapp1` are two applications.',
     mirrors: 'GET /admin/delegation',
     parameters: [
       { name: 'application', in: 'query',
         description: 'One application\'s identifier. Answers the group it is ' +
-                     'in, with its rows and its graph, instead of the list of ' +
-                     'every group. Matched exactly.',
+                     'in, with its rows and its graph, instead of the list ' +
+                     'of every group. Matched exactly.',
         schema: { type: 'string' } },
       { name: 'groupsPage', in: 'query',
-        description: 'Which page of the group LIST. The same name the console ' +
-                     'page uses, because a group list is one of several lists ' +
-                     'a delegation page can hold and a bare `page` would move ' +
-                     'them together. Not read when `application` is given.',
+        description: 'Which page of the group LIST. The same name the ' +
+                     'console page uses, because a group list is one of ' +
+                     'several lists a delegation page can hold and a bare ' +
+                     '`page` would move them together. Not read when ' +
+                     '`application` is given.',
         schema: { type: 'integer', minimum: 1 } },
       { name: 'groupGrantsPage', in: 'query',
         description: 'Which page of the GRANTS inside one group. Read only ' +
@@ -10869,13 +11068,13 @@ const ROUTES = [
                      'follows it.',
         schema: { type: 'integer', minimum: 1 } }
     ],
-    responseDescription: 'Every group with its members and counts, or the one ' +
-                         'group an application is in with its grants, its ' +
-                         'permissions and its graph.',
+    responseDescription: 'Every group with its members and counts, or the ' +
+                         'one group an application is in with its grants, ' +
+                         'its permissions and its graph.',
     responseSchema: { type: 'object',
                       description: 'The configured register partitioned into ' +
-                                   'groups of applications that can reach one ' +
-                                   'another, direction ignored.' },
+                                   'groups of applications that can reach ' +
+                                   'one another, direction ignored.' },
     handler: function (req, res) {
       log.debug("Entering the management API permission groups endpoint.");
       sendJson(res, 200, adminViews.permissionGroupsView(req.query));
@@ -10900,29 +11099,29 @@ const ROUTES = [
         description: 'The first step of exposing an API, and the one that ' +
                      'makes every permission on the entry NAMEABLE: a ' +
                      'permission is identified by this value followed by its ' +
-                     'name, so an application with permissions and no base has ' +
-                     'permissions no client can ever ask for.\n\nIt must be ' +
-                     'ABSOLUTE, because it becomes the `aud` of an access ' +
+                     'name, so an application with permissions and no base ' +
+                     'has permissions no client can ever ask for.\n\nIt must ' +
+                     'be ABSOLUTE, because it becomes the `aud` of an access ' +
                      'token and an audience that is not absolute is one ' +
                      'nothing can compare against. A trailing separator is ' +
                      'ADDED where there is none — `https://example.com` ' +
-                     'becomes `https://example.com/` — because the identifier ' +
-                     'is a plain concatenation and the two would otherwise ' +
-                     'join into one word. An `ldapmodify` is not normalised ' +
-                     'and means exactly what it says.\n\nSending an empty ' +
-                     'value CLEARS it. The permissions stay on the entry with ' +
-                     'no identifier, which `GET /admin-api/permissions` ' +
-                     'reports, and grants already made become `dangling` on ' +
-                     'the clients holding them. Neither is tidied up: that ' +
-                     'would be this operation writing to entries the caller ' +
-                     'did not name.',
+                     'becomes `https://example.com/` — because the ' +
+                     'identifier is a plain concatenation and the two would ' +
+                     'otherwise join into one word. An `ldapmodify` is not ' +
+                     'normalised and means exactly what it says.\n\nSending ' +
+                     'an empty value CLEARS it. The permissions stay on the ' +
+                     'entry with no identifier, which `GET ' +
+                     '/admin-api/permissions` reports, and grants already ' +
+                     'made become `dangling` on the clients holding them. ' +
+                     'Neither is tidied up: that would be this operation ' +
+                     'writing to entries the caller did not name.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             resource: { type: 'string',
-                        description: 'The application that EXPOSES the API, by ' +
-                                     'its identifier exactly as ' +
+                        description: 'The application that EXPOSES the API, ' +
+                                     'by its identifier exactly as ' +
                                      '`ou=applications` holds it.' },
             baseUri: { type: 'string',
                        description: 'An absolute URI. Empty clears it.' }
@@ -10940,22 +11139,23 @@ const ROUTES = [
                      'time.\n\nThe NAME is what ends up on the access ' +
                      'token\'s `scope` claim, so it must be a legal OAuth ' +
                      'scope token: any printable ASCII except space, double ' +
-                     'quote and backslash (RFC 6749 section 3.3), and not `|`, ' +
-                     'which separates the name from the description in the ' +
-                     'attribute. The DESCRIPTION is optional and is stored ' +
-                     'after the first `|` in the same value.\n\n**Defining a ' +
-                     'permission grants it to nobody.** That is the ordering ' +
-                     'this feature is built on and the reason this operation ' +
-                     'and `grant-permission` are two: a permission must exist ' +
+                     'quote and backslash (RFC 6749 section 3.3), and not ' +
+                     '`|`, which separates the name from the description in ' +
+                     'the attribute. The DESCRIPTION is optional and is ' +
+                     'stored after the first `|` in the same ' +
+                     'value.\n\n**Defining a permission grants it to ' +
+                     'nobody.** That is the ordering this feature is built ' +
+                     'on and the reason this operation and ' +
+                     '`grant-permission` are two: a permission must exist ' +
                      'before anything can be granted it, and the check is in ' +
                      '`applications.updateApplication()` so that this ' +
-                     'operation, the console form and the generic ' +
-                     '`POST /admin-api/applications/update` cannot disagree ' +
-                     'about it.\n\nA second permission of the SAME NAME is ' +
-                     'refused rather than merged — a permission has one ' +
-                     'description, and two rows with one name would leave the ' +
-                     'second unreachable. Remove it and define it again to ' +
-                     'change the wording.',
+                     'operation, the console form and the generic `POST ' +
+                     '/admin-api/applications/update` cannot disagree about ' +
+                     'it.\n\nA second permission of the SAME NAME is refused ' +
+                     'rather than merged — a permission has one description, ' +
+                     'and two rows with one name would leave the second ' +
+                     'unreachable. Remove it and define it again to change ' +
+                     'the wording.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -10963,8 +11163,8 @@ const ROUTES = [
             resource: { type: 'string',
                         description: 'The application that exposes it.' },
             name: { type: 'string',
-                    description: 'The permission name — the word a client will ' +
-                                 'send inside a `scope`.' },
+                    description: 'The permission name — the word a client ' +
+                                 'will send inside a `scope`.' },
             description: { type: 'string',
                            description: 'Optional prose, shown wherever the ' +
                                         'permission is.' }
@@ -10974,21 +11174,21 @@ const ROUTES = [
                        description: 'Change widgets on somebody\'s behalf' }],
           additionalProperties: false
         },
-        responseDescription: 'The permission\'s identifier, and what a request ' +
-                             'naming it would be issued.' },
+        responseDescription: 'The permission\'s identifier, and what a ' +
+                             'request naming it would be issued.' },
 
       { action: 'remove-permission', operationId: 'removePermission',
         summary: 'Stop exposing a permission',
         description: 'Named by its NAME rather than by the raw attribute ' +
                      'value, because that value is `name|description` and a ' +
-                     'caller holding a stale description would fail to remove ' +
-                     'anything.\n\n**Grants naming it are NOT revoked.** ' +
-                     'They stay on the clients\' entries and become ' +
-                     '`dangling`, which `GET /admin-api/permissions` reports ' +
-                     'and the reply here counts. Revoking them would be this ' +
-                     'operation writing to entries the caller did not name; ' +
-                     'define the permission again and every one of them ' +
-                     'resolves exactly as before.',
+                     'caller holding a stale description would fail to ' +
+                     'remove anything.\n\n**Grants naming it are NOT ' +
+                     'revoked.** They stay on the clients\' entries and ' +
+                     'become `dangling`, which `GET /admin-api/permissions` ' +
+                     'reports and the reply here counts. Revoking them would ' +
+                     'be this operation writing to entries the caller did ' +
+                     'not name; define the permission again and every one of ' +
+                     'them resolves exactly as before.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -11009,25 +11209,26 @@ const ROUTES = [
         description: '**THE DELEGATION RELATIONSHIP ITSELF** — Entra ID\'s ' +
                      '`requiredResourceAccess`, one permission at a ' +
                      'time.\n\nIt lands on the CLIENT\'s entry, as a value ' +
-                     'of `oauthDelegatedPermission`, because the client is the ' +
-                     'party that will name the permission in a `scope` — so ' +
-                     'the entry that answers *may this request be honoured* is ' +
-                     'the entry the request identifies. One client granted ' +
-                     'three permissions is three calls and three values; three ' +
-                     'clients granted one permission is one value on each of ' +
-                     'three entries. That is how one-to-many and many-to-one ' +
-                     'both work with no store of their own.\n\n**The ' +
-                     'permission must already be DEFINED**, matched EXACTLY ' +
-                     'rather than as a prefix of a registered base — so a ' +
-                     'client cannot address a token to somebody\'s API by ' +
-                     'inventing a word after their base URI. An application ' +
-                     'cannot be granted its own permission: the token would be ' +
-                     'addressed to itself, which is what an ID Token already ' +
-                     'is.\n\n**It changes nothing about what is issued** ' +
-                     'unless `oauth2.delegatedPermissionsEnforced` is on. With ' +
-                     'it off — the default — the request was already producing ' +
-                     'the audience and the scope, and what the grant changes is ' +
-                     'that the console stops marking it ungranted.',
+                     'of `oauthDelegatedPermission`, because the client is ' +
+                     'the party that will name the permission in a `scope` — ' +
+                     'so the entry that answers *may this request be ' +
+                     'honoured* is the entry the request identifies. One ' +
+                     'client granted three permissions is three calls and ' +
+                     'three values; three clients granted one permission is ' +
+                     'one value on each of three entries. That is how ' +
+                     'one-to-many and many-to-one both work with no store of ' +
+                     'their own.\n\n**The permission must already be ' +
+                     'DEFINED**, matched EXACTLY rather than as a prefix of ' +
+                     'a registered base — so a client cannot address a token ' +
+                     'to somebody\'s API by inventing a word after their ' +
+                     'base URI. An application cannot be granted its own ' +
+                     'permission: the token would be addressed to itself, ' +
+                     'which is what an ID Token already is.\n\n**It changes ' +
+                     'nothing about what is issued** unless ' +
+                     '`oauth2.delegatedPermissionsEnforced` is on. With it ' +
+                     'off — the default — the request was already producing ' +
+                     'the audience and the scope, and what the grant changes ' +
+                     'is that the console stops marking it ungranted.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -11037,11 +11238,12 @@ const ROUTES = [
                                    'whose `client_id` appears on the token ' +
                                    'request. Not the one exposing the API.' },
             permission: { type: 'string',
-                          description: 'The whole permission identifier, base ' +
-                                       'URI and name together.' }
+                          description: 'The whole permission identifier, ' +
+                                       'base URI and name together.' }
           },
           required: ['client', 'permission'],
-          examples: [{ client: 'webapp1', permission: 'https://example.com/write' }],
+          examples: [{ client: 'webapp1',
+                       permission: 'https://example.com/write' }],
           additionalProperties: false
         },
         responseDescription: 'The grant, and what an access token asking for ' +
@@ -11049,12 +11251,13 @@ const ROUTES = [
 
       { action: 'revoke-permission', operationId: 'revokePermission',
         summary: 'Take a permission away from a client application',
-        description: 'The opposite of `grant-permission`, and with the setting ' +
-                     'off it changes nothing about what is issued either: the ' +
-                     'permission still becomes an audience and a scope, and ' +
-                     'those requests are simply reported as UNGRANTED — which ' +
-                     'is the state `oauth2.delegatedPermissionsEnforced` turns ' +
-                     'into a refusal.\n\nIt is also how a DANGLING grant is ' +
+        description: 'The opposite of `grant-permission`, and with the ' +
+                     'setting off it changes nothing about what is issued ' +
+                     'either: the permission still becomes an audience and a ' +
+                     'scope, and those requests are simply reported as ' +
+                     'UNGRANTED — which is the state ' +
+                     '`oauth2.delegatedPermissionsEnforced` turns into a ' +
+                     'refusal.\n\nIt is also how a DANGLING grant is ' +
                      'cleared: send the identifier exactly as it appears on ' +
                      'the entry, and it goes whether or not anything defines ' +
                      'it.',
@@ -11062,12 +11265,14 @@ const ROUTES = [
         requestBody: {
           type: 'object',
           properties: {
-            client: { type: 'string', description: 'The application holding it.' },
+            client: { type: 'string',
+                      description: 'The application holding it.' },
             permission: { type: 'string',
                           description: 'The whole permission identifier.' }
           },
           required: ['client', 'permission'],
-          examples: [{ client: 'webapp1', permission: 'https://example.com/write' }],
+          examples: [{ client: 'webapp1',
+                       permission: 'https://example.com/write' }],
           additionalProperties: false
         },
         responseDescription: 'What was revoked.' }
@@ -11093,10 +11298,10 @@ const ROUTES = [
   // the wrong one asks the wrong people again.
   // -------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
-  // ROLES. Three operations against `adminViews.rolesView()`, `adminViews.rolesPreview()`
-  // and `adminActions.rolesAction()` — the same three functions the console calls, so
-  // rule 7's parity is a property of the wiring rather than of two lists
-  // agreeing.
+  // ROLES. Three operations against `adminViews.rolesView()`,
+  // `adminViews.rolesPreview()` and `adminActions.rolesAction()` — the same
+  // three functions the console calls, so rule 7's parity is a property of the
+  // wiring rather than of two lists agreeing.
   //
   // **THE PREVIEW GETS AN OPERATION OF ITS OWN AND NOT A QUERY ON THE FIRST**,
   // and that is the one decision here worth arguing. On the console it IS a
@@ -11110,37 +11315,38 @@ const ROUTES = [
     summary: 'Who holds a role, and what requires one',
     description: 'The role register, both relations.\n\n**A role is a name ' +
                  'somebody may hold, and holding one is what an ISSUANCE is ' +
-                 'decided on.** Three kinds of thing can be mapped into one — ' +
-                 'a person, a GROUP (so every member of it holds the role, ' +
+                 'decided on.** Three kinds of thing can be mapped into one ' +
+                 '— a person, a GROUP (so every member of it holds the role, ' +
                  'resolved at decision time) and an APPLICATION, which is ' +
-                 'what a `client_credentials` grant is decided on where there ' +
-                 'is no person at all.\n\n**`roles` is MEMBERSHIP and ' +
+                 'what a `client_credentials` grant is decided on where ' +
+                 'there is no person at all.\n\n**`roles` is MEMBERSHIP and ' +
                  '`requiring` is REQUIREMENT, and they are opposite.** ' +
-                 'Membership is stored on the ROLE entry under `ou=roles` and ' +
-                 'is written through this resource. A requirement is ' +
+                 'Membership is stored on the ROLE entry under `ou=roles` ' +
+                 'and is written through this resource. A requirement is ' +
                  '`appRequiredRole` on an APPLICATION\'s own entry and is ' +
                  'written through `POST /admin-api/applications/add` — one ' +
                  'store, one door that writes it. It is READ here because ' +
                  'this is the only surface that can resolve it: ' +
                  '`requiring[].unknown` names a role an application demands ' +
-                 'that NOTHING defines, which refuses everybody, silently and ' +
-                 'correctly, and looks exactly like the application being ' +
-                 'broken.\n\n**Only NARROWED applications are in ' +
+                 'that NOTHING defines, which refuses everybody, silently ' +
+                 'and correctly, and looks exactly like the application ' +
+                 'being broken.\n\n**Only NARROWED applications are in ' +
                  '`requiring`.** An application that names no required role ' +
                  'requires `EVERYBODY`, everybody holds `EVERYBODY`, and ' +
                  'nothing is refused — which is how this service behaved ' +
                  'before roles existed and is what makes the feature off by ' +
                  'default without being absent.\n\n**The six `builtIn` roles ' +
-                 'are COMPUTED and in no container.** They cannot be created, ' +
-                 'edited or deleted, they have no members, and every one of ' +
-                 'them is answered from the CONTEXT of the decision being ' +
-                 'made. They are never in the roles claim either: `EVERYBODY` ' +
-                 'and `ALL_AUTHENTICATED_USERS` are true of almost every token ' +
-                 'this service issues, so carrying them would tell a relying ' +
-                 'party nothing it did not know from holding the token.\n\n' +
-                 '`gated: false` means the XACML family is not loaded in this ' +
-                 'process, so `common/issuance_gate.js` has no decider and ' +
-                 'every issuance is allowed whatever this register says. ' +
+                 'are COMPUTED and in no container.** They cannot be ' +
+                 'created, edited or deleted, they have no members, and ' +
+                 'every one of them is answered from the CONTEXT of the ' +
+                 'decision being made. They are never in the roles claim ' +
+                 'either: `EVERYBODY` and `ALL_AUTHENTICATED_USERS` are true ' +
+                 'of almost every token this service issues, so carrying ' +
+                 'them would tell a relying party nothing it did not know ' +
+                 'from holding the token.\n\n`gated: false` means the XACML ' +
+                 'family is not loaded in this process, so ' +
+                 '`common/issuance_gate.js` has no decider and every ' +
+                 'issuance is allowed whatever this register says. ' +
                  '`enforced: false` means `roles.enforceIssuance` is off, ' +
                  'which is the same outcome by a different route and is the ' +
                  'way back if a policy edit locks something out.',
@@ -11169,21 +11375,21 @@ const ROUTES = [
                  'with the enforcement only by coincidence is impossible. ' +
                  'That is the only reason it is worth having.\n\nIt is not ' +
                  '`POST /xacml/pdp`, which asks the same engine a different ' +
-                 'question: an arbitrary request against the repository ROOT, ' +
-                 'which is the policy about somebody else\'s boundary. Two ' +
-                 'questions, two documents.\n\n`available: false` means the ' +
-                 'XACML family is not loaded in this process: nothing is ' +
+                 'question: an arbitrary request against the repository ' +
+                 'ROOT, which is the policy about somebody else\'s boundary. ' +
+                 'Two questions, two documents.\n\n`available: false` means ' +
+                 'the XACML family is not loaded in this process: nothing is ' +
                  'gated and every issuance is allowed.\n\n**`application` ' +
                  'and `subject` are both needed and neither is declared ' +
                  'required**, because this is a READ and a read with no ' +
                  'question in it has nothing to refuse — it answers 200 with ' +
                  '`answered: false` and says what was missing, exactly as a ' +
                  'GET of /admin/roles with no parameters draws the form and ' +
-                 'no answer. **Read `answered` first.** There is deliberately ' +
-                 'no `decision` member on that reply: the gate ALLOWS a call ' +
-                 'that names no application, so an operation that fell ' +
-                 'through to it would hand back a Permit meaning "you did ' +
-                 'not ask".',
+                 'no answer. **Read `answered` first.** There is ' +
+                 'deliberately no `decision` member on that reply: the gate ' +
+                 'ALLOWS a call that names no application, so an operation ' +
+                 'that fell through to it would hand back a Permit meaning ' +
+                 '"you did not ask".',
     mirrors: 'GET /admin/roles',
     parameters: [
       { name: 'application', in: 'query',
@@ -11209,9 +11415,9 @@ const ROUTES = [
                      'token. `GET /admin-api/roles` lists the nine in ' +
                      '`issuanceKinds`; the default is `issue-access-token`.' }
     ],
-    responseDescription: 'The decision, the sentence explaining it, the roles ' +
-                         'the subject holds and the roles the application ' +
-                         'requires.',
+    responseDescription: 'The decision, the sentence explaining it, the ' +
+                         'roles the subject holds and the roles the ' +
+                         'application requires.',
     responseSchema: { type: 'object',
                       description: 'One issuance decision, made and thrown ' +
                                    'away.' },
@@ -11238,7 +11444,8 @@ const ROUTES = [
                'issued TO, and an issuance named with neither is allowed by ' +
                'definition rather than by policy — so nothing was asked and ' +
                'there is no decision here to read.' });
-        log.debug("Leaving the management API role preview endpoint. Nothing asked.");
+        log.debug("Leaving the management API role preview endpoint. Nothing " +
+                  "asked.");
         return;
       }
       sendJson(res, 200, Object.assign({ answered: true }, answer));
@@ -11250,7 +11457,8 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API roles action endpoint.");
       const body = parseBody(req);
-      const result = adminActions.rolesAction(withAction(req, body), { via: 'api' });
+      const result = adminActions.rolesAction(withAction(req, body),
+                                              { via: 'api' });
       if (!result.ok) {
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0059');
       }
@@ -11267,9 +11475,9 @@ const ROUTES = [
                      'the register will then say so.\n\nThe name becomes an ' +
                      'LDAP RDN and a value in a token claim, so it is up to ' +
                      '64 characters of letters, digits, and `. _ : @ -` or a ' +
-                     'space. **It may not be one of the six built-in roles**: ' +
-                     'those are computed and answered first, so a stored role ' +
-                     'of the same name could never be reached.',
+                     'space. **It may not be one of the six built-in ' +
+                     'roles**: those are computed and answered first, so a ' +
+                     'stored role of the same name could never be reached.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -11286,18 +11494,19 @@ const ROUTES = [
 
       { action: 'delete-role', operationId: 'deleteRole',
         summary: 'Remove a role',
-        description: 'Deletes the entry. **Applications that still REQUIRE it ' +
-                     'are named in the reply and the delete still happens**, ' +
-                     'which is deliberate: refusing would mean a role could ' +
-                     'not be removed until every application naming it had ' +
-                     'been edited, and those entries are usually the thing ' +
-                     'somebody is in the middle of changing. Each of them now ' +
-                     'requires a role NOBODY holds and is therefore issued ' +
-                     'nothing at all — so the consequence is said at the ' +
-                     'moment it is created rather than discovered later as a ' +
-                     'service that stopped working.\n\nNothing already ISSUED ' +
-                     'is touched. A token minted while somebody held the role ' +
-                     'is still valid and still carries it in the roles claim.',
+        description: 'Deletes the entry. **Applications that still REQUIRE ' +
+                     'it are named in the reply and the delete still ' +
+                     'happens**, which is deliberate: refusing would mean a ' +
+                     'role could not be removed until every application ' +
+                     'naming it had been edited, and those entries are ' +
+                     'usually the thing somebody is in the middle of ' +
+                     'changing. Each of them now requires a role NOBODY ' +
+                     'holds and is therefore issued nothing at all — so the ' +
+                     'consequence is said at the moment it is created rather ' +
+                     'than discovered later as a service that stopped ' +
+                     'working.\n\nNothing already ISSUED is touched. A token ' +
+                     'minted while somebody held the role is still valid and ' +
+                     'still carries it in the roles claim.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -11323,8 +11532,8 @@ const ROUTES = [
           properties: {
             role: { type: 'string', description: 'The role.' },
             description: { type: 'string',
-                           description: 'The new description. An empty string ' +
-                                        'clears it.' }
+                           description: 'The new description. An empty ' +
+                                        'string clears it.' }
           },
           required: ['role'],
           examples: [{ role: 'staff',
@@ -11336,18 +11545,18 @@ const ROUTES = [
       { action: 'add-member', operationId: 'addRoleMember',
         summary: 'Give somebody a role',
         description: 'Adds one value to the role entry. **Which of the three ' +
-                     'lists it goes in is `kind`, and the three are looked up ' +
-                     'in three different places**, so naming the wrong one ' +
-                     'succeeds and writes something that will never ' +
+                     'lists it goes in is `kind`, and the three are looked ' +
+                     'up in three different places**, so naming the wrong ' +
+                     'one succeeds and writes something that will never ' +
                      'match:\n\n* `user` — a username. The person need not ' +
                      'exist: this service creates a directory entry for any ' +
                      'name on first sight, so a role can be granted before ' +
                      'its holder has ever signed in.\n* `group` — a group in ' +
-                     '`ou=groups`. Every member holds the role, **resolved at ' +
-                     'DECISION TIME** rather than expanded on write, so an ' +
-                     '`ldapmodify` adding somebody to the group changes the ' +
-                     'very next token.\n* `application` — an application that ' +
-                     'holds the role AS ITSELF, which is what a ' +
+                     '`ou=groups`. Every member holds the role, **resolved ' +
+                     'at DECISION TIME** rather than expanded on write, so ' +
+                     'an `ldapmodify` adding somebody to the group changes ' +
+                     'the very next token.\n* `application` — an application ' +
+                     'that holds the role AS ITSELF, which is what a ' +
                      '`client_credentials` grant is decided on.\n\nIt is NOT ' +
                      'the same relation as `appRequiredRole` on an ' +
                      'application entry, which is what that application ' +
@@ -11383,11 +11592,11 @@ const ROUTES = [
                      'a username here arrives from a login form, a SAML ' +
                      'subject, a Kerberos principal and a `client_id`, and ' +
                      'this service has always treated those as one identity ' +
-                     'however they were typed.\n\n**Nothing already ISSUED is ' +
-                     'touched**, exactly as revoking a delegated permission ' +
-                     'does not re-judge a grant already made. The next ' +
-                     'issuance is decided without the role; a token minted a ' +
-                     'minute ago still carries it.',
+                     'however they were typed.\n\n**Nothing already ISSUED ' +
+                     'is touched**, exactly as revoking a delegated ' +
+                     'permission does not re-judge a grant already made. The ' +
+                     'next issuance is decided without the role; a token ' +
+                     'minted a minute ago still carries it.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -11406,37 +11615,39 @@ const ROUTES = [
     ] },
 
   // ---------------------------------------------------------------------------
-  // POLICIES (2026-09-12). Two operations over `adminViews.passwordPoliciesView()`
-  // and `adminActions.passwordPoliciesAction()` — the same two functions
+  // POLICIES (2026-09-12). Two operations over
+  // `adminViews.passwordPoliciesView()` and
+  // `adminActions.passwordPoliciesAction()` — the same two functions
   // /admin/policies calls, so the page and this resource cannot disagree.
   //
   // **THE SAVE'S REQUEST SCHEMA IS BUILT FROM `password_policy.FIELDS`**, so a
   // rule added there is a property here the same day. Each field takes its JSON
   // type OR a string, because a form-encoded body copied from the console
-  // carries `"12"` and `"TRUE"`, and `coerceTypes` is off in this file's ajv for
-  // a reason stated beside it; the module parses both spellings and refuses
+  // carries `"12"` and `"TRUE"`, and `coerceTypes` is off in this file's ajv
+  // for a reason stated beside it; the module parses both spellings and refuses
   // anything else by name.
   // ---------------------------------------------------------------------------
   { method: 'GET', path: BASE + '/policies', tag: 'Policies',
     operationId: 'getPolicies',
     summary: 'The policies this realm holds a credential to',
     description: 'Every kind of policy and its profiles — today the PASSWORD ' +
-                 'POLICY and its one profile, `default`.\n\n**`password.profile` ' +
-                 'is the profile IN FORCE**, which is the stored ' +
+                 'POLICY and its one profile, ' +
+                 '`default`.\n\n**`password.profile` is the profile IN ' +
+                 'FORCE**, which is the stored ' +
                  '`cn=default,ou=passwordPolicies` entry where there is one ' +
                  '(`stored: true`) and the built-in defaults where there is ' +
                  'not. `sources` says which of the two each value came from, ' +
-                 'and `problems` names any stored value that could not be read ' +
-                 '— the built-in default is in force for that field.\n\n' +
-                 '**`enforced` is whether this realm checks it**, which is ' +
-                 'product mode: development checks no password at any door, so ' +
-                 'the rules are recorded and not applied there. A GENERATED ' +
-                 'password meets the profile in both modes.\n\n`password.rules` ' +
-                 'is the profile as a person reads it — the same sentences the ' +
-                 'user portal prints — and `password.doors` names every door ' +
-                 'that sets a password and the one function each ends in.\n\n' +
-                 'It is NOT the XACML policy repository, which is ' +
-                 '`GET /admin-api/xacml/policies`.',
+                 'and `problems` names any stored value that could not be ' +
+                 'read — the built-in default is in force for that ' +
+                 'field.\n\n**`enforced` is whether this realm checks it**, ' +
+                 'which is product mode: development checks no password at ' +
+                 'any door, so the rules are recorded and not applied there. ' +
+                 'A GENERATED password meets the profile in both ' +
+                 'modes.\n\n`password.rules` is the profile as a person ' +
+                 'reads it — the same sentences the user portal prints — and ' +
+                 '`password.doors` names every door that sets a password and ' +
+                 'the one function each ends in.\n\nIt is NOT the XACML ' +
+                 'policy repository, which is `GET /admin-api/xacml/policies`.',
     mirrors: 'GET /admin/policies',
     parameters: pagingParameters(),
     responseDescription: 'The kinds of policy, the password profile in force ' +
@@ -11466,18 +11677,19 @@ const ROUTES = [
     actions: [
       { action: 'save-password-policy', operationId: 'savePasswordPolicy',
         summary: 'Set the password policy profile',
-        description: 'Writes `cn=default,ou=passwordPolicies` in this realm\'s ' +
-                     'directory, REPLACING what is there. **Every field is ' +
-                     'required** and one left out is refused by name rather ' +
-                     'than reset to a default, because a save that quietly ' +
-                     'loosened a rule nobody mentioned is the mistake nobody ' +
-                     'sees.\n\nTwo rules relate fields: `generatedLength` must be ' +
-                     'at least `minLength`, and at least twice `minSymbols` plus ' +
-                     'two. **A change applies to the NEXT password set in this ' +
-                     'realm and to nothing already stored**, which is a hash and ' +
-                     'cannot be re-checked.\n\nThe only profile is `default`: ' +
-                     'nothing assigns a profile to a person yet, so another ' +
-                     'name is refused rather than stored.',
+        description: 'Writes `cn=default,ou=passwordPolicies` in this ' +
+                     'realm\'s directory, REPLACING what is there. **Every ' +
+                     'field is required** and one left out is refused by ' +
+                     'name rather than reset to a default, because a save ' +
+                     'that quietly loosened a rule nobody mentioned is the ' +
+                     'mistake nobody sees.\n\nTwo rules relate fields: ' +
+                     '`generatedLength` must be at least `minLength`, and at ' +
+                     'least twice `minSymbols` plus two. **A change applies ' +
+                     'to the NEXT password set in this realm and to nothing ' +
+                     'already stored**, which is a hash and cannot be ' +
+                     're-checked.\n\nThe only profile is `default`: nothing ' +
+                     'assigns a profile to a person yet, so another name is ' +
+                     'refused rather than stored.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -11498,7 +11710,8 @@ const ROUTES = [
                 : { oneOf: [{ type: 'integer', minimum: field.min,
                               maximum: field.max },
                             { type: 'string' }],
-                    description: field.what + ' Between ' + field.min + ' and ' +
+                    description: field.what + ' Between ' + field.min +
+                                 ' and ' +
                                  field.max + '. Default ' + field.dflt + '.' };
             });
             return out;
@@ -11510,15 +11723,16 @@ const ROUTES = [
                                    passwordPolicy.DEFAULTS, { minLength: 14 })],
           additionalProperties: false
         },
-        responseDescription: 'The profile now in force, the rules as a person ' +
-                             'reads them, and whether this realm enforces them.' },
+        responseDescription: 'The profile now in force, the rules as a ' +
+                             'person reads them, and whether this realm ' +
+                             'enforces them.' },
 
       { action: 'reset-password-policy', operationId: 'resetPasswordPolicy',
         summary: 'Put the built-in password policy back',
         description: 'Deletes the stored profile, after which the built-in ' +
-                     'defaults are in force. `removed: false` means nothing was ' +
-                     'stored, so the defaults already were. Nothing already ' +
-                     'stored is touched, as with a save.',
+                     'defaults are in force. `removed: false` means nothing ' +
+                     'was stored, so the defaults already were. Nothing ' +
+                     'already stored is touched, as with a save.',
         requestBody: {
           type: 'object',
           properties: {
@@ -11528,48 +11742,49 @@ const ROUTES = [
           examples: [{ profile: passwordPolicy.DEFAULT_PROFILE }],
           additionalProperties: false
         },
-        responseDescription: 'Whether anything was removed, and the profile now ' +
-                             'in force.' }
+        responseDescription: 'Whether anything was removed, and the profile ' +
+                             'now in force.' }
     ] },
 
   { method: 'GET', path: BASE + '/consent', tag: 'Delegation',
     operationId: 'getConsent',
     summary: 'What people agreed applications may ask for on their behalf',
     description: 'Both halves of the consent register.\n\n**How it works.** ' +
-                 'With `oauth2.consentRequired` on — it is ON by default, and ' +
-                 'it is the one policy in this service that is — the ' +
+                 'With `oauth2.consentRequired` on — it is ON by default, ' +
+                 'and it is the one policy in this service that is — the ' +
                  'authorization endpoint draws `/oauth2/consent` the first ' +
-                 'time a given username signs in to a given `client_id` for a ' +
-                 'given scope, and issues nothing until they answer. Allow ' +
+                 'time a given username signs in to a given `client_id` for ' +
+                 'a given scope, and issues nothing until they answer. Allow ' +
                  'writes one `oauthConsent` value per scope onto that ' +
                  'person\'s own entry under `ou=users`; Deny returns ' +
-                 '`access_denied` to the client and records nothing.\n\n' +
-                 '**`globals` is CONFIGURATION and `users` is a RECORD**, and ' +
-                 'the difference decides what removing a row does. A global ' +
-                 'consent is `oauthGlobalConsent` on an APPLICATION\'s entry, ' +
-                 'one value per scope: everybody who signs in to that ' +
-                 'application skips the prompt for it and nothing is written ' +
-                 'about anybody — so revoking it asks EVERYBODY again, ' +
-                 'including the people who would have said yes. A recorded ' +
-                 'consent is one person\'s answer, and revoking it asks that ' +
-                 'one person.\n\n**A delegated permission is recorded by its ' +
-                 'WHOLE identifier** — `https://example.com/write`, never the ' +
-                 'bare `write` — because two resources may both expose a ' +
-                 'permission of that name and a consent to one must not cover ' +
-                 'the other. `globals[].resource` says which application ' +
-                 'exposes it where the scope resolves to one, and ' +
-                 '`globals[].granted` whether that client has also been ' +
-                 'GRANTED it: the two are independent, and a consented ' +
-                 'permission the client does not hold is still refused when ' +
-                 '`oauth2.delegatedPermissionsEnforced` is on.\n\n' +
-                 '`users[].unreadable` is a value on somebody\'s entry that is ' +
-                 'not in the shape this service writes — an `ldapmodify` put ' +
-                 'it there. It consents nothing and is reported rather than ' +
-                 'dropped.\n\n`storable: false` means no directory is ' +
-                 'installed behind the register, so an answer is honoured for ' +
-                 'one request and forgotten and the screen is drawn every ' +
-                 'time. That is deliberate: an agreement that cannot be ' +
-                 'remembered is one nobody gave.',
+                 '`access_denied` to the client and records ' +
+                 'nothing.\n\n**`globals` is CONFIGURATION and `users` is a ' +
+                 'RECORD**, and the difference decides what removing a row ' +
+                 'does. A global consent is `oauthGlobalConsent` on an ' +
+                 'APPLICATION\'s entry, one value per scope: everybody who ' +
+                 'signs in to that application skips the prompt for it and ' +
+                 'nothing is written about anybody — so revoking it asks ' +
+                 'EVERYBODY again, including the people who would have said ' +
+                 'yes. A recorded consent is one person\'s answer, and ' +
+                 'revoking it asks that one person.\n\n**A delegated ' +
+                 'permission is recorded by its WHOLE identifier** — ' +
+                 '`https://example.com/write`, never the bare `write` — ' +
+                 'because two resources may both expose a permission of that ' +
+                 'name and a consent to one must not cover the other. ' +
+                 '`globals[].resource` says which application exposes it ' +
+                 'where the scope resolves to one, and `globals[].granted` ' +
+                 'whether that client has also been GRANTED it: the two are ' +
+                 'independent, and a consented permission the client does ' +
+                 'not hold is still refused when ' +
+                 '`oauth2.delegatedPermissionsEnforced` is ' +
+                 'on.\n\n`users[].unreadable` is a value on somebody\'s ' +
+                 'entry that is not in the shape this service writes — an ' +
+                 '`ldapmodify` put it there. It consents nothing and is ' +
+                 'reported rather than dropped.\n\n`storable: false` means ' +
+                 'no directory is installed behind the register, so an ' +
+                 'answer is honoured for one request and forgotten and the ' +
+                 'screen is drawn every time. That is deliberate: an ' +
+                 'agreement that cannot be remembered is one nobody gave.',
     mirrors: 'GET /admin/consent',
     responseDescription: 'Every scope consented for everybody on an ' +
                          'application, every answer a person has given, and ' +
@@ -11600,40 +11815,42 @@ const ROUTES = [
         description: 'Adds one value to `oauthGlobalConsent` on the ' +
                      'application\'s own entry. Nobody is asked about that ' +
                      'scope on that application again, and **nothing is ' +
-                     'written about anybody** — this is an OVERRIDE and not a ' +
-                     'record.\n\nThat is the whole difference from a person ' +
-                     'pressing Allow, and it decides what removing it does: ' +
-                     '`revoke-global-consent` asks everybody again, because ' +
-                     'there is no record of who would have agreed. Somebody ' +
-                     'who consented the same scope personally — before or ' +
-                     'after — still has that on their entry and is still not ' +
-                     'asked.\n\n**It is keyed on the pair, not on the scope.** ' +
-                     'Consenting `read` here consents it for THIS application; ' +
-                     'an application registered five minutes later that spells ' +
-                     'the same word is still asked. There is no service-wide ' +
-                     'list of scopes nobody is ever asked about, deliberately: ' +
-                     'it would mean an application nobody has reviewed ' +
-                     'inheriting a decision made about a different one.\n\n' +
-                     'The scope must be a legal RFC 6749 section 3.3 scope ' +
-                     'token, because a value with a space in it is two scopes ' +
-                     'and could never match one. It need NOT name a permission ' +
-                     'any application defines — most scopes are not ' +
-                     'permissions, and refusing an unrecognised one would make ' +
-                     'it impossible to consent `openid`.',
+                     'written about anybody** — this is an OVERRIDE and not ' +
+                     'a record.\n\nThat is the whole difference from a ' +
+                     'person pressing Allow, and it decides what removing it ' +
+                     'does: `revoke-global-consent` asks everybody again, ' +
+                     'because there is no record of who would have agreed. ' +
+                     'Somebody who consented the same scope personally — ' +
+                     'before or after — still has that on their entry and is ' +
+                     'still not asked.\n\n**It is keyed on the pair, not on ' +
+                     'the scope.** Consenting `read` here consents it for ' +
+                     'THIS application; an application registered five ' +
+                     'minutes later that spells the same word is still ' +
+                     'asked. There is no service-wide list of scopes nobody ' +
+                     'is ever asked about, deliberately: it would mean an ' +
+                     'application nobody has reviewed inheriting a decision ' +
+                     'made about a different one.\n\nThe scope must be a ' +
+                     'legal RFC 6749 section 3.3 scope token, because a ' +
+                     'value with a space in it is two scopes and could never ' +
+                     'match one. It need NOT name a permission any ' +
+                     'application defines — most scopes are not permissions, ' +
+                     'and refusing an unrecognised one would make it ' +
+                     'impossible to consent `openid`.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
             client: { type: 'string',
-                      description: 'The application people sign in to, by its ' +
-                                   'identifier exactly as `ou=applications` ' +
-                                   'holds it. This is the CLIENT — the party ' +
-                                   'that will name the scope in a request — ' +
-                                   'and not the resource that exposes it.' },
+                      description: 'The application people sign in to, by ' +
+                                   'its identifier exactly as ' +
+                                   '`ou=applications` holds it. This is the ' +
+                                   'CLIENT — the party that will name the ' +
+                                   'scope in a request — and not the ' +
+                                   'resource that exposes it.' },
             scope: { type: 'string',
-                     description: 'The scope, exactly as a client puts it in a ' +
-                                  '`scope` parameter. A delegated permission ' +
-                                  'is its WHOLE identifier.' }
+                     description: 'The scope, exactly as a client puts it in ' +
+                                  'a `scope` parameter. A delegated ' +
+                                  'permission is its WHOLE identifier.' }
           },
           required: ['client', 'scope'],
           examples: [{ client: 'webapp1', scope: 'openid' }],
@@ -11644,22 +11861,25 @@ const ROUTES = [
 
       { action: 'revoke-global-consent', operationId: 'revokeGlobalConsent',
         summary: 'Stop consenting a scope for everybody',
-        description: 'Removes one value from `oauthGlobalConsent`. **The next ' +
-                     'person to sign in asking for that scope is PROMPTED**, ' +
-                     'including everybody the override was covering, because ' +
-                     'an override records nothing about the people it covers. ' +
-                     'Somebody who agreed to it personally is unaffected — ' +
-                     'their answer is on their own entry and `revoke-consent` ' +
-                     'is what takes that away.\n\nNothing already ISSUED is ' +
-                     'touched. An access token minted while the override stood ' +
-                     'is still valid, exactly as revoking a delegated ' +
-                     'permission does not re-judge a grant already made.',
+        description: 'Removes one value from `oauthGlobalConsent`. **The ' +
+                     'next person to sign in asking for that scope is ' +
+                     'PROMPTED**, including everybody the override was ' +
+                     'covering, because an override records nothing about ' +
+                     'the people it covers. Somebody who agreed to it ' +
+                     'personally is unaffected — their answer is on their ' +
+                     'own entry and `revoke-consent` is what takes that ' +
+                     'away.\n\nNothing already ISSUED is touched. An access ' +
+                     'token minted while the override stood is still valid, ' +
+                     'exactly as revoking a delegated permission does not ' +
+                     're-judge a grant already made.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
-            client: { type: 'string', description: 'The application holding it.' },
-            scope: { type: 'string', description: 'The scope to stop consenting.' }
+            client: { type: 'string',
+                      description: 'The application holding it.' },
+            scope: { type: 'string', description: 'The scope to stop ' +
+                                                  'consenting.' }
           },
           required: ['client', 'scope'],
           examples: [{ client: 'webapp1', scope: 'openid' }],
@@ -11672,14 +11892,14 @@ const ROUTES = [
         description: 'Removes the `oauthConsent` value naming this person, ' +
                      'this application and this scope. They are asked again ' +
                      'the next time that application requests that scope; ' +
-                     'nobody else is affected.\n\n**All three are required and ' +
-                     'that is not pedantry.** One person may consent the same ' +
-                     'scope to several applications, and revoking the wrong ' +
-                     'pair is invisible until somebody is asked again — which ' +
-                     'is a week later and looks like a bug in the screen.\n\n' +
-                     'A scope covered by GLOBAL consent is not on anybody\'s ' +
-                     'entry, so there is nothing here to remove and this ' +
-                     'refuses rather than pretending: ' +
+                     'nobody else is affected.\n\n**All three are required ' +
+                     'and that is not pedantry.** One person may consent the ' +
+                     'same scope to several applications, and revoking the ' +
+                     'wrong pair is invisible until somebody is asked again ' +
+                     '— which is a week later and looks like a bug in the ' +
+                     'screen.\n\nA scope covered by GLOBAL consent is not on ' +
+                     'anybody\'s entry, so there is nothing here to remove ' +
+                     'and this refuses rather than pretending: ' +
                      '`revoke-global-consent` is the operation for that, and ' +
                      'the refusal says so. Nothing already issued is touched.',
         requestBodyRequired: true,
@@ -11710,12 +11930,12 @@ const ROUTES = [
                      '`revoke-consent` because being asked again is the one ' +
                      'thing somebody wants after testing this screen, and ' +
                      'doing it a row at a time for a person with thirty ' +
-                     'consents is a chore rather than a control.\n\nIt reaches ' +
-                     'nothing under GLOBAL consent, because there is nothing ' +
-                     'on their entry to reach — a scope they were never asked ' +
-                     'about leaves no record, which is what lets the register ' +
-                     'tell the two apart at all. Nothing already issued is ' +
-                     'touched.',
+                     'consents is a chore rather than a control.\n\nIt ' +
+                     'reaches nothing under GLOBAL consent, because there is ' +
+                     'nothing on their entry to reach — a scope they were ' +
+                     'never asked about leaves no record, which is what lets ' +
+                     'the register tell the two apart at all. Nothing ' +
+                     'already issued is touched.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -11747,28 +11967,27 @@ const ROUTES = [
     summary: 'The trust domain: its authorities, its bundle, its listeners',
     description: 'What this service is as a SPIFFE issuing authority. The ' +
                  'X.509 and JWT authorities (the ACTIVE one first, with the ' +
-                 'retired ones that are still published behind it), the bundle ' +
-                 'path and its sequence, every federated trust domain, and ' +
-                 'whether each of the four gRPC listeners actually bound — ' +
-                 'which nothing else can tell you, because neither this API ' +
-                 'nor GET /admin/sts-metadata can see a socket.\n\nThe ' +
-                 'reply also ' +
-                 'carries `authentication`: whether the SPIRE Server API is ' +
-                 'enforcing mutual TLS, which ' +
-                 'identities are administrators, and the whole per-method ' +
-                 'authorization table, which is SPIRE\'s own ' +
+                 'retired ones that are still published behind it), the ' +
+                 'bundle path and its sequence, every federated trust ' +
+                 'domain, and whether each of the four gRPC listeners ' +
+                 'actually bound — which nothing else can tell you, because ' +
+                 'neither this API nor GET /admin/sts-metadata can see a ' +
+                 'socket.\n\nThe reply also carries `authentication`: ' +
+                 'whether the SPIRE Server API is enforcing mutual TLS, ' +
+                 'which identities are administrators, and the whole ' +
+                 'per-method authorization table, which is SPIRE\'s own ' +
                  '`policy_data.json` row for row.\n\n**Nothing here attests ' +
-                 'a workload or a node.** A Workload API caller is identified ' +
-                 'only by the transport it arrived on, the endpoint it ' +
-                 'reached and its peer address — node cannot read a Unix ' +
-                 'socket\'s peer credentials — and an agent\'s attestation ' +
-                 'payload is taken on trust. Where the SPIRE Server API ' +
-                 'authenticates nobody, any ' +
-                 'caller that reaches its port can create a registration ' +
-                 'entry granting any identity here. GET /spiffe carries the ' +
-                 'full list of what is and is not checked.\n\nNo private key ' +
-                 'is in this reply. The authority CERTIFICATE is published, as ' +
-                 'GET /tls/server-certificate publishes that one.',
+                 'a workload or a node.** A Workload API caller is ' +
+                 'identified only by the transport it arrived on, the ' +
+                 'endpoint it reached and its peer address — node cannot ' +
+                 'read a Unix socket\'s peer credentials — and an agent\'s ' +
+                 'attestation payload is taken on trust. Where the SPIRE ' +
+                 'Server API authenticates nobody, any caller that reaches ' +
+                 'its port can create a registration entry granting any ' +
+                 'identity here. GET /spiffe carries the full list of what ' +
+                 'is and is not checked.\n\nNo private key is in this reply. ' +
+                 'The authority CERTIFICATE is published, as GET ' +
+                 '/tls/server-certificate publishes that one.',
     mirrors: 'GET /admin/spiffe',
     responseDescription: 'The trust domain, its authorities, its federated ' +
                          'bundles and its listeners.',
@@ -11806,21 +12025,24 @@ const ROUTES = [
         errorCodes.mark(res, 'STS-API-0022');
         log.error('The SPIFFE management API action threw: ' + err.message);
         sendJson(res, 500, { ok: false, errors: [err.message] });
-        log.debug("Leaving the management API SPIFFE action endpoint. It threw.");
+        log.debug("Leaving the management API SPIFFE action endpoint. It " +
+                  "threw.");
       });
+      log.debug("Leaving handler().");
     },
     actions: [
       { action: 'rotate', operationId: 'rotateSpiffeAuthority',
         summary: 'Rotate the X.509 authority, the JWT authority, or both',
-        description: 'A new authority is PREPENDED — everything is signed with ' +
-                     'it from that moment — and the old one stays in the ' +
-                     'published bundle, so SVIDs already in the field go on ' +
-                     'verifying. That is what a bundle is FOR, and dropping ' +
-                     'the old one is the difference between a rotation and an ' +
-                     'outage.\n\nThe bundle `spiffe_sequence` changes, which ' +
-                     'is how a consumer that polls the bundle endpoint knows ' +
-                     'to refetch. At most four authorities are retained; past ' +
-                     'that the oldest is dropped and anything it signed stops ' +
+        description: 'A new authority is PREPENDED — everything is signed ' +
+                     'with it from that moment — and the old one stays in ' +
+                     'the published bundle, so SVIDs already in the field go ' +
+                     'on verifying. That is what a bundle is FOR, and ' +
+                     'dropping the old one is the difference between a ' +
+                     'rotation and an outage.\n\nThe bundle ' +
+                     '`spiffe_sequence` changes, which is how a consumer ' +
+                     'that polls the bundle endpoint knows to refetch. At ' +
+                     'most four authorities are retained; past that the ' +
+                     'oldest is dropped and anything it signed stops ' +
                      'verifying at that moment.\n\nThis is also the ONLY way ' +
                      'to add an authority to this trust domain. The SPIRE ' +
                      'Server API\'s AppendBundle and PublishJWTAuthority are ' +
@@ -11845,21 +12067,21 @@ const ROUTES = [
                      'bundle endpoint URL in the relationship and a real ' +
                      'implementation polls it; this one records the URL and ' +
                      'refuses to follow it — the SPIRE Server API\'s ' +
-                     'RefreshBundle says so in terms — because fetching a URL ' +
-                     'somebody registered, in order to obtain a key that will ' +
-                     'then verify credentials, is a server-side request ' +
-                     'forgery with a citation attached. The same refusal this ' +
-                     'service gives WS-Federation\'s `wreqptr` and a ' +
+                     'RefreshBundle says so in terms — because fetching a ' +
+                     'URL somebody registered, in order to obtain a key that ' +
+                     'will then verify credentials, is a server-side request ' +
+                     'forgery with a citation attached. The same refusal ' +
+                     'this service gives WS-Federation\'s `wreqptr` and a ' +
                      'client\'s `jwks_uri`.\n\n**A trust domain this service ' +
-                     'itself serves is REFUSED** — any realm\'s, whether or not ' +
-                     'SPIFFE is on in it (2026-09-12). The bundles are held ' +
-                     'per realm, and a federated entry naming a served domain ' +
-                     'would let an authority somebody registered in one realm ' +
-                     'authenticate workloads as another realm\'s.\n\nThe ' +
-                     'document is CHECKED, ' +
-                     'which is unusual for this service: every JWK needs a ' +
-                     '`use` of `x509-svid`, `jwt-svid` or `wit-svid`, because ' +
-                     'a consumer MUST IGNORE one without it — so a bundle of ' +
+                     'itself serves is REFUSED** — any realm\'s, whether or ' +
+                     'not SPIFFE is on in it (2026-09-12). The bundles are ' +
+                     'held per realm, and a federated entry naming a served ' +
+                     'domain would let an authority somebody registered in ' +
+                     'one realm authenticate workloads as another ' +
+                     'realm\'s.\n\nThe document is CHECKED, which is unusual ' +
+                     'for this service: every JWK needs a `use` of ' +
+                     '`x509-svid`, `jwt-svid` or `wit-svid`, because a ' +
+                     'consumer MUST IGNORE one without it — so a bundle of ' +
                      'keys missing that member is stored happily and then ' +
                      'verifies nothing, with no error anywhere pointing back ' +
                      'here.',
@@ -11878,14 +12100,14 @@ const ROUTES = [
             document: { type: 'object',
                         description: 'The bundle, as a JWK Set with ' +
                                      '`spiffe_sequence` and ' +
-                                     '`spiffe_refresh_hint`. A JSON string is ' +
-                                     'accepted too, which is what the ' +
+                                     '`spiffe_refresh_hint`. A JSON string ' +
+                                     'is accepted too, which is what the ' +
                                      'console\'s textarea sends.' },
             bundleEndpointUrl: { type: 'string',
-                                 description: 'Recorded and never fetched. It ' +
-                                              'is reported back so an operator ' +
-                                              'can see what the relationship ' +
-                                              'says.' },
+                                 description: 'Recorded and never fetched. ' +
+                                              'It is reported back so an ' +
+                                              'operator can see what the ' +
+                                              'relationship says.' },
             bundleEndpointProfile: { type: 'string',
                                      enum: ['https_web', 'https_spiffe'],
                                      description: 'Which profile the partner ' +
@@ -11907,18 +12129,19 @@ const ROUTES = [
 
       { action: 'federation-remove', operationId: 'removeSpiffeFederatedBundle',
         summary: 'Forget a foreign trust domain\'s bundle',
-        description: 'Any registration entry that federates with it keeps the ' +
-                     'name and simply contributes no bundle to its workloads, ' +
-                     'which is the same state as a relationship configured ' +
-                     'before its bundle has arrived. The entries are left ' +
-                     'alone deliberately; the SPIRE Server API\'s ' +
+        description: 'Any registration entry that federates with it keeps ' +
+                     'the name and simply contributes no bundle to its ' +
+                     'workloads, which is the same state as a relationship ' +
+                     'configured before its bundle has arrived. The entries ' +
+                     'are left alone deliberately; the SPIRE Server API\'s ' +
                      'BatchDeleteFederatedBundle is where the three modes ' +
                      'RESTRICT, DELETE and DISSOCIATE live.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
           properties: {
-            trustDomain: { type: 'string', description: 'The trust domain name.' }
+            trustDomain: { type: 'string',
+                           description: 'The trust domain name.' }
           },
           required: ['trustDomain'],
           examples: [{ trustDomain: 'other.example' }],
@@ -11931,24 +12154,24 @@ const ROUTES = [
     operationId: 'getSpiffeEntries',
     summary: 'The registration entries, filtered and paged',
     description: 'A registration entry says which SPIFFE ID a workload gets, ' +
-                 'under which parent, matching which selectors. It is the most ' +
-                 'important object in a SPIFFE deployment: the Workload API ' +
-                 'answers out of it.\n\n**The entries ARE the registry.** ' +
-                 'They live under `ou=entries,ou=spiffe` in the embedded LDAP ' +
-                 'directory and nothing caches them, so an `ldapmodify` is ' +
-                 'visible here on the next call and changes what the next SVID ' +
-                 'looks like.\n\n**The selectors restrict nothing here.** ' +
-                 'They are recorded, reported, and used by the SPIRE Server ' +
-                 'API\'s GetAuthorizedEntries — and the Workload API hands ' +
-                 'every caller every identity, because nothing in this service ' +
-                 'attests a workload.',
+                 'under which parent, matching which selectors. It is the ' +
+                 'most important object in a SPIFFE deployment: the Workload ' +
+                 'API answers out of it.\n\n**The entries ARE the ' +
+                 'registry.** They live under `ou=entries,ou=spiffe` in the ' +
+                 'embedded LDAP directory and nothing caches them, so an ' +
+                 '`ldapmodify` is visible here on the next call and changes ' +
+                 'what the next SVID looks like.\n\n**The selectors restrict ' +
+                 'nothing here.** They are recorded, reported, and used by ' +
+                 'the SPIRE Server API\'s GetAuthorizedEntries — and the ' +
+                 'Workload API hands every caller every identity, because ' +
+                 'nothing in this service attests a workload.',
     mirrors: 'GET /admin/spiffe/entries',
     parameters: [
       { name: 'entry', in: 'query', required: false, schema: { type: 'string' },
         description: 'One entry, by its id — the 32 hex characters this ' +
                      'registry minted, which is what the SPIRE Server API ' +
-                     'calls `id`. The reply then carries that entry with every ' +
-                     'attribute of its directory entry.' },
+                     'calls `id`. The reply then carries that entry with ' +
+                     'every attribute of its directory entry.' },
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
         description: 'Substring of the SPIFFE ID, the parent, the entry id, ' +
                      'the hint or any selector, case-insensitive.' },
@@ -11991,13 +12214,13 @@ const ROUTES = [
                      'one, a SPIFFE ID in ANOTHER trust domain (this service ' +
                      'is the issuing authority for exactly one, and cannot ' +
                      'sign for somebody else\'s — that is what federation is ' +
-                     'for), and a SPIFFE ID under the reserved `/spire` path, ' +
-                     'which belongs to this server and the agents it ' +
+                     'for), and a SPIFFE ID under the reserved `/spire` ' +
+                     'path, which belongs to this server and the agents it ' +
                      'attests.\n\nA DUPLICATE SPIFFE ID IS ALLOWED. Two ' +
-                     'entries granting one identity under different parents is ' +
-                     'a real configuration and SPIRE permits it.\n\nThis is ' +
-                     'the same function `BatchCreateEntry` on the SPIRE Server ' +
-                     'API calls, writing the same directory entry an ' +
+                     'entries granting one identity under different parents ' +
+                     'is a real configuration and SPIRE permits it.\n\nThis ' +
+                     'is the same function `BatchCreateEntry` on the SPIRE ' +
+                     'Server API calls, writing the same directory entry an ' +
                      '`ldapadd` would.',
         requestBodyRequired: true,
         requestBody: {
@@ -12009,17 +12232,18 @@ const ROUTES = [
                         description: 'The agent or server it hangs beneath. ' +
                                      'Defaults to this server\'s own SPIFFE ' +
                                      'ID, which is what SPIRE uses for an ' +
-                                     'entry describing a workload rather than ' +
-                                     'a node.' },
+                                     'entry describing a workload rather ' +
+                                     'than a node.' },
             selectors: { type: 'string',
                          description: 'Comma-separated `type:value` pairs, ' +
                                       'split on the FIRST colon only — so ' +
                                       '`docker:label:app:web` is type ' +
-                                      '`docker` and value `label:app:web`. An ' +
-                                      'entry with NO selectors matches every ' +
-                                      'workload, which is how a catch-all is ' +
-                                      'written and is also the shape of one ' +
-                                      'somebody forgot to finish.' },
+                                      '`docker` and value `label:app:web`. ' +
+                                      'An entry with NO selectors matches ' +
+                                      'every workload, which is how a ' +
+                                      'catch-all is written and is also the ' +
+                                      'shape of one somebody forgot to ' +
+                                      'finish.' },
             dnsNames: { type: 'string',
                         description: 'Comma-separated DNS subjectAltNames, ' +
                                      'added beside the SPIFFE ID. What makes ' +
@@ -12027,9 +12251,9 @@ const ROUTES = [
                                      'checks a hostname and cannot read a ' +
                                      'SPIFFE ID.' },
             federatesWith: { type: 'string',
-                             description: 'Comma-separated trust domain names ' +
-                                          'whose bundles are handed to a ' +
-                                          'holder of this identity. A name ' +
+                             description: 'Comma-separated trust domain ' +
+                                          'names whose bundles are handed to ' +
+                                          'a holder of this identity. A name ' +
                                           'with no bundle here contributes ' +
                                           'nothing rather than failing.' },
             x509SvidTtl: { type: 'integer',
@@ -12037,10 +12261,10 @@ const ROUTES = [
             jwtSvidTtl: { type: 'integer',
                           description: 'Seconds. 0 means spiffe.jwtSvidTtl.' },
             hint: { type: 'string',
-                    description: 'Operator guidance when a workload gets more ' +
-                                 'than one SVID — `internal`, `external`. ' +
-                                 'Passed through verbatim; nothing here reads ' +
-                                 'it.' }
+                    description: 'Operator guidance when a workload gets ' +
+                                 'more than one SVID — `internal`, ' +
+                                 '`external`. Passed through verbatim; ' +
+                                 'nothing here reads it.' }
           },
           required: ['spiffeId'],
           examples: [{ spiffeId: 'spiffe://example.org/ns/prod/sa/api',
@@ -12053,22 +12277,23 @@ const ROUTES = [
 
       { action: 'update', operationId: 'updateSpiffeEntry',
         summary: 'Change one field of an entry',
-        description: '**What may be changed is DECLARED and not DERIVED.** The ' +
-                     'declared half is what the entry may DO — the SPIFFE ID, ' +
-                     'the parent, the selectors, the DNS names, the ' +
-                     'lifetimes, the hint, the flags — and it is what the ' +
-                     'Workload API reads. The derived half is what HAPPENED: ' +
-                     'the revision number, the SVID counter, when it was ' +
-                     'created. Those are refused with a list of what is not, ' +
-                     'because a call that could rewrite them would make this ' +
-                     'registry lie about the service\'s own behaviour in a ' +
-                     'way indistinguishable from the recording being ' +
-                     'broken.\n\n`ldapmodify` still reaches everything, ' +
-                     'which is deliberate: refusing it HERE is the difference ' +
-                     'between offering an operation and merely not preventing ' +
-                     'it.\n\nThe change applies to the NEXT SVID issued from ' +
-                     'this entry. Nothing already issued changes, and there is ' +
-                     'nothing to invalidate — SPIFFE has no revocation.',
+        description: '**What may be changed is DECLARED and not DERIVED.** ' +
+                     'The declared half is what the entry may DO — the ' +
+                     'SPIFFE ID, the parent, the selectors, the DNS names, ' +
+                     'the lifetimes, the hint, the flags — and it is what ' +
+                     'the Workload API reads. The derived half is what ' +
+                     'HAPPENED: the revision number, the SVID counter, when ' +
+                     'it was created. Those are refused with a list of what ' +
+                     'is not, because a call that could rewrite them would ' +
+                     'make this registry lie about the service\'s own ' +
+                     'behaviour in a way indistinguishable from the ' +
+                     'recording being broken.\n\n`ldapmodify` still reaches ' +
+                     'everything, which is deliberate: refusing it HERE is ' +
+                     'the difference between offering an operation and ' +
+                     'merely not preventing it.\n\nThe change applies to the ' +
+                     'NEXT SVID issued from this entry. Nothing already ' +
+                     'issued changes, and there is nothing to invalidate — ' +
+                     'SPIFFE has no revocation.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -12090,26 +12315,27 @@ const ROUTES = [
           examples: [{ entry: '0f5a…', field: 'hint', value: 'internal' }],
           additionalProperties: false
         },
-        responseDescription: 'The entry as it now stands, at its new revision.' },
+        responseDescription:
+          'The entry as it now stands, at its new revision.' },
 
       { action: 'delete', operationId: 'deleteSpiffeEntry',
         summary: 'Remove an entry',
-        description: 'Anything holding an SVID minted from it keeps that SVID ' +
-                     'until it expires. SPIFFE has no revocation — the answer ' +
-                     'is a short lifetime and rotation, which is why the ' +
-                     'default X509-SVID lifetime here is an hour and the ' +
+        description: 'Anything holding an SVID minted from it keeps that ' +
+                     'SVID until it expires. SPIFFE has no revocation — the ' +
+                     'answer is a short lifetime and rotation, which is why ' +
+                     'the default X509-SVID lifetime here is an hour and the ' +
                      'JWT-SVID one is five minutes.\n\nIf this was the LAST ' +
                      'entry naming that SPIFFE ID, the identity\'s directory ' +
                      'entry under `ou=users` is marked ' +
-                     '`spiffeCredentialStatus: revoked` with the reason on it. ' +
-                     'The entry is NOT deleted, and that flag is not a ' +
-                     'certificate status: nothing reads it back and no SVID is ' +
-                     'refused because of it. Deleting one of several entries ' +
-                     'that name the same identity changes nothing there.' +
-                     '\n\nA seeded entry stays ' +
-                     'deleted until a restart: nothing here is persisted, but ' +
-                     'nothing re-creates it either, because an operator who ' +
-                     'deleted it meant to.',
+                     '`spiffeCredentialStatus: revoked` with the reason on ' +
+                     'it. The entry is NOT deleted, and that flag is not a ' +
+                     'certificate status: nothing reads it back and no SVID ' +
+                     'is refused because of it. Deleting one of several ' +
+                     'entries that name the same identity changes nothing ' +
+                     'there.\n\nA seeded entry stays deleted until a ' +
+                     'restart: nothing here is persisted, but nothing ' +
+                     're-creates it either, because an operator who deleted ' +
+                     'it meant to.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -12132,8 +12358,8 @@ const ROUTES = [
                  'service — which is why nothing about an agent is editable ' +
                  'and the only write is the ban.\n\n**Node attestation is ' +
                  'never verified.** Whatever attestor an agent names and ' +
-                 'whatever payload it sends are written down as claimed, which ' +
-                 'is why every agent carries a selector valued ' +
+                 'whatever payload it sends are written down as claimed, ' +
+                 'which is why every agent carries a selector valued ' +
                  '`unverified:true`: an agent\'s selectors here are claims, ' +
                  'not attested facts.',
     mirrors: 'GET /admin/spiffe/agents',
@@ -12176,13 +12402,13 @@ const ROUTES = [
                      'button a lie. A banned agent gets `PermissionDenied` ' +
                      'from `AttestAgent`.\n\nWhatever SVID it already holds ' +
                      'keeps working until it expires. There is no revocation ' +
-                     'in SPIFFE, so a ban stops the NEXT identity rather than ' +
-                     'the current one.\n\nThe agent\'s own entry under ' +
+                     'in SPIFFE, so a ban stops the NEXT identity rather ' +
+                     'than the current one.\n\nThe agent\'s own entry under ' +
                      '`ou=users` — the one every identity this trust domain ' +
                      'issues a certificate to gets — is marked ' +
-                     '`spiffeCredentialStatus: revoked`, and unbanning marks it ' +
-                     'active again. It is never deleted, and nothing reads that ' +
-                     'flag back.',
+                     '`spiffeCredentialStatus: revoked`, and unbanning marks ' +
+                     'it active again. It is never deleted, and nothing ' +
+                     'reads that flag back.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -12190,7 +12416,8 @@ const ROUTES = [
             agent: { type: 'string', description: 'The agent\'s SPIFFE ID.' }
           },
           required: ['agent'],
-          examples: [{ agent: 'spiffe://example.org/spire/agent/k8s_psat/abc' }],
+          examples:
+            [{ agent: 'spiffe://example.org/spire/agent/k8s_psat/abc' }],
           additionalProperties: false
         },
         responseDescription: 'The agent as it now stands.' },
@@ -12204,7 +12431,8 @@ const ROUTES = [
             agent: { type: 'string', description: 'The agent\'s SPIFFE ID.' }
           },
           required: ['agent'],
-          examples: [{ agent: 'spiffe://example.org/spire/agent/k8s_psat/abc' }],
+          examples:
+            [{ agent: 'spiffe://example.org/spire/agent/k8s_psat/abc' }],
           additionalProperties: false
         },
         responseDescription: 'The agent as it now stands.' },
@@ -12212,8 +12440,9 @@ const ROUTES = [
       { action: 'delete', operationId: 'deleteSpiffeAgent',
         summary: 'Forget an agent',
         description: '**Deleting is forgetting, not revoking.** It reappears ' +
-                     'the moment it attests again, because attestation is not ' +
-                     'checked here. Ban it if the intention was to stop it.',
+                     'the moment it attests again, because attestation is ' +
+                     'not checked here. Ban it if the intention was to stop ' +
+                     'it.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -12221,7 +12450,8 @@ const ROUTES = [
             agent: { type: 'string', description: 'The agent\'s SPIFFE ID.' }
           },
           required: ['agent'],
-          examples: [{ agent: 'spiffe://example.org/spire/agent/k8s_psat/abc' }],
+          examples:
+            [{ agent: 'spiffe://example.org/spire/agent/k8s_psat/abc' }],
           additionalProperties: false
         },
         responseDescription: 'That it is forgotten.' }
@@ -12319,10 +12549,13 @@ function operationSummaries() {
 // exists.
 // ---------------------------------------------------------------------------
 function bearerOf(req) {
+  log.debug("Entering bearerOf().");
   const said = String((req.headers && req.headers.authorization) || '');
   if (!/^bearer\s+/i.test(said)) {
+    log.debug("Leaving bearerOf().");
     return '';
   }
+  log.debug("Leaving bearerOf().");
   return said.replace(/^bearer\s+/i, '').trim();
 }
 
@@ -12330,10 +12563,13 @@ function bearerOf(req) {
 // `/admin-api` under the host the request arrived on, which is exactly what a
 // client gets by asking `resource=<base>/admin-api` at the token endpoint.
 function wantedAudience(req) {
+  log.debug("Entering wantedAudience().");
   const pinned = String(config.value('adminApi.audience') || '').trim();
   if (pinned) {
+    log.debug("Leaving wantedAudience().");
     return pinned;
   }
+  log.debug("Leaving wantedAudience().");
   // COMPUTED OUTSIDE ANY REALM, for the reason the signing key is taken from
   // the default realm below: this credential is service-wide. `baseUrlOf()`
   // glues on `realms.currentPrefix()`, so under `/realm/acme` it would answer
@@ -12347,9 +12583,11 @@ function wantedAudience(req) {
 }
 
 function audienceAccepted(claims, req) {
+  log.debug("Entering audienceAccepted().");
   const wanted = wantedAudience(req);
   const held = Array.isArray(claims.aud) ? claims.aud
     : (claims.aud === undefined || claims.aud === null ? [] : [claims.aud]);
+  log.debug("Leaving audienceAccepted().");
   return held.map(String).indexOf(wanted) >= 0;
 }
 
@@ -12395,6 +12633,8 @@ app.use(BASE, function (req, res, next) {
                                  function () { return STS.certPem; });
       claims = stsCrypto.verifyJws(presented, certPem);
     } catch (e) {
+      log.debug("Caught in a callback in module scope: " +
+                ((e && e.message) || e));
       claims = null;
     }
     if (!claims) {
@@ -12474,10 +12714,10 @@ app.use(BASE, function (req, res, next) {
     // and not a replacement for them.
     //
     // The two console roles decide who may administer this service and stay
-    // exactly where they are — `adminViews.gateStateFor()` is still the one answer
-    // to that, which is what stops this becoming a second one. What the gate
-    // adds is that a deployment can narrow this surface by POLICY, with the
-    // subject taken from the SESSION that got the caller through the check
+    // exactly where they are — `adminViews.gateStateFor()` is still the one
+    // answer to that, which is what stops this becoming a second one. What the
+    // gate adds is that a deployment can narrow this surface by POLICY, with
+    // the subject taken from the SESSION that got the caller through the check
     // above and never from anything on the request.
     //
     // **IT RUNS ONLY WHERE THIS SURFACE IS GATED AT ALL**, which is the same
@@ -12608,15 +12848,15 @@ log.info('The management API is at ' + BASE + ': ' +
          (config.value('adminApi.authRequired')
            ? 'It REQUIRES an OAuth 2.0 access token (adminApi.authRequired): ' +
              'audience ' + (config.value('adminApi.audience') || BASE) + ', ' +
-             'scope admin:read to read and admin:write to write, checked as a ' +
-             'XACML access decision against the ADMIN_READ and ADMIN_WRITE ' +
+             'scope admin:read to read and admin:write to write, checked as ' +
+             'a XACML access decision against the ADMIN_READ and ADMIN_WRITE ' +
              'roles. Get one from the client_credentials grant as the seeded ' +
              'application sts-management-api, whose secret is ' +
              'adminApi.clientSecret. THAT SETTING IS THE BOOTSTRAP: this ' +
              'surface used to be the way back in when nobody held a console ' +
-             'role, and it is only still that if the secret was pinned before ' +
-             'the start — a secret minted per start is readable only through ' +
-             'the API it unlocks.'
+             'role, and it is only still that if the secret was pinned ' +
+             'before the start — a secret minted per start is readable only ' +
+             'through the API it unlocks.'
            : 'It is NOT protected (adminApi.authRequired is off) — and the ' +
              'console is gated unconditionally, so this is the surface to ' +
              'reach for when nobody holds a console role: POST ' + BASE +

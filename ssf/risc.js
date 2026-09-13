@@ -148,10 +148,14 @@ const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 // default); read per event. `risc.historyPerAccount` bounds the credential and
 // identifier-change lists below, which were a literal 10 each.
 function eventsPerAccount() {
+  log.debug("Entering eventsPerAccount().");
+  log.debug("Leaving eventsPerAccount().");
   return config.value('risc.eventsPerAccount');
 }
 
 function historyPerAccount() {
+  log.debug("Entering historyPerAccount().");
+  log.debug("Leaving historyPerAccount().");
   return config.value('risc.historyPerAccount');
 }
 
@@ -187,12 +191,15 @@ const register = realms.map({ persist: 'risc.register' });
 // its reason. Re-setting the key keeps the row's place in the insertion order,
 // and a row trimmed out or replaced by another process's write is not put back.
 function touch(row) {
+  log.debug("Entering touch().");
   if (!row || !row.accountId) {
+    log.debug("Leaving touch().");
     return;
   }
   if (register.get(row.accountId) === row) {
     register.set(row.accountId, row);
   }
+  log.debug("Leaving touch().");
 }
 
 function enabled() {
@@ -664,7 +671,9 @@ function gate(row, uri) {
 }
 
 function shortNameOf(uri) {
+  log.debug("Entering shortNameOf().");
   const text = String(uri || '');
+  log.debug("Leaving shortNameOf().");
   return text.indexOf(events.RISC_PREFIX) === 0
     ? text.slice(events.RISC_PREFIX.length) : '';
 }
@@ -1346,7 +1355,11 @@ module.exports = {
   LIFECYCLE_STATES: LIFECYCLE_STATES,
   // A GETTER: `tests/risc_register.js` reads this to know how long the ring
   // is, and the answer is the setting now rather than a constant.
-  get EVENTS_PER_ACCOUNT() { return eventsPerAccount(); },
+  get EVENTS_PER_ACCOUNT() {
+    log.debug("Entering EVENTS_PER_ACCOUNT().");
+    log.debug("Leaving EVENTS_PER_ACCOUNT().");
+    return eventsPerAccount();
+  },
   enabled: enabled,
   supportedEventUris: supportedEventUris,
   autoEmitActs: autoEmitActs,

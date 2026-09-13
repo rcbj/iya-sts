@@ -67,19 +67,26 @@ const FORMATS = ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit', 'zcap'];
 const JWT_TYP = 'GNAP';
 
 function refusal(code, why) {
+  log.debug("Entering refusal().");
   const out = { ok: false, errorCode: code, why: why };
+  log.debug("Leaving refusal().");
   return errorCodes.mark(out, code);
 }
 
 // HKDF over the realm secret. `info` is the domain separator and is never
 // shared with another feature.
 function realmDerived(info, length) {
+  log.debug("Entering realmDerived().");
   const secret = helpers.refreshTokenKeysFor().secret;
+  log.debug("Leaving realmDerived().");
   return Buffer.from(nodeCrypto.hkdfSync('sha256', secret, Buffer.alloc(0),
-                                         Buffer.from(info, 'utf8'), length || 32));
+                                         Buffer.from(info, 'utf8'),
+                                         length || 32));
 }
 
 function jweSecret() {
+  log.debug("Entering jweSecret().");
+  log.debug("Leaving jweSecret().");
   return realmDerived('mock-sts gnap jwt-encrypted A256GCM v1', 32);
 }
 
@@ -87,18 +94,23 @@ function jweSecret() {
 // RS application's identifier; '' is the key for tokens with no RS audience,
 // which only this AS (introspection, the demonstration RS) can verify.
 function macaroonKeyFor(rsIdentity) {
-  return realmDerived('mock-sts gnap macaroon root v1|' + String(rsIdentity || ''), 32);
+  log.debug("Entering macaroonKeyFor().");
+  log.debug("Leaving macaroonKeyFor().");
+  return realmDerived('mock-sts gnap macaroon root v1|' +
+                      String(rsIdentity || ''), 32);
 }
 
 function ed25519Keys() {
   log.debug("Entering ed25519Keys().");
   const found = helpers.allSigningKeys().filter(function (one) {
-    return one.alg === 'EdDSA' && (one.publicJwk.crv || 'Ed25519') === 'Ed25519';
+    return one.alg === 'EdDSA' &&
+           (one.publicJwk.crv || 'Ed25519') === 'Ed25519';
   })[0];
   if (!found) {
     log.debug("Leaving ed25519Keys(). None.");
-    throw new Error('this realm holds no Ed25519 signing key, which biscuit and zcap tokens ' +
-                    'are signed with. That is a defect in the realm key set.');
+    throw new Error('this realm holds no Ed25519 signing key, which biscuit ' +
+                    'and zcap tokens are signed with. That is a defect in ' +
+                    'the realm key set.');
   }
   log.debug("Leaving ed25519Keys().");
   return { privateKey: found.privateKey,
@@ -109,9 +121,12 @@ function ed25519Keys() {
 // The ZCAP controller document lives at the realm's own URL, so the controller
 // is built from the base the caller hands in.
 function zcapKeys(base) {
+  log.debug("Entering zcapKeys().");
   const keys = ed25519Keys();
   const controller = String(base || '') + '/gnap/zcap/controller';
-  return { privateKey: keys.privateKey, publicKey: keys.publicKey, controller: controller,
+  log.debug("Leaving zcapKeys().");
+  return { privateKey: keys.privateKey, publicKey: keys.publicKey,
+           controller: controller,
            keyId: controller + '#' + keys.publicJwk.kid };
 }
 
@@ -119,13 +134,17 @@ function zcapKeys(base) {
 // THE JWT CLAIMS FOR THE MODEL (RFC 9767 section 2.1's JWT mappings).
 // ---------------------------------------------------------------------------
 function claimsOf(model) {
+  log.debug("Entering claimsOf().");
   const claims = {
     typ: JWT_TYP,
     iss: model.iss,
     jti: model.jti,
-    iat: model.iat,
-    nbf: model.nbf,
-    exp: model.exp,
+    // A time the model does not carry is OMITTED rather than written as null:
+    // jsonwebtoken refuses a non-numeric nbf, and a minimal bearer model has
+    // none.
+    iat: model.iat === null ? undefined : model.iat,
+    nbf: model.nbf === null ? undefined : model.nbf,
+    exp: model.exp === null ? undefined : model.exp,
     client_id: model.instanceId,
     access: model.access,
     flags: model.flags && model.flags.length ? model.flags : undefined,
@@ -145,15 +164,19 @@ function claimsOf(model) {
       delete claims[name];
     }
   });
+  log.debug("Leaving claimsOf().");
   return claims;
 }
 
 function modelOfClaims(claims) {
+  log.debug("Entering modelOfClaims().");
+  log.debug("Leaving modelOfClaims().");
   return {
     jti: claims.jti || null,
     iss: claims.iss || null,
     sub: claims.sub || null,
-    aud: claims.aud === undefined ? [] : (Array.isArray(claims.aud) ? claims.aud : [claims.aud]),
+    aud: claims.aud === undefined ? [] :
+         (Array.isArray(claims.aud) ? claims.aud : [claims.aud]),
     instanceId: claims.client_id || null,
     access: Array.isArray(claims.access) ? claims.access : [],
     flags: Array.isArray(claims.flags) ? claims.flags : [],
@@ -192,10 +215,13 @@ function checkModel(model, context) {
 // here — otherwise a refused mint reached `store.putToken()` with an undefined
 // value and the client was handed a token object with no value in it.
 function mintedOrThrow(format, minted) {
-  if (!minted || minted.ok === false || typeof minted.value !== 'string' || !minted.value) {
+  log.debug("Entering mintedOrThrow().");
+  if (!minted || minted.ok === false || typeof minted.value !== 'string' ||
+      !minted.value) {
     throw new Error('the ' + format + ' library refused to mint: ' +
                     String((minted && minted.why) || 'no value was produced'));
   }
+  log.debug("Leaving mintedOrThrow().");
   return minted;
 }
 
@@ -203,8 +229,24 @@ async function mint(format, model, ctx) {
   log.debug("Entering mint(). format=" + format);
   const context = ctx || {};
   if (format === 'jwt-signed' || format === 'jwt-encrypted') {
-    const signed = helpers.signJwt(claimsOf(model), { grant: 'gnap', setId: context.setId || null,
-                                                     sessionId: context.sessionId || null });
+    // THE MODEL IS VALIDATED HERE FOR THE JWT FORMATS, as each library format
+    // validates it in its own mint(). Until 2026-09-12 a JWT was signed from
+    // whatever it was handed — a model whose exp preceded its iat included.
+    const valid = access.validateModel(model);
+    if (!valid.ok) {
+      log.debug("Leaving mint(). Model invalid.");
+      const refused = new Error('the token model is not valid: ' + valid.why);
+      refused.errorCode = valid.errorCode;
+      throw errorCodes.mark(refused, valid.errorCode);
+    }
+    const signed = helpers.signJwt(claimsOf(valid.model),
+                                   { grant: 'gnap', setId: context.setId ||
+                                       null,
+                                                           sessionId: context.sessionId || null });
+    if (typeof signed !== 'string' || signed.split('.').length !== 3) {
+      log.debug("Leaving mint(). The signer produced no JWS.");
+      throw new Error('the ' + format + ' access token could not be signed.');
+    }
     if (format === 'jwt-signed') {
       log.debug("Leaving mint(). jwt-signed.");
       return { value: signed, format: format, jti: model.jti };
@@ -212,25 +254,35 @@ async function mint(format, model, ctx) {
     const rsKey = context.rs && context.rs.jweKey ? context.rs.jweKey : null;
     let options;
     if (rsKey) {
-      const alg = rsKey.alg || (rsKey.kty === 'EC' ? 'ECDH-ES+A256KW' : 'RSA-OAEP-256');
-      options = { alg: alg, enc: String(config.value('gnap.jweEnc') || 'A256GCM'), jwk: rsKey,
+      const alg = rsKey.alg ||
+                  (rsKey.kty === 'EC' ? 'ECDH-ES+A256KW' : 'RSA-OAEP-256');
+      options = { alg: alg,
+                  enc: String(config.value('gnap.jweEnc') || 'A256GCM'),
+                  jwk: rsKey,
                   cty: 'JWT', typ: 'JWT' };
     } else {
-      options = { alg: 'dir', enc: 'A256GCM', secret: jweSecret(), cty: 'JWT', typ: 'JWT' };
+      options = { alg: 'dir', enc: 'A256GCM', secret: jweSecret(), cty: 'JWT',
+                  typ: 'JWT' };
     }
     const value = stsCrypto.encryptJweCompact(signed, options);
-    log.debug("Leaving mint(). jwt-encrypted to " + (rsKey ? 'the resource server' : 'this AS') + ".");
-    return { value: value, format: format, jti: model.jti, encryptedTo: rsKey ? 'resource-server' : 'authorization-server' };
+    log.debug("Leaving mint(). jwt-encrypted to " + (rsKey ? 'the resource ' +
+        'server' : 'this ' +
+        'AS') + ".");
+    return { value: value, format: format, jti: model.jti,
+             encryptedTo: rsKey ? 'resource-server' : 'authorization-server' };
   }
   if (format === 'macaroon') {
     const minted = await macaroon.mint(model, {
-      rootKey: macaroonKeyFor(context.rs ? context.rs.identity : ''), location: model.iss });
+      rootKey: macaroonKeyFor(context.rs ? context.rs.identity : ''),
+      location: model.iss });
     log.debug("Leaving mint(). macaroon.");
     return mintedOrThrow(format, minted);
   }
   if (format === 'biscuit') {
     const keys = ed25519Keys();
-    const minted = await biscuit.mint(model, { privateKey: keys.privateKey, publicKey: keys.publicKey });
+    const minted = await biscuit.mint(model,
+                                      { privateKey: keys.privateKey,
+                                        publicKey: keys.publicKey });
     log.debug("Leaving mint(). biscuit.");
     return mintedOrThrow(format, minted);
   }
@@ -247,18 +299,22 @@ async function mint(format, model, ctx) {
 // demonstration RS, which is handed a value and no format — as a real RS that
 // accepts several formats is.
 function formatOf(value) {
+  log.debug("Entering formatOf().");
   const text = String(value || '');
   const dots = text.split('.').length - 1;
   if (dots === 2) {
+    log.debug("Leaving formatOf().");
     return 'jwt-signed';
   }
   if (dots === 4) {
+    log.debug("Leaving formatOf().");
     return 'jwt-encrypted';
   }
   if (/^eyJAY29udGV4d|^eyJpZCI6|^eyJ/.test(text)) {
     try {
       const json = JSON.parse(Buffer.from(text, 'base64url').toString('utf8'));
       if (json && json.parentCapability) {
+        log.debug("Leaving formatOf().");
         return 'zcap';
       }
     } catch (e) {
@@ -268,9 +324,11 @@ function formatOf(value) {
   }
   const bytes = Buffer.from(text, 'base64url');
   if (bytes.length && bytes[0] === 0x02) {
+    log.debug("Leaving formatOf().");
     // libmacaroons v2 binary starts with the version byte 2.
     return 'macaroon';
   }
+  log.debug("Leaving formatOf().");
   return 'biscuit';
 }
 
@@ -286,62 +344,80 @@ async function verify(format, value, ctx) {
     let jws = value;
     if (format === 'jwt-encrypted') {
       try {
-        const header = JSON.parse(Buffer.from(String(value).split('.')[0], 'base64url').toString('utf8'));
+        const header = JSON.parse(Buffer.from(String(value).split('.')[0],
+                                              'base64url').toString('utf8'));
         const opened = header.alg === 'dir'
-          ? stsCrypto.decryptJweCompact(value, { secret: jweSecret(), allowedAlg: ['dir'],
+          ? stsCrypto.decryptJweCompact(value,
+                                        { secret: jweSecret(),
+                                                 allowedAlg: ['dir'],
                                                  allowedEnc: ['A256GCM'] })
           : (context.rsPrivateKey
-            ? stsCrypto.decryptJweCompact(value, { privateKey: context.rsPrivateKey })
+            ? stsCrypto.decryptJweCompact(value,
+                                          { privateKey: context.rsPrivateKey })
             : null);
         if (!opened) {
-          log.debug("Leaving verify(). Encrypted to a resource server key this AS does not hold.");
-          return refusal('STS-GNAP-0340', 'the access token is encrypted to a resource server\'s ' +
-                         'key; only that resource server can read it.');
+          log.debug("Leaving verify(). Encrypted to a resource server key " +
+                    "this AS does not hold.");
+          return refusal('STS-GNAP-0340', 'the access token is encrypted to ' +
+                         'a resource server\'s key; only that resource ' +
+                         'server can read it.');
         }
         jws = opened.plaintext.toString('utf8');
       } catch (e) {
         log.debug("Leaving verify(). JWE does not open: " + e.message);
-        return refusal('STS-GNAP-0341', 'the encrypted access token does not decrypt: ' + e.message);
+        return refusal('STS-GNAP-0341', 'the encrypted access token does not ' +
+                                        'decrypt: ' + e.message);
       }
     }
     let claims;
     try {
-      claims = stsCrypto.verifyJws(jws, STS.certPem, { algorithms: ['RS256'], clockTolerance: 0 });
+      claims = stsCrypto.verifyJws(jws, STS.certPem,
+                                   { algorithms: ['RS256'],
+                                     clockTolerance: 0 });
     } catch (e) {
       // Expiry is refused below with the model's own sentence, so an expired
       // signature error is re-read without the time check.
       if (e && e.name === 'TokenExpiredError') {
         try {
-          claims = stsCrypto.verifyCompactJws(jws, STS.certPem, { algorithms: ['RS256'] }).claims;
+          claims = stsCrypto.verifyCompactJws(jws, STS.certPem,
+                                              { algorithms: ['RS256'] }).claims;
         } catch (e2) {
           log.debug("Leaving verify(). Signature refused: " + e2.message);
-          return refusal('STS-GNAP-0342', 'the access token signature does not verify: ' + e2.message);
+          return refusal('STS-GNAP-0342', 'the access token signature does ' +
+                                          'not verify: ' + e2.message);
         }
       } else if (e && e.name === 'NotBeforeError') {
-        claims = stsCrypto.verifyCompactJws(jws, STS.certPem, { algorithms: ['RS256'] }).claims;
+        claims = stsCrypto.verifyCompactJws(jws, STS.certPem,
+                                            { algorithms: ['RS256'] }).claims;
       } else {
         log.debug("Leaving verify(). Signature refused: " + (e && e.message));
-        return refusal('STS-GNAP-0342', 'the access token signature does not verify: ' +
+        return refusal('STS-GNAP-0342', 'the access token signature does not ' +
+                                        'verify: ' +
                        (e && e.message));
       }
     }
     if (claims.typ !== JWT_TYP) {
       log.debug("Leaving verify(). Not a GNAP JWT.");
-      return refusal('STS-GNAP-0343', 'the JWT is not a GNAP access token (typ ' + claims.typ + ').');
+      return refusal('STS-GNAP-0343',
+                     'the JWT is not a GNAP access token (typ ' + claims.typ +
+                     ').');
     }
     const checked = checkModel(modelOfClaims(claims), context);
     log.debug("Leaving verify(). jwt ok=" + checked.ok);
     return checked;
   }
   if (format === 'macaroon') {
-    const out = await macaroon.verify(value, { rootKey: macaroonKeyFor(context.rsIdentity || ''),
+    const out = await macaroon.verify(value,
+                                      { rootKey: macaroonKeyFor(
+                                          context.rsIdentity || ''),
                                                location: null }, context);
     log.debug("Leaving verify(). macaroon ok=" + out.ok);
     return out;
   }
   if (format === 'biscuit') {
     const keys = ed25519Keys();
-    const out = await biscuit.verify(value, { publicKey: keys.publicKey }, context);
+    const out = await biscuit.verify(value, { publicKey: keys.publicKey },
+                                     context);
     log.debug("Leaving verify(). biscuit ok=" + out.ok);
     return out;
   }
@@ -351,7 +427,8 @@ async function verify(format, value, ctx) {
     return out;
   }
   log.debug("Leaving verify(). Unknown format.");
-  return refusal('STS-GNAP-0344', 'there is no access token format called "' + format + '".');
+  return refusal('STS-GNAP-0344',
+                 'there is no access token format called "' + format + '".');
 }
 
 // What `GET /gnap/keys` publishes: the material an RS needs to verify the
@@ -363,21 +440,28 @@ function publicMaterial(base) {
   const raw = Buffer.from(keys.publicJwk.x, 'base64url');
   log.debug("Leaving publicMaterial().");
   return {
-    jwt: { jwks_uri: base + '/oauth2/jwks', alg: 'RS256', kid: STS.kid, typ: JWT_TYP },
-    biscuit: { algorithm: 'ed25519', root_public_key: 'ed25519/' + raw.toString('hex'),
+    jwt: { jwks_uri: base + '/oauth2/jwks', alg: 'RS256', kid: STS.kid,
+           typ: JWT_TYP },
+    biscuit: { algorithm: 'ed25519',
+               root_public_key: 'ed25519/' + raw.toString('hex'),
                jwk: keys.publicJwk },
     zcap: { controller: base + '/gnap/zcap/controller' },
-    macaroon: { root_key: 'per resource server; carried (sealed) on the resource server\'s ' +
-                'application entry as gnapMacaroonKey' },
-    'jwt-encrypted': { authorization_server: 'dir/A256GCM under a realm-derived key (introspect)',
-                       resource_server: 'the resource server\'s registered gnapJweKey' }
+    macaroon: { root_key: 'per resource server; carried (sealed) on the ' +
+                'resource server\'s application entry as gnapMacaroonKey' },
+    'jwt-encrypted': { authorization_server: 'dir/A256GCM under a ' +
+                                             'realm-derived key (introspect)',
+                       resource_server: 'the resource server\'s registered ' +
+                                        'gnapJweKey' }
   };
 }
 
 function describe() {
+  log.debug("Entering describe().");
+  log.debug("Leaving describe().");
   return {
-    jwt: { signs: 'RS256 with the realm signing key', encrypts: 'dir+A256GCM (realm-derived) or ' +
-           'RSA-OAEP-256 / ECDH-ES+A256KW to the resource server\'s gnapJweKey' },
+    jwt: { signs: 'RS256 with the realm signing key', encrypts: 'dir+A256GCM ' +
+           '(realm-derived) or RSA-OAEP-256 / ECDH-ES+A256KW to the resource ' +
+           'server\'s gnapJweKey' },
     macaroon: macaroon.describe(),
     biscuit: biscuit.describe(),
     zcap: zcap.describe()
@@ -397,6 +481,8 @@ module.exports = {
   publicMaterial: publicMaterial,
   describe: describe,
   isRevokedJti: function (jti) {
+    log.debug("Entering isRevokedJti().");
+    log.debug("Leaving isRevokedJti().");
     return stats.isRevoked(jti);
   }
 };

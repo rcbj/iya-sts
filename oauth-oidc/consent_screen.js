@@ -67,7 +67,8 @@
 // different services.
 // ---------------------------------------------------------------------------
 
-const { log, xmlEscape, parseBody, randomId, oauthError, baseUrlOf } = require('../common/helpers');
+const { log, xmlEscape, parseBody, randomId, oauthError,
+        baseUrlOf } = require('../common/helpers');
 const app = require('../common/app');
 // The pending-record clock, shared with the sign-in screen. See consentTtlMs().
 const config = require('../common/config');
@@ -116,7 +117,8 @@ function consentTtlMs() {
               e.message + '); using the ten-minute default.');
   }
   log.debug('Leaving consentTtlMs().');
-  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 : CONSENT_TTL_MS;
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 :
+         CONSENT_TTL_MS;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +146,8 @@ function beginConsent(opts) {
   const info = opts || {};
   const returnTo = String(info.returnTo || '');
   if (returnTo.charAt(0) !== '/' || returnTo.charAt(1) === '/') {
-    throw new Error('beginConsent() needs a path on this service to return to, not "' +
+    throw new Error('beginConsent() needs a path on this service to return ' +
+                    'to, not "' +
                     returnTo + '".');
   }
   const record = {
@@ -182,9 +185,11 @@ function beginConsent(opts) {
   log.info('consent: "' + record.username + '" is being asked whether "' +
            record.clientId + '" may have ' +
            record.scopes.map(function (one) { return one.scope; }).join(', ') +
-           ' on their behalf. Nothing is issued until they answer; ' + returnTo +
+           ' on their behalf. Nothing is issued until they answer; ' +
+           returnTo +
            ' is where they come back to.');
-  log.debug("Leaving beginConsent(). " + record.id + " will return to " + returnTo + ".");
+  log.debug("Leaving beginConsent(). " + record.id + " will return to " +
+            returnTo + ".");
   return CONSENT_PATH + '?consent=' + encodeURIComponent(record.id);
 }
 
@@ -240,6 +245,8 @@ function answeredBy(req, record) {
 // One normalisation, through the register, so that this file has no opinion of
 // its own about who somebody is.
 function consentIdentity(value) {
+  log.debug("Entering consentIdentity().");
+  log.debug("Leaving consentIdentity().");
   return consent.identityOf(value);
 }
 
@@ -269,16 +276,18 @@ function consentPage(base, record) {
       (permission
         ? '<span>' + xmlEscape(permission.description ||
             ('the permission "' + permission.name + '"')) +
-          ' — exposed by <code>' + xmlEscape(permission.identifier) + '</code>, and the ' +
-          'access token will be addressed to <code>' + xmlEscape(permission.baseUri) +
+          ' — exposed by <code>' + xmlEscape(permission.identifier) +
+          '</code>, ' +
+          'and the access token will be addressed to ' +
+          '<code>' + xmlEscape(permission.baseUri) +
           '</code></span>'
-        : '<span>an ordinary scope: this service attaches no meaning to it and will ' +
-          'put it on the token\'s scope claim as it stands</span>') +
+        : '<span>an ordinary scope: this service attaches no meaning to it ' +
+          'and will put it on the token\'s scope claim as it stands</span>') +
       '</li>';
   }).join('');
   const already = record.already.length
-    ? '<details><summary>' + record.already.length + ' scope(s) you have already agreed ' +
-      'to for this application</summary><ul class="scopes">' +
+    ? '<details><summary>' + record.already.length + ' scope(s) you have ' +
+      'already agreed to for this application</summary><ul class="scopes">' +
       record.already.map(function (one) {
         return '<li><code>' + xmlEscape(one.scope) + '</code><span>' +
           (one.global
@@ -292,29 +301,32 @@ function consentPage(base, record) {
     '<title>Allow access? — mock authorization server</title><style>' +
     authn.CARD_CSS + CONSENT_CSS + '</style></head><body><div class="card">' +
     '<h1>Allow access?</h1>' +
-    '<p class="sub">Signed in as <code>' + xmlEscape(record.username) + '</code> at <code>' +
+    '<p class="sub">Signed in as <code>' + xmlEscape(record.username) +
+    '</code> ' +
+        'at <code>' +
     xmlEscape(base) + '</code></p>' +
-    '<p class="app"><strong>' + xmlEscape(record.clientName) + '</strong> is asking for ' +
-    'access on your behalf.' +
+    '<p class="app"><strong>' + xmlEscape(record.clientName) + '</strong> is ' +
+    'asking for access on your behalf.' +
     (record.clientName === record.clientId ? ''
       : '<br><code>' + xmlEscape(record.clientId) + '</code>') + '</p>' +
     '<ul class="scopes">' + rows + '</ul>' +
     already +
     '<form method="post" action="' + CONSENT_PATH + '">' +
-    '<input type="hidden" name="consent_id" value="' + xmlEscape(record.id) + '">' +
-    '<div class="row">' +
-    '<button type="submit" id="consent-allow" name="action" value="allow">Allow</button>' +
-    '<button type="submit" id="consent-deny" name="action" value="deny" ' +
-    'class="secondary">Deny</button></div></form>' +
-    '<div class="meta">' +
-    '<div>Allow writes one <code>' + xmlEscape(consent.USER_ATTRIBUTE) + '</code> value per ' +
-    'scope onto your entry under <code>ou=users</code>, so you are not asked again for ' +
-    'these. Deny returns <code>access_denied</code> to the application and records ' +
-    'nothing.</div>' +
-    '<div>Nothing has been issued yet. This screen is <code>oauth2.consentRequired</code>, ' +
-    'which is on by default; /admin/consent is where every answer given here can be ' +
-    'read and taken back.</div>' +
-    '<div>Consenting for: <code>' + xmlEscape(record.protocol) + '</code></div>' +
+    '<input type="hidden" name="consent_id" value="' + xmlEscape(record.id) +
+    '"><div ' +
+    'class="row"><button type="submit" id="consent-allow" name="action" ' +
+    'value="allow">Allow</button><button type="submit" id="consent-deny" ' +
+    'name="action" value="deny" ' +
+    'class="secondary">Deny</button></div></form><div ' +
+    'class="meta"><div>Allow writes one ' +
+    '<code>' + xmlEscape(consent.USER_ATTRIBUTE) + '</code> ' +
+    'value per scope onto your entry under <code>ou=users</code>, so you are ' +
+    'not asked again for these. Deny returns <code>access_denied</code> to ' +
+    'the application and records nothing.</div><div>Nothing has been issued ' +
+    'yet. This screen is <code>oauth2.consentRequired</code>, which is on by ' +
+    'default; /admin/consent is where every answer given here can be read ' +
+    'and taken back.</div><div>Consenting for: ' +
+    '<code>' + xmlEscape(record.protocol) + '</code></div>' +
     record.details.map(function (d) {
       return '<div>' + xmlEscape(d.label) + ': <code>' +
         xmlEscape(d.value == null ? '' : d.value) + '</code>' +
@@ -329,16 +341,18 @@ function consentPage(base, record) {
 // than merged into CARD_CSS, so that a change here cannot alter the sign-in
 // screen — which four tests and a person's muscle memory depend on.
 const CONSENT_CSS =
-  '.card{width:460px}p.app{font-size:.9em;margin:0 0 14px}' +
-  'ul.scopes{list-style:none;padding:0;margin:0 0 8px}' +
-  'ul.scopes li{padding:8px 10px;margin:6px 0;border:1px solid #e3e3ea;border-radius:6px;' +
-  'background:#fafafd;font-size:.85em}' +
-  'ul.scopes li span{display:block;color:#666;font-size:.9em;margin-top:3px}' +
-  'details{margin:10px 0 0;font-size:.8em;color:#555}' +
-  'details summary{cursor:pointer}';
+  '.card{width:460px}p.app{font-size:.9em;margin:0 0 ' +
+  '14px}ul.scopes{list-style:none;padding:0;margin:0 0 8px}ul.scopes ' +
+  'li{padding:8px 10px;margin:6px 0;border:1px solid ' +
+  '#e3e3ea;border-radius:6px;background:#fafafd;font-size:.85em}ul.scopes li ' +
+  'span{display:block;color:#666;font-size:.9em;margin-top:3px}' +
+  'details{margin:10px 0 0;font-size:.8em;color:#555}details ' +
+  'summary{cursor:pointer}';
 
 function sendConsentPage(res, html) {
+  log.debug("Entering sendConsentPage().");
   res.status(200).type('text/html').set('Cache-Control', 'no-store').send(html);
+  log.debug("Leaving sendConsentPage().");
 }
 
 // ---------------------------------------------------------------------------
@@ -379,22 +393,27 @@ app.get(CONSENT_PATH, function (req, res) {
     log.debug("Leaving the consent screen. Nothing is pending under that id.");
     errorCodes.mark(res, 'STS-OAUTH-0149');
     return oauthError(res, 400, 'invalid_request',
-      'There is no consent waiting under that id, or it has expired. Start the request ' +
-      'again from the application that sent you here — nothing was issued and nothing ' +
-      'was recorded.');
+      'There is no consent waiting under that id, or it has expired. Start ' +
+      'the request again from the application that sent you here — nothing ' +
+      'was issued and nothing was recorded.');
   }
   const who = answeredBy(req, record);
   if (!who.ok) {
     log.debug("Leaving the consent screen. " + who.why + ".");
-    errorCodes.mark(res, who.why === 'nosession' ? 'STS-OAUTH-0150' : 'STS-OAUTH-0151');
+    errorCodes.mark(res,
+                    who.why === 'nosession' ? 'STS-OAUTH-0150' :
+                    'STS-OAUTH-0151');
     return oauthError(res, 400, 'invalid_request',
       who.why === 'nosession'
-        ? 'Nobody is signed in here any more, so there is nobody to record an answer ' +
-          'for. Start the request again from the application that sent you here.'
-        : 'This consent was asked of "' + record.username + '" and the session in this ' +
-          'browser belongs to "' + who.who + '". It is refused rather than recorded ' +
-          'against whoever happens to be signed in, which is the one failure at this ' +
-          'door that would write something untrue into the directory.');
+        ? 'Nobody is signed in here any more, so there is nobody to record ' +
+          'an answer for. Start the request again from the application that ' +
+          'sent you here.'
+        : 'This consent was asked of "' + record.username + '" and the ' +
+          'session in this browser belongs to ' +
+          '"' + who.who + '". It is refused rather than ' +
+          'recorded against whoever happens to be signed in, which is the ' +
+          'one failure at this door that would write something untrue into ' +
+          'the directory.');
   }
   sendConsentPage(res, consentPage(baseUrlOf(req), record));
   log.debug("Leaving the consent screen. Showed " + record.scopes.length +
@@ -424,19 +443,21 @@ app.post(CONSENT_PATH, function (req, res) {
     log.debug("Leaving the consent endpoint. The form had expired.");
     errorCodes.mark(res, 'STS-OAUTH-0149');
     return oauthError(res, 400, 'invalid_request',
-      'This consent form has expired, or it has already been answered. Start the request ' +
-      'again from the application that sent you here.');
+      'This consent form has expired, or it has already been answered. Start ' +
+      'the request again from the application that sent you here.');
   }
   const who = answeredBy(req, record);
   if (!who.ok) {
     log.debug("Leaving the consent endpoint. " + who.why + ".");
-    errorCodes.mark(res, who.why === 'nosession' ? 'STS-OAUTH-0150' : 'STS-OAUTH-0151');
+    errorCodes.mark(res,
+                    who.why === 'nosession' ? 'STS-OAUTH-0150' :
+                    'STS-OAUTH-0151');
     return oauthError(res, 400, 'invalid_request',
       who.why === 'nosession'
-        ? 'Nobody is signed in here any more, so this answer belongs to nobody. Nothing ' +
-          'was recorded.'
-        : 'This consent was asked of "' + record.username + '" and this browser is signed ' +
-          'in as "' + who.who + '". Nothing was recorded.');
+        ? 'Nobody is signed in here any more, so this answer belongs to ' +
+          'nobody. Nothing was recorded.'
+        : 'This consent was asked of "' + record.username + '" and this ' +
+          'browser is signed in as "' + who.who + '". Nothing was recorded.');
   }
   pending.delete(record.id);
 
@@ -449,8 +470,8 @@ app.post(CONSENT_PATH, function (req, res) {
       detail: 'refused ' + names.join(', ')
     });
     log.info('consent: "' + record.username + '" refused "' + record.clientId +
-             '" the scope(s) ' + names.join(', ') + '. Nothing was recorded and ' +
-             'nothing was issued; the client is told access_denied.');
+             '" the scope(s) ' + names.join(', ') + '. Nothing was recorded ' +
+             'and nothing was issued; the client is told access_denied.');
     log.debug("Leaving the consent endpoint. Denied.");
     errorCodes.mark(res, 'STS-OAUTH-0152');
     return backToCaller(res, record, 'access_denied',
@@ -463,7 +484,9 @@ app.post(CONSENT_PATH, function (req, res) {
     protocol: 'OAuth 2.0 / OIDC', channel: 'http',
     outcome: written.stored ? 'success' : 'warning',
     detail: 'consented ' + names.join(', ') +
-            (written.stored ? '' : ' (not written down: ' + (written.reason || 'no entry') +
+            (written.stored ? '' :
+             ' (not written down: ' + (written.reason || 'no ' +
+                'entry') +
                                    ', so they will be asked again)')
   });
   log.debug("Leaving the consent endpoint. Allowed.");
@@ -494,13 +517,14 @@ function backToCaller(res, record, error, description) {
       '&consent_error_description=' + encodeURIComponent(description || '');
   }
   res.redirect(303, target);
-  log.debug("Leaving backToCaller(). Sent the browser to " + target + " with a 303.");
+  log.debug("Leaving backToCaller(). Sent the browser to " + target + " with " +
+      "a 303.");
 }
 
 log.info('The consent screen is registered at ' + CONSENT_PATH + '. The ' +
-         'authorization endpoint sends a person here before it issues anything ' +
-         'for a scope they have not agreed to for that application, and they ' +
-         'come back to the request they interrupted.');
+         'authorization endpoint sends a person here before it issues ' +
+         'anything for a scope they have not agreed to for that application, ' +
+         'and they come back to the request they interrupted.');
 
 module.exports = {
   CONSENT_PATH: CONSENT_PATH,

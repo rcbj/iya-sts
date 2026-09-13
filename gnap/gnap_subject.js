@@ -13,24 +13,26 @@
 //
 // **NEITHER DIRECTION HAS A BUILDER OF ITS OWN HERE.** The ID Token is
 // `oauth2.idToken()` and the SAML assertion is `saml2.buildSamlAssertion()`,
-// because a GNAP assertion and an OIDC one from the same realm must say the same
-// things about the same person — claim layers, persona values in development,
-// the directory's facts in product — and a second builder would be the second
-// answer that starts disagreeing the day either grows a claim. Verification of
-// an inbound assertion is the same argument read backwards: `common/crypto.js`
-// checks the JWS and the XML signature, against this realm's own certificate.
+// because a GNAP assertion and an OIDC one from the same realm must say the
+// same things about the same person — claim layers, persona values in
+// development, the directory's facts in product — and a second builder would be
+// the second answer that starts disagreeing the day either grows a claim.
+// Verification of an inbound assertion is the same argument read backwards:
+// `common/crypto.js` checks the JWS and the XML signature, against this realm's
+// own certificate.
 //
 // ---------------------------------------------------------------------------
 // WHICH ASSERTIONS AN INBOUND `user` MAY CARRY.
 //
 // Section 2.4: assertions "SHOULD be validated", and section 11.30 lists why.
-// This AS accepts the ones IT ISSUED — an ID Token or SAML assertion signed with
-// this realm's own key — and nothing else, which is section 2.4's own worked
-// example ("an AS acting as an identity provider could expect that assertions
-// being presented using this mechanism were issued by the AS to the client
-// software"). A foreign IdP's assertion would need a federation relationship to
-// verify, and `federation/` is the one feature here that refuses by default for
-// exactly that reason; GNAP does not get a side door around it.
+// This AS accepts the ones IT ISSUED — an ID Token or SAML assertion signed
+// with this realm's own key — and nothing else, which is section 2.4's own
+// worked example ("an AS acting as an identity provider could expect that
+// assertions being presented using this mechanism were issued by the AS to the
+// client software"). A foreign IdP's assertion would need a federation
+// relationship to verify, and `federation/` is the one feature here that
+// refuses by default for exactly that reason; GNAP does not get a side door
+// around it.
 //
 // Sub_ids are HINTS and never authoritative (section 2.4: "MUST NOT be taken as
 // authoritative statements"). They pre-fill the sign-in screen and they are
@@ -50,16 +52,22 @@ const store = require('./gnap_store');
 // on purpose: a person here has a DID only when a wallet linked one, and a
 // format advertised for everybody that most people cannot be named in is a
 // capability the discovery document would be overstating.
-const SUB_ID_FORMATS_SUPPORTED = ['opaque', 'iss_sub', 'email', 'account', 'uri', 'phone_number',
+const SUB_ID_FORMATS_SUPPORTED = ['opaque', 'iss_sub', 'email', 'account',
+                                  'uri', 'phone_number',
                                   'aliases'];
 const ASSERTION_FORMATS_SUPPORTED = ['id_token', 'saml2'];
 
 function refusal(code, why, gnapError) {
-  const out = { ok: false, errorCode: code, why: why, gnapError: gnapError || 'unknown_user' };
+  log.debug("Entering refusal().");
+  const out = { ok: false, errorCode: code, why: why,
+                gnapError: gnapError || 'unknown_user' };
+  log.debug("Leaving refusal().");
   return errorCodes.mark(out, code);
 }
 
 function normaliseName(name) {
+  log.debug("Entering normaliseName().");
+  log.debug("Leaving normaliseName().");
   return String(name || '').trim().toLowerCase();
 }
 
@@ -75,12 +83,17 @@ function normaliseName(name) {
 // then resolves, and a value this AS never issued does not.
 // ---------------------------------------------------------------------------
 function opaqueIdFor(username) {
+  log.debug("Entering opaqueIdFor().");
   const secret = helpers.refreshTokenKeysFor().secret;
   const key = Buffer.from(nodeCrypto.hkdfSync('sha256', secret, Buffer.alloc(0),
-                                              Buffer.from('mock-sts gnap opaque subject v1'), 32));
-  const id = nodeCrypto.createHmac('sha256', key).update(normaliseName(username)).digest('base64url')
+                                              Buffer.from('mock-sts gnap ' +
+                                                  'opaque subject v1'), 32));
+  const id = nodeCrypto.createHmac('sha256', key)
+                       .update(normaliseName(username))
+                       .digest('base64url')
     .slice(0, 20);
   store.putUserRef(id, { username: normaliseName(username) });
+  log.debug("Leaving opaqueIdFor().");
   return id;
 }
 
@@ -92,14 +105,17 @@ function factsFor(username) {
     person = require('../saml/person_attributes').personFor(person);
   } catch (e) {
     // No directory in this process (an in-process test). The formats that need
-    // a fact are omitted, which is the product-mode answer for a fact nobody holds.
+    // a fact are omitted, which is the product-mode answer for a fact nobody
+    // holds.
     log.debug("factsFor(): the directory could not be read: " + e.message);
   }
   let phone = null;
   try {
-    const byLdap = require('../common/claim_attributes').catalogueValuesFor(username).byLdap || {};
+    const byLdap = require('../common/claim_attributes').catalogueValuesFor(
+        username).byLdap || {};
     const item = byLdap.telephonenumber || byLdap.mobile || null;
-    if (item && item.value && /^\+[1-9][0-9]{1,14}$/.test(String(item.value).replace(/[\s-]/g, ''))) {
+    if (item && item.value &&
+        /^\+[1-9][0-9]{1,14}$/.test(String(item.value).replace(/[\s-]/g, ''))) {
       phone = String(item.value).replace(/[\s-]/g, '');
     }
   } catch (e) {
@@ -124,28 +140,45 @@ function subIdsFor(username, formats, ctx) {
     try {
       return new URL(context.issuer).host;
     } catch (e) {
+      log.debug("Caught in a callback in subIdsFor(): " +
+                ((e && e.message) || e));
       // No issuer URL to take a host from; the account format is then omitted.
       return '';
     }
   }());
   const made = {
     opaque: function () {
+      log.debug("Entering opaque().");
+      log.debug("Leaving opaque().");
       return { format: 'opaque', id: opaqueIdFor(username) };
     },
     iss_sub: function () {
+      log.debug("Entering iss_sub().");
+      log.debug("Leaving iss_sub().");
       return { format: 'iss_sub', iss: context.issuer, sub: facts.person.sub };
     },
     email: function () {
+      log.debug("Entering email().");
+      log.debug("Leaving email().");
       return facts.email ? { format: 'email', email: facts.email } : null;
     },
     account: function () {
-      return host ? { format: 'account', uri: 'acct:' + normaliseName(username) + '@' + host } : null;
+      log.debug("Entering account().");
+      log.debug("Leaving account().");
+      return host ?
+             { format: 'account',
+               uri: 'acct:' + normaliseName(username) + '@' + host } : null;
     },
     uri: function () {
+      log.debug("Entering uri().");
+      log.debug("Leaving uri().");
       return { format: 'uri', uri: facts.person.sub };
     },
     phone_number: function () {
-      return facts.phone ? { format: 'phone_number', phone_number: facts.phone } : null;
+      log.debug("Entering phone_number().");
+      log.debug("Leaving phone_number().");
+      return facts.phone ?
+             { format: 'phone_number', phone_number: facts.phone } : null;
     }
   };
   const out = [];
@@ -189,12 +222,18 @@ async function assertionsFor(username, formats, ctx) {
       out.push({ format: 'id_token', value: value });
     } else if (format === 'saml2') {
       const saml2 = require('../saml/saml2');
-      const lifetime = Math.max(1, Math.round((Number(config.value('gnap.accessTokenLifetimeS')) || 3600) / 60));
-      const xml = saml2.buildSamlAssertion(normaliseName(username), context.instanceId, lifetime, {
+      const lifetime = Math.max(1,
+                                Math.round((Number(
+                                    config.value(
+                                        'gnap.accessTokenLifetimeS')) ||
+                                            3600) / 60));
+      const xml = saml2.buildSamlAssertion(normaliseName(username),
+                                           context.instanceId, lifetime, {
         issuer: context.issuer, sessionIndex: context.sessionId || undefined
       });
       // Section 3.4.1: "encoded as a single base64url string with no padding".
-      out.push({ format: 'saml2', value: Buffer.from(xml, 'utf8').toString('base64url') });
+      out.push({ format: 'saml2',
+                 value: Buffer.from(xml, 'utf8').toString('base64url') });
     }
   }
   log.debug("Leaving assertionsFor(). " + out.length + " assertion(s).");
@@ -222,8 +261,8 @@ function resolveUser(user, ctx) {
     const row = store.userByRef(user.reference);
     if (!row) {
       log.debug("Leaving resolveUser(). Unknown reference.");
-      return refusal('STS-GNAP-0070', 'the user reference is not one this authorization server ' +
-                     'issued (RFC 9635 section 2.4.1).');
+      return refusal('STS-GNAP-0070', 'the user reference is not one this ' +
+                     'authorization server issued (RFC 9635 section 2.4.1).');
     }
     log.debug("Leaving resolveUser(). By reference.");
     return { ok: true, username: row.username, verified: false };
@@ -240,8 +279,9 @@ function resolveUser(user, ctx) {
   const assertionProblems = (user.assertions || []).length && !verified;
   if (assertionProblems) {
     log.debug("Leaving resolveUser(). No assertion verified.");
-    return refusal('STS-GNAP-0071', 'none of the presented user assertions is one this ' +
-                   'authorization server issued and can verify (RFC 9635 sections 2.4 and 11.30).');
+    return refusal('STS-GNAP-0071', 'none of the presented user assertions ' +
+                   'is one this authorization server issued and can verify ' +
+                   '(RFC 9635 sections 2.4 and 11.30).');
   }
   (user.subIds || []).forEach(function (subId) {
     const name = usernameFromSubId(subId, context);
@@ -256,35 +296,48 @@ function resolveUser(user, ctx) {
     // Section 2.2: "All identifiers in the sub_ids array MUST identify the same
     // subject" — and the same is true of assertions beside them.
     log.debug("Leaving resolveUser(). Identifiers name different people.");
-    return refusal('STS-GNAP-0072', 'the user identifiers and assertions name more than one ' +
-                   'person (RFC 9635 section 2.2).', 'invalid_request');
+    return refusal('STS-GNAP-0072', 'the user identifiers and assertions ' +
+                   'name more than one person (RFC 9635 section ' +
+                   '2.2).', 'invalid_request');
   }
-  log.debug("Leaving resolveUser(). username=" + (distinct[0] || '(none)') + ", verified=" + verified);
+  log.debug("Leaving resolveUser(). username=" + (distinct[0] || '(none)') +
+      ", " +
+      "verified=" + verified);
   return { ok: true, username: distinct[0] || null, verified: verified };
 }
 
 function usernameFromSubId(subId, ctx) {
+  log.debug("Entering usernameFromSubId().");
   if (!subId) {
+    log.debug("Leaving usernameFromSubId().");
     return null;
   }
   if (subId.format === 'opaque') {
     const row = store.userByRef(subId.id);
+    log.debug("Leaving usernameFromSubId().");
     return row ? row.username : null;
   }
   if (subId.format === 'iss_sub') {
-    if (subId.iss !== ctx.issuer || String(subId.sub).indexOf('urn:sts:user:') !== 0) {
+    if (subId.iss !== ctx.issuer ||
+        String(subId.sub).indexOf('urn:sts:user:') !== 0) {
+      log.debug("Leaving usernameFromSubId().");
       return null;
     }
+    log.debug("Leaving usernameFromSubId().");
     return normaliseName(String(subId.sub).slice('urn:sts:user:'.length));
   }
-  if (subId.format === 'uri' && String(subId.uri).indexOf('urn:sts:user:') === 0) {
+  if (subId.format === 'uri' &&
+      String(subId.uri).indexOf('urn:sts:user:') === 0) {
+    log.debug("Leaving usernameFromSubId().");
     return normaliseName(String(subId.uri).slice('urn:sts:user:'.length));
   }
   if (subId.format === 'account') {
     const match = String(subId.uri).match(/^acct:([^@]+)@/);
+    log.debug("Leaving usernameFromSubId().");
     return match ? normaliseName(match[1]) : null;
   }
   if (subId.format === 'email') {
+    log.debug("Leaving usernameFromSubId().");
     // An email address is a hint for the sign-in screen's username field in
     // the local part, and nothing stronger.
     return normaliseName(String(subId.email).split('@')[0]);
@@ -293,10 +346,12 @@ function usernameFromSubId(subId, ctx) {
     for (let i = 0; i < subId.identifiers.length; i++) {
       const inner = usernameFromSubId(subId.identifiers[i], ctx);
       if (inner) {
+        log.debug("Leaving usernameFromSubId().");
         return inner;
       }
     }
   }
+  log.debug("Leaving usernameFromSubId().");
   return null;
 }
 
@@ -308,32 +363,42 @@ function usernameFromAssertion(assertion, ctx) {
       // Signature only: section 2.4 lets an AS "accept a recently expired
       // assertion in order to help bootstrap a new session", and this AS does,
       // within `gnap.assertionMaxAgeS` of its expiry.
-      claims = stsCrypto.verifyCompactJws(assertion.value, STS.certPem, { algorithms: ['RS256'] }).claims;
+      claims = stsCrypto.verifyCompactJws(assertion.value, STS.certPem,
+                                          { algorithms: ['RS256'] }).claims;
     } catch (e) {
-      log.debug("Leaving usernameFromAssertion(). ID Token does not verify: " + e.message);
+      log.debug("Leaving usernameFromAssertion(). ID Token does not verify: " +
+                e.message);
       return { ok: false };
     }
     const grace = Number(config.value('gnap.assertionMaxAgeS')) || 0;
-    if (claims.typ !== 'ID' || (ctx.oauthIssuer && claims.iss !== ctx.oauthIssuer) ||
+    if (claims.typ !== 'ID' ||
+        (ctx.oauthIssuer && claims.iss !== ctx.oauthIssuer) ||
         (claims.exp && claims.exp + grace < helpers.nowSec())) {
-      log.debug("Leaving usernameFromAssertion(). Not a current ID Token from this issuer.");
+      log.debug("Leaving usernameFromAssertion(). Not a current ID Token " +
+                "from this issuer.");
       return { ok: false };
     }
     const name = claims.preferred_username ||
-      (String(claims.sub).indexOf('urn:sts:user:') === 0 ? String(claims.sub).slice(13) : '');
+      (String(claims.sub).indexOf('urn:sts:user:') === 0 ?
+       String(claims.sub).slice(13) : '');
     log.debug("Leaving usernameFromAssertion(). id_token for " + name);
     return name ? { ok: true, username: normaliseName(name) } : { ok: false };
   }
   if (assertion.format === 'saml2') {
-    const xml = Buffer.from(String(assertion.value), 'base64url').toString('utf8');
-    const result = stsCrypto.verifyXmlSignature(xml, { element: 'Assertion', certPem: STS.certPem });
+    const xml = Buffer.from(String(assertion.value), 'base64url')
+                      .toString('utf8');
+    const result = stsCrypto.verifyXmlSignature(xml,
+                                                { element: 'Assertion',
+                                                  certPem: STS.certPem });
     if (!result.ok) {
-      log.debug("Leaving usernameFromAssertion(). SAML assertion does not verify.");
+      log.debug("Leaving usernameFromAssertion(). SAML assertion does not " +
+                "verify.");
       return { ok: false };
     }
     const match = xml.match(/<(?:[A-Za-z0-9]+:)?NameID\b[^>]*>([^<]+)<\/(?:[A-Za-z0-9]+:)?NameID>/);
     log.debug("Leaving usernameFromAssertion(). saml2.");
-    return match ? { ok: true, username: normaliseName(match[1]) } : { ok: false };
+    return match ? { ok: true, username: normaliseName(match[1]) } :
+           { ok: false };
   }
   log.debug("Leaving usernameFromAssertion(). Unsupported format.");
   return { ok: false };

@@ -55,6 +55,7 @@ const config = require('../common/config');
 const approvers = realms.map({ persist: 'gnap.approvers' });
 
 function noteApprover(identifier, username) {
+  log.debug("Entering noteApprover().");
   try {
     const key = String(identifier);
     const list = approvers.has(key) ? approvers.get(key).slice() : [];
@@ -65,32 +66,43 @@ function noteApprover(identifier, username) {
     }
   } catch (e) {
     // Bookkeeping on the path of an approval; never allowed to fail one.
-    log.error(errorCodes.tag('STS-GNAP-0700') + 'gnap: an approver could not be recorded: ' + e.message);
+    log.error(errorCodes.tag('STS-GNAP-0700') + 'gnap: an approver could not ' +
+                                                'be recorded: ' + e.message);
   }
+  log.debug("Leaving noteApprover().");
 }
 
 function approvedBy(identifier, username) {
+  log.debug("Entering approvedBy().");
   const name = String(username || '').toLowerCase();
   if (!name) {
+    log.debug("Leaving approvedBy().");
     return false;
   }
   const list = approvers.get(String(identifier)) || [];
   if (list.indexOf(name) >= 0) {
+    log.debug("Leaving approvedBy().");
     return true;
   }
   try {
+    log.debug("Leaving approvedBy().");
     return require('../common/consent').consentsOf(name).some(function (row) {
-      return row.client === String(identifier) && String(row.scope).indexOf('gnap:') === 0;
+      return row.client === String(identifier) &&
+             String(row.scope).indexOf('gnap:') === 0;
     });
   } catch (e) {
     // No consent register reachable; the index above is the whole answer.
-    log.debug("approvedBy(): the consent register could not be read: " + e.message);
+    log.debug("approvedBy(): the consent register could not be read: " +
+              e.message);
+    log.debug("Leaving approvedBy().");
     return false;
   }
 }
 
 function subjectFor(req, username, sessionId) {
+  log.debug("Entering subjectFor().");
   const transport = require('../ssf/ssf_http');
+  log.debug("Leaving subjectFor().");
   return {
     user: { format: 'issuer_subject_id', iss: transport.transmitterIssuer(req),
             sub: userFor(username).sub },
@@ -102,14 +114,16 @@ function subjectFor(req, username, sessionId) {
 function emit(req, type, username, sessionId, values, reason) {
   log.debug("Entering emit(). type=" + type);
   if (!username || config.value('gnap.caepEvents') === false) {
-    log.debug("Leaving emit(). No resource owner, or GNAP CAEP events are off.");
+    log.debug("Leaving emit(). No resource owner, or GNAP CAEP events are " +
+              "off.");
     return Promise.resolve({ sent: 0 });
   }
   let ssf;
   try {
     ssf = require('../ssf/ssf');
   } catch (e) {
-    // No SSF family in this process (an in-process test): nothing to deliver to.
+    // No SSF family in this process (an in-process test): nothing to deliver
+    // to.
     log.debug("Leaving emit(). SSF is not loaded: " + e.message);
     return Promise.resolve({ sent: 0 });
   }
@@ -119,30 +133,41 @@ function emit(req, type, username, sessionId, values, reason) {
   }
   log.debug("Leaving emit(). Delivering.");
   return Promise.resolve(ssf.emitProtocolEvent({
-    req: req, protocol: 'GNAP', type: type, subject: subjectFor(req, username, sessionId),
+    req: req, protocol: 'GNAP', type: type,
+    subject: subjectFor(req, username, sessionId),
     values: values || {}, initiatingEntity: 'system',
     reasonAdmin: reason, reasonUser: reason
   })).catch(function (e) {
-    log.error(errorCodes.tag('STS-GNAP-0701') + 'gnap: a CAEP ' + type + ' could not be delivered: ' +
+    log.error(errorCodes.tag('STS-GNAP-0701') + 'gnap: a CAEP ' + type + ' ' +
+        'could not be delivered: ' +
               e.message);
     return { sent: 0, why: e.message };
   });
 }
 
 function grantRevoked(req, grant, reason) {
-  return emit(req, 'session-revoked', grant.ro && grant.ro.username, 'gnap-grant:' + grant.id, {},
+  log.debug("Entering grantRevoked().");
+  log.debug("Leaving grantRevoked().");
+  return emit(req, 'session-revoked', grant.ro && grant.ro.username,
+              'gnap-grant:' + grant.id, {},
               reason || 'A GNAP grant was revoked.');
 }
 
 function tokenRevoked(req, record, grant) {
+  log.debug("Entering tokenRevoked().");
   const username = record.username || (grant && grant.ro && grant.ro.username);
+  log.debug("Leaving tokenRevoked().");
   return emit(req, 'session-revoked', username, 'gnap-token:' + record.jti, {},
               'A GNAP access token was revoked by its client instance.');
 }
 
 function grantModified(req, grant, access) {
-  return emit(req, 'token-claims-change', grant.ro && grant.ro.username, 'gnap-grant:' + grant.id,
-              { claims: { access: access } }, 'A GNAP grant was modified onto different access.');
+  log.debug("Entering grantModified().");
+  log.debug("Leaving grantModified().");
+  return emit(req, 'token-claims-change', grant.ro && grant.ro.username,
+              'gnap-grant:' + grant.id,
+              { claims: { access: access } }, 'A GNAP grant was modified ' +
+                                              'onto different access.');
 }
 
 // ---------------------------------------------------------------------------
@@ -151,65 +176,85 @@ function grantModified(req, grant, access) {
 // that existed before this feature.
 // ---------------------------------------------------------------------------
 function usernameOf(subjectValue) {
+  log.debug("Entering usernameOf().");
   if (!subjectValue || typeof subjectValue !== 'object') {
+    log.debug("Leaving usernameOf().");
     return null;
   }
   const one = subjectValue.format ? subjectValue : subjectValue.user;
   if (!one) {
+    log.debug("Leaving usernameOf().");
     return null;
   }
   const sub = String(one.sub || one.uri || '');
   if (sub.indexOf('urn:sts:user:') === 0) {
+    log.debug("Leaving usernameOf().");
     return sub.slice('urn:sts:user:'.length);
   }
   if (one.email) {
+    log.debug("Leaving usernameOf().");
     return String(one.email).split('@')[0];
   }
   if (one.format === 'account' && one.uri) {
     const match = String(one.uri).match(/^acct:([^@]+)@/);
+    log.debug("Leaving usernameOf().");
     return match ? match[1] : null;
   }
+  log.debug("Leaving usernameOf().");
   return null;
 }
 
 function scope(record, subjectValue) {
-  if (config.value('gnap.scopedSignals') === false || !record || !record.createdBy || !subjectValue) {
+  log.debug("Entering scope().");
+  if (config.value('gnap.scopedSignals') === false || !record ||
+      !record.createdBy || !subjectValue) {
+    log.debug("Leaving scope().");
     return undefined;
   }
   let app = null;
   try {
     app = require('../common/applications').get(String(record.createdBy));
   } catch (e) {
+    log.debug("Caught in scope(): " + ((e && e.message) || e));
+    log.debug("Leaving scope().");
     // No registry: no opinion.
     return undefined;
   }
   if (!app || (app.kinds || []).indexOf('gnap-client') < 0) {
+    log.debug("Leaving scope().");
     return undefined;
   }
   const fields = app.fields || {};
   if (String(fields.gnapScopedSignals || '').toUpperCase() === 'FALSE') {
+    log.debug("Leaving scope().");
     return undefined;
   }
   // A WEB APPLICATION is the population the user named: a client that finishes
   // an interaction in a browser or by push has a finish URI on its entry.
-  if (!fields.gnapFinishUri || (Array.isArray(fields.gnapFinishUri) && !fields.gnapFinishUri.length)) {
+  if (!fields.gnapFinishUri ||
+      (Array.isArray(fields.gnapFinishUri) && !fields.gnapFinishUri.length)) {
+    log.debug("Leaving scope().");
     return undefined;
   }
   const username = usernameOf(subjectValue);
+  log.debug("Leaving scope().");
   return username ? approvedBy(app.identifier, username) : false;
 }
 
 function install() {
+  log.debug("Entering install().");
   try {
     const streams = require('../ssf/ssf_streams');
     if (typeof streams.setSubjectScope === 'function') {
       streams.setSubjectScope('gnap', scope);
+      log.debug("Leaving install().");
       return true;
     }
   } catch (e) {
     // SSF absent in this process; the scope is simply not installed.
     log.debug("install(): ssf_streams is not loadable: " + e.message);
   }
+  log.debug("Leaving install().");
   return false;
 }
 

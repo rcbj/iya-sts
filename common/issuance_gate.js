@@ -65,8 +65,8 @@
 
 const { log } = require('./helpers');
 const config = require('./config');
-// The error-code registry. A LEAF that requires nothing here, so this file stays
-// one; the one failure below is tagged in the log rather than audited.
+// The error-code registry. A LEAF that requires nothing here, so this file
+// stays one; the one failure below is tagged in the log rather than audited.
 const errorCodes = require('./error_codes');
 
 // The kinds of issuance a caller may ask about. They become the XACML
@@ -103,6 +103,8 @@ function setDecider(fn) {
 // this is not pedantry, and it is the same one-process, one-reference
 // situation here.
 function deciderInstalled() {
+  log.debug("Entering deciderInstalled().");
+  log.debug("Leaving deciderInstalled().");
   return decider;
 }
 
@@ -172,6 +174,7 @@ function check(request) {
               'issuance_gate: the decider threw and issuance was ALLOWED; ' +
               'this is a defect in the embedded PEP rather than a decision. ' +
               error.message);
+    log.debug("Leaving check().");
     return allow('The embedded PEP threw, which is a defect rather than a ' +
                  'decision: ' + error.message);
   }
@@ -182,6 +185,8 @@ function check(request) {
 }
 
 function allow(why) {
+  log.debug("Entering allow().");
+  log.debug("Leaving allow().");
   return { allowed: true, decision: 'NotApplicable', why: why,
            roles: [], required: [], policy: null };
 }

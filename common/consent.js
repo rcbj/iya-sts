@@ -106,12 +106,13 @@
 // route.
 //
 // **THE DIRECTORY ARRIVES THROUGH `setDirectory()`, WHICH `ldap_server.js`
-// FILLS AT ITS OWN REQUIRE TIME.** That is the same inversion `group_claims.js`,
-// `applications.js`, `federation.js`, `spiffe_registry.js`, `vc_claims.js` and
-// `admin_rbac.js` all use, and for their reason: `ldap_server.js` is required
-// at 21 precisely so that its routes are registered last, and a require from
-// here would drag every `/ldap` and `/admin/ldap` route to the front of the
-// router `/admin/sts-metadata` is built by walking (rule 1).
+// FILLS AT ITS OWN REQUIRE TIME.** That is the same inversion
+// `group_claims.js`, `applications.js`, `federation.js`, `spiffe_registry.js`,
+// `vc_claims.js` and `admin_rbac.js` all use, and for their reason:
+// `ldap_server.js` is required at 21 precisely so that its routes are
+// registered last, and a require from here would drag every `/ldap` and
+// `/admin/ldap` route to the front of the router `/admin/sts-metadata` is built
+// by walking (rule 1).
 //
 // **A SERVICE WHOSE SLOT WAS NEVER FILLED PROMPTS EVERY TIME AND SAYS SO.**
 // Not "consents to everything": an unfillable store means an agreement that
@@ -177,7 +178,8 @@ function setDirectory(hooks) {
     return false;
   }
   directory = hooks;
-  log.debug("Leaving setDirectory(). The consent register is backed by the directory.");
+  log.debug("Leaving setDirectory(). The consent register is backed by the " +
+            "directory.");
   return true;
 }
 
@@ -185,6 +187,8 @@ function setDirectory(hooks) {
 // both say so rather than letting a person press a button whose effect will not
 // survive the redirect.
 function storable() {
+  log.debug("Entering storable().");
+  log.debug("Leaving storable().");
   return !!directory;
 }
 
@@ -204,6 +208,8 @@ function storable() {
 // written down, so turning the setting back on asks again.
 // ---------------------------------------------------------------------------
 function required() {
+  log.debug("Entering required().");
+  log.debug("Leaving required().");
   return !!config.value('oauth2.consentRequired');
 }
 
@@ -214,18 +220,24 @@ function required() {
 // A GeneralizedTime, the same spelling ldap_server.js writes, produced here so
 // that this module does not have to reach into the directory for a clock.
 function generalizedTime(when) {
+  log.debug("Entering generalizedTime().");
   const d = when ? new Date(when) : new Date();
   const pad = function (n, width) {
+    log.debug("Entering pad().");
+    log.debug("Leaving pad().");
     return String(n).padStart(width || 2, '0');
   };
+  log.debug("Leaving generalizedTime().");
   return pad(d.getUTCFullYear(), 4) + pad(d.getUTCMonth() + 1) +
     pad(d.getUTCDate()) + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
     pad(d.getUTCSeconds()) + 'Z';
 }
 
 function consentValueOf(scope, clientId, when) {
+  log.debug("Entering consentValueOf().");
   const leaf = String(scope == null ? '' : scope).trim();
   const who = String(clientId == null ? '' : clientId).trim();
+  log.debug("Leaving consentValueOf().");
   return generalizedTime(when) + ' ' + leaf + ' ' + who;
 }
 
@@ -245,19 +257,24 @@ function consentValueOf(scope, clientId, when) {
 const CONSENT_STAMP = /^\d{14}Z$/;
 
 function parseConsentValue(value) {
+  log.debug("Entering parseConsentValue().");
   const text = String(value == null ? '' : value).trim();
   const first = text.indexOf(' ');
   if (first < 0) {
+    log.debug("Leaving parseConsentValue().");
     return { at: '', scope: '', client: '', raw: text };
   }
   const second = text.indexOf(' ', first + 1);
   if (second < 0) {
+    log.debug("Leaving parseConsentValue().");
     return { at: '', scope: '', client: '', raw: text };
   }
   const at = text.slice(0, first);
   if (!CONSENT_STAMP.test(at)) {
+    log.debug("Leaving parseConsentValue().");
     return { at: '', scope: '', client: '', raw: text };
   }
+  log.debug("Leaving parseConsentValue().");
   return {
     at: at,
     scope: text.slice(first + 1, second),
@@ -276,6 +293,8 @@ function parseConsentValue(value) {
 // answering, and a second normalisation over there would be a second opinion
 // about who is at the keyboard.
 function identityOf(value) {
+  log.debug("Entering identityOf().");
+  log.debug("Leaving identityOf().");
   return stats.identityKeyOf(value);
 }
 
@@ -284,12 +303,14 @@ function identityOf(value) {
 // nothing about order or repetition, so `openid openid profile` is two scopes
 // and the consent screen must not list `openid` twice.
 function scopesOf(scope) {
+  log.debug("Entering scopesOf().");
   const seen = [];
   String(scope == null ? '' : scope).split(/\s+/).forEach(function (one) {
     if (one && seen.indexOf(one) < 0) {
       seen.push(one);
     }
   });
+  log.debug("Leaving scopesOf().");
   return seen;
 }
 
@@ -310,7 +331,8 @@ function globalConsentsOf(clientId) {
   }
   const raw = (entry.fields || {})[GLOBAL_ATTRIBUTE];
   const out = [];
-  (Array.isArray(raw) ? raw : (raw === undefined || raw === null || raw === '' ? [] : [raw]))
+  (Array.isArray(raw) ? raw :
+   (raw === undefined || raw === null || raw === '' ? [] : [raw]))
     .forEach(function (one) {
       const text = String(one).trim();
       if (text && out.indexOf(text) < 0) {
@@ -345,18 +367,20 @@ function grantGlobal(clientId, scope, actor) {
     return result;
   }
   const permission = applications.forPermission(leaf);
-  log.info('consent: "' + leaf + '" is globally consented for the application "' + who +
-           '". Nobody signing in to it will be asked about that scope again, and ' +
-           'nothing is written to anybody\'s entry — this is an override rather ' +
-           'than a record.');
+  log.info('consent: "' + leaf +
+           '" is globally consented for the application "' + who +
+           '". Nobody signing in to it will be asked about that scope again, ' +
+           'and nothing is written to anybody\'s entry — this is an override ' +
+           'rather than a record.');
   log.debug("Leaving grantGlobal(). ok.");
   return Object.assign({}, result, {
-    message: 'Everybody who signs in to "' + who + '" is now treated as having ' +
-      'consented to <code>' + leaf + '</code>' +
-      (permission ? ', which is the permission "' + permission.name + '" exposed by "' +
-                    permission.identifier + '"' : '') + '. ' +
-      'No consent was written onto anybody\'s entry: this is an OVERRIDE, so removing ' +
-      'it asks everybody again — including the people who would have said yes.'
+    message: 'Everybody who signs in to "' + who + '" is now treated as ' +
+      'having consented to <code>' + leaf + '</code>' +
+      (permission ? ', which is the permission "' + permission.name + '" ' +
+          'exposed by "' +
+                    permission.identifier + '"' : '') + '. No consent was ' +
+      'written onto anybody\'s entry: this is an OVERRIDE, so removing it ' +
+      'asks everybody again — including the people who would have said yes.'
   });
 }
 
@@ -374,20 +398,23 @@ function revokeGlobal(clientId, scope, actor) {
   }
   log.debug("Leaving revokeGlobal(). ok.");
   return Object.assign({}, result, {
-    message: '"' + who + '" no longer consents <code>' + leaf + '</code> for everybody. ' +
-      'The next person to sign in asking for it is PROMPTED — including anybody who ' +
-      'was covered by this override, because an override records nothing about ' +
-      'the people it covered. Somebody who agreed to it personally, before or ' +
-      'after, still has that on their entry and is not asked.'
+    message: '"' + who + '" no longer consents <code>' + leaf + '</code> for ' +
+      'everybody. The next person to sign in asking for it is PROMPTED — ' +
+      'including anybody who was covered by this override, because an ' +
+      'override records nothing about the people it covered. Somebody who ' +
+      'agreed to it personally, before or after, still has that on their ' +
+      'entry and is not asked.'
   });
 }
 
 // RFC 6749 section 3.3's `scope-token`. THE RULE ITSELF IS IN
 // `applications.js`, which owns the schema and therefore owns what a value of
-// `oauthGlobalConsent` may be — see the block above `scopeTokenProblem()` there.
-// This is a one-line delegation rather than a re-export so that the name this
-// module's callers use says what it is about.
+// `oauthGlobalConsent` may be — see the block above `scopeTokenProblem()`
+// there. This is a one-line delegation rather than a re-export so that the name
+// this module's callers use says what it is about.
 function scopeProblem(scope) {
+  log.debug("Entering scopeProblem().");
+  log.debug("Leaving scopeProblem().");
   return applications.scopeTokenProblem(scope);
 }
 
@@ -413,7 +440,8 @@ function consentsOf(username) {
     return [];
   }
   const found = directory.consentsOf(key) || {};
-  const rows = (found.values || []).map(parseConsentValue).filter(function (one) {
+  const rows = (found.values || []).map(parseConsentValue)
+                                   .filter(function (one) {
     return !!one.scope;
   });
   log.debug("Leaving consentsOf(). " + rows.length + " consent(s).");
@@ -486,14 +514,17 @@ function record(username, clientId, scopes, actor) {
   log.debug("Entering record().");
   const key = stats.identityKeyOf(username);
   const who = String(clientId || '').trim();
-  const list = (Array.isArray(scopes) ? scopes : scopesOf(scopes)).filter(Boolean);
+  const list = (Array.isArray(scopes) ? scopes : scopesOf(scopes)).filter(
+      Boolean);
   if (!directory) {
     log.warn(errorCodes.tag('STS-REG-0029') +
-             'consent: no directory is installed, so "' + key + '" agreeing to ' +
-             list.join(', ') + ' for "' + who + '" was not written down. They ' +
-             'will be asked again.');
+             'consent: no directory is installed, so "' + key +
+             '" agreeing to ' +
+             list.join(', ') + ' for "' + who + '" was not written down. ' +
+             'They will be asked again.');
     log.debug("Leaving record(). No directory.");
-    return errorCodes.mark({ ok: true, stored: false, scopes: list }, 'STS-REG-0029');
+    return errorCodes.mark({ ok: true, stored: false, scopes: list },
+                           'STS-REG-0029');
   }
   if (!key || !who || !list.length) {
     log.debug("Leaving record(). Nothing to record.");
@@ -514,10 +545,12 @@ function record(username, clientId, scopes, actor) {
            (written.dn || 'their entry') + ' as ' + USER_ATTRIBUTE +
            ', so the next sign-in does not ask.');
   log.debug("Leaving record(). stored=" + !!written.ok);
-  const recorded = { ok: true, stored: !!written.ok, dn: written.dn || '', scopes: list,
+  const recorded = { ok: true, stored: !!written.ok, dn: written.dn || '',
+                     scopes: list,
                      reason: written.reason || '' };
-  // NOT WRITTEN DOWN is a failure even though the answer is `ok` — the person is
-  // asked again next time, which is the honest consequence and still one an
+  log.debug("Leaving record().");
+  // NOT WRITTEN DOWN is a failure even though the answer is `ok` — the person
+  // is asked again next time, which is the honest consequence and still one an
   // operator wants to count.
   return written.ok ? recorded : errorCodes.mark(recorded, 'STS-REG-0030');
 }
@@ -533,38 +566,54 @@ function revoke(username, clientId, scope, actor) {
   const leaf = String(scope || '').trim();
   if (!directory) {
     log.debug("Leaving revoke(). No directory.");
-    return errorCodes.mark({ ok: false, errors: ['This service has no directory installed, so there ' +
-                                 'is nothing to revoke from.'] }, 'STS-REG-0029');
+    return errorCodes.mark({ ok: false, errors: ['This service has no ' +
+                                 'directory installed, so there is nothing ' +
+                                 'to revoke from.'] }, 'STS-REG-0029');
   }
   if (!key || !who || !leaf) {
     log.debug("Leaving revoke(). Under-specified.");
-    return errorCodes.mark({ ok: false, errors: ['A consent is a person, an application and a scope. ' +
-                                 'Send `username`, `client` and `scope` — all three, ' +
-                                 'because one person may consent the same scope to ' +
-                                 'several applications and revoking the wrong one is ' +
-                                 'invisible until somebody is asked again.'] }, 'STS-REG-0031');
+    return errorCodes.mark({ ok: false, errors: ['A consent is a person, an ' +
+                                 'application and a scope. Send `username`, ' +
+                                 '`client` and `scope` — all three, because ' +
+                                 'one person may consent the same scope to ' +
+                                 'several applications and revoking the ' +
+                                 'wrong one is invisible until somebody is ' +
+                                 'asked again.'] }, 'STS-REG-0031');
   }
   const held = consentsOf(key).filter(function (one) {
     return one.client === who && one.scope === leaf;
   });
   if (!held.length) {
     log.debug("Leaving revoke(). Nothing held.");
-    return errorCodes.mark({ ok: false, errors: ['"' + key + '" has not consented "' + leaf + '" for "' +
-                                 who + '", so there is nothing to take away. A scope ' +
-                                 'covered by GLOBAL consent is not on anybody\'s entry ' +
-                                 'and is removed at /admin/consent instead — that is the ' +
-                                 'difference between an override and a record.'] }, 'STS-REG-0032');
+    return errorCodes.mark({ ok: false, errors: ['"' + key + '" has not ' +
+        'consented "' + leaf + '" ' +
+        'for "' +
+                                 who + '", so there is nothing to take away. ' +
+                                 'A scope covered by GLOBAL consent is not ' +
+                                 'on anybody\'s entry and is removed at ' +
+                                 '/admin/consent instead — that is the ' +
+                                 'difference between an override and a ' +
+                                 'record.'] }, 'STS-REG-0032');
   }
-  const removed = directory.removeConsent(key, held.map(function (one) { return one.raw; })) || {};
-  log.info('consent: "' + key + '" no longer consents "' + leaf + '" for "' + who +
-           '". They are asked again the next time that application requests it.');
+  const removed = directory.removeConsent(key,
+                                          held.map(
+                                              function (
+                                                  one) { return one.raw; })) ||
+                  {};
+  log.info('consent: "' + key + '" no longer consents "' + leaf + '" for "' +
+           who +
+           '". They are asked again the next time that application requests ' +
+           'it.');
   log.debug("Leaving revoke(). ok.");
   return { ok: true, removed: held.length, dn: removed.dn || '',
-           message: '"' + key + '" no longer consents <code>' + leaf + '</code> for "' +
-             who + '". The next authorization request from that application naming ' +
-             'that scope draws the consent screen again. Nothing already ISSUED was ' +
-             'touched — an access token minted before this is still valid, exactly as ' +
-             'a revoked delegated permission does not re-judge a grant already made.' };
+           message: '"' + key + '" no longer consents <code>' + leaf +
+               '</code> ' +
+               'for "' +
+             who + '". The next authorization request from that application ' +
+             'naming that scope draws the consent screen again. Nothing ' +
+             'already ISSUED was touched — an access token minted before ' +
+             'this is still valid, exactly as a revoked delegated permission ' +
+             'does not re-judge a grant already made.' };
 }
 
 // FORGET everything one person agreed to. A separate action rather than a loop
@@ -576,31 +625,41 @@ function forget(username, actor) {
   const key = stats.identityKeyOf(username);
   if (!directory) {
     log.debug("Leaving forget(). No directory.");
-    return errorCodes.mark({ ok: false, errors: ['This service has no directory installed, so there ' +
-                                 'is nothing to forget.'] }, 'STS-REG-0029');
+    return errorCodes.mark({ ok: false, errors: ['This service has no ' +
+                                 'directory installed, so there is nothing ' +
+                                 'to forget.'] }, 'STS-REG-0029');
   }
   if (!key) {
     log.debug("Leaving forget(). No identity.");
-    return errorCodes.mark({ ok: false, errors: ['Which person? Send `username` exactly as /admin/users ' +
-                                 'names them.'] }, 'STS-REG-0031');
+    return errorCodes.mark({ ok: false, errors: ['Which person? Send ' +
+                                 '`username` exactly as /admin/users names ' +
+                                 'them.'] }, 'STS-REG-0031');
   }
   const held = consentsOf(key);
   if (!held.length) {
     log.debug("Leaving forget(). Nothing held.");
-    return errorCodes.mark({ ok: false, errors: ['"' + key + '" has consented nothing that is written ' +
-                                 'down. A scope they were never asked about — one under ' +
-                                 'GLOBAL consent — leaves no record, which is what makes ' +
-                                 'this page able to say the difference.'] }, 'STS-REG-0032');
+    return errorCodes.mark({ ok: false, errors: ['"' + key + '" has ' +
+                                 'consented nothing that is written down. A ' +
+                                 'scope they were never asked about — one ' +
+                                 'under GLOBAL consent — leaves no record, ' +
+                                 'which is what makes this page able to say ' +
+                                 'the difference.'] }, 'STS-REG-0032');
   }
-  const removed = directory.removeConsent(key, held.map(function (one) { return one.raw; })) || {};
-  log.info('consent: every consent "' + key + '" had agreed to (' + held.length +
+  const removed = directory.removeConsent(key,
+                                          held.map(
+                                              function (
+                                                  one) { return one.raw; })) ||
+                  {};
+  log.info('consent: every consent "' + key + '" had agreed to (' +
+           held.length +
            ') was forgotten. They are asked again by every application.');
   log.debug("Leaving forget(). " + held.length + " removed.");
   return { ok: true, removed: held.length, dn: removed.dn || '',
-           message: held.length + ' consent(s) were removed from "' + key + '". Every ' +
-             'application that asks them for a scope now draws the consent screen ' +
-             'again — except for the scopes under GLOBAL consent, which were never ' +
-             'on their entry to begin with.' };
+           message: held.length + ' consent(s) were removed from "' + key +
+             '". ' +
+             'Every application that asks them for a scope now draws the ' +
+             'consent screen again — except for the scopes under GLOBAL ' +
+             'consent, which were never on their entry to begin with.' };
 }
 
 // ---------------------------------------------------------------------------
@@ -631,7 +690,9 @@ function register() {
         // consented permission the client does not hold is a person agreeing
         // to something the operator has not allowed, and with
         // `oauth2.delegatedPermissionsEnforced` on it is refused anyway.
-        granted: permission ? applications.holdsPermission(row.identifier, permission.id) : false
+        granted: permission ?
+                 applications.holdsPermission(row.identifier, permission.id) :
+                 false
       });
     });
   });
@@ -646,7 +707,8 @@ function register() {
           // rather than dropped, for the reason a dangling grant is shown: a
           // value the page silently ignored would be one somebody had written
           // on purpose and could not find out was being ignored.
-          users.push({ username: row.username, dn: row.dn, scope: '', client: '',
+          users.push({ username: row.username, dn: row.dn, scope: '',
+                       client: '',
                        at: '', raw: value, unreadable: true });
           return;
         }
@@ -658,7 +720,9 @@ function register() {
   }
   // Newest first, which is what a page about consents somebody just gave has to
   // show — the row you are looking for is the one you just made.
-  users.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); });
+  users.sort(function (a, b) {
+    return String(b.at).localeCompare(String(a.at));
+  });
 
   const out = {
     required: required(),
@@ -698,8 +762,8 @@ function state() {
 }
 
 log.info('The consent register is loaded. The authorization endpoint asks a ' +
-         'person before it issues anything for a scope they have not agreed to ' +
-         'for that application (oauth2.consentRequired, ' +
+         'person before it issues anything for a scope they have not agreed ' +
+         'to for that application (oauth2.consentRequired, ' +
          (required() ? 'ON' : 'OFF') + '). Answers are written to ' +
          USER_ATTRIBUTE + ' on the person\'s own entry; ' + GLOBAL_ATTRIBUTE +
          ' on an application\'s entry consents a scope for everybody without ' +

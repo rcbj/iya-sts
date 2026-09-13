@@ -67,6 +67,12 @@ const postgres = require('../persistence/persistence_postgres');
 const persistence = require('../persistence/persistence');
 const database = require('../admin-ui/database_admin');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'database_metrics',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The verbs a probe may never contain. **MATCHED AS WHOLE WORDS**, because
 // `UPDATE` is a substring of `pg_stat_user_tables`'s `n_tup_upd` and of
 // `last_autoanalyze`'s neighbours — a naive `indexOf` fails on the very
@@ -76,6 +82,7 @@ const FORBIDDEN = ['INSERT', 'UPDATE', 'DELETE', 'DROP', 'CREATE', 'ALTER',
                    'TRUNCATE', 'GRANT', 'REVOKE', 'COPY', 'CALL', 'DO'];
 
 async function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== A. every probe is a READ, and a literal ===');
 
   const probes = postgres.METRIC_PROBES;
@@ -224,7 +231,8 @@ async function run(t) {
           'and the sentence says what BOTH storeless modes are, because a ' +
           'reader who has one of them wants to know which it is',
           report.why);
-  t.check(/restart-only/.test(report.why) || /before the listener/.test(report.why),
+  t.check(/restart-only/.test(report.why) ||
+          /before the listener/.test(report.why),
           'and that switching to postgres needs a restart — which it does, ' +
           'and a reader who changed the setting and reloaded this page ' +
           'would otherwise conclude the page was broken');
@@ -252,6 +260,7 @@ async function run(t) {
           'and no connection string is in it. The target is reported as ' +
           'host, port, database and user — four fields — and never as the ' +
           'string they were parsed out of');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

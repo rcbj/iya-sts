@@ -1,4 +1,10 @@
 'use strict';
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'spire_api_access_policy',
+  level: process.env.LOG_LEVEL || 'info' });
 //
 // File: spire_api_access_policy.js
 //
@@ -57,6 +63,7 @@
 delete process.env.CONFIG_FILE;
 
 function run(t) {
+  log.debug("Entering run().");
   const config = require('../common/config');
   // The gate is a no-op with no decider installed, and requiring the PEP is
   // what installs one — the same act `xacml/xacml.js` performs at 23c.
@@ -153,6 +160,7 @@ function run(t) {
   // the next file to read the setting then sees a runtime override with the
   // default's value in it rather than the default.
   config.clearOverride('xacml.enforceAccess');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

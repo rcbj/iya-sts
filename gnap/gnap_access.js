@@ -7,9 +7,9 @@
 // EVERY STRUCTURED TOKEN FORMAT SHARES (2026-09-12).
 //
 // A route-free library. It registers nothing and requires only
-// `common/helpers.js` (for the logger and the clock) and `common/error_codes.js`
-// (a leaf), so it cannot join a cycle and its place in the require order is not
-// a place.
+// `common/helpers.js` (for the logger and the clock) and
+// `common/error_codes.js` (a leaf), so it cannot join a cycle and its place in
+// the require order is not a place.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS FILE EXISTS BESIDE `gnap_request.js`'s `checkAccess()`.
@@ -66,7 +66,8 @@
 //     be deep-equal; when it does not, it is unrestricted, by the same rule as
 //     a common dimension.
 //
-//   * `type` is compared by exact bytes, never normalised — section 8 says MUST.
+//   * `type` is compared by exact bytes, never normalised — section 8 says
+//     MUST.
 //
 // An empty array in a REQUIRED object is read as not listing that dimension.
 // Reading it as a cross-product with zero points would make
@@ -130,15 +131,21 @@ const THUMBPRINT_RE = /^[A-Za-z0-9_-]{43}$/;
 const CONTROL_RE = /[\x00-\x1f\x7f]/;
 
 function refusal(code, why) {
+  log.debug("Entering refusal().");
   const out = { ok: false, errorCode: code, why: why };
+  log.debug("Leaving refusal().");
   return errorCodes.mark(out, code);
 }
 
 function isObject(value) {
+  log.debug("Entering isObject().");
+  log.debug("Leaving isObject().");
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isStringArray(value) {
+  log.debug("Entering isStringArray().");
+  log.debug("Leaving isStringArray().");
   return Array.isArray(value) && value.every(function (one) {
     return typeof one === 'string';
   });
@@ -147,14 +154,18 @@ function isStringArray(value) {
 // JSON with the keys of every object sorted, so two rights that differ only in
 // member order are one right. Used for dedupe and for deep equality.
 function canonicalJson(value) {
+  log.debug("Entering canonicalJson().");
   if (Array.isArray(value)) {
+    log.debug("Leaving canonicalJson().");
     return '[' + value.map(canonicalJson).join(',') + ']';
   }
   if (isObject(value)) {
+    log.debug("Leaving canonicalJson().");
     return '{' + Object.keys(value).sort().map(function (k) {
       return JSON.stringify(k) + ':' + canonicalJson(value[k]);
     }).join(',') + '}';
   }
+  log.debug("Leaving canonicalJson().");
   return JSON.stringify(value);
 }
 
@@ -169,23 +180,25 @@ function normalise(access) {
   log.debug("Entering normalise().");
   if (!Array.isArray(access) || access.length === 0) {
     log.debug("Leaving normalise(). Not a non-empty array.");
-    return refusal('STS-GNAP-0300', 'access must be a non-empty array of access rights ' +
-                   '(RFC 9635 section 8).');
+    return refusal('STS-GNAP-0300', 'access must be a non-empty array of ' +
+                   'access rights (RFC 9635 section 8).');
   }
   for (let i = 0; i < access.length; i++) {
     const right = access[i];
     if (typeof right === 'string') {
       if (!right) {
         log.debug("Leaving normalise(). Empty reference at " + i + ".");
-        return refusal('STS-GNAP-0301', 'access element ' + i + ' is an empty reference ' +
-                       'string (RFC 9635 section 8.1).');
+        return refusal('STS-GNAP-0301', 'access element ' + i + ' is an ' +
+                       'empty reference string (RFC 9635 section 8.1).');
       }
       continue;
     }
     if (!isObject(right) || typeof right.type !== 'string' || !right.type) {
-      log.debug("Leaving normalise(). Element " + i + " is neither a string nor a typed object.");
-      return refusal('STS-GNAP-0301', 'access element ' + i + ' must be a reference string ' +
-                     'or an object with a non-empty string "type" (RFC 9635 section 8).');
+      log.debug("Leaving normalise(). Element " + i + " is neither a string " +
+                                                      "nor a typed object.");
+      return refusal('STS-GNAP-0301', 'access element ' + i + ' must be a ' +
+                     'reference string or an object with a non-empty string ' +
+                     '"type" (RFC 9635 section 8).');
     }
     for (let j = 0; j < ARRAY_DIMENSIONS.length; j++) {
       const dim = ARRAY_DIMENSIONS[j];
@@ -195,7 +208,8 @@ function normalise(access) {
                        ' must be an array of strings (RFC 9635 section 8).');
       }
     }
-    if (right.identifier !== undefined && typeof right.identifier !== 'string') {
+    if (right.identifier !== undefined &&
+        typeof right.identifier !== 'string') {
       log.debug("Leaving normalise(). identifier malformed at " + i + ".");
       return refusal('STS-GNAP-0302', '"identifier" in access element ' + i +
                      ' must be a string (RFC 9635 section 8).');
@@ -209,6 +223,7 @@ function normalise(access) {
 // Order-preserving: the first occurrence of each canonical right survives, so a
 // round trip through a format that deduplicates hands back the same array.
 function dedupe(access) {
+  log.debug("Entering dedupe().");
   const seen = new Set();
   const out = [];
   (access || []).forEach(function (right) {
@@ -218,10 +233,13 @@ function dedupe(access) {
       out.push(right);
     }
   });
+  log.debug("Leaving dedupe().");
   return out;
 }
 
 function union(a, b) {
+  log.debug("Entering union().");
+  log.debug("Leaving union().");
   return dedupe((a || []).concat(b || []));
 }
 
@@ -230,6 +248,8 @@ function union(a, b) {
 // object into the covered part of its cross-product: a right handed back to a
 // client in a shape it never asked for is a right the client cannot recognise.
 function intersect(granted, requested) {
+  log.debug("Entering intersect().");
+  log.debug("Leaving intersect().");
   return dedupe((requested || []).filter(function (one) {
     return accessCovers(granted, [one]);
   }));
@@ -264,7 +284,8 @@ function objectCoversPoint(grantedObject, point) {
         log.debug("Leaving objectCoversPoint(). identifier differs.");
         return false;
       }
-    } else if (canonicalJson(grantedObject[key]) !== canonicalJson(point[key])) {
+    } else if (canonicalJson(grantedObject[key]) !== canonicalJson(
+        point[key])) {
       log.debug("Leaving objectCoversPoint(). " + key + " differs.");
       return false;
     }
@@ -326,7 +347,8 @@ function accessCovers(granted, required) {
     log.debug("Leaving accessCovers(). Not arrays.");
     return false;
   }
-  const strings = granted.filter(function (g) { return typeof g === 'string'; });
+  const strings =
+      granted.filter(function (g) { return typeof g === 'string'; });
   const objects = granted.filter(isObject);
   for (let i = 0; i < required.length; i++) {
     const need = required[i];
@@ -351,7 +373,8 @@ function accessCovers(granted, required) {
         }
       });
       if (!objects.some(function (g) { return objectCoversPoint(g, whole); })) {
-        log.debug("Leaving accessCovers(). Large requirement not covered by one grant.");
+        log.debug("Leaving accessCovers(). Large requirement not covered by " +
+                  "one grant.");
         return false;
       }
       continue;
@@ -359,7 +382,8 @@ function accessCovers(granted, required) {
     for (let p = 0; p < points.length; p++) {
       const point = points[p];
       if (!objects.some(function (g) { return objectCoversPoint(g, point); })) {
-        log.debug("Leaving accessCovers(). A point of element " + i + " is not covered.");
+        log.debug("Leaving accessCovers(). A point of element " + i + " is " +
+            "not covered.");
         return false;
       }
     }
@@ -374,15 +398,20 @@ function accessCovers(granted, required) {
 //   jkt:<thumbprint>   x5t:<thumbprint>   kid:<reference>   (null = bearer)
 // ---------------------------------------------------------------------------
 function cnfToString(cnf) {
+  log.debug("Entering cnfToString().");
   if (!cnf) {
+    log.debug("Leaving cnfToString().");
     return null;
   }
   if (cnf.jkt !== undefined) {
+    log.debug("Leaving cnfToString().");
     return 'jkt:' + cnf.jkt;
   }
   if (cnf['x5t#S256'] !== undefined) {
+    log.debug("Leaving cnfToString().");
     return 'x5t:' + cnf['x5t#S256'];
   }
+  log.debug("Leaving cnfToString().");
   return 'kid:' + cnf.kid;
 }
 
@@ -406,24 +435,34 @@ function cnfFromString(text) {
 }
 
 function isInteger(value) {
+  log.debug("Entering isInteger().");
+  log.debug("Leaving isInteger().");
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function absoluteUri(value) {
+  log.debug("Entering absoluteUri().");
   if (typeof value !== 'string' || !value) {
+    log.debug("Leaving absoluteUri().");
     return false;
   }
   try {
     new URL(value); // eslint-disable-line no-new
   } catch (e) {
+    log.debug("Caught in absoluteUri(): " + ((e && e.message) || e));
+    log.debug("Leaving absoluteUri().");
     // Not a URI; `false` is the whole of what the caller needs.
     return false;
   }
+  log.debug("Leaving absoluteUri().");
   return true;
 }
 
 function plainString(value) {
-  return typeof value === 'string' && value.length > 0 && !CONTROL_RE.test(value);
+  log.debug("Entering plainString().");
+  log.debug("Leaving plainString().");
+  return typeof value === 'string' && value.length > 0 &&
+         !CONTROL_RE.test(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -440,30 +479,39 @@ function plainString(value) {
 function validateModel(model) {
   log.debug("Entering validateModel().");
   function bad(why) {
+    log.debug("Entering bad().");
     log.debug("Leaving validateModel(). " + why);
     return refusal('STS-GNAP-0303', 'the token model is not valid: ' + why +
                    ' (RFC 9767 section 2.1).');
   }
   if (!isObject(model)) {
+    log.debug("Leaving validateModel().");
     return bad('it is not an object');
   }
   if (!plainString(model.jti)) {
+    log.debug("Leaving validateModel().");
     return bad('"jti" must be a non-empty string');
   }
   if (!absoluteUri(model.iss) || CONTROL_RE.test(model.iss)) {
+    log.debug("Leaving validateModel().");
     return bad('"iss" must be an absolute URI');
   }
-  if (model.sub !== undefined && model.sub !== null && !plainString(model.sub)) {
+  if (model.sub !== undefined && model.sub !== null &&
+      !plainString(model.sub)) {
+    log.debug("Leaving validateModel().");
     return bad('"sub" must be a non-empty string or null');
   }
   const aud = model.aud === undefined || model.aud === null ? [] : model.aud;
   if (!Array.isArray(aud) || !aud.every(plainString)) {
+    log.debug("Leaving validateModel().");
     return bad('"aud" must be an array of non-empty strings');
   }
   if (new Set(aud).size !== aud.length) {
+    log.debug("Leaving validateModel().");
     return bad('"aud" must not repeat an entry');
   }
   if (!plainString(model.instanceId)) {
+    log.debug("Leaving validateModel().");
     return bad('"instanceId" must be a non-empty string');
   }
   const access = normalise(model.access);
@@ -471,45 +519,61 @@ function validateModel(model) {
     log.debug("Leaving validateModel(). Access malformed.");
     return access;
   }
-  const flags = model.flags === undefined || model.flags === null ? [] : model.flags;
-  if (!Array.isArray(flags) || !flags.every(function (f) { return TOKEN_FLAGS.indexOf(f) >= 0; }) ||
+  const flags = model.flags === undefined || model.flags === null ? [] :
+                model.flags;
+  if (!Array.isArray(flags) ||
+      !flags.every(function (f) { return TOKEN_FLAGS.indexOf(f) >= 0; }) ||
       new Set(flags).size !== flags.length) {
-    return bad('"flags" must be an array of distinct known flags (' + TOKEN_FLAGS.join(', ') + ')');
+    log.debug("Leaving validateModel().");
+    return bad('"flags" must be an array of distinct known flags (' +
+               TOKEN_FLAGS.join(', ') + ')');
   }
   let cnf = model.cnf === undefined ? null : model.cnf;
   if (cnf !== null) {
     const keys = isObject(cnf) ? Object.keys(cnf) : [];
     if (keys.length !== 1 || ['jkt', 'x5t#S256', 'kid'].indexOf(keys[0]) < 0) {
-      return bad('"cnf" must be null or an object with exactly one of jkt, x5t#S256, kid');
+      log.debug("Leaving validateModel().");
+      return bad('"cnf" must be null or an object with exactly one of jkt, ' +
+                 'x5t#S256, kid');
     }
-    if (keys[0] === 'kid' ? !plainString(cnf.kid) : !THUMBPRINT_RE.test(cnf[keys[0]])) {
+    if (keys[0] === 'kid' ? !plainString(cnf.kid) :
+        !THUMBPRINT_RE.test(cnf[keys[0]])) {
+      log.debug("Leaving validateModel().");
       return bad('"cnf.' + keys[0] + '" is not a valid ' +
                  (keys[0] === 'kid' ? 'key reference' : 'SHA-256 thumbprint'));
     }
     cnf = { [keys[0]]: cnf[keys[0]] };
   }
   if ((cnf === null) !== (flags.indexOf('bearer') >= 0)) {
-    return bad('the "bearer" flag and "cnf" disagree — a bearer token has no cnf and a ' +
-               'bound token has no bearer flag');
+    log.debug("Leaving validateModel().");
+    return bad('the "bearer" flag and "cnf" disagree — a bearer token has no ' +
+               'cnf and a bound token has no bearer flag');
   }
   if (!isInteger(model.iat) || !isInteger(model.exp)) {
+    log.debug("Leaving validateModel().");
     return bad('"iat" and "exp" must be non-negative integer seconds');
   }
   const nbf = model.nbf === undefined ? null : model.nbf;
   if (nbf !== null && !isInteger(nbf)) {
+    log.debug("Leaving validateModel().");
     return bad('"nbf" must be integer seconds or null');
   }
   if (model.exp <= model.iat) {
+    log.debug("Leaving validateModel().");
     return bad('"exp" must be later than "iat"');
   }
   if (nbf !== null && nbf >= model.exp) {
+    log.debug("Leaving validateModel().");
     return bad('"nbf" must be earlier than "exp"');
   }
   // Year 9999 is where ISO 8601 and the biscuit date term both stop.
   if (model.exp > 253402300799) {
+    log.debug("Leaving validateModel().");
     return bad('"exp" is past the year 9999');
   }
-  if (model.label !== undefined && model.label !== null && !plainString(model.label)) {
+  if (model.label !== undefined && model.label !== null &&
+      !plainString(model.label)) {
+    log.debug("Leaving validateModel().");
     return bad('"label" must be a non-empty string or null');
   }
   const out = {
@@ -538,14 +602,19 @@ function validateModel(model) {
 // valid BEFORE exp) and `nbf` inclusive. No clock skew here: the caller hands
 // `now`, and a skew belongs to the caller's configuration, not to a format.
 function checkTime(exp, nbf, now) {
+  log.debug("Entering checkTime().");
   if (now >= exp) {
+    log.debug("Leaving checkTime().");
     return refusal('STS-GNAP-0304', 'the access token expired at ' + exp +
                    ' and it is now ' + now + ' (RFC 9767 section 2.1.7).');
   }
   if (nbf !== null && nbf !== undefined && now < nbf) {
-    return refusal('STS-GNAP-0305', 'the access token is not valid before ' + nbf +
+    log.debug("Leaving checkTime().");
+    return refusal('STS-GNAP-0305',
+                   'the access token is not valid before ' + nbf +
                    ' and it is now ' + now + ' (RFC 9767 section 2.1.7).');
   }
+  log.debug("Leaving checkTime().");
   return null;
 }
 
@@ -562,7 +631,8 @@ function checkAudience(audienceLists, audience) {
     const list = audienceLists[i] || [];
     if (list.length > 0 && list.indexOf(audience) < 0) {
       log.debug("Leaving checkAudience(). Not in list " + i + ".");
-      return refusal('STS-GNAP-0306', 'the access token is not intended for "' + audience +
+      return refusal('STS-GNAP-0306',
+                     'the access token is not intended for "' + audience +
                      '" (RFC 9767 section 2.1.3).');
     }
   }
@@ -586,9 +656,10 @@ function checkBinding(cnf, presentedKey) {
   if (!presentedKey || typeof presentedKey[member] !== 'string' ||
       presentedKey[member] !== cnf[member]) {
     log.debug("Leaving checkBinding(). Not the bound key.");
-    return refusal('STS-GNAP-0307', 'the access token is bound to a key (' + member +
-                   ') and was not presented with that key (RFC 9767 section 2.1.4, ' +
-                   'RFC 9635 section 7.2).');
+    return refusal('STS-GNAP-0307',
+                   'the access token is bound to a key (' + member +
+                   ') and was not presented with that key (RFC 9767 section ' +
+                   '2.1.4, RFC 9635 section 7.2).');
   }
   log.debug("Leaving checkBinding(). Bound key presented.");
   return null;
@@ -604,8 +675,9 @@ function checkAccess(accessLists, requiredAccess) {
   for (let i = 0; i < accessLists.length; i++) {
     if (!accessCovers(accessLists[i], requiredAccess)) {
       log.debug("Leaving checkAccess(). List " + i + " does not cover.");
-      return refusal('STS-GNAP-0308', 'the access token does not grant the access this ' +
-                     'request needs' + (i > 0 ? ' (an attenuation narrowed it)' : '') +
+      return refusal('STS-GNAP-0308', 'the access token does not grant the ' +
+                     'access this request ' +
+                     'needs' + (i > 0 ? ' (an attenuation narrowed it)' : '') +
                      ' (RFC 9635 section 8).');
     }
   }
@@ -646,13 +718,16 @@ function checkPresentation(model, context, lists) {
 // `require` would, in the same order.
 // ---------------------------------------------------------------------------
 function packageDir(name) {
+  log.debug("Entering packageDir().");
   const dirs = module.paths || [];
   for (let i = 0; i < dirs.length; i++) {
     const candidate = path.join(dirs[i], name);
     if (fs.existsSync(path.join(candidate, 'package.json'))) {
+      log.debug("Leaving packageDir().");
       return candidate;
     }
   }
+  log.debug("Leaving packageDir().");
   return null;
 }
 
@@ -664,9 +739,11 @@ function libraryInfo(name) {
     return { name: name, version: null, license: null };
   }
   try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'),
+                                           'utf8'));
     log.debug("Leaving libraryInfo(). " + pkg.version);
-    return { name: name, version: pkg.version || null, license: pkg.license || null };
+    return { name: name, version: pkg.version || null,
+             license: pkg.license || null };
   } catch (e) {
     // An unreadable manifest is a metadata page with a blank cell, not a
     // reason for the page to fail; the name is still true.

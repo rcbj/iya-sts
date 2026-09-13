@@ -37,12 +37,13 @@
 //
 // It cannot be. `ldapjs` is a PROTOCOL library: a BER codec, a client, and a
 // `Server` that parses an operation and routes it to a handler you wrote. It
-// ships no storage of any kind and never has. (`node-ldapjs/lib/persistent_search.js`
-// is the LDAP *persistent search* change-notification control — the name is a
-// trap, and it is about telling a connected client that something changed, not
-// about a disk.) The store in this service is ours and always was:
-// `ldap/ldap_server.js`'s `const entries = realms.map()`, a Map of normalised
-// DN to `{dn, attributes, createdAt, modifiedAt, origin}`.
+// ships no storage of any kind and never has.
+// (`node-ldapjs/lib/persistent_search.js` is the LDAP *persistent search*
+// change-notification control — the name is a trap, and it is about telling a
+// connected client that something changed, not about a disk.) The store in this
+// service is ours and always was: `ldap/ldap_server.js`'s `const entries =
+// realms.map()`, a Map of normalised DN to `{dn, attributes, createdAt,
+// modifiedAt, origin}`.
 //
 // THE ALTERNATIVE WAS A REAL DIRECTORY, AND IT WAS REFUSED. Standing up
 // OpenLDAP beside this service and proxying to it would give persistence for
@@ -124,12 +125,13 @@
 // `writeDelay` milliseconds of writes.
 //
 // A FAILED WRITE IS LOGGED AND REPORTED AND NEVER THROWN. The service keeps
-// answering out of memory, `GET /admin/ldap/service` and `/admin/persistence` both carry the
-// error, and the next flush tries again with the same diff (the shadow is only
-// advanced on success, so nothing is lost by a failure). The alternative —
-// refusing the LDAP operation whose write failed — was considered and rejected:
-// it would make a database outage take down sixteen protocol families that do
-// not need a database, and no other refusal in this service is that expensive.
+// answering out of memory, `GET /admin/ldap/service` and `/admin/persistence`
+// both carry the error, and the next flush tries again with the same diff (the
+// shadow is only advanced on success, so nothing is lost by a failure). The
+// alternative — refusing the LDAP operation whose write failed — was considered
+// and rejected: it would make a database outage take down sixteen protocol
+// families that do not need a database, and no other refusal in this service is
+// that expensive.
 //
 // ---------------------------------------------------------------------------
 // TWO INVERTED HOOKS, AND EACH PASSES RULE 3e's TEST INDEPENDENTLY.
@@ -147,9 +149,9 @@
 //     Save.
 //   * `persistence.setDirectory()`, offered below and filled by
 //     `ldap/ldap_server.js`. This one is about ROUTE ORDER rather than a cycle:
-//     `ldap_server.js` registers `/ldap` and `/admin/ldap/directory` at its require
-//     time, and this module is required at #4a — far above `admin.js`. A
-//     require from here would drag both of those routes to the front of the
+//     `ldap_server.js` registers `/ldap` and `/admin/ldap/directory` at its
+//     require time, and this module is required at #4a — far above `admin.js`.
+//     A require from here would drag both of those routes to the front of the
 //     express router, which is the exact failure rule 1 exists to prevent.
 //
 // `realms.js` is a PLAIN REQUIRE in the ordinary direction, and it is worth
@@ -297,7 +299,8 @@ let restoring = false;
 // closed would log an error about a closed client on every shutdown.
 let stopped = false;
 
-// What /admin/persistence, GET /admin/ldap/service and GET /admin-api/persistence report.
+// What /admin/persistence, GET /admin/ldap/service and GET
+// /admin-api/persistence report.
 let lastWriteAt = null;
 let lastError = '';
 let writes = 0;
@@ -312,10 +315,13 @@ let restoredCounts = { realms: 0, entries: 0, overrides: 0 };
 // ---------------------------------------------------------------------------
 
 function mode() {
+  log.debug("Entering mode().");
+  log.debug("Leaving mode().");
   return config.value('persistence.mode');
 }
 
 function dataDir() {
+  log.debug("Entering dataDir().");
   // Resolved against the PACKAGE ROOT rather than the working directory, for
   // config_file.js's reason: a relative path resolves against the directory of
   // whoever is doing the resolving, and this module is two levels from where
@@ -323,26 +329,36 @@ function dataDir() {
   // alone, which is what a container's volume mount always is.
   const configured = String(config.value('persistence.dataDir') || './data');
   if (path.isAbsolute(configured)) {
+    log.debug("Leaving dataDir().");
     return configured;
   }
+  log.debug("Leaving dataDir().");
   return path.resolve(path.join(__dirname, '..'), configured);
 }
 
 function databaseUrl() {
+  log.debug("Entering databaseUrl().");
+  log.debug("Leaving databaseUrl().");
   return String(config.value('persistence.databaseUrl') || '');
 }
 
 function writeDelay() {
+  log.debug("Entering writeDelay().");
+  log.debug("Leaving writeDelay().");
   // Postgres does not use it: a transaction per request is the point, so the
   // delay there is 0 whatever this says. See the header.
   return config.value('persistence.writeDelay');
 }
 
 function persistsAppconfig() {
+  log.debug("Entering persistsAppconfig().");
+  log.debug("Leaving persistsAppconfig().");
   return config.value('persistence.appconfig');
 }
 
 function persistsRealms() {
+  log.debug("Entering persistsRealms().");
+  log.debug("Leaving persistsRealms().");
   return config.value('persistence.realms');
 }
 
@@ -350,6 +366,8 @@ function persistsRealms() {
 // rather than comparing the mode to 'memory', so that a mode added later is one
 // edit here instead of a search for string comparisons.
 function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return activeMode !== 'memory' && driver !== null && !stopped;
 }
 
@@ -387,7 +405,9 @@ let dirtyDns = new Set();
 let dirtyEverything = false;
 
 function directoryChanged(dn) {
+  log.debug("Entering directoryChanged().");
   if (!enabled() || restoring) {
+    log.debug("Leaving directoryChanged().");
     return;
   }
   directoryDirty = true;
@@ -397,6 +417,7 @@ function directoryChanged(dn) {
     dirtyDns.add(String(dn));
   }
   schedule();
+  log.debug("Leaving directoryChanged().");
 }
 
 // ---------------------------------------------------------------------------
@@ -410,18 +431,24 @@ function directoryChanged(dn) {
 // and only schedules.
 // ---------------------------------------------------------------------------
 function mintedChanged() {
+  log.debug("Entering mintedChanged().");
   if (!enabled() || restoring) {
+    log.debug("Leaving mintedChanged().");
     return;
   }
   schedule();
+  log.debug("Leaving mintedChanged().");
 }
 
 function realmsChanged() {
+  log.debug("Entering realmsChanged().");
   if (!enabled() || restoring || !persistsRealms()) {
+    log.debug("Leaving realmsChanged().");
     return;
   }
   realmsDirty = true;
   schedule();
+  log.debug("Leaving realmsChanged().");
 }
 
 // `realmId` is the realm the override landed in, or null for a process-wide
@@ -430,22 +457,29 @@ function realmsChanged() {
 // process-wide one lives in the appconfig store, and those are two different
 // files and two different tables.
 function configChanged(realmId) {
+  log.debug("Entering configChanged().");
   if (!enabled() || restoring) {
+    log.debug("Leaving configChanged().");
     return;
   }
   if (realmId) {
     realmsChanged();
+    log.debug("Leaving configChanged().");
     return;
   }
   if (!persistsAppconfig()) {
+    log.debug("Leaving configChanged().");
     return;
   }
   configDirty = true;
   schedule();
+  log.debug("Leaving configChanged().");
 }
 
 function schedule() {
+  log.debug("Entering schedule().");
   if (timer || stopped) {
+    log.debug("Leaving schedule().");
     return;
   }
   // 0 for a database, `writeDelay` for a file. The header argues both.
@@ -466,6 +500,7 @@ function schedule() {
   if (timer.unref) {
     timer.unref();
   }
+  log.debug("Leaving schedule().");
 }
 
 // ---------------------------------------------------------------------------
@@ -494,12 +529,15 @@ function schedule() {
 // like that — 65ms per SCIM create at 500 entries, 109ms at 4,000.
 // ---------------------------------------------------------------------------
 function entryAt(realmId, key) {
+  log.debug("Entering entryAt().");
   if (typeof directory.entryAt === 'function') {
+    log.debug("Leaving entryAt().");
     return directory.entryAt(realmId, key);
   }
   const found = (directory.realmEntries(realmId) || []).find(function (one) {
     return one.key === key;
   });
+  log.debug("Leaving entryAt().");
   return found ? found.entry : null;
 }
 
@@ -542,6 +580,8 @@ function diff(live, wanted) {
   }));
   walk.forEach(function (rows, realmId) {
     const at = function (key) {
+      log.debug("Entering at().");
+      log.debug("Leaving at().");
       return rows ? rows.get(key) : entryAt(realmId, key);
     };
     const was = shadow.get(realmId) || new Map();
@@ -672,6 +712,8 @@ function advanceShadow(changes, removedRealms) {
 // really defined rather than when the process last started.
 // ---------------------------------------------------------------------------
 function realmRows() {
+  log.debug("Entering realmRows().");
+  log.debug("Leaving realmRows().");
   return realms.list().filter(function (realm) {
     return !realm.builtin;
   }).map(function (realm) {
@@ -842,6 +884,7 @@ function flush() {
     return result;
   });
 
+  log.debug("Leaving flush().");
   return flushing;
 }
 
@@ -921,6 +964,7 @@ function resolveDatabaseUrl() {
     log.debug('Leaving resolveDatabaseUrl(). No provider is configured.');
     return Promise.resolve(raw);
   }
+  log.debug("Leaving resolveDatabaseUrl().");
   return secrets.readDatabasePassword().then(function (password) {
     if (!password) {
       log.debug('Leaving resolveDatabaseUrl(). Nothing was read.');
@@ -930,6 +974,8 @@ function resolveDatabaseUrl() {
     try {
       parsed = new URL(raw);
     } catch (e) {
+      log.debug("Caught in a callback in resolveDatabaseUrl(): " +
+                ((e && e.message) || e));
       throw new Error(errorCodes.tag('STS-STORE-0005') +
                       'persistence.databasePasswordProvider is set, so the ' +
                       'password has to be put into persistence.databaseUrl — ' +
@@ -992,6 +1038,7 @@ function start() {
       'refusal exists to prevent.'));
   }
 
+  log.debug("Leaving start().");
   // -------------------------------------------------------------------------
   // THE PASSWORD COMES BEFORE THE POOL (2026-09-12), AND THAT IS WHY THIS
   // FUNCTION SPLITS HERE.
@@ -1013,7 +1060,9 @@ function start() {
   // Only postgres has a password to resolve; ldif has a directory.
   // -------------------------------------------------------------------------
   return chosen === 'postgres'
-    ? resolveDatabaseUrl().then(function (url) { return openStore(chosen, url); })
+    ? resolveDatabaseUrl().then(function (url) {
+      return openStore(chosen, url);
+    })
     : openStore(chosen, '');
 }
 
@@ -1051,6 +1100,7 @@ function openStore(chosen, resolvedUrl) {
 
   activeMode = chosen;
   restoring = true;
+  log.debug("Leaving openStore().");
   return driver.open().then(function () {
     // ---------------------------------------------------------------------
     // HAND THE KEYSTORE ITS STORE, THE MOMENT THERE IS ONE (2026-09-06).
@@ -1066,11 +1116,21 @@ function openStore(chosen, resolvedUrl) {
     // care because it persists no keys.
     // ---------------------------------------------------------------------
     keystore.setStore({
-      loadKeys: function () { return driver.loadKeys(); },
+      loadKeys: function () {
+        log.debug("Entering loadKeys().");
+        log.debug("Leaving loadKeys().");
+        return driver.loadKeys();
+      },
       saveKeys: function (realmId, ciphertext) {
+        log.debug("Entering saveKeys().");
+        log.debug("Leaving saveKeys().");
         return driver.saveKeys(realmId, ciphertext);
       },
-      deleteKeys: function (realmId) { return driver.deleteKeys(realmId); }
+      deleteKeys: function (realmId) {
+        log.debug("Entering deleteKeys().");
+        log.debug("Leaving deleteKeys().");
+        return driver.deleteKeys(realmId);
+      }
     });
     // ---------------------------------------------------------------------
     // AND THE MINTED STORE ITS DRIVER, AT THE SAME MOMENT AND FOR THE SAME
@@ -1217,10 +1277,10 @@ function openStore(chosen, resolvedUrl) {
 // **WHAT THAT COST IS EVERY REALM-SCOPED SETTING.** A realm's runtime overrides
 // live on its row, so `POST /realm/<id>/admin-api/config/set` on one worker was
 // written, replicated, and then discarded by every other worker because the
-// realm was already there. A dispatched run measured it as `xacml.enforceAccess`
-// turned off and still refusing, `oauth2.consentRequired` set and the consent
-// screen still drawn — settings that reported success and did nothing anywhere
-// but the process that took the call.
+// realm was already there. A dispatched run measured it as
+// `xacml.enforceAccess` turned off and still refusing, `oauth2.consentRequired`
+// set and the consent screen still drawn — settings that reported success and
+// did nothing anywhere but the process that took the call.
 function restoreRealms(rows, replicated) {
   log.debug('Entering restoreRealms(). ' + rows.length + ' row(s).');
   let made = 0;
@@ -1350,7 +1410,9 @@ function primeShadow(loadedRealmIds) {
       return;
     }
     const next = new Map();
-    rows.forEach(function (entry, key) { next.set(key, JSON.stringify(entry)); });
+    rows.forEach(function (entry, key) {
+      next.set(key, JSON.stringify(entry));
+    });
     shadow.set(realmId, next);
   });
   log.debug('Leaving primeShadow(). ' + shadow.size + ' realm(s), ' +
@@ -1374,6 +1436,7 @@ function stop() {
     clearTimeout(timer);
     timer = null;
   }
+  log.debug("Leaving stop().");
   return replication.stop().then(function () {
     return flush();
   }).then(function () {
@@ -1385,7 +1448,8 @@ function stop() {
     stopped = true;
     return driver.close();
   }).then(function () {
-    log.info('persistence: the ' + activeMode + ' store was flushed and closed.');
+    log.info('persistence: the ' + activeMode +
+             ' store was flushed and closed.');
     log.debug('Leaving stop().');
   }).catch(function (err) {
     stopped = true;
@@ -1412,10 +1476,13 @@ function stop() {
 // uses and it is set for the same reason.
 // ---------------------------------------------------------------------------
 function applyDirectoryChange(change) {
+  log.debug("Entering applyDirectoryChange().");
   if (!directory || typeof directory.applyEntry !== 'function' ||
       typeof driver.readEntry !== 'function') {
+    log.debug("Leaving applyDirectoryChange().");
     return Promise.resolve(false);
   }
+  log.debug("Leaving applyDirectoryChange().");
   // The stored key is the NORMALISED DN, which is what `sts_ldap_entries` is
   // keyed by and what `realmEntries()` hands back — so the change row carries
   // the DN as written and this has to normalise nothing itself. Normalising a
@@ -1453,9 +1520,12 @@ function applyDirectoryChange(change) {
 }
 
 function applyRealmsChange() {
+  log.debug("Entering applyRealmsChange().");
   if (!persistsRealms()) {
+    log.debug("Leaving applyRealmsChange().");
     return Promise.resolve(false);
   }
+  log.debug("Leaving applyRealmsChange().");
   return driver.loadRealms().then(function (rows) {
     const was = restoring;
     restoring = true;
@@ -1474,9 +1544,12 @@ function applyRealmsChange() {
 }
 
 function applyAppconfigChange() {
+  log.debug("Entering applyAppconfigChange().");
   if (!persistsAppconfig()) {
+    log.debug("Leaving applyAppconfigChange().");
     return Promise.resolve(false);
   }
+  log.debug("Leaving applyAppconfigChange().");
   return driver.loadOverrides().then(function (saved) {
     // ----------------------------------------------------------------------
     // AN EMPTY TABLE IS A FACT HERE, NOT AN ABSENCE (2026-09-08).
@@ -1513,6 +1586,7 @@ function applyAppconfigChange() {
 }
 
 function applyKeysChange(change) {
+  log.debug("Entering applyKeysChange().");
   // NOTHING TO DO, AND SAYING SO IS THE POINT. A realm's signing keys are read
   // once, at `keystore.start()`, and held for the life of the process; a key
   // that changed in another process cannot be adopted here without deciding
@@ -1525,6 +1599,7 @@ function applyKeysChange(change) {
            'ADOPTED HERE: this process holds the keys it read at startup, ' +
            'and taking new ones would strand everything it has already ' +
            'signed. Restart this process to pick them up.');
+  log.debug("Leaving applyKeysChange().");
   return Promise.resolve(false);
 }
 
@@ -1540,6 +1615,7 @@ function coordinate() {
     log.debug('Leaving coordinate(). Nothing is being persisted.');
     return Promise.resolve({ coordinating: false });
   }
+  log.debug("Leaving coordinate().");
   return replication.start(driver, {
     directory: applyDirectoryChange,
     realms: applyRealmsChange,
@@ -1557,20 +1633,37 @@ function coordinate() {
     // that in step.
     'minted-own': Object.assign(
       function (change) { return minted.applyChange(change); },
-      { prepare: function (rows) { return minted.prefetch(rows); },
-        done: function () { return minted.endPrefetch(); } }),
+      { prepare: function (rows) {
+        log.debug("Entering prepare().");
+        log.debug("Leaving prepare().");
+        return minted.prefetch(rows);
+      },
+        done: function () {
+          log.debug("Entering done().");
+          log.debug("Leaving done().");
+          return minted.endPrefetch();
+        } }),
     minted: Object.assign(
       function (change) { return minted.applyChange(change); },
-      { prepare: function (rows) { return minted.prefetch(rows); },
-        done: function () { return minted.endPrefetch(); } })
+      { prepare: function (rows) {
+        log.debug("Entering prepare().");
+        log.debug("Leaving prepare().");
+        return minted.prefetch(rows);
+      },
+        done: function () {
+          log.debug("Entering done().");
+          log.debug("Leaving done().");
+          return minted.endPrefetch();
+        } })
   });
 }
 
 // ---------------------------------------------------------------------------
-// WHAT THIS MODULE SAYS ABOUT ITSELF. One shape, read by GET /admin/ldap/service, by
-// /admin/persistence and by GET /admin-api/persistence — for the reason
-// config.js's describe() is one shape: a console and an API that compute the
-// same answer twice are a console and an API that will disagree about it.
+// WHAT THIS MODULE SAYS ABOUT ITSELF. One shape, read by GET
+// /admin/ldap/service, by /admin/persistence and by GET /admin-api/persistence
+// — for the reason config.js's describe() is one shape: a console and an API
+// that compute the same answer twice are a console and an API that will
+// disagree about it.
 // ---------------------------------------------------------------------------
 function status() {
   log.debug('Entering status().');
@@ -1638,10 +1731,13 @@ function status() {
 // than printing the string, for that function's reason: the value carries a
 // password even when nobody chose it.
 function describeDefaultTarget() {
+  log.debug("Entering describeDefaultTarget().");
   const target = describeDatabase();
   if (!target || !target.host) {
+    log.debug("Leaving describeDefaultTarget().");
     return 'the built-in connection string';
   }
+  log.debug("Leaving describeDefaultTarget().");
   return target.host + ':' + target.port + '/' + target.database;
 }
 
@@ -1649,8 +1745,10 @@ function describeDefaultTarget() {
 // than regexed so that a password containing an '@' cannot fool it into
 // reporting half of itself.
 function describeDatabase() {
+  log.debug("Entering describeDatabase().");
   const raw = databaseUrl();
   if (!raw) {
+    log.debug("Leaving describeDatabase().");
     return null;
   }
   try {
@@ -1671,6 +1769,7 @@ function describeDatabase() {
     // looks the same either way, because the page never printed the password
     // in the first place.
     const password = secrets.describeDatabasePassword();
+    log.debug("Leaving describeDatabase().");
     return {
       host: parsed.hostname,
       port: parsed.port || '5432',
@@ -1702,6 +1801,8 @@ function describeDatabase() {
            'will not connect there.')
     };
   } catch (err) {
+    log.debug("Caught in describeDatabase(): " + ((err && err.message) || err));
+    log.debug("Leaving describeDatabase().");
     // Not a URL this runtime can parse — a libpq keyword/value string, which
     // `pg` also accepts. There is nothing safe to show of it, because the
     // password is in there somewhere and we do not know where.
@@ -1763,7 +1864,11 @@ module.exports = {
   resolveDatabaseUrl: resolveDatabaseUrl,
   MODES: MODES,
   mode: mode,
-  activeMode: function () { return activeMode; },
+  activeMode: function () {
+    log.debug("Entering activeMode().");
+    log.debug("Leaving activeMode().");
+    return activeMode;
+  },
   enabled: enabled,
   dataDir: dataDir,
   setDirectory: setDirectory,
@@ -1777,12 +1882,20 @@ module.exports = {
   // The minted half, for `server.js`'s third startup step. It is re-exported
   // rather than required over there directly so that `server.js` has ONE
   // persistence module to talk to, which is what it has always had.
-  restoreMinted: function () { return minted.restore(); },
+  restoreMinted: function () {
+    log.debug("Entering restoreMinted().");
+    log.debug("Leaving restoreMinted().");
+    return minted.restore();
+  },
   // THE MINTED FLUSH, for `common/request_worker.js`'s commit-before-answer.
   // The store's flush and this one are two schedulers, and a caller that
   // awaited only the first would leave everything this service MINTS exactly
   // as racy as it was — which is most of what a browser flow writes.
-  flushMinted: function () { return minted.flush(); },
+  flushMinted: function () {
+    log.debug("Entering flushMinted().");
+    log.debug("Leaving flushMinted().");
+    return minted.flush();
+  },
   // THE SEQUENCE THIS PROCESS'S LAST COMMIT REACHED, for
   // `common/request_worker.js`'s commit announcement. It is the STORE's answer
   // and not this process's `applied`: what a reader has to wait for is the
@@ -1840,6 +1953,7 @@ module.exports = {
              'build of persistence_postgres.js older than 2026-09-11.'
       });
     }
+    log.debug("Leaving databaseMetrics().");
     return driver.metrics({
       timeoutMs: Number(config.value('persistence.metricsTimeoutMs'))
     }).then(function (report) {
@@ -1882,26 +1996,44 @@ module.exports = {
   },
 
   changeRowsWritten: function () {
+    log.debug("Entering changeRowsWritten().");
     if (!driver || typeof driver.changeRowsWritten !== 'function') {
+      log.debug("Leaving changeRowsWritten().");
       return 0;
     }
+    log.debug("Leaving changeRowsWritten().");
     return driver.changeRowsWritten();
   },
 
   latestChangeSeq: function () {
+    log.debug("Entering latestChangeSeq().");
     if (!enabled() || !driver || typeof driver.latestChangeSeq !== 'function') {
+      log.debug("Leaving latestChangeSeq().");
       return Promise.resolve(0);
     }
+    log.debug("Leaving latestChangeSeq().");
     return Promise.resolve(driver.latestChangeSeq()).then(function (seq) {
       return Number(seq) || 0;
     });
   },
-  mintedStatus: function () { return minted.status(); },
+  mintedStatus: function () {
+    log.debug("Entering mintedStatus().");
+    log.debug("Leaving mintedStatus().");
+    return minted.status();
+  },
   coordinate: coordinate,
-  replicationStatus: function () { return replication.status(); },
+  replicationStatus: function () {
+    log.debug("Entering replicationStatus().");
+    log.debug("Leaving replicationStatus().");
+    return replication.status();
+  },
   // THE READ BARRIER, for `common/request_pool.js`. Re-exported here rather
   // than reached for directly so that a caller has ONE persistence module to
   // talk to — the same reason restoreMinted() is re-exported above.
-  syncNow: function () { return replication.syncNow(); },
+  syncNow: function () {
+    log.debug("Entering syncNow().");
+    log.debug("Leaving syncNow().");
+    return replication.syncNow();
+  },
   status: status
 };

@@ -161,6 +161,8 @@ require('./xacml_role_pep');
 require('./xacml_access_pep');
 
 function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return config.value('xacml.enabled') !== false;
 }
 
@@ -188,9 +190,11 @@ function offCheck(res) {
 }
 
 function fail(res, status, code, description) {
+  log.debug("Entering fail().");
   res.status(status).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify({ error: code, error_description: description },
                           null, 2));
+  log.debug("Leaving fail().");
 }
 
 // ===========================================================================
@@ -260,7 +264,8 @@ function xacmlAccess(req, res, action, what) {
   if (!identity.authenticated) {
     errorCodes.mark(res, 'STS-XACML-0003');
   } else if (identity.revocationRefused) {
-    errorCodes.mark(res, errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
+    errorCodes.mark(res,
+                    errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
   } else if (!identity.verified) {
     errorCodes.mark(res, 'STS-XACML-0004');
   } else if (held.indexOf(XACML_USER_ROLE) < 0) {
@@ -372,7 +377,8 @@ function decide(request) {
 const XACML_QUERY = validation.z.looseObject({
   format: validation.types.opt(validation.z.string().regex(/^(json|xml|html)$/i,
     'must be "json", "xml" or "html"')),
-  bias: validation.types.opt(validation.types.oneOf(['deny-biased', 'permit-biased']))
+  bias: validation.types.opt(validation.types.oneOf(
+      ['deny-biased', 'permit-biased']))
 });
 
 app.post('/xacml/pdp', function (req, res) {
@@ -569,7 +575,8 @@ app.get('/xacml/protected', function (req, res) {
   monitor.record('protected', { decision: answer.decision,
                                 allowed: enforcement.allowed,
                                 undischargeable:
-                                  (enforcement.undischargeable || []).length > 0 });
+                                  (enforcement.undischargeable ||
+                                   []).length > 0 });
   audit.audit({
     action: 'xacml.enforcement',
     actor: subject,
@@ -755,6 +762,8 @@ function enforce(answer) {
 // ===========================================================================
 
 function remotePepsEnabled() {
+  log.debug("Entering remotePepsEnabled().");
+  log.debug("Leaving remotePepsEnabled().");
   return config.value('xacml.remotePeps') !== false;
 }
 
@@ -910,7 +919,8 @@ function pepAccess(req, res, action, what, known) {
   if (!identity.authenticated) {
     errorCodes.mark(res, 'STS-XACML-0007');
   } else if (identity.revocationRefused) {
-    errorCodes.mark(res, errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
+    errorCodes.mark(res,
+                    errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
   } else if (!identity.verified) {
     errorCodes.mark(res, 'STS-XACML-0008');
   } else if (held.indexOf(REMOTE_PEP_ROLE) < 0) {
@@ -1145,7 +1155,9 @@ app.get('/xacml/pep/policies', function (req, res) {
     // token goes in an ETag as well so that an ordinary HTTP cache — or a
     // client library that already speaks conditional requests — behaves
     // correctly without knowing anything about XACML.
-    res.status(304).set('Cache-Control', 'no-store').set('ETag', '"' + token + '"')
+    res.status(304)
+       .set('Cache-Control', 'no-store')
+       .set('ETag', '"' + token + '"')
        .end();
     log.debug('Leaving GET /xacml/pep/policies. Unchanged.');
     return;
@@ -1222,8 +1234,8 @@ app.get('/xacml/pep/policies', function (req, res) {
        note: 'Every ENABLED policy EXCEPT this service\'s own. A disabled ' +
              'policy is left out rather than sent with a flag, because a PEP ' +
              'that loaded one would enforce a policy this service does not — ' +
-             'and the access-control and role-issuance documents are left out ' +
-             'because they decide THIS service\'s questions against ' +
+             'and the access-control and role-issuance documents are left ' +
+             'out because they decide THIS service\'s questions against ' +
              'attributes only this process can supply. Enforced elsewhere ' +
              'they would answer NotApplicable to everything, which a ' +
              'deny-biased PEP turns into a refusal of everything. They are ' +
@@ -1232,7 +1244,8 @@ app.get('/xacml/pep/policies', function (req, res) {
                ? ' Withheld here: ' + withheld.join(', ') + '.'
                : '')
      }, null, 2));
-  log.debug('Leaving GET /xacml/pep/policies. ' + rows.length + ' policy(ies).');
+  log.debug('Leaving GET /xacml/pep/policies. ' + rows.length +
+            ' policy(ies).');
 });
 
 // ---------------------------------------------------------------------------
@@ -1458,14 +1471,17 @@ const PIP_NS = 'urn:sts:xacml:pip:1.0';
 // designates fifty attributes about one subject — so reaching it is a sign of
 // something else.
 //
-// **`xacml.pipMaxDesignators` SINCE 2026-09-12**, beside `xacml.pipMaxPerWindow`
-// — that one bounds how many queries and this bounds one query, so they are
-// the two halves of what one enforcement point may cost. This constant is the
-// default, read per query so a change reaches the next one.
+// **`xacml.pipMaxDesignators` SINCE 2026-09-12**, beside
+// `xacml.pipMaxPerWindow` — that one bounds how many queries and this bounds
+// one query, so they are the two halves of what one enforcement point may cost.
+// This constant is the default, read per query so a change reaches the next
+// one.
 const PIP_MAX_DESIGNATORS = 50;
 
 function pipMaxDesignators() {
+  log.debug("Entering pipMaxDesignators().");
   const n = Number(config.value('xacml.pipMaxDesignators'));
+  log.debug("Leaving pipMaxDesignators().");
   return isFinite(n) && n > 0 ? Math.floor(n) : PIP_MAX_DESIGNATORS;
 }
 
@@ -1476,12 +1492,15 @@ function pipMaxDesignators() {
 // caller, and it is why `<Unresolved>` exists.
 // ---------------------------------------------------------------------------
 function pipWhy(designator, subject, stored, mapped) {
+  log.debug("Entering pipWhy().");
   if (designator.category !== model.CATEGORY.ACCESS_SUBJECT) {
+    log.debug("Leaving pipWhy().");
     return 'Only the access-subject category is resolved by this PIP: a ' +
            'resource or environment designator has no directory entry to be ' +
            'looked up on.';
   }
   if (!mapped) {
+    log.debug("Leaving pipWhy().");
     return 'That AttributeId is not a directory attribute name. This PIP ' +
            'accepts a bare LDAP name (mail, employeeType) or the prefix ' +
            pip.ATTRIBUTE_PREFIX + '<name>; a standard XACML URI is ' +
@@ -1490,11 +1509,13 @@ function pipWhy(designator, subject, stored, mapped) {
            'decided about.';
   }
   if (!subject) {
+    log.debug("Leaving pipWhy().");
     return 'The request names no ' + model.ATTRIBUTE.SUBJECT_ID +
            ', so there is no entry to read. That is an ordinary request ' +
            'rather than an error.';
   }
   if (!stored) {
+    log.debug("Leaving pipWhy().");
     return 'No directory entry resolves from the subject "' + subject + '".';
   }
   // THE LAST TWO ARE THE ONES WORTH SEPARATING. An entry that does not hold
@@ -1505,9 +1526,11 @@ function pipWhy(designator, subject, stored, mapped) {
   // caller cannot see.
   const raw = pip.rawAttribute(stored.attributes, mapped);
   if (raw === undefined || raw === null) {
+    log.debug("Leaving pipWhy().");
     return 'The entry for "' + subject + '" does not hold "' + mapped + '".';
   }
   const count = Array.isArray(raw) ? raw.length : 1;
+  log.debug("Leaving pipWhy().");
   return 'The entry for "' + subject + '" holds ' + count + ' value(s) for "' +
          mapped + '", and none of them parses as ' + designator.dataType +
          '. Each was dropped with a warning rather than making the decision ' +
@@ -1526,6 +1549,7 @@ function pipWhy(designator, subject, stored, mapped) {
 // unlike any request, for no gain.
 // ---------------------------------------------------------------------------
 function writePipResponse(answers, unresolved) {
+  log.debug("Entering writePipResponse().");
   const byCategory = [];
   answers.forEach(function (answer) {
     let group = byCategory.filter(function (one) {
@@ -1574,6 +1598,7 @@ function writePipResponse(answers, unresolved) {
     parts.push('  </Unresolved>');
   }
   parts.push('</PIPResponse>');
+  log.debug("Leaving writePipResponse().");
   return parts.join('\n') + '\n';
 }
 
@@ -1582,11 +1607,13 @@ function writePipResponse(answers, unresolved) {
 // It carries the same two members `fail()` does so that a reader moving
 // between this endpoint and the six beside it meets one vocabulary.
 function pipFail(res, status, code, description) {
+  log.debug("Entering pipFail().");
   res.status(status).type('application/xml').set('Cache-Control', 'no-store')
      .send('<?xml version="1.0" encoding="UTF-8"?>\n' +
            '<PIPError xmlns="' + PIP_NS + '" error="' + xmlEscape(code) +
            '">\n  <Description>' + xmlEscape(description) +
            '</Description>\n</PIPError>\n');
+  log.debug("Leaving pipFail().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1612,8 +1639,10 @@ function pipFail(res, status, code, description) {
 // — the same cap `userFor()` and every other door in this service puts on one.
 // ---------------------------------------------------------------------------
 function pipScalarProblem(what, value, cap) {
+  log.debug("Entering pipScalarProblem().");
   const text = String(value === undefined || value === null ? '' : value);
   if (text.length > cap) {
+    log.debug("Leaving pipScalarProblem().");
     return 'the ' + what + ' is ' + text.length + ' characters and the ' +
            'limit is ' + cap + '. It is echoed back in <Unresolved>, written ' +
            'into this service\'s audit log, and held in memory while the ' +
@@ -1625,10 +1654,12 @@ function pipScalarProblem(what, value, cap) {
   // appears to be writing. `xmlEscape()` handles `<`, `>`, `&` and quotes and
   // has nothing to say about C0.
   if (/[\u0000-\u001F\u007F]/.test(text)) {
+    log.debug("Leaving pipScalarProblem().");
     return 'the ' + what + ' carries a control character. It is written into ' +
            'an XML attribute value and into a log line, and neither is a ' +
            'place for one.';
   }
+  log.debug("Leaving pipScalarProblem().");
   return '';
 }
 
@@ -1940,9 +1971,9 @@ function nudgeRegisteredPeps(what) {
     });
     if (failed.length) {
       log.warn('xacml: ' + failed.length + ' of ' + results.length +
-               ' nudge(s) were not delivered. Each is recorded on that PEP\'s ' +
-               'row at /admin/xacml/peps. No policy change is lost by this: ' +
-               'those PEPs converge on their next poll.');
+               ' nudge(s) were not delivered. Each is recorded on that ' +
+               'PEP\'s row at /admin/xacml/peps. No policy change is lost by ' +
+               'this: those PEPs converge on their next poll.');
     }
   }).catch(function (error) {
     // `nudgeAll()` resolves rather than rejects for every ordinary failure, so
@@ -1962,8 +1993,10 @@ store.setChangeObserver(nudgeRegisteredPeps);
 // GET /xacml — what this surface is.
 // ---------------------------------------------------------------------------
 function description(req) {
+  log.debug("Entering description().");
   const root = store.root();
   const policies = store.all();
+  log.debug("Leaving description().");
   return {
     enabled: enabled(),
     specification: 'OASIS XACML 3.0 (core), JSON Profile 1.1',
@@ -2155,38 +2188,37 @@ app.get('/xacml', function (req, res) {
         'repository answers 304.'
       : 'Remote Policy Enforcement Points are <strong>off</strong> ' +
         '(<code>xacml.remotePeps</code>); those three endpoints answer 501.') +
-    '</p>' +
-    '<h2>The Policy Information Point, over HTTP</h2>' +
-    '<p>A remote PEP holds the engine but <strong>not the directory</strong>, ' +
-    'so a designator the request did not carry resolves to an empty bag out ' +
-    'there and to a real value here &mdash; the same policy deciding two ways ' +
-    'in two enforcement points. <code>POST /xacml/pip</code> closes that.</p>' +
-    '<p>XACML defines no PIP protocol, so this invents as little as possible: ' +
-    'both directions are <strong>XACML&rsquo;s own XML</strong>. Send a ' +
-    '<code>&lt;PIPRequest&gt;</code> carrying the ' +
+    '</p><h2>The Policy Information Point, over HTTP</h2><p>A remote PEP ' +
+    'holds the engine but <strong>not the directory</strong>, so a ' +
+    'designator the request did not carry resolves to an empty bag out there ' +
+    'and to a real value here &mdash; the same policy deciding two ways in ' +
+    'two enforcement points. <code>POST /xacml/pip</code> closes ' +
+    'that.</p><p>XACML defines no PIP protocol, so this invents as little as ' +
+    'possible: both directions are <strong>XACML&rsquo;s own XML</strong>. ' +
+    'Send a <code>&lt;PIPRequest&gt;</code> carrying the ' +
     '<code>&lt;Request&gt;</code> you are deciding &mdash; which is what ' +
     'names the subject &mdash; and one ' +
     '<code>&lt;AttributeDesignator&gt;</code> per attribute wanted. What ' +
     'comes back is <code>&lt;Attributes&gt;</code> <em>in the shape a ' +
-    '<code>&lt;Request&gt;</code> carries them</em>, so a PEP splices it into ' +
-    'its own request and evaluates &mdash; after which its engine finds the ' +
-    'values where a designator looks for them, which is exactly what happens ' +
-    'in this process when the embedded PDP asks the embedded PIP.</p>' +
-    '<p>An unresolved designator comes back as an <strong>absent</strong> ' +
-    '<code>&lt;Attribute&gt;</code> rather than an empty one: that is what a ' +
-    'request that never carried it looks like, so a PEP needs no branch for ' +
-    'it. <code>MustBePresent</code> is read and deliberately <em>not</em> ' +
-    'applied &mdash; what an empty bag means is settled by the designator and ' +
-    'the function it is handed to, both in your engine. The five reasons a ' +
-    'bag can be empty come back in <code>&lt;Unresolved&gt;</code>, in this ' +
-    'service&rsquo;s own namespace so that a PEP reading only the XACML core ' +
-    'namespace never sees it.</p>' +
-    '<p>The pull <em>is</em> the contract. When the repository changes this ' +
-    'service also POSTs a few bytes to each registered PEP that gave a ' +
-    'notify URL, saying only that something changed &mdash; an optimisation ' +
-    'over the polling interval and never a replacement for it, so a PEP ' +
-    'that is never nudged still converges.</p>' +
-    '<h2>Not here yet</h2><ul>' + later + '</ul>' +
+    '<code>&lt;Request&gt;</code> carries them</em>, so a PEP splices it ' +
+    'into its own request and evaluates &mdash; after which its engine finds ' +
+    'the values where a designator looks for them, which is exactly what ' +
+    'happens in this process when the embedded PDP asks the embedded ' +
+    'PIP.</p><p>An unresolved designator comes back as an ' +
+    '<strong>absent</strong> <code>&lt;Attribute&gt;</code> rather than an ' +
+    'empty one: that is what a request that never carried it looks like, so ' +
+    'a PEP needs no branch for it. <code>MustBePresent</code> is read and ' +
+    'deliberately <em>not</em> applied &mdash; what an empty bag means is ' +
+    'settled by the designator and the function it is handed to, both in ' +
+    'your engine. The five reasons a bag can be empty come back in ' +
+    '<code>&lt;Unresolved&gt;</code>, in this service&rsquo;s own namespace ' +
+    'so that a PEP reading only the XACML core namespace never sees ' +
+    'it.</p><p>The pull <em>is</em> the contract. When the repository ' +
+    'changes this service also POSTs a few bytes to each registered PEP that ' +
+    'gave a notify URL, saying only that something changed &mdash; an ' +
+    'optimisation over the polling interval and never a replacement for it, ' +
+    'so a PEP that is never nudged still converges.</p><h2>Not here ' +
+    'yet</h2><ul>' + later + '</ul>' +
     '<p><a href="?format=json">This document as JSON</a></p>' +
     '</body></html>');
   log.debug('Leaving GET /xacml. HTML.');

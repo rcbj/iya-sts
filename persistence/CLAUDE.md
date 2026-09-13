@@ -562,6 +562,30 @@ throws applies nothing. `common/realms.js` argues the hook and
 back, because two processes with different settings would then exchange it for
 ever.
 
+### A FAILED MINTED FLUSH MUST NOT GROW, AND IT DID (2026-09-12)
+
+Three faults compounded on one dispatched run, and each is fixed where it was:
+
+* **`saveMinted()` took row locks in journal order**, upserts then deletes, so
+  request workers flushing overlapping rows deadlocked (~112 times). The
+  statements are sorted on (handle, realm, key) now, interleaved, so every
+  transaction takes locks in one order.
+* **the retry re-noted `storedKey()`'s answer.** For a `merge: 'own'` store
+  that is the key base64url-encoded with the origin appended, so every
+  consecutive failure encoded it again. Keys grew past the btree limit
+  (`index row size 3880 exceeds … 2704`), which made every later flush fail by
+  construction, and on into gigabytes — one worker at 5.6 GB spending a whole
+  CPU profile in `note()`, its commit announcements and so the read barrier
+  stalled behind it. Each row carries `journalKey` and the retry notes that.
+* **`recordChanges()` put a whole batch in one INSERT**, four parameters a row,
+  and past 16,383 rows the 16-bit count wrapped (`bind message has 63088
+  parameter formats but 0 parameters`). It chunks at 5,000 rows.
+
+`tests/minted_persistence.js` section 5a and `tests/postgres_minted_writes.js`
+pin the three. **What to look for next time**: `STS-STORE-0021` repeating on one
+pid while `STS-WORKER-0007` barrier timeouts pile up — the flush is failing, not
+slow.
+
 ### What still does not coordinate
 
 * **The sockets.** The KDC, both LDAP listeners, the two TLS ports and SPIFFE's

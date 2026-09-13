@@ -61,6 +61,10 @@ const path = require('path');
 const https = require('https');
 const nodeCrypto = require('crypto');
 
+// This script's own logger. Its level is LOG_LEVEL, and info without one.
+const log = require('bunyan').createLogger({ name: 'sts-bao-seed',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ADDR = process.env.STS_BAO_ADDR || 'https://openbao:8200';
 const CA_FILE = process.env.STS_BAO_CA_FILE || '/openbao/file/tls/server.crt';
 const SEED_DIR = process.env.STS_BAO_SEED_DIR || '/openbao/file/seed';
@@ -76,7 +80,9 @@ const WAIT_SECONDS = Number(process.env.STS_BAO_WAIT_SECONDS || 60);
 let ca = null;
 
 function say(what) {
-  console.log('sts-bao-seed: ' + what);
+  log.debug("Entering say().");
+  log.info(what);
+  log.debug("Leaving say().");
 }
 
 // ---------------------------------------------------------------------------
@@ -86,8 +92,11 @@ function say(what) {
 // than an error.
 // ---------------------------------------------------------------------------
 function call(method, route, body, token) {
+  log.debug("Entering call().");
+  log.debug("Leaving call().");
   return new Promise(function (resolve, reject) {
-    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
+    const payload = body === undefined ? null :
+                    Buffer.from(JSON.stringify(body));
     const url = new URL(ADDR + route);
     const req = https.request({
       method: method,
@@ -107,6 +116,8 @@ function call(method, route, body, token) {
         try {
           parsed = text ? JSON.parse(text) : null;
         } catch (e) {
+          log.debug("Caught in a callback in call(): " +
+                    ((e && e.message) || e));
           // Not JSON. Every OpenBao error is JSON, so this is a proxy or a
           // listener that is not the one we think — the raw text is what says
           // which.
@@ -124,7 +135,9 @@ function call(method, route, body, token) {
 }
 
 function refuse(answer, what) {
+  log.debug("Entering refuse().");
   const errors = (answer.body && answer.body.errors) || [];
+  log.debug("Leaving refuse().");
   throw new Error(what + ' — OpenBao answered ' + answer.status +
                   (errors.length ? ': ' + errors.join('; ') : ''));
 }
@@ -133,12 +146,14 @@ function refuse(answer, what) {
 // than in compose's healthcheck as well, because this container may be started
 // by a launcher that has no healthcheck to wait on.
 async function waitForListener() {
+  log.debug("Entering waitForListener().");
   const until = Date.now() + WAIT_SECONDS * 1000;
   let last = '';
   while (Date.now() < until) {
     try {
       const answer = await call('GET', '/v1/sys/seal-status');
       if (answer.status === 200 && answer.body) {
+        log.debug("Leaving waitForListener().");
         return answer.body;
       }
       last = 'status ' + answer.status;
@@ -147,6 +162,7 @@ async function waitForListener() {
     }
     await new Promise(function (r) { setTimeout(r, 1000); });
   }
+  log.debug("Leaving waitForListener().");
   throw new Error('the secret store did not answer at ' + ADDR + ' within ' +
                   WAIT_SECONDS + ' seconds (' + last + ')');
 }
@@ -158,11 +174,13 @@ async function waitForListener() {
 // a clustering problem in a single-node store. `sys/health` is the endpoint
 // that means ready: 200 is initialised, unsealed AND active.
 async function waitForActive() {
+  log.debug("Entering waitForActive().");
   const until = Date.now() + WAIT_SECONDS * 1000;
   let sealed = null;
   while (Date.now() < until) {
     const health = await call('GET', '/v1/sys/health');
     if (health.status === 200) {
+      log.debug("Leaving waitForActive().");
       return;
     }
     const seal = await call('GET', '/v1/sys/seal-status');
@@ -178,11 +196,13 @@ async function waitForActive() {
                     '(BAO_STATIC_SEAL_CURRENT_KEY) must be base64 of exactly ' +
                     '32 bytes.');
   }
+  log.debug("Leaving waitForActive().");
   throw new Error('the secret store unsealed and did not become active ' +
                   'within ' + WAIT_SECONDS + ' seconds.');
 }
 
 async function rootToken() {
+  log.debug("Entering rootToken().");
   const tokenFile = path.join(SEED_DIR, 'root.token');
   const status = await call('GET', '/v1/sys/init');
   if (status.body && status.body.initialized) {
@@ -191,11 +211,12 @@ async function rootToken() {
                       'no root token in ' + tokenFile + ' — so this seeder ' +
                       'cannot configure it. That is the correct answer for a ' +
                       'store somebody else initialised; for a stack that has ' +
-                      'lost its volume state, `docker compose down --volumes` ' +
-                      'is the way back.');
+                      'lost its volume state, `docker compose down ' +
+                      '--volumes` is the way back.');
     }
     say('the store is already initialised; reusing the root token from its ' +
         'own volume.');
+    log.debug("Leaving rootToken().");
     return String(fs.readFileSync(tokenFile, 'utf8')).trim();
   }
   // ONE RECOVERY SHARE. With an auto seal the shares are RECOVERY keys rather
@@ -214,12 +235,15 @@ async function rootToken() {
                    { mode: 0o600 });
   say('initialised the store and kept its root token in the store\'s own ' +
       'volume. See this file\'s header for what that costs.');
+  log.debug("Leaving rootToken().");
   return made.body.root_token;
 }
 
 async function ensureMount(token, mount, type, options) {
+  log.debug("Entering ensureMount().");
   const mounts = await call('GET', '/v1/sys/mounts', undefined, token);
   if (mounts.status === 200 && mounts.body && mounts.body[mount + '/']) {
+    log.debug("Leaving ensureMount().");
     return false;
   }
   const made = await call('POST', '/v1/sys/mounts/' + mount,
@@ -228,6 +252,7 @@ async function ensureMount(token, mount, type, options) {
     refuse(made, 'the "' + mount + '" engine could not be enabled');
   }
   say('enabled the ' + type + ' engine at ' + mount + '/.');
+  log.debug("Leaving ensureMount().");
   return true;
 }
 
@@ -235,14 +260,18 @@ async function ensureMount(token, mount, type, options) {
 // only signal — the status is an ordinary 400 — so it is matched on the two
 // words that cannot be anything else.
 function upgrading(answer) {
+  log.debug("Entering upgrading().");
   if (!answer || answer.status !== 400) {
+    log.debug("Leaving upgrading().");
     return false;
   }
   const said = JSON.stringify(answer.body || '');
+  log.debug("Leaving upgrading().");
   return /Upgrading from non-versioned/i.test(said);
 }
 
 async function ensureSecrets(token) {
+  log.debug("Entering ensureSecrets().");
   const at = '/v1/secret/data/' + SECRET_PATH;
   const held = await call('GET', at, undefined, token);
   const existing = (held.status === 200 && held.body && held.body.data &&
@@ -291,9 +320,11 @@ async function ensureSecrets(token) {
       'the database password was refreshed from the environment.'
     : 'generated a key-encryption key and wrote it with the database ' +
       'password. It will never be replaced by this seeder.');
+  log.debug("Leaving ensureSecrets().");
 }
 
 async function ensurePki(token) {
+  log.debug("Entering ensurePki().");
   await ensureMount(token, 'pki', 'pki',
                     { config: { max_lease_ttl: '87600h' } });
   // Tuned separately: `max_lease_ttl` on the mount config at creation is
@@ -332,10 +363,12 @@ async function ensurePki(token) {
   if (role.status !== 204 && role.status !== 200) {
     refuse(role, 'the client certificate role could not be written');
   }
+  log.debug("Leaving ensurePki().");
   return caPem;
 }
 
 async function ensurePolicy(token) {
+  log.debug("Entering ensurePolicy().");
   const policy = fs.readFileSync(POLICY_FILE, 'utf8');
   const wrote = await call('PUT', '/v1/sys/policies/acl/' + POLICY_NAME,
                            { policy: policy }, token);
@@ -344,9 +377,11 @@ async function ensurePolicy(token) {
   }
   say('wrote the ' + POLICY_NAME + ' policy from ' + POLICY_FILE +
       ' — read on two paths and no write anywhere.');
+  log.debug("Leaving ensurePolicy().");
 }
 
 async function ensureCertAuth(token, caPem) {
+  log.debug("Entering ensureCertAuth().");
   const auths = await call('GET', '/v1/sys/auth', undefined, token);
   if (!(auths.status === 200 && auths.body && auths.body['cert/'])) {
     const made = await call('POST', '/v1/sys/auth/cert', { type: 'cert' },
@@ -356,8 +391,8 @@ async function ensureCertAuth(token, caPem) {
     }
     say('enabled the certificate auth method.');
   }
-  // **THE TRUST IS THE STORE'S OWN CA AND THE NAME IS PINNED.** Trusting the
-  // CA alone would admit every certificate it ever issues; `allowed_common_names`
+  // **THE TRUST IS THE STORE'S OWN CA AND THE NAME IS PINNED.** Trusting the CA
+  // alone would admit every certificate it ever issues; `allowed_common_names`
   // is what makes this one identity rather than a class of them.
   const bound = await call('POST', '/v1/auth/cert/certs/sts',
                            { display_name: 'sts',
@@ -371,9 +406,11 @@ async function ensureCertAuth(token, caPem) {
   }
   say('bound CN=' + COMMON_NAME + ' certificates from that CA to ' +
       POLICY_NAME + '.');
+  log.debug("Leaving ensureCertAuth().");
 }
 
 async function ensureClientCertificate(token, caPem) {
+  log.debug("Entering ensureClientCertificate().");
   fs.mkdirSync(CLIENT_DIR, { recursive: true });
   const certFile = path.join(CLIENT_DIR, 'client.crt');
   const keyFile = path.join(CLIENT_DIR, 'client.key');
@@ -385,6 +422,7 @@ async function ensureClientCertificate(token, caPem) {
   if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
     say('the client certificate is already in the shared volume; it was not ' +
         're-issued.');
+    log.debug("Leaving ensureClientCertificate().");
     return;
   }
   const issued = await call('POST', '/v1/pki/issue/sts-client',
@@ -405,6 +443,7 @@ async function ensureClientCertificate(token, caPem) {
                    data.issuing_ca + '\n', { mode: 0o644 });
   say('issued the service its client certificate (CN=' + COMMON_NAME +
       ') into the shared volume.');
+  log.debug("Leaving ensureClientCertificate().");
 }
 
 // ===========================================================================
@@ -423,6 +462,7 @@ async function ensureClientCertificate(token, caPem) {
 // A test that runs later reports it; this stops it.
 // ===========================================================================
 async function proveReadOnly() {
+  log.debug("Entering proveReadOnly().");
   const cert = fs.readFileSync(path.join(CLIENT_DIR, 'client.crt'));
   const key = fs.readFileSync(path.join(CLIENT_DIR, 'client.key'));
   const login = await new Promise(function (resolve, reject) {
@@ -440,6 +480,8 @@ async function proveReadOnly() {
         try {
           resolve({ status: res.statusCode, body: JSON.parse(text || '{}') });
         } catch (e) {
+          log.debug("Caught in a callback in proveReadOnly(): " +
+                    ((e && e.message) || e));
           resolve({ status: res.statusCode, body: { raw: text } });
         }
       });
@@ -447,7 +489,8 @@ async function proveReadOnly() {
     req.on('error', reject);
     req.end(payload);
   });
-  if (login.status !== 200 || !login.body.auth || !login.body.auth.client_token) {
+  if (login.status !== 200 || !login.body.auth ||
+      !login.body.auth.client_token) {
     refuse(login, 'the client certificate this seeder just issued cannot log ' +
                   'in to the store it was issued by');
   }
@@ -467,11 +510,12 @@ async function proveReadOnly() {
                            { data: { databasePassword: 'proof' } }, asService);
   if (wrote.status !== 403) {
     throw new Error('the service\'s identity was allowed to WRITE its own ' +
-                    'secrets — OpenBao answered ' + wrote.status + ' where 403 ' +
-                    'was expected. ' + POLICY_FILE + ' is meant to grant read ' +
-                    'and nothing else, and this stack will not start with an ' +
-                    'identity that can rotate the key its own data is sealed ' +
-                    'under.');
+                    'secrets — OpenBao answered ' + wrote.status + ' where ' +
+                    '403 was ' +
+                    'expected. ' + POLICY_FILE + ' is meant to grant ' +
+                    'read and nothing else, and this stack will not start ' +
+                    'with an identity that can rotate the key its own data ' +
+                    'is sealed under.');
   }
   // AND THAT THE POLICY IS NARROW AS WELL AS READ-ONLY: a read of somebody
   // else's path must be refused too, or "read" would mean the whole store.
@@ -485,9 +529,11 @@ async function proveReadOnly() {
   say('proved it with the certificate itself: policies [' + policies + '], ' +
       'the two secrets readable, a write to them refused 403, and no other ' +
       'path reachable.');
+  log.debug("Leaving proveReadOnly().");
 }
 
 async function main() {
+  log.debug("Entering main().");
   if (fs.existsSync(CA_FILE)) {
     ca = fs.readFileSync(CA_FILE);
   } else {
@@ -508,9 +554,10 @@ async function main() {
   await proveReadOnly();
   say('the secret store is ready: two secrets, one read-only identity, and a ' +
       'client certificate the store itself issued.');
+  log.debug("Leaving main().");
 }
 
 main().catch(function (e) {
-  console.error('sts-bao-seed: ' + (e && e.message ? e.message : e));
+  log.error((e && e.message) ? e.message : e);
   process.exit(1);
 });

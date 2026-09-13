@@ -3894,14 +3894,30 @@ out of context says which profile it was issued for. The alternative — telling
 them apart by which directory attribute they were stored in — is an answer
 nobody holding a PEM file can get to.
 
-**`jwt` IS THE DEFAULT AND ITS CERTIFICATE IS BYTE-FOR-BYTE WHAT THIS FUNCTION
-PRODUCED BEFORE PURPOSES EXISTED**: one SAN, the application URI. That is
-deliberate rather than tidy — every certificate issued before 2026-09-11 is a
-`jwt` one, and a default that changed their shape would make this function's
-output depend on when it was called. A purpose it does not know is REFUSED
-rather than defaulted, because quietly handing back the other profile's
-certificate would put a key pair on the wrong attribute set with nothing saying
-so.
+**`jwt` IS THE DEFAULT AND ITS SUBJECTALTNAME IS WHAT THIS FUNCTION PRODUCED
+BEFORE PURPOSES EXISTED**: one SAN, the application URI. That is deliberate
+rather than tidy — every certificate issued before 2026-09-11 is a `jwt` one,
+and a default that changed how one reads would make this function's output
+depend on when it was called. A purpose it does not know is REFUSED rather than
+defaulted, because quietly handing back the other profile's certificate would
+put a key pair on the wrong attribute set with nothing saying so.
+
+**IT IS NO LONGER BYTE-FOR-BYTE, AND THAT IS THE 2026-09-12 CHANGE.** Every
+key pair from this function — `jwt`, `saml`, an application's and a person's —
+now carries `cRLDistributionPoints` (http, ldap, ldaps) and an Authority
+Information Access (OCSP, caIssuers) naming the `assertions` Issuing CA that
+signed it, which `certify()` and `issueCaTier()` had done since 2026-09-11 and
+this door had not. So the one certificate this hierarchy hands to something
+that is not this service was the one that could not say where its list was.
+**The pointers cost a record**: the responder answers `good` only for a serial
+its authority is known to have issued, so the row keeps `issuedKeyPairs` —
+serial, subject, expiry, who for, never a key — and `pki_revocation.js`'s
+`issuedList()` reads it as its fifth source. Without it the certificate would
+point a relying party at a responder that answers `unknown` about it, and the
+revoke pane could not offer it. Expired records are dropped at the next issue.
+Replacing an application's key pair does NOT supersede the old one on the list;
+that is still an operator's Revoke. `tests/pki_revocation.js` section G pins
+it.
 
 **`/admin/pki` WRITES SIX ATTRIBUTES FOR ONE AND FIVE FOR THE OTHER**, and the
 missing one is the JWKS: SAML has none, and what a party registers for that

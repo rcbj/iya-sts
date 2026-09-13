@@ -48,10 +48,17 @@ const stsCrypto = require('../common/crypto');
 const assertionGrant = require('../oauth-oidc/assertion_grant');
 const pki = require('../common/pki');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'assertion_grant',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ENCS = ['A128GCM', 'A192GCM', 'A256GCM',
               'A128CBC-HS256', 'A192CBC-HS384', 'A256CBC-HS512'];
 
 function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== the JWE tables say what this service can actually do ===');
 
   // The metadata is built from these lists, so a list that promised an
@@ -71,8 +78,8 @@ function run(t) {
   });
   t.check(stsCrypto.JWE_ALGS.indexOf('RSA1_5') < 0,
           'RSA1_5 IS NOT, and that is a decision rather than a gap: RFC 8017 ' +
-          'deprecated PKCS#1 v1.5 encryption, and implementing it safely means ' +
-          'making an unwrap failure indistinguishable from every later ' +
+          'deprecated PKCS#1 v1.5 encryption, and implementing it safely ' +
+          'means making an unwrap failure indistinguishable from every later ' +
           'failure — a property of a whole code path rather than of one ' +
           'function');
   t.check(stsCrypto.JWE_ASYMMETRIC_ALGS.every(function (alg) {
@@ -83,8 +90,8 @@ function run(t) {
   t.equal(stsCrypto.JWE_ASYMMETRIC_ALGS.length +
           stsCrypto.JWE_SYMMETRIC_ALGS.length,
           stsCrypto.JWE_ALGS.length,
-          'and between them they are the whole table, so a third family added ' +
-          'later cannot be silently absent from both');
+          'and between them they are the whole table, so a third family ' +
+          'added later cannot be silently absent from both');
 
   t.log.info('=== every algorithm against every enc, both ways ===');
   const rsa = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -134,8 +141,8 @@ function run(t) {
   });
   t.equal(combinations, stsCrypto.JWE_ALGS.length * ENCS.length,
           'every key management algorithm round-trips against every content ' +
-          'encryption algorithm — ' + combinations + ' combinations, which is ' +
-          'the whole table and not a sample');
+          'encryption algorithm — ' + combinations + ' combinations, which ' +
+          'is the whole table and not a sample');
 
   t.log.info('=== the three refusals a wrong key produces ===');
   const gcmkw = stsCrypto.encryptJweCompact(PLAINTEXT,
@@ -243,7 +250,8 @@ function run(t) {
   const nested = stsCrypto.encryptJweCompact(inner,
     { alg: 'A256KW', enc: 'A256GCM', secret: Buffer.alloc(32, 7), cty: 'JWT' });
   const opened = assertionGrant.unwrapAssertion(nested,
-                                                { secret: Buffer.alloc(32, 7) });
+                                                { secret: Buffer.alloc(32,
+                                                                       7) });
   t.check(opened.ok && opened.encrypted && opened.jws === inner,
           'a five-part assertion is decrypted and the JWS inside it comes ' +
           'back', opened.description || '');
@@ -254,8 +262,8 @@ function run(t) {
   const plain = assertionGrant.unwrapAssertion(inner, {});
   t.check(plain.ok && !plain.encrypted && plain.jws === inner,
           'a THREE-part assertion comes back untouched — every client that ' +
-          'authenticated with one before encryption existed is on exactly the ' +
-          'path it was');
+          'authenticated with one before encryption existed is on exactly ' +
+          'the path it was');
 
   // **THE FIXTURE THAT MATTERS CARRIES DOTS**, because a plaintext with none
   // is refused by a dot count and this assertion has to be about more than
@@ -266,7 +274,8 @@ function run(t) {
     '{"iss":"https://issuer.example.test/x","sub":"alice"}',
     { alg: 'A256KW', enc: 'A256GCM', secret: Buffer.alloc(32, 7), cty: 'JWT' });
   const refused = assertionGrant.unwrapAssertion(notJws,
-                                                 { secret: Buffer.alloc(32, 7) });
+                                                 { secret: Buffer.alloc(32,
+                                                                        7) });
   t.check(!refused.ok && /section 3 claim 9/.test(refused.description),
           'a JWE whose plaintext is NOT a signed JWT is refused citing the ' +
           'claim it breaks: encryption does not stand in for a signature, ' +
@@ -318,10 +327,10 @@ function run(t) {
   ] });
   const read = assertionGrant.keysFrom(jwks);
   t.equal((read.keys || []).length, 1,
-          'ONE UNREADABLE KEY DOES NOT SPOIL THE SET. A JWKS commonly carries ' +
-          'a key this version of node cannot build beside ones it can, and ' +
-          'refusing the whole document would make a party unable to sign with ' +
-          'the key that was fine');
+          'ONE UNREADABLE KEY DOES NOT SPOIL THE SET. A JWKS commonly ' +
+          'carries a key this version of node cannot build beside ones it ' +
+          'can, and refusing the whole document would make a party unable to ' +
+          'sign with the key that was fine');
   t.check(assertionGrant.keysFrom('{ not json').error,
           'a JWKS that is not JSON is REFUSED rather than throwing — an ' +
           'exception here would surface at the token endpoint as a 500 with ' +
@@ -334,26 +343,28 @@ function run(t) {
           'AN RFC 9964 POST-QUANTUM KEY SURVIVES THE READ. node\'s ' +
           'createPublicKey() has no idea what an AKP is and must not be ' +
           'asked — the JWK travels WHOLE to the verifier, which routes it to ' +
-          'pq_jose.js. Without that branch the eleven post-quantum algorithms ' +
-          'this service advertises for assertions would be advertised and ' +
-          'unverifiable');
+          'pq_jose.js. Without that branch the eleven post-quantum ' +
+          'algorithms this service advertises for assertions would be ' +
+          'advertised and unverifiable');
 
   t.log.info('=== the settings, read where they are used ===');
   t.check(assertionGrant.enabled(),
-          'the grant is ON by default — the metadata advertises it only while ' +
-          'it is, because a grant_types_supported member is a promise');
+          'the grant is ON by default — the metadata advertises it only ' +
+          'while it is, because a grant_types_supported member is a promise');
   t.check(assertionGrant.requiresRegisteredIssuer(),
-          'AND THE ISSUER MUST BE DECLARED, which is one of only two refusals ' +
-          'in this service that default to on. An assertion IS the whole ' +
-          'authorization for this grant: no browser, no password, no consent ' +
-          'step, so accepting one from anybody would mean anybody who can ' +
-          'reach this port getting an access token as anybody');
+          'AND THE ISSUER MUST BE DECLARED, which is one of only two ' +
+          'refusals in this service that default to on. An assertion IS the ' +
+          'whole authorization for this grant: no browser, no password, no ' +
+          'consent step, so accepting one from anybody would mean anybody ' +
+          'who can reach this port getting an access token as anybody');
   t.check(assertionGrant.maxLifetimeSeconds() > 0,
           'and a lifetime ceiling is in force by default (RFC 7521 section ' +
           '5.2 leaves the number to the server)',
           String(assertionGrant.maxLifetimeSeconds()) + 's');
 
-  t.log.info('=== a certificate this service did not issue is not evidence ===');
+  t.log.info('=== a certificate this service did not issue is not evidence ' +
+             '===');
+  log.debug("Leaving run().");
   // The `x5c` path both halves of RFC 7523 share. Asserted here rather than
   // over HTTP because the interesting input is a certificate nobody can be
   // made to send: a perfectly valid self-signed one, presented as though it
@@ -377,9 +388,11 @@ function run(t) {
             'a chain this service ISSUED yields a key, which is the point of ' +
             'holding a certificate authority at all');
 
-    const selfPair = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const selfPair = nodeCrypto.generateKeyPairSync('rsa',
+                                                    { modulusLength: 2048 });
     const self = stsCrypto.selfSignedRsaCertificate({
-      privateKeyPem: selfPair.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+      privateKeyPem: selfPair.privateKey.export({ type: 'pkcs8',
+                                                  format: 'pem' }),
       publicKeyPem: selfPair.publicKey.export({ type: 'spki', format: 'pem' }),
       subject: 'CN=forged'
     });
@@ -387,8 +400,8 @@ function run(t) {
       x5c: [stsCrypto.stripPem(self.certPem || self.pem || '')] });
     t.check(forged && forged.error,
             'AND A CERTIFICATE THAT ARRIVES WITH THE SIGNATURE DOES NOT. ' +
-            'Taking a public key out of an unchecked x5c would be verifying a ' +
-            'signature against a key the signature came with, which proves ' +
+            'Taking a public key out of an unchecked x5c would be verifying ' +
+            'a signature against a key the signature came with, which proves ' +
             'nothing at all', (forged || {}).error);
     t.check(/chain to this realm/.test((forged || {}).error || ''),
             'and the refusal says what was missing rather than reporting a ' +
@@ -410,8 +423,9 @@ module.exports = {
   name: 'assertion_grant',
   describe: 'RFC 7521 and RFC 7523: the whole JWE matrix round-tripped both ' +
             'ways, the PBES2 ceiling, the nested-JWT checks, the twelve ' +
-            'claims that may never reach an issued token, one JWKS reader for ' +
-            'both halves of the profile, and that a certificate presented ' +
-            'WITH a signature is not evidence unless this service issued it',
+            'claims that may never reach an issued token, one JWKS reader ' +
+            'for both halves of the profile, and that a certificate ' +
+            'presented WITH a signature is not evidence unless this service ' +
+            'issued it',
   run: run
 };

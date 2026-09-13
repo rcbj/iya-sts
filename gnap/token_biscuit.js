@@ -44,16 +44,17 @@
 // ---------------------------------------------------------------------------
 // THREE THINGS ABOUT THIS LIBRARY VERSION THAT COST TIME AND ARE WORTH KNOWING.
 //
-//   * `authorize()` WITH DEFAULT LIMITS ANSWERS `RunLimit: Timeout`. Its default
-//     time budget reads the clock in a way this build cannot, so every call is
-//     `authorizeWithLimits()` / `queryWithLimits()` with `LIMITS` below. A
-//     timeout is a REFUSAL (STS-GNAP-0325), never a pass.
-//   * A PARAMETER THAT IS NOT A DATALOG TERM PANICS THE WASM MODULE. A JS `Date`
-//     handed to `addCodeWithParameters()` aborts inside Rust with
-//     `unreachable`; the term must be `{ date: <ISO string> }`, which is what the
-//     package's own `prepareTerm()` does and what `term()` here does. The panic
-//     is caught and the instance kept working in every probe, but a panic is not
-//     a control-flow mechanism, so values are prepared rather than trusted.
+//   * `authorize()` WITH DEFAULT LIMITS ANSWERS `RunLimit: Timeout`. Its
+//     default time budget reads the clock in a way this build cannot, so every
+//     call is `authorizeWithLimits()` / `queryWithLimits()` with `LIMITS`
+//     below. A timeout is a REFUSAL (STS-GNAP-0325), never a pass.
+//   * A PARAMETER THAT IS NOT A DATALOG TERM PANICS THE WASM MODULE. A JS
+//     `Date` handed to `addCodeWithParameters()` aborts inside Rust with
+//     `unreachable`; the term must be `{ date: <ISO string> }`, which is what
+//     the package's own `prepareTerm()` does and what `term()` here does. The
+//     panic is caught and the instance kept working in every probe, but a panic
+//     is not a control-flow mechanism, so values are prepared rather than
+//     trusted.
 //   * A BUILDER THAT HAS THROWN IS CONSUMED. `addCode()` with a parse error
 //     moves the builder's contents out, and the NEXT call on it panics with
 //     "empty BiscuitBuilder". Every attempt here builds a fresh builder.
@@ -137,13 +138,16 @@ const PACKAGE = '@biscuit-auth/biscuit-wasm';
 // Generous against this service's own tokens (a model of fifty rights with
 // every dimension populated is a few hundred facts, evaluated in well under a
 // millisecond) and still a bound on a hostile attenuation block.
-const LIMITS = { max_facts: 10000, max_iterations: 100, max_time_micro: 250000 };
+const LIMITS = { max_facts: 10000, max_iterations: 100,
+                 max_time_micro: 250000 };
 
 const VALUE_RE = /^[A-Za-z0-9_-]+={0,2}$/;
 
 let loading = null;
 
 function refusal(code, why) {
+  log.debug("Entering refusal().");
+  log.debug("Leaving refusal().");
   return access.refusal(code, why);
 }
 
@@ -154,12 +158,14 @@ function refusal(code, why) {
 // the process.
 // ---------------------------------------------------------------------------
 function loadBiscuit() {
+  log.debug("Entering loadBiscuit().");
   if (!loading) {
     loading = instantiate().catch(function (e) {
       loading = null;
       throw e;
     });
   }
+  log.debug("Leaving loadBiscuit().");
   return loading;
 }
 
@@ -171,19 +177,22 @@ async function instantiate() {
     throw new Error(PACKAGE + ' is not installed');
   }
   const moduleDir = path.join(dir, 'module');
-  const compiled = await WebAssembly.compile(fs.readFileSync(path.join(moduleDir, 'biscuit_bg.wasm')));
+  const compiled = await WebAssembly.compile(fs.readFileSync(
+      path.join(moduleDir, 'biscuit_bg.wasm')));
   const imports = {};
   const wanted = WebAssembly.Module.imports(compiled);
   for (let i = 0; i < wanted.length; i++) {
     const name = wanted[i].module;
     if (!imports[name]) {
-      imports[name] = await import(url.pathToFileURL(path.join(moduleDir, name)).href);
+      imports[name] = await import(url.pathToFileURL(
+          path.join(moduleDir, name)).href);
     }
   }
   const bg = imports['./biscuit_bg.js'];
   if (!bg || typeof bg.__wbg_set_wasm !== 'function') {
     log.debug("Leaving instantiate(). Glue module not found.");
-    throw new Error('the biscuit glue module ./biscuit_bg.js was not among the WASM imports');
+    throw new Error('the biscuit glue module ./biscuit_bg.js was not among ' +
+                    'the WASM imports');
   }
   const instance = await WebAssembly.instantiate(compiled, imports);
   bg.__wbg_set_wasm(instance.exports);
@@ -203,38 +212,54 @@ async function instantiate() {
 }
 
 async function library() {
+  log.debug("Entering library().");
   try {
+    log.debug("Leaving library().");
     return { ok: true, bg: await loadBiscuit() };
   } catch (e) {
-    log.error(errorCodes.tag('STS-GNAP-0321') + 'the biscuit WASM library could not be loaded: ' +
+    log.error(errorCodes.tag('STS-GNAP-0321') + 'the biscuit WASM library ' +
+                                                'could not be loaded: ' +
               e.message);
-    return refusal('STS-GNAP-0321', 'the biscuit library could not be loaded: ' + e.message);
+    log.debug("Leaving library().");
+    return refusal('STS-GNAP-0321',
+                   'the biscuit library could not be loaded: ' + e.message);
   }
 }
 
 // The library's errors are plain objects (`{ Format: { Signature: … } }`);
 // render one for a `why` without trusting its shape.
 function errorText(e) {
+  log.debug("Entering errorText().");
   if (e instanceof Error) {
+    log.debug("Leaving errorText().");
     return e.message;
   }
   try {
+    log.debug("Leaving errorText().");
     return JSON.stringify(e);
   } catch (err) {
+    log.debug("Caught in errorText(): " + ((err && err.message) || err));
+    log.debug("Leaving errorText().");
     // A cyclic or exotic value: String() is the best available description.
     return String(e);
   }
 }
 
 function dateTerm(seconds) {
+  log.debug("Entering dateTerm().");
+  log.debug("Leaving dateTerm().");
   return { date: new Date(seconds * 1000).toISOString() };
 }
 
 function rawKey(keyObject, member) {
-  if (!keyObject || typeof keyObject.export !== 'function' || keyObject.asymmetricKeyType !== 'ed25519') {
+  log.debug("Entering rawKey().");
+  if (!keyObject || typeof keyObject.export !== 'function' ||
+      keyObject.asymmetricKeyType !== 'ed25519') {
+    log.debug("Leaving rawKey().");
     return null;
   }
   const jwk = keyObject.export({ format: 'jwk' });
+  log.debug("Leaving rawKey().");
   return jwk[member] ? Buffer.from(jwk[member], 'base64url') : null;
 }
 
@@ -248,6 +273,7 @@ function program() {
   log.debug("Leaving program().");
   return {
     add: function (template, values) {
+      log.debug("Entering add().");
       let line = template;
       (values || []).forEach(function (v) {
         const name = 'p' + (n++);
@@ -255,8 +281,13 @@ function program() {
         line = line.replace('?', '{' + name + '}');
       });
       lines.push(line);
+      log.debug("Leaving add().");
     },
-    source: function () { return lines.join('\n'); },
+    source: function () {
+      log.debug("Entering source().");
+      log.debug("Leaving source().");
+      return lines.join('\n');
+    },
     params: params
   };
 }
@@ -285,8 +316,10 @@ function authorityProgram(model) {
     }
     p.add('access_type(?, ?);', [i, right.type]);
     [['actions', 'access_action'], ['locations', 'access_location'],
-     ['datatypes', 'access_datatype'], ['privileges', 'access_privilege']].forEach(function (pair) {
-      (right[pair[0]] || []).forEach(function (v) { p.add(pair[1] + '(?, ?);', [i, v]); });
+     ['datatypes', 'access_datatype'],
+     ['privileges', 'access_privilege']].forEach(function (pair) {
+      (right[pair[0]] ||
+       []).forEach(function (v) { p.add(pair[1] + '(?, ?);', [i, v]); });
     });
     if (right.identifier !== undefined) {
       p.add('access_identifier(?, ?);', [i, right.identifier]);
@@ -332,7 +365,8 @@ async function mint(model, keys) {
   const d = rawKey(keys && keys.privateKey, 'd');
   if (!d) {
     log.debug("Leaving mint(). Private key unusable.");
-    return refusal('STS-GNAP-0320', 'a biscuit is minted with an Ed25519 private KeyObject.');
+    return refusal('STS-GNAP-0320', 'a biscuit is minted with an Ed25519 ' +
+                                    'private KeyObject.');
   }
   const lib = await library();
   if (!lib.ok) {
@@ -342,7 +376,8 @@ async function mint(model, keys) {
   const bg = lib.bg;
   let value;
   try {
-    const root = bg.PrivateKey.fromBytes(new Uint8Array(d), bg.SignatureAlgorithm.Ed25519);
+    const root = bg.PrivateKey.fromBytes(new Uint8Array(d),
+                                         bg.SignatureAlgorithm.Ed25519);
     const p = authorityProgram(valid.model);
     const builder = bg.Biscuit.builder();
     builder.addCodeWithParameters(p.source(), p.params, {});
@@ -350,16 +385,20 @@ async function mint(model, keys) {
     value = token.toBase64();
     token.free();
   } catch (e) {
-    log.warn(errorCodes.tag('STS-GNAP-0320') + 'biscuit minting failed in the library: ' + errorText(e));
+    log.warn(errorCodes.tag('STS-GNAP-0320') + 'biscuit minting failed in ' +
+                                               'the library: ' + errorText(e));
     log.debug("Leaving mint(). Library failure.");
-    return refusal('STS-GNAP-0320', 'the biscuit library refused to mint: ' + errorText(e));
+    return refusal('STS-GNAP-0320',
+                   'the biscuit library refused to mint: ' + errorText(e));
   }
   if (!VALUE_RE.test(value)) {
     // token68 (RFC 9110 section 11.2) allows `=` only at the end. The library
     // emits URL-safe base64; this is the check that it still does.
-    log.warn(errorCodes.tag('STS-GNAP-0320') + 'the biscuit library emitted a value that is not token68.');
+    log.warn(errorCodes.tag('STS-GNAP-0320') + 'the biscuit library emitted ' +
+                                               'a value that is not token68.');
     log.debug("Leaving mint(). Not token68.");
-    return refusal('STS-GNAP-0320', 'the biscuit library emitted a value that is not token68.');
+    return refusal('STS-GNAP-0320', 'the biscuit library emitted a value ' +
+                                    'that is not token68.');
   }
   log.debug("Leaving mint(). jti=" + valid.model.jti);
   return { value: value, format: FORMAT, jti: valid.model.jti };
@@ -374,17 +413,20 @@ function parseToken(bg, value, keys) {
   const x = rawKey(keys && keys.publicKey, 'x');
   if (!x) {
     log.debug("Leaving parseToken(). Public key unusable.");
-    return refusal('STS-GNAP-0320', 'a biscuit is verified with an Ed25519 public KeyObject.');
+    return refusal('STS-GNAP-0320', 'a biscuit is verified with an Ed25519 ' +
+                                    'public KeyObject.');
   }
   try {
-    const root = bg.PublicKey.fromBytes(new Uint8Array(x), bg.SignatureAlgorithm.Ed25519);
+    const root = bg.PublicKey.fromBytes(new Uint8Array(x),
+                                        bg.SignatureAlgorithm.Ed25519);
     const token = bg.Biscuit.fromBase64(value, root);
     log.debug("Leaving parseToken(). Parsed.");
     return { ok: true, token: token };
   } catch (e) {
     log.debug("Leaving parseToken(). " + errorText(e));
-    return refusal('STS-GNAP-0322', 'the biscuit did not parse, or its signature chain does not ' +
-                   'verify under this authorization server\'s public key: ' + errorText(e));
+    return refusal('STS-GNAP-0322', 'the biscuit did not parse, or its ' +
+                   'signature chain does not verify under this authorization ' +
+                   'server\'s public key: ' + errorText(e));
   }
 }
 
@@ -401,8 +443,10 @@ function requestProgram(p, requiredAccess) {
     }
     p.add('request_type(?, ?);', [i, right.type]);
     [['actions', 'request_action'], ['locations', 'request_location'],
-     ['datatypes', 'request_datatype'], ['privileges', 'request_privilege']].forEach(function (pair) {
-      (Array.isArray(right[pair[0]]) ? right[pair[0]] : []).forEach(function (v) {
+     ['datatypes', 'request_datatype'],
+     ['privileges', 'request_privilege']].forEach(function (pair) {
+      (Array.isArray(right[pair[0]]) ? right[pair[0]] : []).forEach(
+          function (v) {
         if (typeof v === 'string') {
           p.add(pair[1] + '(?, ?);', [i, v]);
         }
@@ -443,12 +487,17 @@ function buildAuthorizer(bg, token, context, now) {
 }
 
 function query(bg, authorizer, rule) {
-  return authorizer.queryWithLimits(bg.Rule.fromString(rule), LIMITS).map(function (f) {
+  log.debug("Entering query().");
+  log.debug("Leaving query().");
+  return authorizer.queryWithLimits(bg.Rule.fromString(rule), LIMITS)
+                   .map(function (f) {
     return f.terms();
   });
 }
 
 function seconds(term) {
+  log.debug("Entering seconds().");
+  log.debug("Leaving seconds().");
   return term instanceof Date ? Math.floor(term.getTime() / 1000) : undefined;
 }
 
@@ -460,8 +509,11 @@ function seconds(term) {
 function readModel(bg, authorizer) {
   log.debug("Entering readModel().");
   function one(rule) {
+    log.debug("Entering one().");
     const rows = query(bg, authorizer, rule);
-    return rows.length === 1 ? rows[0][0] : (rows.length === 0 ? null : undefined);
+    log.debug("Leaving one().");
+    return rows.length === 1 ? rows[0][0] :
+           (rows.length === 0 ? null : undefined);
   }
   const jti = one('data($v) <- gnap_token($v)');
   const iss = one('data($v) <- issuer($v)');
@@ -471,21 +523,26 @@ function readModel(bg, authorizer) {
   const sub = one('data($v) <- subject($v)');
   const client = one('data($v) <- client_instance($v)');
   const label = one('data($v) <- label($v)');
-  const aud = query(bg, authorizer, 'data($v) <- audience($v)').map(function (r) { return r[0]; });
-  const flags = query(bg, authorizer, 'data($v) <- flag($v)').map(function (r) { return r[0]; });
+  const aud = query(bg, authorizer, 'data($v) <- audience($v)').map(
+      function (r) { return r[0]; });
+  const flags = query(bg, authorizer, 'data($v) <- flag($v)').map(
+      function (r) { return r[0]; });
   const rows = query(bg, authorizer, 'data($i, $j) <- access($i, $j)')
     .sort(function (a, b) { return a[0] - b[0]; });
   const rights = [];
   for (let i = 0; i < rows.length; i++) {
     if (rows[i][0] !== i || typeof rows[i][1] !== 'string') {
       log.debug("Leaving readModel(). access indices are not 0..n-1.");
-      return refusal('STS-GNAP-0323', 'the biscuit\'s access facts are not numbered 0..n-1.');
+      return refusal('STS-GNAP-0323', 'the biscuit\'s access facts are not ' +
+                                      'numbered 0..n-1.');
     }
     try {
       rights.push(JSON.parse(rows[i][1]));
     } catch (e) {
+      log.debug("Caught in readModel(): " + ((e && e.message) || e));
       log.debug("Leaving readModel(). access " + i + " is not JSON.");
-      return refusal('STS-GNAP-0323', 'the biscuit\'s access fact ' + i + ' is not JSON.');
+      return refusal('STS-GNAP-0323', 'the biscuit\'s access fact ' + i + ' ' +
+          'is not JSON.');
     }
   }
   const jkt = one('data($v) <- cnf_jkt($v)');
@@ -493,11 +550,14 @@ function readModel(bg, authorizer) {
   const kid = one('data($v) <- cnf_kid($v)');
   const bearer = query(bg, authorizer, 'data($v) <- bearer($v)').length;
   const bindings = [jkt, x5t, kid].filter(function (v) { return v !== null; });
-  if ([jti, iss, iat, exp, nbf, sub, client, label, jkt, x5t, kid].some(function (v) { return v === undefined; }) ||
+  if ([jti, iss, iat, exp, nbf, sub, client, label, jkt, x5t, kid].some(
+      function (v) { return v === undefined; }) ||
       bindings.length + bearer !== 1) {
-    log.debug("Leaving readModel(). A singular fact is repeated, or the binding is not exactly one.");
-    return refusal('STS-GNAP-0323', 'the biscuit\'s authority block repeats a fact that must be ' +
-                   'singular, or does not carry exactly one key binding.');
+    log.debug("Leaving readModel(). A singular fact is repeated, or the " +
+              "binding is not exactly one.");
+    return refusal('STS-GNAP-0323', 'the biscuit\'s authority block repeats ' +
+                   'a fact that must be singular, or does not carry exactly ' +
+                   'one key binding.');
   }
   let cnf = null;
   if (jkt !== null) {
@@ -508,14 +568,17 @@ function readModel(bg, authorizer) {
     cnf = { kid: kid };
   }
   const model = {
-    jti: jti, iss: iss, sub: sub, aud: aud, instanceId: client, access: rights, flags: flags,
-    cnf: cnf, iat: seconds(iat), nbf: nbf === null ? null : seconds(nbf), exp: seconds(exp),
+    jti: jti, iss: iss, sub: sub, aud: aud, instanceId: client, access: rights,
+    flags: flags,
+    cnf: cnf, iat: seconds(iat), nbf: nbf === null ? null :
+                                      seconds(nbf), exp: seconds(exp),
     label: label
   };
   const valid = access.validateModel(model);
   if (!valid.ok) {
     log.debug("Leaving readModel(). Not a valid model.");
-    return refusal('STS-GNAP-0323', 'the biscuit\'s authority block is not a GNAP token model: ' +
+    return refusal('STS-GNAP-0323', 'the biscuit\'s authority block is not a ' +
+                                    'GNAP token model: ' +
                    valid.why);
   }
   log.debug("Leaving readModel(). Read.");
@@ -524,19 +587,25 @@ function readModel(bg, authorizer) {
 
 function authorizationRefusal(e) {
   log.debug("Entering authorizationRefusal().");
-  const failed = e && e.FailedLogic && e.FailedLogic.Unauthorized && e.FailedLogic.Unauthorized.checks;
+  const failed = e && e.FailedLogic && e.FailedLogic.Unauthorized &&
+                 e.FailedLogic.Unauthorized.checks;
   if (e && e.RunLimit) {
     log.debug("Leaving authorizationRefusal(). Run limit.");
-    return refusal('STS-GNAP-0325', 'biscuit authorization exceeded its run limits (' +
-                   errorText(e.RunLimit) + '), which is a refusal and never a pass.');
+    return refusal('STS-GNAP-0325', 'biscuit authorization exceeded its run ' +
+                                    'limits (' +
+                   errorText(e.RunLimit) + '), which is a refusal and never ' +
+                                           'a pass.');
   }
   const rules = (Array.isArray(failed) ? failed : []).map(function (c) {
     const where = c.Block || c.Authorizer || {};
-    return (c.Block ? 'block ' + where.block_id + ': ' : 'authorizer: ') + where.rule;
+    return (c.Block ? 'block ' + where.block_id + ': ' :
+            'authorizer: ') + where.rule;
   });
-  log.debug("Leaving authorizationRefusal(). " + rules.length + " failed check(s).");
+  log.debug("Leaving authorizationRefusal(). " + rules.length + " failed " +
+      "check(s).");
   return refusal('STS-GNAP-0324', 'a biscuit check failed' +
-                 (rules.length ? ' — ' + rules.join('; ') : ': ' + errorText(e)) + '.');
+                 (rules.length ? ' — ' + rules.join('; ') :
+                  ': ' + errorText(e)) + '.');
 }
 
 // ---------------------------------------------------------------------------
@@ -564,9 +633,10 @@ async function verify(value, keys, context) {
     try {
       authorizer = buildAuthorizer(bg, token, ctx, now);
     } catch (e) {
-      log.debug("Leaving verify(). Authorizer could not be built: " + errorText(e));
-      return refusal('STS-GNAP-0324', 'the biscuit authorizer could not be built for this ' +
-                     'presentation: ' + errorText(e));
+      log.debug("Leaving verify(). Authorizer could not be built: " +
+                errorText(e));
+      return refusal('STS-GNAP-0324', 'the biscuit authorizer could not be ' +
+                     'built for this presentation: ' + errorText(e));
     }
     let read;
     try {
@@ -574,13 +644,16 @@ async function verify(value, keys, context) {
     } catch (e) {
       log.debug("Leaving verify(). Model query failed: " + errorText(e));
       return e && e.RunLimit ? authorizationRefusal(e)
-        : refusal('STS-GNAP-0323', 'the biscuit\'s authority block could not be read: ' + errorText(e));
+        : refusal('STS-GNAP-0323', 'the biscuit\'s authority block could not ' +
+                                   'be read: ' + errorText(e));
     }
     if (!read.ok) {
       log.debug("Leaving verify(). Model refused.");
       return read;
     }
-    const failed = access.checkPresentation(read.model, Object.assign({}, ctx, { now: now }));
+    const failed = access.checkPresentation(read.model,
+                                            Object.assign({}, ctx,
+                                                          { now: now }));
     if (failed) {
       log.debug("Leaving verify(). Presentation refused.");
       return failed;
@@ -592,7 +665,8 @@ async function verify(value, keys, context) {
       return authorizationRefusal(e);
     }
     const blocks = token.countBlocks();
-    log.debug("Leaving verify(). Verified jti=" + read.model.jti + " blocks=" + blocks);
+    log.debug("Leaving verify(). Verified jti=" + read.model.jti + " blocks=" +
+              blocks);
     return { ok: true, model: read.model, attenuated: blocks > 1 };
   } finally {
     if (authorizer) {
@@ -614,7 +688,8 @@ async function attenuate(value, datalogSource, keys, parameters) {
   log.debug("Entering attenuate().");
   if (typeof datalogSource !== 'string' || !datalogSource.trim()) {
     log.debug("Leaving attenuate(). No source.");
-    return refusal('STS-GNAP-0326', 'an attenuation is a non-empty block of Datalog.');
+    return refusal('STS-GNAP-0326', 'an attenuation is a non-empty block of ' +
+                                    'Datalog.');
   }
   const lib = await library();
   if (!lib.ok) {
@@ -632,15 +707,18 @@ async function attenuate(value, datalogSource, keys, parameters) {
   const names = Object.keys(given);
   for (let i = 0; i < names.length; i++) {
     const v = given[names[i]];
-    if (typeof v === 'string' || typeof v === 'boolean' || Number.isSafeInteger(v)) {
+    if (typeof v === 'string' || typeof v === 'boolean' ||
+        Number.isSafeInteger(v)) {
       params[names[i]] = v;
     } else if (v instanceof Date) {
       params[names[i]] = { date: v.toISOString() };
     } else {
       parsed.token.free();
-      log.debug("Leaving attenuate(). Parameter " + names[i] + " is not a term.");
-      return refusal('STS-GNAP-0326', 'attenuation parameter "' + names[i] + '" must be a string, ' +
-                     'boolean, integer or Date.');
+      log.debug("Leaving attenuate(). Parameter " + names[i] +
+                " is not a term.");
+      return refusal('STS-GNAP-0326',
+                     'attenuation parameter "' + names[i] + '" ' +
+                     'must be a string, boolean, integer or Date.');
     }
   }
   let out;
@@ -652,7 +730,8 @@ async function attenuate(value, datalogSource, keys, parameters) {
     next.free();
   } catch (e) {
     log.debug("Leaving attenuate(). Library refused: " + errorText(e));
-    return refusal('STS-GNAP-0326', 'the attenuation block was refused: ' + errorText(e));
+    return refusal('STS-GNAP-0326',
+                   'the attenuation block was refused: ' + errorText(e));
   } finally {
     parsed.token.free();
   }
@@ -671,7 +750,8 @@ function describe() {
       ['Serialisation', ['Protobuf, URL-safe base64']],
       ['Authorization logic', ['Datalog (Biscuit v3), bounded by run limits']]
     ],
-    carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags', 'cnf',
+    carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
+              'cnf',
               'iat', 'nbf', 'exp', 'label'],
     cannot: []
   };

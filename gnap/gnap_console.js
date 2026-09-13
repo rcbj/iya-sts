@@ -16,10 +16,11 @@
 // directory reading this family's stores field by field is a second place for
 // that knowledge to go stale.
 //
-// It holds `admin-core/`'s properties exactly, and `tests/admin_actions_layer.js`'s
-// reasoning applies to it: **no route, no `res`, no markup**, and a view reads
-// nothing from the request but its query. `gnap_admin.js` draws the markup and
-// `mgmt-api/admin_api.js` sends the JSON, both out of the SAME call.
+// It holds `admin-core/`'s properties exactly, and
+// `tests/admin_actions_layer.js`'s reasoning applies to it: **no route, no
+// `res`, no markup**, and a view reads nothing from the request but its query.
+// `gnap_admin.js` draws the markup and `mgmt-api/admin_api.js` sends the JSON,
+// both out of the SAME call.
 //
 //   GET  /admin/gnap           gnapView()         Protocols -> GNAP
 //   GET  /admin/gnap/monitor   gnapMonitorView()  Monitoring -> GNAP grants
@@ -43,17 +44,23 @@ const GNAP_ACTIONS = ['revoke-grant', 'delete-resource-set'];
 const STATES = ['processing', 'pending', 'approved', 'finalized'];
 
 function refused(code, result) {
+  log.debug("Entering refused().");
+  log.debug("Leaving refused().");
   return errorCodes.mark(result, code);
 }
 
 function settingsJson() {
+  log.debug("Entering settingsJson().");
   const group = config.groups().filter(function (one) {
     return one.group === 'GNAP';
   })[0];
+  log.debug("Leaving settingsJson().");
   return group ? group.settings : [];
 }
 
 function grantRow(grant) {
+  log.debug("Entering grantRow().");
+  log.debug("Leaving grantRow().");
   return {
     id: grant.id,
     state: grant.state,
@@ -62,7 +69,9 @@ function grantRow(grant) {
     client: grant.client ? grant.client.identifier : null,
     proof: grant.client ? grant.client.proof : null,
     resourceOwner: grant.ro ? grant.ro.username : null,
-    decision: grant.decision ? (grant.decision.approved ? 'approved' : grant.decision.error || 'denied')
+    decision: grant.decision ?
+              (grant.decision.approved ? 'approved' :
+               grant.decision.error || 'denied')
                              : null,
     interaction: grant.interaction ? {
       modes: Object.keys(grant.interaction.modes || {}),
@@ -79,6 +88,8 @@ function grantRow(grant) {
 }
 
 function resourceRow(row) {
+  log.debug("Entering resourceRow().");
+  log.debug("Leaving resourceRow().");
   return {
     reference: row.reference,
     resourceServer: row.rsIdentifier,
@@ -99,16 +110,21 @@ function gnapView(req) {
   log.debug("Entering gnapView().");
   const query = (req && req.query) || {};
   const base = baseUrlOf(req);
-  const wantedState = STATES.indexOf(String(query.state || '')) >= 0 ? String(query.state) : '';
+  const wantedState = STATES.indexOf(String(query.state || '')) >= 0 ?
+                      String(query.state) : '';
   const allGrants = store.listGrants().filter(function (grant) {
     return !wantedState || grant.state === wantedState;
   });
-  const grantPaging = adminViews.pagingOf(query, allGrants.length, { name: 'grants', noun: 'grants' });
+  const grantPaging = adminViews.pagingOf(query, allGrants.length,
+                                          { name: 'grants', noun: 'grants' });
   const resources = store.listResources();
   const resourcePaging = adminViews.pagingOf(query, resources.length,
-                                             { name: 'resources', noun: 'resource sets' });
+                                             { name: 'resources',
+                                               noun: 'resource ' +
+                                                 'sets' });
   const profiles = authorizationServers.list().map(function (profile) {
-    return { id: profile.id, label: profile.label || '', capabilities: grants.capabilities(req, profile.id) };
+    return { id: profile.id, label: profile.label || '',
+             capabilities: grants.capabilities(req, profile.id) };
   });
   let material = {};
   try {
@@ -116,13 +132,15 @@ function gnapView(req) {
   } catch (e) {
     // A realm with no Ed25519 key yet (it is generated on first use). The page
     // says the material is not available rather than failing to draw.
-    log.debug("gnapView(): verification material is not available: " + e.message);
+    log.debug("gnapView(): verification material is not available: " +
+              e.message);
   }
   const json = {
     page: '/admin/gnap',
     title: 'GNAP',
     enabled: config.value('gnap.enabled') !== false,
-    specifications: ['RFC 9635', 'RFC 9767', 'RFC 9421', 'RFC 9530', 'RFC 9493'],
+    specifications: ['RFC 9635', 'RFC 9767', 'RFC 9421', 'RFC 9530',
+                     'RFC 9493'],
     endpoints: {
       grant: base + '/gnap',
       discovery: 'OPTIONS ' + base + '/gnap',
@@ -144,11 +162,14 @@ function gnapView(req) {
       state: wantedState || null,
       states: STATES,
       paging: adminViews.pagingJson(grantPaging),
-      rows: allGrants.slice(grantPaging.offset, grantPaging.offset + grantPaging.perPage).map(grantRow)
+      rows: allGrants.slice(grantPaging.offset,
+                            grantPaging.offset + grantPaging.perPage)
+                     .map(grantRow)
     },
     resourceSets: {
       paging: adminViews.pagingJson(resourcePaging),
-      rows: resources.slice(resourcePaging.offset, resourcePaging.offset + resourcePaging.perPage)
+      rows: resources.slice(resourcePaging.offset,
+                            resourcePaging.offset + resourcePaging.perPage)
         .map(resourceRow)
     },
     actions: GNAP_ACTIONS,
@@ -175,7 +196,8 @@ function gnapMonitorView(req) {
   });
   Object.keys(snapshot.rows).forEach(function (id) {
     if (!byId[id]) {
-      byId[id] = applications.get(id) || { identifier: id, name: null, kinds: [], registered: false };
+      byId[id] = applications.get(id) ||
+                 { identifier: id, name: null, kinds: [], registered: false };
     }
   });
   const liveTokens = store.listTokens();
@@ -187,29 +209,36 @@ function gnapMonitorView(req) {
       return grant.client && grant.client.identifier === id;
     });
     const active = liveTokens.filter(function (record) {
-      return record.instanceId === id && !record.revoked && (!record.exp || record.exp > now);
+      return record.instanceId === id && !record.revoked &&
+             (!record.exp || record.exp > now);
     }).length;
     return {
       identifier: id,
       name: app.name || null,
       kinds: app.kinds || [],
       role: (app.kinds || []).indexOf(grants.KIND_RS) >= 0
-        ? ((app.kinds || []).indexOf(grants.KIND_CLIENT) >= 0 ? 'client and resource server' : 'resource server')
+        ? ((app.kinds || []).indexOf(grants.KIND_CLIENT) >= 0 ? 'client and ' +
+            'resource server' : 'resource ' +
+            'server')
         : 'client',
       registered: !!app.registered,
       finishUris: grants.fieldValues(app, 'gnapFinishUri'),
       webApplication: grants.fieldValues(app, 'gnapFinishUri').length > 0,
       grantsHeld: { total: mine.length,
-                    pending: mine.filter(function (g) { return g.state === 'pending'; }).length,
-                    approved: mine.filter(function (g) { return g.state === 'approved'; }).length,
-                    finalized: mine.filter(function (g) { return g.state === 'finalized'; }).length },
+                    pending: mine.filter(function (
+                        g) { return g.state === 'pending'; }).length,
+                    approved: mine.filter(function (
+                        g) { return g.state === 'approved'; }).length,
+                    finalized: mine.filter(function (
+                        g) { return g.state === 'finalized'; }).length },
       activeTokens: active,
       counters: counted,
       lastAt: counted.lastAt,
       lastEvent: counted.lastEvent
     };
   });
-  const paging = adminViews.pagingOf(query, rows.length, { noun: 'applications' });
+  const paging = adminViews.pagingOf(query, rows.length,
+                                     { noun: 'applications' });
   const totals = {};
   snapshot.events.forEach(function (event) {
     totals[event.counter] = 0;
@@ -244,12 +273,13 @@ function gnapMonitorView(req) {
 // ---------------------------------------------------------------------------
 // POST /admin/gnap — the two things an operator does to GNAP state by hand.
 //
-// **Revoking a grant is the client's section 5.4 act performed by an operator**,
-// and it goes through the same path — the grant's tokens revoked, the grant
-// finalized, CAEP told — rather than a delete, so what the client sees next is
-// exactly what it would see had it revoked the grant itself. A resource set is
-// deleted outright: its reference stops resolving, which is the operator's
-// intent, and tokens already issued against it keep the rights they carry.
+// **Revoking a grant is the client's section 5.4 act performed by an
+// operator**, and it goes through the same path — the grant's tokens revoked,
+// the grant finalized, CAEP told — rather than a delete, so what the client
+// sees next is exactly what it would see had it revoked the grant itself. A
+// resource set is deleted outright: its reference stops resolving, which is the
+// operator's intent, and tokens already issued against it keep the rights they
+// carry.
 // ---------------------------------------------------------------------------
 function gnapAction(body, context) {
   log.debug("Entering gnapAction(). action=" + (body && body.action));
@@ -261,32 +291,43 @@ function gnapAction(body, context) {
     const grant = id ? store.getGrant(id) : null;
     if (!grant) {
       log.debug("Leaving gnapAction(). No such grant.");
-      return refused('STS-GNAP-0660', { ok: false, errors: ['There is no grant "' + id + '" in this ' +
-                     'realm. Name one from the list on /admin/gnap.'] });
+      return refused('STS-GNAP-0660', { ok: false, errors: ['There is no ' +
+          'grant "' + id + '" ' +
+                     'in this realm. Name one from the list on ' +
+                     '/admin/gnap.'] });
     }
     if (grant.state === store.STATE.FINALIZED) {
       log.debug("Leaving gnapAction(). Already finalized.");
-      return { ok: true, grant: grantRow(grant), message: 'The grant was already finalized; nothing changed.' };
+      return { ok: true, grant: grantRow(grant), message: 'The grant was ' +
+          'already finalized; nothing changed.' };
     }
     grants.revokeTokens(grant, 'grant revoked by an administrator');
     grant.state = store.STATE.FINALIZED;
     store.dropContinuation(grant);
-    store.saveGrant(grant, 'revoked by an administrator' + (actor ? ' (' + actor + ')' : ''));
+    store.saveGrant(grant,
+                    'revoked by an administrator' +
+                    (actor ? ' (' + actor + ')' : ''));
     monitor.record(grant.client.identifier, 'grant.revoked', {});
-    audit.audit({ action: 'gnap.grant.revoke', category: 'protocol', protocol: 'GNAP',
-      channel: 'http', outcome: 'success', actor: actor, target: grant.client.identifier,
+    audit.audit({ action: 'gnap.grant.revoke', category: 'protocol',
+      protocol: 'GNAP',
+      channel: 'http', outcome: 'success', actor: actor,
+      target: grant.client.identifier,
       summary: 'An administrator revoked a GNAP grant',
-      detail: { grant: grant.id, via: ctx.via || '', tokens: (grant.tokens || []).length } });
+      detail: { grant: grant.id, via: ctx.via || '',
+                tokens: (grant.tokens || []).length } });
     try {
-      require('./gnap_signals').grantRevoked(ctx.req || null, grant, 'An administrator revoked the grant.');
+      require('./gnap_signals').grantRevoked(ctx.req || null, grant, 'An ' +
+          'administrator revoked the grant.');
     } catch (e) {
       // The revocation is done; a signal that could not be sent is logged by
       // gnap_signals itself and must not undo the answer.
-      log.debug("gnapAction(): the CAEP signal could not be started: " + e.message);
+      log.debug("gnapAction(): the CAEP signal could not be started: " +
+                e.message);
     }
     log.debug("Leaving gnapAction(). Revoked.");
     return { ok: true, grant: grantRow(grant),
-             message: 'Grant ' + grant.id + ' is finalized and its ' + (grant.tokens || []).length +
+             message: 'Grant ' + grant.id + ' is finalized and its ' +
+                      (grant.tokens || []).length +
                       ' token(s) are revoked.' };
   }
   if (action === 'delete-resource-set') {
@@ -294,20 +335,26 @@ function gnapAction(body, context) {
     const row = reference ? store.resourceByReference(reference) : null;
     if (!row) {
       log.debug("Leaving gnapAction(). No such resource set.");
-      return refused('STS-GNAP-0661', { ok: false, errors: ['There is no registered resource set "' +
+      return refused('STS-GNAP-0661', { ok: false, errors: ['There is no ' +
+          'registered resource set "' +
                      reference + '" in this realm.'] });
     }
     store.deleteResource(reference);
-    audit.audit({ action: 'gnap.rs.register', category: 'protocol', protocol: 'GNAP', channel: 'http',
+    audit.audit({ action: 'gnap.rs.register', category: 'protocol',
+      protocol: 'GNAP', channel: 'http',
       outcome: 'success', actor: actor, target: row.rsIdentifier,
       summary: 'An administrator deleted a GNAP resource set',
       detail: { reference: reference, via: ctx.via || '' } });
     log.debug("Leaving gnapAction(). Deleted.");
-    return { ok: true, reference: reference, message: 'The resource set ' + reference + ' is deleted; ' +
-             'the reference no longer resolves in a grant request.' };
+    return { ok: true, reference: reference,
+             message: 'The resource set ' + reference + ' ' +
+             'is deleted; the reference no longer resolves in a grant ' +
+             'request.' };
   }
   log.debug("Leaving gnapAction(). Unknown action.");
-  return refused('STS-GNAP-0662', { ok: false, errors: ['Unknown action "' + action + '". The two are: ' +
+  return refused('STS-GNAP-0662',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'The two are: ' +
                  GNAP_ACTIONS.join(', ') + '.'] });
 }
 

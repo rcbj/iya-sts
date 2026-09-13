@@ -62,6 +62,12 @@ const os = require('os');
 const path = require('path');
 const childProcess = require('child_process');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'spiffe_authority',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // EVERY CLAIM IN THIS FILE IS MADE IN A CHILD PROCESS — see the header.
 //
@@ -74,6 +80,7 @@ const childProcess = require('child_process');
 // all.
 // ---------------------------------------------------------------------------
 function inAFreshProcess() {
+  log.debug("Entering inAFreshProcess().");
   const out = path.join(os.tmpdir(),
                         'sts-spiffe-authority-' + process.pid + '.json');
   const script =
@@ -146,6 +153,7 @@ function inAFreshProcess() {
   try {
     childProcess.execFileSync(process.execPath, ['-e', script],
                               { stdio: 'ignore', timeout: 120000 });
+    log.debug("Leaving inAFreshProcess().");
     return JSON.parse(fs.readFileSync(out, 'utf8'));
   } finally {
     try {
@@ -153,11 +161,13 @@ function inAFreshProcess() {
     } catch (e) {
       // Gone, or never written; the read above has already decided whether
       // this file can assert anything.
+      log.debug("Caught in inAFreshProcess(): " + ((e && e.message) || e));
     }
   }
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   const seen = inAFreshProcess();
   if (seen.threw) {
     // A test that could not RUN, which `run.js` reports differently from a
@@ -218,10 +228,10 @@ async function run(t) {
   t.log.info('=== the stored form is JSON-safe and the live form is not ===');
   const storedX509 = (held.x509 || [])[0] || {};
   t.check(typeof storedX509.certificateDer === 'string',
-          'certificateDer is a STRING in the store. It is a Buffer in memory, ' +
-          'and a Buffer written straight to the journal comes back as ' +
-          '{"type":"Buffer","data":[…]} — an object that every reader here ' +
-          'would then call .toString("base64") on and get nonsense from',
+          'certificateDer is a STRING in the store. It is a Buffer in ' +
+          'memory, and a Buffer written straight to the journal comes back ' +
+          'as {"type":"Buffer","data":[…]} — an object that every reader ' +
+          'here would then call .toString("base64") on and get nonsense from',
           typeof storedX509.certificateDer);
 
   // **THE ROUND TRIP IS MADE IN THIS PROCESS AND THAT IS STILL THE REAL
@@ -248,7 +258,8 @@ async function run(t) {
   // -------------------------------------------------------------------------
   // 3. A ROTATION IS THE SERVICE'S, NOT THIS PROCESS'S.
   // -------------------------------------------------------------------------
-  t.log.info('=== rotating writes through the store, and the sequence moves ===');
+  t.log.info('=== rotating writes through the store, and the sequence moves ' +
+             '===');
   t.check(seen.seqAfter === seen.seqBefore + 1,
           'ROTATING ADVANCES THE SEQUENCE. It is how a relying party knows ' +
           'the bundle it holds is stale, so a rotation that left it alone ' +
@@ -305,6 +316,7 @@ async function run(t) {
           'and the published document reports that same sequence rather than ' +
           'one of its own',
           String(seen.bundleSequence));
+  log.debug("Leaving run().");
 }
 
 module.exports = {

@@ -2,7 +2,8 @@
 //
 // ---------------------------------------------------------------------------
 // THE MOCK STS'S ADMIN CONSOLE AT /admin, DRIVEN IN A REAL BROWSER: EVERY PAGE,
-// EVERY LINK, EVERY GET FORM, AND EVERY BUTTON — AND WHAT COMES BACK AFTERWARDS.
+// EVERY LINK, EVERY GET FORM, AND EVERY BUTTON — AND WHAT COMES BACK
+// AFTERWARDS.
 //
 // The console is the one surface in that service that can CHANGE what every
 // protocol endpoint does — a claim added here appears in every token, a setting
@@ -99,15 +100,16 @@
 //     fields vanish — and here that POST is a REAL browser form submission with
 //     the cookie jar emptied under it; and `/admin-api` next door is not gated
 //     at all, which is deliberate and is the way back in.
-//   * **EVERY PAGE IS DRAWN, IN THE SHELL, UNDER THE POLICY.** All thirty-eight,
-//     walked from the service's own list, each with the nav, its own breadcrumb,
-//     a 200 the browser saw, and a Content-Security-Policy that still says
-//     `script-src 'none'`, `frame-ancestors 'none'` (which has no fallback from
-//     `default-src` and is therefore the clause a page loses by accident) and
-//     `base-uri 'none'` — plus `document.scripts.length === 0`, which is the
-//     browser's answer to the same question and cannot be satisfied by a header
-//     that lies.
-//   * **NO PAGE NESTS A `<form>`** — the raw bytes and the parsed DOM, compared.
+//   * **EVERY PAGE IS DRAWN, IN THE SHELL, UNDER THE POLICY.** All
+//     thirty-eight, walked from the service's own list, each with the nav, its
+//     own breadcrumb, a 200 the browser saw, and a Content-Security-Policy that
+//     still says `script-src 'none'`, `frame-ancestors 'none'` (which has no
+//     fallback from `default-src` and is therefore the clause a page loses by
+//     accident) and `base-uri 'none'` — plus `document.scripts.length === 0`,
+//     which is the browser's answer to the same question and cannot be
+//     satisfied by a header that lies.
+//   * **NO PAGE NESTS A `<form>`** — the raw bytes and the parsed DOM,
+//     compared.
 //   * **EVERY LINK ON EVERY PAGE RESOLVES.** Every same-origin `<a href>` the
 //     console draws, deduplicated and then really visited, has to answer under
 //     400. This is what makes the console routes with no nav row —
@@ -130,10 +132,10 @@
 //     and `/admin/token-lifetimes`' success path — which had only ever been
 //     driven as a refusal.
 //   * **THE TRAIL, THE FILTERS AND THE REALM SWITCHER.** A drill-down's section
-//     crumb is a link carrying the filter it was reached through, the last crumb
-//     is never a link, every form on a drill-down carries `back`, and the realm
-//     switcher — a GET form in the shell of every page — really lands on the
-//     same page in the other realm.
+//     crumb is a link carrying the filter it was reached through, the last
+//     crumb is never a link, every form on a drill-down carries `back`, and the
+//     realm switcher — a GET form in the shell of every page — really lands on
+//     the same page in the other realm.
 //   * **A SETTING CHANGED ON THE PAGE FOR THE PROTOCOL IT CONFIGURES**, then
 //     looked for in three places: redrawn on that page, in `/admin-api/config`
 //     with its source moved, and in the persistence store's write counters.
@@ -179,17 +181,23 @@ const common = require("./jwt_vc_json_common.js");
 const names = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, the arrangement tests/wait_for.js has.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_admin_console",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -206,7 +214,8 @@ const REALM = ("console-" + names.runStamp()).toLowerCase()
     .replace(/[^a-z0-9-]/g, "").slice(0, 40);
 
 // ---------------------------------------------------------------------------
-// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT (2026-09-12).
+// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT
+// (2026-09-12).
 //
 // Product mode creates nobody because a sign-in or a token request named them,
 // invents no persona onto an entry, verifies every password, seeds no `alice`
@@ -215,8 +224,8 @@ const REALM = ("console-" + names.runStamp()).toLowerCase()
 // should not be relying on them. So the console account is created with a
 // password before it signs in and that password is typed on the screen; every
 // person a token is minted for, and the client it is minted by, is created
-// through `/admin-api` first (`ensurePerson()`, `ensureClient()`); and the group
-// members the Groups page adds are two people this job made in its realm
+// through `/admin-api` first (`ensurePerson()`, `ensureClient()`); and the
+// group members the Groups page adds are two people this job made in its realm
 // rather than the seeded two.
 //
 // **ONE SIGN-IN STILL NAMES SOMEBODY THIS JOB DID NOT CREATE**: the reader in
@@ -232,6 +241,8 @@ const GROUP_MEMBER_B = "console-member-b";
 const ensured = {};
 
 async function apiPostJson(url, payload) {
+  log.debug("Entering apiPostJson().");
+  log.debug("Leaving apiPostJson().");
   return common.httpJson(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {})
@@ -262,7 +273,8 @@ async function ensurePerson(apiBase, username) {
     "they already exist; it answered " + r.status + " " +
     String(r.raw).slice(0, 300));
   ensured[key] = made;
-  log.debug("Leaving ensurePerson(). " + (made ? "Created." : "Already there."));
+  log.debug("Leaving ensurePerson(). " +
+            (made ? "Created." : "Already there."));
   return made;
 }
 
@@ -297,13 +309,24 @@ var screenshotDir = "";  // --screenshot-dir, for a person debugging a failure
 // ---------------------------------------------------------------------------
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
-function root(path) { return base + path; }
-function realm(path) { return base + "/realm/" + REALM + path; }
+function root(path) {
+  log.debug("Entering root().");
+  log.debug("Leaving root().");
+  return base + path;
+}
+
+function realm(path) {
+  log.debug("Entering realm().");
+  log.debug("Leaving realm().");
+  return base + "/realm/" + REALM + path;
+}
 
 // ---------------------------------------------------------------------------
 // THE BROWSER'S OWN ACCOUNT OF EVERY RESPONSE IT RECEIVED.
@@ -317,6 +340,7 @@ function realm(path) { return base + "/realm/" + REALM + path; }
 var responses = [];
 
 function recordResponse(event) {
+  log.debug("Entering recordResponse().");
   const headers = {};
   (event.response.headers || []).forEach(function (h) {
     // BiDi spells a header value as {type:"string", value:"…"}; older builds
@@ -333,17 +357,21 @@ function recordResponse(event) {
     headers: headers,
     at: Date.now()
   });
+  log.debug("Leaving recordResponse().");
 }
 
 // The LAST response the browser received for exactly this URL. Last rather than
 // first because a page visited twice — which the filter sections do on purpose
 // — must be read as the visit that just happened.
 function responseFor(url) {
+  log.debug("Entering responseFor().");
   for (let i = responses.length - 1; i >= 0; i -= 1) {
     if (responses[i].url === url) {
+      log.debug("Leaving responseFor().");
       return responses[i];
     }
   }
+  log.debug("Leaving responseFor().");
   return null;
 }
 
@@ -351,19 +379,30 @@ function responseFor(url) {
 // interaction and this is read after it, which is how a form POST's own status
 // is found without guessing its URL — a POST to /admin/users and the 303's
 // destination are both in here, in the order they happened.
-function mark() { return responses.length; }
-function since(from) { return responses.slice(from); }
+function mark() {
+  log.debug("Entering mark().");
+  log.debug("Leaving mark().");
+  return responses.length;
+}
+
+function since(from) {
+  log.debug("Entering since().");
+  log.debug("Leaving since().");
+  return responses.slice(from);
+}
 
 // The one POST in a stretch of responses. A console interaction makes exactly
 // one; more than one means a page grew a second request and the caller's
 // assertion about "the POST" would silently be about the wrong one.
 function thePostIn(stretch, what) {
+  log.debug("Entering thePostIn().");
   const posts = stretch.filter(function (r) { return r.method === "POST"; });
   assert.strictEqual(posts.length, 1,
     "expected exactly one POST while " + what + "; the browser made " +
     posts.length + ": " + JSON.stringify(posts.map(function (r) {
       return r.method + " " + r.url + " -> " + r.status;
     })));
+  log.debug("Leaving thePostIn().");
   return posts[0];
 }
 
@@ -458,6 +497,8 @@ async function waitForMethod(method, from, timeoutMs) {
 }
 
 function pause(ms) {
+  log.debug("Entering pause().");
+  log.debug("Leaving pause().");
   return new Promise(function (resolve) { setTimeout(resolve, ms); });
 }
 
@@ -536,6 +577,8 @@ const SURVEY = `
 `;
 
 async function survey(driver) {
+  log.debug("Entering survey().");
+  log.debug("Leaving survey().");
   return await driver.executeScript(SURVEY);
 }
 
@@ -660,9 +703,18 @@ async function fillAndPress(driver, formIndex, values, options) {
     const field = await driver.executeScript(`
       const f = document.forms[arguments[0]];
       return f ? Array.from(f.elements)[arguments[1]] : null;
-    `, formIndex, typed.firstTextIndex).catch(function () { return null; });
+    `, formIndex, typed.firstTextIndex).catch(function (e) {
+      // No such element: the typing below is skipped and the press goes on.
+      log.debug("Caught finding the field to type into: " +
+                ((e && e.message) || e));
+      return null;
+    });
     if (field) {
-      await field.clear().catch(function () { return null; });
+      await field.clear().catch(function (e) {
+        // A field that will not clear is typed into as it is.
+        log.debug("Caught clearing a field: " + ((e && e.message) || e));
+        return null;
+      });
       await field.sendKeys(String(values[typed.firstText]));
     }
   }
@@ -690,7 +742,8 @@ async function submitButtonOf(driver, formIndex, buttonText) {
   `, formIndex);
   assert.ok(buttons.length > 0,
     "form " + formIndex + " has no submit button, so nothing on it can be " +
-    "pressed. A control that cannot be pressed is a control that does nothing.");
+    "pressed. A control that cannot be pressed is a control that does " +
+    "nothing.");
   // `buttonText` is a PREFERENCE and not a requirement, deliberately. The forms
   // in this suite are found by the FIELDS they draw, which is the contract a
   // handler actually has; a button's wording is prose, and a label edited in a
@@ -763,7 +816,9 @@ async function settleAfterSubmit(driver, from, method) {
 // it sends a reader back to. Both are read from the URL rather than the markup
 // so that a page which draws neither still fails the assertion that wanted one.
 function outcomeOf(url, which) {
+  log.debug("Entering outcomeOf().");
   const found = String(url).match(new RegExp("[?&]" + which + "=([^&]*)"));
+  log.debug("Leaving outcomeOf().");
   return found ? decodeURIComponent(found[1].replace(/\+/g, " ")) : "";
 }
 
@@ -800,15 +855,16 @@ async function signIn(driver, username) {
   await secret.clear();
   await secret.sendKeys(CONSOLE_PASSWORD);
   const button = await driver.findElement(
-      By.xpath("//button[@type='submit'] | //input[@type='submit'] | //button"));
+      By.xpath("//button[@type='submit'] | //input[@type='submit'] | " +
+               "//button"));
   await button.click();
   await settleAfterSubmit(driver);
   const after = await driver.getCurrentUrl();
   assert.ok(after.indexOf("/authn/login") < 0,
     "signing in as " + username + " left the browser on the sign-in screen (" +
-    after + "). The mock checks no password, so this is a name that was typed " +
-    "and a button that was pressed; if it did not open the console, the " +
-    "screen itself is broken rather than the credential.");
+    after + "). The mock checks no password, so this is a name that was " +
+    "typed and a button that was pressed; if it did not open the console, " +
+    "the screen itself is broken rather than the credential.");
   log.debug("Leaving signIn(). Signed in.");
   return true;
 }
@@ -863,6 +919,7 @@ async function keepAPicture(driver, what) {
   }
   log.debug("Leaving keepAPicture().");
 }
+
 // ---------------------------------------------------------------------------
 // THE GATE IN FRONT OF /admin.
 //
@@ -903,9 +960,9 @@ async function theGateBehaves(driver) {
 
   if (first.status === 200 && landed.indexOf("/authn/login") < 0) {
     log.warn("The console answered 200 with no session, so the gate is OFF " +
-             "on this service. Since 2026-09-06 there is no setting that does " +
-             "that. The gate assertions cannot be made and " +
-             "are being skipped; everything below still runs.");
+             "on this service. Since 2026-09-06 there is no setting that " +
+             "does that. The gate assertions cannot be made and are being " +
+             "skipped; everything below still runs.");
     gateIsOn = false;
     log.debug("Leaving theGateBehaves(). The gate is off.");
     return;
@@ -930,7 +987,8 @@ async function theGateBehaves(driver) {
     assert.ok(/\/authn\/login\?authn=/.test(landed),
       "the browser should have landed on the sign-in screen carrying an " +
       "`authn` id — that id is what sends the person back to /admin/tokens " +
-      "afterwards instead of to the top of the console. It landed on " + landed);
+      "afterwards instead of to the top of the console. It landed on " +
+      landed);
   });
 
   // 2. A `?format=json` read.
@@ -983,12 +1041,13 @@ async function theGateBehaves(driver) {
   await go(driver, root("/admin/users/new"));
   const createForm = await formIndexPosting(driver, "create");
   assert.ok(createForm >= 0,
-    "/admin/users/new should draw a form whose action is `create`; the gate's " +
-    "POST assertion needs a real form to submit.");
+    "/admin/users/new should draw a form whose action is `create`; the " +
+    "gate's POST assertion needs a real form to submit.");
   await clearSession(driver);
   const posted = await fillAndPress(driver, createForm,
       { username: "gate-probe-" + names.runStamp() });
-  const postResponse = thePostIn(posted.responses, "posting a form with no session");
+  const postResponse = thePostIn(posted.responses, "posting a form with no " +
+                                                   "session");
   check("a POST with no session is refused, never redirected", function () {
     assert.ok(postResponse.status === 401 || postResponse.status === 403,
       "a POST into the console with no session must be REFUSED (401 or 403) " +
@@ -1002,8 +1061,8 @@ async function theGateBehaves(driver) {
   await signIn(driver, CONSOLE_USER);
   log.info("[gate] OK — a browser GET is redirected with an `authn` id, a " +
            "JSON read is refused 401, a real form POST with the cookie jar " +
-           "emptied under it is refused rather than redirected, /admin-api is " +
-           "open, and a session opens the console.");
+           "emptied under it is refused rather than redirected, /admin-api " +
+           "is open, and a session opens the console.");
   log.debug("Leaving theGateBehaves().");
 }
 
@@ -1329,7 +1388,9 @@ async function everyLinkResolves(driver, links) {
       return;
     }
     const path = href.slice(base.length) || "/";
-    if (NOT_CRAWLED.some(function (one) { return path.split("?")[0] === one; })) {
+    if (NOT_CRAWLED.some(function (one) {
+      return path.split("?")[0] === one;
+    })) {
       skipped.push(path);
       return;
     }
@@ -1371,6 +1432,8 @@ async function everyLinkResolves(driver, links) {
   // exactly the renamed-route mistake this walk was written for.
   // ---------------------------------------------------------------------
   function isTheGateRatherThanAHole(path, status) {
+    log.debug("Entering isTheGateRatherThanAHole().");
+    log.debug("Leaving isTheGateRatherThanAHole().");
     return status === 401 && /^\/admin-api(\/|$|\?)/.test(path);
   }
 
@@ -1393,9 +1456,9 @@ async function everyLinkResolves(driver, links) {
       ". A link that 404s is a page telling a reader about something that is " +
       "not there — and because the console cross-references itself heavily, " +
       "the usual cause is a route renamed on one side of a pair. A 401 on an " +
-      "/admin-api link is NOT in this list and is not a fault: that API takes " +
-      "an access token and a browser carries none. A 401 on an /admin page " +
-      "IS in this list, because it means this crawl lost its session.");
+      "/admin-api link is NOT in this list and is not a fault: that API " +
+      "takes an access token and a browser carries none. A 401 on an /admin " +
+      "page IS in this list, because it means this crawl lost its session.");
   });
 
   // AND THE GATE HAS TO HAVE REFUSED SOMETHING, or the exemption above is
@@ -1404,7 +1467,8 @@ async function everyLinkResolves(driver, links) {
   // answers 200, the exemption never fires, and this walk goes green while
   // the surface it just crawled hands its whole administrative API to
   // anybody who can reach the port.
-  check("and the /admin-api links it draws are refused rather than open", function () {
+  check("and the /admin-api links it draws are refused rather than open",
+        function () {
     assert.ok(gated.length > 0,
       "not one /admin-api link answered 401 to this browser. Either the " +
       "console has stopped linking to its own API — in which case the count " +
@@ -1414,8 +1478,8 @@ async function everyLinkResolves(driver, links) {
       "this service has with no credential at all.");
   });
 
-  log.info("[links] OK — " + mine.length + " distinct /admin links visited in " +
-           "the browser, every one under 400. Not crawled: " +
+  log.info("[links] OK — " + mine.length + " distinct /admin links visited " +
+           "in the browser, every one under 400. Not crawled: " +
            elsewhere.length + " links to another origin or to a protocol " +
            "endpoint outside this console, and " + skipped.length +
            " sign-out door(s) that would end this run's session.");
@@ -1487,7 +1551,8 @@ async function everyGetFormSubmits(driver, pages) {
 
       const carried = Object.keys(values).filter(function (name) {
         return values[name] !== "" &&
-            after.indexOf(encodeURIComponent(name).replace(/%2E/gi, ".") + "=") >= 0;
+            after.indexOf(encodeURIComponent(name).replace(/%2E/gi, ".") +
+                          "=") >= 0;
       });
 
       check(path + " GET form " + i + " submits", function () {
@@ -1525,8 +1590,8 @@ async function everyGetFormSubmits(driver, pages) {
       "THESE GET FORMS SENT NOTHING THEY DREW: " + withoutEffect.join(", ") +
       ". A GET form's whole mechanism is the browser building a query string " +
       "out of its successful controls; a form whose controls are unnamed, or " +
-      "disabled, or outside it, submits an empty query and quietly resets the " +
-      "reader's filter instead of applying it.");
+      "disabled, or outside it, submits an empty query and quietly resets " +
+      "the reader's filter instead of applying it.");
   });
 
   check("enough GET forms were found to mean something", function () {
@@ -1632,7 +1697,8 @@ async function theNewUserPageDescribesAPerson(driver) {
       { buttonText: "Fill with example data", noTyping: true });
 
   const afterFill = await survey(driver);
-  check("Fill writes the invented person into the EMPTY boxes only", function () {
+  check("Fill writes the invented person into the EMPTY boxes only",
+        function () {
     const values = valuesOfBoxes(afterFill, "field.");
     assert.strictEqual(values["field.mail"], "typed@example.com",
       "the one value that was typed must survive the fill: an invention that " +
@@ -1688,7 +1754,8 @@ async function theNewUserPageDescribesAPerson(driver) {
         "entry holds " + JSON.stringify(held));
     });
   });
-  check("and the values that were typed are the values that were stored", function () {
+  check("and the values that were typed are the values that were stored",
+        function () {
     assert.strictEqual((entry.attributes.mail || entry.attributes.Mail ||
                         [])[0], "described@example.com",
       "the entry should carry the email address that was typed; it carries " +
@@ -1713,7 +1780,8 @@ async function theNewUserPageDescribesAPerson(driver) {
       "the only copy. It showed " + JSON.stringify(shown));
   });
   const passwordEntry = await theDirectoryEntryOf(withPassword);
-  check("and what is on the entry is a hash rather than the password", function () {
+  check("and what is on the entry is a hash rather than the password",
+        function () {
     const held = (passwordEntry.attributes.userPassword ||
                   passwordEntry.attributes.userpassword || [])[0] || "";
     assert.ok(held, "the entry should carry a userPassword; it carries none, " +
@@ -1779,6 +1847,7 @@ async function theDirectoryEntryOf(name) {
 // prefix. Off the SURVEY rather than a fresh executeScript, so it sees the
 // same DOM every other assertion in this file does.
 function boxesNamed(page, prefix) {
+  log.debug("Entering boxesNamed().");
   const out = [];
   (page.forms || []).forEach(function (form) {
     (form.controls || []).forEach(function (control) {
@@ -1788,11 +1857,13 @@ function boxesNamed(page, prefix) {
       }
     });
   });
+  log.debug("Leaving boxesNamed().");
   return out;
 }
 
 // The same, as {name: value}.
 function valuesOfBoxes(page, prefix) {
+  log.debug("Entering valuesOfBoxes().");
   const out = {};
   (page.forms || []).forEach(function (form) {
     (form.controls || []).forEach(function (control) {
@@ -1801,6 +1872,7 @@ function valuesOfBoxes(page, prefix) {
       }
     });
   });
+  log.debug("Leaving valuesOfBoxes().");
   return out;
 }
 
@@ -1844,9 +1916,10 @@ const NOT_A_CONSOLE_CONTROL = {
     "2026-09-06. It ends the session of the BROWSER that pressed it — the " +
     "console's own relying-party session and the sign-on session behind it — " +
     "and /admin-api is authenticated by a TOKEN rather than by a session, so " +
-    "an operation there would have nothing to end. It is driven at the very end of this file, in " +
-    "theSignOutButtonSignsYouOut(), which is the last thing this job does " +
-    "because pressing it closes the console against this run."
+    "an operation there would have nothing to end. It is driven at the very " +
+    "end of this file, in theSignOutButtonSignsYouOut(), which is the last " +
+    "thing this job does because pressing it closes the console against this " +
+    "run."
 };
 
 // Is this form target one of the rows above? **THE REALM PREFIX IS STRIPPED
@@ -1856,7 +1929,9 @@ const NOT_A_CONSOLE_CONTROL = {
 // the bare path therefore matched on the pages walked at the root and silently
 // missed the same form on every page walked inside the realm.
 function isNotAConsoleControl(pathname) {
+  log.debug("Entering isNotAConsoleControl().");
   const bare = String(pathname).replace(/^\/realm\/[^/]+/, "");
+  log.debug("Leaving isNotAConsoleControl().");
   return Object.prototype.hasOwnProperty.call(NOT_A_CONSOLE_CONTROL, bare);
 }
 
@@ -1925,10 +2000,12 @@ async function everyControlReachesSomething(driver, pages) {
 // (a query string, which is how the three claim-set doors carry the row they
 // act on) or in a control named `action`.
 function actionValuesIn(form) {
+  log.debug("Entering actionValuesIn().");
   const values = [];
   const inQuery = String(form.resolvedAction || "").match(/[?&]action=([^&]*)/);
   if (inQuery) {
     values.push(decodeURIComponent(inQuery[1]));
+    log.debug("Leaving actionValuesIn().");
     return values;
   }
   form.controls.forEach(function (control) {
@@ -1937,6 +2014,7 @@ function actionValuesIn(form) {
       values.push(control.value);
     }
   });
+  log.debug("Leaving actionValuesIn().");
   return values;
 }
 
@@ -2004,7 +2082,8 @@ async function postRoutesOfTheConsole() {
     "the API index should name the console paths its operations mirror; it " +
     "named " + routes.length + ". Without that this check would pass by " +
     "comparing against nothing.");
-  log.debug("Leaving postRoutesOfTheConsole(). " + routes.length + " route(s).");
+  log.debug("Leaving postRoutesOfTheConsole(). " + routes.length +
+            " route(s).");
   return routes;
 }
 
@@ -2063,8 +2142,10 @@ async function actionsKnownAt(apiPath) {
                            id: "x", user: "x", entry: "x", agent: "x" })
   });
   const errors = ((probe.body && probe.body.errors) || []).join(" ");
-  const sentence = errors.match(/Unknown action "[^"]*"\.\s*[^:]*:\s*([^.]+)\./);
-  const out = sentence ? sentence[1].split(/,\s*|\s+and\s+/).map(function (one) {
+  const sentence =
+      errors.match(/Unknown action "[^"]*"\.\s*[^:]*:\s*([^.]+)\./);
+  const out = sentence ?
+              sentence[1].split(/,\s*|\s+and\s+/).map(function (one) {
     return one.trim();
   }).filter(Boolean) : [];
   log.debug("Leaving actionsKnownAt(). " + out.length + " action(s).");
@@ -2127,7 +2208,8 @@ async function theRealmIsCreatedOnTheForm(driver) {
   // session — the one place in this service where a session crosses a realm,
   // and deliberate: a role is permission to change what every realm does.
   const inRealm = await open(driver, realm("/admin"));
-  check("the realm's console opens on the default realm's session", function () {
+  check("the realm's console opens on the default realm's session",
+        function () {
     assert.strictEqual(inRealm.status, 200,
       "/realm/" + REALM + "/admin should open on the session signed in at " +
       "the root. The two console roles are groups in the DEFAULT realm and " +
@@ -2190,6 +2272,8 @@ async function theRealmIsCreatedOnTheForm(driver) {
 // walk one screen up compares against and there is no reason for two answers to
 // "which form is that".
 function signOutFormOn(page) {
+  log.debug("Entering signOutFormOn().");
+  log.debug("Leaving signOutFormOn().");
   return (page.forms || []).some(function (form) {
     return /\/admin\/signout$/.test(
         new URL(form.resolvedAction, base).pathname);
@@ -2417,11 +2501,11 @@ async function theSignOutButtonSignsYouOut(driver) {
   check("the console is closed again, at the SIGN-IN SCREEN", function () {
     assert.ok(/\/authn\/login/.test(again.url || ""),
       "after signing out, asking for a console page must end at the sign-in " +
-      "screen. The browser stopped at " + again.url + ". If that is a console " +
-      "page, THE SIGN-ON SESSION SURVIVED THE SIGN-OUT and the button is " +
-      "signing nobody out: the code flow met it and issued an ID Token with " +
-      "nothing typed, which is exactly what /admin/signout ends both sessions " +
-      "to prevent.");
+      "screen. The browser stopped at " + again.url + ". If that is a " +
+      "console page, THE SIGN-ON SESSION SURVIVED THE SIGN-OUT and the " +
+      "button is signing nobody out: the code flow met it and issued an ID " +
+      "Token with nothing typed, which is exactly what /admin/signout ends " +
+      "both sessions to prevent.");
   });
 
   log.info("[signout] OK — the button ended the console session AND the " +
@@ -2453,12 +2537,14 @@ async function theSignOutButtonSignsYouOut(driver) {
 // DRIVEN — that file carries the paragraph.
 // ---------------------------------------------------------------------------
 function theRealmIsLeftBehind() {
+  log.debug("Entering theRealmIsLeftBehind().");
   log.info("[teardown] " + REALM + " is LEFT IN PLACE on purpose, with " +
            "everything this job created inside it — the people, the groups, " +
            "the applications, the tokens it revoked, the roles it granted " +
            "and the settings it saved. Read it at " +
            root("/admin/realms?realm=" + encodeURIComponent(REALM)) + ", or " +
            "remove it by hand when you are done with it.");
+  log.debug("Leaving theRealmIsLeftBehind().");
 }
 
 // The index of the first form on the current page carrying a submit button
@@ -2575,7 +2661,8 @@ async function theDirectoryPagesWork(driver) {
       "and they must be recorded as somebody who has NOT authenticated here. " +
       "An administrator creating an entry is not that person signing in, and " +
       "a directory that conflated the two would make every count on this " +
-      "page mean something else. It says " + JSON.stringify(found.authenticated));
+      "page mean something else. It says " +
+      JSON.stringify(found.authenticated));
   });
 
   // The application, with the repeated checkbox column.
@@ -2599,7 +2686,8 @@ async function theDirectoryPagesWork(driver) {
 
   const apps = await apiJson("/realm/" + REALM +
       "/admin-api/applications?q=" + encodeURIComponent(identifier));
-  check("the application and ALL its declared families were stored", function () {
+  check("the application and ALL its declared families were stored",
+        function () {
     const found = (apps.body.applications || []).filter(function (one) {
       return one.identifier === identifier;
     })[0];
@@ -2637,6 +2725,7 @@ async function theDirectoryPagesWork(driver) {
   log.debug("Leaving theDirectoryPagesWork().");
   return { person: person, identifier: identifier };
 }
+
 // ---------------------------------------------------------------------------
 // /admin/tokens: THE BUTTON DRAWN BESIDE ONE ISSUANCE, AND THE FOUR BULK ONES.
 //
@@ -2837,7 +2926,8 @@ async function theTokensPageRevokesWhatItDraws(driver) {
   // Revoke everything for ONE subject, and show it left somebody else alone.
   await open(driver, realm("/admin/tokens"));
   const bySubject = await formIndexPosting(driver, "revoke-subject");
-  assert.ok(bySubject >= 0, "/admin/tokens should draw a revoke-by-subject form.");
+  assert.ok(bySubject >= 0, "/admin/tokens should draw a revoke-by-subject " +
+                            "form.");
   await fillAndPress(driver, bySubject, { subject: mine.sub });
   assert.strictEqual(await introspectActive(other.access), true,
     "A BULK REVOCATION MUST LEAVE SOMEBODY ELSE'S TOKEN ALONE. Each of these " +
@@ -2952,17 +3042,23 @@ async function mintTokens(username, client) {
 }
 
 function claimOf(jwt, name) {
+  log.debug("Entering claimOf().");
   if (!jwt) {
+    log.debug("Leaving claimOf().");
     return "";
   }
   const parts = String(jwt).split(".");
   if (parts.length < 2) {
+    log.debug("Leaving claimOf().");
     return "";
   }
   try {
+    log.debug("Leaving claimOf().");
     return JSON.parse(
         Buffer.from(parts[1], "base64url").toString("utf8"))[name] || "";
   } catch (e) {
+    log.debug("Caught in claimOf(): " + ((e && e.message) || e));
+    log.debug("Leaving claimOf().");
     // A token this service minted always decodes; one that does not is worth
     // reporting as an absent claim rather than as a crash, because the
     // assertion that follows says more about what went wrong.
@@ -2984,7 +3080,8 @@ async function introspectActive(token) {
 }
 
 // ---------------------------------------------------------------------------
-// EVERY WRITE FORM, PRESSED — AND THE VALUE READ BACK OFF THE PAGE THAT DREW IT.
+// EVERY WRITE FORM, PRESSED — AND THE VALUE READ BACK OFF THE PAGE THAT DREW
+// IT.
 //
 // THIS IS THE SECTION THE OLD FILE DID NOT HAVE, and the reason is in the
 // header: the console answers a form POST with 303 and `?notice=…`, and a
@@ -3003,6 +3100,8 @@ async function introspectActive(token) {
 // realm.
 // ---------------------------------------------------------------------------
 function writeForms(stamp) {
+  log.debug("Entering writeForms().");
+  log.debug("Leaving writeForms().");
   return [
     { path: "/admin/claims", button: "Add",
       values: { name: "console_claim_" + stamp, value: "yes",
@@ -3120,7 +3219,8 @@ async function everyWriteRoundTrips(driver) {
     }
     if (one.expect.api) {
       const reply = await apiJson("/realm/" + REALM + one.expect.api);
-      check(one.path + "'s write is visible through the other door", function () {
+      check(one.path + "'s write is visible through the other door",
+            function () {
         assert.strictEqual(reply.status, 200,
           one.expect.api + " should answer 200; it answered " + reply.status);
         assert.ok(JSON.stringify(reply.body).indexOf(one.expect.text) >= 0,
@@ -3214,11 +3314,11 @@ async function theHandlersNothingEverPressed(driver) {
 }
 
 // ---------------------------------------------------------------------------
-// /admin/kerberos/principals: A SERVICE PRINCIPAL CREATED ON THE FORM, ITS KEYTAB
-// SHOWN ONCE, AND ITS KEY DELETED BY ITS OWN ROW BUTTON (2026-09-12).
+// /admin/kerberos/principals: A SERVICE PRINCIPAL CREATED ON THE FORM, ITS
+// KEYTAB SHOWN ONCE, AND ITS KEY DELETED BY ITS OWN ROW BUTTON (2026-09-12).
 //
-// **THE KDC IS THE PROCESS'S, NOT THE THROWAWAY REALM'S**, so this is the second
-// write in this file the realm does not contain, and it follows the
+// **THE KDC IS THE PROCESS'S, NOT THE THROWAWAY REALM'S**, so this is the
+// second write in this file the realm does not contain, and it follows the
 // truststore's three rules for the same reason: an SPN carrying this run's
 // stamp, the only Delete pressed is the one on that SPN's row, and a `finally`
 // deletes it through the API if anything above failed with it still there.
@@ -3231,22 +3331,28 @@ async function theHandlersNothingEverPressed(driver) {
 // ---------------------------------------------------------------------------
 async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
   log.debug("Entering theKerberosPrincipalsPageCreatesAndDeletes().");
-  log.info("=== /admin/kerberos/principals: create a service key, delete it by its row ===");
+  log.info("=== /admin/kerberos/principals: create a service key, delete it " +
+           "by its row ===");
   const host = "console-krb5-" + names.runStamp().toLowerCase()
       .replace(/[^a-z0-9]/g, "").slice(0, 12);
   const spn = "HTTP/" + host + ".example.com";
   const held = async function () {
+    log.debug("Entering held().");
     const reply = await apiJson("/admin-api/kerberos/principals?per=100");
     assert.strictEqual(reply.status, 200,
       "GET /admin-api/kerberos/principals answered " + reply.status);
-    return reply.body.services.filter(function (one) { return one.spn === spn; })[0] || null;
+    log.debug("Leaving held().");
+    return reply.body.services.filter(function (one) {
+      return one.spn === spn;
+    })[0] || null;
   };
 
   try {
     const page = await open(driver, root("/admin/kerberos/principals"));
     check("the Kerberos principals page draws, with no key on it", function () {
       assert.strictEqual(page.status, 200,
-        "/admin/kerberos/principals should answer 200; it answered " + page.status);
+        "/admin/kerberos/principals should answer 200; it answered " +
+        page.status);
       assert.ok(page.text.indexOf("Kerberos principals") >= 0,
         "the page should be titled Kerberos principals");
       assert.ok(page.text.indexOf("$aesgcm$") < 0,
@@ -3256,8 +3362,8 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
     const form = await formIndexFilling(driver, ["spn"]);
     check("the create form is on the page", function () {
       assert.ok(form >= 0,
-        "no form on /admin/kerberos/principals draws an `spn` box, so the create " +
-        "control this suite presses has been renamed or has gone");
+        "no form on /admin/kerberos/principals draws an `spn` box, so the " +
+        "create control this suite presses has been renamed or has gone");
     });
     await fillAndPress(driver, form, { spn: spn },
                        { buttonText: "Create and show the keytab" });
@@ -3268,11 +3374,12 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
       "href: a ? a.getAttribute('href').slice(0, 40) : '', keytab: t ? t.value : '' };");
     check("the create answered with the keytab, shown once", function () {
       assert.ok(/This keytab is shown once/.test(shown.text),
-        "the answer to the create should be a page saying the keytab is shown once; " +
-        "it said: " + String(shown.text).slice(0, 300));
+        "the answer to the create should be a page saying the keytab is " +
+        "shown once; it said: " + String(shown.text).slice(0, 300));
       assert.ok(/\.keytab$/.test(shown.download) &&
                 shown.href.indexOf("data:application/octet-stream;base64,") === 0,
-        "the page should carry a download link for the keytab: " + JSON.stringify(
+        "the page should carry a download link for the keytab: " +
+        JSON.stringify(
           { download: shown.download, href: shown.href }));
       const bytes = Buffer.from(shown.keytab, "base64");
       assert.ok(bytes.length > 50 && bytes[0] === 0x05 && bytes[1] === 0x02,
@@ -3281,7 +3388,8 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
 
     const listed = await held();
     const redrawn = await open(driver, root("/admin/kerberos/principals"));
-    check("the principal is listed on the page AND through the API, with no keytab", function () {
+    check("the principal is listed on the page AND through the API, with no " +
+          "keytab", function () {
       assert.ok(listed && listed.held === true,
         "GET /admin-api/kerberos/principals must list " + spn);
       assert.ok(redrawn.text.indexOf(spn) >= 0,
@@ -3293,39 +3401,50 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
     // PREVIOUS KEY VERSIONS (2026-09-12): the row's Rotate keeps the version it
     // replaces and says so on the keytab page, and the row's "Drop previous
     // versions" — drawn only while one is kept — ends that window.
-    const rotatePressed = await pressTheRowButton(driver, spn, ["Rotate and show the keytab"]);
-    const rotatedText = await driver.executeScript("return document.body.innerText;");
+    const rotatePressed = await pressTheRowButton(driver, spn, ["Rotate and " +
+        "show the keytab"]);
+    const rotatedText = await driver.executeScript(
+        "return document.body.innerText;");
     const afterRotate = await held();
-    check("the row's Rotate shows a keytab carrying the previous version too", function () {
-      assert.ok(rotatePressed, "the row drawing " + spn + " has no Rotate button to press");
+    check("the row's Rotate shows a keytab carrying the previous version too",
+          function () {
+      assert.ok(rotatePressed, "the row drawing " + spn + " has no Rotate " +
+          "button to press");
       assert.ok(/This keytab is shown once/.test(rotatedText) &&
                 /Versions in the keytab/.test(rotatedText),
-        "the answer to the rotate should be the keytab page naming both versions in it: " +
+        "the answer to the rotate should be the keytab page naming both " +
+        "versions in it: " +
         String(rotatedText).slice(0, 300));
       assert.ok(afterRotate && afterRotate.kvno === listed.kvno + 1 &&
-                Array.isArray(afterRotate.retained) && afterRotate.retained.length === 1 &&
+                Array.isArray(afterRotate.retained) &&
+                afterRotate.retained.length === 1 &&
                 afterRotate.retained[0].kvno === listed.kvno,
-        "GET /admin-api/kerberos/principals must list the previous kvno as kept after the " +
-        "rotate: " + JSON.stringify(afterRotate));
+        "GET /admin-api/kerberos/principals must list the previous kvno as " +
+        "kept after the rotate: " + JSON.stringify(afterRotate));
     });
     await open(driver, root("/admin/kerberos/principals"));
-    const dropPressed = await pressTheRowButton(driver, spn, ["Drop previous versions"]);
+    const dropPressed = await pressTheRowButton(driver, spn, ["Drop previous " +
+        "versions"]);
     const droppedAt = await driver.getCurrentUrl();
     const afterDrop = await held();
-    check("the row's Drop previous versions ends the window and keeps the current key", function () {
-      assert.ok(dropPressed, "the row drawing " + spn + " has no Drop previous versions " +
-        "button, although a previous version is kept");
+    check("the row's Drop previous versions ends the window and keeps the " +
+          "current key", function () {
+      assert.ok(dropPressed, "the row drawing " + spn + " has no Drop " +
+        "previous versions button, although a previous version is kept");
       assert.strictEqual(outcomeOf(droppedAt, "error"), "",
         "the drop was refused: " + outcomeOf(droppedAt, "error"));
       assert.ok(afterDrop && afterDrop.kvno === afterRotate.kvno &&
-                Array.isArray(afterDrop.retained) && afterDrop.retained.length === 0,
-        "after the drop the principal must keep its current kvno and list nothing kept: " +
+                Array.isArray(afterDrop.retained) &&
+                afterDrop.retained.length === 0,
+        "after the drop the principal must keep its current kvno and list " +
+        "nothing kept: " +
         JSON.stringify(afterDrop));
     });
 
     const pressed = await pressTheRowButton(driver, spn, ["Delete the key"]);
     check("the principal's own row carries a Delete button", function () {
-      assert.ok(pressed, "the row drawing " + spn + " has no Delete button to press");
+      assert.ok(pressed, "the row drawing " + spn + " has no Delete button " +
+                                                    "to press");
     });
     const removedAt = await driver.getCurrentUrl();
     const afterDelete = await held();
@@ -3333,22 +3452,28 @@ async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
       assert.strictEqual(outcomeOf(removedAt, "error"), "",
         "the delete was refused: " + outcomeOf(removedAt, "error"));
       assert.strictEqual(afterDelete, null,
-        "after pressing its Delete button the principal must be gone from GET " +
-        "/admin-api/kerberos/principals");
+        "after pressing its Delete button the principal must be gone from " +
+        "GET /admin-api/kerberos/principals");
     });
   } finally {
-    const still = await held().catch(function () { return null; });
+    const still = await held().catch(function (e) {
+      // The read-back failed; the cleanup below then has nothing to remove.
+      log.debug("Caught reading the principal back: " +
+                ((e && e.message) || e));
+      return null;
+    });
     if (still) {
       // Only ours, by the SPN stamped above.
       await apiPostJson(base + "/admin-api/kerberos/principals/delete-service",
                         { spn: spn });
     }
   }
-  log.info("[kerberos] OK — a service principal created on /admin/kerberos/principals, " +
-           "its keytab shown once on the answer to the POST, listed on the page and " +
-           "through the API with no key material, rotated with the previous version " +
-           "kept and then dropped by its row buttons, and its key deleted by the " +
-           "button on its own row.");
+  log.info("[kerberos] OK — a service principal created on " +
+           "/admin/kerberos/principals, its keytab shown once on the answer " +
+           "to the POST, listed on the page and through the API with no key " +
+           "material, rotated with the previous version kept and then " +
+           "dropped by its row buttons, and its key deleted by the button on " +
+           "its own row.");
   log.debug("Leaving theKerberosPrincipalsPageCreatesAndDeletes().");
 }
 
@@ -3385,16 +3510,21 @@ async function theTruststorePageAddsAndRemoves(driver) {
   const fingerprint = new (require("crypto").X509Certificate)(
     minted.anchorPem).fingerprint256;
   const held = async function () {
+    log.debug("Entering held().");
     const reply = await apiJson("/admin-api/tls/trust?per=100");
     assert.strictEqual(reply.status, 200,
       "GET /admin-api/tls/trust answered " + reply.status);
-    return reply.body.anchors.map(function (one) { return one.fingerprint256; });
+    log.debug("Leaving held().");
+    return reply.body.anchors.map(function (one) {
+      return one.fingerprint256;
+    });
   };
   const before = await held();
 
   try {
     const page = await open(driver, root("/admin/tls/trust"));
-    check("the truststore page draws, with no control that empties it", function () {
+    check("the truststore page draws, with no control that empties it",
+          function () {
       assert.strictEqual(page.status, 200,
         "/admin/tls/trust should answer 200; it answered " + page.status);
       assert.ok(page.text.indexOf("Client-certificate truststore") >= 0,
@@ -3425,8 +3555,8 @@ async function theTruststorePageAddsAndRemoves(driver) {
                 redrawn.text.indexOf(fingerprint) >= 0,
         "after the add the page must draw the CA's subject and fingerprint");
       assert.ok(afterAdd.indexOf(fingerprint) >= 0,
-        "and GET /admin-api/tls/trust must list it — a write the page redraws " +
-        "and the API cannot see is two truststores");
+        "and GET /admin-api/tls/trust must list it — a write the page " +
+        "redraws and the API cannot see is two truststores");
     });
 
     const pressed = await pressTheRowButton(driver, label, ["Remove"]);
@@ -3437,7 +3567,8 @@ async function theTruststorePageAddsAndRemoves(driver) {
     const removedAt = await driver.getCurrentUrl();
     const afterRemove = await held();
     const removedPage = await open(driver, root("/admin/tls/trust"));
-    check("the row button removed exactly that CA and nothing else", function () {
+    check("the row button removed exactly that CA and nothing else",
+          function () {
       assert.strictEqual(outcomeOf(removedAt, "error"), "",
         "the remove was refused: " + outcomeOf(removedAt, "error"));
       assert.ok(afterRemove.indexOf(fingerprint) < 0 &&
@@ -3449,16 +3580,21 @@ async function theTruststorePageAddsAndRemoves(driver) {
         "the button beside one row must never take away a different anchor");
     });
   } finally {
-    const still = await held().catch(function () { return []; });
+    const still = await held().catch(function (e) {
+      // The read-back failed; the cleanup below then has nothing to remove.
+      log.debug("Caught reading the truststore back: " +
+                ((e && e.message) || e));
+      return [];
+    });
     if (still.indexOf(fingerprint) >= 0) {
       // Only ours, by the fingerprint minted above.
       await apiPostJson(base + "/admin-api/tls/trust/remove",
                         { fingerprint: fingerprint });
     }
   }
-  log.info("[truststore] OK — a minted CA added on /admin/tls/trust, read back " +
-           "on the page and through the API, removed by the button on its own " +
-           "row, and every other anchor left where it was.");
+  log.info("[truststore] OK — a minted CA added on /admin/tls/trust, read " +
+           "back on the page and through the API, removed by the button on " +
+           "its own row, and every other anchor left where it was.");
   log.debug("Leaving theTruststorePageAddsAndRemoves().");
 }
 
@@ -3569,8 +3705,8 @@ async function theDelegationPageDefinesAndGrants(driver) {
       "/admin/applications?application=<client> should draw a form taking a " +
       "`permission` once something is defined — with no `client` select at " +
       "all, because the client is the entry the page is about. Before " +
-      "anything is defined it deliberately draws a paragraph instead, because " +
-      "a select with nothing in it is a control that can only fail.");
+      "anything is defined it deliberately draws a paragraph instead, " +
+      "because a select with nothing in it is a control that can only fail.");
   });
   await fillAndPress(driver, grantForm, { permission: baseUri + "write" });
 
@@ -3578,12 +3714,12 @@ async function theDelegationPageDefinesAndGrants(driver) {
   check("the grant is read back on the client's own page", function () {
     assert.ok(granted.text.indexOf(baseUri + "write") >= 0,
       "AND THE READ-BACK IS OFF THE PAGE THAT DREW THE CONTROL. The grant " +
-      "lands on the CLIENT's entry as a value of oauthDelegatedPermission, so " +
-      "a form that wrote it to the RESOURCE instead would still answer 303 " +
-      "with the same notice and would still read correctly on the delegation " +
-      "page's register — which resolves both directions whichever entry the " +
-      "value landed on. This page can only show it if it landed here. The " +
-      "page says " + granted.text.slice(0, 500));
+      "lands on the CLIENT's entry as a value of oauthDelegatedPermission, " +
+      "so a form that wrote it to the RESOURCE instead would still answer " +
+      "303 with the same notice and would still read correctly on the " +
+      "delegation page's register — which resolves both directions whichever " +
+      "entry the value landed on. This page can only show it if it landed " +
+      "here. The page says " + granted.text.slice(0, 500));
     assert.ok(granted.text.indexOf(resource) >= 0,
       "and it must name the RESOURCE the permission belongs to beside it, " +
       "because a grant is between two applications and the page has to say " +
@@ -3650,8 +3786,8 @@ async function theDelegationPageDefinesAndGrants(driver) {
   log.info("[permissions] OK — a base URI and a permission were typed on " +
            "/admin/delegation, the grant was typed on the CLIENT's own page, " +
            "the composed identifier and both applications were read back off " +
-           "the pages that drew the controls, the register agreed, and revoke " +
-           "and remove took them away again.");
+           "the pages that drew the controls, the register agreed, and " +
+           "revoke and remove took them away again.");
   log.debug("Leaving theDelegationPageDefinesAndGrants().");
 }
 
@@ -3671,7 +3807,10 @@ async function theDelegationPageDefinesAndGrants(driver) {
 // ---------------------------------------------------------------------------
 async function theObservedAddressesArePressed(driver) {
   log.debug("Entering theObservedAddressesArePressed().");
-  const stamp = names.runStamp().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
+  const stamp = names.runStamp()
+                     .toLowerCase()
+                     .replace(/[^a-z0-9]/g, "")
+                     .slice(0, 8);
   const rpId = "urn:test:console-observed-" + stamp;
   const ONE = "https://console-observed-one-" + stamp + ".example.test/acs";
   const TWO = "https://console-observed-two-" + stamp + ".example.test/acs";
@@ -3683,17 +3822,19 @@ async function theObservedAddressesArePressed(driver) {
                                   TARGET: "https://console-observed.example.test/" }).toString()
     });
     await r.text();
-    check("a development SAML 1.1 flow naming " + shire + " is accepted", function () {
+    check("a development SAML 1.1 flow naming " + shire + " is accepted",
+          function () {
       assert.ok(r.status < 400,
-        "POST /saml11/sso in a development realm should record the relying party and send " +
-        "the browser to sign in; it answered " + r.status);
+        "POST /saml11/sso in a development realm should record the relying " +
+        "party and send the browser to sign in; it answered " + r.status);
     });
   }
   // Polled, because in `dispatch` mode the flow and the read are answered by
   // different workers and the replication poll is what joins them.
   let listed = [];
   for (let i = 0; i < 40; i++) {
-    const reply = await apiJson("/realm/" + REALM + "/admin-api/applications?application=" +
+    const reply = await apiJson("/realm/" + REALM +
+                                "/admin-api/applications?application=" +
                                 encodeURIComponent(rpId));
     listed = ((reply.body && reply.body.returnAddressesObserved) || [])
       .map(function (row) { return row.value; });
@@ -3704,16 +3845,20 @@ async function theObservedAddressesArePressed(driver) {
   }
   check("both shires are marked observed on the entry", function () {
     assert.ok(listed.indexOf(ONE) >= 0 && listed.indexOf(TWO) >= 0,
-      "GET /admin-api/applications?application=" + rpId + " should list both sighted " +
-      "addresses under returnAddressesObserved; it listed " + JSON.stringify(listed));
+      "GET /admin-api/applications?application=" + rpId + " should list both " +
+      "sighted addresses under returnAddressesObserved; it " +
+      "listed " + JSON.stringify(listed));
   });
 
-  const pageUrl = realm("/admin/applications?application=" + encodeURIComponent(rpId));
+  const pageUrl = realm("/admin/applications?application=" +
+                        encodeURIComponent(rpId));
   const drawn = await open(driver, pageUrl);
-  check("the application page draws the observed addresses with both buttons", function () {
+  check("the application page draws the observed addresses with both buttons",
+        function () {
     assert.ok(/Return addresses nobody registered/.test(drawn.text) &&
               drawn.text.indexOf(ONE) >= 0 && drawn.text.indexOf(TWO) >= 0,
-      "the drill-down should draw a section listing both observed addresses; it says " +
+      "the drill-down should draw a section listing both observed addresses; " +
+      "it says " +
       drawn.text.slice(0, 500));
   });
 
@@ -3721,6 +3866,7 @@ async function theObservedAddressesArePressed(driver) {
   // assumed from the order: the page draws the marks in the order the entry
   // holds them, which is a fact about the store and not about this test.
   async function pressFor(action, address) {
+    log.debug("Entering pressFor().");
     const index = await driver.executeScript(`
       const forms = Array.from(document.forms);
       for (let i = 0; i < forms.length; i++) {
@@ -3731,36 +3877,42 @@ async function theObservedAddressesArePressed(driver) {
       return -1;
     `, action, address);
     check("the page draws a " + action + " button for " + address, function () {
-      assert.ok(index >= 0, "no form posting action=" + action + " with value=" + address +
+      assert.ok(index >= 0,
+                "no form posting action=" + action + " with value=" + address +
                             " on " + pageUrl);
     });
     await fillAndPress(driver, index, {});
+    log.debug("Leaving pressFor().");
   }
 
   await pressFor("confirm-address", ONE);
   await open(driver, pageUrl);
   await pressFor("discard-address", TWO);
   const after = await open(driver, pageUrl);
-  const entry = (await apiJson("/realm/" + REALM + "/admin-api/applications?application=" +
+  const entry = (await apiJson("/realm/" + REALM +
+                               "/admin-api/applications?application=" +
                                encodeURIComponent(rpId))).body || {};
-  const acs = [].concat(((entry.fields || {}).samlAssertionConsumerService) || []);
-  const still = (entry.returnAddressesObserved || []).map(function (row) { return row.value; });
+  const acs = [].concat(((entry.fields ||
+                          {}).samlAssertionConsumerService) || []);
+  const still = (entry.returnAddressesObserved || []).map(
+      function (row) { return row.value; });
   check("Confirm kept its address and Discard removed its own", function () {
     assert.ok(still.indexOf(ONE) < 0 && acs.indexOf(ONE) >= 0,
-      "after Confirm the address must be REGISTERED — on the entry with no mark; the entry " +
-      "holds " + JSON.stringify({ acs: acs, observed: still }));
+      "after Confirm the address must be REGISTERED — on the entry with no " +
+      "mark; the entry holds " + JSON.stringify({ acs: acs, observed: still }));
     assert.ok(still.indexOf(TWO) < 0 && acs.indexOf(TWO) < 0,
       "after Discard the address must be gone, mark and value; the entry holds " +
       JSON.stringify({ acs: acs, observed: still }));
   });
-  check("and the page that drew the buttons no longer offers them", function () {
+  check("and the page that drew the buttons no longer offers them",
+        function () {
     assert.ok(/Nothing on this entry is marked as observed/.test(after.text),
       "with both decided, the section should say nothing is marked; it says " +
       after.text.slice(0, 500));
   });
-  log.info("[observed addresses] OK — two shires sighted in development were drawn with " +
-           "Confirm and Discard, each button reached its own action, and the entry and " +
-           "the page agreed afterwards.");
+  log.info("[observed addresses] OK — two shires sighted in development were " +
+           "drawn with Confirm and Discard, each button reached its own " +
+           "action, and the entry and the page agreed afterwards.");
   log.debug("Leaving theObservedAddressesArePressed().");
 }
 
@@ -3851,6 +4003,8 @@ async function theLogoutPageEndsWhatItLists(driver) {
 }
 
 async function lookFormIndex(driver) {
+  log.debug("Entering lookFormIndex().");
+  log.debug("Leaving lookFormIndex().");
   return await driver.executeScript(`
     const forms = Array.from(document.forms);
     for (let i = 0; i < forms.length; i += 1) {
@@ -4053,9 +4207,8 @@ async function theGroupPageAddsAMember(driver) {
       "and these two counts are the only thing that tells them apart.");
     assert.ok(String(JSON.stringify(group.members))
                 .indexOf("uid=" + GROUP_MEMBER_A) >= 0,
-      "and it should be " + GROUP_MEMBER_A + "'s own entry DN rather than the " +
-      "string that was " +
-      "typed. It holds " + JSON.stringify(group.members));
+      "and it should be " + GROUP_MEMBER_A + "'s own entry DN rather than " +
+      "the string that was typed. It holds " + JSON.stringify(group.members));
   });
 
   // AND IT IS IDEMPOTENT, pressed a second time. `changed: false` is the
@@ -4067,12 +4220,14 @@ async function theGroupPageAddsAMember(driver) {
   await fillAndPress(driver, again, { member: GROUP_MEMBER_A },
                      { buttonText: "Add" });
   const twice = await driver.getCurrentUrl();
-  const stillOne = await apiJson("/realm/" + REALM + "/admin-api/groups?group=" +
+  const stillOne = await apiJson("/realm/" + REALM +
+                                 "/admin-api/groups?group=" +
                                  encodeURIComponent(dn));
   check("adding the same person again changes nothing and is not an error",
         function () {
     assert.strictEqual(outcomeOf(twice, "error"), "",
-      "adding " + GROUP_MEMBER_A + " to " + dn + " a second time was REFUSED: " +
+      "adding " + GROUP_MEMBER_A + " to " + dn +
+      " a second time was REFUSED: " +
       outcomeOf(twice, "error") + ". It is documented as ok with " +
       "changed:false, so that a script adding on every run does not fail on " +
       "its second one.");
@@ -4111,7 +4266,8 @@ async function theSpiffePageRotatesAndFederates(driver) {
   });
   const after = await apiJson("/realm/" + REALM + "/admin-api/spiffe");
   check("and the authority really changed", function () {
-    assert.notStrictEqual(JSON.stringify(after.body), JSON.stringify(before.body),
+    assert.notStrictEqual(JSON.stringify(after.body),
+      JSON.stringify(before.body),
       "ROTATING MUST CHANGE SOMETHING. The button answered with a notice and " +
       "the SPIFFE status is byte-for-byte what it was, which is what a " +
       "handler that reports a rotation it did not perform looks like.");
@@ -4170,6 +4326,7 @@ async function theSpiffePageRotatesAndFederates(driver) {
 // The value a page's control holds, out of a survey. Used wherever a setting
 // has to be read back off the page that drew it.
 function valueOfControl(page, name) {
+  log.debug("Entering valueOfControl().");
   let found;
   (page.forms || []).forEach(function (form) {
     form.controls.forEach(function (control) {
@@ -4178,10 +4335,12 @@ function valueOfControl(page, name) {
       }
     });
   });
+  log.debug("Leaving valueOfControl().");
   return found;
 }
 
 function settingRow(config, key) {
+  log.debug("Entering settingRow().");
   let found;
   ((config && config.groups) || []).forEach(function (group) {
     (group.settings || []).forEach(function (setting) {
@@ -4190,8 +4349,10 @@ function settingRow(config, key) {
       }
     });
   });
+  log.debug("Leaving settingRow().");
   return found;
 }
+
 // ---------------------------------------------------------------------------
 // THE DRILL-DOWNS, AND THE THING THAT MAKES A TRAIL A TRAIL.
 //
@@ -4211,7 +4372,8 @@ function settingRow(config, key) {
 // ---------------------------------------------------------------------------
 async function theDrillDownsCarryTheirTrail(driver, created) {
   log.debug("Entering theDrillDownsCarryTheirTrail().");
-  log.info("=== Breadcrumbs, drill-downs, and the reader's place in a list ===");
+  log.info("=== Breadcrumbs, drill-downs, and the reader's place in a list " +
+           "===");
 
   // A LIST page: the crumb is one link plus a leaf that is not a link.
   const list = await open(driver, realm("/admin/applications"));
@@ -4227,7 +4389,8 @@ async function theDrillDownsCarryTheirTrail(driver, created) {
   const filtered = "?q=" + encodeURIComponent(created.identifier) + "&per=10";
   const drill = await open(driver, realm("/admin/applications" + filtered +
       "&application=" + encodeURIComponent(created.identifier)));
-  check("a drill-down's section crumb carries the list it came from", function () {
+  check("a drill-down's section crumb carries the list it came from",
+        function () {
     const html = drill.crumb ? drill.crumb.html : "";
     assert.ok(/<a href="[^"]*\/admin\/applications\?[^"]*q=/.test(html),
       "A DRILL-DOWN'S SECTION CRUMB MUST BE A LINK CARRYING THE LIST THE " +
@@ -4380,7 +4543,8 @@ async function filteringAndPagingWork(driver, created) {
   log.debug("Entering filteringAndPagingWork().");
   log.info("=== Filters and paging on the list pages ===");
 
-  const unfiltered = await apiJson("/realm/" + REALM + "/admin-api/applications");
+  const unfiltered = await apiJson("/realm/" + REALM +
+                                   "/admin-api/applications");
   const total = Number(unfiltered.body.applicationCount || 0);
 
   // Filter the list in the BROWSER, on the page's own form.
@@ -4391,14 +4555,16 @@ async function filteringAndPagingWork(driver, created) {
   });
   check("the list page draws a filter", function () {
     assert.ok(filterForm >= 0,
-      "/admin/applications should draw a GET form carrying `q`; it draws none.");
+      "/admin/applications should draw a GET form carrying `q`; it draws " +
+      "none.");
   });
   await fillAndPress(driver, filterForm, { q: created.identifier });
   const narrowed = await driver.getCurrentUrl();
 
   const filtered = await apiJson("/realm/" + REALM +
       "/admin-api/applications?q=" + encodeURIComponent(created.identifier));
-  check("a filter narrows what is shown without changing the total", function () {
+  check("a filter narrows what is shown without changing the total",
+        function () {
     assert.ok(narrowed.indexOf("q=") > 0,
       "the filter should be in the address, because that address IS the " +
       "state a reader bookmarks and a breadcrumb carries. It went to " +
@@ -4421,13 +4587,16 @@ async function filteringAndPagingWork(driver, created) {
   const sizeForm = withFilter.forms.findIndex(function (form) {
     return form.method === "GET" &&
         form.controls.some(function (c) { return c.name === "per"; }) &&
-        !form.controls.some(function (c) { return c.name === "q" && c.type === "text"; });
+        !form.controls.some(function (c) {
+          return c.name === "q" && c.type === "text";
+        });
   });
   if (sizeForm >= 0) {
     const carries = withFilter.forms[sizeForm].controls.map(function (c) {
       return c.name;
     });
-    check("the page-size form carries the filter and not the page", function () {
+    check("the page-size form carries the filter and not the page",
+          function () {
       assert.ok(carries.indexOf("page") < 0,
         "THE PAGE-SIZE FORM MUST NOT CARRY `page`. Changing how many rows " +
         "are shown and staying on page nine is a request nobody makes, and " +
@@ -4463,7 +4632,8 @@ async function theRealmSwitcherSwitches(driver) {
   // something more than "the console opened".
   const page = await open(driver, realm("/admin/metrics"));
   const switcher = page.forms.findIndex(function (form) {
-    return new URL(form.resolvedAction).pathname.indexOf("/admin/realm-switch") >= 0;
+    return new URL(form.resolvedAction).pathname.indexOf(
+        "/admin/realm-switch") >= 0;
   });
   check("every page carries the switcher once a realm exists", function () {
     assert.ok(switcher >= 0,
@@ -4497,11 +4667,13 @@ async function theRealmSwitcherSwitches(driver) {
   // than take one away.
   const atRoot = await open(driver, root("/admin/metrics"));
   const back = atRoot.forms.findIndex(function (form) {
-    return new URL(form.resolvedAction).pathname.indexOf("/admin/realm-switch") >= 0;
+    return new URL(form.resolvedAction).pathname.indexOf(
+        "/admin/realm-switch") >= 0;
   });
   await fillAndPress(driver, back, { realm: REALM });
   const returned = await driver.getCurrentUrl();
-  check("and back again, which is the direction that adds the prefix", function () {
+  check("and back again, which is the direction that adds the prefix",
+        function () {
     assert.ok(returned.indexOf("/realm/" + REALM + "/admin/metrics") >= 0,
       "switching from the default realm INTO " + REALM + " must add the " +
       "prefix and keep the page. It landed on " + returned);
@@ -4584,8 +4756,8 @@ async function theTwoDrawingsAreServerSide(driver) {
         path + " reported that the picture could not be drawn. That is a 200 " +
         "with every table under it correct, so nothing but this notice says " +
         "the drawing failed — read the service's log for the layout error it " +
-        "recorded, and see tests/delegation_map_bands.js for the graph shapes " +
-        "the renderer is held to.");
+        "recorded, and see tests/delegation_map_bands.js for the graph " +
+        "shapes the renderer is held to.");
       assert.ok(drawn.count > 0,
         path + " should draw an inline <svg> in the document. It is laid out " +
         "on the server with dagre precisely so that this console needs no " +
@@ -4618,9 +4790,9 @@ async function theTwoDrawingsAreServerSide(driver) {
     });
   }
 
-  log.info("[drawings] OK — all three pictures are inline server-rendered SVG " +
-           "with no script and no image on the page, and all three hand the " +
-           "document over at ?format=svg.");
+  log.info("[drawings] OK — all three pictures are inline server-rendered " +
+           "SVG with no script and no image on the page, and all three hand " +
+           "the document over at ?format=svg.");
   log.debug("Leaving theTwoDrawingsAreServerSide().");
 }
 
@@ -4715,7 +4887,8 @@ async function theConsoleRefusesWhatItShould(driver) {
 // What is asserted is that NO REQUEST HAPPENS and that the control reported
 // invalid is the one at fault — a form that is merely broken also fails to
 // submit, and the two have to be told apart.
-async function theBrowserWillNotSend(driver, path, fields, values, offender, what) {
+async function theBrowserWillNotSend(driver, path, fields, values, offender,
+                                     what) {
   log.debug("Entering theBrowserWillNotSend(). path=" + path);
   await open(driver, realm(path));
   const form = await formIndexFilling(driver, fields);
@@ -4724,6 +4897,7 @@ async function theBrowserWillNotSend(driver, path, fields, values, offender, wha
       assert.fail(path + " should draw a form carrying " + fields.join(", ") +
         "; it draws none.");
     });
+    log.debug("Leaving theBrowserWillNotSend().");
     return;
   }
 
@@ -4731,7 +4905,8 @@ async function theBrowserWillNotSend(driver, path, fields, values, offender, wha
   const from = mark();
   await fillAndPress(driver, form, values);
   const after = await driver.getCurrentUrl();
-  const posted = since(from).filter(function (r) { return r.method === "POST"; });
+  const posted =
+      since(from).filter(function (r) { return r.method === "POST"; });
   const validity = await driver.executeScript(`
     const f = document.forms[arguments[0]];
     const control = f.elements[arguments[1]];
@@ -4774,12 +4949,14 @@ async function pressAndBeRefused(driver, path, fields, values, expect, what) {
       assert.fail(path + " should draw a form carrying " + fields.join(", ") +
         " so that " + what + " can be refused; it draws none.");
     });
+    log.debug("Leaving pressAndBeRefused().");
     return;
   }
   const from = mark();
   await fillAndPress(driver, form, values);
   const landed = await driver.getCurrentUrl();
-  const posted = since(from).filter(function (r) { return r.method === "POST"; });
+  const posted =
+      since(from).filter(function (r) { return r.method === "POST"; });
   const reason = outcomeOf(landed, "error");
 
   check(path + " refuses " + what.split("—")[0].trim(), function () {
@@ -4829,6 +5006,7 @@ async function theMetadataPageIsStillInTheConsole(driver) {
            "console page.");
   log.debug("Leaving theMetadataPageIsStillInTheConsole().");
 }
+
 // ---------------------------------------------------------------------------
 // A SETTING, CHANGED ON THE PAGE FOR THE PROTOCOL IT CONFIGURES.
 //
@@ -4866,7 +5044,8 @@ async function aSettingChangedOnItsProtocolPage(driver) {
   const chosen = anIntegerSettingWithAProtocolPage(config.body);
   assert.ok(chosen,
     "the configuration should carry at least one runtime integer setting " +
-    "whose group is drawn on a page other than /admin/config; it carries none.");
+    "whose group is drawn on a page other than /admin/config; it carries " +
+    "none.");
   const wanted = Number(chosen.setting.value) + 1;
   log.info("[settings] Driving " + chosen.setting.key + " on " + chosen.path +
            ": " + chosen.setting.value + " -> " + wanted);
@@ -5044,7 +5223,8 @@ async function aRealmRuntimeSettingIsSettableOnItsPage(driver) {
       outcomeOf(landed, "error") + ". `set-many` is all-or-nothing, so a " +
       "refusal here makes the whole section unsaveable inside every realm — " +
       "including when nothing on the page has been changed — and the refusal " +
-      "explains, correctly, that a realm may carry the setting it is refusing.");
+      "explains, correctly, that a realm may carry the setting it is " +
+      "refusing.");
   });
 
   const row = settingRow((await apiJson("/realm/" + REALM +
@@ -5076,6 +5256,7 @@ async function aRealmRuntimeSettingIsSettableOnItsPage(driver) {
 // A control by name, out of a survey, with whether the BROWSER thinks it is
 // disabled — which is the thing that decides whether it is submitted.
 function controlNamed(page, name) {
+  log.debug("Entering controlNamed().");
   let found;
   (page.forms || []).forEach(function (form) {
     form.controls.forEach(function (control) {
@@ -5084,6 +5265,7 @@ function controlNamed(page, name) {
       }
     });
   });
+  log.debug("Leaving controlNamed().");
   return found;
 }
 
@@ -5105,7 +5287,8 @@ async function theChangeReachedTheStore(driver) {
   // page's own prose. Reading the top level instead is how this section came
   // to compare 0 against `undefined` and report a store that was never on.
   const store = (reply.body && reply.body.status) || {};
-  if (reply.status !== 200 || store.mode === "memory" || store.enabled === false) {
+  if (reply.status !== 200 || store.mode === "memory" ||
+      store.enabled === false) {
     log.info("[persistence] The store is OFF (persistence.mode=" +
              (store.mode || "memory") + "), the default " +
              "and what the containerized stack runs. The value round trip " +
@@ -5196,6 +5379,8 @@ async function settleStore(previous) {
 // grant had been made, and made the teardown warn about a roster that was
 // already empty — a false positive in both directions at once.
 function rolesHeldBy(body, person) {
+  log.debug("Entering rolesHeldBy().");
+  log.debug("Leaving rolesHeldBy().");
   return ((body && body.grants) || []).filter(function (grant) {
     return grant.username === person || grant.userKey === person;
   }).map(function (grant) { return grant.role; });
@@ -5509,10 +5694,12 @@ async function drainTheBrowserLog(driver) {
     const dropped = await driver.manage().logs().get("browser");
     log.debug("Leaving drainTheBrowserLog(). Dropped " + dropped.length + ".");
   } catch (e) {
+    log.debug("Caught in drainTheBrowserLog(): " + ((e && e.message) || e));
     // Not every driver serves the log endpoint; the check that reads it says
     // so for itself.
     log.debug("Leaving drainTheBrowserLog(). No log to drain.");
   }
+  log.debug("Leaving drainTheBrowserLog().");
 }
 
 async function theBrowserConsoleIsClean(driver) {
@@ -5533,7 +5720,8 @@ async function theBrowserConsoleIsClean(driver) {
 
   const severe = browserFlags.withoutTransientLoadErrors(
       entries.filter(function (entry) {
-        return String(entry.level && entry.level.name || entry.level) === "SEVERE";
+        return String(entry.level && entry.level.name ||
+                      entry.level) === "SEVERE";
       }).map(function (entry) { return String(entry.message); })
       // The browser asks for /favicon.ico on its own, on every origin, and
       // this service serves none. It is the browser's request rather than the

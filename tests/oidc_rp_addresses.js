@@ -50,44 +50,72 @@ require('../ldap/ldap_server');
 const oidcRp = require('../common/oidc_rp');
 const helpers = require('../common/helpers');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'oidc_rp_addresses',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const CLIENT = 'sts-admin-console';
 
 // The two things `beginSignIn()` reads off express's request, and the three
 // it calls on the response.
 function fakeReq(host) {
+  log.debug("Entering fakeReq().");
+  log.debug("Leaving fakeReq().");
   return {
     protocol: 'https',
     headers: { host: host },
     originalUrl: '/admin',
     get: function (name) {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
       return String(name).toLowerCase() === 'host' ? host : undefined;
     }
   };
 }
 
 function fakeRes() {
+  log.debug("Entering fakeRes().");
   const res = { statusCode: 0, location: '', ended: false };
-  res.status = function (code) { res.statusCode = code; return res; };
+  res.status = function (code) {
+    log.debug("Entering status().");
+    res.statusCode = code;
+    log.debug("Leaving status().");
+    return res;
+  };
   res.set = function (name, value) {
+    log.debug("Entering set().");
     if (String(name).toLowerCase() === 'location') {
       res.location = value;
     }
+    log.debug("Leaving set().");
     return res;
   };
-  res.end = function () { res.ended = true; return res; };
+  res.end = function () {
+    log.debug("Entering end().");
+    res.ended = true;
+    log.debug("Leaving end().");
+    return res;
+  };
+  log.debug("Leaving fakeRes().");
   return res;
 }
 
 function redirectUris() {
+  log.debug("Entering redirectUris().");
+  log.debug("Leaving redirectUris().");
   return [].concat(applications.clientConfigOf(CLIENT).redirect_uris || []);
 }
 
 function withSettings(pairs, fn) {
+  log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
   try {
     keys.forEach(function (key) {
       config.setOverride(key, String(pairs[key]));
     });
+    log.debug("Leaving withSettings().");
     return fn();
   } finally {
     keys.forEach(function (key) {
@@ -99,6 +127,7 @@ function withSettings(pairs, fn) {
 // Take back every value this file taught the entry, whatever happened, so the
 // entry is what `seedInternal` wrote when the next file reads it.
 function forget(values) {
+  log.debug("Entering forget().");
   values.forEach(function (value) {
     if (redirectUris().indexOf(value) >= 0) {
       applications.updateApplication(CLIENT, {
@@ -107,9 +136,11 @@ function forget(values) {
       });
     }
   });
+  log.debug("Leaving forget().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   const before = redirectUris();
   t.check(applications.clientConfigOf(CLIENT).registered,
           'the console\'s client is seeded, which everything below reads',
@@ -123,32 +154,35 @@ function run(t) {
       const started = oidcRp.beginSignIn(fakeReq('evil.example'), res, 'admin',
                                          { returnTo: '/admin' });
       t.check(!started.ok, 'a sign-in at an address the entry does not carry ' +
-              'is REFUSED in product mode', JSON.stringify(started).slice(0, 200));
+              'is REFUSED in product mode',
+              JSON.stringify(started).slice(0, 200));
       t.equal(started.reason, 'unregistered-address',
-              'and the refusal says which kind it is, so a page can say which ' +
-              'kind of fix it needs');
+              'and the refusal says which kind it is, so a page can say ' +
+              'which kind of fix it needs');
       t.check(/global\.publicBaseUrl/.test(started.why || ''),
               'naming global.publicBaseUrl, which is the fix', started.why);
       t.check(!res.ended && !res.location,
-              'and NO browser was sent anywhere — the refusal comes before the ' +
-              'redirect, not after it');
+              'and NO browser was sent anywhere — the refusal comes before ' +
+              'the redirect, not after it');
       t.check(redirectUris().indexOf('https://evil.example/admin/callback') < 0,
-              'and — the assertion the file is for — nothing was written onto ' +
-              'the console\'s client entry', JSON.stringify(redirectUris()));
+              'and — the assertion the file is for — nothing was written ' +
+              'onto the console\'s client ' +
+              'entry', JSON.stringify(redirectUris()));
       const held = before[0];
       if (held) {
         const ok = oidcRp.ensureRedirectUri(oidcRp.surfaceOf('admin'),
                                             applications.clientConfigOf(CLIENT),
                                             held);
         t.check(ok.ok && !ok.learnt,
-                'while an address the entry ALREADY carries is used in product ' +
-                'mode exactly as before', JSON.stringify(ok));
+                'while an address the entry ALREADY carries is used in ' +
+                'product mode exactly as before', JSON.stringify(ok));
       }
     });
 
     // -----------------------------------------------------------------------
     t.log.info('=== B. a pinned base is used and never learnt ===');
-    withSettings({ 'global.publicBaseUrl': 'https://idp.example.test' }, function () {
+    withSettings({ 'global.publicBaseUrl': 'https://idp.example.test' },
+                 function () {
       const res = fakeRes();
       const started = oidcRp.beginSignIn(fakeReq('evil.example'), res, 'admin',
                                          { returnTo: '/admin' });
@@ -171,7 +205,8 @@ function run(t) {
                    'global.mode': 'product' }, function () {
       const started = oidcRp.beginSignIn(fakeReq('evil.example'), fakeRes(),
                                          'admin', { returnTo: '/admin' });
-      t.check(!started.ok && /POST \/admin-api\/applications\/add/.test(started.why),
+      t.check(!started.ok &&
+              /POST \/admin-api\/applications\/add/.test(started.why),
               'in product mode a pinned callback the entry does not carry is ' +
               'refused too, naming how to register it', started.why);
     });
@@ -185,22 +220,24 @@ function run(t) {
     const started = oidcRp.beginSignIn(fakeReq(learnHost), res, 'admin',
                                        { returnTo: '/admin' });
     t.check(started.ok && res.statusCode === 303,
-            'development mode with nothing pinned starts the flow as it always ' +
-            'did', started.why);
+            'development mode with nothing pinned starts the flow as it ' +
+            'always did', started.why);
     t.check(redirectUris().indexOf(learnt) >= 0,
             'and the entry LEARNT the address — the container and proxy ' +
             'convenience this behaviour exists for is unchanged in development',
             JSON.stringify(redirectUris()));
     const capped = 'https://over-the-cap.example/admin/callback';
     planted.push(capped);
-    withSettings({ 'oidcRp.maxRedirectUris': redirectUris().length }, function () {
-      const again = oidcRp.beginSignIn(fakeReq('over-the-cap.example'), fakeRes(),
+    withSettings({ 'oidcRp.maxRedirectUris': redirectUris().length },
+                 function () {
+      const again = oidcRp.beginSignIn(fakeReq('over-the-cap.example'),
+                                       fakeRes(),
                                        'admin', { returnTo: '/admin' });
       t.check(again.ok, 'at the cap the flow still starts');
       t.check(redirectUris().indexOf(capped) < 0,
-              'but nothing more is written — an entry reached under many names, ' +
-              'or asked with many invented Hosts, cannot grow without bound ' +
-              'even in development', JSON.stringify(redirectUris()));
+              'but nothing more is written — an entry reached under many ' +
+              'names, or asked with many invented Hosts, cannot grow without ' +
+              'bound even in development', JSON.stringify(redirectUris()));
     });
 
     // -----------------------------------------------------------------------
@@ -209,15 +246,17 @@ function run(t) {
     try {
       process.env.STS_HOST = '::';
       t.check(/^https?:\/\/\[::1\]:\d+$/.test(oidcRp.loopbackOrigin()),
-              'a wildcard IPv6 bind is dialled on [::1], bracketed in the URL — ' +
-              'it was 127.0.0.1 whatever the bind', oidcRp.loopbackOrigin());
+              'a wildcard IPv6 bind is dialled on [::1], bracketed in the ' +
+              'URL — it was 127.0.0.1 whatever the ' +
+              'bind', oidcRp.loopbackOrigin());
       process.env.STS_HOST = '10.20.30.40';
       t.check(oidcRp.loopbackOrigin().indexOf('://10.20.30.40:') > 0,
               'an interface address is dialled as itself, since nothing ' +
               'answers on 127.0.0.1 for a listener bound only there',
               oidcRp.loopbackOrigin());
       t.equal(helpers.loopbackHost(), '10.20.30.40',
-              'and it is helpers.loopbackHost()\'s answer, not a second opinion');
+              'and it is helpers.loopbackHost()\'s answer, not a second ' +
+              'opinion');
       // THE SOCKET ITSELF IS OPENED IN `backChannel()`, whose request options
       // name the host separately from `loopbackOrigin()` — node wants an IPv6
       // literal there WITHOUT brackets. Dialling it for real would mean binding
@@ -230,8 +269,8 @@ function run(t) {
                                         source.indexOf('.request({') + 400);
       t.check(/host:\s*helpers\.loopbackHost\(\)/.test(requestBlock) &&
               !/host:\s*'127\.0\.0\.1'/.test(requestBlock),
-              'and backChannel() opens its socket on helpers.loopbackHost(), not ' +
-              'on the literal 127.0.0.1', requestBlock.slice(0, 120));
+              'and backChannel() opens its socket on helpers.loopbackHost(), ' +
+              'not on the literal 127.0.0.1', requestBlock.slice(0, 120));
     } finally {
       if (saved === undefined) {
         delete process.env.STS_HOST;
@@ -243,20 +282,21 @@ function run(t) {
             'a flow waits the sign-in screen\'s own ten minutes by default');
     withSettings({ 'authn.pendingTtlS': 90 }, function () {
       t.equal(oidcRp.flowTtlMs(), 90000,
-              'and follows authn.pendingTtlS — the two were "deliberately the ' +
-              'same" as two literals, which is how they come apart');
+              'and follows authn.pendingTtlS — the two were "deliberately ' +
+              'the same" as two literals, which is how they come apart');
     });
   } finally {
     forget(planted);
   }
   t.equal(JSON.stringify(redirectUris()), JSON.stringify(before),
           'and the entry is back to what the seed wrote');
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'oidc_rp_addresses',
-  describe: 'the console\'s and the portal\'s redirect URI: refused rather than ' +
-            'learnt in product mode, never learnt when pinned, capped in ' +
-            'development, and the back channel dialling the bound interface',
+  describe: 'the console\'s and the portal\'s redirect URI: refused rather ' +
+            'than learnt in product mode, never learnt when pinned, capped ' +
+            'in development, and the back channel dialling the bound interface',
   run: run
 };

@@ -225,8 +225,8 @@ const SCHEMA = {
             'modify, because a history anybody can edit is a history ' +
             'anybody can empty.' },
     { name: 'pwdChangedTime',
-      what: 'When the password was last set, as a GeneralizedTime. Maintained ' +
-            'by this service.' }
+      what: 'When the password was last set, as a GeneralizedTime. ' +
+            'Maintained by this service.' }
   ]
 };
 
@@ -248,11 +248,15 @@ function setDirectory(hooks) {
 }
 
 function directoryInstalled() {
+  log.debug("Entering directoryInstalled().");
+  log.debug("Leaving directoryInstalled().");
   return directory;
 }
 
 function haveDirectory() {
+  log.debug("Entering haveDirectory().");
   if (directory && typeof directory.allPasswordPolicies === 'function') {
+    log.debug("Leaving haveDirectory().");
     return true;
   }
   if (!warnedAboutNoDirectory) {
@@ -263,6 +267,7 @@ function haveDirectory() {
              'the policy an unedited service has anyway, so nothing is ' +
              'weaker than it would be.');
   }
+  log.debug("Leaving haveDirectory().");
   return false;
 }
 
@@ -270,8 +275,10 @@ function haveDirectory() {
 // READING.
 // ---------------------------------------------------------------------------
 function firstValue(attributes, name) {
+  log.debug("Entering firstValue().");
   const found = attributes[name] !== undefined ? attributes[name]
     : attributes[name.toLowerCase()];
+  log.debug("Leaving firstValue().");
   return Array.isArray(found) ? (found[0] === undefined ? '' : found[0])
     : (found === undefined || found === null ? '' : found);
 }
@@ -282,6 +289,7 @@ function firstValue(attributes, name) {
 // value will be compared against a password and a policy that read `12.5` as
 // 12 is a policy nobody wrote.
 function parseField(field, raw) {
+  log.debug("Entering parseField().");
   const text = String(raw === undefined || raw === null ? '' : raw).trim();
   if (field.type === 'bool') {
     const lower = text.toLowerCase();
@@ -290,29 +298,36 @@ function parseField(field, raw) {
     // and a JSON body sends true and false. All three spellings are one
     // question.
     if (['true', 'on', '1'].indexOf(lower) >= 0) {
+      log.debug("Leaving parseField().");
       return { value: true };
     }
     if (['false', 'off', '0', ''].indexOf(lower) >= 0) {
+      log.debug("Leaving parseField().");
       return { value: false };
     }
+    log.debug("Leaving parseField().");
     return { problem: field.label + ' is a yes-or-no setting, and "' +
                       text.slice(0, 40) + '" is neither.' };
   }
   if (!/^\d+$/.test(text)) {
+    log.debug("Leaving parseField().");
     return { problem: field.label + ' must be a whole number between ' +
                       field.min + ' and ' + field.max + '; "' +
                       text.slice(0, 40) + '" is not one.' };
   }
   const value = Number(text);
   if (value < field.min || value > field.max) {
+    log.debug("Leaving parseField().");
     return { problem: field.label + ' must be between ' + field.min + ' and ' +
                       field.max + '; ' + value + ' is not.' };
   }
+  log.debug("Leaving parseField().");
   return { value: value };
 }
 
 // The rules that relate two fields, which no one field can check.
 function crossFieldProblems(values) {
+  log.debug("Entering crossFieldProblems().");
   const out = [];
   if (values.generatedLength < values.minLength) {
     out.push('A generated password would be ' + values.generatedLength +
@@ -327,14 +342,18 @@ function crossFieldProblems(values) {
              ' symbols; it must be at least ' + (values.minSymbols * 2 + 2) +
              ' (twice the symbol count plus two).');
   }
+  log.debug("Leaving crossFieldProblems().");
   return out;
 }
 
 function entryFor(name) {
+  log.debug("Entering entryFor().");
   if (!haveDirectory()) {
+    log.debug("Leaving entryFor().");
     return null;
   }
   const wanted = String(name).toLowerCase();
+  log.debug("Leaving entryFor().");
   return directory.allPasswordPolicies().filter(function (entry) {
     return String(entry.name || '').toLowerCase() === wanted;
   })[0] || null;
@@ -397,7 +416,9 @@ function read(name) {
 // function exists so that assigning profiles later changes this body and no
 // caller — the username is accepted now for exactly that reason.
 function profileFor(username) {
+  log.debug("Entering profileFor().");
   void username;
+  log.debug("Leaving profileFor().");
   return read(DEFAULT_PROFILE);
 }
 
@@ -419,14 +440,17 @@ function list() {
 // nothing ASSIGNS one to anybody yet, so it would be an entry that decides
 // nothing while looking exactly like one that does.
 function checkProfileName(name) {
+  log.debug("Entering checkProfileName().");
   const text = String(name || DEFAULT_PROFILE).trim();
   if (text.toLowerCase() !== DEFAULT_PROFILE) {
+    log.debug("Leaving checkProfileName().");
     return 'There is one password policy profile, "' + DEFAULT_PROFILE +
            '", and it applies to everybody in this realm. "' +
            text.slice(0, 64) + '" cannot be created: nothing assigns a ' +
            'profile to a person yet, so a second one would decide nothing ' +
            'while looking exactly like one that does.';
   }
+  log.debug("Leaving checkProfileName().");
   return null;
 }
 
@@ -448,8 +472,9 @@ function validate(given) {
       raw = 'false';
     }
     if (raw === undefined) {
-      problems.push('`' + field.key + '` (' + field.label + ') is required. A ' +
-                    'save replaces the whole profile, so every field is sent.');
+      problems.push('`' + field.key + '` (' + field.label + ') is required. ' +
+                    'A save replaces the whole profile, so every field is ' +
+                    'sent.');
       return;
     }
     if (typeof raw === 'boolean' || typeof raw === 'number') {
@@ -481,14 +506,16 @@ function save(name, given) {
   const checked = validate(given);
   if (checked.problems.length) {
     log.debug('Leaving save(). The values were refused.');
-    return errorCodes.mark({ ok: false, errors: checked.problems }, 'STS-AUTHN-0108');
+    return errorCodes.mark({ ok: false, errors: checked.problems },
+                           'STS-AUTHN-0108');
   }
   if (!haveDirectory()) {
     log.debug('Leaving save(). No directory.');
     return errorCodes.mark({ ok: false,
              errors: ['There is no embedded directory in this process, so ' +
                       'there is nowhere to keep a password policy. ' +
-                      'ou=passwordPolicies IS the register.'] }, 'STS-AUTHN-0109');
+                      'ou=passwordPolicies IS the register.'] },
+                           'STS-AUTHN-0109');
   }
   const attributes = {
     objectClass: ['top', 'pwdPolicy', 'stsPasswordPolicy'],
@@ -537,6 +564,8 @@ function reset(name) {
 // CHECKING A PASSWORD.
 // ---------------------------------------------------------------------------
 function countMatching(password, pattern) {
+  log.debug("Entering countMatching().");
+  log.debug("Leaving countMatching().");
   return Array.from(password).filter(function (ch) {
     return pattern.test(ch);
   }).length;
@@ -551,18 +580,22 @@ function countMatching(password, pattern) {
 // password is in Greek has uppercase letters, and a rule that only saw A to Z
 // would refuse them for not having what they plainly have.
 function problemsWith(password, profile) {
+  log.debug("Entering problemsWith().");
   const rules = profile || read(DEFAULT_PROFILE);
-  const text = String(password === undefined || password === null ? '' : password);
+  const text = String(password === undefined || password === null ? '' :
+                      password);
   const out = [];
   const length = Array.from(text).length;
   if (length < rules.minLength) {
-    out.push('at least ' + rules.minLength + ' characters (it has ' + length + ')');
+    out.push('at least ' + rules.minLength + ' characters (it has ' + length +
+             ')');
   }
   if (rules.minSymbols > 0) {
     const symbols = countMatching(text, /[^\p{L}\p{N}\s]/u);
     if (symbols < rules.minSymbols) {
       out.push('at least ' + rules.minSymbols + ' symbol' +
-               (rules.minSymbols === 1 ? '' : 's') + ' (it has ' + symbols + ')');
+               (rules.minSymbols === 1 ? '' : 's') + ' (it has ' + symbols +
+               ')');
     }
   }
   if (rules.requireUppercase && countMatching(text, /\p{Lu}/u) === 0) {
@@ -571,11 +604,13 @@ function problemsWith(password, profile) {
   if (rules.requireDigit && countMatching(text, /\p{Nd}/u) === 0) {
     out.push('a number');
   }
+  log.debug("Leaving problemsWith().");
   return out;
 }
 
 // The rules as a person reads them, for the forms that ask for a password.
 function describe(profile) {
+  log.debug("Entering describe().");
   const rules = profile || read(DEFAULT_PROFILE);
   const out = ['at least ' + rules.minLength + ' characters'];
   if (rules.minSymbols > 0) {
@@ -593,6 +628,7 @@ function describe(profile) {
     out.push('not your current password or any of the ' + rules.history +
              ' before it');
   }
+  log.debug("Leaving describe().");
   return out;
 }
 
@@ -602,12 +638,16 @@ function describe(profile) {
 // and `credentials.js` decides what goes in them.
 // ---------------------------------------------------------------------------
 function generalizedTime(when) {
+  log.debug("Entering generalizedTime().");
   const d = when instanceof Date ? when : new Date(when || Date.now());
+  log.debug("Leaving generalizedTime().");
   return d.toISOString().replace(/[-:T]/g, '').replace(/\.\d{3}Z$/, 'Z');
 }
 
 function historyValue(hash, when) {
+  log.debug("Entering historyValue().");
   const data = String(hash);
+  log.debug("Leaving historyValue().");
   return generalizedTime(when) + '#' + OCTET_STRING_OID + '#' +
          Buffer.byteLength(data, 'utf8') + '#' + data;
 }
@@ -615,11 +655,14 @@ function historyValue(hash, when) {
 // The hash out of one stored value, or '' for one that is not in the form.
 // The DATA may itself contain `#`, so it is everything after the THIRD one.
 function hashOfHistoryValue(value) {
+  log.debug("Entering hashOfHistoryValue().");
   const text = String(value || '');
   const parts = text.split('#');
   if (parts.length < 4) {
+    log.debug("Leaving hashOfHistoryValue().");
     return '';
   }
+  log.debug("Leaving hashOfHistoryValue().");
   return parts.slice(3).join('#');
 }
 
@@ -657,8 +700,9 @@ function generate(profile) {
             ' characters produced no password satisfying the profile. The ' +
             'profile cannot be satisfied by a generated password.');
   log.debug('Leaving generate(). Gave up.');
-  throw errorCodes.mark(new Error('No generated password of ' + length + ' characters ' +
-                  'satisfied the password policy in ' + MAX_DRAWS + ' draws. ' +
+  throw errorCodes.mark(new Error('No generated password of ' + length + ' ' +
+                  'characters satisfied the password policy ' +
+                  'in ' + MAX_DRAWS + ' draws. ' +
                   'Raise the generated length or lower the symbol count on ' +
                   '/admin/policies.'), 'STS-AUTHN-0111');
 }
@@ -685,6 +729,8 @@ module.exports = {
   hashOfHistoryValue: hashOfHistoryValue,
   generalizedTime: generalizedTime,
   enforced: function () {
+    log.debug("Entering enforced().");
+    log.debug("Leaving enforced().");
     return mode.verifiesCredentials();
   }
 };

@@ -102,7 +102,11 @@ const registry = require('./spiffe_registry');
 const rpc = require('./spiffe_grpc');
 const auth = require('./spiffe_auth');
 
-function trustDomain() { return ca.trustDomain(); }
+function trustDomain() {
+  log.debug("Entering trustDomain().");
+  log.debug("Leaving trustDomain().");
+  return ca.trustDomain();
+}
 
 // ---------------------------------------------------------------------------
 // WHICH IDENTITIES THE CALLER GETS.
@@ -201,7 +205,8 @@ async function federatedBundlesFor(entries) {
   log.debug('Entering federatedBundlesFor().');
   const wanted = {};
   (entries || []).forEach(function (entry) {
-    (entry.federatesWith || []).forEach(function (name) { wanted[name] = true; });
+    (entry.federatesWith || []).forEach(function (
+        name) { wanted[name] = true; });
   });
   const out = {};
   Object.keys(wanted).forEach(function (name) {
@@ -213,11 +218,13 @@ async function federatedBundlesFor(entries) {
       // error and not silent: it is the ordinary order of events, and a
       // workload that gets no bundle for a trust domain its entry names has no
       // other way to find out why.
-      log.debug('federatedBundlesFor(): ' + name + ' is named by an entry and ' +
-                'no bundle for it is held here, so nothing is sent for it.');
+      log.debug('federatedBundlesFor(): ' + name + ' is named by an entry ' +
+                'and no bundle for it is held here, so nothing is sent for ' +
+                'it.');
     }
   });
-  log.debug('Leaving federatedBundlesFor(). ' + Object.keys(out).length + ' bundle(s).');
+  log.debug('Leaving federatedBundlesFor(). ' + Object.keys(out).length + ' ' +
+      'bundle(s).');
   return out;
 }
 
@@ -231,7 +238,8 @@ async function federatedBundlesFor(entries) {
 // the error names neither field.
 // ---------------------------------------------------------------------------
 // `observed`, when given, is told the SHORTEST lifetime among the SVIDs this
-// response carried — see `pushOnRotation()` for why the rotation timer needs it.
+// response carried — see `pushOnRotation()` for why the rotation timer needs
+// it.
 async function buildX509Response(caller, observed) {
   log.debug('Entering buildX509Response().');
   const entries = entitledEntries(caller);
@@ -326,8 +334,10 @@ async function buildX509Response(caller, observed) {
 // there so that an SVID clamped to nothing cannot spin the loop.
 // ---------------------------------------------------------------------------
 function rotationPeriod(lifetimeSeconds) {
+  log.debug("Entering rotationPeriod().");
   const lifetime = Number(lifetimeSeconds) > 0
     ? Number(lifetimeSeconds) : config.value('spiffe.svidTtl');
+  log.debug("Leaving rotationPeriod().");
   return Math.max(1, Math.floor(lifetime / 2));
 }
 
@@ -335,6 +345,7 @@ function pushOnRotation(push, buildResponse, label, lifetimeOf) {
   log.debug('Entering pushOnRotation().');
   const handle = { timer: null, stopped: false };
   function arm() {
+    log.debug("Entering arm().");
     const period = rotationPeriod(lifetimeOf ? lifetimeOf() : 0);
     log.debug('pushOnRotation(): ' + label + ' will be re-sent in ' + period +
               ' second(s) while the client is there.');
@@ -342,8 +353,11 @@ function pushOnRotation(push, buildResponse, label, lifetimeOf) {
     // `unref` so a held-open stream cannot keep the process alive on its own.
     // Everything else in this service dies with the process and so should this.
     if (handle.timer.unref) handle.timer.unref();
+    log.debug("Leaving arm().");
   }
+
   function tick() {
+    log.debug("Entering tick().");
     Promise.resolve()
       .then(buildResponse)
       .then(function (message) {
@@ -363,6 +377,7 @@ function pushOnRotation(push, buildResponse, label, lifetimeOf) {
                   'spiffe: could not re-send ' + label + ': ' + err.message);
         arm();
       });
+    log.debug("Leaving tick().");
   }
   arm();
   log.debug('Leaving pushOnRotation().');
@@ -385,7 +400,8 @@ const fetchX509Svid = rpc.serverStream('workload', 'FetchX509SVID',
     // the service default.
     const observed = { shortest: 0 };
     const first = await buildX509Response(caller, observed);
-    pushOnRotation(push, function () { return buildX509Response(caller, observed); },
+    pushOnRotation(push,
+                   function () { return buildX509Response(caller, observed); },
                    'FetchX509SVID', function () { return observed.shortest; });
     return first;
   });
@@ -444,7 +460,8 @@ const fetchX509Bundles = rpc.serverStream('workload', 'FetchX509Bundles',
 // error, which is what SPIRE does: "you may not have that" and "there is no
 // such entry" are not distinguishable to a workload and should not be.
 // ---------------------------------------------------------------------------
-const fetchJwtSvid = rpc.unary('workload', 'FetchJWTSVID', async function (call) {
+const fetchJwtSvid = rpc.unary('workload', 'FetchJWTSVID',
+                               async function (call) {
   await ca.ready();
   const request = call.request || {};
   const audiences = (request.audience || []).map(function (a) {
@@ -467,13 +484,16 @@ const fetchJwtSvid = rpc.unary('workload', 'FetchJWTSVID', async function (call)
       errorCodes.mark(call, 'STS-SPIFFE-0028');
       throw rpc.invalidArgument('spiffe_id: ' + parsed.reason);
     }
-    entries = entries.filter(function (entry) { return entry.spiffeId === parsed.id; });
+    entries = entries.filter(function (entry) {
+      return entry.spiffeId === parsed.id;
+    });
   }
   const svids = [];
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const minted = await ca.mintJwtSvid(entry.spiffeId, audiences,
-                                        { ttl: entry.jwtSvidTtl, hint: entry.hint });
+                                        { ttl: entry.jwtSvidTtl,
+                                          hint: entry.hint });
     registry.noteSvidIssued(entry.id);
     stats.recordSvid('JWT', {
       subject: entry.spiffeId, entryId: entry.id, audiences: audiences,
@@ -508,9 +528,11 @@ const fetchJwtSvid = rpc.unary('workload', 'FetchJWTSVID', async function (call)
 // be sending certificates to something that is going to parse them as JWKs.
 // ---------------------------------------------------------------------------
 async function jwtBundleFor(document) {
+  log.debug("Entering jwtBundleFor().");
   const jwtKeys = (document.keys || []).filter(function (key) {
     return key.use === 'jwt-svid';
   });
+  log.debug("Leaving jwtBundleFor().");
   return Buffer.from(JSON.stringify({ keys: jwtKeys }), 'utf8');
 }
 
@@ -545,15 +567,16 @@ const fetchJwtBundles = rpc.serverStream('workload', 'FetchJWTBundles',
 //
 // See the note in `spiffe_ca.validateJwtSvid()`: the point of this call is to
 // be told no, so a mock that said yes to everything would be useless to the
-// only person who would ever call it. It is the same exception `/oauth2/userinfo`
-// is among the token-reading endpoints.
+// only person who would ever call it. It is the same exception
+// `/oauth2/userinfo` is among the token-reading endpoints.
 //
 // The `claims` field is a `google.protobuf.Struct`, which grpc-js builds from a
 // plain object — but only from JSON-shaped values. `aud` may be a string or an
 // array and both are fine; a `Buffer` or an `undefined` in there produces a
 // serialisation error naming the field and not the value.
 // ---------------------------------------------------------------------------
-const validateJwtSvid = rpc.unary('workload', 'ValidateJWTSVID', async function (call) {
+const validateJwtSvid = rpc.unary('workload', 'ValidateJWTSVID',
+                                  async function (call) {
   await ca.ready();
   const request = call.request || {};
   const result = await ca.validateJwtSvid(request.svid, request.audience);
@@ -632,10 +655,12 @@ const validateJwtSvid = rpc.unary('workload', 'ValidateJWTSVID', async function 
 // `value` in both spellings.
 // ---------------------------------------------------------------------------
 function structFrom(value) {
+  log.debug("Entering structFrom().");
   const fields = {};
   Object.keys(value || {}).forEach(function (key) {
     fields[key] = valueFrom(value[key]);
   });
+  log.debug("Leaving structFrom().");
   return { fields: fields };
 }
 

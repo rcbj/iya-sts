@@ -52,15 +52,23 @@
 const pool = require('../common/request_pool');
 const config = require('../common/config');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'request_routing',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The two settings this file drives, saved and restored around every section —
 // they are process-wide and every later file in the run reads through them.
 // See tests/CLAUDE.md's rule about process-wide state.
 function withSettings(dispatch, fanout, fn) {
+  log.debug("Entering withSettings().");
   const hadDispatch = process.env.STS_WORKERS_DISPATCH;
   const hadFanout = process.env.STS_WORKERS_FANOUT;
   process.env.STS_WORKERS_DISPATCH = dispatch;
   process.env.STS_WORKERS_FANOUT = fanout;
   try {
+    log.debug("Leaving withSettings().");
     return fn();
   } finally {
     if (hadDispatch === undefined) {
@@ -82,6 +90,7 @@ function withSettings(dispatch, fanout, fn) {
 // because the default routes nothing anywhere.
 // ---------------------------------------------------------------------------
 function checkTheDefaultIsInert(t) {
+  log.debug("Entering checkTheDefaultIsInert().");
   t.log.info('=== with no dispatch list, nothing goes to a worker ===');
   withSettings('', '/scim,/xacml,/admin-api', function () {
     ['/oauth2/authorize', '/scim/v2/Users', '/admin', '/admin-api/config',
@@ -91,12 +100,14 @@ function checkTheDefaultIsInert(t) {
               String(pool.dispatched(url)));
     });
   });
+  log.debug("Leaving checkTheDefaultIsInert().");
 }
 
 // ---------------------------------------------------------------------------
 // THE SEGMENT BOUNDARY. This is the section the file was written for.
 // ---------------------------------------------------------------------------
 function checkThePrefixEndsAtASegment(t) {
+  log.debug("Entering checkThePrefixEndsAtASegment().");
   t.log.info('=== a prefix ends at a segment boundary ===');
   withSettings('/admin', '/scim,/xacml,/admin-api', function () {
     t.check(pool.dispatched('/admin') === true,
@@ -108,15 +119,16 @@ function checkThePrefixEndsAtASegment(t) {
 
     t.check(pool.dispatched('/admin-api/config') === false,
             'AND IT DOES NOT DISPATCH /admin-api. This is the bug the file ' +
-            'exists for: a bare prefix match made naming the console drag the ' +
-            'management API onto the affinity side of the routing, and the ' +
-            'two are the clearest case in the service of surfaces that must ' +
-            'route oppositely',
+            'exists for: a bare prefix match made naming the console drag ' +
+            'the management API onto the affinity side of the routing, and ' +
+            'the two are the clearest case in the service of surfaces that ' +
+            'must route oppositely',
             String(pool.dispatched('/admin-api/config')));
     t.check(pool.dispatched('/administrator') === false,
             'nor a path that merely starts with the same letters',
             String(pool.dispatched('/administrator')));
   });
+  log.debug("Leaving checkThePrefixEndsAtASegment().");
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +136,7 @@ function checkThePrefixEndsAtASegment(t) {
 // list rather than to an argument spread over several checks.
 // ---------------------------------------------------------------------------
 function checkTheRoutingPolicy(t) {
+  log.debug("Entering checkTheRoutingPolicy().");
   t.log.info('=== affinity for everything except the three that fan out ===');
   const DISPATCH = '/oauth2,/saml2,/saml11,/wsfed,/wstrust,/authn,/portal,' +
                    '/admin,/admin-api,/scim,/xacml,/federation,/ssf';
@@ -168,6 +181,7 @@ function checkTheRoutingPolicy(t) {
               String(pool.fansOut(url)));
     });
   });
+  log.debug("Leaving checkTheRoutingPolicy().");
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +194,7 @@ function checkTheRoutingPolicy(t) {
 // thing it does not reach.
 // ---------------------------------------------------------------------------
 function checkDispatchEverything(t) {
+  log.debug("Entering checkDispatchEverything().");
   t.log.info('=== "*" dispatches every path except what cannot move ===');
   withSettings('*', '/scim,/xacml,/admin-api', function () {
     ['/oauth2/authorize', '/saml2/sso', '/saml11/sso', '/wsfed', '/wstrust',
@@ -243,8 +258,8 @@ function checkDispatchEverything(t) {
     t.check(pool.mutationKeyOf({ method: 'PATCH' },
               '/realm/acme/scim/v2/Groups/abc') ===
               'r:/realm/acme/scim/v2/Groups/abc',
-            'AND IN A REALM, which is where the bulk-load jobs run — the pool ' +
-            'routes on req.originalUrl, which keeps the realm prefix',
+            'AND IN A REALM, which is where the bulk-load jobs run — the ' +
+            'pool routes on req.originalUrl, which keeps the realm prefix',
             pool.mutationKeyOf({ method: 'PATCH' },
                                '/realm/acme/scim/v2/Groups/abc'));
     t.check(pool.mutationKeyOf({ method: 'POST' }, '/scim/v2/Users') === '',
@@ -263,19 +278,20 @@ function checkDispatchEverything(t) {
     // the store. Measured on sequential SCIM creates: 16.2ms each spread,
     // 3.7ms each when the credential keeps them together.
     // ---------------------------------------------------------------------
-    const withCred = { method: 'POST', headers: { authorization: 'Basic abc' } };
+    const withCred = { method: 'POST',
+                       headers: { authorization: 'Basic abc' } };
     const other = { method: 'POST', headers: { authorization: 'Basic zzz' } };
     const key = pool.mutationKeyOf(withCred, '/scim/v2/Users');
     t.check(key.indexOf('c:') === 0,
-            'a fanout write carrying a credential is keyed on that credential, ' +
-            'so one client keeps landing on the worker that already holds its ' +
-            'writes', key);
+            'a fanout write carrying a credential is keyed on that ' +
+            'credential, so one client keeps landing on the worker that ' +
+            'already holds its writes', key);
     t.check(key === pool.mutationKeyOf(withCred, '/scim/v2/Users'),
             'and the key is STABLE for one credential — an affinity key that ' +
             'moved would spread the client again and buy nothing', key);
     t.check(key !== pool.mutationKeyOf(other, '/scim/v2/Users'),
-            'while a different credential gets a different worker, so this is ' +
-            'locality and not a funnel', 'differs');
+            'while a different credential gets a different worker, so this ' +
+            'is locality and not a funnel', 'differs');
     t.check(key.indexOf('abc') < 0 && key.indexOf('Basic') < 0,
             'AND THE KEY IS NOT THE HEADER. It is hashed, because a routing ' +
             'key lives in a Map for the life of the process and a Basic ' +
@@ -288,16 +304,17 @@ function checkDispatchEverything(t) {
     t.check(pool.mutationKeyOf({ method: 'PATCH',
                                  headers: { authorization: 'Basic abc' } },
                                '/scim/v2/Groups/g1') === 'r:/scim/v2/Groups/g1',
-            'and a write to ONE RESOURCE still wins over the credential — two ' +
-            'clients patching one group must meet on one worker, which is the ' +
-            'serialisation that keeps their appends from losing each other',
+            'and a write to ONE RESOURCE still wins over the credential — ' +
+            'two clients patching one group must meet on one worker, which ' +
+            'is the serialisation that keeps their appends from losing each ' +
+            'other',
             pool.mutationKeyOf({ method: 'PATCH',
                                  headers: { authorization: 'Basic abc' } },
                                '/scim/v2/Groups/g1'));
 
     t.check(pool.mutationKeyOf({ method: 'GET' }, '/scim/v2/Groups/abc') === '',
-            'and a READ is untouched — a reader that must see a write is what ' +
-            'the barrier is for; this is about two writers',
+            'and a READ is untouched — a reader that must see a write is ' +
+            'what the barrier is for; this is about two writers',
             JSON.stringify(pool.mutationKeyOf({ method: 'GET' },
                                               '/scim/v2/Groups/abc')));
 
@@ -307,9 +324,11 @@ function checkDispatchEverything(t) {
     t.check(pool.fansOut('/oauth2/authorize') === false,
             'nor which hold affinity', 'no');
   });
+  log.debug("Leaving checkDispatchEverything().");
 }
 
 function checkTheRealmIsTransparent(t) {
+  log.debug("Entering checkTheRealmIsTransparent().");
   t.log.info('=== a realm prefix does not change the routing ===');
   withSettings('/scim,/admin', '/scim,/xacml,/admin-api', function () {
     t.check(pool.dispatched('/realm/acme/scim/v2/Users') === true,
@@ -320,6 +339,7 @@ function checkTheRealmIsTransparent(t) {
             'and a realmed console page holds affinity exactly as the bare ' +
             'one does — the realm is not a routing decision', 'no');
   });
+  log.debug("Leaving checkTheRealmIsTransparent().");
 }
 
 // ---------------------------------------------------------------------------
@@ -327,6 +347,7 @@ function checkTheRealmIsTransparent(t) {
 // enough: the hops that most need affinity happen before there is a session.
 // ---------------------------------------------------------------------------
 function checkTheAffinityKey(t) {
+  log.debug("Entering checkTheAffinityKey().");
   t.log.info('=== the affinity key: cookie first, then the flow ===');
 
   const withCookie = { headers: { cookie: 'a=1; sts_session=SESS1; b=2' },
@@ -354,9 +375,9 @@ function checkTheAffinityKey(t) {
                  url: '/oauth2/consent?consent=C7',
                  originalUrl: '/oauth2/consent?consent=C7' };
   t.check(pool.affinityKeyOf(both) === 's:SESS2',
-          'the cookie WINS over a flow id, because a request carrying both is ' +
-          'a browser that is already signed in and the session outlives the ' +
-          'flow', pool.affinityKeyOf(both));
+          'the cookie WINS over a flow id, because a request carrying both ' +
+          'is a browser that is already signed in and the session outlives ' +
+          'the flow', pool.affinityKeyOf(both));
 
   const artifact = { headers: {}, url: '/saml11/artifact?SAMLart=AA%2FBB',
                      originalUrl: '/saml11/artifact?SAMLart=AA%2FBB' };
@@ -385,8 +406,8 @@ function checkTheAffinityKey(t) {
   const bothCookies = { headers: { cookie: 'sts_pool=4242; sts_session=SESS3' },
                         url: '/admin', originalUrl: '/admin' };
   t.check(pool.affinityKeyOf(bothCookies) === 's:SESS3',
-          'and the sign-on session still wins over it, because it is bound to ' +
-          'the worker that minted it rather than hashed to an arbitrary one',
+          'and the sign-on session still wins over it, because it is bound ' +
+          'to the worker that minted it rather than hashed to an arbitrary one',
           pool.affinityKeyOf(bothCookies));
 
   // And with no pin the session is still the key — a browser that never got a
@@ -409,8 +430,9 @@ function checkTheAffinityKey(t) {
                   url: '/admin', originalUrl: '/admin' };
   t.check(pool.affinityKeyOf(empty) === '',
           'an EMPTY cookie is no key either — a sign-out clears it, and ' +
-          'binding the empty string would pin every signed-out request to one ' +
-          'worker', JSON.stringify(pool.affinityKeyOf(empty)));
+          'binding the empty string would pin every signed-out request to ' +
+          'one worker', JSON.stringify(pool.affinityKeyOf(empty)));
+  log.debug("Leaving checkTheAffinityKey().");
 }
 
 // ---------------------------------------------------------------------------
@@ -429,6 +451,7 @@ function checkTheAffinityKey(t) {
 // where `ldap` would quietly match `/ldapsomething`.
 // ---------------------------------------------------------------------------
 function checkOperations(t) {
+  log.debug("Entering checkOperations().");
   t.log.info('=== operations and paths come out of one setting ===');
   const had = process.env.STS_WORKERS_DISPATCH;
   try {
@@ -494,9 +517,11 @@ function checkOperations(t) {
       process.env.STS_WORKERS_DISPATCH = had;
     }
   }
+  log.debug("Leaving checkOperations().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkTheDefaultIsInert(t);
   checkThePrefixEndsAtASegment(t);
   checkTheRoutingPolicy(t);
@@ -504,6 +529,7 @@ function run(t) {
   checkTheRealmIsTransparent(t);
   checkTheAffinityKey(t);
   checkOperations(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

@@ -6,13 +6,14 @@
 // REVOCATION, CONSULTED (2026-09-12): THE OTHER HALF OF `pki_revocation.js`.
 //
 // `common/pki_revocation.js` PUBLISHES — every certificate authority this
-// service holds signs an RFC 5280 CRL and answers RFC 6960 OCSP. Until this file
-// existed nothing here CONSULTED anything: a client certificate presented on
-// 8443, 9443 or the main port, an X509-SVID at the SPIRE Server API and a chain
-// in an assertion's `x5c` were all checked against their anchors and never
-// against a list, so **a certificate revoked on this service's own /admin/pki
-// still authenticated to this service.** `common/mode.js` carried that as its
-// `certificate-revocation` NOT_YET row, and this file is what narrowed it.
+// service holds signs an RFC 5280 CRL and answers RFC 6960 OCSP. Until this
+// file existed nothing here CONSULTED anything: a client certificate presented
+// on 8443, 9443 or the main port, an X509-SVID at the SPIRE Server API and a
+// chain in an assertion's `x5c` were all checked against their anchors and
+// never against a list, so **a certificate revoked on this service's own
+// /admin/pki still authenticated to this service.** `common/mode.js` carried
+// that as its `certificate-revocation` NOT_YET row, and this file is what
+// narrowed it.
 //
 // ---------------------------------------------------------------------------
 // ONE FUNCTION ANSWERS, AND EVERY DOOR ASKS IT.
@@ -30,13 +31,13 @@
 //   * **A CERTIFICATE ONE OF THIS SERVICE'S OWN AUTHORITIES SIGNED is answered
 //     from the REGISTER** — `pki_revocation.isRevoked()` — with no fetch. The
 //     issuer is found by NAME AND SIGNATURE among the Root, every Intermediate
-//     and every Issuing CA this process holds, which is the only comparison that
-//     tells two same-named authorities apart (`pki.js` says why at length). It
-//     is synchronous, so it has no failure mode: the answer is `good` or
-//     `revoked` and never `unknown`. **The walk goes UP through the tiers this
-//     service holds whether or not the client sent them**, because a revoked
-//     Intermediate revokes everything under it and a client that sends only its
-//     leaf must not be how that is got around.
+//     and every Issuing CA this process holds, which is the only comparison
+//     that tells two same-named authorities apart (`pki.js` says why at
+//     length). It is synchronous, so it has no failure mode: the answer is
+//     `good` or `revoked` and never `unknown`. **The walk goes UP through the
+//     tiers this service holds whether or not the client sent them**, because a
+//     revoked Intermediate revokes everything under it and a client that sends
+//     only its leaf must not be how that is got around.
 //   * **A CERTIFICATE FROM ANYBODY ELSE'S AUTHORITY is answered by the OCSP
 //     responder its Authority Information Access names and by the CRL its
 //     `cRLDistributionPoints` names** — in the order `pki.revocationOcsp`
@@ -163,10 +164,10 @@
 //     distribution points name. REVOKED makes its answers unusable under every
 //     policy. UNKNOWN is decided by the policy at the moment of use —
 //     `responderStatusOf()` argues it.
-//   * **A SIGNED `unknown` IS AN ANSWER**: the issuer's responder saying it does
-//     not know this certificate. It is kept as unknown under the policy — so
-//     hard-fail refuses it — and a CRL that does not list the certificate does
-//     not upgrade it, while one that lists it still wins.
+//   * **A SIGNED `unknown` IS AN ANSWER**: the issuer's responder saying it
+//     does not know this certificate. It is kept as unknown under the policy —
+//     so hard-fail refuses it — and a CRL that does not list the certificate
+//     does not upgrade it, while one that lists it still wins.
 //
 // ---------------------------------------------------------------------------
 // DELTA AND INDIRECT CRLs (RFC 5280 sections 5.2.4, 5.2.5 and 5.3.3), ALSO THE
@@ -179,15 +180,15 @@
 //     `removeFromCRL` takes an entry off. A delta that cannot be applied leaves
 //     a base's permanent revocation standing and makes everything else unknown,
 //     because blocking a delta must not hide the newest revocations.
-//   * **AN INDIRECT CRL** is one the certificate's cRLDistributionPoints says is
-//     issued by a named cRLIssuer. The list must declare indirectCRL, carry that
-//     name, and be signed by a certificate for it that may sign CRLs and chains
-//     to an authority the presented path passes through — found in the chain,
-//     among this service's authorities, in `pki.revocationCrlIssuersFile`, or
-//     at the caIssuers address the CRL's own Authority Information Access
-//     names (`crlSignerFromCaIssuers()`).
-//     Entries are attributed to the certificateIssuer before them, so a serial
-//     is only ever matched under the right issuer.
+//   * **AN INDIRECT CRL** is one the certificate's cRLDistributionPoints says
+//     is issued by a named cRLIssuer. The list must declare indirectCRL, carry
+//     that name, and be signed by a certificate for it that may sign CRLs and
+//     chains to an authority the presented path passes through — found in the
+//     chain, among this service's authorities, in
+//     `pki.revocationCrlIssuersFile`, or at the caIssuers address the CRL's own
+//     Authority Information Access names (`crlSignerFromCaIssuers()`). Entries
+//     are attributed to the certificateIssuer before them, so a serial is only
+//     ever matched under the right issuer.
 //   * **THE ISSUING DISTRIBUTION POINT IS HONOURED**: its name must match the
 //     point the certificate named; onlyContainsUserCerts, onlyContainsCACerts
 //     and onlyContainsAttributeCerts decide whether it is about this
@@ -205,22 +206,23 @@
 //   * **A NAME RELATIVE TO ITS CRL ISSUER IS RESOLVED ONLY WHERE IT IS
 //     UNAMBIGUOUS**: every RDN single-valued, and a directory named by
 //     `pki.revocationLdapDirectory`. A multi-valued RDN has no single string
-//     form a directory is guaranteed to index it under, and the directory is not
-//     in the certificate at all, so either absence is REFUSED by name rather
-//     than guessed (`wholeNameOf()`, `relativeAddressOf()`).
+//     form a directory is guaranteed to index it under, and the directory is
+//     not in the certificate at all, so either absence is REFUSED by name
+//     rather than guessed (`wholeNameOf()`, `relativeAddressOf()`).
 //   * **A PRESENTED CERTIFICATE WHOSE ISSUER WAS NOT PRESENTED IS NOT
 //     PATH-BUILT** from its caIssuers address. A verified chain already carries
 //     its issuer — the TLS handshake would not have verified otherwise — so the
 //     case does not arise at a door that verified; a REGISTERED certificate,
 //     which nothing presents, is the one whose issuers are fetched.
-//   * **LDAPS 636 ASKS FOR NO CLIENT CERTIFICATE**, so there is nothing there to
-//     consult (`ldap/ldap_server.js` says so at the listener).
+//   * **LDAPS 636 ASKS FOR NO CLIENT CERTIFICATE**, so there is nothing there
+//     to consult (`ldap/ldap_server.js` says so at the listener).
 //   * **A SPIFFE FEDERATED BUNDLE IS A SET OF TRUST ANCHORS**, and an anchor is
-//     trusted by being installed; no list can revoke one, which is what the walk
-//     answers for a self-signed link anywhere.
-//   * **RFC 8705 TOKEN BINDING IS NOT A REFUSAL POINT.** A `cnf` thumbprint binds
-//     a token to whichever key completed the handshake, and section 3 explicitly
-//     permits a certificate nobody vouched for; binding authenticates nobody.
+//     trusted by being installed; no list can revoke one, which is what the
+//     walk answers for a self-signed link anywhere.
+//   * **RFC 8705 TOKEN BINDING IS NOT A REFUSAL POINT.** A `cnf` thumbprint
+//     binds a token to whichever key completed the handshake, and section 3
+//     explicitly permits a certificate nobody vouched for; binding
+//     authenticates nobody.
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3): it registers no route. It requires `config`, `mode`,
@@ -261,11 +263,11 @@ const USER_AGENT = require('./version').userAgent('crl-fetch');
 
 const POLICIES = ['auto', 'off', 'soft-fail', 'hard-fail'];
 
-// The two REFUSAL codes, named once, because `decide()` marks a verdict with one
-// and three doors elsewhere compare against them. The two FAILURE codes —
+// The two REFUSAL codes, named once, because `decide()` marks a verdict with
+// one and three doors elsewhere compare against them. The two FAILURE codes —
 // STS-PKI-0120 (a CRL could not be fetched) and STS-PKI-0121 (it could not be
-// used) — are written as literals at each log line, where `tests/error_codes.js`
-// looks for a code beside a failure.
+// used) — are written as literals at each log line, where
+// `tests/error_codes.js` looks for a code beside a failure.
 const CODE_REVOKED = 'STS-PKI-0118';
 const CODE_UNKNOWN = 'STS-PKI-0119';
 
@@ -294,7 +296,8 @@ function policy() {
       config.value('pki.revocationRequireDistributionPoint') === true,
     decidedBy: configured === 'auto'
       ? 'pki.revocationCheck is auto, so the mode decides: ' +
-        (mode.isProduct() ? 'product mode hard-fails' : 'development mode soft-fails')
+        (mode.isProduct() ? 'product mode hard-fails' : 'development mode ' +
+                                                        'soft-fails')
       : 'pki.revocationCheck is set to ' + configured
   };
 }
@@ -307,6 +310,8 @@ function policy() {
 // because two spellings of one serial is a certificate that is revoked and
 // reports as good.
 function normalSerial(text) {
+  log.debug("Entering normalSerial().");
+  log.debug("Leaving normalSerial().");
   return pkiRevocation.normalSerial(text);
 }
 
@@ -315,32 +320,42 @@ function normalSerial(text) {
 // before this certificate — `pki_revocation.js`'s `derFromPem()` records the
 // afternoon that cost.
 function arrayBufferOf(buf) {
+  log.debug("Entering arrayBufferOf().");
+  log.debug("Leaving arrayBufferOf().");
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 }
 
 function derOfPem(pem) {
+  log.debug("Entering derOfPem().");
+  log.debug("Leaving derOfPem().");
   return Buffer.from(String(pem || '').replace(/-----[^-]+-----/g, '')
     .replace(/\s+/g, ''), 'base64');
 }
 
 // A parsed certificate, or null. Accepts PEM, DER or an X509Certificate.
 function x509Of(value) {
+  log.debug("Entering x509Of().");
   if (!value) {
+    log.debug("Leaving x509Of().");
     return null;
   }
   if (value instanceof nodeCrypto.X509Certificate) {
+    log.debug("Leaving x509Of().");
     return value;
   }
   try {
     if (Buffer.isBuffer(value)) {
+      log.debug("Leaving x509Of().");
       return new nodeCrypto.X509Certificate(value);
     }
+    log.debug("Leaving x509Of().");
     return new nodeCrypto.X509Certificate(String(value));
   } catch (e) {
     // Not a certificate this OpenSSL can read — a composite post-quantum one,
     // or bytes that are not a certificate at all. Answered as absent: the
     // caller reports a link it could not read rather than a verdict about it.
     log.debug('x509Of(): unreadable: ' + e.message);
+    log.debug("Leaving x509Of().");
     return null;
   }
 }
@@ -348,12 +363,17 @@ function x509Of(value) {
 // Did `issuer` sign `cert`? Name AND signature, because two authorities this
 // service built carry the same subject and only the key tells them apart.
 function signedBy(cert, issuer) {
+  log.debug("Entering signedBy().");
   if (!cert || !issuer || cert.issuer !== issuer.subject) {
+    log.debug("Leaving signedBy().");
     return false;
   }
   try {
+    log.debug("Leaving signedBy().");
     return cert.checkIssued(issuer) && cert.verify(issuer.publicKey);
   } catch (e) {
+    log.debug("Caught in signedBy(): " + ((e && e.message) || e));
+    log.debug("Leaving signedBy().");
     // `verify()` throws for a key of the wrong type rather than answering
     // false. That is an ordinary "not this issuer", not an error.
     return false;
@@ -361,6 +381,8 @@ function signedBy(cert, issuer) {
 }
 
 function selfSigned(cert) {
+  log.debug("Entering selfSigned().");
+  log.debug("Leaving selfSigned().");
   return !!cert && cert.subject === cert.issuer && signedBy(cert, cert);
 }
 
@@ -380,11 +402,14 @@ const parsed = new Map();
 const PARSE_MEMO_ENTRIES = 256;
 
 function parsedTier(pem) {
+  log.debug("Entering parsedTier().");
   const key = String(pem || '');
   if (!key) {
+    log.debug("Leaving parsedTier().");
     return null;
   }
   if (parsed.has(key)) {
+    log.debug("Leaving parsedTier().");
     return parsed.get(key);
   }
   const cert = x509Of(key);
@@ -392,6 +417,7 @@ function parsedTier(pem) {
     parsed.clear();
   }
   parsed.set(key, cert);
+  log.debug("Leaving parsedTier().");
   return cert;
 }
 
@@ -421,14 +447,17 @@ function heldAuthorities() {
 
 // The authority this service holds that signed `cert`, or null.
 function localIssuerOf(cert) {
+  log.debug("Entering localIssuerOf().");
   const held = heldAuthorities();
   for (let i = 0; i < held.length; i++) {
     const tierCert = parsedTier(held[i].tier && held[i].tier.certificatePem);
     if (tierCert && signedBy(cert, tierCert)) {
+      log.debug("Leaving localIssuerOf().");
       return { scope: held[i].scope, ca: held[i].ca, tier: held[i].tier,
                cert: tierCert };
     }
   }
+  log.debug("Leaving localIssuerOf().");
   return null;
 }
 
@@ -472,7 +501,8 @@ const CERT_ID_HASHES = {
   '2.16.840.1.101.3.4.2.3': 'sha512'
 };
 const OCSP_RESPONSE_STATUS = { 1: 'malformedRequest', 2: 'internalError',
-                               3: 'tryLater', 5: 'sigRequired', 6: 'unauthorized' };
+                               3: 'tryLater', 5: 'sigRequired',
+                               6: 'unauthorized' };
 const SHORT_NAMES = { '2.5.4.3': 'CN', '2.5.4.10': 'O', '2.5.4.11': 'OU',
                       '2.5.4.6': 'C', '2.5.4.7': 'L', '2.5.4.8': 'ST',
                       '0.9.2342.19200300.100.1.25': 'DC',
@@ -481,16 +511,22 @@ const SHORT_NAMES = { '2.5.4.3': 'CN', '2.5.4.10': 'O', '2.5.4.11': 'OU',
 // `pki.revocationClockSkewS`, read directly: zero is legal and means the clocks
 // agree exactly, which `Number(x || n)` would have made unreachable.
 function skewMs() {
+  log.debug("Entering skewMs().");
   const seconds = Number(config.value('pki.revocationClockSkewS'));
+  log.debug("Leaving skewMs().");
   return seconds > 0 ? seconds * 1000 : 0;
 }
 
 function ocspMaxAgeMs() {
+  log.debug("Entering ocspMaxAgeMs().");
+  log.debug("Leaving ocspMaxAgeMs().");
   return Math.max(1, Number(config.value('pki.revocationOcspMaxAgeS'))) * 1000;
 }
 
 function ocspOrder() {
+  log.debug("Entering ocspOrder().");
   const order = String(config.value('pki.revocationOcsp') || 'first');
+  log.debug("Leaving ocspOrder().");
   return ['first', 'after-crl', 'off'].indexOf(order) >= 0 ? order : 'first';
 }
 
@@ -505,35 +541,46 @@ function ocspOrder() {
 // mask read wrongly is a list believed to cover reasons it does not, which is
 // a certificate reported good by a list that was never about it.
 //
-// **A NAME IS COMPARED AS ITS ATTRIBUTES, NOT AS ITS BYTES.** The same issuer is
-// written as a PrintableString by one encoder and a UTF8String by another, and
-// the CRL, the certificateIssuer entry and the cRLIssuer each come from a
+// **A NAME IS COMPARED AS ITS ATTRIBUTES, NOT AS ITS BYTES.** The same issuer
+// is written as a PrintableString by one encoder and a UTF8String by another,
+// and the CRL, the certificateIssuer entry and the cRLIssuer each come from a
 // different one. Order is kept — a DN is an ordered sequence.
 // ---------------------------------------------------------------------------
 function derParse(bytes) {
+  log.debug("Entering derParse().");
   const parsed = asn1js.fromBER(arrayBufferOf(Buffer.from(bytes)));
   if (parsed.offset === -1) {
     throw new Error('not DER: ' + parsed.result.error);
   }
+  log.debug("Leaving derParse().");
   return parsed.result;
 }
 
 function contextTagOf(element) {
+  log.debug("Entering contextTagOf().");
+  log.debug("Leaving contextTagOf().");
   return element && element.idBlock && element.idBlock.tagClass === 3
     ? element.idBlock.tagNumber : -1;
 }
 
 function childrenOf(element) {
-  return element && element.valueBlock && Array.isArray(element.valueBlock.value)
+  log.debug("Entering childrenOf().");
+  log.debug("Leaving childrenOf().");
+  return element && element.valueBlock &&
+         Array.isArray(element.valueBlock.value)
     ? element.valueBlock.value : [];
 }
 
 function booleanOf(element) {
+  log.debug("Entering booleanOf().");
   const view = element && element.valueBlock && element.valueBlock.valueHexView;
+  log.debug("Leaving booleanOf().");
   return !!(view && view.length && view[0] !== 0);
 }
 
 function generalNamesOf(element) {
+  log.debug("Entering generalNamesOf().");
+  log.debug("Leaving generalNamesOf().");
   return childrenOf(element).map(function (one) {
     return new pkijs.GeneralName({ schema: one });
   });
@@ -542,6 +589,7 @@ function generalNamesOf(element) {
 // A reason mask from the CONTENT octets of an implicitly tagged BIT STRING —
 // the unused-bits count first, then the bits, MSB first.
 function reasonMaskOf(content) {
+  log.debug("Entering reasonMaskOf().");
   const bits = Buffer.from(content).slice(1);
   let mask = 0;
   for (let reason = 1; reason <= 8; reason++) {
@@ -549,101 +597,136 @@ function reasonMaskOf(content) {
       mask |= (1 << reason);
     }
   }
+  log.debug("Leaving reasonMaskOf().");
   return mask;
 }
 
 function nameKey(rdn) {
+  log.debug("Entering nameKey().");
   if (!rdn || !Array.isArray(rdn.typesAndValues)) {
+    log.debug("Leaving nameKey().");
     return '';
   }
+  log.debug("Leaving nameKey().");
   return rdn.typesAndValues.map(function (one) {
-    const value = one.value && one.value.valueBlock ? one.value.valueBlock.value : '';
+    const value = one.value && one.value.valueBlock ?
+                  one.value.valueBlock.value : '';
     return one.type + '=' + String(value === undefined ? '' : value).trim()
       .replace(/\s+/g, ' ').toLowerCase();
   }).join(',');
 }
 
 function describeName(rdn) {
+  log.debug("Entering describeName().");
   if (!rdn || !Array.isArray(rdn.typesAndValues)) {
+    log.debug("Leaving describeName().");
     return '(an unreadable name)';
   }
+  log.debug("Leaving describeName().");
   return rdn.typesAndValues.map(function (one) {
-    const value = one.value && one.value.valueBlock ? one.value.valueBlock.value : '';
+    const value = one.value && one.value.valueBlock ?
+                  one.value.valueBlock.value : '';
     return (SHORT_NAMES[one.type] || one.type) + '=' + String(value);
   }).join(', ');
 }
 
 // The DER of a Name exactly as it was received, which is what a CertID hashes.
 function nameDerOf(rdn) {
+  log.debug("Entering nameDerOf().");
   if (rdn.valueBeforeDecode && rdn.valueBeforeDecode.byteLength) {
+    log.debug("Leaving nameDerOf().");
     return Buffer.from(rdn.valueBeforeDecode);
   }
+  log.debug("Leaving nameDerOf().");
   return Buffer.from(rdn.toSchema().toBER(false));
 }
 
 function generalNameKey(name) {
+  log.debug("Entering generalNameKey().");
   if (name.type === 6) {
+    log.debug("Leaving generalNameKey().");
     return 'uri:' + String(name.value || '');
   }
   if (name.type === 4) {
+    log.debug("Leaving generalNameKey().");
     return 'dn:' + nameKey(name.value);
   }
+  log.debug("Leaving generalNameKey().");
   return 'type' + name.type;
 }
 
 function pkijsOf(cert) {
+  log.debug("Entering pkijsOf().");
   if (!cert || !cert.raw) {
+    log.debug("Leaving pkijsOf().");
     return null;
   }
   try {
+    log.debug("Leaving pkijsOf().");
     return pkijs.Certificate.fromBER(arrayBufferOf(cert.raw));
   } catch (e) {
     // A certificate OpenSSL read and pkijs could not. Answered as absent, and
     // every caller reports what it therefore could not look at.
     log.debug('pkijsOf(): pkijs could not parse it: ' + e.message);
+    log.debug("Leaving pkijsOf().");
     return null;
   }
 }
 
 function extensionOf(parsedCert, oid) {
+  log.debug("Entering extensionOf().");
+  log.debug("Leaving extensionOf().");
   return ((parsedCert && parsedCert.extensions) || []).filter(function (ext) {
     return ext.extnID === oid;
   })[0] || null;
 }
 
 function isCaCertificate(parsedCert) {
+  log.debug("Entering isCaCertificate().");
   const ext = extensionOf(parsedCert, OID.BASIC_CONSTRAINTS);
+  log.debug("Leaving isCaCertificate().");
   return !!(ext && ext.parsedValue && ext.parsedValue.cA);
 }
 
 // RFC 5280 section 4.2.1.3: a certificate with no keyUsage is unrestricted.
 function keyUsageAllows(parsedCert, bit) {
+  log.debug("Entering keyUsageAllows().");
   const ext = extensionOf(parsedCert, OID.KEY_USAGE);
   if (!ext || !ext.parsedValue || !ext.parsedValue.valueBlock) {
+    log.debug("Leaving keyUsageAllows().");
     return true;
   }
   const bytes = Buffer.from(ext.parsedValue.valueBlock.valueHexView);
+  log.debug("Leaving keyUsageAllows().");
   return !!(((bytes[bit >> 3] || 0) >> (7 - (bit & 7))) & 1);
 }
 
 function hasExtendedKeyUsage(parsedCert, oid) {
+  log.debug("Entering hasExtendedKeyUsage().");
   const ext = extensionOf(parsedCert, OID.EXT_KEY_USAGE);
-  return !!(ext && ext.parsedValue && Array.isArray(ext.parsedValue.keyPurposes) &&
+  log.debug("Leaving hasExtendedKeyUsage().");
+  return !!(ext && ext.parsedValue &&
+            Array.isArray(ext.parsedValue.keyPurposes) &&
             ext.parsedValue.keyPurposes.indexOf(oid) >= 0);
 }
 
 function validAt(cert, now) {
+  log.debug("Entering validAt().");
   const skew = skewMs();
+  log.debug("Leaving validAt().");
   return !(Date.parse(cert.validFrom) - skew > now) &&
          !(Date.parse(cert.validTo) + skew < now);
 }
 
 function integerExtensionOf(ext) {
+  log.debug("Entering integerExtensionOf().");
   if (!ext) {
+    log.debug("Leaving integerExtensionOf().");
     return null;
   }
   const integer = derParse(ext.extnValue.valueBlock.valueHexView);
   const hex = Buffer.from(integer.valueBlock.valueHexView).toString('hex');
+  log.debug("Leaving integerExtensionOf().");
   return BigInt('0x' + (hex || '0'));
 }
 
@@ -657,10 +740,13 @@ function integerExtensionOf(ext) {
 // verdict can say what was there and why it was not dialled.
 // ---------------------------------------------------------------------------
 function pointNameOf(wrapper) {
+  log.debug("Entering pointNameOf().");
   const inner = childrenOf(wrapper)[0];
   if (contextTagOf(inner) === 0) {
+    log.debug("Leaving pointNameOf().");
     return { names: generalNamesOf(inner), relative: false, rdn: null };
   }
+  log.debug("Leaving pointNameOf().");
   return { names: [], relative: contextTagOf(inner) === 1,
            rdn: contextTagOf(inner) === 1 ? inner : null };
 }
@@ -669,15 +755,17 @@ function pointNameOf(wrapper) {
 // A NAME RELATIVE TO ITS CRL ISSUER, made whole (RFC 5280 section 4.2.1.13):
 // the issuer's DN with the relative RDN appended as its most specific part.
 //
-// **IT IS REFUSED WHEREVER THE RESULT COULD BE READ TWO WAYS.** pkijs flattens a
-// Name into one list of attribute values and forgets which of them shared an
+// **IT IS REFUSED WHEREVER THE RESULT COULD BE READ TWO WAYS.** pkijs flattens
+// a Name into one list of attribute values and forgets which of them shared an
 // RDN, so a multi-valued RDN — in the issuer's name or in the relative part —
 // cannot be written back as the one DN it was; and a value that is not a string
 // cannot be written in RFC 4514 at all. Anything else is one DN, and the
 // comparison key is the same one every other name here is compared by.
 // ---------------------------------------------------------------------------
 function escapeDnValue(value) {
-  let out = String(value).replace(/[\\,+"<>;=]/g, function (c) { return '\\' + c; })
+  log.debug("Entering escapeDnValue().");
+  let out = String(value).replace(/[\\,+"<>;=]/g,
+                                  function (c) { return '\\' + c; })
     .replace(/\u0000/g, '\\00');
   if (/^[ #]/.test(out)) {
     out = '\\' + out;
@@ -685,6 +773,7 @@ function escapeDnValue(value) {
   if (/ $/.test(out)) {
     out = out.slice(0, -1) + '\\ ';
   }
+  log.debug("Leaving escapeDnValue().");
   return out;
 }
 
@@ -699,28 +788,33 @@ function wholeNameOf(issuerName, rdnElement) {
     });
   } catch (e) {
     log.debug('Leaving wholeNameOf(). Unreadable: ' + e.message);
-    return { ok: false, why: 'its relative name could not be read: ' + e.message };
+    return { ok: false,
+             why: 'its relative name could not be read: ' + e.message };
   }
   if (atvs.length !== 1 || issuerSets.some(function (set) {
     return childrenOf(set).length !== 1;
   })) {
     log.debug('Leaving wholeNameOf(). Multi-valued.');
     return { ok: false,
-             why: 'its name relative to the CRL issuer involves a multi-valued RDN, ' +
-                  'which cannot be written back as one unambiguous DN' };
+             why: 'its name relative to the CRL issuer involves a ' +
+                  'multi-valued RDN, which cannot be written back as one ' +
+                  'unambiguous DN' };
   }
   const all = issuerName.typesAndValues.concat(atvs);
   const plain = all.every(function (one) {
-    return one.value && one.value.valueBlock && typeof one.value.valueBlock.value === 'string';
+    return one.value && one.value.valueBlock &&
+           typeof one.value.valueBlock.value === 'string';
   });
   if (!plain) {
     log.debug('Leaving wholeNameOf(). A value that is not a string.');
-    return { ok: false, why: 'its name relative to the CRL issuer carries a value that ' +
-                             'is not a string, which has no RFC 4514 spelling' };
+    return { ok: false, why: 'its name relative to the CRL issuer carries a ' +
+                             'value that is not a string, which has no RFC ' +
+                             '4514 spelling' };
   }
   const whole = new pkijs.RelativeDistinguishedNames({ typesAndValues: all });
   const dn = all.slice().reverse().map(function (one) {
-    return (SHORT_NAMES[one.type] || one.type) + '=' + escapeDnValue(one.value.valueBlock.value);
+    return (SHORT_NAMES[one.type] || one.type) + '=' + escapeDnValue(
+        one.value.valueBlock.value);
   }).join(',');
   log.debug('Leaving wholeNameOf(). ' + dn);
   return { ok: true, name: whole, key: 'dn:' + nameKey(whole), dn: dn };
@@ -734,30 +828,41 @@ function wholeNameOf(issuerName, rdnElement) {
 // failure to check.
 // ---------------------------------------------------------------------------
 function ldapPolicy() {
+  log.debug("Entering ldapPolicy().");
   const value = String(config.value('pki.revocationLdap') || 'ldaps');
-  return ['ldaps', 'ldaps-and-ldap', 'off'].indexOf(value) >= 0 ? value : 'ldaps';
+  log.debug("Leaving ldapPolicy().");
+  return ['ldaps', 'ldaps-and-ldap', 'off'].indexOf(value) >= 0 ? value :
+         'ldaps';
 }
 
 function dialability(uri) {
+  log.debug("Entering dialability().");
   const text = String(uri || '');
   if (/^https?:\/\//i.test(text)) {
+    log.debug("Leaving dialability().");
     return { dial: true };
   }
   if (!/^ldaps?:\/\//i.test(text)) {
-    return { dial: false, why: 'only http, https and ldap addresses are dialled' };
+    log.debug("Leaving dialability().");
+    return { dial: false,
+             why: 'only http, https and ldap addresses are dialled' };
   }
   const parsed = parseLdapUrl(text);
   if (!parsed.ok) {
+    log.debug("Leaving dialability().");
     return { dial: false, why: parsed.why };
   }
   const allowed = ldapPolicy();
   if (allowed === 'off') {
+    log.debug("Leaving dialability().");
     return { dial: false, why: 'pki.revocationLdap is off' };
   }
   if (parsed.scheme === 'ldap' && allowed !== 'ldaps-and-ldap') {
-    return { dial: false, why: 'plain ldap is not dialled unless pki.revocationLdap is ' +
-                               'ldaps-and-ldap' };
+    log.debug("Leaving dialability().");
+    return { dial: false, why: 'plain ldap is not dialled unless ' +
+                               'pki.revocationLdap is ldaps-and-ldap' };
   }
+  log.debug("Leaving dialability().");
   return { dial: true };
 }
 
@@ -833,11 +938,15 @@ function pointsOfExtension(ext) {
 }
 
 function distributionPointsOf(cert, extensionOid) {
+  log.debug("Entering distributionPointsOf().");
+  log.debug("Leaving distributionPointsOf().");
   return pointsOfExtension(extensionOf(pkijsOf(cert),
-                                       extensionOid || OID.CRL_DISTRIBUTION_POINTS));
+                                       extensionOid ||
+                                       OID.CRL_DISTRIBUTION_POINTS));
 }
 
 function ocspRespondersOf(cert) {
+  log.debug("Entering ocspRespondersOf().");
   const out = { fetchable: [], other: [] };
   const ext = extensionOf(pkijsOf(cert), OID.AUTHORITY_INFO_ACCESS);
   ((ext && ext.parsedValue && ext.parsedValue.accessDescriptions) || [])
@@ -853,17 +962,21 @@ function ocspRespondersOf(cert) {
         out.other.push(uri);
       }
     });
+  log.debug("Leaving ocspRespondersOf().");
   return out;
 }
 
 // ---------------------------------------------------------------------------
-// CERTIFICATES THAT MAY SIGN AN INDIRECT CRL, from `pki.revocationCrlIssuersFile`.
+// CERTIFICATES THAT MAY SIGN AN INDIRECT CRL, from
+// `pki.revocationCrlIssuersFile`.
 //
 // Read again when the file's mtime moves. It is the operator's half of the
 // answer; the list's own caIssuers address is the issuer's, and both are held
 // to the same authorisation before either is believed.
 // ---------------------------------------------------------------------------
 function configuredCrlIssuers() {
+  log.debug("Entering configuredCrlIssuers().");
+  log.debug("Leaving configuredCrlIssuers().");
   return pemFileOf('pki.revocationCrlIssuersFile').certs;
 }
 
@@ -885,38 +998,50 @@ const failures = new Map();
 const inFlight = new Map();
 
 function cacheLimit() {
+  log.debug("Entering cacheLimit().");
+  log.debug("Leaving cacheLimit().");
   return Math.max(1, Number(config.value('pki.revocationCrlCacheEntries')));
 }
 
 function remember(cache, key, entry) {
+  log.debug("Entering remember().");
   cache.delete(key);
   cache.set(key, entry);
   while (cache.size > cacheLimit()) {
     cache.delete(cache.keys().next().value);
   }
+  log.debug("Leaving remember().");
 }
 
 function cached(cache, key) {
+  log.debug("Entering cached().");
   const entry = cache.get(key);
   if (!entry) {
+    log.debug("Leaving cached().");
     return null;
   }
   if (entry.expiresAt <= Date.now()) {
     cache.delete(key);
+    log.debug("Leaving cached().");
     return null;
   }
+  log.debug("Leaving cached().");
   return entry;
 }
 
 function failedRecently(url) {
+  log.debug("Entering failedRecently().");
   const failed = failures.get(url);
   if (!failed) {
+    log.debug("Leaving failedRecently().");
     return null;
   }
   if (failed.until <= Date.now()) {
     failures.delete(url);
+    log.debug("Leaving failedRecently().");
     return null;
   }
+  log.debug("Leaving failedRecently().");
   return failed;
 }
 
@@ -927,10 +1052,12 @@ function rememberFailure(url, why, kind) {
   // unreachable.
   const seconds = Number(config.value('pki.revocationFailureRetryS'));
   if (!(seconds > 0)) {
-    log.debug('Leaving rememberFailure(). Not remembered (retry window is zero).');
+    log.debug('Leaving rememberFailure(). Not remembered (retry window is ' +
+              'zero).');
     return;
   }
-  failures.set(url, { until: Date.now() + seconds * 1000, why: why, kind: kind });
+  failures.set(url,
+               { until: Date.now() + seconds * 1000, why: why, kind: kind });
   while (failures.size > cacheLimit()) {
     failures.delete(failures.keys().next().value);
   }
@@ -940,12 +1067,15 @@ function rememberFailure(url, why, kind) {
 // One piece of work per key at a time: a concurrent caller waits on the same
 // promise rather than dialling again.
 async function once(key, work) {
+  log.debug("Entering once().");
   if (inFlight.has(key)) {
+    log.debug("Leaving once().");
     return inFlight.get(key);
   }
   const running = work();
   inFlight.set(key, running);
   try {
+    log.debug("Leaving once().");
     return await running;
   } finally {
     inFlight.delete(key);
@@ -965,19 +1095,22 @@ function fetchBytes(url, options) {
   try {
     target = new URL(url);
   } catch (e) {
+    log.debug("Caught in fetchBytes(): " + ((e && e.message) || e));
     log.debug('Leaving fetchBytes(). Not a URL.');
     return Promise.resolve({ ok: false, why: '"' + url + '" is not a URL' });
   }
   if (target.protocol !== 'http:' && target.protocol !== 'https:') {
     log.debug('Leaving fetchBytes(). Wrong scheme.');
     return Promise.resolve({ ok: false,
-                             why: 'only http and https addresses are dialled, ' +
-                                  'and this is ' + target.protocol });
+                             why: 'only http and https addresses are ' +
+                                  'dialled, and this is ' + target.protocol });
   }
   const secure = target.protocol === 'https:';
   const cap = Math.max(1, Number(config.value('pki.revocationMaxCrlBytes')));
-  const timeout = Math.max(1, Number(config.value('pki.revocationFetchTimeoutMs')));
-  const headers = { 'Accept': opts.accept || 'application/pkix-crl, application/octet-stream, */*',
+  const timeout = Math.max(1,
+                           Number(config.value('pki.revocationFetchTimeoutMs')));
+  const headers = { 'Accept': opts.accept || 'application/pkix-crl, ' +
+                                             'application/octet-stream, */*',
                     'User-Agent': opts.userAgent || USER_AGENT };
   if (opts.body) {
     headers['Content-Type'] = opts.contentType;
@@ -987,11 +1120,14 @@ function fetchBytes(url, options) {
   return new Promise(function (resolve) {
     let settled = false;
     const done = function (result) {
+      log.debug("Entering done().");
       if (settled) {
+        log.debug("Leaving done().");
         return;
       }
       settled = true;
       resolve(result);
+      log.debug("Leaving done().");
     };
     let request;
     try {
@@ -1012,9 +1148,9 @@ function fetchBytes(url, options) {
           return done({ ok: false,
                         why: 'it answered ' + status + ' redirecting to "' +
                              String(response.headers.location || '') +
-                             '", and a redirect is not followed — the address ' +
-                             'a certificate names is the only one its issuer ' +
-                             'signed' });
+                             '", and a redirect is not followed — the ' +
+                             'address a certificate names is the only one ' +
+                             'its issuer signed' });
         }
         if (status < 200 || status >= 300) {
           response.destroy();
@@ -1041,7 +1177,8 @@ function fetchBytes(url, options) {
         });
       });
     } catch (e) {
-      return done({ ok: false, why: 'the request could not be built: ' + e.message });
+      return done({ ok: false,
+                    why: 'the request could not be built: ' + e.message });
     }
     request.setTimeout(timeout, function () {
       request.destroy();
@@ -1067,27 +1204,28 @@ function fetchBytes(url, options) {
 //     CRITICAL extension (`!name`) is refused as RFC 4516 section 2.1 requires,
 //     which also refuses `!bindname` — this service binds as nobody.
 //   * **ONLY THE ATTRIBUTES A LIST OR A CERTIFICATE IS KEPT IN.** A URL naming
-//     some other attribute is refused rather than read; one naming none gets the
-//     standard ones — `certificateRevocationList;binary` (and
+//     some other attribute is refused rather than read; one naming none gets
+//     the standard ones — `certificateRevocationList;binary` (and
 //     `authorityRevocationList;binary` for a CA certificate), and
 //     `cACertificate;binary` for a caIssuers address.
 //   * **THE SAME LIMITS AS THE HTTP FETCH**: one deadline for the whole
 //     exchange, `pki.revocationFetchTimeoutMs`; the connection's bytes counted
 //     against `pki.revocationMaxCrlBytes` as they arrive, and the socket
-//     destroyed at the cap; one entry; no referral or search reference followed;
-//     an anonymous search and nothing else; a fresh client per fetch, destroyed
-//     afterwards, never reconnecting.
+//     destroyed at the cap; one entry; no referral or search reference
+//     followed; an anonymous search and nothing else; a fresh client per fetch,
+//     destroyed afterwards, never reconnecting.
 //   * **ldaps VERIFIES THE DIRECTORY, AND THAT IS WHY IT IS THE DEFAULT.** An
 //     http fetch hands this service a byte stream it parses itself under a cap,
 //     and the list's signature is the whole of the trust. An LDAP session is a
 //     protocol a library speaks on its behalf — results, referrals, search
 //     references, extended responses — so whoever answers on that port reaches
 //     far more code than a DER parser. TLS against node's CA store and
-//     `pki.revocationLdapCaFile` bounds WHO may speak it. Plain ldap removes that
-//     bound, and `pki.revocationLdap=ldaps-and-ldap` is an operator saying their
-//     directory's network is theirs.
+//     `pki.revocationLdapCaFile` bounds WHO may speak it. Plain ldap removes
+//     that bound, and `pki.revocationLdap=ldaps-and-ldap` is an operator saying
+//     their directory's network is theirs.
 // ---------------------------------------------------------------------------
-const LDAP_CRL_ATTRIBUTES = ['certificaterevocationlist', 'authorityrevocationlist',
+const LDAP_CRL_ATTRIBUTES = ['certificaterevocationlist',
+                             'authorityrevocationlist',
                              'deltarevocationlist'];
 const LDAP_CERTIFICATE_ATTRIBUTES = ['cacertificate'];
 
@@ -1102,8 +1240,9 @@ function parseLdapUrl(text) {
   const scheme = match[1].toLowerCase();
   if (!match[2]) {
     log.debug('Leaving parseLdapUrl(). No host.');
-    return { ok: false, why: 'it names no host — an ldap:/// address means "the directory ' +
-                             'this client already uses", and this service has none it could mean' };
+    return { ok: false, why: 'it names no host — an ldap:/// address means ' +
+                             '"the directory this client already uses", and ' +
+                             'this service has none it could mean' };
   }
   const hostPort = /^(?:\[([^\]]+)\]|([^:]+))(?::(\d+))?$/.exec(match[2]);
   if (!hostPort) {
@@ -1127,26 +1266,33 @@ function parseLdapUrl(text) {
     }).filter(function (one) { return !!one; });
   } catch (e) {
     log.debug('Leaving parseLdapUrl(). Bad percent-encoding.');
-    return { ok: false, why: 'it is not percent-encoded correctly: ' + e.message };
+    return { ok: false,
+             why: 'it is not percent-encoded correctly: ' + e.message };
   }
   if (scope && scope !== 'base') {
     log.debug('Leaving parseLdapUrl(). Scope ' + scope + '.');
-    return { ok: false, why: 'its scope is "' + scope + '", and only a base-object search ' +
-                             'names exactly one entry' };
+    return { ok: false, why: 'its scope is "' + scope + '", and only a ' +
+                             'base-object search names exactly one entry' };
   }
-  const critical = extensions.filter(function (one) { return one.charAt(0) === '!'; })[0];
+  const critical = extensions.filter(function (one) {
+    return one.charAt(0) === '!';
+  })[0];
   if (critical) {
     log.debug('Leaving parseLdapUrl(). A critical extension.');
-    return { ok: false, why: 'it carries a critical extension (' + critical + ') this ' +
-                             'service does not implement (RFC 4516 section 2.1)' };
+    return { ok: false,
+             why: 'it carries a critical extension (' + critical + ') ' +
+                             'this service does not implement (RFC 4516 ' +
+                             'section 2.1)' };
   }
   log.debug('Leaving parseLdapUrl(). ' + scheme + '://' + match[2]);
   return { ok: true, scheme: scheme, host: hostPort[1] || hostPort[2],
-           port: Number(hostPort[3] || (scheme === 'ldaps' ? 636 : 389)), dn: dn,
+           port: Number(hostPort[3] || (scheme === 'ldaps' ? 636 : 389)),
+           dn: dn,
            attributes: attributes, filter: filter || '(objectClass=*)' };
 }
 
-// PEM certificates in a file named by a setting, memoised on the path and mtime.
+// PEM certificates in a file named by a setting, memoised on the path and
+// mtime.
 const pemFiles = new Map();
 
 function pemFileOf(settingKey) {
@@ -1168,24 +1314,33 @@ function pemFileOf(settingKey) {
     text = fs.readFileSync(file, 'utf8');
   } catch (e) {
     if (settingKey === 'pki.revocationLdapCaFile') {
-      log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: ' + settingKey + ' "' + file +
-               '" could not be read: ' + e.message + '. Nothing is taken from it.');
+      log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: ' + settingKey +
+          ' ' +
+          '"' + file +
+               '" could not be read: ' + e.message + '. Nothing is taken ' +
+                                                     'from it.');
     } else {
-      log.warn(errorCodes.tag('STS-PKI-0125') + 'revocation: ' + settingKey + ' "' + file +
-               '" could not be read: ' + e.message + '. Nothing is taken from it.');
+      log.warn(errorCodes.tag('STS-PKI-0125') + 'revocation: ' + settingKey +
+          ' ' +
+          '"' + file +
+               '" could not be read: ' + e.message + '. Nothing is taken ' +
+                                                     'from it.');
     }
     log.debug('Leaving pemFileOf(). Unreadable.');
     return { pems: [], certs: [] };
   }
   const pems = text.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
   const entry = { file: file, mtimeMs: stat.mtimeMs, pems: pems,
-                  certs: pems.map(x509Of).filter(function (one) { return !!one; }) };
+                  certs: pems.map(x509Of)
+                             .filter(function (one) { return !!one; }) };
   pemFiles.set(settingKey, entry);
   log.debug('Leaving pemFileOf(). ' + entry.certs.length + ' certificate(s).');
   return entry;
 }
 
 function attributeBaseOf(name) {
+  log.debug("Entering attributeBaseOf().");
+  log.debug("Leaving attributeBaseOf().");
   return String(name || '').split(';')[0].trim().toLowerCase();
 }
 
@@ -1195,30 +1350,38 @@ function fetchLdap(url, want) {
   const parsed = parseLdapUrl(url);
   const dial = dialability(url);
   if (!parsed.ok || !dial.dial) {
-    log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: ' + url + ' is not dialled: ' +
+    log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: ' + url + ' is ' +
+        'not dialled: ' +
              (parsed.why || dial.why) + '.');
     log.debug('Leaving fetchLdap(). Not dialled.');
     return Promise.resolve({ ok: false, why: parsed.why || dial.why });
   }
-  const requested = parsed.attributes.length ? parsed.attributes : want.defaults;
+  const requested = parsed.attributes.length ? parsed.attributes :
+                    want.defaults;
   const stray = requested.filter(function (one) {
     return want.allowed.indexOf(attributeBaseOf(one)) < 0;
   })[0];
   if (stray) {
-    log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: ' + url + ' asks for "' + stray +
+    log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: ' + url + ' asks ' +
+        'for "' + stray +
              '", which is not where ' + want.what + ' is kept.');
     log.debug('Leaving fetchLdap(). A stray attribute.');
-    return Promise.resolve({ ok: false, why: 'it asks for "' + stray + '", which is not an ' +
-                                             'attribute ' + want.what + ' is kept in' });
+    return Promise.resolve({ ok: false, why: 'it asks for "' + stray + '", ' +
+                                             'which is not an ' +
+                                             'attribute ' + want.what + ' is ' +
+                                                 'kept in' });
   }
   const cap = Math.max(1, Number(config.value('pki.revocationMaxCrlBytes')));
-  const timeout = Math.max(1, Number(config.value('pki.revocationFetchTimeoutMs')));
+  const timeout = Math.max(1,
+                           Number(config.value('pki.revocationFetchTimeoutMs')));
   log.debug('Leaving fetchLdap(). Dialling.');
   return new Promise(function (resolve) {
     let settled = false;
     let client = null;
     const done = function (result) {
+      log.debug("Entering done().");
       if (settled) {
+        log.debug("Leaving done().");
         return;
       }
       settled = true;
@@ -1233,36 +1396,45 @@ function fetchLdap(url, want) {
         }
       }
       if (!result.ok && result.protocol) {
-        log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: the directory at ' + url +
+        log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: the directory ' +
+                                                  'at ' + url +
                  ' did not answer usably: ' + result.why + '.');
       }
       resolve(result);
+      log.debug("Leaving done().");
     };
     const deadline = setTimeout(function () {
       done({ ok: false, why: 'it did not answer within ' + timeout + 'ms ' +
                              '(pki.revocationFetchTimeoutMs)' });
     }, timeout);
     const tlsOptions = { rejectUnauthorized: true,
-                         ca: tls.rootCertificates.concat(pemFileOf('pki.revocationLdapCaFile').pems) };
+                         ca: tls.rootCertificates.concat(
+                             pemFileOf('pki.revocationLdapCaFile').pems) };
     if (!net.isIP(parsed.host)) {
       tlsOptions.servername = parsed.host;
     }
     try {
       const ldap = require('ldapjs');
       client = ldap.createClient({
-        url: parsed.scheme + '://' + (net.isIPv6(parsed.host) ? '[' + parsed.host + ']' : parsed.host) +
+        url: parsed.scheme + '://' +
+             (net.isIPv6(parsed.host) ? '[' + parsed.host + ']' : parsed.host) +
              ':' + parsed.port,
         timeout: timeout, connectTimeout: timeout, reconnect: false,
         tlsOptions: parsed.scheme === 'ldaps' ? tlsOptions : undefined
       });
     } catch (e) {
-      return done({ ok: false, why: 'the client could not be built: ' + e.message });
+      return done({ ok: false,
+                    why: 'the client could not be built: ' + e.message });
     }
     client.on('error', function (e) {
-      done({ ok: false, why: 'the connection failed: ' + (e.code ? e.code + ' — ' : '') + e.message });
+      done({ ok: false,
+             why: 'the connection failed: ' + (e.code ? e.code + ' ' +
+          '— ' : '') + e.message });
     });
     client.on('connectError', function (e) {
-      done({ ok: false, why: 'the connection failed: ' + (e.code ? e.code + ' — ' : '') + e.message });
+      done({ ok: false,
+             why: 'the connection failed: ' + (e.code ? e.code + ' ' +
+          '— ' : '') + e.message });
     });
     client.on('connect', function (socket) {
       let bytes = 0;
@@ -1270,16 +1442,21 @@ function fetchLdap(url, want) {
         bytes += chunk.length;
         if (bytes > cap) {
           socket.destroy();
-          done({ ok: false, why: 'it answered with more than ' + cap + ' bytes ' +
-                                 '(pki.revocationMaxCrlBytes)' });
+          done({ ok: false, why: 'it answered with more than ' + cap + ' ' +
+                                 'bytes (pki.revocationMaxCrlBytes)' });
         }
       });
     });
-    client.search(parsed.dn, { scope: 'base', filter: parsed.filter, attributes: requested,
-                               sizeLimit: 1, timeLimit: Math.max(1, Math.ceil(timeout / 1000)) },
+    client.search(parsed.dn,
+      { scope: 'base', filter: parsed.filter, attributes: requested,
+                               sizeLimit: 1, timeLimit: Math.max(1,
+                                                                 Math.ceil(
+                                                                     timeout /
+                                                                         1000)) },
       function (err, res) {
         if (err) {
-          return done({ ok: false, why: 'the search could not be sent: ' + err.message });
+          return done({ ok: false,
+                        why: 'the search could not be sent: ' + err.message });
         }
         const entries = [];
         res.on('searchEntry', function (entry) {
@@ -1287,37 +1464,46 @@ function fetchLdap(url, want) {
         });
         res.on('searchReference', function (reference) {
           done({ ok: false, protocol: true,
-                 why: 'it answered with a referral to ' + ((reference && reference.uris) || []).join(', ') +
-                      ', and a referral is not followed — the address the issuer signed is ' +
-                      'the only one' });
+                 why: 'it answered with a referral to ' +
+                      ((reference && reference.uris) || []).join(', ') +
+                      ', and a referral is not followed — the address the ' +
+                      'issuer signed is the only one' });
         });
         res.on('error', function (e) {
-          done({ ok: false, protocol: true, why: 'the search failed: ' + e.message });
+          done({ ok: false, protocol: true,
+                 why: 'the search failed: ' + e.message });
         });
         res.on('end', function (result) {
-          const status = result && typeof result.status === 'number' ? result.status : -1;
+          const status = result && typeof result.status === 'number' ?
+                         result.status : -1;
           if (status !== 0) {
             return done({ ok: false, protocol: true,
                           why: 'the directory answered result code ' + status +
-                               (status === 10 ? ' (a referral, which is not followed)' : '') });
+                               (status === 10 ? ' (a referral, which is not ' +
+                                                'followed)' : '') });
           }
           if (entries.length !== 1) {
             return done({ ok: false, protocol: true,
                           why: entries.length
-                            ? 'it answered with ' + entries.length + ' entries where one was named'
+                            ? 'it answered with ' + entries.length + ' ' +
+                                'entries where one was named'
                             : 'there is no entry at "' + parsed.dn + '"' });
           }
           const attributes = entries[0].attributes || [];
           for (let i = 0; i < requested.length; i++) {
             const found = attributes.filter(function (one) {
-              return attributeBaseOf(one.type) === attributeBaseOf(requested[i]);
+              return attributeBaseOf(one.type) === attributeBaseOf(
+                  requested[i]);
             })[0];
             if (found && (found.buffers || []).length) {
-              return done({ ok: true, values: found.buffers.map(function (b) { return Buffer.from(b); }) });
+              return done({ ok: true,
+                            values: found.buffers.map(
+                                function (b) { return Buffer.from(b); }) });
             }
           }
           done({ ok: false, protocol: true,
-                 why: 'the entry at "' + parsed.dn + '" carries none of ' + requested.join(', ') });
+                 why: 'the entry at "' + parsed.dn + '" carries none of ' +
+                      requested.join(', ') });
         });
       });
   });
@@ -1325,16 +1511,22 @@ function fetchLdap(url, want) {
 
 // A list, from whichever kind of address names it. { ok, der, why }.
 async function fetchCrlDocument(url, context) {
+  log.debug("Entering fetchCrlDocument().");
   if (!/^ldaps?:\/\//i.test(url)) {
+    log.debug("Leaving fetchCrlDocument().");
     return fetchBytes(url);
   }
   const isCa = !!(context && context.target && context.target.isCa);
   const defaults = context && context.purpose === 'delta'
     ? ['deltaRevocationList;binary', 'certificateRevocationList;binary']
-    : (isCa ? ['authorityRevocationList;binary', 'certificateRevocationList;binary']
+    : (isCa ?
+       ['authorityRevocationList;binary', 'certificateRevocationList;binary']
             : ['certificateRevocationList;binary']);
-  const got = await fetchLdap(url, { allowed: LDAP_CRL_ATTRIBUTES, defaults: defaults,
+  const got = await fetchLdap(url,
+                              { allowed: LDAP_CRL_ATTRIBUTES,
+                                     defaults: defaults,
                                      what: 'a revocation list' });
+  log.debug("Leaving fetchCrlDocument().");
   return got.ok ? { ok: true, der: got.values[0] } : got;
 }
 
@@ -1355,7 +1547,8 @@ function certificatesOfDocument(buffers) {
   buffers.forEach(function (buffer) {
     const text = buffer.slice(0, 64).toString('latin1');
     if (/-----BEGIN/.test(text)) {
-      (buffer.toString('latin1').match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [])
+      (buffer.toString('latin1')
+             .match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [])
         .forEach(function (pem) { out.push(x509Of(pem)); });
       return;
     }
@@ -1373,13 +1566,14 @@ function certificatesOfDocument(buffers) {
         }
       });
     } catch (e) {
-      // Neither a certificate nor a certs-only bundle. Nothing is taken from it,
-      // and the caller reports an address that held no certificate.
+      // Neither a certificate nor a certs-only bundle. Nothing is taken from
+      // it, and the caller reports an address that held no certificate.
       log.debug('certificatesOfDocument(): not PKCS#7 either: ' + e.message);
     }
   });
   const certs = out.filter(function (one) { return !!one; });
-  log.debug('Leaving certificatesOfDocument(). ' + certs.length + ' certificate(s).');
+  log.debug('Leaving certificatesOfDocument(). ' + certs.length + ' ' +
+      'certificate(s).');
   return certs;
 }
 
@@ -1394,36 +1588,48 @@ async function certificatesFrom(url) {
   const failed = failedRecently(key);
   if (failed) {
     log.debug('Leaving certificatesFrom(). Failed recently.');
-    return { ok: false, why: failed.why + ' (remembered for pki.revocationFailureRetryS)' };
+    return { ok: false, why: failed.why + ' (remembered for ' +
+                                          'pki.revocationFailureRetryS)' };
   }
-  log.debug('Leaving certificatesFrom(). Fetching, or joining a fetch in flight.');
+  log.debug('Leaving certificatesFrom(). Fetching, or joining a fetch in ' +
+            'flight.');
   return once(key, async function () {
     const fetched = /^ldaps?:\/\//i.test(url)
       ? await fetchLdap(url, { allowed: LDAP_CERTIFICATE_ATTRIBUTES,
-                               defaults: ['cACertificate;binary'], what: 'a CA certificate' })
-      : await fetchBytes(url, { accept: 'application/pkix-cert, application/pkcs7-mime, */*' });
-    const certs = fetched.ok ? certificatesOfDocument(fetched.values || [fetched.der]) : [];
+                               defaults: ['cACertificate;binary'], what: 'a ' +
+                                   'CA certificate' })
+      : await fetchBytes(url, { accept: 'application/pkix-cert, ' +
+                                        'application/pkcs7-mime, */*' });
+    const certs = fetched.ok ?
+                  certificatesOfDocument(fetched.values || [fetched.der]) : [];
     if (!certs.length) {
-      const why = fetched.ok ? 'what it answered holds no certificate' : fetched.why;
-      log.warn(errorCodes.tag('STS-PKI-0126') + 'revocation: no certificate could be taken ' +
-               'from the caIssuers address ' + url + ': ' + why + '.');
+      const why = fetched.ok ? 'what it answered holds no certificate' :
+                  fetched.why;
+      log.warn(errorCodes.tag('STS-PKI-0126') + 'revocation: no certificate ' +
+               'could be taken from the caIssuers ' +
+               'address ' + url + ': ' + why + '.');
       rememberFailure(key, why, 'unreachable');
       return { ok: false, why: why };
     }
-    const maxAge = Math.max(1, Number(config.value('pki.revocationCrlMaxAgeS')));
-    remember(certCache, key, { url: url, certs: certs, expiresAt: Date.now() + maxAge * 1000 });
+    const maxAge = Math.max(1,
+                            Number(config.value('pki.revocationCrlMaxAgeS')));
+    remember(certCache, key,
+             { url: url, certs: certs, expiresAt: Date.now() + maxAge * 1000 });
     return { ok: true, certs: certs };
   });
 }
 
 function caIssuersOf(extensions) {
+  log.debug("Entering caIssuersOf().");
   const ext = (extensions || []).filter(function (one) {
     return one.extnID === OID.AUTHORITY_INFO_ACCESS;
   })[0];
+  log.debug("Leaving caIssuersOf().");
   return ((ext && ext.parsedValue && ext.parsedValue.accessDescriptions) || [])
     .filter(function (one) {
       return one.accessMethod === OID.AD_CA_ISSUERS && one.accessLocation &&
-             one.accessLocation.type === 6 && dialability(one.accessLocation.value).dial;
+             one.accessLocation.type === 6 &&
+             dialability(one.accessLocation.value).dial;
     }).map(function (one) { return String(one.accessLocation.value); });
 }
 
@@ -1431,25 +1637,28 @@ function caIssuersOf(extensions) {
 // A LIST'S SIGNER, FETCHED FROM THE LIST'S OWN caIssuers ADDRESS (RFC 5280
 // section 5.2.7).
 //
-// **THE URL IS WRITTEN INSIDE THE DOCUMENT WHOSE SIGNER IS IN QUESTION, AND THAT
-// IS WHY FETCHING IT IS SAFE RATHER THAN WHY IT IS NOT.** Whatever is fetched is
-// believed only if it carries the name the list must be issued by, may sign
-// CRLs, is valid now, CHAINS — through CA certificates in the presented chain,
-// this service's authorities, the issuers file or the same address — to a
-// certificate the target's own verified path passes through, and its key
-// verifies the list. A list pointing at an impostor's certificate gets nothing
-// the impostor could not already have had from anywhere else: an unrelated key
-// that chains nowhere. It serves both the indirect case, where the certificate
-// NAMED a separate CRL issuer, and the direct one, where the issuer signed its
-// list with a different key than the one that signed the certificate — which
-// RFC 5280 permits and which the presented chain cannot contain.
+// **THE URL IS WRITTEN INSIDE THE DOCUMENT WHOSE SIGNER IS IN QUESTION, AND
+// THAT IS WHY FETCHING IT IS SAFE RATHER THAN WHY IT IS NOT.** Whatever is
+// fetched is believed only if it carries the name the list must be issued by,
+// may sign CRLs, is valid now, CHAINS — through CA certificates in the
+// presented chain, this service's authorities, the issuers file or the same
+// address — to a certificate the target's own verified path passes through, and
+// its key verifies the list. A list pointing at an impostor's certificate gets
+// nothing the impostor could not already have had from anywhere else: an
+// unrelated key that chains nowhere. It serves both the indirect case, where
+// the certificate NAMED a separate CRL issuer, and the direct one, where the
+// issuer signed its list with a different key than the one that signed the
+// certificate — which RFC 5280 permits and which the presented chain cannot
+// contain.
 // ---------------------------------------------------------------------------
 async function crlSignerFromCaIssuers(crl, context) {
   log.debug('Entering crlSignerFromCaIssuers().');
-  const urls = caIssuersOf((crl.crlExtensions && crl.crlExtensions.extensions) || []);
+  const urls = caIssuersOf((crl.crlExtensions &&
+                            crl.crlExtensions.extensions) || []);
   if (!urls.length) {
     log.debug('Leaving crlSignerFromCaIssuers(). No address.');
-    return { why: 'the list names no caIssuers address to fetch its signer\'s certificate from' };
+    return { why: 'the list names no caIssuers address to fetch its ' +
+                  'signer\'s certificate from' };
   }
   const wanted = nameKey(context.expectName);
   const problems = [];
@@ -1460,7 +1669,9 @@ async function crlSignerFromCaIssuers(crl, context) {
       continue;
     }
     const seen = new Set();
-    const pool = context.target.offered.concat(heldCertificates(), configuredCrlIssuers(), got.certs)
+    const pool = context.target.offered.concat(heldCertificates(),
+                                               configuredCrlIssuers(),
+                                               got.certs)
       .filter(function (one) {
         if (seen.has(one.fingerprint256)) {
           return false;
@@ -1477,22 +1688,26 @@ async function crlSignerFromCaIssuers(crl, context) {
     });
     if (!authorised.length) {
       problems.push(urls[i] + ': ' + (named.length
-        ? 'the certificate there for "' + describeName(context.expectName) + '" may not sign ' +
-          'CRLs, is not valid now or does not chain to an authority the presented path passes ' +
-          'through'
+        ? 'the certificate there for "' + describeName(context.expectName) +
+          '" ' +
+          'may not sign CRLs, is not valid now or does not chain to an ' +
+          'authority the presented path passes through'
         : 'none of the ' + got.certs.length + ' certificate(s) there is for "' +
           describeName(context.expectName) + '"'));
       continue;
     }
     const signer = await crlSignerOf(crl, authorised);
     if (signer) {
-      log.debug('Leaving crlSignerFromCaIssuers(). Signed by a certificate from ' + urls[i]);
+      log.debug('Leaving crlSignerFromCaIssuers(). Signed by a certificate ' +
+                'from ' + urls[i]);
       return { signer: signer, url: urls[i] };
     }
-    problems.push(urls[i] + ': the certificate there does not verify the list\'s signature');
+    problems.push(urls[i] + ': the certificate there does not verify the ' +
+                            'list\'s signature');
   }
   log.debug('Leaving crlSignerFromCaIssuers(). Nothing usable.');
-  return { why: 'no certificate fetched from its caIssuers address could sign it — ' +
+  return { why: 'no certificate fetched from its caIssuers address could ' +
+                'sign it — ' +
                 problems.join('; ') };
 }
 
@@ -1503,33 +1718,38 @@ async function crlSignerFromCaIssuers(crl, context) {
 // ---------------------------------------------------------------------------
 function relativeAddressOf(point, target) {
   log.debug('Entering relativeAddressOf().');
-  const whole = wholeNameOf(point.crlIssuer || target.parsed.issuer, point.relativeRdn);
+  const whole = wholeNameOf(point.crlIssuer || target.parsed.issuer,
+                            point.relativeRdn);
   if (!whole.ok) {
     log.debug('Leaving relativeAddressOf(). Not resolvable.');
     return { why: whole.why };
   }
-  const directory = String(config.value('pki.revocationLdapDirectory') || '').replace(/\/+$/, '');
+  const directory = String(config.value('pki.revocationLdapDirectory') ||
+                           '').replace(/\/+$/, '');
   if (!directory) {
     log.debug('Leaving relativeAddressOf(). No directory.');
     return { key: whole.key,
-             why: 'it names its list relative to its CRL issuer, as "' + whole.dn + '", and ' +
-                  'says nothing about which directory holds it — pki.revocationLdapDirectory ' +
-                  'names none' };
+             why: 'it names its list relative to its CRL issuer, as "' +
+                  whole.dn + '", ' +
+                  'and says nothing about which directory holds it — ' +
+                  'pki.revocationLdapDirectory names none' };
   }
   if (!/^ldaps?:\/\/[^/?]+$/i.test(directory)) {
     log.debug('Leaving relativeAddressOf(). A malformed directory setting.');
     return { key: whole.key,
-             why: 'pki.revocationLdapDirectory is not an ldap:// or ldaps:// address with a host ' +
-                  'and nothing after it' };
+             why: 'pki.revocationLdapDirectory is not an ldap:// or ldaps:// ' +
+                  'address with a host and nothing after it' };
   }
   const url = directory + '/' + encodeURIComponent(whole.dn);
   const dial = dialability(url);
   log.debug('Leaving relativeAddressOf(). ' + (dial.dial ? url : dial.why));
-  return dial.dial ? { key: whole.key, url: url } : { key: whole.key, why: dial.why };
+  return dial.dial ? { key: whole.key, url: url } :
+         { key: whole.key, why: dial.why };
 }
 
 // ---------------------------------------------------------------------------
-// A FETCHED LIST, READ AND VERIFIED, or a sentence saying why it cannot be used.
+// A FETCHED LIST, READ AND VERIFIED, or a sentence saying why it cannot be
+// used.
 //
 // The checks are RFC 5280 section 6.3.3's, in the order that makes a refusal
 // most useful: it parses; it names the issuer it has to (the certificate's
@@ -1537,23 +1757,27 @@ function relativeAddressOf(point, target) {
 // have been signed by did sign it, and that signer may sign CRLs; it carries no
 // critical extension this file does not implement; it is not past its
 // nextUpdate. What is true of the LIST — its number, whether it is a delta, its
-// issuing distribution point, the freshestCRL it names — is read here once; what
-// is true of a list FOR ONE CERTIFICATE (its scope) is decided per certificate,
-// because a cached list serves many.
+// issuing distribution point, the freshestCRL it names — is read here once;
+// what is true of a list FOR ONE CERTIFICATE (its scope) is decided per
+// certificate, because a cached list serves many.
 //
-// **ENTRIES ARE KEYED BY ISSUER AND SERIAL**, and the issuer is RFC 5280 section
-// 5.3.3's: the CRL issuer, until an entry carries a certificateIssuer, which
-// then applies to it and to every entry after it until the next one. A serial is
-// only unique per issuer, and an indirect list holds several.
+// **ENTRIES ARE KEYED BY ISSUER AND SERIAL**, and the issuer is RFC 5280
+// section 5.3.3's: the CRL issuer, until an entry carries a certificateIssuer,
+// which then applies to it and to every entry after it until the next one. A
+// serial is only unique per issuer, and an indirect list holds several.
 // ---------------------------------------------------------------------------
-const UNDERSTOOD_CRL_EXTENSIONS = ['2.5.29.20', '2.5.29.35', '2.5.29.18', '2.5.29.27',
-                                   '2.5.29.28', '2.5.29.46', '1.3.6.1.5.5.7.1.1'];
+const UNDERSTOOD_CRL_EXTENSIONS = ['2.5.29.20', '2.5.29.35', '2.5.29.18',
+                                   '2.5.29.27',
+                                   '2.5.29.28', '2.5.29.46',
+                                   '1.3.6.1.5.5.7.1.1'];
 const UNDERSTOOD_ENTRY_EXTENSIONS = ['2.5.29.21', '2.5.29.24', '2.5.29.29'];
 
 function reasonNameOf(code) {
+  log.debug("Entering reasonNameOf().");
   const known = pkiRevocation.REASONS.filter(function (one) {
     return one.code === code;
   })[0];
+  log.debug("Leaving reasonNameOf().");
   return known ? known.id : 'code ' + code;
 }
 
@@ -1591,8 +1815,10 @@ function readIssuingDistributionPoint(ext) {
     return out;
   }
   out.present = true;
-  out.derHex = Buffer.from(ext.extnValue.valueBlock.valueHexView).toString('hex');
-  childrenOf(derParse(ext.extnValue.valueBlock.valueHexView)).forEach(function (field) {
+  out.derHex = Buffer.from(ext.extnValue.valueBlock.valueHexView)
+                     .toString('hex');
+  childrenOf(derParse(ext.extnValue.valueBlock.valueHexView)).forEach(
+      function (field) {
     const tag = contextTagOf(field);
     if (tag === 0) {
       const name = pointNameOf(field);
@@ -1621,8 +1847,9 @@ function readIssuingDistributionPoint(ext) {
 // because that method answers FALSE for a list carrying a critical extension it
 // does not know and for an issuer name whose BYTES differ from the signer's
 // subject — so a list this file would refuse for its extension was reported as
-// forged, and one whose issuer an encoder spelled differently could never verify.
-// Both of those are decided above and below this call, in their own words.
+// forged, and one whose issuer an encoder spelled differently could never
+// verify. Both of those are decided above and below this call, in their own
+// words.
 async function crlSignerOf(crl, signers) {
   log.debug('Entering crlSignerOf(). ' + signers.length + ' candidate(s).');
   for (let i = 0; i < signers.length; i++) {
@@ -1659,14 +1886,16 @@ function entriesOf(crl, crlIssuerKey, indirect) {
     if (problem) {
       return;
     }
-    const extensions = (entry.crlEntryExtensions && entry.crlEntryExtensions.extensions) || [];
+    const extensions = (entry.crlEntryExtensions &&
+                        entry.crlEntryExtensions.extensions) || [];
     const unknownCritical = extensions.filter(function (ext) {
-      return ext.critical && UNDERSTOOD_ENTRY_EXTENSIONS.indexOf(ext.extnID) < 0;
+      return ext.critical &&
+             UNDERSTOOD_ENTRY_EXTENSIONS.indexOf(ext.extnID) < 0;
     });
     if (unknownCritical.length) {
       problem = 'an entry carries a critical extension this service does not ' +
-                'implement (' + unknownCritical[0].extnID + '), which makes the ' +
-                'list unusable';
+                'implement (' + unknownCritical[0].extnID + '), which makes ' +
+                'the list unusable';
       return;
     }
     const named = extensions.filter(function (ext) {
@@ -1674,9 +1903,9 @@ function entriesOf(crl, crlIssuerKey, indirect) {
     })[0];
     if (named) {
       if (!indirect) {
-        problem = 'an entry names a certificate issuer, but the list does not ' +
-                  'declare itself indirect in its issuing distribution point (RFC ' +
-                  '5280 section 5.3.3)';
+        problem = 'an entry names a certificate issuer, but the list does ' +
+                  'not declare itself indirect in its issuing distribution ' +
+                  'point (RFC 5280 section 5.3.3)';
         return;
       }
       let dn = null;
@@ -1685,13 +1914,14 @@ function entriesOf(crl, crlIssuerKey, indirect) {
           .filter(function (one) { return one.type === 4; })[0] || null;
       } catch (e) {
         // Unreadable, which is reported below exactly as a name in a form this
-        // file cannot compare is: the entry's issuer is unknown, so the list is.
+        // file cannot compare is: the entry's issuer is unknown, so the list
+        // is.
         log.debug('entriesOf(): certificateIssuer unreadable: ' + e.message);
         dn = null;
       }
       if (!dn) {
-        problem = 'an entry names its certificate issuer in a form this service ' +
-                  'cannot compare — only a directory name is';
+        problem = 'an entry names its certificate issuer in a form this ' +
+                  'service cannot compare — only a directory name is';
         return;
       }
       attributed = nameKey(dn.value);
@@ -1729,11 +1959,12 @@ async function readCrl(der, context) {
     log.debug('Leaving readCrl(). Another issuer.');
     return { ok: false, signerProblem: true,
              why: context.indirect
-               ? 'the list is issued by "' + describeName(crl.issuer) + '", not by ' +
-                 'the CRL issuer the certificate names'
+               ? 'the list is issued by "' + describeName(crl.issuer) + '", ' +
+                 'not by the CRL issuer the certificate names'
                : 'the list is issued by "' + describeName(crl.issuer) + '", ' +
                  'somebody other than the certificate\'s issuer — and the ' +
-                 'certificate names no separate CRL issuer who could have signed it' };
+                 'certificate names no separate CRL issuer who could have ' +
+                 'signed it' };
   }
   let signer = await crlSignerOf(crl, context.signers || []);
   let signerFetchedFrom = '';
@@ -1749,18 +1980,21 @@ async function readCrl(der, context) {
     const first = context.localWhy
       ? context.localWhy
       : 'its signature does not verify against the ' +
-        (context.indirect ? 'certificate of the CRL issuer the certificate names'
+        (context.indirect ? 'certificate of the CRL issuer the certificate ' +
+                            'names'
                           : 'issuer\'s certificate') +
         ', so it says nothing about what that issuer revoked';
+    log.debug("Leaving readCrl().");
     return { ok: false, signerProblem: true,
-             caIssuersProblem: !!caIssuersWhy && caIssuersWhy.indexOf('names no caIssuers') < 0,
+             caIssuersProblem: !!caIssuersWhy && caIssuersWhy.indexOf('names ' +
+                 'no caIssuers') < 0,
              why: first + (caIssuersWhy ? '; and ' + caIssuersWhy : '') };
   }
   if (!keyUsageAllows(signer.parsed, KEY_USAGE_CRL_SIGN)) {
     log.debug('Leaving readCrl(). Signer may not sign CRLs.');
     return { ok: false, signerProblem: true,
-             why: 'it was signed by a certificate whose keyUsage does not include ' +
-                  'cRLSign (RFC 5280 section 4.2.1.3)' };
+             why: 'it was signed by a certificate whose keyUsage does not ' +
+                  'include cRLSign (RFC 5280 section 4.2.1.3)' };
   }
   const extensions = (crl.crlExtensions && crl.crlExtensions.extensions) || [];
   const critical = extensions.filter(function (ext) {
@@ -1776,7 +2010,11 @@ async function readCrl(der, context) {
                   'makes the list unusable' };
   }
   const find = function (oid) {
-    return extensions.filter(function (ext) { return ext.extnID === oid; })[0] || null;
+    log.debug("Entering find().");
+    log.debug("Leaving find().");
+    return extensions.filter(function (ext) {
+      return ext.extnID === oid;
+    })[0] || null;
   };
   let facts;
   try {
@@ -1788,16 +2026,22 @@ async function readCrl(der, context) {
     };
   } catch (e) {
     log.debug('Leaving readCrl(). An extension could not be read.');
-    return { ok: false, why: 'an extension it carries could not be read: ' + e.message };
+    return { ok: false,
+             why: 'an extension it carries could not be read: ' + e.message };
   }
   if (facts.idp.relative) {
-    // A name relative to the CRL issuer is made whole against THIS list's issuer
-    // and compared like any other directory name; one that cannot be made whole
-    // unambiguously leaves the list unusable rather than matched by a guess.
+    // A name relative to the CRL issuer is made whole against THIS list's
+    // issuer and compared like any other directory name; one that cannot be
+    // made whole unambiguously leaves the list unusable rather than matched by
+    // a guess.
     const whole = wholeNameOf(crl.issuer, facts.idp.relativeRdn);
     if (!whole.ok) {
-      log.debug('Leaving readCrl(). An unresolvable relative distribution point name.');
-      return { ok: false, why: 'its issuing distribution point ' + whole.why.replace(/^its /, 'has a ') };
+      log.debug('Leaving readCrl(). An unresolvable relative distribution ' +
+                'point name.');
+      return { ok: false,
+               why: 'its issuing distribution point ' +
+                    whole.why.replace(/^its /, 'has ' +
+          'a ') };
     }
     facts.idp.keys = [whole.key];
   }
@@ -1838,7 +2082,9 @@ async function listFrom(url, context) {
   // certificate is authorised depends on the path it has to chain to.
   const key = url + '|' + (context.signers || []).map(function (one) {
     return one.fingerprint256;
-  }).join(',') + (context.target ? '|' + Array.from(context.target.above).sort().join(',') : '');
+  }).join(',') +
+              (context.target ?
+               '|' + Array.from(context.target.above).sort().join(',') : '');
   const hit = cached(crlCache, key);
   if (hit) {
     log.debug('Leaving listFrom(). Cached.');
@@ -1848,13 +2094,15 @@ async function listFrom(url, context) {
   if (failed) {
     log.debug('Leaving listFrom(). Failed recently.');
     return { ok: false, why: failed.why + ' (remembered for ' +
-                             'pki.revocationFailureRetryS)', kind: failed.kind };
+                             'pki.revocationFailureRetryS)',
+             kind: failed.kind };
   }
   log.debug('Leaving listFrom(). Fetching, or joining a fetch in flight.');
   return once(key, async function () {
     const fetched = await fetchCrlDocument(url, context);
     if (!fetched.ok) {
-      log.warn(errorCodes.tag('STS-PKI-0120') + 'revocation: the CRL at ' + url +
+      log.warn(errorCodes.tag('STS-PKI-0120') + 'revocation: the CRL at ' +
+               url +
                ' could not be fetched: ' + fetched.why + '.');
       rememberFailure(key, fetched.why, 'unreachable');
       return { ok: false, why: fetched.why, kind: 'unreachable' };
@@ -1862,27 +2110,33 @@ async function listFrom(url, context) {
     const read = await readCrl(fetched.der, context);
     if (!read.ok) {
       if (context.purpose === 'delta') {
-        log.warn(errorCodes.tag('STS-PKI-0124') + 'revocation: the delta CRL at ' +
+        log.warn(errorCodes.tag('STS-PKI-0124') + 'revocation: the delta CRL ' +
+                                                  'at ' +
                  url + ' cannot be used: ' + read.why + '.');
       } else if (read.caIssuersProblem) {
-        log.warn(errorCodes.tag('STS-PKI-0126') + 'revocation: no certificate fetched ' +
-                 'from the caIssuers address of the CRL at ' + url + ' could sign it: ' +
+        log.warn(errorCodes.tag('STS-PKI-0126') + 'revocation: no ' +
+                 'certificate fetched from the caIssuers address of the CRL ' +
+                 'at ' + url + ' could ' +
+                     'sign it: ' +
                  read.why + '.');
       } else if (context.indirect && read.signerProblem) {
-        log.warn(errorCodes.tag('STS-PKI-0125') + 'revocation: the indirect CRL ' +
-                 'at ' + url + ' cannot be trusted: ' + read.why + '.');
+        log.warn(errorCodes.tag('STS-PKI-0125') + 'revocation: the indirect ' +
+                 'CRL at ' + url + ' cannot be trusted: ' + read.why + '.');
       } else {
-        log.warn(errorCodes.tag('STS-PKI-0121') + 'revocation: the CRL at ' + url +
+        log.warn(errorCodes.tag('STS-PKI-0121') + 'revocation: the CRL at ' +
+                 url +
                  ' cannot be used: ' + read.why + '.');
       }
       rememberFailure(key, read.why, 'unusable');
       return { ok: false, why: read.why, kind: 'unusable' };
     }
-    const maxAge = Math.max(1, Number(config.value('pki.revocationCrlMaxAgeS')));
+    const maxAge = Math.max(1,
+                            Number(config.value('pki.revocationCrlMaxAgeS')));
     const ceiling = Date.now() + maxAge * 1000;
     const entry = Object.assign({}, read, {
       url: url, fetchedAt: new Date().toISOString(),
-      expiresAt: read.nextUpdateMs ? Math.min(read.nextUpdateMs, ceiling) : ceiling
+      expiresAt: read.nextUpdateMs ? Math.min(read.nextUpdateMs, ceiling) :
+                 ceiling
     });
     remember(crlCache, key, entry);
     log.info('revocation: fetched and verified the ' +
@@ -1917,10 +2171,14 @@ async function listFrom(url, context) {
 //     `pki.revocationOcspMaxAgeS`.
 // ---------------------------------------------------------------------------
 function digestOf(algorithm, bytes) {
+  log.debug("Entering digestOf().");
+  log.debug("Leaving digestOf().");
   return nodeCrypto.createHash(algorithm).update(Buffer.from(bytes)).digest();
 }
 
 function keyBitsOf(parsedCert) {
+  log.debug("Entering keyBitsOf().");
+  log.debug("Leaving keyBitsOf().");
   return Buffer.from(parsedCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock.valueHexView);
 }
 
@@ -1931,31 +2189,40 @@ function buildOcspRequest(target) {
     valueHex: arrayBufferOf(nonce) }).toBER(false));
   const certId = new pkijs.CertID({
     hashAlgorithm: new pkijs.AlgorithmIdentifier({ algorithmId: OID.SHA1,
-                                                   algorithmParams: new asn1js.Null() }),
+                                                   algorithmParams:
+                                                     new asn1js.Null() }),
     issuerNameHash: new asn1js.OctetString({
-      valueHex: arrayBufferOf(digestOf('sha1', nameDerOf(target.parsed.issuer))) }),
+      valueHex: arrayBufferOf(digestOf('sha1',
+                                       nameDerOf(target.parsed.issuer))) }),
     issuerKeyHash: new asn1js.OctetString({
-      valueHex: arrayBufferOf(digestOf('sha1', keyBitsOf(target.issuerParsed))) }),
+      valueHex: arrayBufferOf(digestOf('sha1',
+                                       keyBitsOf(target.issuerParsed))) }),
     serialNumber: target.parsed.serialNumber
   });
   const request = new pkijs.OCSPRequest({
     tbsRequest: new pkijs.TBSRequest({
       requestList: [new pkijs.Request({ reqCert: certId })],
       requestExtensions: [new pkijs.Extension({ extnID: OID.OCSP_NONCE,
-                                                extnValue: arrayBufferOf(nonceValue) })]
+                                                extnValue: arrayBufferOf(
+                                                    nonceValue) })]
     })
   });
   log.debug('Leaving buildOcspRequest().');
-  return { der: Buffer.from(request.toSchema(true).toBER(false)), nonceValue: nonceValue };
+  return { der: Buffer.from(request.toSchema(true).toBER(false)),
+           nonceValue: nonceValue };
 }
 
 function certIdMatches(certId, target) {
+  log.debug("Entering certIdMatches().");
   const algorithm = CERT_ID_HASHES[certId.hashAlgorithm.algorithmId];
   if (!algorithm) {
+    log.debug("Leaving certIdMatches().");
     return false;
   }
-  const serial = normalSerial(Buffer.from(certId.serialNumber.valueBlock.valueHexView)
+  const serial =
+      normalSerial(Buffer.from(certId.serialNumber.valueBlock.valueHexView)
     .toString('hex'));
+  log.debug("Leaving certIdMatches().");
   return serial === target.serial &&
     Buffer.from(certId.issuerNameHash.valueBlock.valueHexView)
       .equals(digestOf(algorithm, nameDerOf(target.parsed.issuer))) &&
@@ -1964,7 +2231,9 @@ function certIdMatches(certId, target) {
 }
 
 async function ocspSignatureVerifies(basic, parsedCert) {
+  log.debug("Entering ocspSignatureVerifies().");
   try {
+    log.debug("Leaving ocspSignatureVerifies().");
     return await pkijs.getCrypto(true).verifyWithPublicKey(
       basic.tbsResponseData.tbsView, basic.signature,
       parsedCert.subjectPublicKeyInfo, basic.signatureAlgorithm);
@@ -1972,6 +2241,7 @@ async function ocspSignatureVerifies(basic, parsedCert) {
     // A key of a type the engine cannot use for this algorithm answers by
     // throwing. That is "this key did not sign it", which is what false says.
     log.debug('ocspSignatureVerifies(): threw: ' + e.message);
+    log.debug("Leaving ocspSignatureVerifies().");
     return false;
   }
 }
@@ -1979,48 +2249,54 @@ async function ocspSignatureVerifies(basic, parsedCert) {
 // ---------------------------------------------------------------------------
 // A DELEGATED RESPONDER'S OWN STATUS (RFC 6960 section 4.2.2.2.1).
 //
-// **id-pkix-ocsp-nocheck MEANS DO NOT CHECK IT**, and it is honoured: the issuer
-// that put it there has said the responder's certificate is short-lived enough
-// that its revocation is not a question, and the answer says so rather than
-// reporting a status nobody established.
+// **id-pkix-ocsp-nocheck MEANS DO NOT CHECK IT**, and it is honoured: the
+// issuer that put it there has said the responder's certificate is short-lived
+// enough that its revocation is not a question, and the answer says so rather
+// than reporting a status nobody established.
 //
 // **OTHERWISE ITS STATUS COMES FROM ITS CRL AND NEVER FROM OCSP.** The one
-// responder this file could ask is the one whose certificate is in question, and
-// asking it whether it is revoked is a question whose answer it signs; any other
-// responder the certificate names would be asked with this same machinery, a
-// loop in the general case. The CRL route is the same one a leaf goes through —
-// deltas, indirect lists, caIssuers and all — with the responder's issuer (the
-// certificate's issuer, by the rule above) as the issuer.
+// responder this file could ask is the one whose certificate is in question,
+// and asking it whether it is revoked is a question whose answer it signs; any
+// other responder the certificate names would be asked with this same
+// machinery, a loop in the general case. The CRL route is the same one a leaf
+// goes through — deltas, indirect lists, caIssuers and all — with the
+// responder's issuer (the certificate's issuer, by the rule above) as the
+// issuer.
 //
-// **REVOKED MAKES EVERY ANSWER IT SIGNED UNUSABLE**, in both policies — a signed
-// fact wins everywhere else here, and does here. **UNKNOWN IS THE POLICY'S** and
-// is decided where the answer is USED (`ocspRoute()`), because the answer is
-// cached and the policy is read per call: hard-fail does not believe a responder
-// whose status could not be established, soft-fail does and says so. A responder
-// certificate naming no list at all is refused by hard-fail only under
-// `pki.revocationRequireDistributionPoint`, which is the rule a leaf gets.
+// **REVOKED MAKES EVERY ANSWER IT SIGNED UNUSABLE**, in both policies — a
+// signed fact wins everywhere else here, and does here. **UNKNOWN IS THE
+// POLICY'S** and is decided where the answer is USED (`ocspRoute()`), because
+// the answer is cached and the policy is read per call: hard-fail does not
+// believe a responder whose status could not be established, soft-fail does and
+// says so. A responder certificate naming no list at all is refused by
+// hard-fail only under `pki.revocationRequireDistributionPoint`, which is the
+// rule a leaf gets.
 // ---------------------------------------------------------------------------
 async function responderStatusOf(parsedCert, x509, target) {
   log.debug('Entering responderStatusOf().');
   if (extensionOf(parsedCert, OID.OCSP_NOCHECK)) {
     log.debug('Leaving responderStatusOf(). nocheck.');
     return { status: 'not-checked', nocheck: true, refusable: false,
-             why: 'its certificate carries id-pkix-ocsp-nocheck, so its own status is not ' +
-                  'checked (RFC 6960 section 4.2.2.2.1)' };
+             why: 'its certificate carries id-pkix-ocsp-nocheck, so its own ' +
+                  'status is not checked (RFC 6960 section 4.2.2.2.1)' };
   }
   const responderTarget = targetOf({ cert: x509, issuerCert: target.issuerCert,
-                                     offered: target.offered, serialHex: x509.serialNumber,
-                                     subject: x509.subject, depth: target.link.depth });
+                                     offered: target.offered,
+                                     serialHex: x509.serialNumber,
+                                     subject: x509.subject,
+                                     depth: target.link.depth });
   if (!responderTarget) {
     log.debug('Leaving responderStatusOf(). Unreadable.');
     return { status: 'unknown', refusable: true,
-             why: 'its certificate could not be read closely enough to look it up' };
+             why: 'its certificate could not be read closely enough to look ' +
+                  'it up' };
   }
   const result = await crlRoute(responderTarget);
   log.debug('Leaving responderStatusOf(). ' + result.status);
   return { status: result.status, kind: result.kind || '',
            refusable: result.status === 'unknown'
-             ? (result.none ? policy().requireDistributionPoint : !!result.refusable) : false,
+             ? (result.none ? policy().requireDistributionPoint :
+                !!result.refusable) : false,
            why: 'from its CRL: ' + result.why };
 }
 
@@ -2029,11 +2305,14 @@ async function ocspSignerOf(basic, target) {
   log.debug('Entering ocspSignerOf().');
   const responderId = basic.tbsResponseData.responderID;
   const named = function (parsedCert) {
+    log.debug("Entering named().");
     if (responderId instanceof pkijs.RelativeDistinguishedNames) {
+      log.debug("Leaving named().");
       return nameKey(responderId) === nameKey(parsedCert.subject);
     }
     const byKey = responderId && responderId.valueBlock
       ? Buffer.from(responderId.valueBlock.valueHexView) : null;
+    log.debug("Leaving named().");
     return !!byKey && byKey.equals(digestOf('sha1', keyBitsOf(parsedCert)));
   };
   const tried = [];
@@ -2042,8 +2321,8 @@ async function ocspSignerOf(basic, target) {
       log.debug('Leaving ocspSignerOf(). The issuer.');
       return { ok: true, kind: 'issuer' };
     }
-    tried.push('it names the issuer as its responder, and the issuer\'s key does ' +
-               'not verify its signature');
+    tried.push('it names the issuer as its responder, and the issuer\'s key ' +
+               'does not verify its signature');
   }
   const now = Date.now();
   const certs = basic.certs || [];
@@ -2051,16 +2330,18 @@ async function ocspSignerOf(basic, target) {
     if (!named(certs[i])) {
       continue;
     }
-    const label = 'the responder certificate "' + describeName(certs[i].subject) + '"';
+    const label = 'the responder certificate "' +
+                  describeName(certs[i].subject) + '"';
     const x509 = x509Of(Buffer.from(certs[i].toSchema().toBER(false)));
     if (!x509 || !signedBy(x509, target.issuerCert)) {
-      tried.push(label + ' was not issued by the certificate\'s issuer, so the ' +
-                 'issuer never delegated anything to it');
+      tried.push(label + ' was not issued by the certificate\'s issuer, so ' +
+                 'the issuer never delegated anything to it');
       continue;
     }
     if (!hasExtendedKeyUsage(certs[i], OID.KP_OCSP_SIGNING)) {
-      tried.push(label + ' carries no id-kp-OCSPSigning in its extendedKeyUsage, ' +
-                 'so its issuer did not make it a responder (RFC 6960 section 4.2.2.2)');
+      tried.push(label + ' carries no id-kp-OCSPSigning in its ' +
+                 'extendedKeyUsage, so its issuer did not make it a ' +
+                 'responder (RFC 6960 section 4.2.2.2)');
       continue;
     }
     if (!validAt(x509, now)) {
@@ -2070,15 +2351,19 @@ async function ocspSignerOf(basic, target) {
     if (await ocspSignatureVerifies(basic, certs[i])) {
       const responderStatus = await responderStatusOf(certs[i], x509, target);
       if (responderStatus.status === 'revoked') {
-        log.warn(errorCodes.tag('STS-PKI-0127') + 'revocation: the delegated OCSP ' +
-                 'responder "' + describeName(certs[i].subject) + '" is itself revoked: ' +
+        log.warn(errorCodes.tag('STS-PKI-0127') + 'revocation: the delegated ' +
+                 'OCSP responder ' +
+                 '"' + describeName(certs[i].subject) + '" is ' +
+                     'itself revoked: ' +
                  responderStatus.why + '.');
-        tried.push(label + ' is itself REVOKED — ' + responderStatus.why + ' — so ' +
-                   'nothing it signs is an answer (RFC 6960 section 4.2.2.2.1)');
+        tried.push(label + ' is itself REVOKED — ' + responderStatus.why + ' ' +
+                   '— so nothing it signs is an answer (RFC 6960 section ' +
+                   '4.2.2.2.1)');
         continue;
       }
       log.debug('Leaving ocspSignerOf(). A delegated responder.');
-      return { ok: true, kind: 'delegated', responder: describeName(certs[i].subject),
+      return { ok: true, kind: 'delegated',
+               responder: describeName(certs[i].subject),
                responderStatus: responderStatus };
     }
     tried.push(label + '\'s key does not verify its signature');
@@ -2086,27 +2371,34 @@ async function ocspSignerOf(basic, target) {
   log.debug('Leaving ocspSignerOf(). Nobody authorised.');
   return { ok: false,
            why: tried.length
-             ? 'it was not signed by anybody the issuer authorised — ' + tried.join('; ')
-             : 'its responderID names neither the certificate\'s issuer nor a ' +
-               'responder certificate the response carries, so nothing the issuer ' +
-               'vouched for signed it' };
+             ? 'it was not signed by anybody the issuer authorised — ' +
+               tried.join('; ')
+             : 'its responderID names neither the certificate\'s issuer nor ' +
+               'a responder certificate the response carries, so nothing the ' +
+               'issuer vouched for signed it' };
 }
 
 function ocspNonceOf(data, sent) {
+  log.debug("Entering ocspNonceOf().");
   const echoed = (data.responseExtensions || []).filter(function (ext) {
     return ext.extnID === OID.OCSP_NONCE;
   })[0];
   if (!echoed) {
     if (config.value('pki.revocationOcspRequireNonce') === true) {
+      log.debug("Leaving ocspNonceOf().");
       return { ok: false, why: 'it echoes no nonce, and ' +
                                'pki.revocationOcspRequireNonce requires one' };
     }
+    log.debug("Leaving ocspNonceOf().");
     return { ok: true, state: 'absent' };
   }
   if (!Buffer.from(echoed.extnValue.valueBlock.valueHexView).equals(sent)) {
-    return { ok: false, why: 'it echoes a nonce that is not the one this request ' +
-                             'sent, so it answers somebody else\'s question — a replay' };
+    log.debug("Leaving ocspNonceOf().");
+    return { ok: false, why: 'it echoes a nonce that is not the one this ' +
+                             'request sent, so it answers somebody else\'s ' +
+                             'question — a replay' };
   }
+  log.debug("Leaving ocspNonceOf().");
   return { ok: true, state: 'matched' };
 }
 
@@ -2114,16 +2406,19 @@ function ocspFreshness(single) {
   log.debug('Entering ocspFreshness().');
   const now = Date.now();
   const skew = skewMs();
-  const thisUpdate = single.thisUpdate instanceof Date ? single.thisUpdate.getTime() : 0;
-  const nextUpdate = single.nextUpdate instanceof Date ? single.nextUpdate.getTime() : 0;
+  const thisUpdate = single.thisUpdate instanceof Date ?
+                     single.thisUpdate.getTime() : 0;
+  const nextUpdate = single.nextUpdate instanceof Date ?
+                     single.nextUpdate.getTime() : 0;
   let why = '';
   if (!thisUpdate) {
     why = 'it carries no thisUpdate';
   } else if (thisUpdate - skew > now) {
-    why = 'its thisUpdate is ' + new Date(thisUpdate).toISOString() + ', in the ' +
-          'future by more than pki.revocationClockSkewS';
+    why = 'its thisUpdate is ' + new Date(thisUpdate).toISOString() + ', in ' +
+          'the future by more than pki.revocationClockSkewS';
   } else if (nextUpdate && nextUpdate + skew < now) {
-    why = 'it is STALE — its nextUpdate was ' + new Date(nextUpdate).toISOString();
+    why = 'it is STALE — its nextUpdate was ' +
+          new Date(nextUpdate).toISOString();
   } else if (!nextUpdate && thisUpdate + ocspMaxAgeMs() + skew < now) {
     why = 'it is STALE — it carries no nextUpdate, and its thisUpdate, ' +
           new Date(thisUpdate).toISOString() + ', is older than ' +
@@ -2134,23 +2429,31 @@ function ocspFreshness(single) {
 }
 
 function ocspStatusOf(single) {
+  log.debug("Entering ocspStatusOf().");
   const status = single.certStatus;
   const tag = status && status.idBlock ? status.idBlock.tagNumber : -1;
   if (tag === 0) {
+    log.debug("Leaving ocspStatusOf().");
     return { status: 'good' };
   }
   if (tag !== 1) {
+    log.debug("Leaving ocspStatusOf().");
     return { status: 'unknown' };
   }
   const parts = childrenOf(status);
-  const at = parts[0] && typeof parts[0].toDate === 'function' ? parts[0].toDate() : null;
-  const holder = parts.filter(function (one) { return contextTagOf(one) === 0; })[0];
+  const at = parts[0] && typeof parts[0].toDate === 'function' ?
+             parts[0].toDate() : null;
+  const holder = parts.filter(function (one) {
+    return contextTagOf(one) === 0;
+  })[0];
   const enumerated = childrenOf(holder)[0];
   const code = enumerated && enumerated.valueBlock &&
                typeof enumerated.valueBlock.valueDec === 'number'
     ? enumerated.valueBlock.valueDec : 0;
+  log.debug("Leaving ocspStatusOf().");
   return { status: 'revoked', revokedAt: at ? at.toISOString() : '',
-           reasonCode: code, reason: holder ? reasonNameOf(code) : 'unspecified' };
+           reasonCode: code,
+           reason: holder ? reasonNameOf(code) : 'unspecified' };
 }
 
 async function readOcsp(der, target, nonceValue) {
@@ -2161,20 +2464,24 @@ async function readOcsp(der, target, nonceValue) {
     response = pkijs.OCSPResponse.fromBER(arrayBufferOf(der));
   } catch (e) {
     log.debug('Leaving readOcsp(). Not a response.');
-    return { ok: false, why: 'what it answered is not an OCSP response: ' + e.message };
+    return { ok: false,
+             why: 'what it answered is not an OCSP response: ' + e.message };
   }
   const statusCode = response.responseStatus.valueBlock.valueDec;
   if (statusCode !== 0) {
     log.debug('Leaving readOcsp(). responseStatus ' + statusCode + '.');
     return { ok: false, transport: true,
-             why: 'the responder answered ' + (OCSP_RESPONSE_STATUS[statusCode] ||
+             why: 'the responder answered ' +
+                  (OCSP_RESPONSE_STATUS[statusCode] ||
                                                'status ' + statusCode) +
                   ' rather than a response' };
   }
-  if (!response.responseBytes || response.responseBytes.responseType !== OID.OCSP_BASIC) {
+  if (!response.responseBytes ||
+      response.responseBytes.responseType !== OID.OCSP_BASIC) {
     log.debug('Leaving readOcsp(). Not a basic response.');
-    return { ok: false, why: 'it is not a basic OCSP response, the one type RFC 6960 ' +
-                             'section 4.2.1 requires a responder to support' };
+    return { ok: false, why: 'it is not a basic OCSP response, the one type ' +
+                             'RFC 6960 section 4.2.1 requires a responder to ' +
+                             'support' };
   }
   try {
     basic = pkijs.BasicOCSPResponse.fromBER(arrayBufferOf(
@@ -2188,8 +2495,8 @@ async function readOcsp(der, target, nonceValue) {
   })[0];
   if (!single) {
     log.debug('Leaving readOcsp(). No answer about this certificate.');
-    return { ok: false, why: 'it carries no answer about this certificate — no single ' +
-                             'response names its issuer and serial' };
+    return { ok: false, why: 'it carries no answer about this certificate — ' +
+                             'no single response names its issuer and serial' };
   }
   const signer = await ocspSignerOf(basic, target);
   if (!signer.ok) {
@@ -2208,9 +2515,11 @@ async function readOcsp(der, target, nonceValue) {
   }
   log.debug('Leaving readOcsp(). Usable.');
   return Object.assign({ ok: true, responder: signer.kind,
-                         responderName: signer.responder || '', nonce: nonce.state,
+                         responderName: signer.responder || '',
+                         nonce: nonce.state,
                          responderStatus: signer.responderStatus || null,
-                         thisUpdateMs: fresh.thisUpdate, nextUpdateMs: fresh.nextUpdate,
+                         thisUpdateMs: fresh.thisUpdate,
+                         nextUpdateMs: fresh.nextUpdate,
                          nextUpdate: fresh.nextUpdate
                            ? new Date(fresh.nextUpdate).toISOString() : '' },
                        ocspStatusOf(single));
@@ -2219,7 +2528,8 @@ async function readOcsp(der, target, nonceValue) {
 // One responder, answered from the cache or asked. Never rejects.
 async function ocspFrom(url, target) {
   log.debug('Entering ocspFrom(). url=' + url);
-  const key = url + '|' + target.issuerCert.fingerprint256 + '|' + target.serial;
+  const key = url + '|' + target.issuerCert.fingerprint256 + '|' +
+              target.serial;
   const hit = cached(ocspCache, key);
   if (hit) {
     log.debug('Leaving ocspFrom(). Cached.');
@@ -2237,33 +2547,43 @@ async function ocspFrom(url, target) {
     try {
       built = buildOcspRequest(target);
     } catch (e) {
-      log.warn(errorCodes.tag('STS-PKI-0122') + 'revocation: an OCSP request for ' +
+      log.warn(errorCodes.tag('STS-PKI-0122') + 'revocation: an OCSP request ' +
+                                                'for ' +
                url + ' could not be built: ' + e.message + '.');
       return { ok: false, why: 'the request could not be built: ' + e.message };
     }
     const fetched = await fetchBytes(url, { body: built.der,
-                                            contentType: 'application/ocsp-request',
-                                            accept: 'application/ocsp-response' });
-    const read = fetched.ok ? await readOcsp(fetched.der, target, built.nonceValue)
+                                            contentType:
+                                              'application/ocsp-request',
+                                            accept:
+                                              'application/ocsp-response' });
+    const read = fetched.ok ?
+                 await readOcsp(fetched.der, target, built.nonceValue)
                             : { ok: false, transport: true, why: fetched.why };
     if (!read.ok) {
       if (read.transport) {
-        log.warn(errorCodes.tag('STS-PKI-0122') + 'revocation: the OCSP responder ' +
+        log.warn(errorCodes.tag('STS-PKI-0122') + 'revocation: the OCSP ' +
+                 'responder ' +
                  'at ' + url + ' could not be asked: ' + read.why + '.');
       } else {
-        log.warn(errorCodes.tag('STS-PKI-0123') + 'revocation: the OCSP response ' +
-                 'from ' + url + ' cannot be used: ' + read.why + '.');
+        log.warn(errorCodes.tag('STS-PKI-0123') + 'revocation: the OCSP ' +
+                 'response from ' + url + ' cannot be used: ' + read.why + '.');
       }
-      rememberFailure(key, read.why, read.transport ? 'unreachable' : 'unusable');
+      rememberFailure(key, read.why,
+                      read.transport ? 'unreachable' : 'unusable');
       return { ok: false, why: read.why };
     }
     const now = Date.now();
-    const expiresAt = Math.min(read.nextUpdateMs || read.thisUpdateMs + ocspMaxAgeMs(),
+    const expiresAt = Math.min(read.nextUpdateMs ||
+                               read.thisUpdateMs + ocspMaxAgeMs(),
                                now + ocspMaxAgeMs());
-    const entry = Object.assign({}, read, { url: url, fetchedAt: new Date(now).toISOString(),
+    const entry = Object.assign({}, read,
+                                { url: url, fetchedAt: new Date(
+                                    now).toISOString(),
                                             expiresAt: expiresAt });
     remember(ocspCache, key, entry);
-    log.info('revocation: the OCSP responder at ' + url + ' answered ' + read.status +
+    log.info('revocation: the OCSP responder at ' + url + ' answered ' +
+             read.status +
              ' (signed by ' + read.responder + ', nonce ' + read.nonce + ').');
     return { ok: true, answer: entry, fromCache: false };
   });
@@ -2370,7 +2690,8 @@ function walk(input) {
         authority: { scope: local.scope, ca: local.ca,
                      label: (local.scope === pki.SERVICE_SCOPE ? 'service'
                              : (local.scope === pki.PROCESS_SCOPE ? 'process'
-                                : (local.scope || 'default'))) + '/' + local.ca },
+                                : (local.scope ||
+                                   'default'))) + '/' + local.ca },
         source: 'register',
         status: entry ? 'revoked' : 'good',
         reason: entry ? entry.reason : '',
@@ -2379,8 +2700,8 @@ function walk(input) {
         why: entry
           ? 'on the ' + local.ca + ' authority\'s own revocation list since ' +
             entry.revokedAt + ' (' + entry.reason + ')'
-          : 'signed by this service\'s ' + local.ca + ' authority, whose list ' +
-            'does not name it'
+          : 'signed by this service\'s ' + local.ca + ' authority, whose ' +
+            'list does not name it'
       });
       current = local.cert;
       continue;
@@ -2394,9 +2715,9 @@ function walk(input) {
       issuer: current.issuer, source: 'crl', status: 'unknown',
       cert: current, issuerCert: presentedIssuer, offered: offered,
       why: presentedIssuer ? 'signed by an authority this service does not hold'
-                           : 'its issuer is neither held here nor in the chain ' +
-                             'that was presented, so nothing can verify a list ' +
-                             'about it'
+                           : 'its issuer is neither held here nor in the ' +
+                             'chain that was presented, so nothing can ' +
+                             'verify a list about it'
     });
     current = presentedIssuer;
   }
@@ -2430,10 +2751,12 @@ function targetOf(link) {
       break;
     }
     const at = current;
-    current = offered.filter(function (one) { return signedBy(at, one); })[0] || null;
+    current = offered.filter(function (one) { return signedBy(at, one); })[0] ||
+              null;
   }
   log.debug('Leaving targetOf(). ' + above.size + ' above it.');
-  return { link: link, cert: link.cert, parsed: parsed, issuerCert: link.issuerCert,
+  return { link: link, cert: link.cert, parsed: parsed,
+           issuerCert: link.issuerCert,
            issuerParsed: issuerParsed, issuerKey: nameKey(parsed.issuer),
            serial: normalSerial(link.serialHex), isCa: isCaCertificate(parsed),
            offered: offered, above: above };
@@ -2447,17 +2770,19 @@ function targetOf(link) {
 // presented chain — which is where every list was trusted from before this.
 //
 // **A point naming a cRLIssuer is INDIRECT**, and the certificate's own
-// signature is what authorises that name: its issuer wrote "this list is
-// issued by X" into the certificate. What remains is finding X's certificate
-// and making sure it is REALLY X's. It is looked for in the presented chain,
-// among this service's own authorities and in `pki.revocationCrlIssuersFile`,
-// and one is authorised only if it may sign CRLs, is inside its validity period,
-// and chains — through CA certificates from the same three places — to a
+// signature is what authorises that name: its issuer wrote "this list is issued
+// by X" into the certificate. What remains is finding X's certificate and
+// making sure it is REALLY X's. It is looked for in the presented chain, among
+// this service's own authorities and in `pki.revocationCrlIssuersFile`, and one
+// is authorised only if it may sign CRLs, is inside its validity period, and
+// chains — through CA certificates from the same three places — to a
 // certificate the target's own verified path passes through. A certificate that
 // merely carries the right name and chains somewhere else is an impostor, which
 // is the case `signedBy()` exists for one level up.
 // ---------------------------------------------------------------------------
 function heldCertificates() {
+  log.debug("Entering heldCertificates().");
+  log.debug("Leaving heldCertificates().");
   return heldAuthorities().map(function (one) {
     return parsedTier(one.tier && one.tier.certificatePem);
   }).filter(function (one) { return !!one; });
@@ -2467,7 +2792,8 @@ function crlSignerAuthorised(candidate, target, pool) {
   log.debug('Entering crlSignerAuthorised().');
   const parsed = pkijsOf(candidate);
   const now = Date.now();
-  if (!parsed || !keyUsageAllows(parsed, KEY_USAGE_CRL_SIGN) || !validAt(candidate, now)) {
+  if (!parsed || !keyUsageAllows(parsed, KEY_USAGE_CRL_SIGN) ||
+      !validAt(candidate, now)) {
     log.debug('Leaving crlSignerAuthorised(). May not sign CRLs now.');
     return false;
   }
@@ -2497,11 +2823,13 @@ function crlContextFor(target, point) {
              expectName: target.parsed.issuer, target: target };
   }
   if (!point.crlIssuer) {
-    log.warn(errorCodes.tag('STS-PKI-0125') + 'revocation: "' + target.link.subject +
+    log.warn(errorCodes.tag('STS-PKI-0125') + 'revocation: "' +
+             target.link.subject +
              '" names a CRL issuer that is not a directory name.');
     log.debug('Leaving crlContextFor(). Unreadable cRLIssuer.');
-    return { ok: false, why: 'it names a CRL issuer that is not a directory name, ' +
-                             'which this service has no way to look for' };
+    return { ok: false, why: 'it names a CRL issuer that is not a directory ' +
+                             'name, which this service has no way to look ' +
+                             'for' };
   }
   const wanted = nameKey(point.crlIssuer);
   const seen = new Set();
@@ -2523,22 +2851,26 @@ function crlContextFor(target, point) {
   if (!authorised.length) {
     // NOTHING HELD HERE MAY SIGN IT — which is not yet a refusal: the list
     // itself may name, in its Authority Information Access, where its signer's
-    // certificate is published (RFC 5280 section 5.2.7). The list is fetched and
-    // that address is tried; the sentence below is what the refusal says if it
-    // names none or what is there is not authorised either.
+    // certificate is published (RFC 5280 section 5.2.7). The list is fetched
+    // and that address is tried; the sentence below is what the refusal says if
+    // it names none or what is there is not authorised either.
     const why = named.length
-      ? 'the CRL issuer it names, "' + describeName(point.crlIssuer) + '", has a ' +
-        'certificate here only in forms that may not sign CRLs, are not valid now or ' +
-        'do not chain to an authority its own path passes through'
-      : 'it names "' + describeName(point.crlIssuer) + '" as its CRL issuer, and no ' +
-        'certificate for that name is in the presented chain, among this service\'s ' +
-        'authorities or in pki.revocationCrlIssuersFile';
-    log.debug('Leaving crlContextFor(). No authorised signer held; caIssuers next.');
+      ? 'the CRL issuer it names, "' + describeName(point.crlIssuer) + '", ' +
+        'has a certificate here only in forms that may not sign CRLs, are ' +
+        'not valid now or do not chain to an authority its own path passes ' +
+        'through'
+      : 'it names "' + describeName(point.crlIssuer) + '" as its CRL issuer, ' +
+        'and no certificate for that name is in the presented chain, among ' +
+        'this service\'s authorities or in pki.revocationCrlIssuersFile';
+    log.debug('Leaving crlContextFor(). No authorised signer held; caIssuers ' +
+              'next.');
     return { ok: true, indirect: true, signers: [], expectName: point.crlIssuer,
              target: target, localWhy: why };
   }
-  log.debug('Leaving crlContextFor(). Indirect, ' + authorised.length + ' signer(s).');
-  return { ok: true, indirect: true, signers: authorised, expectName: point.crlIssuer,
+  log.debug('Leaving crlContextFor(). Indirect, ' + authorised.length + ' ' +
+      'signer(s).');
+  return { ok: true, indirect: true, signers: authorised,
+           expectName: point.crlIssuer,
            target: target };
 }
 
@@ -2547,30 +2879,40 @@ function crlContextFor(target, point) {
 // 6.3.3 (b)): an empty string when it is, a sentence when it is not.
 // ---------------------------------------------------------------------------
 function scopeProblem(list, target, point) {
+  log.debug("Entering scopeProblem().");
   const idp = list.idp;
   if (list.isDelta) {
-    return 'it is a DELTA CRL — it carries a deltaCRLIndicator — at a distribution ' +
-           'point, which names a complete list';
+    log.debug("Leaving scopeProblem().");
+    return 'it is a DELTA CRL — it carries a deltaCRLIndicator — at a ' +
+           'distribution point, which names a complete list';
   }
   if (point.crlIssuerNamed && !idp.indirect) {
-    return 'the certificate names a separate CRL issuer, and this list does not ' +
-           'declare itself indirect';
+    log.debug("Leaving scopeProblem().");
+    return 'the certificate names a separate CRL issuer, and this list does ' +
+           'not declare itself indirect';
   }
   if (idp.keys.length && !idp.keys.some(function (key) {
     return point.keys.indexOf(key) >= 0;
   })) {
-    return 'its issuing distribution point names a different list from the one the ' +
-           'certificate points at';
+    log.debug("Leaving scopeProblem().");
+    return 'its issuing distribution point names a different list from the ' +
+           'one the certificate points at';
   }
   if (idp.onlyUser && target.isCa) {
-    return 'it covers only end-entity certificates, and this is a CA certificate';
+    log.debug("Leaving scopeProblem().");
+    return 'it covers only end-entity certificates, and this is a CA ' +
+           'certificate';
   }
   if (idp.onlyCa && !target.isCa) {
-    return 'it covers only CA certificates, and this is an end-entity certificate';
+    log.debug("Leaving scopeProblem().");
+    return 'it covers only CA certificates, and this is an end-entity ' +
+           'certificate';
   }
   if (idp.onlyAttribute) {
+    log.debug("Leaving scopeProblem().");
     return 'it covers only attribute certificates';
   }
+  log.debug("Leaving scopeProblem().");
   return '';
 }
 
@@ -2579,38 +2921,52 @@ function scopeProblem(list, target, point) {
 //
 // It must BE a delta; be issued and signed by the base's issuer; describe the
 // same scope (the same issuing distribution point, byte for byte); be built on
-// a base no newer than the one here (BaseCRLNumber <= the base's cRLNumber); and
-// be newer than it (its own cRLNumber > the base's). Merged, an entry replaces
-// the base's for that certificate and a `removeFromCRL` entry takes the base's
-// away — which is how a certificateHold is released between two complete lists.
+// a base no newer than the one here (BaseCRLNumber <= the base's cRLNumber);
+// and be newer than it (its own cRLNumber > the base's). Merged, an entry
+// replaces the base's for that certificate and a `removeFromCRL` entry takes
+// the base's away — which is how a certificateHold is released between two
+// complete lists.
 // ---------------------------------------------------------------------------
 function deltaProblem(base, delta) {
+  log.debug("Entering deltaProblem().");
   if (!delta.isDelta) {
+    log.debug("Leaving deltaProblem().");
     return 'it carries no deltaCRLIndicator, so it is not a delta CRL';
   }
-  if (delta.issuerKey !== base.issuerKey || delta.signerFingerprint !== base.signerFingerprint) {
-    return 'it was issued or signed by somebody other than the base CRL\'s issuer';
+  if (delta.issuerKey !== base.issuerKey ||
+      delta.signerFingerprint !== base.signerFingerprint) {
+    log.debug("Leaving deltaProblem().");
+    return 'it was issued or signed by somebody other than the base CRL\'s ' +
+           'issuer';
   }
   if (delta.idp.derHex !== base.idp.derHex) {
-    return 'its issuing distribution point differs from the base CRL\'s, so it ' +
-           'describes a different scope';
+    log.debug("Leaving deltaProblem().");
+    return 'its issuing distribution point differs from the base CRL\'s, so ' +
+           'it describes a different scope';
   }
   if (base.crlNumber === null) {
-    return 'the base CRL carries no cRLNumber to check its BaseCRLNumber against';
+    log.debug("Leaving deltaProblem().");
+    return 'the base CRL carries no cRLNumber to check its BaseCRLNumber ' +
+           'against';
   }
   if (delta.baseCrlNumber > base.crlNumber) {
-    return 'its BaseCRLNumber is ' + delta.baseCrlNumber + ', newer than the base ' +
-           'CRL\'s cRLNumber ' + base.crlNumber + ', so it was built on a list this ' +
-           'service does not have';
+    log.debug("Leaving deltaProblem().");
+    return 'its BaseCRLNumber is ' + delta.baseCrlNumber + ', newer than the ' +
+           'base CRL\'s ' +
+           'cRLNumber ' + base.crlNumber + ', so it was built on a ' +
+           'list this service does not have';
   }
   if (delta.crlNumber === null || delta.crlNumber <= base.crlNumber) {
-    return 'its cRLNumber is not greater than the base CRL\'s, so it is not newer ' +
-           'than the list it would update';
+    log.debug("Leaving deltaProblem().");
+    return 'its cRLNumber is not greater than the base CRL\'s, so it is not ' +
+           'newer than the list it would update';
   }
+  log.debug("Leaving deltaProblem().");
   return '';
 }
 
 function mergedEntries(baseEntries, deltaEntries) {
+  log.debug("Entering mergedEntries().");
   const out = new Map(baseEntries);
   deltaEntries.forEach(function (entry, key) {
     if (entry.reasonCode === REASON_REMOVE_FROM_CRL) {
@@ -2619,6 +2975,7 @@ function mergedEntries(baseEntries, deltaEntries) {
       out.set(key, entry);
     }
   });
+  log.debug("Leaving mergedEntries().");
   return out;
 }
 
@@ -2626,15 +2983,19 @@ async function deltaFor(context, base, urls) {
   log.debug('Entering deltaFor(). ' + urls.length + ' url(s).');
   const problems = [];
   for (let i = 0; i < urls.length; i++) {
-    const got = await listFrom(urls[i], Object.assign({}, context, { purpose: 'delta' }));
+    const got = await listFrom(urls[i],
+                               Object.assign({}, context,
+                                             { purpose: 'delta' }));
     if (!got.ok) {
       problems.push(urls[i] + ': ' + got.why);
       continue;
     }
     const why = deltaProblem(base, got.list);
     if (why) {
-      log.warn(errorCodes.tag('STS-PKI-0124') + 'revocation: the delta CRL at ' +
-               urls[i] + ' cannot be applied to the CRL at ' + base.url + ': ' + why + '.');
+      log.warn(errorCodes.tag('STS-PKI-0124') +
+               'revocation: the delta CRL at ' +
+               urls[i] + ' cannot be applied to the CRL at ' + base.url + ': ' +
+               why + '.');
       problems.push(urls[i] + ': ' + why);
       continue;
     }
@@ -2666,27 +3027,38 @@ async function deltaFor(context, base, urls) {
 // the newest revocations. So that is unknown, and hard-fail refuses it.
 // ---------------------------------------------------------------------------
 function crlRevokedResult(target, got, context, delta, entry) {
+  log.debug("Entering crlRevokedResult().");
+  log.debug("Leaving crlRevokedResult().");
   return {
     status: 'revoked', answeredBy: 'crl', crlUrl: got.url,
     crlNextUpdate: got.list.nextUpdate, crlFromCache: !!got.fromCache,
     deltaUrl: delta && delta.ok ? delta.url : '', indirect: context.indirect,
-    reason: entry.reason, reasonCode: entry.reasonCode, revokedAt: entry.revokedAt,
-    why: 'the CRL at ' + got.url + (delta && delta.ok ? ' with its delta at ' + delta.url : '') +
-         ', signed by ' + (context.indirect ? 'the CRL issuer the certificate names'
+    reason: entry.reason, reasonCode: entry.reasonCode,
+    revokedAt: entry.revokedAt,
+    why: 'the CRL at ' + got.url +
+         (delta && delta.ok ? ' with its delta at ' + delta.url : '') +
+         ', signed by ' + (context.indirect ? 'the CRL issuer the ' +
+                                              'certificate names'
                                             : 'its issuer') +
-         ', lists it as revoked since ' + entry.revokedAt + ' (' + entry.reason + ')'
+         ', lists it as revoked since ' + entry.revokedAt + ' (' +
+         entry.reason + ')'
   };
 }
 
 function crlNoPointResult(points) {
-  let why = 'its issuer publishes no CRL for it — it names no distribution point';
+  log.debug("Entering crlNoPointResult().");
+  let why = 'its issuer publishes no CRL for it — it names no distribution ' +
+            'point';
   if (points.other.length) {
     why = 'it names only distribution points this service does not dial (' +
           points.other.join(', ') + ')';
   } else if (points.indirect) {
-    why = 'it names only a CRL issuer, with no address to fetch that issuer\'s list from';
+    why = 'it names only a CRL issuer, with no address to fetch that ' +
+          'issuer\'s list from';
   }
-  return { status: 'unknown', none: true, kind: 'no-distribution-point', why: why };
+  log.debug("Leaving crlNoPointResult().");
+  return { status: 'unknown', none: true, kind: 'no-distribution-point',
+           why: why };
 }
 
 async function crlRoute(target) {
@@ -2703,18 +3075,23 @@ async function crlRoute(target) {
     if (address.url) {
       point.urls.push(address.url);
     } else {
-      log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: a distribution point of "' +
+      log.warn(errorCodes.tag('STS-PKI-0128') + 'revocation: a distribution ' +
+                                                'point of "' +
                target.link.subject + '" is not dialled: ' + address.why + '.');
-      point.other.push('a name relative to its CRL issuer (' + address.why + ')');
-      points.other.push('a name relative to its CRL issuer (' + address.why + ')');
+      point.other.push('a name relative to its CRL issuer (' + address.why +
+                       ')');
+      points.other.push('a name relative to its CRL issuer (' + address.why +
+                        ')');
     }
   });
-  const usable = points.points.filter(function (one) { return one.urls.length > 0; });
+  const usable =
+      points.points.filter(function (one) { return one.urls.length > 0; });
   if (!usable.length) {
     log.debug('Leaving crlRoute(). Nothing fetchable.');
     return crlNoPointResult(points);
   }
-  const certificateDeltas = distributionPointsOf(target.cert, OID.FRESHEST_CRL).fetchable;
+  const certificateDeltas = distributionPointsOf(target.cert,
+                                                 OID.FRESHEST_CRL).fetchable;
   const key = target.issuerKey + '|' + target.serial;
   const problems = [];
   let covered = 0;
@@ -2728,7 +3105,8 @@ async function crlRoute(target) {
     }
     let got = null;
     for (let u = 0; u < point.urls.length && !got; u++) {
-      const one = await listFrom(point.urls[u], Object.assign({ purpose: 'base' }, context));
+      const one = await listFrom(point.urls[u],
+                                 Object.assign({ purpose: 'base' }, context));
       if (one.ok) {
         got = Object.assign({ url: point.urls[u] }, one);
       } else {
@@ -2740,22 +3118,27 @@ async function crlRoute(target) {
     }
     const outOfScope = scopeProblem(got.list, target, point);
     if (outOfScope) {
-      log.warn(errorCodes.tag('STS-PKI-0121') + 'revocation: the CRL at ' + got.url +
-               ' does not cover "' + target.link.subject + '": ' + outOfScope + '.');
+      log.warn(errorCodes.tag('STS-PKI-0121') + 'revocation: the CRL at ' +
+               got.url +
+               ' does not cover "' + target.link.subject + '": ' + outOfScope +
+               '.');
       problems.push(got.url + ': ' + outOfScope);
       continue;
     }
     const baseEntry = got.list.entries.get(key) || null;
-    const deltaUrls = certificateDeltas.concat(got.list.freshest).filter(function (url, at, all) {
+    const deltaUrls = certificateDeltas.concat(got.list.freshest)
+                                       .filter(function (url, at, all) {
       return all.indexOf(url) === at;
     });
     let entry = baseEntry;
     let delta = null;
     if (deltaUrls.length) {
-      delta = await deltaFor(context, Object.assign({ url: got.url }, got.list), deltaUrls);
+      delta = await deltaFor(context, Object.assign({ url: got.url }, got.list),
+                             deltaUrls);
       if (delta.ok) {
         entry = delta.entries.get(key) || null;
-      } else if (!baseEntry || baseEntry.reasonCode === REASON_CERTIFICATE_HOLD ||
+      } else if (!baseEntry ||
+                 baseEntry.reasonCode === REASON_CERTIFICATE_HOLD ||
                  baseEntry.reasonCode === REASON_REMOVE_FROM_CRL) {
         problems.push(got.url + ': ' + delta.why);
         continue;
@@ -2772,9 +3155,12 @@ async function crlRoute(target) {
       return {
         status: 'good', answeredBy: 'crl', crlUrl: got.url,
         crlNextUpdate: got.list.nextUpdate, crlFromCache: !!got.fromCache,
-        deltaUrl: delta && delta.ok ? delta.url : '', indirect: context.indirect,
-        why: 'the CRL at ' + got.url + (delta && delta.ok ? ' with its delta at ' + delta.url : '') +
-             ', signed by ' + (context.indirect ? 'the CRL issuer the certificate names'
+        deltaUrl: delta && delta.ok ? delta.url : '',
+        indirect: context.indirect,
+        why: 'the CRL at ' + got.url + (delta && delta.ok ? ' with its delta ' +
+            'at ' + delta.url : '') +
+             ', signed by ' + (context.indirect ? 'the CRL issuer the ' +
+                                                  'certificate names'
                                                 : 'its issuer') +
              ' and fresh until ' + (got.list.nextUpdate || 'an unstated time') +
              ', does not list it'
@@ -2785,8 +3171,9 @@ async function crlRoute(target) {
     log.debug('Leaving crlRoute(). Only some reasons covered.');
     return { status: 'unknown', kind: 'incomplete-reasons', refusable: true,
              crlUrl: answered.got.url,
-             why: 'the lists it names cover only some revocation reasons between them ' +
-                  '(RFC 5280 section 6.3.3), and the CRL at ' + answered.got.url +
+             why: 'the lists it names cover only some revocation reasons ' +
+                  'between them (RFC 5280 section 6.3.3), and the CRL ' +
+                  'at ' + answered.got.url +
                   ' does not list it for those' };
   }
   log.debug('Leaving crlRoute(). Unknown.');
@@ -2821,45 +3208,62 @@ async function ocspRoute(target) {
     const answer = got.answer;
     const responderStatus = answer.responderStatus;
     // A DELEGATED RESPONDER WHOSE OWN STATUS COULD NOT BE ESTABLISHED is the
-    // policy's question, decided per call rather than when the answer was cached:
-    // hard-fail does not believe it, because blocking the responder's CRL is
-    // exactly how a compromised responder's "good" would otherwise get in; and
-    // soft-fail believes it and says so, because accepting what could not be
-    // established is what soft-fail is.
-    if (responderStatus && responderStatus.status === 'unknown' && responderStatus.refusable &&
+    // policy's question, decided per call rather than when the answer was
+    // cached: hard-fail does not believe it, because blocking the responder's
+    // CRL is exactly how a compromised responder's "good" would otherwise get
+    // in; and soft-fail believes it and says so, because accepting what could
+    // not be established is what soft-fail is.
+    if (responderStatus && responderStatus.status === 'unknown' &&
+        responderStatus.refusable &&
         policy().effective === 'hard-fail') {
-      log.warn(errorCodes.tag('STS-PKI-0127') + 'revocation: the answer from ' + url +
-               ' is not used under hard-fail — its delegated responder\'s own status could ' +
-               'not be established: ' + responderStatus.why + '.');
-      problems.push(url + ': it was signed by a delegated responder whose own status could ' +
-                    'not be established — ' + responderStatus.why);
+      log.warn(errorCodes.tag('STS-PKI-0127') + 'revocation: the answer from ' +
+               url +
+               ' is not used under hard-fail — its delegated responder\'s ' +
+               'own status could not be ' +
+               'established: ' + responderStatus.why + '.');
+      problems.push(url + ': it was signed by a delegated responder whose ' +
+                    'own status could not be established ' +
+                    '— ' + responderStatus.why);
       continue;
     }
-    const facts = { answeredBy: 'ocsp', ocspUrl: url, ocspFromCache: !!got.fromCache,
+    const facts = { answeredBy: 'ocsp', ocspUrl: url,
+                    ocspFromCache: !!got.fromCache,
                     ocspResponder: answer.responder, ocspNonce: answer.nonce,
                     ocspNextUpdate: answer.nextUpdate,
-                    ocspResponderStatus: responderStatus ? responderStatus.status : '' };
+                    ocspResponderStatus: responderStatus ?
+                                         responderStatus.status : '' };
     const by = answer.responder === 'delegated'
-      ? 'a responder its issuer delegated ("' + answer.responderName + '", whose own status ' +
-        'is ' + (responderStatus ? responderStatus.status + ': ' + responderStatus.why : 'unrecorded') +
+      ? 'a responder its issuer delegated ("' + answer.responderName + '", ' +
+        'whose own status ' +
+        'is ' +
+        (responderStatus ? responderStatus.status + ': ' + responderStatus.why :
+         'unrecorded') +
         ')'
       : 'its issuer';
     log.debug('Leaving ocspRoute(). ' + answer.status);
     if (answer.status === 'revoked') {
+      log.debug("Leaving ocspRoute().");
       return Object.assign(facts, {
         status: 'revoked', reason: answer.reason, reasonCode: answer.reasonCode,
         revokedAt: answer.revokedAt,
-        why: 'the OCSP responder at ' + url + ', in a response signed by ' + by +
-             ', answers that it was revoked at ' + (answer.revokedAt || 'an unstated time') +
+        why: 'the OCSP responder at ' + url + ', in a response signed by ' +
+             by +
+             ', answers that it was revoked at ' + (answer.revokedAt || 'an ' +
+                 'unstated time') +
              ' (' + answer.reason + ')' });
     }
     if (answer.status === 'good') {
+      log.debug("Leaving ocspRoute().");
       return Object.assign(facts, {
         status: 'good',
-        why: 'the OCSP responder at ' + url + ', in a response signed by ' + by +
-             ' and fresh until ' + (answer.nextUpdate || 'pki.revocationOcspMaxAgeS runs out') +
+        why: 'the OCSP responder at ' + url + ', in a response signed by ' +
+             by +
+             ' and fresh until ' + (answer.nextUpdate ||
+                                    'pki.revocationOcspMaxAgeS ' +
+                 'runs out') +
              ', answers good' });
     }
+    log.debug("Leaving ocspRoute().");
     return Object.assign(facts, {
       status: 'unknown', kind: 'responder-unknown', refusable: true,
       why: 'the OCSP responder at ' + url + ', in a response signed by ' + by +
@@ -2867,7 +3271,8 @@ async function ocspRoute(target) {
   }
   log.debug('Leaving ocspRoute(). Unknown.');
   return { status: 'unknown', kind: 'unreachable', refusable: true,
-           why: 'no OCSP responder it names gave a usable answer — ' + problems.join('; ') };
+           why: 'no OCSP responder it names gave a usable answer — ' +
+                problems.join('; ') };
 }
 
 // ---------------------------------------------------------------------------
@@ -2895,7 +3300,8 @@ async function ocspRoute(target) {
 // ---------------------------------------------------------------------------
 function applyRouteResult(link, result, results) {
   log.debug('Entering applyRouteResult(). ' + result.status);
-  ['answeredBy', 'crlUrl', 'crlNextUpdate', 'crlFromCache', 'deltaUrl', 'indirect',
+  ['answeredBy', 'crlUrl', 'crlNextUpdate', 'crlFromCache', 'deltaUrl',
+   'indirect',
    'ocspUrl', 'ocspFromCache', 'ocspResponder', 'ocspNonce', 'ocspNextUpdate',
    'ocspResponderStatus',
    'reason', 'reasonCode', 'revokedAt'].forEach(function (field) {
@@ -2907,7 +3313,8 @@ function applyRouteResult(link, result, results) {
   const others = results.filter(function (one) {
     return one !== result && !one.none;
   }).map(function (one) { return one.why; });
-  link.why = result.why + (others.length ? ' (and ' + others.join('; ') + ')' : '');
+  link.why = result.why +
+             (others.length ? ' (and ' + others.join('; ') + ')' : '');
   if (result.status === 'unknown') {
     link.unknownKind = result.kind;
     link.refusable = !!result.refusable;
@@ -2916,14 +3323,19 @@ function applyRouteResult(link, result, results) {
 }
 
 function combinedUnknown(results) {
+  log.debug("Entering combinedUnknown().");
   const failed = results.filter(function (one) { return !one.none; });
   if (!failed.length) {
+    log.debug("Leaving combinedUnknown().");
     return { status: 'unknown', kind: 'no-distribution-point',
              refusable: policy().requireDistributionPoint,
-             why: results.map(function (one) { return one.why; }).join(', and ') };
+             why: results.map(function (one) { return one.why; })
+                         .join(', and ') };
   }
+  log.debug("Leaving combinedUnknown().");
   return { status: 'unknown', kind: failed[0].kind, refusable: true,
-           why: failed.concat(results.filter(function (one) { return one.none; }))
+           why: failed.concat(results.filter(function (
+               one) { return one.none; }))
              .map(function (one) { return one.why; }).join('; and ') };
 }
 
@@ -2949,8 +3361,8 @@ async function resolveForeign(link, verified, opts) {
     // written, so nothing is dialled for it.
     link.unknownKind = 'unverified-chain';
     link.refusable = false;
-    link.why = 'signed by an authority this service does not hold, in a chain ' +
-               'that did not verify — so no URL it names was dialled';
+    link.why = 'signed by an authority this service does not hold, in a ' +
+               'chain that did not verify — so no URL it names was dialled';
     log.debug('Leaving resolveForeign(). Not verified.');
     return;
   }
@@ -2958,8 +3370,8 @@ async function resolveForeign(link, verified, opts) {
   if (!target) {
     link.unknownKind = 'unreadable';
     link.refusable = true;
-    link.why = 'the certificate or its issuer could not be read closely enough to ' +
-               'build an OCSP request or decide a CRL\'s scope';
+    link.why = 'the certificate or its issuer could not be read closely ' +
+               'enough to build an OCSP request or decide a CRL\'s scope';
     log.debug('Leaving resolveForeign(). Unreadable.');
     return;
   }
@@ -2998,8 +3410,10 @@ async function resolveForeign(link, verified, opts) {
 // unknown link makes the whole chain unknown; otherwise good.
 function summarise(links, checked) {
   log.debug('Entering summarise(). ' + links.length + ' link(s).');
-  const revoked = links.filter(function (one) { return one.status === 'revoked'; })[0];
-  const unknown = links.filter(function (one) { return one.status === 'unknown'; });
+  const revoked =
+      links.filter(function (one) { return one.status === 'revoked'; })[0];
+  const unknown =
+      links.filter(function (one) { return one.status === 'unknown'; });
   const status = revoked ? 'revoked' : (unknown.length ? 'unknown' : 'good');
   log.debug('Leaving summarise(). ' + status);
   return {
@@ -3012,7 +3426,8 @@ function summarise(links, checked) {
                          answeredBy: revoked.answeredBy || '' }
                      : null,
     unknown: unknown.map(function (one) {
-      return { depth: one.depth, subject: one.subject, kind: one.unknownKind || '',
+      return { depth: one.depth, subject: one.subject,
+               kind: one.unknownKind || '',
                refusable: !!one.refusable, why: one.why };
     }),
     links: links.map(function (one) {
@@ -3044,8 +3459,8 @@ async function verdictFor(input, options) {
   } catch (e) {
     // A defect in this file must not become a refusal nobody can explain, nor
     // an acceptance nobody chose. It is an unknown, and the policy decides.
-    log.error(errorCodes.tag('STS-PKI-0121') + 'revocation: walking a presented ' +
-              'chain threw: ' + e.message);
+    log.error(errorCodes.tag('STS-PKI-0121') + 'revocation: walking a ' +
+              'presented chain threw: ' + e.message);
     walked = { links: [{ depth: 0, status: 'unknown', source: 'error',
                          unknownKind: 'error', refusable: true,
                          why: 'the chain could not be walked: ' + e.message }],
@@ -3095,20 +3510,21 @@ function localVerdictFor(input) {
   try {
     walked = walk(input);
   } catch (e) {
-    log.error(errorCodes.tag('STS-PKI-0121') + 'revocation: walking a presented ' +
-              'chain threw: ' + e.message);
+    log.error(errorCodes.tag('STS-PKI-0121') + 'revocation: walking a ' +
+              'presented chain threw: ' + e.message);
     log.debug('Leaving localVerdictFor(). Threw.');
     return decide({ status: 'unknown', checked: true, revoked: null,
                     unknown: [{ depth: 0, kind: 'error', refusable: true,
-                                why: 'the chain could not be walked: ' + e.message }],
+                                why: 'the chain could not be walked: ' +
+                                     e.message }],
                     links: [] }, pol);
   }
   walked.links.forEach(function (one) {
     if (one.source === 'crl') {
       one.unknownKind = 'not-consulted';
       one.refusable = false;
-      one.why = 'signed by an authority this service does not hold; this door ' +
-                'consults the register only';
+      one.why = 'signed by an authority this service does not hold; this ' +
+                'door consults the register only';
     }
   });
   log.debug('Leaving localVerdictFor().');
@@ -3134,12 +3550,12 @@ function localVerdictFor(input) {
 // client presented a revoked certificate" and "a key an operator registered
 // has been revoked since" send an operator to two different places.
 //
-// **WHY DIALLING ITS ADDRESSES IS ALLOWED.** The presented case dials only for a
-// chain that verified against an installed anchor. A registered certificate has
-// no anchor and needs none: the operator installed THE CERTIFICATE ITSELF, which
-// is a stronger statement than installing a CA that signed it. So the URLs it
-// carries were written by an authority the operator chose — the same argument
-// reached one step shorter.
+// **WHY DIALLING ITS ADDRESSES IS ALLOWED.** The presented case dials only for
+// a chain that verified against an installed anchor. A registered certificate
+// has no anchor and needs none: the operator installed THE CERTIFICATE ITSELF,
+// which is a stronger statement than installing a CA that signed it. So the
+// URLs it carries were written by an authority the operator chose — the same
+// argument reached one step shorter.
 //
 // **ITS ISSUER IS FETCHED, BECAUSE NOTHING PRESENTS IT.** A registered leaf
 // usually arrives alone. The issuer is looked for in whatever chain was
@@ -3169,19 +3585,25 @@ const CODE_REGISTERED = 'STS-PKI-0129';
 // DER (what `fedSigningCertificate` and an x5c member hold), DER bytes or a
 // parsed certificate.
 function registeredCertificateOf(value) {
+  log.debug("Entering registeredCertificateOf().");
   if (!value) {
+    log.debug("Leaving registeredCertificateOf().");
     return null;
   }
   if (Buffer.isBuffer(value) || value instanceof nodeCrypto.X509Certificate) {
+    log.debug("Leaving registeredCertificateOf().");
     return x509Of(value);
   }
   const text = String(value).trim();
   if (!text) {
+    log.debug("Leaving registeredCertificateOf().");
     return null;
   }
   if (/-----BEGIN/.test(text)) {
+    log.debug("Leaving registeredCertificateOf().");
     return x509Of(text);
   }
+  log.debug("Leaving registeredCertificateOf().");
   return x509Of(Buffer.from(text.replace(/\s+/g, ''), 'base64'));
 }
 
@@ -3192,7 +3614,8 @@ function registeredChainOf(value) {
     if (!one) {
       return;
     }
-    const pems = typeof one === 'string' ? one.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) : null;
+    const pems = typeof one === 'string' ?
+                 one.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) : null;
     (pems || [one]).forEach(function (each) {
       const cert = registeredCertificateOf(each);
       if (cert) {
@@ -3204,10 +3627,15 @@ function registeredChainOf(value) {
   return out;
 }
 
-// The material a registered JWK carries: its x5c, or nothing, which is a bare key.
+// The material a registered JWK carries: its x5c, or nothing, which is a bare
+// key.
 function registeredKeyMaterial(jwk, source) {
+  log.debug("Entering registeredKeyMaterial().");
   const x5c = jwk && Array.isArray(jwk.x5c) ? jwk.x5c : [];
-  return { certificate: x5c[0] || '', chain: x5c.slice(1), source: source || 'a registered key',
+  log.debug("Leaving registeredKeyMaterial().");
+  return { certificate: x5c[0] || '', chain: x5c.slice(1),
+           source: source || 'a ' +
+      'registered key',
            kid: (jwk && jwk.kid) || '' };
 }
 
@@ -3226,7 +3654,10 @@ async function issuersFetchedFor(leaf, offered) {
       break;
     }
     const at = current;
-    const inHand = offered.concat(fetched).filter(function (one) { return signedBy(at, one); })[0];
+    const inHand = offered.concat(fetched)
+                          .filter(function (one) {
+                            return signedBy(at, one);
+                          })[0];
     if (inHand) {
       current = inHand;
       continue;
@@ -3244,10 +3675,14 @@ async function issuersFetchedFor(leaf, offered) {
         problems.push(urls[i] + ': ' + got.why);
         continue;
       }
-      found = got.certs.filter(function (one) { return signedBy(at, one); })[0] || null;
+      found = got.certs.filter(function (one) {
+        return signedBy(at, one);
+      })[0] ||
+              null;
       if (!found) {
-        problems.push(urls[i] + ': none of the ' + got.certs.length + ' certificate(s) there ' +
-                      'signed "' + at.subject.replace(/\n/g, ', ') + '"');
+        problems.push(urls[i] + ': none of the ' + got.certs.length + ' ' +
+                      'certificate(s) there signed ' +
+                      '"' + at.subject.replace(/\n/g, ', ') + '"');
       }
     }
     if (!found) {
@@ -3261,21 +3696,29 @@ async function issuersFetchedFor(leaf, offered) {
 }
 
 function bareRegisteredVerdict(source) {
-  return decide({ status: 'unchecked', checked: false, revoked: null, unknown: [], links: [],
+  log.debug("Entering bareRegisteredVerdict().");
+  log.debug("Leaving bareRegisteredVerdict().");
+  return decide({ status: 'unchecked', checked: false, revoked: null,
+                  unknown: [], links: [],
                   registered: true, bare: true, source: source }, policy());
 }
 
 // Stamp a verdict as being about registered material, and move its refusal code
 // to the registered one.
 function asRegistered(verdict, material, extra) {
+  log.debug("Entering asRegistered().");
   verdict.registered = true;
   verdict.bare = false;
   verdict.source = material.source || 'a registered certificate';
-  Object.keys(extra || {}).forEach(function (key) { verdict[key] = extra[key]; });
+  Object.keys(extra || {})
+        .forEach(function (key) { verdict[key] = extra[key]; });
   if (verdict.refused) {
-    verdict.why = 'The certificate ' + verdict.source + ' names: ' + verdict.why;
+    verdict.why = 'The certificate ' + verdict.source + ' names: ' +
+                  verdict.why;
+    log.debug("Leaving asRegistered().");
     return errorCodes.mark(verdict, CODE_REGISTERED);
   }
+  log.debug("Leaving asRegistered().");
   return verdict;
 }
 
@@ -3286,55 +3729,75 @@ async function registeredVerdictFor(material) {
   const leaf = registeredCertificateOf(m.certificate);
   if (!leaf) {
     const bare = bareRegisteredVerdict(source);
-    bare.why = 'Nothing to check: ' + source + ' is a bare key with no certificate, so it has ' +
-               'no issuer, no serial and no list that could revoke it. Taking it off the ' +
-               'entry is the only way to stop it verifying.';
+    bare.why = 'Nothing to check: ' + source + ' is a bare key with no ' +
+               'certificate, so it has no issuer, no serial and no list that ' +
+               'could revoke it. Taking it off the entry is the only way to ' +
+               'stop it verifying.';
     log.debug('Leaving registeredVerdictFor(). Bare key.');
     return bare;
   }
   const pol = policy();
   if (pol.effective === 'off') {
     log.debug('Leaving registeredVerdictFor(). Off.');
-    return asRegistered(decide({ status: 'unchecked', checked: false, revoked: null,
+    return asRegistered(decide({ status: 'unchecked', checked: false,
+                                 revoked: null,
                                  unknown: [], links: [] }, pol), m);
   }
   const offered = registeredChainOf(m.chain);
   const found = await issuersFetchedFor(leaf, offered);
-  const verdict = await verdictFor({ leaf: leaf, chain: offered.concat(found.certs), verified: true }, {
+  const verdict = await verdictFor({ leaf: leaf,
+                                     chain: offered.concat(found.certs),
+                                     verified: true }, {
     issuerMissing: function (link) {
+      log.debug("Entering issuerMissing().");
       if (found.problems.length) {
+        log.debug("Leaving issuerMissing().");
         return { kind: 'issuer-not-fetched', refusable: true,
-                 why: '"' + String(link.subject || '').replace(/\n/g, ', ') + '" names a ' +
-                      'caIssuers address and its issuer could not be taken from it — ' +
+                 why: '"' + String(link.subject || '').replace(/\n/g, ', ') +
+                      '" ' +
+                      'names a caIssuers address and its issuer could not be ' +
+                      'taken from it — ' +
                       found.problems.join('; ') };
       }
-      return { kind: 'no-distribution-point', refusable: pol.requireDistributionPoint,
-               why: '"' + String(link.subject || '').replace(/\n/g, ', ') + '" was issued by ' +
-                    'an authority that is neither held here nor registered with it, and it ' +
-                    'names no caIssuers address to fetch it from, so nothing can verify a ' +
-                    'list about it' };
+      log.debug("Leaving issuerMissing().");
+      return { kind: 'no-distribution-point',
+               refusable: pol.requireDistributionPoint,
+               why: '"' + String(link.subject || '').replace(/\n/g, ', ') +
+                    '" ' +
+                    'was issued by an authority that is neither held here ' +
+                    'nor registered with it, and it names no caIssuers ' +
+                    'address to fetch it from, so nothing can verify a list ' +
+                    'about it' };
     }
   });
   log.debug('Leaving registeredVerdictFor(). ' + verdict.status);
-  return asRegistered(verdict, m, { issuersFetched: found.certs.map(function (one) {
+  return asRegistered(verdict, m,
+                      { issuersFetched: found.certs.map(function (one) {
     return one.subject.replace(/\n/g, ', ');
   }) });
 }
 
 // A registered JWK: its x5c answered as above, or reported bare.
 function registeredKeyVerdictFor(jwk, source) {
+  log.debug("Entering registeredKeyVerdictFor().");
+  log.debug("Leaving registeredKeyVerdictFor().");
   return registeredVerdictFor(registeredKeyMaterial(jwk, source));
 }
 
 // A short sentence for a door's audit row and log line.
 function registeredSummary(verdict) {
+  log.debug("Entering registeredSummary().");
   if (!verdict) {
+    log.debug("Leaving registeredSummary().");
     return '';
   }
   if (verdict.bare) {
+    log.debug("Leaving registeredSummary().");
     return 'revocation: not checked (a bare key has no certificate)';
   }
-  return 'revocation: ' + verdict.status + (verdict.refused ? ' (refused)' : '') +
+  log.debug("Leaving registeredSummary().");
+  return 'revocation: ' + verdict.status +
+         (verdict.refused ? ' (refused)' : '') +
          ' under ' + verdict.policy;
 }
 
@@ -3358,19 +3821,23 @@ function decide(verdict, pol) {
     verdict.why = 'REVOKED: "' + verdict.revoked.subject + '" (serial ' +
                   verdict.revoked.serialHex + ') was revoked at ' +
                   (verdict.revoked.revokedAt || 'an unstated time') + ' for "' +
-                  (verdict.revoked.reason || 'unspecified') + '", according to ' +
+                  (verdict.revoked.reason || 'unspecified') +
+                  '", according to ' +
                   (verdict.revoked.source === 'register'
                     ? 'this service\'s own register'
                     : (verdict.revoked.answeredBy === 'ocsp'
-                        ? 'its issuer\'s OCSP responder' : 'its issuer\'s CRL')) + '.';
+                        ? 'its issuer\'s OCSP responder' :
+                       'its issuer\'s CRL')) + '.';
     log.debug('Leaving decide(). Refused: revoked.');
     return errorCodes.mark(verdict, CODE_REVOKED);
   }
   if (verdict.status === 'unknown') {
-    const refusable = verdict.unknown.filter(function (one) { return one.refusable; });
+    const refusable = verdict.unknown.filter(function (
+        one) { return one.refusable; });
     verdict.refused = p.effective === 'hard-fail' && refusable.length > 0;
     verdict.why = (verdict.refused
-      ? 'REFUSED UNDER HARD-FAIL: the revocation status could not be established — '
+      ? 'REFUSED UNDER HARD-FAIL: the revocation status could not be ' +
+        'established — '
       : 'Status unknown and accepted (' + p.effective + '): ') +
       verdict.unknown.map(function (one) { return one.why; }).join('; ') + '.';
     log.debug('Leaving decide(). Unknown, refused=' + verdict.refused);
@@ -3412,8 +3879,8 @@ async function annotateRequest(req) {
   } catch (e) {
     // A request must not hang or fail because the annotation did. Nothing is
     // set, and every door reads an absent verdict as "not consulted".
-    log.error(errorCodes.tag('STS-PKI-0121') + 'revocation: annotating a request ' +
-              'failed and was skipped: ' + e.message);
+    log.error(errorCodes.tag('STS-PKI-0121') + 'revocation: annotating a ' +
+              'request failed and was skipped: ' + e.message);
     log.debug('Leaving annotateRequest(). Threw.');
     return null;
   }
@@ -3421,13 +3888,18 @@ async function annotateRequest(req) {
 
 // What a door reads. Null when nothing was annotated.
 function requestVerdict(req) {
+  log.debug("Entering requestVerdict().");
+  log.debug("Leaving requestVerdict().");
   return (req && req.certificateRevocation) || null;
 }
 
 // The refusal code a refused verdict carries, for a door that marks a response.
 function codeOf(verdict) {
+  log.debug("Entering codeOf().");
+  log.debug("Leaving codeOf().");
   return errorCodes.codeOf(verdict) ||
-         (verdict && verdict.status === 'revoked' ? CODE_REVOKED : CODE_UNKNOWN);
+         (verdict && verdict.status === 'revoked' ? CODE_REVOKED :
+          CODE_UNKNOWN);
 }
 
 // ---------------------------------------------------------------------------
@@ -3443,42 +3915,61 @@ function describePolicy() {
     decidedBy: p.decidedBy,
     requireDistributionPoint: p.requireDistributionPoint,
     consultedAt: ['the 8443 and 9443 listeners (a session and the recorded ' +
-                  'authentication)', 'the main port (the remote XACML PEP and ' +
-                  'XACML user chains, SCIM\'s client-certificate scheme, RFC 8705 ' +
-                  'client authentication)', 'the SPIRE Server API (the register ' +
-                  'only)', 'an RFC 7523 assertion\'s x5c chain (the register only)'],
+                  'authentication)', 'the main port (the remote XACML PEP ' +
+                  'and XACML user chains, SCIM\'s client-certificate scheme, ' +
+                  'RFC 8705 client ' +
+                  'authentication)', 'the SPIRE Server API (the ' +
+                  'register ' +
+                  'only)', 'an RFC 7523 assertion\'s x5c chain (the register ' +
+                           'only)',
+                  'a REGISTERED certificate when it verifies a signature — ' +
+                  'an RFC 7523 key\'s x5c, an RFC 7522 certificate, a ' +
+                  'federation relationship\'s signing certificate or partner ' +
+                  'key, a trusted OID4VP issuer certificate'],
     ocsp: ocspOrder(),
     ocspRequiresNonce: config.value('pki.revocationOcspRequireNonce') === true,
     clockSkewS: skewMs() / 1000,
     crlIssuersFile: String(config.value('pki.revocationCrlIssuersFile') || ''),
     notConsultedAt: ['LDAPS 636, which asks for no client certificate',
-                     'a key or certificate REGISTERED on an application entry',
+                     'a BARE registered key with no certificate, which names ' +
+                     'no list',
                      'RFC 8705 token binding, which authenticates nobody',
-                     'a delegated OCSP responder\'s own revocation status',
-                     'a CRL or responder at an ldap: or other non-http address, ' +
-                     'and a CRL issuer\'s certificate that would have to be ' +
-                     'fetched'],
+                     'a delegated OCSP responder carrying id-pkix-ocsp-nocheck',
+                     'a plain ldap: address unless pki.revocationLdap allows ' +
+                     'it, and a distribution point named relative to its CRL ' +
+                     'issuer without pki.revocationLdapDirectory or with a ' +
+                     'multi-valued RDN'],
+    ldap: ldapPolicy(),
     sentence: p.effective === 'off'
       ? 'CONSULTED NOWHERE: pki.revocationCheck is off, so a presented ' +
         'certificate is checked against its anchors and against no list.'
-      : 'CONSULTED, ' + p.effective.toUpperCase() + ' (' + p.decidedBy + '). A ' +
-        'presented certificate this service issued is looked up in its own ' +
-        'register — the whole chain, including the tiers it did not send — and ' +
-        'one from another authority, for a chain that verified, ' +
+      : 'CONSULTED, ' + p.effective.toUpperCase() + ' (' + p.decidedBy + '). ' +
+        'A presented certificate this service issued is looked up in its own ' +
+        'register — the whole chain, including the tiers it did not send — ' +
+        'and one from another authority, for a chain that verified, ' +
         (ocspOrder() === 'first'
           ? 'by the OCSP responder it names, falling back to the CRL it names'
           : (ocspOrder() === 'after-crl'
-              ? 'by the CRL it names, falling back to the OCSP responder it names'
+              ? 'by the CRL it names, falling back to the OCSP responder it ' +
+                'names'
               : 'by the CRL it names (OCSP is off)')) +
-        ', over http or https, with delta CRLs merged and indirect CRLs read ' +
-        'per issuer. A revoked certificate is refused; ' +
+        ', over http, https or ldaps' +
+        (ldapPolicy() === 'ldaps-and-ldap' ? ' ' +
+            '(and plain ldap)' : '') +
+        ', with delta CRLs merged, indirect CRLs read per issuer, a list\'s ' +
+        'signer fetched from its caIssuers address where nothing here holds ' +
+        'it, and a delegated responder\'s own status asked of its CRL. A ' +
+        'REGISTERED certificate is checked the same way when it verifies a ' +
+        'signature. A revoked certificate is refused; ' +
         (p.effective === 'hard-fail'
-          ? 'so is one whose status could not be fetched, verified or trusted as ' +
-            'fresh, or that the responder does not know' + (p.requireDistributionPoint
+          ? 'so is one whose status could not be fetched, verified or ' +
+            'trusted as fresh, or that the responder does not ' +
+            'know' + (p.requireDistributionPoint
               ? ', and one whose issuer names no list and no responder at all.'
               : ' (one whose issuer names no list and no responder at all is ' +
                 'accepted, because there is nothing an attacker could block).')
-          : 'one whose status could not be established is accepted and reported.') +
+          : 'one whose status could not be established is accepted and ' +
+            'reported.') +
         ' LDAPS 636 requests no client certificate.'
   };
   log.debug('Leaving describePolicy().');
@@ -3486,6 +3977,7 @@ function describePolicy() {
 }
 
 function cacheReport() {
+  log.debug("Entering cacheReport().");
   const out = [];
   crlCache.forEach(function (entry, key) {
     out.push({ url: entry.url, signerFingerprints: key.split('|')[1] || '',
@@ -3496,16 +3988,19 @@ function cacheReport() {
   });
   const responses = [];
   ocspCache.forEach(function (entry) {
-    responses.push({ url: entry.url, status: entry.status, responder: entry.responder,
+    responses.push({ url: entry.url, status: entry.status,
+                     responder: entry.responder,
                      nonce: entry.nonce, fetchedAt: entry.fetchedAt,
                      nextUpdate: entry.nextUpdate,
                      expiresAt: new Date(entry.expiresAt).toISOString() });
   });
+  log.debug("Leaving cacheReport().");
   return { lists: out, ocspResponses: responses, failures: failures.size };
 }
 
 // For a test: forget every cached list and failure.
 function resetCache() {
+  log.debug("Entering resetCache().");
   crlCache.clear();
   ocspCache.clear();
   failures.clear();
@@ -3513,6 +4008,7 @@ function resetCache() {
   parsed.clear();
   certCache.clear();
   pemFiles.clear();
+  log.debug("Leaving resetCache().");
 }
 
 module.exports = {

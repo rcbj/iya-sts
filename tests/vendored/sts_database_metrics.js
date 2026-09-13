@@ -40,17 +40,23 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_database_metrics",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -60,26 +66,32 @@ var api = base + "/admin-api";
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  ✓ " + what);
+  log.debug("Leaving check().");
 }
 
 async function getJson(path) {
+  log.debug("Entering getJson().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in getJson(): " + ((e && e.message) || e));
     // Not JSON — an HTML error page. Quoting it whole says more than a parse
     // failure would.
     body = raw;
   }
+  log.debug("Leaving getJson().");
   return { status: r.status, body: body, raw: raw };
 }
 
 async function test() {
+  log.debug("Entering test().");
   log.info("=== A. the report answers at all ===");
 
   const view = await getJson("/database");
@@ -108,6 +120,7 @@ async function test() {
              "restart-only, so a job cannot switch it on for itself — run " +
              "this against a stack whose service is in postgres mode.");
     log.info(checks + " check(s) passed; the database sections were skipped.");
+    log.debug("Leaving test().");
     return;
   }
 
@@ -244,7 +257,8 @@ async function test() {
         "claim nothing else in this service makes: the driver's declared " +
         "objects against what the server actually has", function () {
           const drift = view.body.schemaDrift;
-          assert.ok(drift && Array.isArray(drift.missing), JSON.stringify(drift));
+          assert.ok(drift && Array.isArray(drift.missing),
+                    JSON.stringify(drift));
           assert.deepStrictEqual(drift.missing, [],
             "the database is missing objects the driver declares: " +
             drift.missing.join(", "));
@@ -292,6 +306,7 @@ async function test() {
         });
 
   log.info(checks + " check(s) passed.");
+  log.debug("Leaving test().");
 }
 
 const program = new Command();

@@ -147,7 +147,8 @@ var config = {
   oidcRp: {
     maxFlows: 200,           // Console and portal sign-ins in flight, per realm
     backChannelTimeoutS: 10, // Console and portal back-channel timeout (seconds)
-    maxRedirectUris: 20      // Most redirect URIs the console and portal clients may learn
+    maxRedirectUris: 20,     // Most redirect URIs the console and portal clients may learn
+    renewBeforeExpiryS: 60   // Console and portal token renewal lead time (seconds)
   },
 
   // --- Web security ----------------------------------------------------

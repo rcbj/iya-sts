@@ -40,11 +40,11 @@
 //      one: the sign-in screen, an LDAP bind, a WS-Security UsernameToken, SCIM
 //      Basic. `common/credentials.js` performs it; this file decides whether it
 //      is asked.
-//   2. EVERY REFERENCED OBJECT EXISTS ALREADY. Nothing is created because it was
-//      named — not a user, not an application, not a service principal, not an
-//      authorization server. An unknown name is a refusal, which is what makes
-//      the register a statement about the deployment rather than a log of what
-//      has been tried.
+//   2. EVERY REFERENCED OBJECT EXISTS ALREADY. Nothing is created because it
+//      was named — not a user, not an application, not a service principal, not
+//      an authorization server. An unknown name is a refusal, which is what
+//      makes the register a statement about the deployment rather than a log of
+//      what has been tried.
 //   3. EVERY OAUTH 2.0 / OIDC APPLICATION HOLDS A SECRET, and authenticates
 //      with it. There are no public clients in product mode.
 //   4. `/admin-api` IS GATED. It is ungated in development on purpose — it is
@@ -76,6 +76,30 @@
 
 const config = require('./config');
 
+// This module's own logger rather than the shared one in helpers.js, which
+// requires this module: a require back would close a cycle. So the level is
+// read the way the vendored modules read theirs: STS_LOG_LEVEL, then
+// CONFIG_FILE's logLevel, then info.
+let logLevelProblem = null;
+const log = require('bunyan').createLogger({
+  name: 'sts-mode',
+  level: (function () {
+    if (process.env.STS_LOG_LEVEL) {
+      return process.env.STS_LOG_LEVEL;
+    }
+    try {
+      return require(process.env.CONFIG_FILE).logLevel || 'info';
+    } catch (e) {
+      logLevelProblem = e;
+      return 'info';
+    }
+  })()
+});
+if (logLevelProblem) {
+  log.debug('No log level from CONFIG_FILE, so info: ' +
+            logLevelProblem.message);
+}
+
 const DEVELOPMENT = 'development';
 const PRODUCT = 'product';
 
@@ -83,15 +107,21 @@ const PRODUCT = 'product';
 // never cached, because it is runtime-settable and per realm — a cached answer
 // would be the mode of whichever realm happened to ask first.
 function current() {
+  log.debug("Entering current().");
   const value = String(config.value('global.mode') || DEVELOPMENT);
+  log.debug("Leaving current().");
   return value === PRODUCT ? PRODUCT : DEVELOPMENT;
 }
 
 function isProduct() {
+  log.debug("Entering isProduct().");
+  log.debug("Leaving isProduct().");
   return current() === PRODUCT;
 }
 
 function isDevelopment() {
+  log.debug("Entering isDevelopment().");
+  log.debug("Leaving isDevelopment().");
   return current() === DEVELOPMENT;
 }
 
@@ -111,6 +141,8 @@ function isDevelopment() {
 // way because the password IS the key, and whose permissiveness therefore lives
 // in the KDC's account policy instead. See kerberos/CLAUDE.md.
 function verifiesCredentials() {
+  log.debug("Entering verifiesCredentials().");
+  log.debug("Leaving verifiesCredentials().");
   return isProduct();
 }
 
@@ -119,6 +151,8 @@ function verifiesCredentials() {
 // makes it a mock: a client can point at this service with any client_id and
 // get a working exchange.
 function autoCreates() {
+  log.debug("Entering autoCreates().");
+  log.debug("Leaving autoCreates().");
   return !isProduct();
 }
 
@@ -127,6 +161,8 @@ function autoCreates() {
 // also means no PKCE-only public client, and a deployment that wants one wants
 // development mode or a different product.
 function requiresClientSecret() {
+  log.debug("Entering requiresClientSecret().");
+  log.debug("Leaving requiresClientSecret().");
   return isProduct();
 }
 
@@ -147,6 +183,8 @@ function requiresClientSecret() {
 // apart from what it was configured with, because a fixture account with a
 // password printed in this repository is an account anybody can use.
 function seedsDemoData() {
+  log.debug("Entering seedsDemoData().");
+  log.debug("Leaving seedsDemoData().");
   return !isProduct();
 }
 
@@ -157,6 +195,8 @@ function seedsDemoData() {
 // something to parse; product OMITS what it does not know, because an invented
 // fact a relying party believes is worse than an absent one it can handle.
 function inventsClaimValues() {
+  log.debug("Entering inventsClaimValues().");
+  log.debug("Leaving inventsClaimValues().");
   return !isProduct();
 }
 
@@ -168,6 +208,8 @@ function inventsClaimValues() {
 // on the application's own entry, which is the difference between an identity
 // provider and a signed-assertion forwarding service.
 function acceptsUnregisteredAddresses() {
+  log.debug("Entering acceptsUnregisteredAddresses().");
+  log.debug("Leaving acceptsUnregisteredAddresses().");
   return !isProduct();
 }
 
@@ -175,10 +217,12 @@ function acceptsUnregisteredAddresses() {
 // anchor at POST /tls/trust, switching DPoP nonces, reading the Kerberos
 // fixture passwords off /krb5/principals, signing somebody ELSE out with
 // ?username=, registering an OAuth client with no initial credential, asking a
-// SAML 1.1 attribute authority about any named person. Each exists so a test can
-// drive a state; in product each is either refused or behind the credential
+// SAML 1.1 attribute authority about any named person. Each exists so a test
+// can drive a state; in product each is either refused or behind the credential
 // the equivalent administrative operation already requires.
 function opensTestControls() {
+  log.debug("Entering opensTestControls().");
+  log.debug("Leaving opensTestControls().");
   return !isProduct();
 }
 
@@ -191,6 +235,8 @@ function opensTestControls() {
 // protecting nothing. `ldap/ldap_server.js`'s `directoryWriteRefusal()` argues
 // the rule.
 function authorizesDirectoryWrites() {
+  log.debug("Entering authorizesDirectoryWrites().");
+  log.debug("Leaving authorizesDirectoryWrites().");
   return isProduct();
 }
 
@@ -214,6 +260,8 @@ function authorizesDirectoryWrites() {
 // bound is refused — the root DSE excepted, because a client reads it to find
 // out where to bind.
 function requiresDirectoryBind() {
+  log.debug("Entering requiresDirectoryBind().");
+  log.debug("Leaving requiresDirectoryBind().");
   return isProduct();
 }
 
@@ -225,6 +273,8 @@ function requiresDirectoryBind() {
 // console and the management API read them through this module's functions,
 // and nothing needs them on the wire.
 function withholdsDirectorySecrets() {
+  log.debug("Entering withholdsDirectorySecrets().");
+  log.debug("Leaving withholdsDirectorySecrets().");
   return isProduct();
 }
 
@@ -233,6 +283,8 @@ function withholdsDirectorySecrets() {
 // administrator, because a timestamp anybody can set is not evidence of when
 // anything happened.
 function protectsOperationalAttributes() {
+  log.debug("Entering protectsOperationalAttributes().");
+  log.debug("Leaving protectsOperationalAttributes().");
   return isProduct();
 }
 
@@ -240,6 +292,8 @@ function protectsOperationalAttributes() {
 // on the plain listener is answered confidentialityRequired before the password
 // is looked at, since by then it has already crossed the network in the clear.
 function requiresConfidentialDirectoryBinds() {
+  log.debug("Entering requiresConfidentialDirectoryBinds().");
+  log.debug("Leaving requiresConfidentialDirectoryBinds().");
   return isProduct();
 }
 
@@ -249,6 +303,8 @@ function requiresConfidentialDirectoryBinds() {
 // lockout is refused like a wrong one and teaches nothing. A SUCCESSFUL bind is
 // never counted, because a connection pool binds on every connection it opens.
 function limitsDirectoryBindFailures() {
+  log.debug("Entering limitsDirectoryBindFailures().");
+  log.debug("Leaving limitsDirectoryBindFailures().");
   return isProduct();
 }
 
@@ -256,12 +312,14 @@ function limitsDirectoryBindFailures() {
 // An assertion an application is configured to have encrypted, or a WS-Trust
 // token requested with an encryption certificate, that cannot be encrypted —
 // development sends it in the clear and says so loudly, because refusing to
-// issue would hide the defect a client author is trying to see. Product refuses:
-// a document the deployment said must be confidential and was not is a leak,
-// however loudly it is logged. Not `opensTestControls()`, which the first
+// issue would hide the defect a client author is trying to see. Product
+// refuses: a document the deployment said must be confidential and was not is a
+// leak, however loudly it is logged. Not `opensTestControls()`, which the first
 // version used for want of this: that one is about who may DRIVE a switch, and
 // this one is about what a response is allowed to lose on the way out.
 function sendsWeakerThanAsked() {
+  log.debug("Entering sendsWeakerThanAsked().");
+  log.debug("Leaving sendsWeakerThanAsked().");
   return !isProduct();
 }
 
@@ -278,6 +336,8 @@ function sendsWeakerThanAsked() {
 // and cannot make a good certificate fail. `common/revocation_status.js`
 // argues all of it.
 function refusesUnknownRevocationStatus() {
+  log.debug("Entering refusesUnknownRevocationStatus().");
+  log.debug("Leaving refusesUnknownRevocationStatus().");
   return isProduct();
 }
 
@@ -285,6 +345,8 @@ function refusesUnknownRevocationStatus() {
 // development. **THIS IS THE ONLY GATE THE MODE TURNS ON**, because it is the
 // only one that was ever off.
 function gatesManagementApi() {
+  log.debug("Entering gatesManagementApi().");
+  log.debug("Leaving gatesManagementApi().");
   return isProduct();
 }
 
@@ -313,12 +375,16 @@ function gatesManagementApi() {
 // Is a sign-on session and a role required at the console? Was
 // `admin.authRequired`, which defaulted to on.
 function gatesConsole() {
+  log.debug("Entering gatesConsole().");
+  log.debug("Leaving gatesConsole().");
   return true;
 }
 
 // Is a credential required at /scim/v2? Was `scim.authRequired`, on by default,
 // because those endpoints create and DELETE accounts.
 function gatesScim() {
+  log.debug("Entering gatesScim().");
+  log.debug("Leaving gatesScim().");
   return true;
 }
 
@@ -327,6 +393,8 @@ function gatesScim() {
 // security events about people, so an ungated one is a subscription anybody can
 // take out.
 function gatesSharedSignals() {
+  log.debug("Entering gatesSharedSignals().");
+  log.debug("Leaving gatesSharedSignals().");
   return true;
 }
 
@@ -339,6 +407,8 @@ function gatesSharedSignals() {
 // no root of trust until that call gives it one. What it lacks there is
 // ATTESTATION, not authentication, and no mode changes that.
 function gatesSpireServerApi() {
+  log.debug("Entering gatesSpireServerApi().");
+  log.debug("Leaving gatesSpireServerApi().");
   return true;
 }
 
@@ -358,11 +428,11 @@ const REQUIREMENTS = [
                  'unsigned SAML assertion.',
     product: 'Verified against the hashed `userPassword` on the person\'s ' +
              'directory entry, at every one of those doors. A person with no ' +
-             '`userPassword` set cannot sign in at all. The OAuth 2.0 password ' +
-             'grant is one of those doors, and refuses a person holding a ' +
-             'second factor, which that grant cannot carry. WS-Trust requires a ' +
-             'credential, and accepts an assertion only when this realm ' +
-             'signed it and it is inside its Conditions.',
+             '`userPassword` set cannot sign in at all. The OAuth 2.0 ' +
+             'password grant is one of those doors, and refuses a person ' +
+             'holding a second factor, which that grant cannot carry. ' +
+             'WS-Trust requires a credential, and accepts an assertion only ' +
+             'when this realm signed it and it is inside its Conditions.',
     where: 'common/credentials.js, ws-trust/wstrust.js, oauth-oidc/oauth2.js' },
   { id: 'weaker-responses',
     what: 'A response may go out weaker than asked',
@@ -376,8 +446,8 @@ const REQUIREMENTS = [
                  'server is created the first time something names it, which ' +
                  'is what lets a client point at this service with any ' +
                  'identifier and get a working exchange.',
-    product: 'An unknown name is REFUSED. Everything must be created ahead of ' +
-             'time, through the console, /admin-api, SCIM or an LDAP add.',
+    product: 'An unknown name is REFUSED. Everything must be created ahead ' +
+             'of time, through the console, /admin-api, SCIM or an LDAP add.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
            'common/applications.js, oauth-oidc/authorization_servers.js, ' +
            'spiffe/spiffe_workload.js, scim/scim_auth.js' },
@@ -388,11 +458,11 @@ const REQUIREMENTS = [
                  'makes this service disposable, and the `kid` is derived ' +
                  'from the key material so two instances can never publish ' +
                  'one name over two keys.',
-    product: 'Generated ONCE and read back from the persistence store — which ' +
-             'product mode therefore requires — encrypted with AES-256-GCM ' +
-             'under a key this service never generates and never stores, read ' +
-             'from a mounted file, AWS Secrets Manager, GCP Secret Manager, ' +
-             'Azure Key Vault or HashiCorp Vault.',
+    product: 'Generated ONCE and read back from the persistence store — ' +
+             'which product mode therefore requires — encrypted with ' +
+             'AES-256-GCM under a key this service never generates and never ' +
+             'stores, read from a mounted file, AWS Secrets Manager, GCP ' +
+             'Secret Manager, Azure Key Vault or HashiCorp Vault.',
     where: 'common/keystore.js, common/secrets.js' },
   { id: 'client-secret',
     what: 'An OAuth 2.0 / OIDC application holds a secret',
@@ -421,27 +491,28 @@ const REQUIREMENTS = [
     development: 'Required in one of RFC 7644 section 2\'s six schemes — and ' +
                  'it always was — with none of them verified beyond its shape.',
     product: 'Required and verified. HTTP Digest is not offered, because RFC ' +
-             '7616 needs the password or its hash and a scrypt hash can check ' +
-             'neither; a HOBA key may be registered only by the signed-in ' +
-             'owner of an existing account, and registering one never creates ' +
-             'an account.',
+             '7616 needs the password or its hash and a scrypt hash can ' +
+             'check neither; a HOBA key may be registered only by the ' +
+             'signed-in owner of an existing account, and registering one ' +
+             'never creates an account.',
     where: 'scim/scim_auth.js' },
   { id: 'shared-signals',
     what: '/ssf requires a credential',
     development: 'Required in one of the schemes the endpoints accept — and ' +
                  'it always was — none verified beyond its shape.',
     product: 'Required and verified: a Basic credential is checked against ' +
-             'the person\'s userPassword, and ssf.authBasic removes the scheme.',
+             'the person\'s userPassword, and ssf.authBasic removes the ' +
+             'scheme.',
     where: 'ssf/ssf_auth.js' },
   { id: 'demo-data',
     what: 'A new service contains demonstration data',
     development: 'The directory is seeded with three people, two groups, a ' +
                  'bind account, and the remote-pep-1 and xacml-user-1 ' +
                  'identities in the two XACML role groups; the KDC with ' +
-                 'fixture accounts, delegation rules and a trusted realm whose ' +
-                 'passwords are written in its source; the SPIFFE registry ' +
-                 'with sample entries; and every person is given generated ' +
-                 'credential attributes.',
+                 'fixture accounts, delegation rules and a trusted realm ' +
+                 'whose passwords are written in its source; the SPIFFE ' +
+                 'registry with sample entries; and every person is given ' +
+                 'generated credential attributes.',
     product: 'None of it. The directory, the principal database and the ' +
              'registry hold what was configured or provisioned, and nothing ' +
              'else — the two XACML role groups exist and are empty, and the ' +
@@ -462,8 +533,8 @@ const REQUIREMENTS = [
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
                  'WS-Federation wreply or a wallet link names is used, ' +
-                 'registered or not — and an address a sighting writes onto an ' +
-                 'application entry (or a callback the console or portal ' +
+                 'registered or not — and an address a sighting writes onto ' +
+                 'an application entry (or a callback the console or portal ' +
                  'learns from a Host header) is MARKED as observed on ' +
                  'appReturnAddressObserved.',
     product: 'Only an address registered on the application\'s own entry — ' +
@@ -471,15 +542,15 @@ const REQUIREMENTS = [
              'observed is NOT registered: development put it there and it is ' +
              'refused until an operator confirms it on the application\'s ' +
              'page or with POST /admin-api/applications/confirm-address ' +
-             '(STS-REG-0049). Addresses recorded before sightings were marked ' +
-             'carry no mark and still need reviewing before a realm is ' +
-             'switched. The console\'s and the portal\'s ' +
-             'own callbacks are not learnt from a request\'s Host header ' +
-             '(set global.publicBaseUrl), and a WebAuthn RP ID that does not ' +
-             'fit the host refuses the ceremony instead of falling back to it.',
+             '(STS-REG-0049). Addresses recorded before sightings were ' +
+             'marked carry no mark and still need reviewing before a realm ' +
+             'is switched. The console\'s and the portal\'s own callbacks ' +
+             'are not learnt from a request\'s Host header (set ' +
+             'global.publicBaseUrl), and a WebAuthn RP ID that does not fit ' +
+             'the host refuses the ceremony instead of falling back to it.',
     where: 'saml/saml2_sso.js, saml/saml11_sso.js, ws-federation/wsfed.js, ' +
-           'oid4vc/vc_offers.js, oid4vc/vc_verifier.js, common/applications.js, ' +
-           'common/oidc_rp.js, authn/authn.js' },
+           'oid4vc/vc_offers.js, oid4vc/vc_verifier.js, ' +
+           'common/applications.js, common/oidc_rp.js, authn/authn.js' },
   { id: 'test-controls',
     what: 'Test controls are open',
     development: 'POST /tls/trust and /tls/trust/clear, POST ' +
@@ -497,8 +568,8 @@ const REQUIREMENTS = [
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +
-                 'in any realm, anonymous ones included — which is what lets a ' +
-                 'test drive the raw socket with no setup.',
+                 'in any realm, anonymous ones included — which is what lets ' +
+                 'a test drive the raw socket with no setup.',
     product: 'An anonymous connection writes nothing. A connection bound as ' +
              'somebody holding Admin Write — in the default realm\'s ' +
              'directory, and not merely because no role has a member yet — ' +
@@ -512,37 +583,39 @@ const REQUIREMENTS = [
     what: 'A read of the directory over LDAP requires a bind, and never ' +
           'returns a credential',
     development: 'Any connection, anonymous or never bound, may search and ' +
-                 'compare every entry and read every attribute but a Kerberos ' +
-                 'key, and may write createTimestamp, modifyTimestamp and ' +
-                 'entryDN like any other attribute.',
+                 'compare every entry and read every attribute but a ' +
+                 'Kerberos key, and may write createTimestamp, ' +
+                 'modifyTimestamp and entryDN like any other attribute.',
     product: 'A search or compare on a connection that has not bound as ' +
-             'somebody is refused with result code 50, insufficientAccessRights ' +
-             '— the root DSE excepted, which a client reads to find out where ' +
-             'to bind. Credential attributes (userPassword, pwdHistory, client ' +
-             'secrets, registration access tokens, private keys, TOTP secrets, ' +
-             'recovery codes, activation tokens and Kerberos keys) are never ' +
-             'returned by a search, are invisible to a search FILTER so that it ' +
-             'cannot be used as an oracle, and cannot be compared against; an ' +
-             'administrator is not excepted. createTimestamp, modifyTimestamp ' +
-             'and entryDN cannot be written by anybody, with result code 19, ' +
+             'somebody is refused with result code 50, ' +
+             'insufficientAccessRights — the root DSE excepted, which a ' +
+             'client reads to find out where to bind. Credential attributes ' +
+             '(userPassword, pwdHistory, client secrets, registration access ' +
+             'tokens, private keys, TOTP secrets, recovery codes, activation ' +
+             'tokens and Kerberos keys) are never returned by a search, are ' +
+             'invisible to a search FILTER so that it cannot be used as an ' +
+             'oracle, and cannot be compared against; an administrator is ' +
+             'not excepted. createTimestamp, modifyTimestamp and entryDN ' +
+             'cannot be written by anybody, with result code 19, ' +
              'constraintViolation.',
     where: 'ldap/ldap_server.js' },
   { id: 'directory-binds',
     what: 'An LDAP bind is confidential, authenticated and rate limited',
-    development: 'Every bind succeeds but one with the password "invalid", on ' +
-                 '389 and 636 alike, anonymous and unauthenticated ones included, ' +
-                 'with no limit on how many fail.',
+    development: 'Every bind succeeds but one with the password "invalid", ' +
+                 'on 389 and 636 alike, anonymous and unauthenticated ones ' +
+                 'included, with no limit on how many fail.',
     product: 'An anonymous bind is refused with result code 48, ' +
-             'inappropriateAuthentication, and a DN with an empty password with ' +
-             '53, unwillingToPerform (RFC 4513 sections 5.1.1 and 5.1.2). A bind ' +
-             'carrying a password on the plain listener is refused with 13, ' +
-             'confidentialityRequired, before the password is read — use LDAPS, ' +
-             'or turn ldap.plainListener off. FAILED binds are counted per bind ' +
-             'DN and per address against security.rateLimitPerIdentity and ' +
-             'security.rateLimitPerAddress within security.rateLimitWindowS, and ' +
-             'a caller over either is refused with 53 before its password is ' +
-             'checked; a successful bind clears its own DN\'s counter, never ' +
-             'its address\'s, and is never counted.',
+             'inappropriateAuthentication, and a DN with an empty password ' +
+             'with 53, unwillingToPerform (RFC 4513 sections 5.1.1 and ' +
+             '5.1.2). A bind carrying a password on the plain listener is ' +
+             'refused with 13, confidentialityRequired, before the password ' +
+             'is read — use LDAPS, or turn ldap.plainListener off. FAILED ' +
+             'binds are counted per bind DN and per address against ' +
+             'security.rateLimitPerIdentity and security.rateLimitPerAddress ' +
+             'within security.rateLimitWindowS, and a caller over either is ' +
+             'refused with 53 before its password is checked; a successful ' +
+             'bind clears its own DN\'s counter, never its address\'s, and ' +
+             'is never counted.',
     where: 'ldap/ldap_server.js, common/websecurity.js' },
   { id: 'spire',
     what: 'The SPIRE Server API requires an X509-SVID',
@@ -560,19 +633,19 @@ const REQUIREMENTS = [
     development: 'SOFT-FAIL (pki.revocationCheck=auto). A certificate this ' +
                  'service issued is looked up in its own register, the whole ' +
                  'chain, and a revoked one is refused; one from another ' +
-                 'authority is checked with the OCSP responder and the CRL it ' +
-                 'names, and a status that cannot be fetched or verified is ' +
-                 'accepted and reported.',
+                 'authority is checked with the OCSP responder and the CRL ' +
+                 'it names, and a status that cannot be fetched or verified ' +
+                 'is accepted and reported.',
     product: 'HARD-FAIL (pki.revocationCheck=auto). The same lookups, and a ' +
-             'foreign certificate whose status cannot be fetched, verified or ' +
-             'trusted as fresh — or that its issuer\'s responder does not ' +
-             'know — is REFUSED too: an attacker who can block a fetch cannot ' +
-             'turn "revoked" into "accepted". One whose issuer names no list ' +
-             'and no responder at all is accepted unless ' +
+             'foreign certificate whose status cannot be fetched, verified ' +
+             'or trusted as fresh — or that its issuer\'s responder does not ' +
+             'know — is REFUSED too: an attacker who can block a fetch ' +
+             'cannot turn "revoked" into "accepted". One whose issuer names ' +
+             'no list and no responder at all is accepted unless ' +
              'pki.revocationRequireDistributionPoint is on.',
-    where: 'common/revocation_status.js, tls/tls_server.js, oauth-oidc/mtls.js, ' +
-           'oauth-oidc/client_auth.js, scim/scim_auth.js, spiffe/spiffe_auth.js, ' +
-           'common/pki.js' }
+    where: 'common/revocation_status.js, tls/tls_server.js, ' +
+           'oauth-oidc/mtls.js, oauth-oidc/client_auth.js, ' +
+           'scim/scim_auth.js, spiffe/spiffe_auth.js, common/pki.js' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -622,20 +695,21 @@ const NOT_YET = [
     what: 'Revocation is CONSULTED for a presented certificate (see the ' +
           'requirement above) and for a REGISTERED one when it verifies ' +
           'something — the register, the OCSP responder (a delegated ' +
-          'responder\'s own status included) and the CRL a foreign certificate ' +
-          'names, over http, https and ldaps, delta CRLs merged, indirect CRLs ' +
-          'read per issuer with their signer fetched from the list\'s ' +
-          'caIssuers address where nothing here holds it. What remains is ' +
-          'limits rather than work: a BARE key registered with no certificate ' +
-          '(a JWK without x5c) names no issuer and no list, so only taking it ' +
-          'off the entry stops it verifying; plain ldap: is dialled only when ' +
-          'pki.revocationLdap allows it; a distribution point named relative to ' +
-          'its CRL issuer is used only with pki.revocationLdapDirectory set and ' +
-          'every RDN single-valued; and LDAPS 636 asks for no client ' +
-          'certificate, so nothing there is consulted.' },
+          'responder\'s own status included) and the CRL a foreign ' +
+          'certificate names, over http, https and ldaps, delta CRLs merged, ' +
+          'indirect CRLs read per issuer with their signer fetched from the ' +
+          'list\'s caIssuers address where nothing here holds it. What ' +
+          'remains is limits rather than work: a BARE key registered with no ' +
+          'certificate (a JWK without x5c) names no issuer and no list, so ' +
+          'only taking it off the entry stops it verifying; plain ldap: is ' +
+          'dialled only when pki.revocationLdap allows it; a distribution ' +
+          'point named relative to its CRL issuer is used only with ' +
+          'pki.revocationLdapDirectory set and every RDN single-valued; and ' +
+          'LDAPS 636 asks for no client certificate, so nothing there is ' +
+          'consulted.' },
   { id: 'key-overlap',
-    what: 'A rotation has NO OVERLAP. This service publishes one key per realm ' +
-          'per algorithm, so everything signed with the old key stops ' +
+    what: 'A rotation has NO OVERLAP. This service publishes one key per ' +
+          'realm per algorithm, so everything signed with the old key stops ' +
           'verifying the moment the new one is in use. A product deployment ' +
           'wants both keys in JWKS for a window, which needs the old private ' +
           'key kept — the thing rotation is for getting rid of — so it is a ' +
@@ -649,15 +723,16 @@ const NOT_YET = [
   // no hierarchy to hang from, so there is nothing for the keystore to keep it
   // beside.
   { id: 'post-quantum-keys',
-    what: 'The eleven post-quantum keys per realm are NOT persisted, in either ' +
-          'mode: they are generated on the worker pool because generating ' +
-          'them is expensive, and cached by pq_jose.js. Nor are the TLS server ' +
-          'certificate and the SPIFFE JWT authority, which belong to their own ' +
-          'modules. The SPIFFE X.509 authority came off this row on ' +
-          '2026-09-11: it is this realm\'s SPIFFE Issuing CA under the ' +
-          'service Root, so it persists in product mode exactly as the rest ' +
-          'of the certificate authority does. Only the RSA signing key and ' +
-          'the eight EC/Ed keys beside it survive a restart otherwise.' },
+    what: 'The eleven post-quantum keys per realm are NOT persisted, in ' +
+          'either mode: they are generated on the worker pool because ' +
+          'generating them is expensive, and cached by pq_jose.js. Nor are ' +
+          'the TLS server certificate and the SPIFFE JWT authority, which ' +
+          'belong to their own modules. The SPIFFE X.509 authority came off ' +
+          'this row on 2026-09-11: it is this realm\'s SPIFFE Issuing CA ' +
+          'under the service Root, so it persists in product mode exactly as ' +
+          'the rest of the certificate authority does. Only the RSA signing ' +
+          'key and the eight EC/Ed keys beside it survive a restart ' +
+          'otherwise.' },
   { id: 'key-never-in-memory',
     what: 'A private key is DECRYPTED IN THIS PROCESS while it signs. Since ' +
           '2026-09-06 what is resident between signatures is the ciphertext, ' +
@@ -682,15 +757,15 @@ const NOT_YET = [
           'passwords. Directory people authenticate to the product KDC with ' +
           'keys derived from their own password when it is set or verified, ' +
           'sealed on their entry (`stsKrb5Keys`); service principals get ' +
-          'random keys and a keytab shown once at /admin/kerberos/principals. ' +
-          'A password change or a rotation keeps the version it replaced — at ' +
-          'most krb5.retainedKeyVersions, each for krb5.retainedKeyTtlS — so a ' +
-          'ticket issued under it is still accepted until it could have expired, ' +
-          'while pre-authentication and issuance use the current key only; ' +
-          '"Drop previous versions" ends that window. Not yet: the krbtgt key ' +
-          'has no rotation and so no previous version (a TGT under an older ' +
-          'krb5.krbtgtPassword is refused), and one KDC serves the default ' +
-          'trust realm only.' },
+          'random keys and a keytab shown once at ' +
+          '/admin/kerberos/principals. A password change or a rotation keeps ' +
+          'the version it replaced — at most krb5.retainedKeyVersions, each ' +
+          'for krb5.retainedKeyTtlS — so a ticket issued under it is still ' +
+          'accepted until it could have expired, while pre-authentication ' +
+          'and issuance use the current key only; "Drop previous versions" ' +
+          'ends that window. Not yet: the krbtgt key has no rotation and so ' +
+          'no previous version (a TGT under an older krb5.krbtgtPassword is ' +
+          'refused), and one KDC serves the default trust realm only.' },
   // `vci-request-encryption-key` WAS HERE AND WAS PAID ON 2026-09-12. The
   // OpenID4VCI request-encryption key is a member of each realm's key set now
   // (`helpers.js`'s `makeStsKeys()`), so it is per realm, travels to request
@@ -722,19 +797,23 @@ const NOT_YET = [
           'withheld from everybody, but any connection that has bound as ' +
           'somebody may search and compare every entry in the realm its base ' +
           'names and read every other attribute on it — every person\'s ' +
-          'mail, telephone number and group memberships, every application\'s ' +
-          'redirect URIs. Deciding what a person, an administrator and an ' +
-          'application may each read is the outstanding design.' },
+          'mail, telephone number and group memberships, every ' +
+          'application\'s redirect URIs. Deciding what a person, an ' +
+          'administrator and an application may each read is the outstanding ' +
+          'design.' },
 ];
 
 // The whole answer, for the console page, the management API and the metadata
 // report. One function so the three cannot disagree.
 function report() {
+  log.debug("Entering report().");
+  log.debug("Leaving report().");
   return {
     mode: current(),
     isProduct: isProduct(),
     requirements: REQUIREMENTS.map(function (row) {
-      return Object.assign({ inForce: isProduct() ? row.product : row.development },
+      return Object.assign({ inForce: isProduct() ? row.product :
+                                      row.development },
                            row);
     }),
     notYet: NOT_YET

@@ -32,10 +32,10 @@
 //     prove it is not to read the code but to revoke a token here and watch
 //     RFC 7662 introspection call it inactive.
 //
-// It also checks the one thing the explorer costs: /admin/api-explorer is the only
-// page in this service with a script on it, so it is the only one served under
-// a relaxed Content-Security-Policy. That relaxation must stay scoped — the
-// console next door must still be `script-src 'none'` — and it must stay
+// It also checks the one thing the explorer costs: /admin/api-explorer is the
+// only page in this service with a script on it, so it is the only one served
+// under a relaxed Content-Security-Policy. That relaxation must stay scoped —
+// the console next door must still be `script-src 'none'` — and it must stay
 // minimal, which means `'self'` and never `'unsafe-inline'`.
 //
 // **This test restores what it changes.** The mock's admin state survives
@@ -141,7 +141,8 @@ const CONDITIONAL = {
 // two things that are THIS job's: which user, and what a missing role means.
 async function signInToTheConsole() {
   log.debug("Entering signInToTheConsole().");
-  const cookie = await consoleSignIn.signInToTheConsole(base, CONSOLE_USER, log);
+  const cookie = await consoleSignIn.signInToTheConsole(base, CONSOLE_USER,
+                                                        log);
   log.debug("Leaving signInToTheConsole(). " +
             (cookie ? "Holding a session." : "The gate is off."));
   return cookie;
@@ -295,7 +296,8 @@ async function theDocumentIsServedAndWellFormed() {
   log.info("[document] OK — OpenAPI " + doc.openapi + ", " + paths.length +
            " paths, " + ids.length + " operations, " +
            (Array.isArray(doc.security) && doc.security.length
-             ? Object.keys((doc.components || {}).securitySchemes || {}).length +
+             ? Object.keys((doc.components ||
+                            {}).securitySchemes || {}).length +
                " security scheme(s)."
              : "no security scheme."));
   log.debug("Leaving theDocumentIsServedAndWellFormed().");
@@ -314,7 +316,8 @@ async function theIndexAgreesWithTheDocument(doc) {
   // after `/admin-api` grew a token gate. What the assertion is FOR is that
   // the index says so in a field as well as in prose, and that survives the
   // switch being thrown either way; the constant did not.
-  const documentIsGuarded = Array.isArray(doc.security) && doc.security.length > 0;
+  const documentIsGuarded = Array.isArray(doc.security) &&
+                            doc.security.length > 0;
   assert.strictEqual(index.protected, documentIsGuarded,
     "the index must say in a field what the OpenAPI document says in its " +
     "`security`, and they disagree: the index reports `protected: " +
@@ -587,7 +590,8 @@ async function theSchemasMatchTheReplies(doc) {
   // And the drill-down, which is the only place IssuedSetDetail appears.
   cases.push({ name: "IssuedSetDetail",
                body: await get("/tokens/set?id=" +
-                               encodeURIComponent(issuedList.sets[0].setKey)) });
+                               encodeURIComponent(
+                                   issuedList.sets[0].setKey)) });
 
   const sets = cases.filter(function (item) {
     return item.name === "ClaimSets";
@@ -1193,7 +1197,8 @@ async function configurationCanBeChangedAndPutBack(doc) {
   // set-many is all-or-nothing, which is the property a section's Save rests
   // on: a body with one bad field must change NOTHING.
   const partly = await post("/config/set-many",
-    { "oid4vci.offerUsername": "someone.else", "oid4vp.kbMaxAgeS": "not-a-number" });
+    { "oid4vci.offerUsername": "someone.else",
+      "oid4vp.kbMaxAgeS": "not-a-number" });
   assert.strictEqual(partly.status, 400,
     "a set-many with one unusable value should be refused; got " +
     partly.status);
@@ -1438,7 +1443,8 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
   });
 
   // --- against the discovery document -----------------------------------
-  const oidc = await common.httpJson(base + "/.well-known/openid-configuration");
+  const oidc = await common.httpJson(base +
+                                     "/.well-known/openid-configuration");
   assert.ok(oidc.ok, "the OpenID Provider metadata should answer 200; got " +
             oidc.status);
   const oauthFamily = report.families.filter(function (row) {
@@ -1446,6 +1452,7 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
   })[0];
   assert.ok(oauthFamily, "the report should carry the OAuth2 / OIDC family.");
   const listNamed = function (what) {
+    log.debug("Entering listNamed().");
     const group = oauthFamily.algorithms.filter(function (row) {
       return row.what === what;
     })[0];
@@ -1454,6 +1461,7 @@ async function theCryptoReportAgreesWithTheServiceItDescribes() {
               JSON.stringify(oauthFamily.algorithms.map(function (row) {
                 return row.what;
               })));
+    log.debug("Leaving listNamed().");
     return group.values;
   };
   assert.deepStrictEqual(listNamed("ID Token, when a client registers one"),

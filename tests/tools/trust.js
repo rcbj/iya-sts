@@ -66,6 +66,12 @@ const fs = require('fs');
 const https = require('https');
 const path = require('path');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'trust',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The document is served as `text/plain` and is the PEM itself — see
 // tls/tls_server.js. It is on the MAIN port deliberately: it and POST
 // /tls/trust are what a caller reaches before it trusts anything.
@@ -73,6 +79,8 @@ const CERTIFICATE_PATH = '/tls/server-certificate';
 
 // Whether this URL needs any of the below at all.
 function isTls(url) {
+  log.debug("Entering isTls().");
+  log.debug("Leaving isTls().");
   return /^https:/i.test(String(url || ''));
 }
 
@@ -91,11 +99,15 @@ function isTls(url) {
 // too, where the runner has no dependency on undici's public API.
 // ---------------------------------------------------------------------------
 function fetchCertificate(url, timeoutMs) {
+  log.debug("Entering fetchCertificate().");
+  log.debug("Leaving fetchCertificate().");
   return new Promise(function (resolve, reject) {
     let target;
     try {
       target = new URL(CERTIFICATE_PATH, url);
     } catch (e) {
+      log.debug("Caught in a callback in fetchCertificate(): " +
+                ((e && e.message) || e));
       reject(new Error('not a URL: ' + url));
       return;
     }
@@ -147,8 +159,10 @@ function fetchCertificate(url, timeoutMs) {
 //   openssl x509 -pubkey -noout | openssl pkey -pubin -outform der \
 //     | openssl dgst -sha256 -binary | openssl enc -base64
 function spkiPin(pem) {
+  log.debug("Entering spkiPin().");
   const cert = new crypto.X509Certificate(pem);
   const der = cert.publicKey.export({ type: 'spki', format: 'der' });
+  log.debug("Leaving spkiPin().");
   return crypto.createHash('sha256').update(der).digest('base64');
 }
 

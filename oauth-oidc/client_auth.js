@@ -19,10 +19,10 @@
 //                           worth nothing to an attacker
 //
 // This service enforced the first and merely ACCEPTED the second: a client that
-// registered `private_key_jwt` sent an assertion and this server did not look at
-// it. That is worse than not offering the method at all — a client author would
-// have come away believing an assertion had been checked. Closing that is what
-// this file is for.
+// registered `private_key_jwt` sent an assertion and this server did not look
+// at it. That is worse than not offering the method at all — a client author
+// would have come away believing an assertion had been checked. Closing that is
+// what this file is for.
 //
 // ---------------------------------------------------------------------------
 // THE SIX METHODS, and which of them is real here.
@@ -38,8 +38,8 @@
 //   self_signed_tls_client_auth the client certificate's thumbprint matches the
 //                               one registered (RFC 8705 section 2.2)
 //
-// All of them are verified. The two shared-secret ones compare in constant time;
-// the two assertion ones do the full RFC 7523 section 3 check; the two
+// All of them are verified. The two shared-secret ones compare in constant
+// time; the two assertion ones do the full RFC 7523 section 3 check; the two
 // certificate ones read the connection `mtls.js` already looks at.
 //
 // **RFC 8705 section 2 is client AUTHENTICATION and section 3 is token
@@ -82,7 +82,8 @@ const { log } = require('../common/helpers');
 const config = require('../common/config');
 // THE MODE, for one question (2026-09-12): is a presented credential CHECKED
 // strictly — `exp` required on a client assertion and its lifetime capped? A
-// LEAF (rule 3), requiring only `config`, so it moves nothing and closes nothing.
+// LEAF (rule 3), requiring only `config`, so it moves nothing and closes
+// nothing.
 const mode = require('../common/mode');
 const mtls = require('./mtls');
 // A library (rule 3): the revocation check a REGISTERED key's certificate gets
@@ -113,10 +114,10 @@ const ASSERTION_TYPE = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const SAML_ASSERTION_TYPE =
   'urn:ietf:params:oauth:client-assertion-type:saml2-bearer';
 
-// The methods this file can actually verify. `token_endpoint_auth_methods_supported`
-// is built from this in oauth2.js, so the metadata cannot advertise one that
-// falls through to "not checked" — which is the state this file was written to
-// end.
+// The methods this file can actually verify.
+// `token_endpoint_auth_methods_supported` is built from this in oauth2.js, so
+// the metadata cannot advertise one that falls through to "not checked" — which
+// is the state this file was written to end.
 //
 // ---------------------------------------------------------------------------
 // **`saml2_bearer` IS THIS SERVICE'S OWN NAME AND NOT A REGISTERED ONE**, and
@@ -138,8 +139,10 @@ const SAML_ASSERTION_TYPE =
 // RFC 7522's URN exactly, and a client that sends that with its assertion is
 // conforming whatever this service happens to call the method internally.
 // ---------------------------------------------------------------------------
-const SYMMETRIC_METHODS = ['client_secret_basic', 'client_secret_post', 'client_secret_jwt'];
-const ASYMMETRIC_METHODS = ['private_key_jwt', 'saml2_bearer', 'tls_client_auth',
+const SYMMETRIC_METHODS = ['client_secret_basic', 'client_secret_post',
+                           'client_secret_jwt'];
+const ASYMMETRIC_METHODS = ['private_key_jwt', 'saml2_bearer',
+                            'tls_client_auth',
                             'self_signed_tls_client_auth'];
 const METHODS = ['none'].concat(SYMMETRIC_METHODS, ASYMMETRIC_METHODS);
 
@@ -147,6 +150,8 @@ const METHODS = ['none'].concat(SYMMETRIC_METHODS, ASYMMETRIC_METHODS);
 // logs the RECOMMENDED a client did not follow, so that the list and the advice
 // cannot drift apart.
 function isAsymmetric(method) {
+  log.debug("Entering isAsymmetric().");
+  log.debug("Leaving isAsymmetric().");
   return ASYMMETRIC_METHODS.indexOf(String(method)) >= 0;
 }
 
@@ -177,7 +182,9 @@ function isAsymmetric(method) {
 const MAX_ASSERTIONS = 1000;
 
 function maxAssertions() {
+  log.debug("Entering maxAssertions().");
   const count = Number(config.value('oauth2.assertionReplayCacheSize'));
+  log.debug("Leaving maxAssertions().");
   return isFinite(count) && count > 0 ? Math.floor(count) : MAX_ASSERTIONS;
 }
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
@@ -185,7 +192,8 @@ function maxAssertions() {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const seenAssertions = realms.map({ persist: 'client_auth.seenAssertions' });  // jti -> forget-at
+// jti -> forget-at
+const seenAssertions = realms.map({ persist: 'client_auth.seenAssertions' });
 
 // Sweeps what has expired, and answers whether there is ROOM for one more.
 // It never deletes an entry that has not expired — see the header above.
@@ -198,7 +206,8 @@ function forgetStaleAssertions() {
     }
   });
   const room = seenAssertions.size < maxAssertions();
-  log.debug("Leaving forgetStaleAssertions(). " + seenAssertions.size + " live; " +
+  log.debug("Leaving forgetStaleAssertions(). " + seenAssertions.size + " " +
+      "live; " +
             (room ? "room for another." : "FULL."));
   return room;
 }
@@ -212,14 +221,19 @@ function forgetStaleAssertions() {
 // post-quantum ones for an hour so that a slow signature under coverage is not
 // reported as the mock refusing it.
 function assertionLifetimeCap() {
+  log.debug("Entering assertionLifetimeCap().");
   if (!mode.verifiesCredentials()) {
+    log.debug("Leaving assertionLifetimeCap().");
     return 0;
   }
   const seconds = Number(config.value('oauth2.jwtBearerMaxLifetimeS'));
+  log.debug("Leaving assertionLifetimeCap().");
   return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
 }
 
 function clockSkewSeconds() {
+  log.debug("Entering clockSkewSeconds().");
+  log.debug("Leaving clockSkewSeconds().");
   return config.value('oauth2.clientAssertionSkewS');
 }
 
@@ -229,6 +243,8 @@ function clockSkewSeconds() {
 // around it. The name stays here because "do these two client secrets match" is
 // what this file is asking.
 function secretsMatch(presented, expected) {
+  log.debug("Entering secretsMatch().");
+  log.debug("Leaving secretsMatch().");
   return stsCrypto.constantTimeEquals(presented, expected);
 }
 
@@ -242,6 +258,8 @@ function secretsMatch(presented, expected) {
 // unchanged bar one added member (`jwk`, which the certificate-bound path
 // needs), so every caller here is untouched.
 function keysFrom(jwksText) {
+  log.debug("Entering keysFrom().");
+  log.debug("Leaving keysFrom().");
   return assertionGrant.keysFrom(jwksText);
 }
 
@@ -282,18 +300,23 @@ async function verifyAssertion(opts) {
   // authenticated with one before this existed is on exactly the path it was.
   // ---------------------------------------------------------------------
   const unwrapped = assertionGrant.unwrapAssertion(opts.assertion,
-                                                   { secret: opts.clientSecret });
+                                                   { secret:
+                                                       opts.clientSecret });
   if (!unwrapped.ok) {
     log.debug("Leaving verifyAssertion(). It would not decrypt.");
-    return { ok: false, errorCode: unwrapped.errorCode, description: unwrapped.description };
+    return { ok: false, errorCode: unwrapped.errorCode,
+             description: unwrapped.description };
   }
   const assertion = unwrapped.jws;
   let header = null;
   try {
-    header = JSON.parse(Buffer.from(assertion.split('.')[0], 'base64url').toString('utf8'));
+    header = JSON.parse(Buffer.from(assertion.split('.')[0], 'base64url')
+                              .toString('utf8'));
   } catch (e) {
     log.debug("Leaving verifyAssertion(). The assertion is not a JWT.");
-    return { ok: false, errorCode: 'STS-OAUTH-0001', description: 'client_assertion is not a JWT: ' + e.message };
+    return { ok: false, errorCode: 'STS-OAUTH-0001',
+             description: 'client_assertion ' +
+        'is not a JWT: ' + e.message };
   }
   const alg = String((header && header.alg) || '');
 
@@ -302,15 +325,21 @@ async function verifyAssertion(opts) {
   let verifyEntries = [];
   if (opts.method === 'client_secret_jwt') {
     if (!/^HS(256|384|512)$/.test(alg)) {
-      log.debug("Leaving verifyAssertion(). client_secret_jwt with a non-HMAC alg.");
-      return { ok: false, errorCode: 'STS-OAUTH-0002', description: 'client_secret_jwt signs with an HMAC over the ' +
-                                       'client_secret, so alg must be HS256, HS384 or HS512. ' +
-                                       'This assertion says "' + alg + '".' };
+      log.debug("Leaving verifyAssertion(). client_secret_jwt with a " +
+                "non-HMAC alg.");
+      return { ok: false, errorCode: 'STS-OAUTH-0002',
+               description: 'client_secret_jwt ' +
+                                       'signs with an HMAC over the ' +
+                                       'client_secret, so alg must be HS256, ' +
+                                       'HS384 or HS512. This assertion says ' +
+                                       '"' + alg + '".' };
     }
     if (!opts.clientSecret) {
-      return { ok: false, errorCode: 'STS-OAUTH-0003', description: 'this client has no client_secret on its entry, so ' +
-                                       'there is nothing to verify a client_secret_jwt ' +
-                                       'assertion with.' };
+      log.debug("Leaving verifyAssertion().");
+      return { ok: false, errorCode: 'STS-OAUTH-0003', description: 'this ' +
+                                       'client has no client_secret on its ' +
+                                       'entry, so there is nothing to verify ' +
+                                       'a client_secret_jwt assertion with.' };
     }
     verifyWith = opts.clientSecret;
   } else {
@@ -320,13 +349,19 @@ async function verifyAssertion(opts) {
       // the client registered a public key would be verified with that PUBLIC
       // key as an HMAC secret — the classic JWT forgery, and it is a forgery
       // anybody can perform because the key is public.
-      log.debug("Leaving verifyAssertion(). private_key_jwt with a symmetric alg.");
-      return { ok: false, errorCode: 'STS-OAUTH-0004', description: 'private_key_jwt is asymmetric, so alg must be an ' +
-                                       'asymmetric one (RS256, PS256, ES256 and so on). This ' +
-                                       'assertion says "' + alg + '", which would have this ' +
-                                       'server verify a signature with a PUBLIC key used as an ' +
-                                       'HMAC secret — a forgery anybody could produce, since ' +
-                                       'the key is public.' };
+      log.debug("Leaving verifyAssertion(). private_key_jwt with a symmetric " +
+                "alg.");
+      return { ok: false, errorCode: 'STS-OAUTH-0004',
+               description: 'private_key_jwt ' +
+                                       'is asymmetric, so alg must be an ' +
+                                       'asymmetric one (RS256, PS256, ES256 ' +
+                                       'and so on). This assertion says ' +
+                                       '"' + alg + '", which ' +
+                                       'would have this server verify a ' +
+                                       'signature with a PUBLIC key used as ' +
+                                       'an HMAC secret — a forgery anybody ' +
+                                       'could produce, since the key is ' +
+                                       'public.' };
     }
     // -------------------------------------------------------------------
     // THREE SOURCES OF KEY SINCE 2026-09-10, AND THEY ARE ORed.
@@ -372,31 +407,43 @@ async function verifyAssertion(opts) {
                    key: fromChain.key });
     } else if (fromChain && fromChain.error && !found.length) {
       log.debug("Leaving verifyAssertion(). The x5c does not chain here.");
-      return { ok: false, errorCode: fromChain.errorCode, description: fromChain.error };
+      return { ok: false, errorCode: fromChain.errorCode,
+               description: fromChain.error };
     }
     if (!found.length && opts.jwksUri) {
       log.debug("Leaving verifyAssertion(). Only a jwks_uri is registered.");
-      return { ok: false, errorCode: 'STS-OAUTH-0005', description: 'this client registered jwks_uri and no jwks. This ' +
-                                       'service will NOT fetch a URL somebody registered in ' +
-                                       'order to verify a credential — that is a server-side ' +
-                                       'request forgery with a specification citation attached, ' +
-                                       'and it is the same refusal WS-Federation\'s wreqptr ' +
-                                       'gets here. Register the keys by value, as `jwks`.' };
+      return { ok: false, errorCode: 'STS-OAUTH-0005', description: 'this ' +
+                                       'client registered jwks_uri and no ' +
+                                       'jwks. This service will NOT fetch a ' +
+                                       'URL somebody registered in order to ' +
+                                       'verify a credential — that is a ' +
+                                       'server-side request forgery with a ' +
+                                       'specification citation attached, and ' +
+                                       'it is the same refusal ' +
+                                       'WS-Federation\'s wreqptr gets here. ' +
+                                       'Register the keys by value, as ' +
+                                       '`jwks`.' };
     }
     if (!found.length && readingProblem) {
-      return { ok: false, errorCode: readingProblemCode, description: readingProblem + '.' };
+      log.debug("Leaving verifyAssertion().");
+      return { ok: false, errorCode: readingProblemCode,
+               description: readingProblem + '.' };
     }
     if (!found.length) {
-      return { ok: false, errorCode: 'STS-OAUTH-0006', description: 'this client registered no keys, so a private_key_jwt ' +
-                                       'assertion cannot be verified. Register a `jwks` — by ' +
-                                       'value — on its entry, or have this service issue it a ' +
-                                       'signing key pair from /admin/pki.' };
+      log.debug("Leaving verifyAssertion().");
+      return { ok: false, errorCode: 'STS-OAUTH-0006', description: 'this ' +
+                                       'client registered no keys, so a ' +
+                                       'private_key_jwt assertion cannot be ' +
+                                       'verified. Register a `jwks` — by ' +
+                                       'value — on its entry, or have this ' +
+                                       'service issue it a signing key pair ' +
+                                       'from /admin/pki.' };
     }
     // The kid narrows the set when the assertion names one and the JWKS uses
-    // them; otherwise every key is tried. Trying them all is correct rather than
-    // lax — a signature either verifies under a key or it does not, and a client
-    // that rotated without updating its kid is a client whose assertion is still
-    // genuine.
+    // them; otherwise every key is tried. Trying them all is correct rather
+    // than lax — a signature either verifies under a key or it does not, and a
+    // client that rotated without updating its kid is a client whose assertion
+    // is still genuine.
     const candidates = header.kid
       ? found.filter(function (one) { return one.kid === String(header.kid); })
       : found;
@@ -426,7 +473,8 @@ async function verifyAssertion(opts) {
         algorithms: [alg],
         // The audience and the issuer are checked here rather than by hand
         // below, so that a library that knows the rules applies them: `aud` may
-        // be an array and a single expected value must match ANY of its members.
+        // be an array and a single expected value must match ANY of its
+        // members.
         audience: audiences,
         issuer: clientId || undefined,
         clockTolerance: clockSkewSeconds()
@@ -439,10 +487,13 @@ async function verifyAssertion(opts) {
   if (!claims) {
     log.debug("Leaving verifyAssertion(). It did not verify.");
     return { ok: false, errorCode: 'STS-OAUTH-0007',
-             description: 'the client_assertion did not verify: ' + lastError + '. It must be ' +
-                          'signed by a key this client registered, name this client as both ' +
-                          '`iss` and `sub`, name one of ' + audiences.join(' or ') + ' as ' +
-                          '`aud`, and be unexpired.' };
+             description: 'the client_assertion did not verify: ' + lastError +
+                          '. ' +
+                          'It must be signed by a key this client ' +
+                          'registered, name this client as both `iss` and ' +
+                          '`sub`, name one of ' + audiences.join(' ' +
+                              'or ') + ' ' +
+                          'as `aud`, and be unexpired.' };
   }
   // THE REGISTERED KEY'S CERTIFICATE, NOW THAT IT HAS VERIFIED SOMETHING. A key
   // out of `jwks` or `oauthAssertionJwks` that carries an `x5c` is checked for
@@ -453,17 +504,22 @@ async function verifyAssertion(opts) {
   // which the verdict reports rather than calling good. Asynchronous, because
   // this function is.
   if (usedEntry && usedEntry.jwk) {
-    const keyRevocation = await revocationStatus.registeredKeyVerdictFor(usedEntry.jwk,
-      'the key "' + (usedEntry.kid || '(no kid)') + '" registered for client "' + clientId + '"');
+    const keyRevocation =
+        await revocationStatus.registeredKeyVerdictFor(usedEntry.jwk,
+      'the key "' + (usedEntry.kid || '(no kid)') +
+      '" registered for client "' + clientId + '"');
     if (keyRevocation.refused) {
-      log.warn('client_auth: the registered key that verified client "' + clientId +
+      log.warn('client_auth: the registered key that verified client "' +
+               clientId +
                '"\'s assertion is refused: ' + keyRevocation.why);
       log.debug("Leaving verifyAssertion(). The registered key is revoked.");
       return { ok: false, errorCode: 'STS-PKI-0129',
-               description: 'the key this client registered, which verified the assertion, may ' +
-                            'no longer be used: ' + keyRevocation.why };
+               description: 'the key this client registered, which verified ' +
+                            'the assertion, may no longer be ' +
+                            'used: ' + keyRevocation.why };
     }
-    log.debug('verifyAssertion(): ' + revocationStatus.registeredSummary(keyRevocation) + '.');
+    log.debug('verifyAssertion(): ' +
+              revocationStatus.registeredSummary(keyRevocation) + '.');
   }
   // RFC 7523 section 3: iss and sub are both the client. `iss` was checked
   // above by the library; `sub` is checked here because it is the one that says
@@ -471,11 +527,15 @@ async function verifyAssertion(opts) {
   // somebody else is a different thing entirely.
   if (String(claims.sub || '') !== clientId) {
     log.debug("Leaving verifyAssertion(). The subject is not this client.");
-    return { ok: false, errorCode: 'STS-OAUTH-0008', description: 'RFC 7523 section 3: a client assertion names the client ' +
-                                     'as both `iss` and `sub`. This one has sub="' +
-                                     (claims.sub || '') + '" where the client is "' + clientId +
-                                     '" — an assertion a client made ABOUT somebody else is ' +
-                                     'not that somebody authenticating.' };
+    return { ok: false, errorCode: 'STS-OAUTH-0008', description: 'RFC 7523 ' +
+                                     'section 3: a client assertion names ' +
+                                     'the client as both `iss` and `sub`. ' +
+                                     'This one has sub="' +
+                                     (claims.sub || '') + '" where the ' +
+                                         'client is "' + clientId +
+                                     '" — an assertion a client made ABOUT ' +
+                                     'somebody else is not that somebody ' +
+                                     'authenticating.' };
   }
   // -------------------------------------------------------------------
   // `exp` AND THE LIFETIME CEILING (2026-09-12).
@@ -497,10 +557,14 @@ async function verifyAssertion(opts) {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const hasExp = claims.exp !== undefined && claims.exp !== null;
   if (!hasExp && mode.verifiesCredentials()) {
-    log.debug("Leaving verifyAssertion(). No exp, and credentials are verified here.");
-    return { ok: false, errorCode: 'STS-OAUTH-0009', description: 'RFC 7523 section 3 claim 4: a client assertion MUST ' +
-                                     'carry an `exp`. One without it never expires, so it is a ' +
-                                     'credential anybody who captures it can use for ever.' };
+    log.debug("Leaving verifyAssertion(). No exp, and credentials are " +
+              "verified here.");
+    return { ok: false, errorCode: 'STS-OAUTH-0009', description: 'RFC 7523 ' +
+                                     'section 3 claim 4: a client assertion ' +
+                                     'MUST carry an `exp`. One without it ' +
+                                     'never expires, so it is a credential ' +
+                                     'anybody who captures it can use for ' +
+                                     'ever.' };
   }
   const cap = assertionLifetimeCap();
   if (cap && hasExp) {
@@ -509,53 +573,71 @@ async function verifyAssertion(opts) {
     const lifetime = Number(claims.exp) - from;
     if (lifetime > cap + clockSkewSeconds()) {
       log.debug("Leaving verifyAssertion(). The assertion lives too long.");
-      return { ok: false, errorCode: 'STS-OAUTH-0010', description: 'this client assertion is valid for ' + lifetime +
-                                       ' seconds and this authorization server accepts at most ' +
-                                       cap + ' (oauth2.jwtBearerMaxLifetimeS), measured from ' +
-                                       '`iat` or, where there is none, from now. Mint a ' +
+      return { ok: false, errorCode: 'STS-OAUTH-0010', description: 'this ' +
+          'client assertion is valid for ' + lifetime +
+                                       ' seconds and this authorization ' +
+                                       'server accepts at most ' +
+                                       cap + ' ' +
+                                       '(oauth2.jwtBearerMaxLifetimeS), ' +
+                                       'measured from `iat` or, where there ' +
+                                       'is none, from now. Mint a ' +
                                        'short-lived assertion per request.' };
     }
   }
   if (!claims.jti) {
-    return { ok: false, errorCode: 'STS-OAUTH-0011', description: 'RFC 7523 section 3: a client assertion must carry a `jti`, ' +
-                                     'so that this server can refuse a replay of it.' };
+    log.debug("Leaving verifyAssertion().");
+    return { ok: false, errorCode: 'STS-OAUTH-0011', description: 'RFC 7523 ' +
+                                     'section 3: a client assertion must ' +
+                                     'carry a `jti`, so that this server can ' +
+                                     'refuse a replay of it.' };
   }
   const room = forgetStaleAssertions();
   const key = clientId + ':' + String(claims.jti);
   if (seenAssertions.has(key)) {
-    log.warn('client_auth: client "' + clientId + '" replayed the assertion jti ' + claims.jti +
-             '. A signed assertion is a credential until it expires, so a second use of one is ' +
-             'refused (RFC 7523 section 3).');
+    log.warn('client_auth: client "' + clientId + '" replayed the assertion ' +
+                                                  'jti ' + claims.jti +
+             '. A signed assertion is a credential until it expires, so a ' +
+             'second use of one is refused (RFC 7523 section 3).');
     log.debug("Leaving verifyAssertion(). The jti was replayed.");
-    return { ok: false, errorCode: 'STS-OAUTH-0012', description: 'this client_assertion has been used already. Its `jti` is ' +
-                                     'remembered until the assertion expires, because a signed ' +
-                                     'assertion captured off the wire is a credential until ' +
-                                     'then. Mint a fresh one per request.' };
+    return { ok: false, errorCode: 'STS-OAUTH-0012', description: 'this ' +
+                                     'client_assertion has been used ' +
+                                     'already. Its `jti` is remembered until ' +
+                                     'the assertion expires, because a ' +
+                                     'signed assertion captured off the wire ' +
+                                     'is a credential until then. Mint a ' +
+                                     'fresh one per request.' };
   }
   if (!room) {
-    log.warn('client_auth: the client assertion replay cache for this realm is full of ' +
-             'unexpired entries (oauth2.assertionReplayCacheSize = ' + maxAssertions() +
-             '), so a new assertion from "' + clientId + '" is REFUSED rather than a live ' +
-             'one being forgotten.');
+    log.warn('client_auth: the client assertion replay cache for this realm ' +
+             'is full of unexpired entries (oauth2.assertionReplayCacheSize ' +
+             '= ' + maxAssertions() +
+             '), so a new assertion from "' + clientId + '" is REFUSED ' +
+             'rather than a live one being forgotten.');
     log.debug("Leaving verifyAssertion(). The replay cache is full.");
-    return { ok: false, errorCode: 'STS-OAUTH-0013', description: 'this authorization server is holding as many unexpired ' +
-                                     'client assertions as it is configured to remember ' +
-                                     '(oauth2.assertionReplayCacheSize), and it will not forget ' +
-                                     'one that could still be replayed in order to accept ' +
-                                     'yours. Retry shortly, with a short-lived assertion.' };
+    return { ok: false, errorCode: 'STS-OAUTH-0013', description: 'this ' +
+                                     'authorization server is holding as ' +
+                                     'many unexpired client assertions as it ' +
+                                     'is configured to remember ' +
+                                     '(oauth2.assertionReplayCacheSize), and ' +
+                                     'it will not forget one that could ' +
+                                     'still be replayed in order to accept ' +
+                                     'yours. Retry shortly, with a ' +
+                                     'short-lived assertion.' };
   }
   // Remembered until it expires — not for a fixed window — so the cache and the
-  // `exp` check cover exactly the same span between them, with no gap in which a
-  // replay would be accepted because the entry had been swept early. An
+  // `exp` check cover exactly the same span between them, with no gap in which
+  // a replay would be accepted because the entry had been swept early. An
   // assertion with NO `exp` (development only, see above) is remembered for the
   // lifetime ceiling where there is one and for five minutes where there is not
   // — it stays presentable after that, which is the permissiveness development
   // mode has, stated here rather than pretended away.
   const remembered = hasExp
     ? Number(claims.exp) * 1000
-    : Date.now() + (Number(config.value('oauth2.jwtBearerMaxLifetimeS')) || 300) * 1000;
+    : Date.now() +
+      (Number(config.value('oauth2.jwtBearerMaxLifetimeS')) || 300) * 1000;
   seenAssertions.set(key, remembered + clockSkewSeconds() * 1000);
-  log.debug("Leaving verifyAssertion(). Verified. alg=" + alg + ", jti=" + claims.jti);
+  log.debug("Leaving verifyAssertion(). Verified. alg=" + alg + ", jti=" +
+            claims.jti);
   return { ok: true, alg: alg, jti: String(claims.jti) };
 }
 
@@ -584,9 +666,11 @@ function subjectRfc4514(cert) {
   const subject = (cert && cert.subject) || {};
   const parts = [];
   Object.keys(subject).forEach(function (type) {
-    const values = Array.isArray(subject[type]) ? subject[type] : [subject[type]];
+    const values = Array.isArray(subject[type]) ? subject[type] :
+                   [subject[type]];
     values.forEach(function (value) {
-      parts.push(type + '=' + String(value).replace(/([,+="<>;\\\\])/g, '\\\\$1'));
+      parts.push(type + '=' +
+                 String(value).replace(/([,+="<>;\\\\])/g, '\\\\$1'));
     });
   });
   log.debug("Leaving subjectRfc4514().");
@@ -597,63 +681,78 @@ function verifyCertificate(opts) {
   log.debug("Entering verifyCertificate(). method=" + opts.method);
   const cert = mtls.peerCertificate(opts.request);
   if (!cert) {
-    log.debug("Leaving verifyCertificate(). No certificate on this connection.");
+    log.debug("Leaving verifyCertificate(). No certificate on this " +
+              "connection.");
     return { ok: false, errorCode: 'STS-OAUTH-0014',
-             description: 'RFC 8705 section 2: this client authenticates with its TLS client ' +
-                          'certificate, and this request arrived with none. The token endpoint ' +
-                          'has to be reached over a TLS connection that asked for one — set ' +
-                          'global.https, which RFC 9700 mode does by default.' };
+             description: 'RFC 8705 section 2: this client authenticates ' +
+                          'with its TLS client certificate, and this request ' +
+                          'arrived with none. The token endpoint has to be ' +
+                          'reached over a TLS connection that asked for one ' +
+                          '— set global.https, which RFC 9700 mode does by ' +
+                          'default.' };
   }
   // REVOCATION, CONSULTED (2026-09-12), before either match, for BOTH methods.
   // The certificate here is standing in for a client secret, and a revoked one
-  // is a secret its issuer withdrew. `common/app.js` computed the verdict before
-  // any route. **An UNVERIFIED certificate is looked up too** — the register
-  // needs no chain to say that this service revoked something it issued — and
-  // what it never does for one is dial a URL the certificate names, which is
-  // `common/revocation_status.js`'s rule. So `self_signed_tls_client_auth` with
-  // a certificate nobody issued is unaffected: there is nobody to revoke it.
+  // is a secret its issuer withdrew. `common/app.js` computed the verdict
+  // before any route. **An UNVERIFIED certificate is looked up too** — the
+  // register needs no chain to say that this service revoked something it
+  // issued — and what it never does for one is dial a URL the certificate
+  // names, which is `common/revocation_status.js`'s rule. So
+  // `self_signed_tls_client_auth` with a certificate nobody issued is
+  // unaffected: there is nobody to revoke it.
   const revocation = opts.request && opts.request.certificateRevocation;
   if (revocation && revocation.refused) {
     log.debug("Leaving verifyCertificate(). Refused on revocation.");
     return { ok: false,
-             errorCode: revocation.status === 'revoked' ? 'STS-PKI-0118' : 'STS-PKI-0119',
-             description: 'RFC 8705 section 2: the client certificate on this connection ' +
-                          'was refused on revocation (pki.revocationCheck is ' +
+             errorCode: revocation.status === 'revoked' ? 'STS-PKI-0118' :
+                        'STS-PKI-0119',
+             description: 'RFC 8705 section 2: the client certificate on ' +
+                          'this connection was refused on revocation ' +
+                          '(pki.revocationCheck is ' +
                           revocation.policy + '). ' + revocation.why };
   }
   if (opts.method === 'self_signed_tls_client_auth') {
     const registered = String(opts.certificateThumbprint || '');
     if (!registered) {
+      log.debug("Leaving verifyCertificate().");
       return { ok: false, errorCode: 'STS-OAUTH-0015',
-               description: 'this client authenticates with a self-signed certificate ' +
-                            '(RFC 8705 section 2.2) and has none registered. Put its SHA-256 ' +
-                            'thumbprint on its entry as oauthTlsClientCertificateThumbprint.' };
+               description: 'this client authenticates with a self-signed ' +
+                            'certificate (RFC 8705 section 2.2) and has none ' +
+                            'registered. Put its SHA-256 thumbprint on its ' +
+                            'entry as oauthTlsClientCertificateThumbprint.' };
     }
     const presented = mtls.thumbprintOf(cert);
     if (presented !== registered) {
       log.debug("Leaving verifyCertificate(). The thumbprint does not match.");
       return { ok: false, errorCode: 'STS-OAUTH-0016',
-               description: 'RFC 8705 section 2.2: this client registered the certificate whose ' +
-                            'SHA-256 thumbprint is ' + registered + ', and this connection was ' +
-                            'made with the one whose thumbprint is ' + presented + '.' };
+               description: 'RFC 8705 section 2.2: this client registered ' +
+                            'the certificate whose SHA-256 thumbprint ' +
+                            'is ' + registered + ', and ' +
+                            'this connection was made with the one whose ' +
+                            'thumbprint is ' + presented + '.' };
     }
     log.debug("Leaving verifyCertificate(). The thumbprint matches.");
     return { ok: true, subject: subjectRfc4514(cert), thumbprint: presented };
   }
   const registeredDn = String(opts.subjectDn || '');
   if (!registeredDn) {
+    log.debug("Leaving verifyCertificate().");
     return { ok: false, errorCode: 'STS-OAUTH-0017',
-             description: 'this client authenticates with a PKI certificate (RFC 8705 section ' +
-                          '2.1) and has no subject DN registered. Put it on its entry as ' +
-                          'oauthTlsClientAuthSubjectDn, in RFC 4514 form — the spelling ' +
-                          '/admin/users files a verified certificate under.' };
+             description: 'this client authenticates with a PKI certificate ' +
+                          '(RFC 8705 section 2.1) and has no subject DN ' +
+                          'registered. Put it on its entry as ' +
+                          'oauthTlsClientAuthSubjectDn, in RFC 4514 form — ' +
+                          'the spelling /admin/users files a verified ' +
+                          'certificate under.' };
   }
   const presentedDn = subjectRfc4514(cert);
   if (presentedDn !== registeredDn) {
     log.debug("Leaving verifyCertificate(). The subject DN does not match.");
     return { ok: false, errorCode: 'STS-OAUTH-0018',
-             description: 'RFC 8705 section 2.1.2: this client registered the subject DN "' +
-                          registeredDn + '" and the certificate on this connection has "' +
+             description: 'RFC 8705 section 2.1.2: this client registered ' +
+                          'the subject DN "' +
+                          registeredDn + '" and the certificate on this ' +
+                                         'connection has "' +
                           presentedDn + '".' };
   }
   // NOT a check on the chain, and that is worth being explicit about rather
@@ -663,12 +762,15 @@ function verifyCertificate(opts) {
   // verified here is possession of the private key for a certificate with the
   // registered subject, which the TLS handshake proves, and NOT that a CA
   // vouched for it. A real deployment must do both.
-  log.warn('RFC 8705 section 2.1: client "' + (opts.clientId || '') + '" authenticated by its ' +
-           'certificate subject DN. This service does NOT validate the certificate chain — the ' +
-           'truststore at /tls/trust starts empty by design — so what was proved is possession ' +
-           'of the key for a certificate carrying that subject, not that a CA issued it.');
+  log.warn('RFC 8705 section 2.1: client "' + (opts.clientId || '') + '" ' +
+           'authenticated by its certificate subject DN. This service does ' +
+           'NOT validate the certificate chain — the truststore at ' +
+           '/tls/trust starts empty by design — so what was proved is ' +
+           'possession of the key for a certificate carrying that subject, ' +
+           'not that a CA issued it.');
   log.debug("Leaving verifyCertificate(). The subject DN matches.");
-  return { ok: true, subject: presentedDn, thumbprint: mtls.thumbprintOf(cert) };
+  return { ok: true, subject: presentedDn,
+           thumbprint: mtls.thumbprintOf(cert) };
 }
 
 // ---------------------------------------------------------------------------
@@ -687,22 +789,28 @@ async function verify(opts) {
   log.debug("Entering verify().");
   const info = opts || {};
   const method = String(info.method || '');
-  log.debug("Entering verify(). method=" + method + ", client=" + info.clientId);
+  log.debug("Entering verify(). method=" + method + ", client=" +
+            info.clientId);
 
   if (method === 'client_secret_basic' || method === 'client_secret_post') {
     if (!info.presentedSecret) {
       log.debug("Leaving verify(). No secret was presented.");
       log.debug("Leaving verify().");
-      return { ok: false, errorCode: 'STS-OAUTH-0019', description: 'no client_secret was presented. Send it by ' +
+      return { ok: false, errorCode: 'STS-OAUTH-0019', description: 'no ' +
+          'client_secret was presented. Send it by ' +
                                        (method === 'client_secret_post'
-                                         ? 'client_secret_post (a client_secret form parameter).'
-                                         : 'client_secret_basic (an Authorization: Basic header).') };
+                                         ? 'client_secret_post (a ' +
+                                           'client_secret form parameter).'
+                                         : 'client_secret_basic (an ' +
+                                           'Authorization: Basic header).') };
     }
     if (!secretsMatch(info.presentedSecret, info.clientSecret)) {
       log.debug("Leaving verify(). The secret did not match.");
       log.debug("Leaving verify().");
-      return { ok: false, errorCode: 'STS-OAUTH-0020', description: 'the client_secret presented is not the one on this ' +
-                                       'client\'s entry in the application registry.' };
+      return { ok: false, errorCode: 'STS-OAUTH-0020', description: 'the ' +
+                                       'client_secret presented is not the ' +
+                                       'one on this client\'s entry in the ' +
+                                       'application registry.' };
     }
     log.debug("Leaving verify(). The secret matched.");
     log.debug("Leaving verify().");
@@ -713,15 +821,21 @@ async function verify(opts) {
     if (!info.assertion) {
       log.debug("Leaving verify(). No assertion was presented.");
       log.debug("Leaving verify().");
-      return { ok: false, errorCode: 'STS-OAUTH-0021', description: 'this client authenticates with ' + method + ', so the ' +
-                                       'request must carry client_assertion and ' +
-                                       'client_assertion_type=' + ASSERTION_TYPE + '.' };
+      return { ok: false, errorCode: 'STS-OAUTH-0021', description: 'this ' +
+          'client authenticates with ' + method + ', ' +
+                                       'so the request must carry ' +
+                                       'client_assertion and ' +
+                                       'client_assertion_type=' +
+          ASSERTION_TYPE + '.' };
     }
     if (String(info.assertionType || '') !== ASSERTION_TYPE) {
       log.debug("Leaving verify(). The assertion type is wrong.");
       log.debug("Leaving verify().");
-      return { ok: false, errorCode: 'STS-OAUTH-0022', description: 'client_assertion_type must be "' + ASSERTION_TYPE +
-                                       '" (RFC 7523 section 2.2). This request says "' +
+      return { ok: false, errorCode: 'STS-OAUTH-0022',
+               description: 'client_assertion_type ' +
+          'must be "' + ASSERTION_TYPE +
+                                       '" (RFC 7523 section 2.2). This ' +
+                                       'request says "' +
                                        (info.assertionType || '') + '".' };
     }
     const checked = await verifyAssertion({
@@ -763,9 +877,12 @@ async function verify(opts) {
   if (method === 'saml2_bearer') {
     if (!info.assertion) {
       log.debug("Leaving verify(). No SAML assertion was presented.");
-      return { ok: false, errorCode: 'STS-OAUTH-0023', description: 'this client authenticates with ' + method +
-                                       ', so the request must carry client_assertion and ' +
-                                       'client_assertion_type=' + SAML_ASSERTION_TYPE +
+      return { ok: false, errorCode: 'STS-OAUTH-0023', description: 'this ' +
+          'client authenticates with ' + method +
+                                       ', so the request must carry ' +
+                                       'client_assertion and ' +
+                                       'client_assertion_type=' +
+          SAML_ASSERTION_TYPE +
                                        ' (RFC 7522 section 2.2).' };
     }
     if (String(info.assertionType || '') !== SAML_ASSERTION_TYPE) {
@@ -775,13 +892,18 @@ async function verify(opts) {
       // good JWT under the wrong type is the least useful true sentence
       // available.
       log.debug("Leaving verify(). The SAML assertion type is wrong.");
-      return { ok: false, errorCode: 'STS-OAUTH-0024', description: 'client_assertion_type must be "' +
-                                       SAML_ASSERTION_TYPE + '" (RFC 7522 section 2.2). ' +
-                                       'This request says "' + (info.assertionType || '') +
+      return { ok: false, errorCode: 'STS-OAUTH-0024',
+               description: 'client_assertion_type ' +
+          'must be "' +
+                                       SAML_ASSERTION_TYPE + '" (RFC 7522 ' +
+                                       'section 2.2). This request says ' +
+                                       '"' + (info.assertionType || '') +
                                        '"' +
-                                       (String(info.assertionType || '') === ASSERTION_TYPE
-                                         ? ', which is RFC 7523\'s JWT profile — this ' +
-                                           'client is registered for the SAML 2.0 one'
+                                       (String(info.assertionType ||
+                                               '') === ASSERTION_TYPE
+                                         ? ', which is RFC 7523\'s JWT ' +
+                                           'profile — this client is ' +
+                                           'registered for the SAML 2.0 one'
                                          : '') + '.' };
     }
     const checked = await samlAssertionGrant.verify({
@@ -796,17 +918,20 @@ async function verify(opts) {
     });
     if (!checked.ok) {
       log.debug("Leaving verify(). The SAML assertion was refused.");
-      return { ok: false, errorCode: checked.errorCode, description: checked.description };
+      return { ok: false, errorCode: checked.errorCode,
+               description: checked.description };
     }
     log.debug("Leaving verify(). The SAML assertion verified.");
     return { ok: true, method: method, alg: checked.signatureMethod,
              jti: checked.id };
   }
 
-  if (method === 'tls_client_auth' || method === 'self_signed_tls_client_auth') {
+  if (method === 'tls_client_auth' ||
+      method === 'self_signed_tls_client_auth') {
     const checked = verifyCertificate({
       method: method, request: info.request, clientId: info.clientId,
-      subjectDn: info.subjectDn, certificateThumbprint: info.certificateThumbprint
+      subjectDn: info.subjectDn,
+      certificateThumbprint: info.certificateThumbprint
     });
     if (!checked.ok) {
       log.debug("Leaving verify(). The certificate was refused.");
@@ -825,8 +950,10 @@ async function verify(opts) {
   log.debug("Leaving verify(). Unknown method.");
   log.debug("Leaving verify().");
   return { ok: false, errorCode: 'STS-OAUTH-0025',
-           description: 'this client\'s entry says token_endpoint_auth_method="' + method +
-                        '", which this server cannot verify. The ' + METHODS.length +
+           description:
+             'this client\'s entry says token_endpoint_auth_method="' + method +
+                        '", which this server cannot verify. The ' +
+                        METHODS.length +
                         ' it can are: ' + METHODS.join(', ') + '.' };
 }
 
@@ -840,5 +967,9 @@ module.exports = {
   subjectRfc4514: subjectRfc4514,
   verify: verify,
   // For the pages that report how many assertions are being remembered.
-  assertionsRemembered: function () { return seenAssertions.size; }
+  assertionsRemembered: function () {
+    log.debug("Entering assertionsRemembered().");
+    log.debug("Leaving assertionsRemembered().");
+    return seenAssertions.size;
+  }
 };

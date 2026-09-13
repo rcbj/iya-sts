@@ -109,6 +109,7 @@ const VERSION = version.load().version;
 // do exactly the operations the console would let them press a button for.
 // ---------------------------------------------------------------------------
 function scopesFor(gate) {
+  log.debug("Entering scopesFor().");
   const scopes = [];
   if (gate.read) {
     scopes.push('admin:read');
@@ -116,12 +117,15 @@ function scopesFor(gate) {
   if (gate.write) {
     scopes.push('admin:write');
   }
+  log.debug("Leaving scopesFor().");
   return scopes.join(' ');
 }
 
 // The audience `/admin-api` answers to, computed the way that file computes it:
 // outside any realm, because the credential is service-wide.
 function audienceFor(req) {
+  log.debug("Entering audienceFor().");
+  log.debug("Leaving audienceFor().");
   return realms.run(realms.get(realms.DEFAULT_ID), function () {
     return baseUrlOf(req);
   }) + adminApi.BASE;
@@ -174,6 +178,7 @@ function tokenFor(req, gate) {
 // document: that is what the route below serves, and repeating it here would be
 // a second copy of a large thing in a reply whose subject is the PAGE.
 function explorerJson(req) {
+  log.debug("Entering explorerJson().");
   const gate = adminViews.gateStateFor(req);
   const document = spec.buildSpec(adminApi.ROUTES, adminApi.specOptions(req));
   const paths = Object.keys(document.paths || {});
@@ -181,6 +186,7 @@ function explorerJson(req) {
   paths.forEach(function (one) {
     operations += Object.keys(document.paths[one] || {}).length;
   });
+  log.debug("Leaving explorerJson().");
   return {
     page: PATH,
     api: adminApi.BASE,
@@ -198,7 +204,8 @@ function explorerJson(req) {
     audience: audienceFor(req),
     // The token is NOT in this reply. It is a credential, and `?format=json` is
     // the shape a script reads — a page handing one to a browser it has already
-    // authenticated is a different act from an API handing one to whoever asked.
+    // authenticated is a different act from an API handing one to whoever
+    // asked.
     tokenInReply: false
   };
 }

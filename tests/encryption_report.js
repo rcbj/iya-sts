@@ -33,11 +33,19 @@ delete process.env.CONFIG_FILE;
 const crypto = require('../common/crypto');
 const encryption = require('../admin-ui/encryption_admin');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'encryption_report',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const KEK = 'a'.repeat(64);
 const OTHER_KEK = 'b'.repeat(64);
 
 async function run(t) {
-  t.log.info('=== A. the algorithm is READ from the module that performs it ===');
+  log.debug("Entering run().");
+  t.log.info('=== A. the algorithm is READ from the module that performs it ' +
+             '===');
 
   const params = crypto.KEK_PARAMETERS;
   t.equal(params.cipher, 'aes-256-gcm',
@@ -127,6 +135,7 @@ async function run(t) {
   try {
     crypto.decryptWithKek(OTHER_KEK, sealed, 'probe-a');
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     threw = true;
   }
   t.check(threw,
@@ -148,6 +157,7 @@ async function run(t) {
   try {
     crypto.decryptWithKek(KEK, 'this is not a sealed value at all', 'probe-a');
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     malformedThrew = true;
   }
   t.check(malformedThrew, 'a value this service did not write is refused');
@@ -252,6 +262,7 @@ async function run(t) {
   t.check(String(drifted.key.note).length > 100,
           'and the report says which of the two states it is in, in words, ' +
           'rather than leaving a reader to infer it from two booleans');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

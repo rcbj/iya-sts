@@ -189,11 +189,15 @@ function setDirectory(fns) {
 // service calls this, exactly as nothing calls
 // `applications.directoryInstalled()`.
 function directoryInstalled() {
+  log.debug("Entering directoryInstalled().");
+  log.debug("Leaving directoryInstalled().");
   return directory;
 }
 
 function haveDirectory() {
+  log.debug("Entering haveDirectory().");
   if (directory) {
+    log.debug("Leaving haveDirectory().");
     return true;
   }
   if (!warnedAboutNoDirectory) {
@@ -206,6 +210,7 @@ function haveDirectory() {
              'fallback store, deliberately — a policy repository that ' +
              'quietly lived in memory would decide things nobody could find.');
   }
+  log.debug("Leaving haveDirectory().");
   return false;
 }
 
@@ -291,19 +296,24 @@ function all() {
 // call sites cannot each get it right separately.
 // ---------------------------------------------------------------------------
 function attributeReader(attributes) {
+  log.debug("Entering attributeReader().");
   const lowered = {};
   Object.keys(attributes || {}).forEach(function (key) {
     lowered[key.toLowerCase()] = attributes[key];
   });
+  log.debug("Leaving attributeReader().");
   return function (name) {
     return one(lowered[String(name).toLowerCase()]);
   };
 }
 
 function one(value) {
+  log.debug("Entering one().");
   if (Array.isArray(value)) {
+    log.debug("Leaving one().");
     return value.length ? String(value[0]) : null;
   }
+  log.debug("Leaving one().");
   return value === undefined || value === null ? null : String(value);
 }
 

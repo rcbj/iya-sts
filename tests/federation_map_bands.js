@@ -51,14 +51,20 @@
 delete process.env.CONFIG_FILE;
 
 const diagram = require('../admin-ui/federation_diagram');
-// `ldap_server.js` is what fills `federation.js`'s directory slot — ou=federations
-// IS the store and there is deliberately no fallback Map — so the model half
-// below cannot run without it. Requiring it here registers the `/ldap` routes,
-// which costs nothing in a test that never listens.
+// `ldap_server.js` is what fills `federation.js`'s directory slot —
+// ou=federations IS the store and there is deliberately no fallback Map — so
+// the model half below cannot run without it. Requiring it here registers the
+// `/ldap` routes, which costs nothing in a test that never listens.
 require('../ldap/ldap_server');
 const federation = require('../federation/federation');
 const federationGraph = require('../federation/federation_graph');
 const applications = require('../common/applications');
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'federation_map_bands',
+  level: process.env.LOG_LEVEL || 'info' });
 
 // ---------------------------------------------------------------------------
 // READING THE PICTURE BACK.
@@ -69,6 +75,7 @@ const applications = require('../common/applications');
 // a `marker-end`, which is the only shape in the document that has one.
 // ---------------------------------------------------------------------------
 function boxes(svg) {
+  log.debug("Entering boxes().");
   const out = [];
   // `<title>…</title>` then either a rect (x/y/width/height) or a hexagon path
   // whose first two numbers are its left inset and its top.
@@ -91,10 +98,12 @@ function boxes(svg) {
     }
     m = re.exec(svg);
   }
+  log.debug("Leaving boxes().");
   return out;
 }
 
 function lines(svg) {
+  log.debug("Entering lines().");
   const out = [];
   const re = /<path d="([^"]+)" fill="none" stroke="([^"]+)"[^>]*marker-end/g;
   let m = re.exec(svg);
@@ -107,10 +116,13 @@ function lines(svg) {
                from: points[0], to: points[points.length - 1] });
     m = re.exec(svg);
   }
+  log.debug("Leaving lines().");
   return out;
 }
 
 function boxNamed(svg, text) {
+  log.debug("Entering boxNamed().");
+  log.debug("Leaving boxNamed().");
   return boxes(svg).filter(function (one) {
     return one.title.indexOf(text) >= 0;
   })[0] || null;
@@ -124,11 +136,14 @@ function boxNamed(svg, text) {
 // own record shape, which is what `describe()` reads.
 // ---------------------------------------------------------------------------
 function relationship(over) {
+  log.debug("Entering relationship().");
+  log.debug("Leaving relationship().");
   return Object.assign({
     fedId: 'r', fedName: '', fedRole: 'service-provider', fedProtocol: 'saml2',
     fedPeer: 'https://partner.example', fedApplication: '',
     fedEnabled: 'TRUE', fedSsoUrl: 'https://partner.example/sso',
-    fedSigningCertificate: '-----BEGIN CERTIFICATE-----\nx\n-----END CERTIFICATE-----',
+    fedSigningCertificate: '-----BEGIN CERTIFICATE-----\nx\n-----END ' +
+                           'CERTIFICATE-----',
     fedAuthentications: '0', fedUsers: '0', fedLastUser: '', fedLastSeen: '',
     fedLastError: '', fedLastErrorAt: '', fedRelease: [],
     fedAuthnMechanism: '', fedAuthnRelationship: '', fedApplicationUse: []
@@ -136,6 +151,8 @@ function relationship(over) {
 }
 
 function render(nodes, edges) {
+  log.debug("Entering render().");
+  log.debug("Leaving render().");
   return diagram.render({ nodes: nodes, edges: edges },
                         { links: false, id: 't', label: 'test' });
 }
@@ -146,6 +163,7 @@ module.exports = {
             'and the per-application counts account for themselves',
   run: function (t) {
 
+    log.debug("Entering run().");
     // -------------------------------------------------------------------
     // 1. THE THREE BANDS.
     //
@@ -193,15 +211,18 @@ module.exports = {
       // edge is sts -> partner, which puts this box on the right.
       t.check(app.right < hex.left,
               'an application is left of the hexagon',
-              'application right edge ' + app.right + ', hexagon left ' + hex.left);
+              'application right edge ' + app.right + ', hexagon left ' +
+              hex.left);
       t.check(fsp.right < hex.left,
               'a FOREIGN SERVICE PROVIDER is left of the hexagon — it asks, ' +
               'even though this service asserts to it',
-              'partner-sp right edge ' + fsp.right + ', hexagon left ' + hex.left);
+              'partner-sp right edge ' + fsp.right + ', hexagon left ' +
+              hex.left);
       // WHO AUTHENTICATES IS RIGHT.
       t.check(fidp.left > hex.right,
               'a FOREIGN IDENTITY PROVIDER is right of the hexagon',
-              'partner-idp left edge ' + fidp.left + ', hexagon right ' + hex.right);
+              'partner-idp left edge ' + fidp.left + ', hexagon right ' +
+              hex.right);
     }
 
     // Every line runs left to right, which is the same claim read off the
@@ -210,7 +231,8 @@ module.exports = {
     // boxes in the right bands.
     const drawn = lines(bands.svg);
     t.equal(drawn.length, 3, 'three lines are drawn');
-    const backwards = drawn.filter(function (one) { return one.to.x <= one.from.x; });
+    const backwards =
+        drawn.filter(function (one) { return one.to.x <= one.from.x; });
     t.equal(backwards.length, 0,
             'every arrow points rightward — nothing asks from the right or ' +
             'answers from the left',
@@ -246,7 +268,8 @@ module.exports = {
       const line = lines(one.svg)[0];
       strokes[key] = line ? line.stroke : '(no line)';
     });
-    const distinct = Object.keys(strokes).map(function (k) { return strokes[k]; })
+    const distinct = Object.keys(strokes)
+                           .map(function (k) { return strokes[k]; })
       .filter(function (v, i, all) { return all.indexOf(v) === i; });
     t.equal(distinct.length, 4,
             'ready, disabled, enabled-but-unconfigured and a broker that ' +
@@ -266,19 +289,24 @@ module.exports = {
     t.log.info('a broker is one line and keeps its counts');
     const made = [];
     const make = function (info) {
+      log.debug("Entering make().");
       const result = federation.create(info);
       if (!result.ok) {
         throw new Error('could not create ' + info.id + ': ' +
                         result.errors.join(' '));
       }
       made.push(info.id);
+      log.debug("Leaving make().");
     };
+
     const set = function (id, field, value) {
+      log.debug("Entering set().");
       const result = federation.update(id, { field: field, value: value });
       if (!result.ok) {
         throw new Error('could not set ' + field + ' on ' + id + ': ' +
                         result.errors.join(' '));
       }
+      log.debug("Leaving set().");
     };
 
     make({ id: 'fmb-upstream', role: 'service-provider', protocol: 'saml2',
@@ -304,7 +332,8 @@ module.exports = {
     // A fixture that silently does not happen is the one failure mode a test
     // cannot tell from the thing it is testing being broken.
     const created = applications.createApplication({ identifier: 'fmb-webapp',
-                                                     kind: 'oidc-relying-party' });
+                                                     kind:
+                                                       'oidc-relying-party' });
     t.check(created.ok !== false, 'the fixture application was created',
             JSON.stringify(created.errors || []));
     const pointed = applications.updateApplication('fmb-webapp',
@@ -342,9 +371,10 @@ module.exports = {
         return e.from === partnerId;
       });
       t.equal(fromPartner.length, 1,
-              'a brokered partner has ONE arrow into the hexagon, not one per ' +
-              'relationship that describes it',
-              fromPartner.map(function (e) { return e.id + '/' + e.relation; }).join(', '));
+              'a brokered partner has ONE arrow into the hexagon, not one ' +
+              'per relationship that describes it',
+              fromPartner.map(function (e) { return e.id + '/' + e.relation; })
+                         .join(', '));
       t.equal((fromPartner[0] || {}).relation, 'asks',
               'and it is the identity-provider side\'s arrow — the one that ' +
               'names the relationship that brokered it');
@@ -372,21 +402,22 @@ module.exports = {
         return n.kind === 'application' && n.label === 'fmb-partner-app';
       });
       t.equal(appBoxes.length, 0,
-              'the brokered partner is not ALSO drawn as a local application — ' +
-              'one party, one box');
+              'the brokered partner is not ALSO drawn as a local application ' +
+              '— one party, one box');
 
       // THE ARITHMETIC. Four sign-ins crossed the relationship; three named a
       // configured application; one named none.
       t.equal(upstream.authentications, 4,
               'the relationship counted every sign-in that crossed it');
       t.equal(upstream.attributed, 3,
-              'three of them named an application this service is configured for');
+              'three of them named an application this service is configured ' +
+              'for');
       t.equal(upstream.unattributed, 1,
-              'and the remainder is REPORTED rather than left as a column that ' +
-              'does not add up');
+              'and the remainder is REPORTED rather than left as a column ' +
+              'that does not add up');
       t.equal(upstream.applicationCount, 2,
-              'two applications are configured to use it — one through its own ' +
-              'entry and one through the relationship brokering to it');
+              'two applications are configured to use it — one through its ' +
+              'own entry and one through the relationship brokering to it');
     }
 
     // -------------------------------------------------------------------
@@ -401,14 +432,15 @@ module.exports = {
     // -------------------------------------------------------------------
     t.log.info('a pair this service is not configured for gets no row');
     federation.recordUse('fmb-upstream', { user: 'mallory',
-                                           application: 'not-configured-at-all' });
+                                           application:
+                                             'not-configured-at-all' });
     const after = federationGraph.graph({ q: 'fmb-upstream' }).relationships[0];
     const invented = (after.applications || []).filter(function (one) {
       return one.application === 'not-configured-at-all';
     });
     t.equal(invented.length, 0,
-            'an application nothing names got no per-application row, however ' +
-            'insistently the request named it');
+            'an application nothing names got no per-application row, ' +
+            'however insistently the request named it');
     t.equal(after.authentications, 5,
             'while the relationship\'s own total still moved — the sign-in ' +
             'happened and is not hidden');
@@ -428,5 +460,6 @@ module.exports = {
     });
     t.equal(left.length, 0, 'this test cleaned up after itself',
             left.map(function (r) { return r.fedId; }).join(', '));
+    log.debug("Leaving run().");
   }
 };

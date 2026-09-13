@@ -1240,6 +1240,22 @@ composeUp()
       # naming both launchers rather than on a URL this script promised.
       export STS_LDAP_URL="ldap://localhost:${STS_LDAP_HOST_PORT}"
       # -------------------------------------------------------------------
+      # AND WHERE THE SERVICE CAN DIAL BACK INTO THIS MACHINE (2026-09-12).
+      #
+      # `sts_gnap_core` section 6 runs a listener in the JOB and has the
+      # authorization server POST an RFC 9635 push finish to it. The job
+      # defaulted the host to `localhost`, which from inside the service's
+      # container is the container itself — so every mode of every run
+      # failed with "0 !== 1 pushes", while the service logged that it had
+      # dialled `http://localhost:<port>` and been refused. The runner is a
+      # host process here, so the address is this compose network's GATEWAY:
+      # docker gives a user-defined network `.1`, and it is derived from the
+      # SUBNET chosen above for that block's reason. An operator's own value
+      # wins. `--no-docker` never reaches this line, and `localhost` is
+      # right there.
+      # -------------------------------------------------------------------
+      export GNAP_PUSH_HOST="${GNAP_PUSH_HOST:-${STS_NETWORK_PREFIX}.1}"
+      # -------------------------------------------------------------------
       # AND THE PORT ON ITS OWN, BECAUSE TWO JOBS ASK TWO DIFFERENT QUESTIONS
       # (2026-09-09).
       #
@@ -1616,6 +1632,12 @@ ARGS+=("--protocol=${PROTOCOL}")
 # this default OFF rather than being half-overridden, because naming a file
 # says something more specific than a level does and a service logging at
 # `info` out of a file that says `debug` is nobody's idea of an answer.
+#
+# EVERY APPCONFIG FILE IN env/ IS AT `info` SINCE 2026-09-12, env/local.js and
+# env/docker-tests.js included, because every function now logs its entry and
+# exit at debug. So the file this block picks no longer changes the level: a
+# trace or debug run raises what STS_LOG_LEVEL reaches, and the vendored
+# modules stay at info unless CONFIG_FILE names a file that says otherwise.
 #
 # The three branches rather than a `:-`: an EMPTY STS_LOG_LEVEL is not a
 # harmless default. bunyan throws `unknown level name: ""` while the service is

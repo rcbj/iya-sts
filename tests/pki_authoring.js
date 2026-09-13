@@ -52,6 +52,12 @@ const x509 = require('../common/vendored/x509');
 // it and no port is bound.
 const pkiAdmin = require('../admin-ui/pki_admin');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'pki_authoring',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A realm per section, so that nothing below depends on the order the sections
 // run in — every one of these is a partition of the keystore's PKI map, and a
 // section reusing another's realm would be a test that passes because of what
@@ -67,6 +73,7 @@ const EXPORT = 'pane-export';
 // would pass every positive case here. So: one helper, and it checks the
 // MESSAGE as well as the throw.
 function refuses(t, fn, pattern, what) {
+  log.debug("Entering refuses().");
   let threw = null;
   try {
     fn();
@@ -75,12 +82,15 @@ function refuses(t, fn, pattern, what) {
   }
   if (!threw) {
     t.check(false, what, 'it did not refuse at all');
+    log.debug("Leaving refuses().");
     return;
   }
   t.check(pattern.test(threw.message), what, threw.message);
+  log.debug("Leaving refuses().");
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== every declared field is drawn, and every drawn field is ' +
              'declared ===');
 
@@ -142,8 +152,8 @@ async function run(t) {
           'a text field is trimmed');
   t.equal(posted.pki_private_key, '  PEM\n  ',
           'and a KEY field is not: PEM has meaningful line breaks, and a ' +
-          'field whose whole content is a wire format is the one place a trim ' +
-          'is a change');
+          'field whose whole content is a wire format is the one place a ' +
+          'trim is a change');
   // **A BROWSER CANNOT PRODUCE THESE AND `/admin-api` CAN**, which is why the
   // reading is not `!!raw`. A JSON caller that sends `"false"` or `"0"` for a
   // box it means to leave clear is writing the word for OFF, and reading it as
@@ -183,8 +193,8 @@ async function run(t) {
   refuses(t, function () { authoring.parseAltNames(['example.test']); },
            /has no type/,
            'a name with no type is REFUSED and the message names the line — ' +
-           'dropping it would produce a certificate silently missing the name ' +
-           'somebody typed, which verifies');
+           'dropping it would produce a certificate silently missing the ' +
+           'name somebody typed, which verifies');
   refuses(t, function () { authoring.parseAltNames(['nonsense:x']); },
            /Unknown alternative name type/,
            'and so is a type this encoder does not have');
@@ -228,7 +238,10 @@ async function run(t) {
           'place a general name is not simply an address');
   refuses(t, function () { authoring.parseNameConstraints(['dns:x.test']); },
            /permit|exclude/, 'a constraint with no verb is refused');
-  refuses(t, function () { authoring.parseNameConstraints(['allow dns:x.test']); },
+  refuses(t,
+           function () {
+             authoring.parseNameConstraints(['allow dns:x.test']);
+           },
            /starts with "permit"/,
            'and so is one with a verb this page does not have, rather than ' +
            'its being read as one of the two that it is not');
@@ -252,8 +265,8 @@ async function run(t) {
           }).join(','),
           'CN,O,C,businessCategory,1.3.6.1.4.1.311.60.2.1.3',
           'the named boxes in ENCODING order, then the extra lines as ' +
-          'written — a Name is an ordered RDNSequence and a reordered DN is a ' +
-          'different name that chains to nothing');
+          'written — a Name is an ordered RDNSequence and a reordered DN is ' +
+          'a different name that chains to nothing');
   t.check(subject[3].name === 'businessCategory' && subject[4].oid,
           'a name the encoder knows goes in BY NAME and one it does not goes ' +
           'in by OID, which is what lets a DN carry an attribute this page ' +
@@ -355,13 +368,15 @@ async function run(t) {
   // that survived a round because the assertion matched on an extension NAME
   // the encoder never writes; an OID is what is actually in the DER, so a
   // renamed table entry cannot make this pass or fail.
-  const described = await x509.describeCertificate(issued.object.certificatePem);
+  const described = await x509.describeCertificate(
+      issued.object.certificatePem);
   const byOid = {};
   (described.extensions || []).forEach(function (one) {
     byOid[one.oid] = one;
   });
   [['2.5.29.19', 'basicConstraints'], ['2.5.29.15', 'keyUsage'],
-   ['2.5.29.17', 'subjectAltName'], ['1.3.6.1.5.5.7.1.1', 'authorityInfoAccess'],
+   ['2.5.29.17', 'subjectAltName'],
+   ['1.3.6.1.5.5.7.1.1', 'authorityInfoAccess'],
    ['2.5.29.31', 'cRLDistributionPoints'], ['2.5.29.32', 'certificatePolicies'],
    ['2.5.29.30', 'nameConstraints'],
    ['2.16.840.1.113730.1.13', 'the Netscape comment'],
@@ -369,8 +384,8 @@ async function run(t) {
    ['1.3.6.1.4.1.99999.7.7', 'an extension this page has never heard of']
   ].forEach(function (pair) {
     t.check(!!byOid[pair[0]],
-            'the certificate carries ' + pair[1] + ' (' + pair[0] + '), which ' +
-            'means the box on the form reached the encoder');
+            'the certificate carries ' + pair[1] + ' (' + pair[0] + '), ' +
+            'which means the box on the form reached the encoder');
   });
   const san = JSON.stringify((byOid['2.5.29.17'] || {}).value || []);
   t.check(/ca\.example\.test/.test(san) && /10\.0\.0\.1/.test(san),
@@ -429,7 +444,8 @@ async function run(t) {
       pki_issuer: first.object.id }));
   t.check(leaf.ok, 'and a leaf is issued from it',
           (leaf.errors || []).join(' '));
-  t.equal(authoring.chainFor(STORE, pki.objectFor(STORE, leaf.object.id)).length,
+  t.equal(authoring.chainFor(STORE,
+                             pki.objectFor(STORE, leaf.object.id)).length,
           1, 'the chain above that leaf is its issuer and nothing else');
 
   // BUILDING THE HIERARCHY MUST NOT EMPTY THE STORE, and clearing it must not
@@ -534,14 +550,15 @@ async function run(t) {
   const missingOne = await authoring.exportKeys(EXPORT, base, 'leaf-nope');
   t.check(!missingOne.ok && /no object/i.test(missingOne.errors.join(' ')),
           'and naming an object that is not there is refused by name');
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'pki_authoring',
   describe: 'The Certificate & Key Configuration pane: the form against the ' +
-            'page that draws it, the six line grammars and what each refuses, ' +
-            'the three subject rules a profile change must and must not ' +
-            'break, the approach filters, every extension reaching the ' +
+            'page that draws it, the six line grammars and what each ' +
+            'refuses, the three subject rules a profile change must and must ' +
+            'not break, the approach filters, every extension reaching the ' +
             'encoder, the store against the hierarchy, and what is handed out',
   run: run
 };

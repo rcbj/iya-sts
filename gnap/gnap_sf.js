@@ -83,14 +83,20 @@ const { log } = require('../common/helpers');
 // CHARACTER CLASSES, from the ABNF of RFC 8941 section 3 and RFC 9110's tchar.
 // ---------------------------------------------------------------------------
 function isDigit(c) {
+  log.debug("Entering isDigit().");
+  log.debug("Leaving isDigit().");
   return c >= '0' && c <= '9';
 }
 
 function isLcalpha(c) {
+  log.debug("Entering isLcalpha().");
+  log.debug("Leaving isLcalpha().");
   return c >= 'a' && c <= 'z';
 }
 
 function isAlpha(c) {
+  log.debug("Entering isAlpha().");
+  log.debug("Leaving isAlpha().");
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
@@ -98,11 +104,17 @@ function isAlpha(c) {
 //         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA        (RFC 9110 5.6.2)
 const TCHAR_PUNCT = "!#$%&'*+-.^_`|~";
 function isTchar(c) {
-  return isAlpha(c) || isDigit(c) || (c.length === 1 && TCHAR_PUNCT.indexOf(c) >= 0);
+  log.debug("Entering isTchar().");
+  log.debug("Leaving isTchar().");
+  return isAlpha(c) || isDigit(c) ||
+         (c.length === 1 && TCHAR_PUNCT.indexOf(c) >= 0);
 }
 
 function isKeyChar(c) {
-  return isLcalpha(c) || isDigit(c) || c === '_' || c === '-' || c === '.' || c === '*';
+  log.debug("Entering isKeyChar().");
+  log.debug("Leaving isKeyChar().");
+  return isLcalpha(c) || isDigit(c) || c === '_' || c === '-' || c === '.' ||
+         c === '*';
 }
 
 // ---------------------------------------------------------------------------
@@ -111,32 +123,44 @@ function isKeyChar(c) {
 // algorithm without copying the remainder on every character.
 // ---------------------------------------------------------------------------
 function cursor(text) {
+  log.debug("Entering cursor().");
+  log.debug("Leaving cursor().");
   return { s: text, i: 0 };
 }
 
 function peek(cur) {
+  log.debug("Entering peek().");
+  log.debug("Leaving peek().");
   return cur.i < cur.s.length ? cur.s[cur.i] : '';
 }
 
 function empty(cur) {
+  log.debug("Entering empty().");
+  log.debug("Leaving empty().");
   return cur.i >= cur.s.length;
 }
 
 function discardSP(cur) {
+  log.debug("Entering discardSP().");
   while (!empty(cur) && peek(cur) === ' ') {
     cur.i++;
   }
+  log.debug("Leaving discardSP().");
 }
 
 // OWS = *( SP / HTAB ), RFC 9110 5.6.3. Lists and Dictionaries allow a tab
 // between members because some implementations combine field lines with one.
 function discardOWS(cur) {
+  log.debug("Entering discardOWS().");
   while (!empty(cur) && (peek(cur) === ' ' || peek(cur) === '\t')) {
     cur.i++;
   }
+  log.debug("Leaving discardOWS().");
 }
 
 function fail(sentence) {
+  log.debug("Entering fail().");
+  log.debug("Leaving fail().");
   throw new Error('RFC 8941: ' + sentence);
 }
 
@@ -172,8 +196,8 @@ function parseTop(input, fieldType, options) {
     output = parseItemAt(cur);
   } else {
     log.debug("Leaving parseTop(). Unknown field type.");
-    fail('"' + fieldType + '" is not a Structured Field type; it must be list, ' +
-         'dictionary or item.');
+    fail('"' + fieldType + '" is not a Structured Field type; it must be ' +
+         'list, dictionary or item.');
   }
   discardSP(cur);
   if (!empty(cur)) {
@@ -198,7 +222,8 @@ function parseListAt(cur) {
     }
     if (peek(cur) !== ',') {
       log.debug("Leaving parseListAt(). Expected a comma.");
-      fail('expected "," between List members at offset ' + cur.i + ', found "' +
+      fail('expected "," between List members at offset ' + cur.i +
+           ', found "' +
            peek(cur) + '" (section 4.2.1 step 2.4).');
     }
     cur.i++;
@@ -214,9 +239,12 @@ function parseListAt(cur) {
 
 // Section 4.2.1.1.
 function parseItemOrInnerListAt(cur) {
+  log.debug("Entering parseItemOrInnerListAt().");
   if (peek(cur) === '(') {
+    log.debug("Leaving parseItemOrInnerListAt().");
     return parseInnerListAt(cur);
   }
+  log.debug("Leaving parseItemOrInnerListAt().");
   return parseItemAt(cur);
 }
 
@@ -234,7 +262,8 @@ function parseInnerListAt(cur) {
     if (peek(cur) === ')') {
       cur.i++;
       const params = parseParametersAt(cur);
-      log.debug("Leaving parseInnerListAt(). " + innerList.length + " item(s).");
+      log.debug("Leaving parseInnerListAt(). " + innerList.length +
+                " item(s).");
       return { type: 'innerList', value: innerList, params: params };
     }
     innerList.push(parseItemAt(cur));
@@ -247,6 +276,7 @@ function parseInnerListAt(cur) {
   }
   log.debug("Leaving parseInnerListAt(). Unterminated.");
   fail('the Inner List is not closed with ")" (section 4.2.1.2 step 4).');
+  log.debug("Leaving parseInnerListAt().");
   return null;
 }
 
@@ -278,7 +308,8 @@ function parseDictionaryAt(cur, options) {
     }
     discardOWS(cur);
     if (empty(cur)) {
-      log.debug("Leaving parseDictionaryAt(). " + dictionary.length + " member(s).");
+      log.debug("Leaving parseDictionaryAt(). " + dictionary.length + " " +
+          "member(s).");
       return dictionary;
     }
     if (peek(cur) !== ',') {
@@ -290,7 +321,8 @@ function parseDictionaryAt(cur, options) {
     discardOWS(cur);
     if (empty(cur)) {
       log.debug("Leaving parseDictionaryAt(). Trailing comma.");
-      fail('the Dictionary ends with a trailing comma (section 4.2.2 step 2.10).');
+      fail('the Dictionary ends with a trailing comma (section 4.2.2 step ' +
+           '2.10).');
     }
   }
   log.debug("Leaving parseDictionaryAt(). Empty.");
@@ -298,18 +330,23 @@ function parseDictionaryAt(cur, options) {
 }
 
 function indexOfKey(pairs, key) {
+  log.debug("Entering indexOfKey().");
   for (let k = 0; k < pairs.length; k++) {
     if (pairs[k][0] === key) {
+      log.debug("Leaving indexOfKey().");
       return k;
     }
   }
+  log.debug("Leaving indexOfKey().");
   return -1;
 }
 
 // Section 4.2.3.
 function parseItemAt(cur) {
+  log.debug("Entering parseItemAt().");
   const bare = parseBareItemAt(cur);
   bare.params = parseParametersAt(cur);
+  log.debug("Leaving parseItemAt().");
   return bare;
 }
 
@@ -398,11 +435,13 @@ function parseNumberAt(cur) {
   }
   if (empty(cur)) {
     log.debug("Leaving parseNumberAt(). Empty.");
-    fail('a "-" with no digits after it is not a number (section 4.2.4 step 5).');
+    fail('a "-" with no digits after it is not a number (section 4.2.4 step ' +
+         '5).');
   }
   if (!isDigit(peek(cur))) {
     log.debug("Leaving parseNumberAt(). Not a digit.");
-    fail('a number must begin with a digit; found "' + peek(cur) + '" at offset ' +
+    fail('a number must begin with a digit; found "' + peek(cur) + '" at ' +
+        'offset ' +
          cur.i + ' (section 4.2.4 step 6).');
   }
   while (!empty(cur)) {
@@ -413,7 +452,8 @@ function parseNumberAt(cur) {
     } else if (type === 'integer' && c === '.') {
       if (inputNumber.length > 12) {
         log.debug("Leaving parseNumberAt(). Decimal integer part too long.");
-        fail('a Decimal has at most 12 digits before "." (section 4.2.4 step 7.3.1).');
+        fail('a Decimal has at most 12 digits before "." (section 4.2.4 step ' +
+             '7.3.1).');
       }
       inputNumber += c;
       type = 'decimal';
@@ -465,7 +505,8 @@ function parseStringAt(cur) {
       const next = cur.s[cur.i++];
       if (next !== '"' && next !== '\\') {
         log.debug("Leaving parseStringAt(). Bad escape.");
-        fail('only DQUOTE and "\\" may be escaped in a String; found "\\' + next +
+        fail('only DQUOTE and "\\" may be escaped in a String; found "\\' +
+             next +
              '" (section 4.2.5 step 4.2.3).');
       }
       output += next;
@@ -484,6 +525,7 @@ function parseStringAt(cur) {
   }
   log.debug("Leaving parseStringAt(). Unterminated.");
   fail('a String is not closed with DQUOTE (section 4.2.5 step 5).');
+  log.debug("Leaving parseStringAt().");
   return null;
 }
 
@@ -551,8 +593,8 @@ function decodeBase64Strict(b64) {
   }
   if (body.length % 4 === 1) {
     log.debug("Leaving decodeBase64Strict(). Impossible length.");
-    fail('a base64 value of ' + body.length + ' characters before padding cannot ' +
-         'be decoded (RFC 8941 section 4.2.7 step 7).');
+    fail('a base64 value of ' + body.length + ' characters before padding ' +
+         'cannot be decoded (RFC 8941 section 4.2.7 step 7).');
   }
   if (pad.length > 0 && b64.length % 4 !== 0) {
     log.debug("Leaving decodeBase64Strict(). Wrong padding.");
@@ -584,6 +626,7 @@ function parseBooleanAt(cur) {
   }
   log.debug("Leaving parseBooleanAt(). Neither.");
   fail('a Boolean is "?1" or "?0"; found "?' + c + '" (section 4.2.8 step 5).');
+  log.debug("Leaving parseBooleanAt().");
   return null;
 }
 
@@ -593,6 +636,8 @@ function parseBooleanAt(cur) {
 // handed that and not the lines one at a time.
 // ---------------------------------------------------------------------------
 function parseList(input) {
+  log.debug("Entering parseList().");
+  log.debug("Leaving parseList().");
   return parseTop(input, 'list');
 }
 
@@ -602,10 +647,14 @@ function parseList(input) {
 // says a signature label MUST be unique, and last-wins there would let a second
 // member silently replace the signature a verifier was about to check.
 function parseDictionary(input, options) {
+  log.debug("Entering parseDictionary().");
+  log.debug("Leaving parseDictionary().");
   return parseTop(input, 'dictionary', options);
 }
 
 function parseItem(input) {
+  log.debug("Entering parseItem().");
+  log.debug("Leaving parseItem().");
   return parseTop(input, 'item');
 }
 
@@ -653,7 +702,8 @@ function serializeParams(params) {
   }
   if (!Array.isArray(params)) {
     log.debug("Leaving serializeParams(). Not an array.");
-    fail('Parameters to serialize must be an ordered array of [key, bareItem] pairs.');
+    fail('Parameters to serialize must be an ordered array of [key, ' +
+         'bareItem] pairs.');
   }
   let out = '';
   params.forEach(function (pair) {
@@ -685,8 +735,8 @@ function serializeKey(key) {
   for (let k = 1; k < key.length; k++) {
     if (!isKeyChar(key[k])) {
       log.debug("Leaving serializeKey(). Bad character.");
-      fail('the key "' + key + '" contains "' + key[k] + '", which a key may not ' +
-           '(section 4.1.1.3 step 2).');
+      fail('the key "' + key + '" contains "' + key[k] + '", which a key may ' +
+           'not (section 4.1.1.3 step 2).');
     }
   }
   log.debug("Leaving serializeKey().");
@@ -699,7 +749,8 @@ function serializeDictionary(dictionary) {
   log.debug("Entering serializeDictionary().");
   if (!Array.isArray(dictionary)) {
     log.debug("Leaving serializeDictionary(). Not an array.");
-    fail('a Dictionary to serialize must be an ordered array of [key, member] pairs.');
+    fail('a Dictionary to serialize must be an ordered array of [key, ' +
+         'member] pairs.');
   }
   const out = dictionary.map(function (pair) {
     if (!Array.isArray(pair) || pair.length !== 2) {
@@ -722,9 +773,11 @@ function serializeDictionary(dictionary) {
 
 // Section 4.1.3.
 function serializeItem(item) {
+  log.debug("Entering serializeItem().");
   if (!item || typeof item !== 'object') {
     fail('an Item to serialize must be an object with a type and a value.');
   }
+  log.debug("Leaving serializeItem().");
   return serializeBareItem(item) + serializeParams(item.params);
 }
 
@@ -757,7 +810,8 @@ function serializeBareItem(item) {
       break;
     default:
       log.debug("Leaving serializeBareItem(). Unknown type.");
-      fail('"' + item.type + '" is not a bare Item type (section 4.1.3.1 step 7).');
+      fail('"' + item.type + '" is not a bare Item type (section 4.1.3.1 ' +
+                             'step 7).');
   }
   log.debug("Leaving serializeBareItem(). " + item.type);
   return out;
@@ -765,11 +819,13 @@ function serializeBareItem(item) {
 
 // Section 4.1.4.
 function serializeInteger(value) {
+  log.debug("Entering serializeInteger().");
   if (typeof value !== 'number' || !Number.isInteger(value) ||
       value < -999999999999999 || value > 999999999999999) {
     fail('an Integer must be a whole number of at most 15 digits; got ' +
          String(value) + ' (section 4.1.4 step 1).');
   }
+  log.debug("Leaving serializeInteger().");
   return (value < 0 ? '-' : '') + String(Math.abs(value));
 }
 
@@ -814,7 +870,8 @@ function serializeString(value) {
   log.debug("Entering serializeString().");
   if (typeof value !== 'string') {
     log.debug("Leaving serializeString(). Not a string.");
-    fail('a String must be a string; got ' + typeof value + ' (section 4.1.6 step 1).');
+    fail('a String must be a string; got ' + typeof value + ' (section 4.1.6 ' +
+        'step 1).');
   }
   let out = '"';
   for (let k = 0; k < value.length; k++) {
@@ -854,18 +911,22 @@ function serializeToken(value) {
 
 // Section 4.1.8. Padded, as the section requires; node's encoder pads.
 function serializeBytes(value) {
+  log.debug("Entering serializeBytes().");
   if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array)) {
     fail('a Byte Sequence must be a Buffer (section 4.1.8 step 1).');
   }
+  log.debug("Leaving serializeBytes().");
   return ':' + Buffer.from(value).toString('base64') + ':';
 }
 
 // Section 4.1.9.
 function serializeBoolean(value) {
+  log.debug("Entering serializeBoolean().");
   if (typeof value !== 'boolean') {
     fail('a Boolean must be true or false; got ' + JSON.stringify(value) +
          ' (section 4.1.9 step 1).');
   }
+  log.debug("Leaving serializeBoolean().");
   return value ? '?1' : '?0';
 }
 
@@ -875,23 +936,31 @@ function serializeBoolean(value) {
 // answers the bare item itself, for a caller that has to know the type.
 // ---------------------------------------------------------------------------
 function param(params, key) {
+  log.debug("Entering param().");
   if (!Array.isArray(params)) {
+    log.debug("Leaving param().");
     return undefined;
   }
   const at = indexOfKey(params, key);
+  log.debug("Leaving param().");
   return at < 0 ? undefined : params[at][1];
 }
 
 function paramValue(params, key) {
+  log.debug("Entering paramValue().");
   const bare = param(params, key);
+  log.debug("Leaving paramValue().");
   return bare === undefined ? undefined : bare.value;
 }
 
 function member(dictionary, key) {
+  log.debug("Entering member().");
   if (!Array.isArray(dictionary)) {
+    log.debug("Leaving member().");
     return undefined;
   }
   const at = indexOfKey(dictionary, key);
+  log.debug("Leaving member().");
   return at < 0 ? undefined : dictionary[at][1];
 }
 

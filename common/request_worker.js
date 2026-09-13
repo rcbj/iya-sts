@@ -32,10 +32,10 @@
 //     app.js that rewrites HTML and re-checks the CSP as the response is
 //     flushed. Every one of those would have to be reproduced exactly, and the
 //     ones that were reproduced NEARLY exactly would be the bugs.
-//   * **A fake `req` is a second HTTP parser.** Chunked bodies, a `content-type`
-//     with parameters, repeated headers, a `HEAD` that must send no body,
-//     `Expect: 100-continue`, an upgrade — node already implements all of it
-//     and there is no version of hand-rolling it that is not worse.
+//   * **A fake `req` is a second HTTP parser.** Chunked bodies, a
+//     `content-type` with parameters, repeated headers, a `HEAD` that must send
+//     no body, `Expect: 100-continue`, an upgrade — node already implements all
+//     of it and there is no version of hand-rolling it that is not worse.
 //   * **The response-flush CSP re-check is the one that decides it.** The root
 //     CLAUDE.md records that Express's own 404 handler REPLACES the security
 //     header, which nothing in this service could see, because the header this
@@ -127,16 +127,22 @@ const serviceState = require('./service_state');
 // A LEAF with no requires: the failure codes on the log lines below.
 const errorCodes = require('./error_codes');
 
+let logLevelProblem = null;
 const log = bunyan.createLogger({
   name: 'request_worker',
   level: (function () {
     try {
       return config.value('global.logLevel') || 'info';
     } catch (e) {
+      logLevelProblem = e;
       return 'info';
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug('No log level could be read, so info: ' +
+            logLevelProblem.message);
+}
 
 // ---------------------------------------------------------------------------
 // HOW LONG A WORKER HAS TO COME UP, AND IT COVERS THE STATE AND NOT THE SOCKET.
@@ -223,8 +229,9 @@ function installDirectoryMirror(seed) {
       // the honest answer is that there is no answer for it to ride out on.
       // Thrown rather than logged, because dropConnectionsFor() catches it and
       // says the connections may still be open, which is the truth.
-      throw new Error('there is no response in flight in this worker to carry ' +
-                      'the request on, so the front process cannot be asked');
+      throw new Error('there is no response in flight in this worker to ' +
+                      'carry the request on, so the front process cannot be ' +
+                      'asked');
     }
     if (res.headersSent) {
       throw new Error('this request\'s headers have already gone to the ' +
@@ -275,6 +282,7 @@ function start(path) {
     // ENOENT is the ordinary case — there was nothing there, which is what we
     // want. Anything else is reported when the bind fails, with a better
     // message than this one could give.
+    log.debug("Caught in start(): " + ((e && e.message) || e));
   }
 
   // THE WHOLE SERVICE, in the one order there is. See protocol_stack.js.
@@ -378,6 +386,8 @@ function start(path) {
   let finishedTickets = [];
 
   function announcesWrites(req) {
+    log.debug("Entering announcesWrites().");
+    log.debug("Leaving announcesWrites().");
     return !!config.value('workers.readYourWrite');
   }
 
@@ -405,8 +415,10 @@ function start(path) {
   let announcing = false;
   let again = false;
   function announceWhenCommitted() {
+    log.debug("Entering announceWhenCommitted().");
     if (announcing) {
       again = true;
+      log.debug("Leaving announceWhenCommitted().");
       return;
     }
     announcing = true;
@@ -441,6 +453,8 @@ function start(path) {
                                     tickets: covered } });
       } catch (e) {
         // The front process has gone; this worker is about to be told so.
+        log.debug("Caught in a callback in announceWhenCommitted(): " +
+                  ((e && e.message) || e));
       }
     }).catch(function (e) {
       // PUT THEM BACK. A flush that failed has covered nothing, and tickets
@@ -460,6 +474,7 @@ function start(path) {
         announceWhenCommitted();
       }
     });
+    log.debug("Leaving announceWhenCommitted().");
   }
 
   // ---------------------------------------------------------------------
@@ -479,13 +494,16 @@ function start(path) {
   // two steps a response does — count it, remember its ticket, announce when
   // the flush covers it — through the one function both paths call.
   //
-  // It is a module-level hook rather than a require because `announceWhenCommitted`
-  // closes over this worker's store handle, and `handleOperation()` is at module
-  // scope so that the `begin` message is what brings the service up. Filled
-  // here, which is after the store is open and before any operation can arrive.
+  // It is a module-level hook rather than a require because
+  // `announceWhenCommitted` closes over this worker's store handle, and
+  // `handleOperation()` is at module scope so that the `begin` message is what
+  // brings the service up. Filled here, which is after the store is open and
+  // before any operation can arrive.
   // ---------------------------------------------------------------------
   noteOperationFinished = function (ticket) {
+    log.debug("Entering noteOperationFinished().");
     if (!config.value('workers.readYourWrite')) {
+      log.debug("Leaving noteOperationFinished().");
       return;
     }
     finishedCount++;
@@ -493,6 +511,7 @@ function start(path) {
       finishedTickets.push(Number(ticket));
     }
     announceWhenCommitted();
+    log.debug("Leaving noteOperationFinished().");
   };
 
   server = http.createServer(function (req, res) {
@@ -503,7 +522,11 @@ function start(path) {
         const authorized = req.headers[PEER_AUTHORIZED_HEADER] === 'yes';
         const shim = Object.create(req.socket);
         shim.authorized = authorized;
-        shim.getPeerCertificate = function () { return cert; };
+        shim.getPeerCertificate = function () {
+          log.debug("Entering getPeerCertificate().");
+          log.debug("Leaving getPeerCertificate().");
+          return cert;
+        };
         // Both names, because this codebase reads both: `mtls.js` and
         // `xacml.js` use `req.socket`, and `ldap_server.js` and the call log
         // use `req.connection`.
@@ -580,7 +603,9 @@ function start(path) {
     // ---------------------------------------------------------------------
     let announcedFor = false;
     function announceOnce() {
+      log.debug("Entering announceOnce().");
       if (announcedFor || !announcesWrites(req)) {
+        log.debug("Leaving announceOnce().");
         return;
       }
       announcedFor = true;
@@ -592,6 +617,7 @@ function start(path) {
         finishedTickets.push(ticket);
       }
       announceWhenCommitted();
+      log.debug("Leaving announceOnce().");
     }
     res.on('finish', function () {
       inFlight--;
@@ -613,8 +639,9 @@ function start(path) {
 
   startTimer = setTimeout(function () {
     report({ ready: false, error: 'the worker did not finish starting within ' +
-             START_TIMEOUT_MS + 'ms — it brings its whole state up (the store, ' +
-             'the keys, the minted rows and coordination) before it listens' });
+             START_TIMEOUT_MS + 'ms — it brings its whole state up (the ' +
+             'store, the keys, the minted rows and coordination) before it ' +
+             'listens' });
   }, START_TIMEOUT_MS);
   startTimer.unref();
 
@@ -733,7 +760,8 @@ function decodePeer(encoded) {
   }
   Object.keys(flat).forEach(function (name) {
     const value = flat[name];
-    if (value && typeof value === 'object' && typeof value.__buffer === 'string') {
+    if (value && typeof value === 'object' &&
+        typeof value.__buffer === 'string') {
       flat[name] = Buffer.from(value.__buffer, 'base64');
     }
   });
@@ -771,6 +799,7 @@ function stop() {
   if (!server) {
     cleanup();
     process.exit(0);
+    log.debug("Leaving stop().");
     return;
   }
   server.close(function () {
@@ -790,11 +819,14 @@ function stop() {
 }
 
 function cleanup() {
+  log.debug("Entering cleanup().");
   try {
     fs.unlinkSync(socketPath);
   } catch (e) {
     // Already gone, which is the ordinary case when several things tidy up.
+    log.debug("Caught in cleanup(): " + ((e && e.message) || e));
   }
+  log.debug("Leaving cleanup().");
 }
 
 // ---------------------------------------------------------------------------
@@ -818,6 +850,7 @@ function cleanup() {
 const OPERATIONS = new Map();
 
 function register(kind, fn) {
+  log.debug("Entering register().");
   if (typeof fn !== 'function') {
     throw new Error('request_worker: the "' + kind + '" operation needs a ' +
       'function.');
@@ -831,6 +864,7 @@ function register(kind, fn) {
   }
   OPERATIONS.set(kind, fn);
   log.debug('register(): worker ' + process.pid + ' answers "' + kind + '".');
+  log.debug("Leaving register().");
 }
 
 // Filled by start(), which is where the store handle the announcement needs
@@ -846,7 +880,9 @@ let noteOperationFinished = null;
 // leave the ticket for a refused operation outstanding for ever, which is the
 // wedge again.
 function operationFinished(ticket) {
+  log.debug("Entering operationFinished().");
   if (!noteOperationFinished) {
+    log.debug("Leaving operationFinished().");
     return;
   }
   try {
@@ -858,6 +894,7 @@ function operationFinished(ticket) {
              'request_worker: an operation could not be announced: ' +
              e.message + '. A reader may wait the full barrier bound for it.');
   }
+  log.debug("Leaving operationFinished().");
 }
 
 // One operation, and its answer on the channel. A FAILED operation is a
@@ -934,6 +971,7 @@ function handleSync(message) {
     process.send({ sync: true, id: message.id, ok: false,
                    error: err.message });
   });
+  log.debug("Leaving handleSync().");
 }
 
 process.on('message', function (message) {
@@ -960,7 +998,8 @@ process.on('disconnect', function () {
 // STATUS ON REQUEST, so the front process can report what its workers are
 // doing without keeping a second tally that could disagree with this one.
 process.on('SIGUSR2', function () {
-  report({ status: true, pid: process.pid, inFlight: inFlight, served: served });
+  report({ status: true, pid: process.pid, inFlight: inFlight,
+           served: served });
 });
 
 // ---------------------------------------------------------------------------
@@ -981,7 +1020,9 @@ process.on('SIGUSR2', function () {
 // ---------------------------------------------------------------------------
 if (require.main === module) {
   process.on('message', function onStart(message) {
+    log.debug("Entering onStart().");
     if (!message || !message.begin) {
+      log.debug("Leaving onStart().");
       return;
     }
     process.removeListener('message', onStart);
@@ -1065,6 +1106,8 @@ if (require.main === module) {
       } catch (e) {
         // The parent has gone; this worker is about to be told so. Its keys
         // stay its own, which is correct for a process on its way out.
+        log.debug("Caught in a callback in onStart(): " +
+                  ((e && e.message) || e));
       }
     });
     keystore.setPkiPublisher(function (realmId, chain) {
@@ -1073,6 +1116,8 @@ if (require.main === module) {
       } catch (e) {
         // Same case, same answer: the parent has gone and this worker is on
         // its way out.
+        log.debug("Caught in a callback in onStart(): " +
+                  ((e && e.message) || e));
       }
     });
     // A LATE ARRIVAL, or a correction: another process generated this realm's
@@ -1112,7 +1157,8 @@ if (require.main === module) {
           .adoptServerCertificate(later.adoptServerCertificate);
       }
       if (later && later.ldapConnections) {
-        require('../ldap/ldap_server').setConnectionMirror(later.ldapConnections);
+        require('../ldap/ldap_server').setConnectionMirror(
+            later.ldapConnections);
       }
     });
     try {
@@ -1127,6 +1173,7 @@ if (require.main === module) {
     } catch (e) {
       report({ ready: false, error: e.message });
     }
+    log.debug("Leaving onStart().");
   });
 }
 

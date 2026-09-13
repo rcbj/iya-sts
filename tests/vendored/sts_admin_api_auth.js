@@ -67,17 +67,23 @@ const { Command, Option } = require("commander");
 const tokens = require("../tools/admin-api-token.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_admin_api_auth",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -91,9 +97,11 @@ const RUN_TOKEN = process.env.STS_ADMIN_API_TOKEN || "";
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
 async function fetchJson(url, options) {
@@ -104,6 +112,7 @@ async function fetchJson(url, options) {
   try {
     body = JSON.parse(text);
   } catch (e) {
+    log.debug("Caught in fetchJson(): " + ((e && e.message) || e));
     // Not JSON — an HTML refusal or an empty body. The status and the raw text
     // say more than a parse error would.
     body = null;
@@ -116,22 +125,38 @@ async function fetchJson(url, options) {
 // A read and a write, each reachable with one token and refused with the
 // other. `/admin-api/status` is the cheapest GET; `/admin-api/config/set` is a
 // write that changes something harmless and is the shape every other write has.
-function readUrl(prefix) { return (prefix || base) + "/admin-api/status"; }
-function writeUrl(prefix) { return (prefix || base) + "/admin-api/config/set"; }
+function readUrl(prefix) {
+  log.debug("Entering readUrl().");
+  log.debug("Leaving readUrl().");
+  return (prefix || base) + "/admin-api/status";
+}
+
+function writeUrl(prefix) {
+  log.debug("Entering writeUrl().");
+  log.debug("Leaving writeUrl().");
+  return (prefix || base) + "/admin-api/config/set";
+}
 
 // The body a write takes. `groups.claim` is a boolean this service reads on
 // every issuance, so setting it to what it already is changes nothing while
 // being a real write through the real handler — which is what the gate is
 // being asked about. The refusals below never reach the handler at all.
 function writeBody() {
+  log.debug("Entering writeBody().");
+  log.debug("Leaving writeBody().");
   return JSON.stringify({ key: "groups.claim", value: "true" });
 }
 
 async function readWith(authorization, prefix) {
-  return fetchJson(readUrl(prefix), { headers: { authorization: authorization } });
+  log.debug("Entering readWith().");
+  log.debug("Leaving readWith().");
+  return fetchJson(readUrl(prefix),
+                   { headers: { authorization: authorization } });
 }
 
 async function writeWith(authorization, prefix) {
+  log.debug("Entering writeWith().");
+  log.debug("Leaving writeWith().");
   return fetchJson(writeUrl(prefix), {
     method: "POST",
     headers: { authorization: authorization,
@@ -198,7 +223,8 @@ async function withAGarbageToken() {
   // A WELL-FORMED JWS SIGNED BY SOMEBODY ELSE. The header and payload are
   // real JSON and the signature is nonsense, which is the shape of the attack
   // this check is about — a caller that can build a token but cannot sign one.
-  const forged = Buffer.from('{"alg":"RS256","typ":"JWT"}').toString("base64url") +
+  const forged = Buffer.from('{"alg":"RS256","typ":"JWT"}')
+                       .toString("base64url") +
     "." + Buffer.from(JSON.stringify({
       sub: "sts-management-api", client_id: "sts-management-api",
       scope: "admin:read admin:write",
@@ -327,7 +353,8 @@ async function insideARealm() {
   }
   const prefix = base + "/realm/" + other.id;
   const read = await readWith("Bearer " + RUN_TOKEN, prefix);
-  check("a token minted at the default realm works inside a realm", function () {
+  check("a token minted at the default realm works inside a realm",
+        function () {
     assert.strictEqual(read.status, 200,
       "GET " + prefix + "/admin-api/status must accept the service-wide " +
       "token. This is the observable half of a deliberate decision: the " +
@@ -419,7 +446,8 @@ async function theDocumentDescribesTheGate() {
   log.info("=== what the published document says about the gate ===");
 
   const doc = await fetchJson(base + "/admin-api/openapi.json",
-                              { headers: { Authorization: "Bearer " + RUN_TOKEN } });
+                              { headers: { Authorization: "Bearer " +
+                                  RUN_TOKEN } });
   check("the OpenAPI document is served to a token holder", function () {
     assert.strictEqual(doc.status, 200,
       "GET /admin-api/openapi.json answered " + doc.status + " to the run's " +
@@ -481,7 +509,8 @@ async function theDocumentDescribesTheGate() {
   });
 
   const index = await fetchJson(base + "/admin-api",
-                                { headers: { Authorization: "Bearer " + RUN_TOKEN } });
+                                { headers: { Authorization: "Bearer " +
+                                    RUN_TOKEN } });
   check("and the index says it is protected", function () {
     assert.strictEqual((index.body || {}).protected, true,
       "GET /admin-api reports `protected: " +

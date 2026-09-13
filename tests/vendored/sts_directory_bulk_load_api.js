@@ -97,17 +97,23 @@ const { Command, Option } = require("commander");
 const bulk = require("./bulk_load.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_directory_bulk_load_api",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -136,8 +142,8 @@ async function theOperationsExist() {
   log.debug("Entering theOperationsExist().");
   const doc = await http.get(http.api("/openapi.json"));
   assert.strictEqual(doc.status, 200,
-    "GET /admin-api/openapi.json answered " + doc.status + ". It is generated " +
-    "from the operation table this job drives.");
+    "GET /admin-api/openapi.json answered " + doc.status + ". It is " +
+    "generated from the operation table this job drives.");
   const paths = Object.keys((doc.body && doc.body.paths) || {});
   const wanted = ["/admin-api/users/create", "/admin-api/groups/create",
                   "/admin-api/groups/add-member"];
@@ -219,9 +225,10 @@ async function createThePeople(catalogue) {
   check("every created person came back with a DN", function () {
     const nameless = created.filter(function (one) { return !one.dn; });
     assert.strictEqual(nameless.length, 0,
-      nameless.length + " create(s) answered ok and named no entry. The DN is " +
-      "what the group memberships below are written from, so a create that " +
-      "does not say where it put somebody is a create this job cannot use.");
+      nameless.length + " create(s) answered ok and named no entry. The DN " +
+      "is what the group memberships below are written from, so a create " +
+      "that does not say where it put somebody is a create this job cannot " +
+      "use.");
   });
 
   const summary = bulk.summaryOf(watch);
@@ -423,6 +430,8 @@ async function itReadsBackWhatItWrote(people, groups, catalogue, expected) {
                                       ":not-checked-in-development")
                                 .toString("base64");
   function scimGet(path) {
+    log.debug("Entering scimGet().");
+    log.debug("Leaving scimGet().");
     return http.timed(base + "/scim/v2" + path, {
       headers: { "Accept": "application/scim+json", "Authorization": auth }
     });
@@ -433,7 +442,8 @@ async function itReadsBackWhatItWrote(people, groups, catalogue, expected) {
   // entries, and that is precisely the failure this is here for.
   const step = Math.max(1, Math.floor(people.length / SIZES.SAMPLE));
   const sampled = [];
-  for (let i = 0; i < people.length && sampled.length < SIZES.SAMPLE; i += step) {
+  for (let i = 0; i < people.length &&
+                  sampled.length < SIZES.SAMPLE; i += step) {
     sampled.push(people[i]);
   }
 
@@ -492,10 +502,10 @@ async function itReadsBackWhatItWrote(people, groups, catalogue, expected) {
       }
     });
     assert.deepStrictEqual(wrong, [],
-      "THE ENTRY DOES NOT HOLD WHAT THE CREATE WAS SENT. Every attribute this " +
-      "job fills is on the catalogue that create validates against, so a " +
-      "value that did not land is a create that accepted it and dropped it — " +
-      "which no status code shows:\n  " + wrong.join("\n  "));
+      "THE ENTRY DOES NOT HOLD WHAT THE CREATE WAS SENT. Every attribute " +
+      "this job fills is on the catalogue that create validates against, so " +
+      "a value that did not land is a create that accepted it and dropped it " +
+      "— which no status code shows:\n  " + wrong.join("\n  "));
   });
 
   // EVERY GROUP, not a sample: there are only fifty of them and the counts are
@@ -520,10 +530,10 @@ async function itReadsBackWhatItWrote(people, groups, catalogue, expected) {
         function () {
     assert.deepStrictEqual(wrongCounts, [],
       "these groups do not hold what was written into them. `memberCount` is " +
-      "the values on the entry, `presentCount` how many of them name an entry " +
-      "this directory holds, and a difference between the two is a dangling " +
-      "member — which is what a membership written from the wrong DN " +
-      "produces, silently, with a 200 on the way in:\n  " +
+      "the values on the entry, `presentCount` how many of them name an " +
+      "entry this directory holds, and a difference between the two is a " +
+      "dangling member — which is what a membership written from the wrong " +
+      "DN produces, silently, with a 200 on the way in:\n  " +
       wrongCounts.join("\n  "));
   });
 
@@ -537,7 +547,8 @@ async function itReadsBackWhatItWrote(people, groups, catalogue, expected) {
   check("the group list finds this run's groups", function () {
     assert.strictEqual(list.status, 200,
       "GET /admin-api/groups answered " + list.status + ".");
-    const shown = ((list.body && list.body.groups) || []).filter(function (row) {
+    const shown = ((list.body && list.body.groups) || []).filter(
+        function (row) {
       return String(row.dn || "").indexOf(STAMP.prefix) >= 0;
     });
     assert.strictEqual(shown.length, SIZES.GROUPS,

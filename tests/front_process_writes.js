@@ -57,12 +57,20 @@
 
 const pool = require('../common/request_pool');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'front_process_writes',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // `workers.readYourWrite` is process-wide and every later file in this run
 // reads through it — see tests/CLAUDE.md's rule about process-wide state.
 function withReadYourWrite(on, fn) {
+  log.debug("Entering withReadYourWrite().");
   const had = process.env.STS_WORKERS_READ_YOUR_WRITE;
   process.env.STS_WORKERS_READ_YOUR_WRITE = on ? 'true' : 'false';
   try {
+    log.debug("Leaving withReadYourWrite().");
     return fn();
   } finally {
     if (had === undefined) {
@@ -74,6 +82,8 @@ function withReadYourWrite(on, fn) {
 }
 
 function generation() {
+  log.debug("Entering generation().");
+  log.debug("Leaving generation().");
   return pool.stats().generation;
 }
 
@@ -86,6 +96,7 @@ function generation() {
 // barrier on its first request to fetch what it was born holding.
 // ---------------------------------------------------------------------------
 function checkTheFirstSampleIsABaseline(t) {
+  log.debug("Entering checkTheFirstSampleIsABaseline().");
   t.log.info('=== the first sample is a baseline, not a change ===');
 
   withReadYourWrite(true, function () {
@@ -93,12 +104,13 @@ function checkTheFirstSampleIsABaseline(t) {
     const moved = pool.noteLocalWrites(4096);
     t.check(moved === false,
             'the first count this pool is shown moves nothing',
-            'it is a baseline: everything written on the way up is already in ' +
-            'every worker, and a bump would be a barrier for nothing');
+            'it is a baseline: everything written on the way up is already ' +
+            'in every worker, and a bump would be a barrier for nothing');
     t.check(generation() === before,
             'and the generation is where it was',
             'expected ' + before + ', got ' + generation());
   });
+  log.debug("Leaving checkTheFirstSampleIsABaseline().");
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +124,7 @@ function checkTheFirstSampleIsABaseline(t) {
 // the same reason.
 // ---------------------------------------------------------------------------
 function checkAWriteMovesIt(t) {
+  log.debug("Entering checkAWriteMovesIt().");
   t.log.info('=== a write by this process moves the generation ===');
 
   withReadYourWrite(true, function () {
@@ -125,9 +138,9 @@ function checkAWriteMovesIt(t) {
 
     t.check(pool.noteLocalWrites(10001) === true,
             'one more committed change row moves the generation',
-            'this is the sign-out that left a session behind: the session was ' +
-            'minted on a socket only this process holds, and nothing told the ' +
-            'worker that answers /logout');
+            'this is the sign-out that left a session behind: the session ' +
+            'was minted on a socket only this process holds, and nothing ' +
+            'told the worker that answers /logout');
     t.check(generation() === base + 1,
             'by exactly one',
             'expected ' + (base + 1) + ', got ' + generation());
@@ -151,6 +164,7 @@ function checkAWriteMovesIt(t) {
             'a burst — an LDAP bulk load over 389, which is this process ' +
             'too — is one catch-up and not ninety');
   });
+  log.debug("Leaving checkAWriteMovesIt().");
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +177,7 @@ function checkAWriteMovesIt(t) {
 // same reason, so this is the same rule read from the other end.
 // ---------------------------------------------------------------------------
 function checkTheSwitchIsHonoured(t) {
+  log.debug("Entering checkTheSwitchIsHonoured().");
   t.log.info('=== with read-your-write off, nothing moves ===');
 
   withReadYourWrite(false, function () {
@@ -177,12 +192,15 @@ function checkTheSwitchIsHonoured(t) {
             'and the generation is where it was',
             'expected ' + before + ', got ' + generation());
   });
+  log.debug("Leaving checkTheSwitchIsHonoured().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkTheFirstSampleIsABaseline(t);
   checkAWriteMovesIt(t);
   checkTheSwitchIsHonoured(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

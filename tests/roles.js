@@ -52,23 +52,36 @@
 const roles = require('../common/roles');
 const gate = require('../common/issuance_gate');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'roles',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A directory in the shape `roles.setDirectory()` is offered one, built from a
 // plain table so a test can say what is in the register without an LDAP server.
 function directoryOf(table, groupsByUser) {
+  log.debug("Entering directoryOf().");
+  log.debug("Leaving directoryOf().");
   return {
     allRoles: function () {
+      log.debug("Entering allRoles().");
+      log.debug("Leaving allRoles().");
       return Object.keys(table).map(function (name) {
         return { name: name, dn: 'cn=' + name + ',ou=roles',
                  attributes: table[name] };
       });
     },
     groupsOfUser: function (name) {
+      log.debug("Entering groupsOfUser().");
+      log.debug("Leaving groupsOfUser().");
       return (groupsByUser || {})[name] || [];
     }
   };
 }
 
 function run(t) {
+  log.debug("Entering run().");
   // WHAT WAS INSTALLED, not `null`. `xacml_store.js` argues why that
   // distinction is not pedantry and it is the same one-process, one-reference
   // situation here: another file in this run may have filled these.
@@ -83,16 +96,20 @@ function run(t) {
 
   roles.setDirectory(beforeDirectory);
   gate.setDecider(beforeDecider);
+  log.debug("Leaving run().");
 }
 
 // ---------------------------------------------------------------------------
 // 1. THE SIX BUILT-IN ROLES, over every context that can produce one.
 // ---------------------------------------------------------------------------
 function builtInRoles(t) {
+  log.debug("Entering builtInRoles().");
   t.log.info('=== The six built-in roles ===');
   roles.setDirectory(null);
 
   function held(who) {
+    log.debug("Entering held().");
+    log.debug("Leaving held().");
     return roles.rolesOf(who).join(',');
   }
 
@@ -136,12 +153,14 @@ function builtInRoles(t) {
           }) && !roles.isBuiltIn('staff'),
           'isBuiltIn() answers for exactly the six',
           roles.BUILT_IN_NAMES.join(', '));
+  log.debug("Leaving builtInRoles().");
 }
 
 // ---------------------------------------------------------------------------
 // 2. THE REGISTER: three kinds of member, and a lookup that cannot throw.
 // ---------------------------------------------------------------------------
 function theRegister(t) {
+  log.debug("Entering theRegister().");
   t.log.info('=== The register ===');
   roles.setDirectory(directoryOf({
     staff: { roleName: ['staff'], roleMemberUser: ['alice'],
@@ -150,6 +169,8 @@ function theRegister(t) {
   }, { bob: ['developers'], alice: [] }));
 
   function held(who) {
+    log.debug("Entering held().");
+    log.debug("Leaving held().");
     return roles.rolesOf(who).filter(function (name) {
       return !roles.isBuiltIn(name);
     }).join(',');
@@ -199,7 +220,11 @@ function theRegister(t) {
   // IT NEVER THROWS. A register consulted during an issuance must not be able
   // to fail that issuance.
   roles.setDirectory({
-    allRoles: function () { throw new Error('the directory is on fire'); }
+    allRoles: function () {
+      log.debug("Entering allRoles().");
+      log.debug("Leaving allRoles().");
+      throw new Error('the directory is on fire');
+    }
   });
   t.equal(roles.rolesOf({ kind: 'user', name: 'alice', authenticated: true })
             .join(','), 'EVERYBODY,ALL_AUTHENTICATED_USERS',
@@ -215,12 +240,14 @@ function theRegister(t) {
           'and a write is refused rather than kept in memory — a role ' +
           'register that quietly lived in a Map would decide things nobody ' +
           'could find');
+  log.debug("Leaving theRegister().");
 }
 
 // ---------------------------------------------------------------------------
 // 3. THE CLAIM. What is in it, and — more importantly — what is not.
 // ---------------------------------------------------------------------------
 function theClaim(t) {
+  log.debug("Entering theClaim().");
   t.log.info('=== The roles claim ===');
   roles.setDirectory(directoryOf({
     staff: { roleName: ['staff'], roleMemberUser: ['alice'] },
@@ -245,12 +272,14 @@ function theClaim(t) {
           'an empty array — an empty array is a claim, and a client reading ' +
           'one would be told something false about a service that has no ' +
           'roles configured');
+  log.debug("Leaving theClaim().");
 }
 
 // ---------------------------------------------------------------------------
 // 4. READING A CLAIM BACK OFF A TOKEN SOMEBODY PRESENTED.
 // ---------------------------------------------------------------------------
 function claimsComingIn(t) {
+  log.debug("Entering claimsComingIn().");
   t.log.info('=== Roles in a presented token ===');
 
   t.equal(roles.rolesInClaims({ roles: ['staff', 'oncall'] }).join(','),
@@ -268,12 +297,14 @@ function claimsComingIn(t) {
   t.equal(roles.rolesInClaims({}).length, 0,
           'a token with no such claim carries no roles');
   t.equal(roles.rolesInClaims(null).length, 0, 'and neither does no token');
+  log.debug("Leaving claimsComingIn().");
 }
 
 // ---------------------------------------------------------------------------
 // 5. THE GATE. Absent-safe, off-safe, and open on a defect.
 // ---------------------------------------------------------------------------
 function theGate(t) {
+  log.debug("Entering theGate().");
   t.log.info('=== The issuance gate ===');
   const asked = { application: 'webapp1', kind: gate.ISSUANCE.ACCESS_TOKEN,
                   subject: { kind: 'user', name: 'alice',
@@ -335,6 +366,7 @@ function theGate(t) {
           'issue-wsfed-token,issue-wstrust-token,issue-kerberos-ticket',
           'and these are their spellings, which are XACML action-ids and ' +
           'therefore part of the contract with every policy anybody writes');
+  log.debug("Leaving theGate().");
 }
 
 module.exports = {

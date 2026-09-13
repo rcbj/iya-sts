@@ -55,17 +55,23 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_portal_backup_keys",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -84,9 +90,11 @@ var PERSON = usernameFor("backup-keys");
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  ✓ " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
@@ -94,22 +102,47 @@ function check(what, fn) {
 // backup, and one that is never enrolled at all.
 // ---------------------------------------------------------------------------
 function sha256(buf) {
+  log.debug("Entering sha256().");
+  log.debug("Leaving sha256().");
   return nodeCrypto.createHash("sha256").update(buf).digest();
 }
+
 function cborBytes(buf) {
+  log.debug("Entering cborBytes().");
   const head = buf.length < 24 ? Buffer.from([0x40 + buf.length])
     : Buffer.concat([Buffer.from([0x58]), Buffer.from([buf.length])]);
+  log.debug("Leaving cborBytes().");
   return Buffer.concat([head, buf]);
 }
+
 function cborText(text) {
+  log.debug("Entering cborText().");
   const body = Buffer.from(text, "utf8");
+  log.debug("Leaving cborText().");
   return Buffer.concat([Buffer.from([0x60 + body.length]), body]);
 }
-function cborMapHeader(n) { return Buffer.from([0xa0 + n]); }
-function cborInt(n) { return Buffer.from([n]); }
-function cborNegInt(n) { return Buffer.from([0x20 + (Math.abs(n) - 1)]); }
+
+function cborMapHeader(n) {
+  log.debug("Entering cborMapHeader().");
+  log.debug("Leaving cborMapHeader().");
+  return Buffer.from([0xa0 + n]);
+}
+
+function cborInt(n) {
+  log.debug("Entering cborInt().");
+  log.debug("Leaving cborInt().");
+  return Buffer.from([n]);
+}
+
+function cborNegInt(n) {
+  log.debug("Entering cborNegInt().");
+  log.debug("Leaving cborNegInt().");
+  return Buffer.from([0x20 + (Math.abs(n) - 1)]);
+}
 
 function coseKey(jwk) {
+  log.debug("Entering coseKey().");
+  log.debug("Leaving coseKey().");
   return Buffer.concat([
     cborMapHeader(5),
     cborInt(0x01), cborInt(0x02),
@@ -121,6 +154,7 @@ function coseKey(jwk) {
 }
 
 function authenticatorData(opts) {
+  log.debug("Entering authenticatorData().");
   const flags = Buffer.from([opts.flags]);
   const count = Buffer.alloc(4);
   count.writeUInt32BE(opts.signCount >>> 0, 0);
@@ -130,30 +164,38 @@ function authenticatorData(opts) {
     idLen.writeUInt16BE(opts.credentialId.length, 0);
     parts.push(Buffer.alloc(16), idLen, opts.credentialId, opts.cose);
   }
+  log.debug("Leaving authenticatorData().");
   return Buffer.concat(parts);
 }
 
 function clientData(type, challenge) {
+  log.debug("Entering clientData().");
+  log.debug("Leaving clientData().");
   return Buffer.from(JSON.stringify({
     type: type, challenge: challenge, origin: ORIGIN, crossOrigin: false
   }), "utf8");
 }
 
 function makeAuthenticator(name) {
-  const pair = nodeCrypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  log.debug("Entering makeAuthenticator().");
+  const pair = nodeCrypto.generateKeyPairSync("ec",
+                                              { namedCurve: "prime256v1" });
   const jwk = pair.publicKey.export({ format: "jwk" });
   const credentialId = nodeCrypto.randomBytes(32);
   let signCount = 0;
+  log.debug("Leaving makeAuthenticator().");
   return {
     name: name,
     idB64: credentialId.toString("base64url"),
     register: function (challenge) {
+      log.debug("Entering register().");
       const authData = authenticatorData({
         flags: 0x45, signCount: signCount, attested: true,
         credentialId: credentialId, cose: coseKey(jwk)
       });
       const length = Buffer.alloc(2);
       length.writeUInt16BE(authData.length, 0);
+      log.debug("Leaving register().");
       return {
         id: credentialId.toString("base64url"),
         rawId: credentialId.toString("base64url"),
@@ -168,14 +210,17 @@ function makeAuthenticator(name) {
             cborText("authData"),
             Buffer.concat([Buffer.from([0x59]), length, authData])
           ]).toString("base64url"),
-          clientDataJSON: clientData("webauthn.create", challenge).toString("base64url")
+          clientDataJSON: clientData("webauthn.create", challenge).toString(
+              "base64url")
         }
       };
     },
     assert: function (challenge) {
+      log.debug("Entering assert().");
       signCount += 1;
       const authData = authenticatorData({ flags: 0x05, signCount: signCount });
       const cdj = clientData("webauthn.get", challenge);
+      log.debug("Leaving assert().");
       return {
         id: credentialId.toString("base64url"),
         rawId: credentialId.toString("base64url"),
@@ -196,19 +241,38 @@ function makeAuthenticator(name) {
 // ---------------------------------------------------------------------------
 // THE VERBS.
 // ---------------------------------------------------------------------------
-function form(o) { return new URLSearchParams(o).toString(); }
+function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
+  return new URLSearchParams(o).toString();
+}
+
 function absolute(l) {
-  return /^https?:\/\//i.test(String(l || "")) ? String(l) : base + String(l || "");
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
+  return /^https?:\/\//i.test(String(l || "")) ? String(l) :
+         base + String(l || "");
 }
+
 function csrfOf(text) {
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
+  log.debug("Entering csrfOf().");
+  log.debug("Leaving csrfOf().");
+  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
+          [])[1] || "";
 }
+
 function attr(html, name) {
+  log.debug("Entering attr().");
   const m = String(html).match(new RegExp(name + '="([^"]*)"'));
+  log.debug("Leaving attr().");
   return m ? m[1] : "";
 }
+
 function hidden(html, name) {
-  const m = String(html).match(new RegExp('name="' + name + '"[^>]*value="([^"]*)"'));
+  log.debug("Entering hidden().");
+  const m = String(html).match(new RegExp('name="' + name +
+                                          '"[^>]*value="([^"]*)"'));
+  log.debug("Leaving hidden().");
   return m ? m[1] : "";
 }
 
@@ -229,21 +293,26 @@ function hidden(html, name) {
 // session. The service was right and the jar was wrong.
 // ---------------------------------------------------------------------------
 function browser() {
+  log.debug("Entering browser().");
   const jar = new Map();
   const self = {
     get cookie() {
+      log.debug("Entering cookie().");
+      log.debug("Leaving cookie().");
       return Array.from(jar.entries()).map(function (pair) {
         return pair[0] + "=" + pair[1];
       }).join("; ");
     },
     async go(method, path, body) {
+      log.debug("Entering go().");
       const headers = {};
       const sending = self.cookie;
       if (sending) { headers.cookie = sending; }
       if (body !== undefined) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
-      const r = await fetch(absolute(path), { method: method, redirect: "manual",
+      const r = await fetch(absolute(path),
+                            { method: method, redirect: "manual",
                                               headers: headers, body: body });
       const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
       set.forEach(function (one) {
@@ -257,30 +326,36 @@ function browser() {
         // session id it has never heard of rather than as no cookie at all.
         if (!value) { jar.delete(name); } else { jar.set(name, value); }
       });
+      log.debug("Leaving go().");
       return { status: r.status, location: r.headers.get("location") || "",
                csp: r.headers.get("content-security-policy") || "",
                text: await r.text() };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
 async function get(path) {
+  log.debug("Entering get().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in get(): " + ((e && e.message) || e));
     // An HTML page from a door that answers JSON is worth quoting whole.
     body = raw;
   }
+  log.debug("Leaving get().");
   return { status: r.status, body: body, raw: raw };
 }
 
 // The management API taking JSON, for the one thing no browser door here does:
 // creating the person before they sign in.
 async function apiPost(path, payload) {
+  log.debug("Entering apiPost().");
   const r = await fetch(api + path, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -290,9 +365,11 @@ async function apiPost(path, payload) {
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in apiPost(): " + ((e && e.message) || e));
     // An HTML page from a door that answers JSON is worth quoting whole.
     body = raw;
   }
+  log.debug("Leaving apiPost().");
   return { status: r.status, body: body, raw: raw };
 }
 
@@ -313,8 +390,11 @@ var PASSWORD = "portal-backup-keys-Passw0rd!-" + String(Date.now()).slice(-6);
 var MAIL_DOMAIN = "portal-backup-keys.test";
 
 function personAttributes(who) {
+  log.debug("Entering personAttributes().");
+  log.debug("Leaving personAttributes().");
   return { cn: "Backup Keys Person " + who, givenName: "Backup", sn: who,
-           displayName: "Backup Keys Person " + who, mail: who + "@" + MAIL_DOMAIN };
+           displayName: "Backup Keys Person " + who,
+           mail: who + "@" + MAIL_DOMAIN };
 }
 
 // Create `who` with a password and real attributes, once per run.
@@ -338,15 +418,18 @@ async function ensurePerson(who) {
 }
 
 async function factorsFor(who) {
+  log.debug("Entering factorsFor().");
   const r = await get("/users?user=" + encodeURIComponent(who));
   assert.strictEqual(r.status, 200,
     "GET /admin-api/users?user=" + who + " answered " + r.status);
+  log.debug("Leaving factorsFor().");
   return r.body.factors || {};
 }
 
 // Sign in at a portal door through the code flow, answering a security-key
 // step with `authenticator` when one is asked for.
 async function signIn(door, authenticator) {
+  log.debug("Entering signIn().");
   const b = browser();
   let r = await b.go("GET", door);
   assert.ok(/\/oauth2\/authorize\?/.test(r.location),
@@ -377,14 +460,17 @@ async function signIn(door, authenticator) {
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in did not complete: " + r.status + " " +
     String(r.text).slice(0, 400));
-  r = await b.go("GET", r.location);   // the authorization endpoint, with a code
+  r = await b.go("GET",
+                 r.location);   // the authorization endpoint, with a code
   r = await b.go("GET", r.location);   // the callback, which mints the session
   assert.ok(b.cookie, "completing the flow established no session cookie.");
+  log.debug("Leaving signIn().");
   return b;
 }
 
 // Drive `/portal/keys`'s two-step enrolment with one authenticator.
 async function enrolAt(b, authenticator, role, label) {
+  log.debug("Entering enrolAt().");
   let page = await b.go("GET", "/portal/keys");
   const begun = await b.go("POST", "/portal/keys",
     form({ action: "begin", role: role, label: label || "",
@@ -400,6 +486,7 @@ async function enrolAt(b, authenticator, role, label) {
     form({ action: "finish", enrolment_id: hidden(page.text, "enrolment_id"),
            credential: JSON.stringify(authenticator.register(challenge)),
            csrf_token: csrfOf(page.text) }));
+  log.debug("Leaving enrolAt().");
   return { armed: page, done: done };
 }
 
@@ -407,13 +494,14 @@ async function enrolAt(b, authenticator, role, label) {
 // 1. THE FIRST KEY, AND THE PAGE THAT COULD NOT ENROL ONE.
 // ---------------------------------------------------------------------------
 async function thePortalCanEnrolAKey(first) {
+  log.debug("Entering thePortalCanEnrolAKey().");
   log.info("=== /portal/keys enrols a key at all ===");
   const b = await signIn("/portal/keys", null);
 
   const page = await b.go("GET", "/portal/keys");
   check("THE PAGE OFFERS AN ENROL CONTROL. It said `there is no enrol button " +
-        "here, because a WebAuthn ceremony belongs to a sign-in and this page " +
-        "is not one` — and the premise is false: a ceremony belongs to " +
+        "here, because a WebAuthn ceremony belongs to a sign-in and this " +
+        "page is not one` — and the premise is false: a ceremony belongs to " +
         "whoever is asking, and a signed-in person registering a credential " +
         "is the ordinary WebAuthn flow", function () {
     assert.strictEqual(page.status, 200,
@@ -425,8 +513,8 @@ async function thePortalCanEnrolAKey(first) {
 
   check("AND IT RELAXES `script-src` TO `'self'` WHILE KEEPING " +
         "`frame-ancestors` — the seventh scripted page in this service and " +
-        "the first in this portal. A ceremony is a browser API call and there " +
-        "is no markup that makes one; the relaxation goes through " +
+        "the first in this portal. A ceremony is a browser API call and " +
+        "there is no markup that makes one; the relaxation goes through " +
         "app.contentSecurityPolicy(), which is what stops the framing clause " +
         "being lost with the page still working", function () {
     assert.ok(/script-src 'self'/.test(page.csp),
@@ -438,7 +526,8 @@ async function thePortalCanEnrolAKey(first) {
     // 'unsafe-inline'` is the service-wide default — every page here carries
     // its stylesheet inline — and asserting against the whole policy reads it
     // as a script hole, which is a check that fails on a correct service.
-    const scriptSrc = (String(page.csp).match(/script-src ([^;]*)/) || [])[1] || "";
+    const scriptSrc = (String(page.csp).match(/script-src ([^;]*)/) ||
+                       [])[1] || "";
     assert.ok(!/unsafe-inline/.test(scriptSrc),
       "script-src was relaxed with 'unsafe-inline', which is a hole rather " +
       "than an exception: " + scriptSrc);
@@ -460,8 +549,8 @@ async function thePortalCanEnrolAKey(first) {
            credential: JSON.stringify(
              first.register(attr(armedPage.text, "data-challenge"))),
            csrf_token: csrfOf(armedPage.text) }));
-  check("A `finish` NAMING A DIFFERENT ENROLMENT IS REFUSED — the challenge is " +
-        "held against an id, so a ceremony armed in one tab cannot be " +
+  check("A `finish` NAMING A DIFFERENT ENROLMENT IS REFUSED — the challenge " +
+        "is held against an id, so a ceremony armed in one tab cannot be " +
         "completed by another", function () {
     assert.strictEqual(wrongId.status, 400,
       "it answered " + wrongId.status + " " +
@@ -490,6 +579,7 @@ async function thePortalCanEnrolAKey(first) {
     assert.strictEqual(factors.keys[0].role, "mfa",
       "the role did not survive.");
   });
+  log.debug("Leaving thePortalCanEnrolAKey().");
   return b;
 }
 
@@ -497,6 +587,7 @@ async function thePortalCanEnrolAKey(first) {
 // 2. THE BACKUP, AND THE MISTAKE IT HAS TO REFUSE.
 // ---------------------------------------------------------------------------
 async function aSecondKeyIsABackupAndTheSameOneIsNot(first, second) {
+  log.debug("Entering aSecondKeyIsABackupAndTheSameOneIsNot().");
   log.info("=== a second key, and the same one refused ===");
   const b = await signIn("/portal/keys", first);
 
@@ -516,7 +607,8 @@ async function aSecondKeyIsABackupAndTheSameOneIsNot(first, second) {
   check("and the excluded list on the armed page names the key they hold, so " +
         "a conforming browser refuses before the person touches anything",
     function () {
-      assert.ok(attr(again.armed.text, "data-exclude").indexOf(first.idB64) >= 0,
+      assert.ok(attr(again.armed.text, "data-exclude").indexOf(
+          first.idB64) >= 0,
         "the ceremony did not exclude the enrolled key: " +
         attr(again.armed.text, "data-exclude"));
     });
@@ -541,12 +633,14 @@ async function aSecondKeyIsABackupAndTheSameOneIsNot(first, second) {
       assert.ok(ids.indexOf(first.idB64) >= 0 && ids.indexOf(second.idB64) >= 0,
         "the two enrolled keys are not the two stored: " + ids.join(", "));
     });
+  log.debug("Leaving aSecondKeyIsABackupAndTheSameOneIsNot().");
 }
 
 // ---------------------------------------------------------------------------
 // 3. EITHER KEY SIGNS THEM IN. **The assertion the backup is FOR.**
 // ---------------------------------------------------------------------------
 async function eitherKeySignsThemIn(first, second) {
+  log.debug("Entering eitherKeySignsThemIn().");
   log.info("=== either key signs them in ===");
   for (const one of [first, second]) {
     const b = await signIn("/portal", one);
@@ -577,12 +671,14 @@ async function eitherKeySignsThemIn(first, second) {
     assert.strictEqual(refused.status, 200,
       "a stranger's authenticator was accepted (" + refused.status + ").");
   });
+  log.debug("Leaving eitherKeySignsThemIn().");
 }
 
 // ---------------------------------------------------------------------------
 // 4. LOSING ONE. Self-service for the lost key, refused for the last.
 // ---------------------------------------------------------------------------
 async function theLostKeyIsRemovedWithoutAnOperator(first, second) {
+  log.debug("Entering theLostKeyIsRemovedWithoutAnOperator().");
   log.info("=== the lost key is removed, and the last one is not ===");
   const b = await signIn("/portal/keys", second);
   let page = await b.go("GET", "/portal/keys");
@@ -610,8 +706,8 @@ async function theLostKeyIsRemovedWithoutAnOperator(first, second) {
     form({ credentialId: second.idB64, csrf_token: csrfOf(page.text) }));
   check("AND REMOVING THE LAST ONE IS ALLOWED HERE ONLY BECAUSE IT IS A " +
         "SECOND FACTOR — an `mfa` key was never a way IN, so taking it away " +
-        "drops the account to one factor rather than to none. A `primary` key " +
-        "in the same position is refused, which tests/portal_access.js " +
+        "drops the account to one factor rather than to none. A `primary` " +
+        "key in the same position is refused, which tests/portal_access.js " +
         "asserts at the layer that decides it", function () {
     assert.ok(lastOne.status === 303 || lastOne.status === 200,
       "removing the last second factor answered " + lastOne.status + " " +
@@ -625,6 +721,7 @@ async function theLostKeyIsRemovedWithoutAnOperator(first, second) {
     assert.strictEqual(factors.mfaRequired, false,
       "a second factor is still being demanded.");
   });
+  log.debug("Leaving theLostKeyIsRemovedWithoutAnOperator().");
 }
 
 async function test() {

@@ -56,9 +56,10 @@
 //
 // **AND ONE THING THAT IS NOT A BOUND AND IS WORTH NOT MISTAKING FOR ONE.**
 // These endpoints are gated — unconditionally, since `global.mode` replaced
-// `ssf.authRequired` on 2026-09-06 — but every credential this service
-// accepts is a turnstile, see `ssf/CLAUDE.md`. So "a receiver created the
-// stream" is not evidence of anything much. The bounds above are the bounds; the gate is not one of them.
+// `ssf.authRequired` on 2026-09-06 — but every credential this service accepts
+// is a turnstile, see `ssf/CLAUDE.md`. So "a receiver created the stream" is
+// not evidence of anything much. The bounds above are the bounds; the gate is
+// not one of them.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT DOES NOT DO, AND THE ONE THAT SURPRISES PEOPLE.
@@ -108,6 +109,8 @@ const USER_AGENT = require('../common/version').userAgent('ssf-transmitter');
 const MAX_BODY_BYTES = 64 * 1024;
 
 function maxBodyBytes() {
+  log.debug("Entering maxBodyBytes().");
+  log.debug("Leaving maxBodyBytes().");
   return config.value('ssf.pushMaxResponseBytes');
 }
 
@@ -264,6 +267,7 @@ function isOwnLoopback(raw) {
   try {
     parsed = new URL(String(raw || '').trim());
   } catch (e) {
+    log.debug("Caught in isOwnLoopback(): " + ((e && e.message) || e));
     // Not a URL at all. `urlProblem()` says so properly a few lines down; here
     // the only question is whether it is OURS, and an unparseable string is
     // not.
@@ -442,9 +446,11 @@ function pushSet(url, token, options) {
   log.debug('Leaving pushSet(). Dialling ' + target.origin + '.');
   return new Promise(function (resolve) {
     const done = function (result) {
+      log.debug("Entering done().");
       log.debug('pushSet() finished. ok=' + result.ok + ', status=' +
                 result.status);
       resolve(Object.assign({ url: String(url) }, result));
+      log.debug("Leaving done().");
     };
     let request = null;
     try {
@@ -523,6 +529,8 @@ function pushSet(url, token, options) {
           try {
             json = JSON.parse(text);
           } catch (e) {
+            log.debug("Caught in a callback in pushSet(): " +
+                      ((e && e.message) || e));
             // Not JSON. A proxy in front of the receiver serving an HTML
             // error page is the ordinary case, and the TEXT is then the
             // diagnosis — so it is carried rather than discarded.
@@ -610,6 +618,8 @@ function pushSetWithRetries(url, token, options) {
   const delay = config.value('ssf.pushRetryDelayMs');
   const attempts = [];
   function attempt(n) {
+    log.debug("Entering attempt().");
+    log.debug("Leaving attempt().");
     return pushSet(url, token, options).then(function (result) {
       attempts.push({ status: result.status, why: result.why });
       if (result.ok || !result.retryable || n >= retries) {

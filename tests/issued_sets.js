@@ -47,11 +47,18 @@ delete process.env.CONFIG_FILE;
 const helpers = require('../common/helpers');
 const stats = require('../common/admin_stats');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'issued_sets',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // One JWT through the real funnel — `signJwt()` is what records a token, so a
 // test that pushed a record into the store directly would be asserting against
 // a shape nothing produces. `context` is the third parameter that function
 // offers, and `setId` is the member under test.
 function mint(typ, jti, setId, extra) {
+  log.debug("Entering mint().");
   const now = Math.floor(Date.now() / 1000);
   helpers.signJwt(Object.assign({
     typ: typ, jti: jti, sub: 'urn:sts:user:alice', username: 'alice',
@@ -59,13 +66,18 @@ function mint(typ, jti, setId, extra) {
     iat: now, nbf: now, exp: now + 900
   }, extra || {}), { sessionId: 'sess-1', grant: 'authorization_code',
                      setId: setId || '' });
+  log.debug("Leaving mint().");
 }
 
 function setsByKey(key) {
-  return stats.issuedSets().filter(function (set) { return set.setKey === key; })[0];
+  log.debug("Entering setsByKey().");
+  log.debug("Leaving setsByKey().");
+  return stats.issuedSets()
+              .filter(function (set) { return set.setKey === key; })[0];
 }
 
 function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== One reply is one row ===');
 
   // -----------------------------------------------------------------------
@@ -90,10 +102,10 @@ function run(t) {
           'and neither absorbed the other: three credentials in the first');
   t.equal(second.size, 3, 'and three in the second');
   t.check(first.members.every(function (m) { return m.setId === 'REPLY-1'; }),
-          'EVERY MEMBER CARRIES THE ID ITS ISSUER STATED, which is what makes ' +
-          'this separable at all — a heuristic over sub, client, scope, grant ' +
-          'and issuedAt would have merged these six into one reply nobody ' +
-          'received',
+          'EVERY MEMBER CARRIES THE ID ITS ISSUER STATED, which is what ' +
+          'makes this separable at all — a heuristic over sub, client, ' +
+          'scope, grant and issuedAt would have merged these six into one ' +
+          'reply nobody received',
           first.members.map(function (m) { return m.setId; }).join(','));
   t.equal(first.members.map(function (m) { return m.username; }).join(','),
           'alice,alice,alice',
@@ -153,9 +165,9 @@ function run(t) {
   // there would be nothing to address the row by at all.
   const ticketSet = setsByKey('one:' + ticket.key);
   t.check(!!ticketSet,
-          'A KERBEROS TICKET IS ADDRESSABLE THOUGH IT HAS NO IDENTIFIER — the ' +
-          'protocol gives it none and the KDC keeps no handle on it, so the ' +
-          'issued register supplies one of its own',
+          'A KERBEROS TICKET IS ADDRESSABLE THOUGH IT HAS NO IDENTIFIER — ' +
+          'the protocol gives it none and the KDC keeps no handle on it, so ' +
+          'the issued register supplies one of its own',
           'looked for one:' + ticket.key);
   t.equal(ticketSet.members[0].identifier, '',
           'and it still has no identifier to quote, which is a different ' +
@@ -175,10 +187,12 @@ function run(t) {
   stats.revoke('a-one', 'issued_sets.js');
   const mixed = setsByKey('set:REPLY-1');
   t.equal(mixed.state, 'mixed',
-          'one revoked member makes the SET mixed rather than revoked or valid');
+          'one revoked member makes the SET mixed rather than revoked or ' +
+          'valid');
   t.equal(mixed.states.revoked, 1, 'and the breakdown counts the revoked one');
   t.equal(mixed.states.valid, 2, 'beside the two that are still good');
-  t.equal(mixed.revokedCount, 1, 'which is what decides Revoke set from Restore set');
+  t.equal(mixed.revokedCount, 1, 'which is what decides Revoke set from ' +
+                                 'Restore set');
   stats.restore('a-one');
   t.equal(setsByKey('set:REPLY-1').state, 'valid',
           'and putting it back makes the set whole again');
@@ -228,6 +242,7 @@ function run(t) {
   const keys = stats.issuedSets().map(function (set) { return set.setKey; });
   t.equal(keys.length, new Set(keys).size,
           'and no two sets share a key, which is what the buttons address');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

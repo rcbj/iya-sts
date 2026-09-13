@@ -63,9 +63,17 @@
 const fs = require('fs');
 const path = require('path');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'stack_network',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 
 function read(rel) {
+  log.debug("Entering read().");
+  log.debug("Leaving read().");
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
@@ -103,6 +111,7 @@ const VARIABLES = [
 // machine are free.
 // ---------------------------------------------------------------------------
 function checkTheScanIsSharedAndComplete(t) {
+  log.debug("Entering checkTheScanIsSharedAndComplete().");
   t.log.info('=== one subnet scan, shared by both launchers ===');
   const helper = read('tests/tools/compose.sh');
 
@@ -140,6 +149,7 @@ function checkTheScanIsSharedAndComplete(t) {
           'the point of the scan is to say what is wrong BEFORE the stack ' +
           'tries, so a fallback to the literal would be the scan handing ' +
           'back the very answer it was asked to avoid');
+  log.debug("Leaving checkTheScanIsSharedAndComplete().");
 }
 
 // ---------------------------------------------------------------------------
@@ -149,6 +159,7 @@ function checkTheScanIsSharedAndComplete(t) {
 // is `<base>.0.0/24`, so nothing moves unless something is in the way.
 // ---------------------------------------------------------------------------
 function checkBothLaunchersScan(t) {
+  log.debug("Entering checkBothLaunchersScan().");
   t.log.info('=== both launchers choose a subnet, from their own base ===');
 
   LAUNCHERS.forEach(function (launcher) {
@@ -186,6 +197,7 @@ function checkBothLaunchersScan(t) {
           'and the two launchers sit in different /16s',
           'a developer running both at once is the ordinary case, and it ' +
           'should not depend on a scan to work');
+  log.debug("Leaving checkBothLaunchersScan().");
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +207,7 @@ function checkBothLaunchersScan(t) {
 // done the work of choosing.
 // ---------------------------------------------------------------------------
 function checkTheFourVariablesTravelTogether(t) {
+  log.debug("Entering checkTheFourVariablesTravelTogether().");
   t.log.info('=== the subnet and the three addresses in it move together ===');
 
   LAUNCHERS.forEach(function (launcher) {
@@ -215,6 +228,7 @@ function checkTheFourVariablesTravelTogether(t) {
               'reporting a subnet nothing used');
     });
   });
+  log.debug("Leaving checkTheFourVariablesTravelTogether().");
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +240,7 @@ function checkTheFourVariablesTravelTogether(t) {
 // situation the scan exists for.
 // ---------------------------------------------------------------------------
 function checkTheAddressesComeOffTheSubnet(t) {
+  log.debug("Entering checkTheAddressesComeOffTheSubnet().");
   t.log.info('=== the addresses are derived from the chosen subnet ===');
 
   LAUNCHERS.forEach(function (launcher) {
@@ -249,13 +264,16 @@ function checkTheAddressesComeOffTheSubnet(t) {
             'add`, so a length that did not match the network would give a ' +
             'realm listener an address with the wrong idea of who is local');
   });
+  log.debug("Leaving checkTheAddressesComeOffTheSubnet().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkTheScanIsSharedAndComplete(t);
   checkBothLaunchersScan(t);
   checkTheFourVariablesTravelTogether(t);
   checkTheAddressesComeOffTheSubnet(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

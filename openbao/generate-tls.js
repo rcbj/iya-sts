@@ -43,6 +43,10 @@ const path = require('path');
 const x509 = require('../common/vendored/x509');
 const keyMaterial = require('../common/vendored/key_material');
 
+// This script's own logger. Its level is LOG_LEVEL, and info without one.
+const log = require('bunyan').createLogger({ name: 'sts-bao-tls',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const DIR = process.env.STS_BAO_TLS_DIR || '/openbao/file/tls';
 const CERT = path.join(DIR, 'server.crt');
 const KEY = path.join(DIR, 'server.key');
@@ -56,6 +60,7 @@ const IPS = String(process.env.STS_BAO_TLS_IPS || '127.0.0.1')
   .split(',').map(function (one) { return one.trim(); }).filter(Boolean);
 
 async function main() {
+  log.debug("Entering main().");
   fs.mkdirSync(DIR, { recursive: true });
   // THE RAFT DIRECTORY TOO, AND IT BELONGS HERE RATHER THAN IN THE STORE'S
   // CONFIG. OpenBao's raft backend opens its bolt file inside a directory it
@@ -71,10 +76,12 @@ async function main() {
   } catch (e) {
     // Reported below with the rest; on a host bind mount this is the ordinary
     // case and the store's own entrypoint chowns what it can.
+    log.debug("Caught in main(): " + ((e && e.message) || e));
   }
   if (fs.existsSync(CERT) && fs.existsSync(KEY)) {
-    console.log('sts-bao-tls: ' + CERT + ' is already there; nothing was ' +
-                'minted. The pair belongs to the volume.');
+    log.info(CERT + ' is already there; nothing was minted. The pair ' +
+             'belongs to the volume.');
+    log.debug("Leaving main().");
     return;
   }
   const pair = await keyMaterial.generateKeyPair('rsa-2048');
@@ -96,7 +103,9 @@ async function main() {
       subjectAltName: {
         present: true, critical: false,
         names: NAMES.map(function (one) { return { kind: 'dns', value: one }; })
-          .concat(IPS.map(function (one) { return { kind: 'ip', value: one }; }))
+          .concat(IPS.map(function (one) {
+            return { kind: 'ip', value: one };
+          }))
       }
     }
   });
@@ -127,17 +136,17 @@ async function main() {
     // person running the stack: the server reads a 0644 certificate whoever
     // owns it, and only the key matters. Reported so that a listener that
     // will not start has this in the log above it.
-    console.log('sts-bao-tls: the pair could not be chowned to the server\'s ' +
-                'user (' + e.message + '). That is only a problem if the ' +
-                'listener then cannot read its key.');
+    log.info('The pair could not be chowned to the server\'s user (' +
+             e.message + '). That is only a problem if the listener then ' +
+             'cannot read its key.');
   }
-  console.log('sts-bao-tls: minted a TLS pair for ' +
-              NAMES.concat(IPS).join(', ') + ' into ' + DIR +
-              ' with this repository\'s own encoder.');
+  log.info('Minted a TLS pair for ' + NAMES.concat(IPS).join(', ') +
+           ' into ' + DIR + ' with this repository\'s own encoder.');
+  log.debug("Leaving main().");
 }
 
 main().catch(function (e) {
-  console.error('sts-bao-tls: the listener certificate could not be minted: ' +
-                (e && e.stack ? e.stack : e));
+  log.error('The listener certificate could not be minted: ' +
+            (e && e.stack ? e.stack : e));
   process.exit(1);
 });

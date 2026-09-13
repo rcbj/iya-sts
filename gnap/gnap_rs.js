@@ -53,31 +53,44 @@ const grants = require('./gnap_grants');
 const accessRights = require('./gnap_access');
 
 function refusal(code, why, gnapError, status) {
-  const out = { ok: false, errorCode: code, why: why, gnapError: gnapError || 'invalid_request',
+  log.debug("Entering refusal().");
+  const out = { ok: false, errorCode: code, why: why,
+                gnapError: gnapError || 'invalid_request',
                 status: status || 400 };
+  log.debug("Leaving refusal().");
   return errorCodes.mark(out, code);
 }
 
 // Whether a token record is live — the checks introspection and the RS share.
 function liveProblem(record) {
+  log.debug("Entering liveProblem().");
   if (!record) {
+    log.debug("Leaving liveProblem().");
     return 'unknown';
   }
   if (record.revoked || tokens.isRevokedJti(record.jti)) {
+    log.debug("Leaving liveProblem().");
     return 'revoked';
   }
   if (record.exp && record.exp < nowSec()) {
+    log.debug("Leaving liveProblem().");
     return 'expired';
   }
   const grant = store.getGrant(record.grantId);
   if (grant && grant.state === store.STATE.FINALIZED) {
+    log.debug("Leaving liveProblem().");
     return 'grant finalized';
   }
+  log.debug("Leaving liveProblem().");
   return '';
 }
 
 function rsNamesOf(app, extra) {
-  return [app.identifier].concat(grants.fieldValues(app, 'gnapResourceServerUri'), extra || []);
+  log.debug("Entering rsNamesOf().");
+  log.debug("Leaving rsNamesOf().");
+  return [app.identifier].concat(grants.fieldValues(app,
+                                                    'gnapResourceServerUri'),
+                                 extra || []);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +100,8 @@ function introspect(req) {
   log.debug("Entering introspect().");
   if (config.value('gnap.introspection') === false) {
     log.debug("Leaving introspect(). Off.");
-    return refusal('STS-GNAP-0520', 'introspection is not offered by this authorization server.',
+    return refusal('STS-GNAP-0520', 'introspection is not offered by this ' +
+                                    'authorization server.',
                    'invalid_request', 404);
   }
   const body = proof.readBody(req);
@@ -100,10 +114,12 @@ function introspect(req) {
     log.debug("Leaving introspect(). Request refused.");
     return parsed;
   }
-  const caller = grants.identifyCaller(req, body, parsed.request.resourceServer, grants.KIND_RS);
+  const caller = grants.identifyCaller(req, body, parsed.request.resourceServer,
+                                       grants.KIND_RS);
   if (!caller.ok) {
     log.debug("Leaving introspect(). Resource server refused.");
-    return Object.assign(caller, { gnapError: 'invalid_resource_server', status: 400 });
+    return Object.assign(caller,
+                         { gnapError: 'invalid_resource_server', status: 400 });
   }
   const rs = caller.app;
   monitor.record(rs.identifier, 'rs.introspection', {});
@@ -113,7 +129,8 @@ function introspect(req) {
   if (!inactiveWhy) {
     const names = rsNamesOf(rs);
     if (record.aud && record.aud.length && !record.aud.some(function (aud) {
-      return names.indexOf(aud) >= 0 || /\/gnap\/rs\/resource$/.test(aud) && rs.identifier === aud;
+      return names.indexOf(aud) >= 0 ||
+             /\/gnap\/rs\/resource$/.test(aud) && rs.identifier === aud;
     })) {
       inactiveWhy = 'not for this resource server';
     } else if (parsed.request.proof) {
@@ -128,14 +145,17 @@ function introspect(req) {
       inactiveWhy = 'not appropriate for the access indicated';
     }
   }
-  audit.audit({ action: 'gnap.rs.introspect', category: 'protocol', protocol: 'GNAP',
-    channel: 'http', outcome: 'success', actor: rs.identifier, target: rs.identifier,
+  audit.audit({ action: 'gnap.rs.introspect', category: 'protocol',
+    protocol: 'GNAP',
+    channel: 'http', outcome: 'success', actor: rs.identifier, target:
+                                                                 rs.identifier,
     summary: 'A resource server introspected a GNAP access token',
     detail: { active: !inactiveWhy, why: inactiveWhy || '' } });
   if (inactiveWhy) {
     // RFC 9767 section 3.3: "the value is set to false and other fields are
     // omitted". The reason is logged for the operator and never sent.
-    log.info('gnap: introspection by ' + rs.identifier + ' answered inactive: ' + inactiveWhy);
+    log.info('gnap: introspection by ' + rs.identifier +
+             ' answered inactive: ' + inactiveWhy);
     log.debug("Leaving introspect(). Inactive.");
     return { ok: true, status: 200, body: { active: false } };
   }
@@ -169,8 +189,8 @@ function register(req) {
   log.debug("Entering register().");
   if (config.value('gnap.resourceRegistration') === false) {
     log.debug("Leaving register(). Off.");
-    return refusal('STS-GNAP-0530', 'resource registration is not offered by this authorization ' +
-                   'server.', 'invalid_request', 404);
+    return refusal('STS-GNAP-0530', 'resource registration is not offered by ' +
+                   'this authorization server.', 'invalid_request', 404);
   }
   const body = proof.readBody(req);
   if (!body.ok) {
@@ -183,13 +203,16 @@ function register(req) {
     return parsed;
   }
   const asked = parsed.request;
-  const caller = grants.identifyCaller(req, body, asked.resourceServer, grants.KIND_RS);
+  const caller = grants.identifyCaller(req, body, asked.resourceServer,
+                                       grants.KIND_RS);
   if (!caller.ok) {
     log.debug("Leaving register(). Resource server refused.");
-    return Object.assign(caller, { gnapError: 'invalid_resource_server', status: 400 });
+    return Object.assign(caller,
+                         { gnapError: 'invalid_resource_server', status: 400 });
   }
   const rs = caller.app;
-  const enabled = grants.capabilityList(req, null, 'token_formats_supported') || tokens.FORMATS;
+  const enabled = grants.capabilityList(req, null, 'token_formats_supported') ||
+                  tokens.FORMATS;
   let formats = null;
   if (asked.tokenFormats) {
     formats = asked.tokenFormats.filter(function (format) {
@@ -197,15 +220,19 @@ function register(req) {
     });
     if (!formats.length) {
       log.debug("Leaving register(). No shared token format.");
-      return refusal('STS-GNAP-0531', 'this authorization server supports none of the requested ' +
-                     'token formats (it issues ' + enabled.join(', ') + '; RFC 9767 section 3.4).',
+      return refusal('STS-GNAP-0531', 'this authorization server supports ' +
+                     'none of the requested token formats (it ' +
+                     'issues ' + enabled.join(', ') + '; ' +
+                         'RFC 9767 section 3.4).',
                      'invalid_request');
     }
   }
-  if (asked.introspectionRequired && config.value('gnap.introspection') === false) {
+  if (asked.introspectionRequired &&
+      config.value('gnap.introspection') === false) {
     log.debug("Leaving register(). Introspection required and off.");
-    return refusal('STS-GNAP-0532', 'the resource server requires introspection and this ' +
-                   'authorization server does not offer it (RFC 9767 section 3.4).', 'invalid_request');
+    return refusal('STS-GNAP-0532', 'the resource server requires ' +
+                   'introspection and this authorization server does not ' +
+                   'offer it (RFC 9767 section 3.4).', 'invalid_request');
   }
   const allowed = grants.fieldValues(rs, 'gnapAllowedAccess');
   const denied = asked.access.filter(function (right) {
@@ -214,31 +241,40 @@ function register(req) {
   });
   if (denied.length) {
     log.debug("Leaving register(). Access not permitted for this RS.");
-    return refusal('STS-GNAP-0533', 'this resource server may not register access to "' +
-                   (typeof denied[0] === 'string' ? denied[0] : denied[0].type) + '".',
+    return refusal('STS-GNAP-0533', 'this resource server may not register ' +
+                                    'access to "' +
+                   (typeof denied[0] === 'string' ? denied[0] :
+                    denied[0].type) + '".',
                    'invalid_access');
   }
-  const canonical = grants.canonicalJson({ access: asked.access, formats: formats });
+  const canonical = grants.canonicalJson({ access: asked.access,
+                                           formats: formats });
   let row = store.resourceByCanonical(canonical, rs.identifier);
   if (!row) {
     row = store.putResource(store.mint(12), {
-      canonical: canonical, rsIdentity: rs.identifier, rsIdentifier: rs.identifier,
-      access: asked.access, tokenFormats: formats, introspectionRequired: asked.introspectionRequired
+      canonical: canonical, rsIdentity: rs.identifier,
+      rsIdentifier: rs.identifier,
+      access: asked.access, tokenFormats: formats, introspectionRequired:
+                                                     asked.introspectionRequired
     });
     monitor.record(rs.identifier, 'rs.registration', {});
   }
   ensureMacaroonKey(rs);
   const response = { resource_reference: row.reference };
   if (config.value('gnap.introspection') !== false) {
-    response.introspection_endpoint = grants.realmBase(req) + '/gnap/introspect';
+    response.introspection_endpoint = grants.realmBase(req) +
+                                      '/gnap/introspect';
   }
   if (!caller.instanceId && config.value('gnap.instanceIds') !== false &&
       caller.descriptor.format !== 'reference') {
     const instanceId = store.mint(18);
-    store.putInstance(instanceId, { identifier: rs.identifier, key: caller.descriptor.value });
+    store.putInstance(instanceId,
+                      { identifier: rs.identifier,
+                        key: caller.descriptor.value });
     response.instance_id = instanceId;
   }
-  audit.audit({ action: 'gnap.rs.register', category: 'protocol', protocol: 'GNAP', channel: 'http',
+  audit.audit({ action: 'gnap.rs.register', category: 'protocol',
+    protocol: 'GNAP', channel: 'http',
     outcome: 'success', actor: rs.identifier, target: rs.identifier,
     summary: 'A resource server registered a GNAP resource set',
     detail: { reference: row.reference, rights: asked.access.length,
@@ -272,15 +308,18 @@ function ensureMacaroonKey(rs) {
   // operator's hands. A sighting is the door this service writes what it did
   // through, and the registry's own save seals the value (SEALED_FIELDS).
   try {
-    applications.seen({ identifier: rs.identifier, kind: grants.KIND_RS, protocol: grants.PROTOCOL,
+    applications.seen({ identifier: rs.identifier, kind: grants.KIND_RS,
+                        protocol: grants.PROTOCOL,
                         counts: false, fields: { gnapMacaroonKey: value } });
   } catch (e) {
-    log.warn(errorCodes.tag('STS-GNAP-0655') + 'gnap: the macaroon root key could not be written ' +
-             'onto "' + rs.identifier + '": ' + e.message);
+    log.warn(errorCodes.tag('STS-GNAP-0655') + 'gnap: the macaroon root key ' +
+             'could not be written onto "' + rs.identifier + '": ' + e.message);
   }
   if (!grants.field(applications.get(rs.identifier), 'gnapMacaroonKey')) {
-    log.warn(errorCodes.tag('STS-GNAP-0655') + 'gnap: the macaroon root key was not recorded on "' +
-             rs.identifier + '"; a resource server verifying macaroons itself will not find it.');
+    log.warn(errorCodes.tag('STS-GNAP-0655') + 'gnap: the macaroon root key ' +
+                                               'was not recorded on "' +
+             rs.identifier + '"; a resource server verifying macaroons ' +
+                             'itself will not find it.');
   }
   log.debug("Leaving ensureMacaroonKey(). sealed=" + keystore.persists());
 }
@@ -292,9 +331,9 @@ function ensureMacaroonKey(rs) {
 // `presentation()` is everything this authorization server can decide out of
 // its OWN RECORD of the token — that it issued it, that it is live, that it was
 // presented under the right scheme, and that the request carries a proof by the
-// key it is bound to — and it is SYNCHRONOUS. `authenticate()` adds the format's
-// own verification, which is what a resource server that is not this process
-// would be doing, and is async because a zcap signature check is.
+// key it is bound to — and it is SYNCHRONOUS. `authenticate()` adds the
+// format's own verification, which is what a resource server that is not this
+// process would be doing, and is async because a zcap signature check is.
 //
 // `ssf/ssf_auth.js` takes the first half only. Its gate is synchronous across
 // twelve endpoints, and for a token this process minted and still holds the
@@ -308,15 +347,18 @@ function presentation(req) {
   const bearerMatch = header.match(/^Bearer\s+(\S+)\s*$/i);
   if (!gnapMatch && !bearerMatch) {
     log.debug("Leaving presentation(). No token.");
-    return refusal('STS-GNAP-0540', 'no GNAP access token was presented.', 'invalid_token', 401);
+    return refusal('STS-GNAP-0540', 'no GNAP access token was presented.',
+                   'invalid_token', 401);
   }
   const value = (gnapMatch || bearerMatch)[1];
   const record = store.tokenByValue(value);
   const problem = liveProblem(record);
   if (problem) {
     log.debug("Leaving presentation(). " + problem);
-    return refusal('STS-GNAP-0541', 'the access token is ' + (problem === 'unknown'
-      ? 'not one this authorization server issued' : problem) + '.', 'invalid_token', 401);
+    return refusal('STS-GNAP-0541',
+                   'the access token is ' + (problem === 'unknown'
+      ? 'not one this authorization server issued' : problem) + '.',
+                   'invalid_token', 401);
   }
   const bearer = (record.flags || []).indexOf('bearer') >= 0;
   // Section 7.2: a bearer token "MUST be sent using the Authorization request
@@ -324,36 +366,45 @@ function presentation(req) {
   // scheme and a proof. Either the other way round is a presentation error.
   if (bearer && !bearerMatch) {
     log.debug("Leaving presentation(). Bearer token under the GNAP scheme.");
-    return refusal('STS-GNAP-0542', 'a bearer GNAP token is presented with the Bearer scheme ' +
-                   '(RFC 9635 section 7.2).', 'invalid_request', 401);
+    return refusal('STS-GNAP-0542', 'a bearer GNAP token is presented with ' +
+                   'the Bearer scheme (RFC 9635 section ' +
+                   '7.2).', 'invalid_request', 401);
   }
   if (!bearer && !gnapMatch) {
     log.debug("Leaving presentation(). Bound token under the Bearer scheme.");
-    return refusal('STS-GNAP-0543', 'this access token is bound to a key and is presented with the ' +
-                   'GNAP scheme and proof of that key (RFC 9635 section 7.2).', 'invalid_request', 401);
+    return refusal('STS-GNAP-0543', 'this access token is bound to a key and ' +
+                   'is presented with the GNAP scheme and proof of that key ' +
+                   '(RFC 9635 section 7.2).', 'invalid_request', 401);
   }
   let presentedKey = null;
   let method = 'bearer';
   if (!bearer) {
-    const descriptor = keys.describe(record.key, { resolveReference: grants.resolveKeyReference });
+    const descriptor = keys.describe(record.key,
+                                     { resolveReference:
+                                         grants.resolveKeyReference });
     const body = proof.readBody(req);
     if (!descriptor.ok || !body.ok) {
       log.debug("Leaving presentation(). Key or body unusable.");
-      return refusal('STS-GNAP-0544', 'the token\'s key or the request content cannot be read.',
+      return refusal('STS-GNAP-0544', 'the token\'s key or the request ' +
+                                      'content cannot be read.',
                      'invalid_request', 401);
     }
-    const verified = proof.verifyRequest(req, body, descriptor, { accessToken: value });
+    const verified = proof.verifyRequest(req, body, descriptor,
+                                         { accessToken: value });
     if (!verified.ok) {
-      monitor.record(record.instanceId, 'proof.failed', { gnapError: 'invalid_token' });
+      monitor.record(record.instanceId, 'proof.failed',
+                     { gnapError: 'invalid_token' });
       log.debug("Leaving presentation(). Proof refused: " + verified.why);
-      return refusal(errorCodes.codeOf(verified) || 'STS-GNAP-0545', 'the key proof does not verify: ' +
+      return refusal(errorCodes.codeOf(verified) || 'STS-GNAP-0545', 'the ' +
+          'key proof does not verify: ' +
                      verified.why, 'invalid_token', 401);
     }
     presentedKey = keys.confirmationOf(descriptor);
     method = descriptor.proof.method;
   }
   log.debug("Leaving presentation(). " + record.format + " via " + method);
-  return { ok: true, record: record, value: value, presentedKey: presentedKey, method: method };
+  return { ok: true, record: record, value: value, presentedKey: presentedKey,
+           method: method };
 }
 
 // `options`: `{ audience, requiredAccess, base }`. Answers `{ ok, record,
@@ -374,20 +425,25 @@ async function authenticate(req, options) {
   const checked = await tokens.verify(record.format, value, {
     now: nowSec(), audience: opts.audience || null, presentedKey: presentedKey,
     requiredAccess: opts.requiredAccess || null, base: opts.base,
-    rsIdentity: record.rsIdentifiers && record.rsIdentifiers.length === 1 ? record.rsIdentifiers[0] : ''
+    rsIdentity: record.rsIdentifiers && record.rsIdentifiers.length === 1 ?
+                record.rsIdentifiers[0] : ''
   });
   if (!checked.ok) {
-    log.debug("Leaving authenticate(). Format verification refused: " + checked.why);
+    log.debug("Leaving authenticate(). Format verification refused: " +
+              checked.why);
     // ONLY A RIGHTS SHORTFALL IS 403 insufficient_scope; every other format
     // refusal is the token itself and 401 invalid_token. Decided on the CODE
     // gnap_access.checkAccess() raises, not on the sentence — nearly every
     // refusal sentence begins "the access token …".
     const shortfall = errorCodes.codeOf(checked) === 'STS-GNAP-0308';
+    log.debug("Leaving authenticate().");
     return refusal(errorCodes.codeOf(checked) || 'STS-GNAP-0546', checked.why,
-                   shortfall ? 'insufficient_scope' : 'invalid_token', shortfall ? 403 : 401);
+                   shortfall ? 'insufficient_scope' : 'invalid_token',
+                   shortfall ? 403 : 401);
   }
   log.debug("Leaving authenticate(). " + record.format + " via " + method);
-  return { ok: true, record: record, model: checked.model, method: method, format: record.format };
+  return { ok: true, record: record, model: checked.model, method: method,
+           format: record.format };
 }
 
 module.exports = {

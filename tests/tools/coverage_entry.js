@@ -33,11 +33,19 @@
 const v8 = require('v8');
 const path = require('path');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'coverage_entry',
+  level: process.env.LOG_LEVEL || 'info' });
+
 let stopping = false;
 
 // Longer than ten lines, so it says so at both ends like everything else here.
 function flushAndExit(signal) {
+  log.debug("Entering flushAndExit().");
   if (stopping) {
+    log.debug("Leaving flushAndExit().");
     return;
   }
   stopping = true;
@@ -53,6 +61,7 @@ function flushAndExit(signal) {
                          signal + ': ' + e.message + '\n');
   }
   process.exit(0);
+  log.debug("Leaving flushAndExit().");
 }
 
 process.on('SIGTERM', function () { flushAndExit('SIGTERM'); });

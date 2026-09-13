@@ -122,9 +122,10 @@ const SECRET_NOTES = {
           'it has always been — in <code>persistence.databaseUrl</code>, ' +
           'in clear text.',
     without: 'Nothing, until <code>persistence.mode</code> is ' +
-             '<code>postgres</code>. Then this service cannot open its store, ' +
-             'and <code>persistence.start()</code> is the one place in this ' +
-             'repository where a failure to open something stops the process.',
+             '<code>postgres</code>. Then this service cannot open its ' +
+             'store, and <code>persistence.start()</code> is the one place ' +
+             'in this repository where a failure to open something stops the ' +
+             'process.',
     rotating: 'Rotating it is ordinary: change it in the store and in ' +
               'PostgreSQL, and restart. Nothing this service has written ' +
               'depends on its value.'
@@ -153,8 +154,10 @@ const SECRET_NOTES = {
 const ISO_LIKE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 
 function ago(iso) {
+  log.debug("Entering ago().");
   const then = Date.parse(iso);
   if (!then) {
+    log.debug("Leaving ago().");
     return '';
   }
   const seconds = Math.round((Date.now() - then) / 1000);
@@ -170,37 +173,46 @@ function ago(iso) {
   } else {
     said = Math.round(n / 86400) + ' days';
   }
+  log.debug("Leaving ago().");
   return future ? ('in ' + said) : (said + ' ago');
 }
 
 function cell(value) {
+  log.debug("Entering cell().");
   if (value === null || value === undefined) {
+    log.debug("Leaving cell().");
     return '<span class="muted">&mdash;</span>';
   }
   if (typeof value === 'boolean') {
+    log.debug("Leaving cell().");
     return value ? 'yes' : 'no';
   }
   if (Array.isArray(value)) {
     if (!value.length) {
+      log.debug("Leaving cell().");
       return '<span class="muted">none</span>';
     }
     if (value.every(function (one) {
       return one === null || typeof one !== 'object';
     })) {
+      log.debug("Leaving cell().");
       return value.map(function (one) {
         return '<code>' + admin.esc(String(one)) + '</code>';
       }).join(' ');
     }
+    log.debug("Leaving cell().");
     return '<div class="wide">' + value.map(function (one) {
       return objectTable(one);
     }).join('') + '</div>';
   }
   if (typeof value === 'object') {
+    log.debug("Leaving cell().");
     return objectTable(value);
   }
   const text = String(value);
   if (ISO_LIKE.test(text)) {
     const relative = ago(text);
+    log.debug("Leaving cell().");
     return admin.esc(text.replace('T', ' ').replace(/\.\d+/, '')) +
            (relative ? ' <span class="muted">(' + admin.esc(relative) +
                        ')</span>' : '');
@@ -218,8 +230,10 @@ function cell(value) {
   // reading.
   const limit = text.indexOf(' ') >= 0 ? 160 : 80;
   if (text.length > limit) {
+    log.debug("Leaving cell().");
     return admin.clipped(text, limit);
   }
+  log.debug("Leaving cell().");
   return admin.esc(text);
 }
 
@@ -228,13 +242,17 @@ function cell(value) {
 // naming a single member of either — which is the same reason
 // `/admin/database` asks for every column rather than the ones it knows.
 function objectTable(value) {
+  log.debug("Entering objectTable().");
   if (value === null || typeof value !== 'object') {
+    log.debug("Leaving objectTable().");
     return cell(value);
   }
   const keys = Object.keys(value);
   if (!keys.length) {
+    log.debug("Leaving objectTable().");
     return '<span class="muted">empty</span>';
   }
+  log.debug("Leaving objectTable().");
   return '<table class="grid"><tbody>' +
     keys.map(function (key) {
       return '<tr><th>' + label(key) + '</th><td>' + cell(value[key]) +
@@ -248,9 +266,11 @@ function objectTable(value) {
 // and a page that only showed "cas required" would have cost them the string
 // they need.
 function label(name) {
+  log.debug("Entering label().");
   const text = String(name)
     .replace(/_/g, ' ')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  log.debug("Leaving label().");
   return '<span title="' + admin.esc(String(name)) + '">' +
          admin.esc(text) + '</span>';
 }
@@ -266,46 +286,57 @@ function label(name) {
 // key.
 // ---------------------------------------------------------------------------
 function whyNot(probe) {
+  log.debug("Entering whyNot().");
   if (probe.status === 403) {
+    log.debug("Leaving whyNot().");
     return 'The store refused it. For the paths this service is NOT supposed ' +
            'to reach that is the read-only policy <strong>working</strong> ' +
            'and not a fault — the identity it holds is bound to two read ' +
            'paths and nothing else.';
   }
   if (probe.status === 404) {
-    return 'No such path in the store. For a KV version 2 secret that usually ' +
-           'means the engine is mounted somewhere else, or the secret has ' +
-           'not been written yet.';
+    log.debug("Leaving whyNot().");
+    return 'No such path in the store. For a KV version 2 secret that ' +
+           'usually means the engine is mounted somewhere else, or the ' +
+           'secret has not been written yet.';
   }
   if (probe.status === 400) {
+    log.debug("Leaving whyNot().");
     return 'The store rejected the request itself. A KV version 1 engine ' +
            'answers this to a version 2 path, which is the usual cause.';
   }
   if (/ENOENT/.test(probe.error || '')) {
+    log.debug("Leaving whyNot().");
     return 'There is no such file. On a DEVELOPMENT-mode service that is ' +
            'ordinary: nothing is persisted, so the key-encryption key is ' +
            'never read and the file it names need not exist. In product mode ' +
            'this is a service that would not start.';
   }
   if (/EACCES/.test(probe.error || '')) {
+    log.debug("Leaving whyNot().");
     return 'The file is there and this process may not read it. Check the ' +
            'ownership of the mount rather than the path.';
   }
   if (/did not answer within/.test(probe.error || '')) {
-    return 'The store did not answer inside <code>keys.storeProbeTimeoutMs</code>. ' +
-           'That bounds one probe and not the page, so the others below were ' +
-           'still asked.';
+    log.debug("Leaving whyNot().");
+    return 'The store did not answer inside ' +
+           '<code>keys.storeProbeTimeoutMs</code>. That bounds one probe and ' +
+           'not the page, so the others below were still asked.';
   }
   if (/Cannot find module|needs the /.test(probe.error || '')) {
+    log.debug("Leaving whyNot().");
     return 'The SDK for this provider is not installed. It is deliberately ' +
            'not a dependency of this service — it is a mock first, and ' +
            'five cloud SDKs nobody uses would be carried by every install — ' +
            'so the message above names the package to install.';
   }
+  log.debug("Leaving whyNot().");
   return '';
 }
 
 function probeRows(probes) {
+  log.debug("Entering probeRows().");
+  log.debug("Leaving probeRows().");
   return probes.map(function (probe) {
     return '<h4>' + admin.esc(probe.id) +
       ' <span class="muted">' + (probe.ok ? '' : 'unavailable, ') +
@@ -336,6 +367,7 @@ function probeRows(probes) {
 // ===========================================================================
 function secretsJson() {
   log.debug('Entering secretsJson().');
+  log.debug("Leaving secretsJson().");
   return secrets.storeReport().then(function (report) {
     const keys = keystore.report();
     const out = Object.assign({}, report);
@@ -365,7 +397,8 @@ function renderSecrets(req, res) {
     admin.respond(req, res, json, 'Secret store', '/admin/secrets', body(json));
     log.debug('Leaving renderSecrets().');
   }).catch(function (e) {
-    log.error(errorCodes.tag('STS-ADMIN-0599') + 'secrets_admin: the page threw: ' +
+    log.error(errorCodes.tag('STS-ADMIN-0599') + 'secrets_admin: the page ' +
+                                                 'threw: ' +
               (e && e.stack ? e.stack : e));
     errorCodes.mark(res, 'STS-ADMIN-0599');
     admin.respond(req, res, { ok: false, error: String(e && e.message || e) },
@@ -374,6 +407,7 @@ function renderSecrets(req, res) {
                              admin.esc(String(e && e.message || e)),
                              'It threw'));
   });
+  log.debug("Leaving renderSecrets().");
 }
 
 function body(json) {
@@ -462,6 +496,7 @@ function body(json) {
         'Nothing here is load-bearing on this service, yet')
     : '';
 
+  log.debug("Leaving body().");
   return tiles + what + refusals + unused +
          json.secrets.map(function (row) {
            return secretBlock(row, json);
@@ -499,11 +534,10 @@ function secretBlock(row, json) {
                      ' <span class="muted">(' + admin.esc(ago(last.at)) +
                      ')</span>, in ' + admin.esc(String(last.tookMs)) +
                      'ms, from <code>' + admin.esc(last.provider) +
-                     '</code>.</p>' +
-                     '<p class="muted">This process holds the value in memory ' +
-                     'and nothing wrote it to disk. It is not on this page, ' +
-                     'in the JSON behind it, or in any log line this service ' +
-                     'has ever emitted.</p>',
+                     '</code>.</p><p class="muted">This process holds the ' +
+                     'value in memory and nothing wrote it to disk. It is ' +
+                     'not on this page, in the JSON behind it, or in any log ' +
+                     'line this service has ever emitted.</p>',
                      'This process has read it')
         : admin.warn('<p>The last read <strong>failed</strong> at ' +
                      admin.esc(String(last.at).replace('T', ' ')
@@ -543,12 +577,13 @@ function secretBlock(row, json) {
     '<tr><th>Location of its own</th><td>' + (row.shared ? 'no' : 'yes') +
       '</td><td class="why">' +
       (row.shared
-        ? 'This secret names no location, so it is read from <strong>wherever ' +
-          'the key-encryption key is</strong> and the field above is what ' +
-          'tells the two apart inside one value. That is the arrangement a ' +
-          'deployment with one mounted file or one cloud secret is already ' +
-          'in. If what is there turns out NOT to be a JSON object, reading ' +
-          'this secret is REFUSED rather than handing that key to a database.'
+        ? 'This secret names no location, so it is read from ' +
+          '<strong>wherever the key-encryption key is</strong> and the field ' +
+          'above is what tells the two apart inside one value. That is the ' +
+          'arrangement a deployment with one mounted file or one cloud ' +
+          'secret is already in. If what is there turns out NOT to be a JSON ' +
+          'object, reading this secret is REFUSED rather than handing that ' +
+          'key to a database.'
         : 'It names its own location in <code>' +
           admin.esc(row.settings.location) + '</code>.') +
       '</td></tr>' +
@@ -574,11 +609,14 @@ function secretBlock(row, json) {
 // either secret.
 // ---------------------------------------------------------------------------
 function storesBlock(json) {
+  log.debug("Entering storesBlock().");
   if (!json.stores.length) {
+    log.debug("Leaving storesBlock().");
     return '<h3>The stores</h3>' +
       admin.note('Neither secret is read from a store, so there is none to ' +
                  'report on.');
   }
+  log.debug("Leaving storesBlock().");
   return '<h3>The stores</h3>' +
     admin.note('<p>One block per store and not per secret: two secrets kept ' +
                'in one place share everything below, and asking the same ' +
@@ -621,5 +659,9 @@ module.exports = {
   // descriptors `secrets.js` exports in both directions. A secret with no
   // note is drawn with no explanation; a note for a secret that no longer
   // exists is prose about nothing. Neither is an error anywhere else.
-  secretNotes: function () { return Object.assign({}, SECRET_NOTES); }
+  secretNotes: function () {
+    log.debug("Entering secretNotes().");
+    log.debug("Leaving secretNotes().");
+    return Object.assign({}, SECRET_NOTES);
+  }
 };

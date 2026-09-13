@@ -47,6 +47,12 @@ delete process.env.CONFIG_FILE;
 
 const map = require('../admin-ui/delegation_map');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'delegation_map_bands',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // READING THE PICTURE BACK.
 //
@@ -58,6 +64,7 @@ const map = require('../admin-ui/delegation_map');
 // the only `<rect>` in the document carrying `fill-opacity`.
 // ---------------------------------------------------------------------------
 function panels(svg) {
+  log.debug("Entering panels().");
   const out = [];
   const re = /<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)" rx="3" fill="[^"]*" fill-opacity/g;
   let m = re.exec(svg);
@@ -66,6 +73,7 @@ function panels(svg) {
                width: Number(m[3]), height: Number(m[4]) });
     m = re.exec(svg);
   }
+  log.debug("Leaving panels().");
   return out;
 }
 
@@ -73,10 +81,13 @@ function panels(svg) {
 // by a `<title>` or a class, so the numbers come from the shape actually drawn:
 //   M x+cut y  H x+w-cut  L x+w y+h/2  L x+w-cut y+h  H x+cut  L x y+h/2  Z
 function hexagon(svg) {
+  log.debug("Entering hexagon().");
   const m = svg.match(/<path d="M([\d.]+) ([\d.]+)H([\d.]+)L([\d.]+) ([\d.]+)L([\d.]+) ([\d.]+)H([\d.]+)L([\d.]+) ([\d.]+)Z"/);
   if (!m) {
+    log.debug("Leaving hexagon().");
     return null;
   }
+  log.debug("Leaving hexagon().");
   return { top: Number(m[2]), bottom: Number(m[7]),
            left: Number(m[9]), right: Number(m[4]) };
 }
@@ -84,6 +95,7 @@ function hexagon(svg) {
 // Every application box: the rounded rectangles, which are the only `rx="5"` in
 // the document — an edge label's panel is `rx="3"` and the hexagon is a path.
 function rects(svg) {
+  log.debug("Entering rects().");
   const out = [];
   const re = /<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)" rx="5"/g;
   let m = re.exec(svg);
@@ -97,6 +109,7 @@ function rects(svg) {
                width: Number(m[3]), height: Number(m[4]) });
     m = re.exec(svg);
   }
+  log.debug("Leaving rects().");
   return out;
 }
 
@@ -105,6 +118,7 @@ function rects(svg) {
 // little above its bottom, so the extent below is the drawn glyph rather than
 // the space reserved for it — which is what an assertion about bands wants.
 function figures(svg) {
+  log.debug("Entering figures().");
   const out = [];
   const re = /<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"\/><path d="M[\d.]+ [\d.]+V([\d.]+)/g;
   let m = re.exec(svg);
@@ -113,14 +127,18 @@ function figures(svg) {
                bottom: Number(m[4]) });
     m = re.exec(svg);
   }
+  log.debug("Leaving figures().");
   return out;
 }
 
 // Where a box's own label was written, which is the only way to tell one box
 // from another without asking this file to know how a box is drawn.
 function labelY(svg, text) {
-  const re = new RegExp('<text x="([\\d.]+)" y="([\\d.]+)"[^>]*>' + text + '<\\/text>');
+  log.debug("Entering labelY().");
+  const re = new RegExp('<text x="([\\d.]+)" y="([\\d.]+)"[^>]*>' + text +
+                        '<\\/text>');
   const m = svg.match(re);
+  log.debug("Leaving labelY().");
   return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
 }
 
@@ -128,6 +146,7 @@ function labelY(svg, text) {
 // along the row are straight too and the arcs under it are cubics, so this is a
 // superset and the assertions below say which ones they mean.
 function segments(svg) {
+  log.debug("Entering segments().");
   const out = [];
   const re = /<path d="M([\d.]+) ([\d.]+)L([\d.]+) ([\d.]+)" fill="none"/g;
   let m = re.exec(svg);
@@ -137,6 +156,7 @@ function segments(svg) {
                d: m[1] + ' ' + m[2] + ' ' + m[3] + ' ' + m[4] });
     m = re.exec(svg);
   }
+  log.debug("Leaving segments().");
   return out;
 }
 
@@ -144,10 +164,13 @@ function segments(svg) {
 // question the label-seating assertion asks, in one place because two of them
 // ask it.
 function onSegment(line, x, y) {
+  log.debug("Entering onSegment().");
   if (y < Math.min(line.y1, line.y2) || y > Math.max(line.y1, line.y2)) {
+    log.debug("Leaving onSegment().");
     return false;
   }
   const t = (y - line.y1) / ((line.y2 - line.y1) || 1);
+  log.debug("Leaving onSegment().");
   return Math.abs((line.x1 + (line.x2 - line.x1) * t) - x) <= 1;
 }
 
@@ -155,6 +178,7 @@ function onSegment(line, x, y) {
 // SVG is the whole of the stacking, there being no z-index. A line emitted
 // after a label panel is painted ON TOP of the words in it.
 function paintOrder(svg) {
+  log.debug("Entering paintOrder().");
   const lines = [];
   const reLine = /<path d="[^"]+" fill="none" stroke=/g;
   let m = reLine.exec(svg);
@@ -163,18 +187,22 @@ function paintOrder(svg) {
     m = reLine.exec(svg);
   }
   const labels = [];
-  const rePanel = /<rect x="[-\d.]+" y="[-\d.]+" width="[\d.]+" height="[\d.]+" rx="3"/g;
+  const rePanel =
+      /<rect x="[-\d.]+" y="[-\d.]+" width="[\d.]+" height="[\d.]+" rx="3"/g;
   m = rePanel.exec(svg);
   while (m) {
     labels.push(m.index);
     m = rePanel.exec(svg);
   }
+  log.debug("Leaving paintOrder().");
   return { lines: lines, labels: labels,
            lastLine: lines.length ? lines[lines.length - 1] : -1,
            firstLabel: labels.length ? labels[0] : Infinity };
 }
 
 function overlap(a, b) {
+  log.debug("Entering overlap().");
+  log.debug("Leaving overlap().");
   return a.x < b.x + b.width && b.x < a.x + a.width &&
          a.y < b.y + b.height && b.y < a.y + a.height;
 }
@@ -185,6 +213,8 @@ function overlap(a, b) {
 // shape the register would take a suite of protocol traffic to produce.
 // ---------------------------------------------------------------------------
 function party(id, extra) {
+  log.debug("Entering party().");
+  log.debug("Leaving party().");
   return Object.assign({
     id: id, kind: 'party', key: id, presented: id, application: id, what: '',
     roles: { initial: 0, intermediary: 0, target: 1 }, protocols: [],
@@ -195,6 +225,8 @@ function party(id, extra) {
 }
 
 function edge(id, from, to, extra) {
+  log.debug("Entering edge().");
+  log.debug("Leaving edge().");
   return Object.assign({
     id: id, from: from, to: to, fromRole: '', toRole: '', relation: 'reaches',
     acts: 0, issued: 0, refused: 0, credentials: 1, firstAt: 0, lastAt: 0,
@@ -207,7 +239,8 @@ function edge(id, from, to, extra) {
 
 const STS = { id: ' sts', kind: 'sts',
               realm: { id: '', name: 'Default', isDefault: true },
-              issuer: 'urn:test', roles: { initial: 0, intermediary: 0, target: 0 },
+              issuer: 'urn:test',
+              roles: { initial: 0, intermediary: 0, target: 0 },
               acts: 0, issued: 0, refused: 0 };
 
 // A chain: a person, a client, and two services behind it. This is the shape
@@ -216,14 +249,19 @@ const CHAIN = {
   nodes: [STS,
           party('alice', { chiefRole: 'initial', isSubject: true }),
           party('webapp1'), party('apigw1'), party('esb1')],
-  edges: [edge('a', 'alice', 'webapp1', { relation: 'issued-for', credentials: 3 }),
+  edges: [edge('a', 'alice', 'webapp1',
+               { relation: 'issued-for', credentials: 3 }),
           edge('b', 'webapp1', 'apigw1'),
-          edge('c', 'apigw1', 'esb1', { relation: 'acts-for', mode: 'impersonation',
-                                        acts: 1, issued: 1, typeLabel: 'Token exchange' }),
+          edge('c', 'apigw1', 'esb1',
+               { relation: 'acts-for', mode: 'impersonation',
+                                        acts: 1, issued: 1, typeLabel:
+                                                              'Token ' +
+                                            'exchange' }),
           edge('d', ' sts', 'webapp1', { relation: 'issued', credentials: 3 }),
           edge('e', ' sts', 'apigw1', { relation: 'issued', credentials: 1 }),
           edge('f', ' sts', 'esb1', { relation: 'issued', credentials: 1 }),
-          edge('g', 'alice', ' sts', { relation: 'signed-in', acts: 2, issued: 2,
+          edge('g', 'alice', ' sts',
+               { relation: 'signed-in', acts: 2, issued: 2,
                                        typeLabel: 'the sign-in screen' })]
 };
 
@@ -238,12 +276,15 @@ const FAN = {
           edge('2', ' sts', 'two', { relation: 'issued', credentials: 2 }),
           edge('3', ' sts', 'three', { relation: 'issued', credentials: 3 }),
           edge('4', ' sts', 'four', { relation: 'issued', credentials: 4 }),
-          edge('5', 'alice', ' sts', { relation: 'signed-in', acts: 1, issued: 1,
+          edge('5', 'alice', ' sts',
+               { relation: 'signed-in', acts: 1, issued: 1,
                                        typeLabel: 'the sign-in screen' }),
           edge('6', 'alice', 'one', { relation: 'issued-for', credentials: 1 }),
           edge('7', 'alice', 'two', { relation: 'issued-for', credentials: 1 }),
-          edge('8', 'alice', 'three', { relation: 'issued-for', credentials: 1 }),
-          edge('9', 'alice', 'four', { relation: 'issued-for', credentials: 1 })]
+          edge('8', 'alice', 'three',
+               { relation: 'issued-for', credentials: 1 }),
+          edge('9', 'alice', 'four',
+               { relation: 'issued-for', credentials: 1 })]
 };
 
 // ONE PARTY WITH TWO LINES TO THE ISSUER, which was `bob_end_user`'s own
@@ -278,11 +319,12 @@ const TWICE = {
                  typeLabel: 'Client Credentials grant' })]
 };
 
-// Nothing has ever happened. `delegation.graph([])`'s answer, which every one of
-// these pages draws before anybody has chosen anything.
+// Nothing has ever happened. `delegation.graph([])`'s answer, which every one
+// of these pages draws before anybody has chosen anything.
 const ALONE = { nodes: [STS], edges: [] };
 
 function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   t.log.info('the issuer is in a band of its own, above every party');
   // -----------------------------------------------------------------------
@@ -298,7 +340,8 @@ function run(t) {
     return Math.min(held, one.top);
   }, Infinity);
   t.check(!!hex && hex.bottom <= topmost,
-          'THE HEXAGON ENDS ABOVE WHERE THE PARTIES BEGIN — two bands, not one flow',
+          'THE HEXAGON ENDS ABOVE WHERE THE PARTIES BEGIN — two bands, not ' +
+          'one flow',
           'issuer ends at ' + (hex && hex.bottom) +
           ', the topmost party begins at ' + topmost.toFixed(1));
 
@@ -308,7 +351,8 @@ function run(t) {
   const hexMid = hex ? (hex.left + hex.right) / 2 : 0;
   t.check(!!hex && Math.abs(hexMid - width / 2) <= 2,
           'and it is centred over them',
-          'hexagon at ' + hexMid.toFixed(1) + ', picture is ' + width + ' wide');
+          'hexagon at ' + hexMid.toFixed(1) + ', picture is ' + width +
+          ' wide');
 
   // -----------------------------------------------------------------------
   t.log.info('every party of a chain is on one plane');
@@ -318,11 +362,14 @@ function run(t) {
   // whole visible point of taking the issuer out of the layout: before it, the
   // issuer's edges pulled the ranks apart and the four boxes came out at four
   // heights.
-  const centres = parties.map(function (one) { return (one.top + one.bottom) / 2; });
+  const centres = parties.map(function (one) {
+    return (one.top + one.bottom) / 2;
+  });
   const spread = Math.max.apply(null, centres) - Math.min.apply(null, centres);
   t.check(spread <= 30,
           'THEY SHARE ONE HORIZONTAL PLANE, within half a box',
-          'centres ' + centres.map(function (c) { return c.toFixed(0); }).join(', '));
+          'centres ' +
+          centres.map(function (c) { return c.toFixed(0); }).join(', '));
 
   // And they are in the order of the chain rather than in some order of dagre's
   // own — the person first, then the client, then what it reaches.
@@ -338,17 +385,18 @@ function run(t) {
   const fan = map.render(FAN, { id: 'fan', label: 'fan' });
 
   // -----------------------------------------------------------------------
-  t.log.info('every party of a FAN is on one plane too, and none of them share a seat');
+  t.log.info('every party of a FAN is on one plane too, and none of them ' +
+             'share a seat');
   // -----------------------------------------------------------------------
   // THE CASE THE CHAIN ABOVE CANNOT SEE, and the one that was broken on
   // 2026-08-26 by the first attempt at this. In `rankdir: 'LR'` the RANK is the
   // x, so dagre gives every node on one rank the SAME x and tells them apart by
   // the y alone — which is the coordinate the row throws away. A chain has one
   // node per rank and comes out perfect either way; this fixture's four
-  // applications are all on rank 1, and flattening the y without also owning the
-  // x drew all four of them exactly on top of each other. Nothing in the file
-  // failed: the label panels did not clash, the bands were still bands, and the
-  // picture was four boxes in one place.
+  // applications are all on rank 1, and flattening the y without also owning
+  // the x drew all four of them exactly on top of each other. Nothing in the
+  // file failed: the label panels did not clash, the bands were still bands,
+  // and the picture was four boxes in one place.
   //
   // So both halves are asserted, and the second is the one that matters: they
   // share a plane, AND no two of them overlap. `spread` alone is satisfied by
@@ -356,10 +404,14 @@ function run(t) {
   const fanRects = rects(fan.svg);
   const fanParties = fanRects.concat(figures(fan.svg));
   t.equal(fanParties.length, 5, 'the fan draws a box for each party');
-  const fanCentres = fanParties.map(function (one) { return (one.top + one.bottom) / 2; });
-  t.check(Math.max.apply(null, fanCentres) - Math.min.apply(null, fanCentres) <= 30,
+  const fanCentres = fanParties.map(function (one) {
+    return (one.top + one.bottom) / 2;
+  });
+  t.check(Math.max.apply(null, fanCentres) -
+          Math.min.apply(null, fanCentres) <= 30,
           'THE FAN\'S PARTIES SHARE ONE PLANE, within half a box',
-          'centres ' + fanCentres.map(function (c) { return c.toFixed(0); }).join(', '));
+          'centres ' +
+          fanCentres.map(function (c) { return c.toFixed(0); }).join(', '));
   // On the RECTS alone, which is the four applications — the stick figure is
   // drawn as a glyph and the markup carries no width for it, so an extent read
   // off the document would be invented. It is the four that shared a rank and
@@ -369,14 +421,18 @@ function run(t) {
   fanRects.forEach(function (one, i) {
     fanRects.slice(i + 1).forEach(function (other) {
       if (one.left < other.right && one.right > other.left) {
-        stacked.push('(' + one.left.toFixed(0) + '-' + one.right.toFixed(0) + ') and (' +
-                     other.left.toFixed(0) + '-' + other.right.toFixed(0) + ')');
+        stacked.push('(' + one.left.toFixed(0) + '-' + one.right.toFixed(0) +
+            ') ' +
+            'and (' +
+                     other.left.toFixed(0) + '-' + other.right.toFixed(
+                         0) + ')');
       }
     });
   });
   t.check(stacked.length === 0,
           'AND NO TWO OF THEM OVERLAP — one plane is a row, not a pile',
-          stacked.length ? stacked.join('; ') : fanRects.length + ' box(es), none overlapping');
+          stacked.length ? stacked.join('; ') : fanRects.length + ' box(es), ' +
+              'none overlapping');
 
   // -----------------------------------------------------------------------
   t.log.info('no two edge labels are drawn on top of each other');
@@ -393,7 +449,8 @@ function run(t) {
   fanPanels.forEach(function (one, i) {
     fanPanels.slice(i + 1).forEach(function (other) {
       if (overlap(one, other)) {
-        clashes.push('(' + one.x.toFixed(0) + ',' + one.y.toFixed(0) + ') and (' +
+        clashes.push('(' + one.x.toFixed(0) + ',' + one.y.toFixed(0) +
+                     ') and (' +
                      other.x.toFixed(0) + ',' + other.y.toFixed(0) + ')');
       }
     });
@@ -449,8 +506,8 @@ function run(t) {
   });
   t.check(seated.length >= 5,
           'and each of their labels sits ON its own line rather than beside it',
-          seated.length + ' of ' + fanPanels.length + ' panels are on a straight ' +
-          'segment (the rest belong to lines dagre routed)');
+          seated.length + ' of ' + fanPanels.length + ' panels are on a ' +
+          'straight segment (the rest belong to lines dagre routed)');
 
   // -----------------------------------------------------------------------
   t.log.info('two lines between one party and the issuer are two lines');
@@ -466,10 +523,15 @@ function run(t) {
   // points INTO the hexagon and the grant comes back OUT of it, which is the
   // whole reason the graph cannot fold them into one.
   const atHex = function (line) {
+    log.debug("Entering atHex().");
+    log.debug("Leaving atHex().");
     return !!twiceHex && (Math.abs(line.y1 - twiceHex.bottom) <= 1 ||
                           Math.abs(line.y2 - twiceHex.bottom) <= 1);
   };
+
   const hexEndOf = function (line) {
+    log.debug("Entering hexEndOf().");
+    log.debug("Leaving hexEndOf().");
     return Math.abs(line.y1 - (twiceHex ? twiceHex.bottom : 0)) <= 1
       ? { x: line.x1, y: line.y1 } : { x: line.x2, y: line.y2 };
   };
@@ -534,7 +596,8 @@ function run(t) {
   t.equal(alone.edges, 0, 'and no lines');
   const aloneBox = hexagon(alone.svg);
   t.check(!!aloneBox && alone.height - aloneBox.bottom <= 20,
-          'AND THE PICTURE ENDS JUST BELOW IT — no empty band under a lone hexagon',
+          'AND THE PICTURE ENDS JUST BELOW IT — no empty band under a lone ' +
+          'hexagon',
           'hexagon ends at ' + (aloneBox && aloneBox.bottom) +
           ', picture is ' + alone.height + ' tall');
 
@@ -571,7 +634,8 @@ function run(t) {
   const MESH = { nodes: [], edges: [] };
   MESH_IDS.forEach(function (id) {
     MESH.nodes.push(party(id, { chiefRole: 'target',
-                                roles: { initial: 0, intermediary: 4, target: 4 } }));
+                                roles: { initial: 0, intermediary: 4,
+                                         target: 4 } }));
   });
   MESH_IDS.forEach(function (client) {
     MESH_IDS.forEach(function (resource) {
@@ -582,7 +646,8 @@ function run(t) {
         return;
       }
       ['read', 'write'].forEach(function (name) {
-        const line = edge(client + ' | ' + resource + '/' + name, client, resource, {
+        const line = edge(client + ' | ' + resource + '/' + name, client,
+                          resource, {
           relation: 'may-reach', protocols: [], protocol: '', typeLabel: '',
           // The identifier is the resource's BASE followed by the name, which
           // is what `app_permissions.js` mints and what a client sends as an
@@ -609,7 +674,8 @@ function run(t) {
 
   const mesh = map.render(MESH, { id: 'mesh', label: 'mesh' });
   t.check(!mesh.failed,
-          'THE PICTURE IS DRAWN — five boxes and forty lines is a layout, not a failure',
+          'THE PICTURE IS DRAWN — five boxes and forty lines is a layout, ' +
+          'not a failure',
           mesh.failed || (mesh.width + 'x' + mesh.height + ' of SVG'));
   t.equal(mesh.nodes, MESH_IDS.length, 'every box is in it');
   t.equal(mesh.edges, MESH.edges.length, 'and every line');
@@ -627,7 +693,8 @@ function run(t) {
   });
   t.check(meshStacked.length === 0,
           'each in a column of its own rather than on top of the last',
-          'left edges: ' + meshLefts.map(function (x) { return x.toFixed(0); }).join(', '));
+          'left edges: ' +
+          meshLefts.map(function (x) { return x.toFixed(0); }).join(', '));
 
   // EVERY LINE IS PAINTED BEFORE EVERY LABEL, and on this graph that is the
   // difference between a picture and a mess. Each edge used to emit its own
@@ -644,8 +711,8 @@ function run(t) {
   const meshOrder = paintOrder(mesh.svg);
   t.check(meshOrder.lines.length > 0 && meshOrder.labels.length > 0 &&
           meshOrder.lastLine < meshOrder.firstLabel,
-          'AND EVERY LINE IS DRAWN BEFORE EVERY LABEL — a crossing goes behind ' +
-          'the words rather than through them',
+          'AND EVERY LINE IS DRAWN BEFORE EVERY LABEL — a crossing goes ' +
+          'behind the words rather than through them',
           meshOrder.lines.length + ' line(s) ending at ' + meshOrder.lastLine +
           ', ' + meshOrder.labels.length + ' label(s) starting at ' +
           meshOrder.firstLabel);
@@ -656,15 +723,19 @@ function run(t) {
   meshPanels.forEach(function (one, i) {
     meshPanels.slice(i + 1).forEach(function (other) {
       if (overlap(one, other)) {
-        meshClashes.push('(' + one.x.toFixed(0) + ',' + one.y.toFixed(0) + ') and (' +
+        meshClashes.push('(' + one.x.toFixed(0) + ',' + one.y.toFixed(0) +
+            ') ' +
+            'and (' +
                          other.x.toFixed(0) + ',' + other.y.toFixed(0) + ')');
       }
     });
   });
   t.check(meshClashes.length === 0,
-          'and no two of the forty labels overlap — the arc lanes hold at this density',
+          'and no two of the forty labels overlap — the arc lanes hold at ' +
+          'this density',
           meshClashes.length ? meshClashes.slice(0, 5).join('; ')
-                             : meshPanels.length + ' panel(s), none overlapping');
+                             : meshPanels.length +
+                               ' panel(s), none overlapping');
 
   // AND THE SENTENCE ON HOVER IS ABOUT THIS PICTURE. `edgeTitle()` ends with a
   // count of acts and of credentials from the issued register, which a
@@ -677,27 +748,31 @@ function run(t) {
   // that describes no act. This is the one thing on the picture that carries
   // the whole permission identifier, which is why it is worth an assertion.
   t.check(mesh.svg.indexOf('undefined') < 0,
-          'AND NO TOOLTIP SAYS `undefined` — a configured line has no credential ' +
-          'count to report',
+          'AND NO TOOLTIP SAYS `undefined` — a configured line has no ' +
+          'credential count to report',
           mesh.svg.indexOf('undefined') < 0
             ? 'no occurrence in ' + mesh.svg.length + ' bytes'
             : mesh.svg.slice(Math.max(0, mesh.svg.indexOf('undefined') - 90),
                              mesh.svg.indexOf('undefined') + 40));
   t.check(mesh.svg.indexOf('nothing was exchanged') < 0 &&
           mesh.svg.indexOf('issued register') < 0,
-          'and none of them reports acts or the issued register on a line that ' +
-          'describes neither',
+          'and none of them reports acts or the issued register on a line ' +
+          'that describes neither',
           'the may-reach tooltip ends at what the client has asked for');
   t.check(/MAY reach/.test(mesh.svg) &&
           mesh.svg.indexOf('has NEVER asked for it') >= 0 &&
           mesh.svg.indexOf('abcapp2.example.com/read') >= 0,
-          'while still carrying what a configured line DOES say — the relation, ' +
-          'the whole permission identifier, and whether it has ever been asked for',
-          'MAY reach / the identifier / never asked for are all in the document');
+          'while still carrying what a configured line DOES say — the ' +
+          'relation, the whole permission identifier, and whether it has ' +
+          'ever been asked for',
+          'MAY reach / the identifier / never asked for are all in the ' +
+          'document');
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'delegation_map_bands',
-  describe: 'the delegation picture is two bands, and no two edge labels overlap',
+  describe: 'the delegation picture is two bands, and no two edge labels ' +
+            'overlap',
   run: run
 };

@@ -1,13 +1,13 @@
 // ===========================================================================
 // tests/tools/attach-admin-token.js — PRESENT THE MANAGEMENT API'S TOKEN.
 //
-// `/admin-api` requires an OAuth 2.0 access token since 2026-09-09. Twenty-three
-// jobs drive that API and NOT ONE OF THEM SHARES AN HTTP HELPER — each builds
-// its own `fetch` or `https.request` — so making them all authenticate is
-// either twenty-three edits that say the same thing, or one place that says it
-// once. This is that place: `run-report.js` preloads it into every job with
-// `--require`, and it adds the header to management-API calls that do not
-// already carry one.
+// `/admin-api` requires an OAuth 2.0 access token since 2026-09-09.
+// Twenty-three jobs drive that API and NOT ONE OF THEM SHARES AN HTTP HELPER —
+// each builds its own `fetch` or `https.request` — so making them all
+// authenticate is either twenty-three edits that say the same thing, or one
+// place that says it once. This is that place: `run-report.js` preloads it into
+// every job with `--require`, and it adds the header to management-API calls
+// that do not already carry one.
 //
 // **WHY A PRELOAD RATHER THAN A SHARED CLIENT.** A shared client is the right
 // answer for a suite being written today, and adopting one across twenty-three
@@ -29,6 +29,12 @@
 
 'use strict';
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'attach-admin-token',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const TOKEN = process.env.STS_ADMIN_API_TOKEN || '';
 
 if (TOKEN) {
@@ -40,12 +46,22 @@ if (TOKEN) {
   const WANTED = /^(?:\/realm\/[^/]+)?\/admin-api(?:\/|$|\?)/;
 
   function wants(pathname) {
+    log.debug("Entering wants().");
+    log.debug("Leaving wants().");
     return WANTED.test(String(pathname || ''));
   }
 
   function hasAuth(headers) {
-    if (!headers) { return false; }
-    if (typeof headers.get === 'function') { return !!headers.get('authorization'); }
+    log.debug("Entering hasAuth().");
+    if (!headers) {
+      log.debug("Leaving hasAuth().");
+      return false;
+    }
+    if (typeof headers.get === 'function') {
+      log.debug("Leaving hasAuth().");
+      return !!headers.get('authorization');
+    }
+    log.debug("Leaving hasAuth().");
     return Object.keys(headers).some(function (k) {
       return k.toLowerCase() === 'authorization';
     });
@@ -55,12 +71,19 @@ if (TOKEN) {
   if (typeof globalThis.fetch === 'function') {
     const realFetch = globalThis.fetch;
     globalThis.fetch = function (input, init) {
+      log.debug("Entering fetch().");
       const url = typeof input === 'string' ? input
         : (input && input.url) || String(input);
       let path = '';
-      try { path = new URL(url).pathname + (new URL(url).search || ''); }
-      catch (e) { path = String(url); }
+      try {
+        path = new URL(url).pathname + (new URL(url).search || '');
+      }
+      catch (e) {
+        log.debug("Caught in fetch(): " + ((e && e.message) || e));
+        path = String(url);
+      }
       if (!wants(path)) {
+        log.debug("Leaving fetch().");
         return realFetch.apply(this, arguments);
       }
       const options = Object.assign({}, init || {});
@@ -70,6 +93,7 @@ if (TOKEN) {
         headers.authorization = 'Bearer ' + TOKEN;
       }
       options.headers = headers;
+      log.debug("Leaving fetch().");
       return realFetch.call(this, input, options);
     };
   }
@@ -78,6 +102,7 @@ if (TOKEN) {
   [http, https].forEach(function (mod) {
     const real = mod.request;
     mod.request = function (a, b, c) {
+      log.debug("Entering request().");
       let options = null;
       if (typeof a === 'string' || a instanceof URL) {
         options = (b && typeof b === 'object') ? b : null;
@@ -86,7 +111,12 @@ if (TOKEN) {
       }
       let path = '';
       if (typeof a === 'string') {
-        try { path = new URL(a).pathname; } catch (e) { path = a; }
+        try {
+          path = new URL(a).pathname;
+        } catch (e) {
+          log.debug("Caught in request(): " + ((e && e.message) || e));
+          path = a;
+        }
       } else if (a instanceof URL) {
         path = a.pathname;
       } else if (options) {
@@ -96,6 +126,7 @@ if (TOKEN) {
         options.headers = Object.assign({}, options.headers || {},
                                         { authorization: 'Bearer ' + TOKEN });
       }
+      log.debug("Leaving request().");
       return real.apply(this, arguments);
     };
   });

@@ -69,6 +69,12 @@ const path = require('path');
 
 const config = require('../common/config');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'readme_settings',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const README = path.join(__dirname, '..', 'README.md');
 
 // A settings row is `| \`key\` | \`ENV_VAR\` | ... |`. The key may carry a
@@ -81,6 +87,7 @@ const README = path.join(__dirname, '..', 'README.md');
 const ROW = /^\|\s*`([a-z][a-zA-Z0-9]*\.[a-zA-Z0-9]+)`[^|]*\|\s*`?([A-Z][A-Z0-9_]*)`?\s*\|([^|]*)\|/gm;
 
 function rows() {
+  log.debug("Entering rows().");
   const text = fs.readFileSync(README, 'utf8');
   const found = [];
   let m;
@@ -90,16 +97,19 @@ function rows() {
   while ((m = ROW.exec(text)) !== null) {
     found.push({ key: m[1], env: m[2], dflt: m[3].trim() });
   }
+  log.debug("Leaving rows().");
   return found;
 }
 
 function run(t) {
+  log.debug("Entering run().");
   const found = rows();
   if (!t.check(found.length > 150,
                'README.md has a settings table to check',
                'found ' + found.length + ' rows, which is too few to be that ' +
                'table; either the format changed — in which case change ROW ' +
                'here too — or a table that was being kept honest is gone')) {
+    log.debug("Leaving run().");
     // Stopping rather than reporting two hundred passes against nothing, which
     // is the exact failure this file exists to prevent one document over.
     return;
@@ -174,6 +184,7 @@ function run(t) {
   t.check(cited.size > known.size / 2,
           'the settings table still covers most of what config.js declares',
           cited.size + ' of ' + known.size + ' documented');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

@@ -76,12 +76,12 @@
 const config = require('./../common/config');
 const { log } = require('./../common/helpers');
 const vcClaims = require('./../oid4vc/vc_claims');
-// `identityKeyOf()`, and ONLY that. See usernameFor() below, where the reason is
-// argued: the local name a foreign subject becomes has to be the SAME name the
-// identity funnel and the directory will file them under, and that function is
-// where this service decides it. A plain require in the ordinary direction —
-// `admin_stats.js` requires `federation.js`, not this file, so there is no cycle
-// — and it registers no route, so nothing moves.
+// `identityKeyOf()`, and ONLY that. See usernameFor() below, where the reason
+// is argued: the local name a foreign subject becomes has to be the SAME name
+// the identity funnel and the directory will file them under, and that function
+// is where this service decides it. A plain require in the ordinary direction —
+// `admin_stats.js` requires `federation.js`, not this file, so there is no
+// cycle — and it registers no route, so nothing moves.
 const stats = require('./../common/admin_stats');
 
 // ---------------------------------------------------------------------------
@@ -99,13 +99,19 @@ const DEFAULT_MAP = [];
 const seenIncoming = new Set();
 
 function addDefault(incoming, ldap, where) {
+  log.debug("Entering addDefault().");
   const key = String(incoming).toLowerCase();
   // FIRST WINS. The catalogue is walked before the hand-written rows below it,
   // so a name in both keeps the catalogue's attribute — which is the one the
   // rest of this service already uses for it.
-  if (seenIncoming.has(key)) return;
+  if (seenIncoming.has(key)) {
+    log.debug("Leaving addDefault().");
+    return;
+  }
   seenIncoming.add(key);
-  DEFAULT_MAP.push({ incoming: String(incoming), ldap: String(ldap), where: where });
+  DEFAULT_MAP.push({ incoming: String(incoming), ldap: String(ldap),
+                     where: where });
+  log.debug("Leaving addDefault().");
 }
 
 vcClaims.VC_ATTRIBUTES.forEach(function (row) {
@@ -116,22 +122,27 @@ vcClaims.VC_ATTRIBUTES.forEach(function (row) {
     // ordinary case and is what is matched; one sending the whole `address`
     // object is handled by flatten() below, which turns it into the same flat
     // names before anything gets here.
-    if (claims[1]) addDefault(claims[1], row.ldap, 'OpenID Connect Core 1.0 address claim');
+    if (claims[1]) addDefault(claims[1], row.ldap, 'OpenID Connect Core 1.0 ' +
+                                                   'address claim');
     return;
   }
   claims.forEach(function (claim) {
-    addDefault(claim, row.ldap, 'OpenID Connect Core 1.0 / ' + (row.schema || 'the credential catalogue'));
+    addDefault(claim, row.ldap,
+               'OpenID Connect Core 1.0 / ' + (row.schema || 'the ' +
+        'credential catalogue'));
   });
 });
 
 // LAYER 2, PART TWO: the spellings that are in no specification and in half the
 // deployments. Every one of these has been seen in the wild; none is guessed.
 [
-  ['firstName', 'givenName'], ['first_name', 'givenName'], ['fname', 'givenName'],
+  ['firstName', 'givenName'], ['first_name', 'givenName'],
+  ['fname', 'givenName'],
   ['lastName', 'sn'], ['last_name', 'sn'], ['surname', 'sn'], ['lname', 'sn'],
   ['emailAddress', 'mail'], ['email_address', 'mail'], ['Email', 'mail'],
   ['fullName', 'cn'], ['full_name', 'cn'], ['displayname', 'displayName'],
-  ['username', 'uid'], ['user_name', 'uid'], ['login', 'uid'], ['userid', 'uid'],
+  ['username', 'uid'], ['user_name', 'uid'], ['login', 'uid'], ['userid',
+                                                                'uid'],
   ['phone', 'telephoneNumber'], ['phoneNumber', 'telephoneNumber'],
   ['mobilePhone', 'mobile'], ['jobTitle', 'title'], ['job_title', 'title'],
   ['company', 'o'], ['organization', 'o'], ['department', 'departmentNumber'],
@@ -177,9 +188,11 @@ vcClaims.VC_ATTRIBUTES.forEach(function (row) {
   // InCommon or GEANT partner sets fedUsernameSource to this name.
   ['urn:oid:1.3.6.1.4.1.5923.1.1.1.6', 'uid',
    'eduPerson 2020-01 eduPersonPrincipalName — usually the USERNAME'],
-  ['urn:oid:1.3.6.1.4.1.5923.1.1.1.1', 'employeeType', 'eduPerson eduPersonAffiliation'],
+  ['urn:oid:1.3.6.1.4.1.5923.1.1.1.1', 'employeeType', 'eduPerson ' +
+                                                       'eduPersonAffiliation'],
   ['urn:oid:1.3.6.1.4.1.25178.1.2.3', 'schacDateOfBirth', 'SCHAC 1.5.0'],
-  ['urn:oid:1.3.6.1.4.1.25178.1.2.5', 'schacCountryOfCitizenship', 'SCHAC 1.5.0']
+  ['urn:oid:1.3.6.1.4.1.25178.1.2.5', 'schacCountryOfCitizenship',
+   'SCHAC 1.5.0']
 ].forEach(function (row) {
   addDefault(row[0], row[1], row[2]);
 });
@@ -221,7 +234,8 @@ DEFAULT_MAP.forEach(function (row) {
 });
 
 log.debug('federation_map: ' + DEFAULT_MAP.length + ' default mappings, ' +
-          vcClaims.VC_ATTRIBUTES.length + ' of them derived from the credential catalogue.');
+          vcClaims.VC_ATTRIBUTES.length + ' of them derived from the ' +
+                                          'credential catalogue.');
 
 // ---------------------------------------------------------------------------
 // A RELATIONSHIP'S OWN MAP, parsed from `fedAttributeMap`.
@@ -241,25 +255,36 @@ function relationshipMap(record) {
     const at = text.indexOf('=');
     if (at <= 0) {
       log.warn('federation: "' + text + '" is not a mapping on ' +
-               (record.fedId || '?') + '. A mapping is <incoming name>=<LDAP attribute>, ' +
-               'split at the FIRST equals sign. It was ignored.');
+               (record.fedId || '?') + '. A mapping is <incoming name>=<LDAP ' +
+               'attribute>, split at the FIRST equals sign. It was ignored.');
       return;
     }
     const incoming = text.slice(0, at).trim();
     const ldap = text.slice(at + 1).trim();
     if (!incoming || !ldap) return;
-    map.set(incoming.toLowerCase(), { incoming: incoming, ldap: ldap, where: 'this relationship' });
+    map.set(incoming.toLowerCase(),
+            { incoming: incoming, ldap: ldap, where: 'this ' +
+        'relationship' });
   });
-  log.debug('Leaving relationshipMap(). ' + map.size + ' mapping(s) of its own.');
+  log.debug('Leaving relationshipMap(). ' + map.size +
+            ' mapping(s) of its own.');
   return map;
 }
 
 // Which LDAP attribute an incoming name becomes, and where that was decided.
 // Null for a name nothing knows, which is layer 3 — see the header.
 function resolve(name, own) {
+  log.debug("Entering resolve().");
   const key = String(name || '').toLowerCase();
-  if (own.has(key)) return own.get(key);
-  if (DEFAULT_BY_INCOMING.has(key)) return DEFAULT_BY_INCOMING.get(key);
+  if (own.has(key)) {
+    log.debug("Leaving resolve().");
+    return own.get(key);
+  }
+  if (DEFAULT_BY_INCOMING.has(key)) {
+    log.debug("Leaving resolve().");
+    return DEFAULT_BY_INCOMING.get(key);
+  }
+  log.debug("Leaving resolve().");
   return null;
 }
 
@@ -295,6 +320,8 @@ function flatten(bag) {
         try {
           return JSON.stringify(one);
         } catch (e) {
+          log.debug("Caught in a callback in put(): " +
+                    ((e && e.message) || e));
           // A cycle, which JSON cannot represent. It cannot come off the wire —
           // JSON.parse never produces one — so this can only be a caller's own
           // object, and String() of it is more use than throwing here.
@@ -312,8 +339,10 @@ function flatten(bag) {
   };
   Object.keys(bag || {}).forEach(function (name) {
     const value = bag[name];
-    if (name === 'address' && value && typeof value === 'object' && !Array.isArray(value)) {
-      Object.keys(value).forEach(function (member) { put(member, value[member]); });
+    if (name === 'address' && value && typeof value === 'object' &&
+        !Array.isArray(value)) {
+      Object.keys(value)
+            .forEach(function (member) { put(member, value[member]); });
       return;
     }
     put(name, value);
@@ -339,8 +368,8 @@ function flatten(bag) {
 // was pointed at another instance of this service. A foreign `sub` is an opaque
 // string, and that partner's happened to be `urn:sts:user:alice` — this
 // service's OWN subject format, because the partner IS this service. The raw
-// value went to `startSession()`, `userFor()` put the prefix on again, and every
-// downstream token carried `sub: urn:sts:user:urn:sts:user:alice`.
+// value went to `startSession()`, `userFor()` put the prefix on again, and
+// every downstream token carried `sub: urn:sts:user:urn:sts:user:alice`.
 //
 // The doubling is the symptom and not the bug. The bug is that the identity
 // funnel ALREADY normalises — `recordAuthentication()` runs `presented` through
@@ -376,10 +405,11 @@ function usernameFor(record, flat, subject) {
       // stopped sending the attribute the username comes from would otherwise
       // start creating a second set of entries named by NameID, and the two
       // sets would look like two populations rather than one bug.
-      log.warn('federation: ' + (record.fedId || '?') + ' is configured to take the ' +
-               'username from "' + source + '", which this assertion did not carry. ' +
-               'Falling back to the subject, which means this sign-in may land on a ' +
-               'different entry from the last one.');
+      log.warn('federation: ' + (record.fedId || '?') + ' is configured to ' +
+               'take the username from ' +
+               '"' + source + '", which this assertion did not ' +
+               'carry. Falling back to the subject, which means this sign-in ' +
+               'may land on a different entry from the last one.');
       raw = String(subject || '');
       from = 'the subject (' + source + ' was not sent)';
     }
@@ -391,14 +421,17 @@ function usernameFor(record, flat, subject) {
   // Step 2. See the header.
   const normalised = stats.identityKeyOf(raw);
   if (normalised !== raw) {
-    log.debug('usernameFor(): the partner\'s subject "' + raw + '" is filed here as "' +
-              normalised + '" — the same normalisation every other family goes ' +
-              'through, so the session and the directory name one person.');
+    log.debug('usernameFor(): the partner\'s subject "' + raw + '" is filed ' +
+        'here as "' +
+              normalised + '" — the same normalisation every other family ' +
+              'goes through, so the session and the directory name one ' +
+              'person.');
   }
   const prefix = String(config.value('federation.usernamePrefix') || '');
   const username = prefix && normalised ? prefix + normalised : normalised;
   log.debug('Leaving usernameFor(). username=' + username + ' from ' + from);
-  return { username: username, raw: raw, from: from, prefixed: !!(prefix && normalised) };
+  return { username: username, raw: raw, from: from,
+           prefixed: !!(prefix && normalised) };
 }
 
 // ---------------------------------------------------------------------------
@@ -434,7 +467,8 @@ function mapIncoming(record, bag, subject) {
       return;
     }
     attributes[row.ldap] = (attributes[row.ldap] || []).concat(values);
-    mapped.push({ incoming: name, ldap: row.ldap, where: row.where, values: values });
+    mapped.push({ incoming: name, ldap: row.ldap, where: row.where,
+                  values: values });
   });
   const who = usernameFor(record, flat, subject);
   if (unmapped.length) {

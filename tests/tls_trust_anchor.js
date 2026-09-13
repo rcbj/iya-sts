@@ -57,6 +57,12 @@ const keystore = require('../common/keystore');
 const pki = require('../common/pki');
 const tlsServer = require('../tls/tls_server');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'tls_trust_anchor',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // ONE HANDSHAKE, ANSWERED BY OpenSSL.
 //
@@ -68,6 +74,8 @@ const tlsServer = require('../tls/tls_server');
 // on a message would pass on the wrong failure.
 // ---------------------------------------------------------------------------
 function handshake(certPem, keyPem, anchorPem) {
+  log.debug("Entering handshake().");
+  log.debug("Leaving handshake().");
   return new Promise(function (resolve) {
     const server = tls.createServer({ cert: certPem, key: keyPem },
       function (socket) {
@@ -78,7 +86,11 @@ function handshake(certPem, keyPem, anchorPem) {
         host: '127.0.0.1',
         port: server.address().port,
         ca: [anchorPem],
-        checkServerIdentity: function () { return undefined; }
+        checkServerIdentity: function () {
+          log.debug("Entering checkServerIdentity().");
+          log.debug("Leaving checkServerIdentity().");
+          return undefined;
+        }
       }, function () {
         socket.destroy();
         server.close(function () { resolve(''); });
@@ -93,6 +105,8 @@ function handshake(certPem, keyPem, anchorPem) {
 
 // The whole bundle a listener presents: leaf first, then what it travels with.
 function presented(record) {
+  log.debug("Entering presented().");
+  log.debug("Leaving presented().");
   return (record.chainPem && record.chainPem.length)
     ? [record.certPem].concat(record.chainPem).join('')
     : record.certPem;
@@ -105,7 +119,9 @@ function presented(record) {
 // leaf worked as an anchor at all is that OpenSSL's truststore lookup does not
 // ask.
 function isSelfSigned(pem) {
+  log.debug("Entering isSelfSigned().");
   const cert = new nodeCrypto.X509Certificate(pem);
+  log.debug("Leaving isSelfSigned().");
   return cert.subject === cert.issuer && cert.verify(cert.publicKey);
 }
 
@@ -117,6 +133,7 @@ function isSelfSigned(pem) {
 // result would arrive interleaved with a startup banner.
 // ---------------------------------------------------------------------------
 function freshProcessCertificate() {
+  log.debug("Entering freshProcessCertificate().");
   const out = path.join(os.tmpdir(),
                         'sts-trust-anchor-' + process.pid + '.json');
   const script =
@@ -131,6 +148,7 @@ function freshProcessCertificate() {
   try {
     childProcess.execFileSync(process.execPath, ['-e', script],
                               { stdio: 'ignore', timeout: 60000 });
+    log.debug("Leaving freshProcessCertificate().");
     return JSON.parse(fs.readFileSync(out, 'utf8'));
   } finally {
     try {
@@ -138,11 +156,14 @@ function freshProcessCertificate() {
     } catch (e) {
       // The temporary file is gone or was never written; the read above has
       // already decided whether this section can run.
+      log.debug("Caught in freshProcessCertificate(): " +
+                ((e && e.message) || e));
     }
   }
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   // 1. BEFORE `pki.start()`: the certificate IS the anchor, and that is the
   //    state every process that never builds a hierarchy stays in — `npm
@@ -158,7 +179,8 @@ async function run(t) {
   //    the shape of flake that gets a test deleted rather than fixed. A child
   //    is the only way to ask what a fresh process holds.
   // -----------------------------------------------------------------------
-  t.log.info('=== before pki.start(): a self-signed leaf is its own anchor ===');
+  t.log.info('=== before pki.start(): a self-signed leaf is its own anchor ' +
+             '===');
   const before = freshProcessCertificate();
   t.check(isSelfSigned(before.certPem),
           'the certificate a fresh process builds at require time is ' +
@@ -230,7 +252,8 @@ async function run(t) {
   t.log.info('=== the loopback pins read trustAnchorPem ===');
   const fs = require('fs');
   const path = require('path');
-  [['common/oidc_rp.js', 'the back channel /admin and /portal redeem a code on'],
+  [['common/oidc_rp.js',
+    'the back channel /admin and /portal redeem a code on'],
    ['ssf/ssf_http.js', 'the loopback push to this service\'s own receivers']
   ].forEach(function (pair) {
     const src = fs.readFileSync(path.join(__dirname, '..', pair[0]), 'utf8');
@@ -241,6 +264,7 @@ async function run(t) {
     t.check(src.indexOf('serverCertificate().trustAnchorPem') > 0,
             pair[0] + ' pins the anchor');
   });
+  log.debug("Leaving run().");
 }
 
 module.exports = {

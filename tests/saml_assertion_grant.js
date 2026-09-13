@@ -69,10 +69,17 @@ const assertionGrant = require('../oauth-oidc/assertion_grant');
 const applications = require('../common/applications');
 const signer = require('./vendored/saml_xmldsig.js');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'saml_assertion_grant',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const AUD = 'https://sts.example.test/oauth2/token';
 const ISS = 'https://issuer.example.test/saml';
 
 async function run(t) {
+  log.debug("Entering run().");
   // -------------------------------------------------------------------------
   t.log.info('=== the two parameter values, spelt once each ===');
   // Every one of these is a string a client puts on the wire, and a typo in
@@ -84,8 +91,8 @@ async function run(t) {
           'urn:ietf:params:oauth:client-assertion-type:saml2-bearer',
           'RFC 7522 section 2.2\'s client_assertion_type');
   t.equal(grant.BEARER, 'urn:oasis:names:tc:SAML:2.0:cm:bearer',
-          'SAML 2.0 core section 2.4.1.1\'s bearer confirmation method, which ' +
-          'is the one method section 3 item 5 names');
+          'SAML 2.0 core section 2.4.1.1\'s bearer confirmation method, ' +
+          'which is the one method section 3 item 5 names');
   t.check(grant.GRANT_TYPE !== assertionGrant.GRANT_TYPE,
           'and NEITHER is RFC 7523\'s — two profiles of one framework, and a ' +
           'service that answered one URN for both would be accepting a JWT ' +
@@ -133,9 +140,9 @@ async function run(t) {
           samlSource.indexOf("'oauthAssertionJwks'") < 0,
           'the RFC 7522 module never names an `oauthAssertion*` key attribute');
   t.check(jwtSource.indexOf('oauthSamlAssertion') < 0,
-          'and the RFC 7523 module never names an `oauthSamlAssertion*` one — ' +
-          'the two halves of one claim, and the half that would be added by ' +
-          'somebody making the profiles "work together"');
+          'and the RFC 7523 module never names an `oauthSamlAssertion*` one ' +
+          '— the two halves of one claim, and the half that would be added ' +
+          'by somebody making the profiles "work together"');
   t.check(samlSource.indexOf("require('./assertion_grant')") < 0,
           'and neither requires the other, which is what keeps the format ' +
           'flag from being one edit away');
@@ -193,13 +200,14 @@ async function run(t) {
           'A <Response> IS REFUSED BY NAME. It is the browser profile\'s ' +
           'envelope and this profile takes the assertion out of it, which is ' +
           'the first mistake anybody with a working SAML deployment makes');
-  t.check(!grant.read('<not-xml').ok, 'and something that is not XML is refused');
+  t.check(!grant.read('<not-xml').ok,
+          'and something that is not XML is refused');
 
   // -------------------------------------------------------------------------
   t.log.info('=== RFC 7522 section 3 item 8: what reaches an issued token ===');
   t.equal(grant.PROTOCOL_ATTRIBUTES.join(','), 'scope',
-          'ONE name, where RFC 7523\'s list is twelve — and the difference is ' +
-          'a fact about the two formats rather than an omission: a SAML ' +
+          'ONE name, where RFC 7523\'s list is twelve — and the difference ' +
+          'is a fact about the two formats rather than an omission: a SAML ' +
           'assertion keeps its protocol furniture in ELEMENTS, so there is ' +
           'nothing in the AttributeStatement to strip but the one attribute ' +
           'this service reads as a constraint');
@@ -207,8 +215,9 @@ async function run(t) {
                                          groups: ['a', 'b'],
                                          scope: ['openid'] });
   t.equal(claims.department, 'engineering',
-          'A ONE-MEMBER LIST BECOMES A STRING. `"department": ["engineering"]` ' +
-          'in a token reads as a bug to every relying party that meets it');
+          'A ONE-MEMBER LIST BECOMES A STRING. `"department": ' +
+          '["engineering"]` in a token reads as a bug to every relying party ' +
+          'that meets it');
   t.check(Array.isArray(claims.groups) && claims.groups.length === 2,
           'and a list of two stays a list');
   t.check(claims.scope === undefined,
@@ -220,7 +229,8 @@ async function run(t) {
   t.log.info('=== the certificate authority issues two key pairs, and they ' +
              'are two ===');
   const built = await pki.buildChain(undefined, { organisation: 'Test' });
-  t.check(built.ok, 'a hierarchy for this realm', (built.errors || []).join(' '));
+  t.check(built.ok, 'a hierarchy for this realm',
+          (built.errors || []).join(' '));
   t.check(pki.PURPOSE_IDS.indexOf('jwt') >= 0 &&
           pki.PURPOSE_IDS.indexOf('saml') >= 0,
           'the two assertion profiles are the two purposes a key pair may be ' +
@@ -268,6 +278,7 @@ async function run(t) {
   // `client_auth.js` does — the checks are the same eleven either way, and
   // this avoids a directory entry per case.
   async function tryIt(build, signOpts, overrides) {
+    log.debug("Entering tryIt().");
     const a = signer.buildAssertion(Object.assign(
       { issuer: ISS, subject: 'alice', audience: AUD, recipient: AUD },
       build || {}));
@@ -275,6 +286,7 @@ async function run(t) {
     const xml = signer.sign(a, o.key || key,
                             o.cert === null ? '' : (o.cert || cert),
                             signOpts || {});
+    log.debug("Leaving tryIt().");
     return grant.verify(Object.assign({
       assertion: signer.b64u(xml), clientId: 'alice',
       issuedCertificate: cert, audiences: [AUD]
@@ -285,8 +297,8 @@ async function run(t) {
   t.check(good.ok,
           'A SIGNATURE MADE BY THIS SUITE VERIFIES IN THIS SERVICE. Two ' +
           'implementations of exclusive canonicalization agreeing, which is ' +
-          'the assertion every refusal below rests on — a broken signer would ' +
-          'make all of them pass for the wrong reason',
+          'the assertion every refusal below rests on — a broken signer ' +
+          'would make all of them pass for the wrong reason',
           good.description);
   t.equal(good.certificateSource, 'issued',
           'and the certificate it verified against is the one this realm ' +
@@ -367,8 +379,9 @@ async function run(t) {
   const conditionsOnly = await tryIt({ omitConfirmationData: true });
   t.check(conditionsOnly.ok,
           'and an expiry on the <Conditions> alone is enough, with NO ' +
-          '<SubjectConfirmationData> at all — which item 5 permits in exactly ' +
-          'that case and which a server demanding a Recipient would refuse',
+          '<SubjectConfirmationData> at all — which item 5 permits in ' +
+          'exactly that case and which a server demanding a Recipient would ' +
+          'refuse',
           conditionsOnly.description);
 
   // Item 6's own distinction, and the one most implementations collapse: an
@@ -396,10 +409,10 @@ async function run(t) {
     clientId: 'alice', issuedCertificate: cert, audiences: [AUD] });
   t.check(mixed.ok,
           'ITEM 6: AN EXPIRED <SubjectConfirmation> IS DISCARDED AND THE ' +
-          'LIVE ONE BESIDE IT IS USED. The item says a server MUST reject the ' +
-          'confirmation and MAY still use the rest of the assertion, which is ' +
-          'a distinction nearly every implementation collapses into refusing ' +
-          'the document',
+          'LIVE ONE BESIDE IT IS USED. The item says a server MUST reject ' +
+          'the confirmation and MAY still use the rest of the assertion, ' +
+          'which is a distinction nearly every implementation collapses into ' +
+          'refusing the document',
           mixed.description);
   t.equal(mixed.discardedConfirmations, 1,
           'and it says how many it discarded, because silently ignoring one ' +
@@ -412,9 +425,9 @@ async function run(t) {
   t.check(!crossed.ok,
           'AN ASSERTION SIGNED WITH THE SAME APPLICATION\'S RFC 7523 KEY ' +
           'PAIR IS REFUSED. This is the requirement the two attribute sets ' +
-          'exist for, and the certificate involved is a real one this realm\'s ' +
-          'own CA issued moments ago — so it is not being refused for failing ' +
-          'to chain',
+          'exist for, and the certificate involved is a real one this ' +
+          'realm\'s own CA issued moments ago — so it is not being refused ' +
+          'for failing to chain',
           crossed.ok ? 'IT WAS ACCEPTED' : crossed.description);
   t.check(String(crossed.description).indexOf('KeyInfo') > 0 &&
           String(crossed.description).indexOf('chains') > 0,
@@ -438,8 +451,9 @@ async function run(t) {
     audiences: [AUD] });
   t.check(registered.ok,
           'AND THE SAME CERTIFICATE REGISTERED UNDER THE RFC 7522 ATTRIBUTE ' +
-          'IS ACCEPTED — one attribute is the whole difference, which is what ' +
-          'tells a working rule from a service refusing for another reason',
+          'IS ACCEPTED — one attribute is the whole difference, which is ' +
+          'what tells a working rule from a service refusing for another ' +
+          'reason',
           registered.description);
   t.equal(registered.certificateSource, 'registered',
           'and it says which of the two attributes vouched for it');
@@ -462,9 +476,9 @@ async function run(t) {
   // -------------------------------------------------------------------------
   t.log.info('=== the settings, and what each one does NOT do ===');
   t.check(grant.enabled(),
-          'the grant is on by default — RFC 7522 is a profile a client author ' +
-          'exercises, and the off switch is for testing what their code does ' +
-          'against a server that does not offer it');
+          'the grant is on by default — RFC 7522 is a profile a client ' +
+          'author exercises, and the off switch is for testing what their ' +
+          'code does against a server that does not offer it');
   t.check(grant.requiresRegisteredIssuer(),
           'AND THE ISSUER MUST BE DECLARED, which is on by default and is ' +
           'the third refusal in this service that is — an assertion IS the ' +
@@ -477,6 +491,7 @@ async function run(t) {
   // See tests/assertion_grant.js: the ambient realm is shared by every file in
   // this run, so what this section built has to go.
   pki.clearChain(undefined);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

@@ -1,4 +1,10 @@
 'use strict';
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'api_sessions',
+  level: process.env.LOG_LEVEL || 'info' });
 //
 // File: api_sessions.js
 //
@@ -32,6 +38,7 @@
 delete process.env.CONFIG_FILE;
 
 function run(t) {
+  log.debug("Entering run().");
   require('../common/app');
   const authn = require('../authn/authn');
   const logout = require('../logout/logout');
@@ -39,6 +46,8 @@ function run(t) {
   // A response that is not a browser: no cookie jar, no express. The three
   // surfaces hand `startSession()` exactly this.
   const noBrowser = function () {
+    log.debug("Entering noBrowser().");
+    log.debug("Leaving noBrowser().");
     return { set: function () {}, req: null };
   };
 
@@ -92,20 +101,22 @@ function run(t) {
           'and the global sign-out read, because they are in the same store ' +
           'and not a register of their own');
 
-  const scimRow = live.filter(function (r) { return r.sessionId === first.id; })[0];
-  const apiRow = live.filter(function (r) { return r.sessionId === other.id; })[0];
+  const scimRow =
+      live.filter(function (r) { return r.sessionId === first.id; })[0];
+  const apiRow =
+      live.filter(function (r) { return r.sessionId === other.id; })[0];
   t.check(!!scimRow && !!apiRow, 'each has a row');
   t.equal(scimRow.kind, 'SCIM session',
           'AND IT IS NOT DRAWN AS A BROWSER SIGN-ON SESSION. One store does ' +
           'not mean one kind of row: a SCIM client drawn as a browser would ' +
-          'be this page saying something untrue about the one thing it exists ' +
-          'to report');
+          'be this page saying something untrue about the one thing it ' +
+          'exists to report');
   t.equal(apiRow.kind, 'SPIRE Server API session',
           'and the SPIRE caller is named by its own surface');
   t.check(scimRow.expiryRule.indexOf('Extended by use') === 0,
-          'they carry the FOURTH expiry rule, which is the only one here that ' +
-          'is extended by use — a browser holds a cookie that outlives its ' +
-          'own use, and these exist only while a client is calling',
+          'they carry the FOURTH expiry rule, which is the only one here ' +
+          'that is extended by use — a browser holds a cookie that outlives ' +
+          'its own use, and these exist only while a client is calling',
           scimRow.expiryRule);
   t.check(scimRow.expiryRule.indexOf('revokes NOTHING') > 0,
           'and it says outright that ending one revokes nothing, because the ' +
@@ -178,9 +189,9 @@ function run(t) {
     t.check(!!permitted, 'a permitted subject gets a session');
     t.equal(held.length > 0 && held[held.length - 1].kind,
             gate.ISSUANCE.SESSION,
-            'AND THE GATE WAS ASKED, with `start-session` — the kind that was ' +
-            'in the list from the day it was written and was asked at one ' +
-            'door out of six');
+            'AND THE GATE WAS ASKED, with `start-session` — the kind that ' +
+            'was in the list from the day it was written and was asked at ' +
+            'one door out of six');
 
     const refused = authn.startSession(noBrowser(), 'refused-person', [], '1',
                                        'SPIRE Server API',
@@ -198,7 +209,8 @@ function run(t) {
     // with a reason on it rather than one reported in two shapes.
     const optedOut = authn.startSession(noBrowser(), 'refused-person', [], '1',
                                         'OAuth 2.0 / OIDC',
-                                        { gated: true, application: 'gate-probe' });
+                                        { gated: true,
+                                          application: 'gate-probe' });
     t.check(!!optedOut,
             '`gated: true` skips it, which is how this module\'s own sign-in ' +
             'screen says it already asked at the door');
@@ -240,6 +252,7 @@ function run(t) {
           'are different sentences and this is what stops the new one ' +
           'quietly becoming everybody\'s',
           browserRow.expiryRule.slice(0, 40));
+  log.debug("Leaving run().");
 }
 
 module.exports = {

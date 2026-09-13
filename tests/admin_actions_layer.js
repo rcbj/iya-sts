@@ -42,9 +42,9 @@
 //      writer would make it two, and the two would drift apart silently.
 //
 // WHY IN PROCESS. Every claim is a comparison between FILES, which is
-// `teardown_bounds.js`'s shape and `admin_api_token_wiring.js`'s before it.
-// The one thing this cannot check is whether the actions still WORK, and
-// nothing here pretends to: that is `tests/vendored/sts_admin_api_operations.js`
+// `teardown_bounds.js`'s shape and `admin_api_token_wiring.js`'s before it. The
+// one thing this cannot check is whether the actions still WORK, and nothing
+// here pretends to: that is `tests/vendored/sts_admin_api_operations.js`
 // driving all 273 operations and `sts_admin_console.js` driving the pages.
 // **Both of those matter more than this file** — the first run of the moved
 // layer failed in one of them with `numberWord is not defined`, on the single
@@ -53,6 +53,12 @@
 
 const fs = require('fs');
 const path = require('path');
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'admin_actions_layer',
+  level: process.env.LOG_LEVEL || 'info' });
 
 const ROOT = path.join(__dirname, '..');
 // The layer is two files and the line between them is what each one DOES:
@@ -77,13 +83,18 @@ const API_MODULE = 'mgmt-api/admin_api.js';
 // the console, which changes nothing this file checks — the forward and the
 // single writer are the console's and the layer's either way.
 const FORWARDED = {
-  'admin-core/admin_actions.js': ['logoutReader', 'directoryWriter', 'groupWriter',
-    'signalsReporter', 'caepReporter', 'riscReporter', 'xacmlPages', 'truststore'],
-  'admin-core/admin_views.js': ['cryptoReporter', 'xacmlPages', 'directoryPages',
+  'admin-core/admin_actions.js': ['logoutReader', 'directoryWriter',
+    'groupWriter',
+    'signalsReporter', 'caepReporter', 'riscReporter', 'xacmlPages',
+    'truststore'],
+  'admin-core/admin_views.js': ['cryptoReporter', 'xacmlPages',
+    'directoryPages',
     'scimReader', 'rolePreviewer', 'configSettingsJson', 'truststore']
 };
 
 function read(rel) {
+  log.debug("Entering read().");
+  log.debug("Leaving read().");
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
@@ -91,6 +102,7 @@ function read(rel) {
 // long and full of words that are also identifiers — `page`, `note`, `mode` —
 // so a check that reads them reports noise and buries the one real finding.
 function codeOf(src) {
+  log.debug("Entering codeOf().");
   let out = '';
   let i = 0;
   let quote = null;
@@ -117,10 +129,12 @@ function codeOf(src) {
     }
     if (c === '/' && d === '/') { lineComment = true; i += 2; continue; }
     if (c === '/' && d === '*') { blockComment = true; i += 2; continue; }
-    if (c === '"' || c === "'" || c === '`') { quote = c; out += ' '; i += 1; continue; }
+    if (c === '"' || c === "'" ||
+        c === '`') { quote = c; out += ' '; i += 1; continue; }
     out += c;
     i += 1;
   }
+  log.debug("Leaving codeOf().");
   return out;
 }
 
@@ -128,18 +142,21 @@ function codeOf(src) {
 // (1) AND (2): WHAT MAY NOT BE IN THE LAYER.
 // ---------------------------------------------------------------------------
 function checkTheLayerIsALibrary(t) {
+  log.debug("Entering checkTheLayerIsALibrary().");
   t.log.info('=== the layer registers nothing and renders nothing ===');
   LAYERS.forEach(function (layer) { checkOneLayerIsALibrary(t, layer); });
+  log.debug("Leaving checkTheLayerIsALibrary().");
 }
 
 function checkOneLayerIsALibrary(t, layer) {
+  log.debug("Entering checkOneLayerIsALibrary().");
   const code = codeOf(read(layer));
 
   t.check(!/\bapp\s*\.\s*(get|post|put|patch|delete|use|all)\s*\(/.test(code),
           layer + ' registers no route',
           'two modules require it, so a route here would be registered twice ' +
-          'and rule 1 means the second one can never win — which is a handler ' +
-          'that looks present and is unreachable');
+          'and rule 1 means the second one can never win — which is a ' +
+          'handler that looks present and is unreachable');
 
   // NEITHER HALF MAY TOUCH `res`. A layer that wrote the response would be
   // deciding the status code and the content type for two surfaces that
@@ -170,9 +187,10 @@ function checkOneLayerIsALibrary(t, layer) {
     t.check(illegal.length === 0,
             'and it reads only req.query — a view is parameterised by the ' +
               'query string and by nothing else',
-            'which page, which filter, which user is a question both surfaces ' +
-            'ask the same way; a header, a cookie or a body is the console\'s ' +
-            'and would not mean the same thing arriving at the API: found ' +
+            'which page, which filter, which user is a question both ' +
+            'surfaces ask the same way; a header, a cookie or a body is the ' +
+            'console\'s and would not mean the same thing arriving at the ' +
+            'API: found ' +
             (illegal.join(', ') || 'none'));
   }
 
@@ -180,6 +198,7 @@ function checkOneLayerIsALibrary(t, layer) {
           'and it builds no HTML',
           'the console renders and this decides; markup here is the first ' +
           'step back to a layer only one of the two surfaces can use');
+  log.debug("Leaving checkOneLayerIsALibrary().");
 }
 
 // ---------------------------------------------------------------------------
@@ -191,22 +210,27 @@ function checkOneLayerIsALibrary(t, layer) {
 // depends on how something is going to be displayed.
 // ---------------------------------------------------------------------------
 function checkTheHalvesDependOneWay(t) {
+  log.debug("Entering checkTheHalvesDependOneWay().");
   t.log.info('=== the two halves depend one way ===');
-  t.check(/require\('\.\/admin_actions'\)/.test(read('admin-core/admin_views.js')),
+  t.check(/require\('\.\/admin_actions'\)/.test(read(
+      'admin-core/admin_views.js')),
           'admin_views.js requires admin_actions.js for the shared tables',
-          'one table with two readers is what stops a page offering a control ' +
-          'its action does not have');
-  t.check(!/require\([^)]*admin_views/.test(read('admin-core/admin_actions.js')),
+          'one table with two readers is what stops a page offering a ' +
+          'control its action does not have');
+  t.check(!/require\([^)]*admin_views/.test(read(
+      'admin-core/admin_actions.js')),
           'and admin_actions.js does not require admin_views.js',
           'an action that consulted a view would depend on how its result is ' +
           'going to be displayed, which is the coupling this whole directory ' +
           'exists to remove');
+  log.debug("Leaving checkTheHalvesDependOneWay().");
 }
 
 // ---------------------------------------------------------------------------
 // (3) THE DIRECTION OF THE DEPENDENCY, WHICH IS THE WHOLE POINT.
 // ---------------------------------------------------------------------------
 function checkTheApiDoesNotGoThroughTheConsole(t) {
+  log.debug("Entering checkTheApiDoesNotGoThroughTheConsole().");
   t.log.info('=== the management API reaches its decisions directly ===');
   const api = codeOf(read(API_MODULE));
 
@@ -218,7 +242,8 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
   // The one action-shaped thing still legitimately on the console module is
   // respondToAction(), which is TRANSPORT: it turns a result into a 303 back
   // to the page or into JSON, and belongs to the surface that has a page.
-  const throughConsole = (api.match(/\badmin\.[A-Za-z0-9_$]*Action\s*\(/g) || [])
+  const throughConsole = (api.match(/\badmin\.[A-Za-z0-9_$]*Action\s*\(/g) ||
+                          [])
     .filter(function (call) { return !/respondToAction/.test(call); });
   t.check(throughConsole.length === 0,
           'and it calls no action on the console module',
@@ -234,14 +259,17 @@ function checkTheApiDoesNotGoThroughTheConsole(t) {
   const exported = consoleSrc.slice(exportsAt);
   const reExported = (exported.match(/^\s{2}([A-Za-z0-9_$]+Action):/gm) || [])
     .map(function (l) { return l.trim().replace(':', ''); })
-    .filter(function (n) { return n !== 'respondToAction' && n !== 'respondToApplicationAction'; });
+    .filter(function (n) {
+      return n !== 'respondToAction' && n !== 'respondToApplicationAction';
+    });
   t.check(reExported.length === 0,
           'and the console does not re-export them either',
-          'the actions are aliased into that file\'s scope so its own several ' +
-          'hundred call sites are unchanged; re-exporting them as well would ' +
-          'publish a SECOND way to reach the same function, and the second ' +
-          'way is the one that goes stale: found ' +
+          'the actions are aliased into that file\'s scope so its own ' +
+          'several hundred call sites are unchanged; re-exporting them as ' +
+          'well would publish a SECOND way to reach the same function, and ' +
+          'the second way is the one that goes stale: found ' +
           (reExported.join(', ') || 'none'));
+  log.debug("Leaving checkTheApiDoesNotGoThroughTheConsole().");
 }
 
 // ---------------------------------------------------------------------------
@@ -265,15 +293,18 @@ const MAY_STAY_ON_THE_CONSOLE = ['consoleJson', 'configJson',
   'protocolSettingsJsonFor', 'listField'];
 
 function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
+  log.debug("Entering checkOnlyTheConsolesOwnKnowledgeIsLeft().");
   t.log.info('=== what the management API still asks the console ===');
   const api = codeOf(read(API_MODULE));
-  const called = [...new Set((api.match(/\badmin\.([A-Za-z0-9_$]+)\s*\(/g) || [])
+  const called = [...new Set((api.match(/\badmin\.([A-Za-z0-9_$]+)\s*\(/g) ||
+                              [])
     .map(function (c) { return c.slice(6).replace(/\s*\($/, ''); }))].sort();
   const unexpected = called.filter(function (n) {
     return MAY_STAY_ON_THE_CONSOLE.indexOf(n) < 0;
   });
   t.check(unexpected.length === 0,
-          'it calls only the console\'s own knowledge (' + called.join(', ') + ')',
+          'it calls only the console\'s own knowledge (' + called.join(', ') +
+          ')',
           'everything else it needs comes from admin-core/. A name here that ' +
           'is not one of the four is the API reading through the console ' +
           'again, which is the coupling this directory exists to remove: ' +
@@ -289,16 +320,22 @@ function checkOnlyTheConsolesOwnKnowledgeIsLeft(t) {
           'permission nobody needs, and the next reader will take it as ' +
           'evidence that reading through the console is fine: ' +
           (missing.join(', ') || 'none'));
+  log.debug("Leaving checkOnlyTheConsolesOwnKnowledgeIsLeft().");
 }
 
 function checkTheForwardsCannotDrift(t) {
+  log.debug("Entering checkTheForwardsCannotDrift().");
   t.log.info('=== every forwarded collaborator has one writer ===');
   LAYERS.forEach(function (layer) {
-    FORWARDED[layer].forEach(function (name) { checkOneForward(t, layer, name); });
+    FORWARDED[layer].forEach(function (name) {
+      checkOneForward(t, layer, name);
+    });
   });
+  log.debug("Leaving checkTheForwardsCannotDrift().");
 }
 
 function checkOneForward(t, layer, name) {
+  log.debug("Entering checkOneForward().");
   const consoleSrc = read(CONSOLE_MODULE);
   const layerCode = codeOf(read(layer));
   {
@@ -328,7 +365,8 @@ function checkOneForward(t, layer, name) {
     // counting it made this check demand zero real writers — which it then
     // reported as a failure against a layer that was correct. The first
     // version of this file did exactly that, seven times.
-    const writes = (layerCode.match(new RegExp('(?:^|[^.\\w$])' + name + '\\s*=(?!=)', 'g')) || [])
+    const writes = (layerCode.match(new RegExp('(?:^|[^.\\w$])' + name +
+                                               '\\s*=(?!=)', 'g')) || [])
       .length - (new RegExp('let ' + name + '\\s*=').test(layerCode) ? 1 : 0);
     t.check(writes === 1,
             'and nothing else in the layer assigns ' + name + ' (' + writes +
@@ -337,12 +375,14 @@ function checkOneForward(t, layer, name) {
             'make the console\'s copy and this one two answers rather than ' +
             'two caches, and they would drift apart with nothing failing');
   }
+  log.debug("Leaving checkOneForward().");
 }
 
 // ---------------------------------------------------------------------------
 // AND THE LOAD-ORDER CONSTRAINT THE DIRECTORY EXISTS TO STATE.
 // ---------------------------------------------------------------------------
 function checkNothingRequiresItEarly(t) {
+  log.debug("Entering checkNothingRequiresItEarly().");
   t.log.info('=== nothing above position 18 requires the layer ===');
   // The layer requires oauth2, saml2, saml11 and federation, every one of
   // which registers routes. That is free from the console (18) and the
@@ -357,17 +397,21 @@ function checkNothingRequiresItEarly(t) {
   const allowed = ['admin-ui/admin.js', 'admin-ui/api_explorer.js',
                    'mgmt-api/admin_api.js', 'ldap/ldap_server.js',
                    // GNAP's view/action layer (2026-09-12), for `adminViews`'
-                   // paging only. It is loaded at 23d, from `gnap/gnap_admin.js`
-                   // and lazily from the management API, so the require is a
-                   // cache hit — the same position ldap_server.js argues.
+                   // paging only. It is loaded at 23d, from
+                   // `gnap/gnap_admin.js` and lazily from the management API,
+                   // so the require is a cache hit — the same position
+                   // ldap_server.js argues.
                    'gnap/gnap_console.js',
                    'tests/admin_actions_layer.js'];
   const offenders = [];
   function walk(dir) {
-    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).forEach(function (entry) {
+    log.debug("Entering walk().");
+    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
+      .forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs', 'tests'].indexOf(entry.name) >= 0) { return; }
+        if (['node_modules', '.git', 'node-ldapjs', 'tests'].indexOf(
+            entry.name) >= 0) { return; }
         walk(rel);
         return;
       }
@@ -375,8 +419,10 @@ function checkNothingRequiresItEarly(t) {
       if (allowed.indexOf(rel) >= 0) { return; }
       if (/admin-core\//.test(rel)) { return; }
       const src = read(rel);
-      if (/require\([^)]*admin-core\/admin_(actions|views)/.test(src)) { offenders.push(rel); }
+      if (/require\([^)]*admin-core\/admin_(actions|views)/.test(
+          src)) { offenders.push(rel); }
     });
+    log.debug("Leaving walk().");
   }
   walk('');
   t.check(offenders.length === 0,
@@ -384,6 +430,7 @@ function checkNothingRequiresItEarly(t) {
           'this layer pulls in four route-registering modules, which is free ' +
           'at 18 and 19 where they are already loaded and costs a reordered ' +
           'router anywhere earlier: found ' + (offenders.join(', ') || 'none'));
+  log.debug("Leaving checkNothingRequiresItEarly().");
 }
 
 // ---------------------------------------------------------------------------
@@ -406,6 +453,7 @@ function checkNothingRequiresItEarly(t) {
 // whether the name is in scope, not whether anything reached it.
 // ---------------------------------------------------------------------------
 function checkEveryNameResolves(t) {
+  log.debug("Entering checkEveryNameResolves().");
   t.log.info('=== every name each half uses is in scope there ===');
   const adminSrc = read(CONSOLE_MODULE);
 
@@ -457,20 +505,27 @@ function checkEveryNameResolves(t) {
     const srcLines = src.split('\n');
     const scopes = [];
     for (let i = 0; i < srcLines.length; i += 1) {
-      if (!/^(?:async )?function [A-Za-z0-9_$]+\(/.test(srcLines[i])) { continue; }
+      if (!/^(?:async )?function [A-Za-z0-9_$]+\(/.test(
+          srcLines[i])) { continue; }
       let j = i;
       while (j < srcLines.length && srcLines[j] !== '}') { j += 1; }
       const body = codeOf(srcLines.slice(i, j + 1).join('\n'));
       const bound = new Set();
       (body.match(/(?:const|let|var)\s+([A-Za-z0-9_$]+)/g) || [])
         .forEach(function (d) { bound.add(d.split(/\s+/)[1]); });
-      (body.match(/(?:const|let|var)\s*\{([^}]*)\}/g) || []).forEach(function (d) {
-        d.replace(/(?:const|let|var)\s*\{|\}/g, '').split(',').forEach(function (n) {
+      (body.match(/(?:const|let|var)\s*\{([^}]*)\}/g) || []).forEach(
+          function (d) {
+        d.replace(/(?:const|let|var)\s*\{|\}/g, '')
+         .split(',')
+         .forEach(function (n) {
           if (n.trim()) { bound.add(n.trim().split(':').pop().trim()); }
         });
       });
-      (body.match(/function\s*[A-Za-z0-9_$]*\s*\(([^)]*)\)/g) || []).forEach(function (sig) {
-        sig.replace(/function\s*[A-Za-z0-9_$]*\s*\(|\)/g, '').split(',').forEach(function (a) {
+      (body.match(/function\s*[A-Za-z0-9_$]*\s*\(([^)]*)\)/g) || []).forEach(
+          function (sig) {
+        sig.replace(/function\s*[A-Za-z0-9_$]*\s*\(|\)/g, '')
+           .split(',')
+           .forEach(function (a) {
           if (a.trim()) { bound.add(a.trim()); }
         });
       });
@@ -494,6 +549,7 @@ function checkEveryNameResolves(t) {
             'caught one at a time by jobs driving the running service: ' +
             (unresolved.join(', ') || 'none'));
   });
+  log.debug("Leaving checkEveryNameResolves().");
 }
 
 // ---------------------------------------------------------------------------
@@ -505,6 +561,7 @@ function checkEveryNameResolves(t) {
 // a TypeError when somebody opened the page, which is how it was found.
 // ---------------------------------------------------------------------------
 function checkNobodyReachesThroughTheConsole(t) {
+  log.debug("Entering checkNobodyReachesThroughTheConsole().");
   t.log.info('=== nothing reaches a moved function through admin.* ===');
   const moved = new Set();
   LAYERS.forEach(function (layer) {
@@ -514,32 +571,42 @@ function checkNobodyReachesThroughTheConsole(t) {
   });
   const offenders = [];
   function walk(dir) {
-    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true }).forEach(function (entry) {
+    log.debug("Entering walk().");
+    fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
+      .forEach(function (entry) {
       const rel = dir ? dir + '/' + entry.name : entry.name;
       if (entry.isDirectory()) {
-        if (['node_modules', '.git', 'node-ldapjs'].indexOf(entry.name) >= 0) { return; }
+        if (['node_modules', '.git', 'node-ldapjs'].indexOf(
+            entry.name) >= 0) { return; }
         walk(rel);
         return;
       }
       if (!/\.js$/.test(entry.name) || /^admin-core\//.test(rel)) { return; }
       read(rel).split('\n').forEach(function (l, i) {
         if (/^\s*(\/\/|\*)/.test(l)) { return; }
-        (l.match(/\badmin\.([A-Za-z0-9_$]+)\s*\(/g) || []).forEach(function (call) {
+        (l.match(/\badmin\.([A-Za-z0-9_$]+)\s*\(/g) || []).forEach(
+            function (call) {
           const n = call.slice(6).replace(/\s*\($/, '');
-          if (moved.has(n)) { offenders.push(rel + ':' + (i + 1) + ' admin.' + n); }
+          if (moved.has(n)) {
+            offenders.push(rel + ':' + (i + 1) + ' admin.' + n);
+          }
         });
       });
     });
+    log.debug("Leaving walk().");
   }
   walk('');
   t.check(offenders.length === 0,
           'every caller reaches the layer directly',
-          'the console does not re-export what moved, so a call left pointing ' +
-          'at it is a TypeError the next time somebody opens that page — it ' +
-          'loads fine and fails on use: ' + (offenders.join(', ') || 'none'));
+          'the console does not re-export what moved, so a call left ' +
+          'pointing at it is a TypeError the next time somebody opens that ' +
+          'page — it loads fine and fails on ' +
+          'use: ' + (offenders.join(', ') || 'none'));
+  log.debug("Leaving checkNobodyReachesThroughTheConsole().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkTheLayerIsALibrary(t);
   checkEveryNameResolves(t);
   checkNobodyReachesThroughTheConsole(t);
@@ -548,6 +615,7 @@ function run(t) {
   checkOnlyTheConsolesOwnKnowledgeIsLeft(t);
   checkTheForwardsCannotDrift(t);
   checkNothingRequiresItEarly(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

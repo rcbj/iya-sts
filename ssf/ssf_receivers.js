@@ -272,6 +272,7 @@ function endpointFor(surface) {
 const SECRET_VAR = 'STS_SSF_RECEIVER_SECRET';
 
 function internalSecret() {
+  log.debug("Entering internalSecret().");
   let held = String(process.env[SECRET_VAR] || '');
   if (!held) {
     held = nodeCrypto.randomBytes(32).toString('base64');
@@ -285,10 +286,13 @@ function internalSecret() {
     log.debug('internalSecret(): a per-run secret was generated for this ' +
               'service\'s own SSF receivers.');
   }
+  log.debug("Leaving internalSecret().");
   return held;
 }
 
 function receiverToken(surface) {
+  log.debug("Entering receiverToken().");
+  log.debug("Leaving receiverToken().");
   return 'Bearer ' + stsCrypto.deriveSharedCredential(
     internalSecret(), 'ssf-internal-receiver', realms.currentId(), surface.id);
 }
@@ -335,6 +339,8 @@ function receiverToken(surface) {
 // are written out in SURFACES above.
 // ---------------------------------------------------------------------------
 function internalStreamId(surface) {
+  log.debug("Entering internalStreamId().");
+  log.debug("Leaving internalStreamId().");
   return 'ssf-internal-' + realms.currentId() + '-' + surface.id;
 }
 
@@ -405,7 +411,8 @@ function sweepDuplicates(surface) {
       summary: 'Removed ' + stale.length + ' duplicate ' + surface.label +
         ' receiver stream(s) in the "' + realms.currentId() + '" realm',
       detail: { kept: keep,
-                removed: stale.map(function (one) { return one.stream_id; }) } });
+                removed:
+                  stale.map(function (one) { return one.stream_id; }) } });
   }
   log.debug('Leaving sweepDuplicates(). ' + stale.length + ' removed.');
   return stale.length;
@@ -562,6 +569,7 @@ function accept(surfaceId, req) {
               'which is not one of this service\'s receivers.');
     log.debug('Leaving accept(). No such surface.');
     errorCodes.mark(req && req.res, 'STS-SSF-0064');
+    log.debug("Leaving accept().");
     return { status: 500, entry: null,
       body: { err: 'invalid_request',
         description: 'There is no internal receiver called "' +
@@ -570,6 +578,7 @@ function accept(surfaceId, req) {
   if (!enabled()) {
     log.debug('Leaving accept(). Off.');
     errorCodes.mark(req && req.res, 'STS-SSF-0065');
+    log.debug("Leaving accept().");
     return { status: 501, entry: null,
       body: { err: 'invalid_request',
         description: 'This service is not running its own receivers (' +
@@ -582,6 +591,7 @@ function accept(surfaceId, req) {
   if (!record) {
     log.debug('Leaving accept(). No stream.');
     errorCodes.mark(req && req.res, 'STS-SSF-0066');
+    log.debug("Leaving accept().");
     return { status: 404, entry: null,
       body: { err: 'invalid_request',
         description: 'The ' + surface.label + ' has no stream in the "' +
@@ -620,6 +630,7 @@ function accept(surfaceId, req) {
       detail: { surface: surface.id, presented: presented ? 'yes' : 'no' } });
     log.debug('Leaving accept(). Refused on the credential.');
     errorCodes.mark(req.res, 'STS-SSF-0067');
+    log.debug("Leaving accept().");
     return { status: 401, entry: null,
       body: { err: 'access_denied',
         // WHICH OF THE TWO IT WAS, and it is deliberately said out loud.
@@ -631,11 +642,11 @@ function accept(surfaceId, req) {
         // random identifier minted per start, and a caller already knows
         // whether it sent one.
         description: presented
-          ? 'This receiver checks the authorization_header on its own stream, ' +
-            'and the one this request carried is not it. That value is minted ' +
-            'per stream and per start, so a transmitter holding one from ' +
-            'before a restart — or from a stream that has since been ' +
-            'recreated — presents exactly this.'
+          ? 'This receiver checks the authorization_header on its own ' +
+            'stream, and the one this request carried is not it. That value ' +
+            'is minted per stream and per start, so a transmitter holding ' +
+            'one from before a restart — or from a stream that has since ' +
+            'been recreated — presents exactly this.'
           : 'This receiver checks the authorization_header on its own stream ' +
             'and this request carried none. It is minted per stream and per ' +
             'start, and only this service\'s own transmitter is ever given ' +
@@ -649,6 +660,7 @@ function accept(surfaceId, req) {
   if (!token) {
     log.debug('Leaving accept(). Empty body.');
     errorCodes.mark(req.res, 'STS-SSF-0068');
+    log.debug("Leaving accept().");
     return { status: 400, entry: null,
       body: { err: 'invalid_request',
         description: 'The body is empty. RFC 8935 section 2.1 puts the ' +
@@ -714,6 +726,7 @@ function accept(surfaceId, req) {
   if (read.problem) {
     log.debug('Leaving accept(). Malformed.');
     errorCodes.mark(req.res, 'STS-SSF-0069');
+    log.debug("Leaving accept().");
     return { status: 400, entry: entry,
       body: { err: 'invalid_request',
         description: read.problem + ' It has been recorded anyway and is on ' +
@@ -727,6 +740,7 @@ function accept(surfaceId, req) {
              'refused.');
     log.debug('Leaving accept(). Wrong audience.');
     errorCodes.mark(req.res, 'STS-SSF-0070');
+    log.debug("Leaving accept().");
     return { status: 400, entry: entry,
       body: { err: 'invalid_audience',
         description: 'This receiver is "' + surface.audience + '" and that ' +
@@ -736,6 +750,7 @@ function accept(surfaceId, req) {
   if (!entry.verified && config.value('ssf.receiveRequireSignature')) {
     log.debug('Leaving accept(). Signature required.');
     errorCodes.mark(req.res, 'STS-SSF-0071');
+    log.debug("Leaving accept().");
     return { status: 400, entry: entry,
       body: { err: 'invalid_key', description: entry.verificationNote } };
   }

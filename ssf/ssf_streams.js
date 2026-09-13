@@ -133,11 +133,15 @@ function createStream(asked, context) {
   const audience = normaliseAudience(body.aud, ctx, errors);
   const requested = normaliseEventList(body.events_requested);
   const supported = events.supportedEventUris();
-  const delivered = requested.length
+  const offered = requested.length
     ? requested.filter(function (uri) {
         return supported.indexOf(uri) >= 0;
       })
     : supported.slice();
+  // The OWNER'S ENTRY narrows it further (see allowedEventsFor()). Nothing is
+  // noted on the stream here because the stream does not exist yet; the note is
+  // written once it does, below.
+  const delivered = narrowByApplication(null, offered, ctx && ctx.principal);
 
   requested.forEach(function (uri) {
     if (supported.indexOf(uri) < 0) {
@@ -229,11 +233,162 @@ function createStream(asked, context) {
     lastVerificationAt: 0
   };
   store.set(record.stream_id, record);
+  if (offered.length !== delivered.length) {
+    note(record, 'withheld', (offered.length - delivered.length) + ' event ' +
+         'type(s) this transmitter supports are not delivered, because ' +
+         'ssfAllowedEvents on the owning application does not allow ' +
+         'them: ' + offered.filter(function (uri) {
+           return delivered.indexOf(uri) < 0;
+         }).join(', '));
+  }
   note(record, 'created', 'The stream was created with ' +
        record.events_delivered.length + ' event type(s) and ' +
        deliveryName(record.delivery.method) + ' delivery.');
   log.debug('Leaving createStream(). ' + record.stream_id);
   return { ok: true, stream: record, errors: [] };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE APPLICATION THAT OWNS A STREAM MAY BE SENT (2026-09-12).
+//
+// `ssfAllowedEvents` on an application entry is the one place in the registry
+// that LIMITS Shared Signals: a stream owned by that application carries only
+// the event types it names. Everything else on an entry is a declaration — this
+// is enforcement, asked for by name, and it is the reason the registry's
+// "declaring grants nothing" sentence now has an exception for this family.
+//
+// **ABSENT MEANS UNRESTRICTED.** An entry with no values, a principal no entry
+// answers to, and a stream nobody authenticated for all behave exactly as every
+// stream did before the attribute existed. What is restricted is only what an
+// operator wrote down.
+//
+// **SSF'S OWN TWO EVENTS ARE ALWAYS ALLOWED.** Verification and stream-updated
+// are about the PIPE; a receiver refused its verification event could not find
+// out that its stream works, which is the one question those events answer.
+//
+// **IT IS ASKED TWICE AND BOTH ARE NEEDED.** At agreement, so
+// `events_delivered` tells the receiver the truth; and at DELIVERY
+// (`deliversEvent()`), because an operator tightening the entry after a stream
+// was agreed must stop what that stream receives from then on — a limit that
+// only applied to streams created afterwards would be one a receiver escapes by
+// creating its stream first.
+//
+// The owner is the stream's `createdBy`: the identifier the receiver
+// AUTHENTICATED as, found as an application identifier or among an entry's
+// `ssfReceiverId` values. `applications.js` is required lazily — it is a
+// library, and this file is loaded from places that never touch the registry.
+// ---------------------------------------------------------------------------
+function applicationFor(principal) {
+  log.debug("Entering applicationFor().");
+  const name = String(principal || '');
+  if (!name || name === '(unauthenticated)') {
+    log.debug("Leaving applicationFor().");
+    return null;
+  }
+  let applications;
+  try {
+    applications = require('../common/applications');
+  } catch (e) {
+    log.debug("Caught in applicationFor(): " + ((e && e.message) || e));
+    log.debug("Leaving applicationFor().");
+    // No registry in this process: nothing is restricted.
+    return null;
+  }
+  const direct = applications.get(name);
+  if (direct) {
+    log.debug("Leaving applicationFor().");
+    return direct;
+  }
+  log.debug("Leaving applicationFor().");
+  return applications.list().filter(function (entry) {
+    return (((entry.attributes || {}).ssfReceiverId) || []).indexOf(name) >= 0;
+  })[0] || null;
+}
+
+function allowedEventsFor(principal) {
+  log.debug("Entering allowedEventsFor().");
+  const entry = applicationFor(principal);
+  const values = entry ? (((entry.attributes || {}).ssfAllowedEvents) || []) :
+                 [];
+  if (!values.length) {
+    log.debug("Leaving allowedEventsFor().");
+    return null;
+  }
+  const allowed = {};
+  events.SSF_EVENTS.forEach(function (row) {
+    allowed[row.uri] = true;
+  });
+  values.forEach(function (value) {
+    const word = String(value).trim();
+    const lower = word.toLowerCase();
+    if (lower === 'caep') {
+      events.CAEP_EVENT_URIS.forEach(function (uri) { allowed[uri] = true; });
+    } else if (lower === 'risc') {
+      events.RISC_EVENT_URIS.forEach(function (uri) { allowed[uri] = true; });
+    } else if (events.EVENT_BY_URI[word]) {
+      allowed[word] = true;
+    }
+  });
+  log.debug("Leaving allowedEventsFor().");
+  return { application: entry.identifier, values: values.slice(),
+           allowed: allowed };
+}
+
+function permits(restriction, uri) {
+  log.debug("Entering permits().");
+  log.debug("Leaving permits().");
+  return !restriction || !!restriction.allowed[String(uri)];
+}
+
+// The event types this stream would actually be sent right now: what was
+// agreed, less anything its owner's entry has since stopped allowing.
+function effectiveDelivered(record) {
+  log.debug("Entering effectiveDelivered().");
+  const restriction = allowedEventsFor(record.createdBy);
+  log.debug("Leaving effectiveDelivered().");
+  return record.events_delivered.filter(function (uri) {
+    return permits(restriction, uri);
+  });
+}
+
+// THE question every delivery path asks. A stream takes an event when it agreed
+// to and its owner is still allowed it.
+function deliversEvent(record, uri) {
+  log.debug("Entering deliversEvent().");
+  log.debug("Leaving deliversEvent().");
+  return record.events_delivered.indexOf(String(uri)) >= 0 &&
+         permits(allowedEventsFor(record.createdBy), uri);
+}
+
+// Narrow an agreed list by the owner's entry, noting what was withheld.
+function narrowByApplication(record, delivered, principal) {
+  log.debug("Entering narrowByApplication().");
+  const restriction = allowedEventsFor(principal);
+  if (!restriction) {
+    log.debug("Leaving narrowByApplication().");
+    return delivered;
+  }
+  const withheld = delivered.filter(function (uri) {
+    return !permits(restriction, uri);
+  });
+  if (withheld.length) {
+    log.info('ssf: ' + withheld.length + ' event type(s) were withheld from ' +
+                                         'a stream for "' +
+             restriction.application + '", whose entry allows only ' +
+             restriction.values.join(', ') + ' (ssfAllowedEvents): ' +
+                                         withheld.join(', '));
+    if (record) {
+      note(record, 'withheld', withheld.length + ' requested event type(s) ' +
+           'are not allowed by ssfAllowedEvents on ' +
+           '"' + restriction.application + '" and are ' +
+               'not delivered: ' +
+           withheld.join(', '));
+    }
+  }
+  log.debug("Leaving narrowByApplication().");
+  return delivered.filter(function (uri) {
+    return permits(restriction, uri);
+  });
 }
 
 function deliveryName(method) {
@@ -432,6 +587,8 @@ function updateStream(id, asked, mode, context) {
   const replace = mode === 'replace';
   const errors = [];
   const has = function (name) {
+    log.debug("Entering has().");
+    log.debug("Leaving has().");
     return Object.prototype.hasOwnProperty.call(body, name);
   };
 
@@ -447,11 +604,11 @@ function updateStream(id, asked, mode, context) {
     const supported = events.supportedEventUris();
     record.events_requested = requested;
     record.events_supported = supported.slice();
-    record.events_delivered = requested.length
+    record.events_delivered = narrowByApplication(record, requested.length
       ? requested.filter(function (uri) {
           return supported.indexOf(uri) >= 0;
         })
-      : supported.slice();
+      : supported.slice(), record.createdBy);
   }
   if (replace || has('format')) {
     const format = String(body.format || '');
@@ -620,8 +777,8 @@ function removeSubject(id, subject) {
 // Whether an event about this subject belongs on this stream. `defaultSubjects`
 // is what decides it when the list is empty; see the header above.
 // ---------------------------------------------------------------------------
-// SUBJECT SCOPES (2026-09-12): a narrowing a PROTOCOL family puts on the streams
-// its own applications own.
+// SUBJECT SCOPES (2026-09-12): a narrowing a PROTOCOL family puts on the
+// streams its own applications own.
 //
 // GNAP's web applications are receivers whose streams carry events only about
 // people who approved a grant to that application (gnap/gnap_signals.js). That
@@ -638,14 +795,19 @@ function removeSubject(id, subject) {
 const subjectScopes = {};
 
 function setSubjectScope(family, fn) {
+  log.debug("Entering setSubjectScope().");
   if (typeof fn !== 'function') {
     delete subjectScopes[String(family)];
+    log.debug("Leaving setSubjectScope().");
     return;
   }
   subjectScopes[String(family)] = fn;
+  log.debug("Leaving setSubjectScope().");
 }
 
 function scopeRefuses(record, subject) {
+  log.debug("Entering scopeRefuses().");
+  log.debug("Leaving scopeRefuses().");
   return Object.keys(subjectScopes).some(function (family) {
     let answer;
     try {
@@ -670,7 +832,8 @@ function streamCoversSubject(record, subject) {
     return true;
   }
   if (scopeRefuses(record, subject)) {
-    log.debug('Leaving streamCoversSubject(). A family\'s subject scope refuses it.');
+    log.debug('Leaving streamCoversSubject(). A family\'s subject scope ' +
+              'refuses it.');
     return false;
   }
   if (record.subjects.length) {
@@ -775,7 +938,8 @@ function countEvent(record, uri) {
     record.eventCounts = {};
   }
   record.eventCounts[uri] = (record.eventCounts[uri] || 0) + 1;
-  log.debug('Leaving countEvent(). ' + record.eventCounts[uri] + ' of that type.');
+  log.debug('Leaving countEvent(). ' + record.eventCounts[uri] + ' of that ' +
+      'type.');
 }
 
 // RFC 8936's poll. `ack` names what the receiver has now stored, so those come
@@ -914,7 +1078,10 @@ function streamConfiguration(record, options) {
     aud: record.aud,
     events_supported: record.events_supported,
     events_requested: record.events_requested,
-    events_delivered: record.events_delivered,
+    // What this stream would be sent NOW: an owner's ssfAllowedEvents tightened
+    // after agreement narrows it here too, so a receiver reading its own
+    // configuration is told what delivery will actually do.
+    events_delivered: effectiveDelivered(record),
     delivery: delivery,
     min_verification_interval: record.min_verification_interval,
     format: record.format,
@@ -940,6 +1107,9 @@ module.exports = {
   addSubject: addSubject,
   removeSubject: removeSubject,
   streamCoversSubject: streamCoversSubject,
+  allowedEventsFor: allowedEventsFor,
+  deliversEvent: deliversEvent,
+  effectiveDelivered: effectiveDelivered,
   enqueue: enqueue,
   countEvent: countEvent,
   poll: poll,

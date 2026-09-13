@@ -155,9 +155,12 @@ const errorCodes = require('../common/error_codes');
 // the non-enumerable mark, or an `errorCode` member on an internal result. Its
 // own is the more specific; this portal's code names the door otherwise.
 function innerCode(result) {
+  log.debug("Entering innerCode().");
   if (!result || typeof result !== 'object') {
+    log.debug("Leaving innerCode().");
     return '';
   }
+  log.debug("Leaving innerCode().");
   return errorCodes.codeOf(result) || String(result.errorCode || '');
 }
 
@@ -274,6 +277,7 @@ function setDirectory(hooks) {
 // no call shape in which a caller supplies a string.
 // ---------------------------------------------------------------------------
 function entryFor(session) {
+  log.debug("Entering entryFor().");
   const username = session && session.user && session.user.username;
   log.debug('Entering entryFor(). username=' + username);
   if (!directory || !username) {
@@ -302,43 +306,47 @@ function entryFor(session) {
 // Everything drawn here goes through it. The console has its own; this is a
 // separate application and shares no markup with it.
 function esc(value) {
+  log.debug("Entering esc().");
+  log.debug("Leaving esc().");
   return String(value === undefined || value === null ? '' : value)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 const CSS =
-  'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;' +
-  'background:#f4f4f7;margin:0;padding:2rem 1rem;color:#222;line-height:1.5}' +
-  '.wrap{max-width:720px;margin:0 auto}' +
-  '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;' +
-  'padding:24px 28px;margin-bottom:18px;box-shadow:0 2px 10px rgba(0,0,0,.04)}' +
-  'h1{font-size:1.4em;margin:0 0 4px}h2{font-size:1.05em;margin:0 0 12px}' +
+  'body{font-family:system-ui,-apple-system,"Segoe ' +
+  'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
+  '1rem;color:#222;line-height:1.5}.wrap{max-width:720px;margin:0 ' +
+  'auto}.card{background:#fff;border:1px solid ' +
+  '#d5d5dd;border-radius:10px;padding:24px ' +
+  '28px;margin-bottom:18px;box-shadow:0 2px 10px ' +
+  'rgba(0,0,0,.04)}h1{font-size:1.4em;margin:0 0 ' +
+  '4px}h2{font-size:1.05em;margin:0 0 12px}' +
   // The heading and its one control on the same line. `align-items:start` and
   // not `center`: the button is a small box beside a large heading and centring
   // it drags it down past the heading's baseline. The form's margin is reset
   // because `button` carries a top margin of its own for the stacked forms
   // below, which is right there and wrong here.
   '.pagehead{display:flex;gap:12px;align-items:start;' +
-  'justify-content:space-between;flex-wrap:wrap}' +
-  '.pagehead h1{margin:0}' +
-  '.pagehead form{margin:0}.pagehead button{margin-top:0}' +
-  'p.sub{color:#666;font-size:.9em;margin:0 0 18px}' +
-  'label{display:block;font-size:.85em;font-weight:600;margin:12px 0 4px}' +
-  'input[type=text],input[type=password]{width:100%;padding:9px 10px;' +
-  'border:1px solid #c9c9d2;border-radius:6px;font-size:1em;box-sizing:border-box}' +
-  'button{margin-top:14px;padding:9px 16px;border:0;border-radius:6px;' +
-  'background:#2c5cc5;color:#fff;font-size:.95em;cursor:pointer}' +
-  'button.danger{background:#b00020}button.secondary{background:#5a5a68}' +
-  'table{border-collapse:collapse;width:100%;font-size:.9em}' +
-  'th,td{text-align:left;padding:7px 10px;border-bottom:1px solid #e6e6ec}' +
-  'th{color:#555;font-weight:600;width:34%}' +
-  '.err{background:#fdecef;border:1px solid #f5c2cb;color:#8a1027;' +
-  'padding:10px 12px;border-radius:6px;margin-bottom:14px;font-size:.9em}' +
-  '.ok{background:#eaf6ec;border:1px solid #bfe3c6;color:#1d5b2a;' +
-  'padding:10px 12px;border-radius:6px;margin-bottom:14px;font-size:.9em}' +
-  '.note{color:#555;font-size:.85em;margin:10px 0 0}' +
-  'code{background:#f0f0f5;padding:1px 5px;border-radius:4px;font-size:.9em}' +
+  'justify-content:space-between;flex-wrap:wrap}.pagehead ' +
+  'h1{margin:0}.pagehead form{margin:0}.pagehead ' +
+  'button{margin-top:0}p.sub{color:#666;font-size:.9em;margin:0 0 ' +
+  '18px}label{display:block;font-size:.85em;font-weight:600;margin:12px 0 ' +
+  '4px}input[type=text],input[type=password]{width:100%;padding:9px ' +
+  '10px;border:1px solid #c9c9d2;border-radius:6px;font-size:1em;' +
+  'box-sizing:border-box}button{margin-top:14px;padding:9px 16px;border:0;' +
+  'border-radius:6px;background:#2c5cc5;color:#fff;font-size:.95em;' +
+  'cursor:pointer}button.danger{background:#b00020}' +
+  'button.secondary{background:#5a5a68}table{border-collapse:collapse;' +
+  'width:100%;font-size:.9em}th,td{text-align:left;padding:7px ' +
+  '10px;border-bottom:1px solid #e6e6ec}th{color:#555;font-weight:600;' +
+  'width:34%}.err{background:#fdecef;border:1px solid ' +
+  '#f5c2cb;color:#8a1027;padding:10px 12px;border-radius:6px;' +
+  'margin-bottom:14px;font-size:.9em}.ok{background:#eaf6ec;border:1px solid ' +
+  '#bfe3c6;color:#1d5b2a;padding:10px 12px;border-radius:6px;' +
+  'margin-bottom:14px;font-size:.9em}.note{color:#555;font-size:.85em;' +
+  'margin:10px 0 0}code{background:#f0f0f5;padding:1px ' +
+  '5px;border-radius:4px;font-size:.9em}' +
   // THE RECOVERY CODE LIST (2026-09-10). Two columns where there is room and
   // one where there is not, because the list is read off a phone as often as
   // off a laptop — and a ten-character code that wraps mid-string is one
@@ -414,13 +422,12 @@ const CSS =
   // The rule down the left marking the section the current page is in, so a
   // reader who arrived on a deep link can see where they are without reading
   // every label. Same device as the console's, one colour over.
-  '.navsec.open{border-left:3px solid #2c5cc5;margin-left:-14px;padding-left:11px}' +
-  '.navsec.open .navhead{color:#2c5cc5}' +
-  'nav a,nav .here{display:block;padding:4px 7px;border-radius:5px;' +
-  'text-decoration:none;color:#2c5cc5;font-size:.9em}' +
-  'nav a:hover{background:#eef2fb}' +
-  'nav .here{font-weight:700;color:#fff;background:#2c5cc5}' +
-  '.who{color:#666;font-size:.85em;margin:3px 0 0}' +
+  '.navsec.open{border-left:3px solid ' +
+  '#2c5cc5;margin-left:-14px;padding-left:11px}.navsec.open ' +
+  '.navhead{color:#2c5cc5}nav a,nav .here{display:block;padding:4px 7px;' +
+  'border-radius:5px;text-decoration:none;color:#2c5cc5;font-size:.9em}nav ' +
+  'a:hover{background:#eef2fb}nav .here{font-weight:700;color:#fff;' +
+  'background:#2c5cc5}.who{color:#666;font-size:.85em;margin:3px 0 0}' +
   // A HEADER TABLE RATHER THAN A LABEL COLUMN. `th` above is 34% wide because
   // every table in this application until now was two columns of name and
   // value; the applications list is four columns with a heading ROW, where a
@@ -436,15 +443,15 @@ const CSS =
   // A BLOCK, because two of them follow the application's name in one cell —
   // the identifier and the description — and inline they run together into
   // one line that reads as a single fact.
-  '.ident{display:block;color:#666;font-size:.85em}' +
-  '.tag{display:inline-block;background:#eef2fb;border:1px solid #d3ddf4;' +
-  'color:#26417d;border-radius:4px;padding:0 6px;margin:0 4px 3px 0;font-size:.8em}' +
-  '.pagenav{margin:14px 0 0;font-size:.85em}' +
-  '.pagenav a,.pagenav span{display:inline-block;padding:3px 9px;' +
-  'border:1px solid #d5d5dd;border-radius:5px;margin-right:6px;' +
-  'text-decoration:none;color:#2c5cc5;background:#fff}' +
-  '.pagenav .here{background:#2c5cc5;border-color:#2c5cc5;color:#fff;font-weight:700}' +
-  '.pagenav .off{color:#9a9aa6;background:#f4f4f7}' +
+  '.ident{display:block;color:#666;font-size:.85em}.tag{display:inline-block;' +
+  'background:#eef2fb;border:1px solid ' +
+  '#d3ddf4;color:#26417d;border-radius:4px;padding:0 6px;margin:0 4px 3px ' +
+  '0;font-size:.8em}.pagenav{margin:14px 0 0;font-size:.85em}.pagenav ' +
+  'a,.pagenav span{display:inline-block;padding:3px 9px;border:1px solid ' +
+  '#d5d5dd;border-radius:5px;margin-right:6px;text-decoration:none;' +
+  'color:#2c5cc5;background:#fff}.pagenav .here{background:#2c5cc5;' +
+  'border-color:#2c5cc5;color:#fff;font-weight:700}.pagenav ' +
+  '.off{color:#9a9aa6;background:#f4f4f7}' +
   // One column on a narrow screen, and the sections laid out across the top
   // rather than stacked: four headings down the page before any content would
   // be a phone showing nothing but navigation.
@@ -460,6 +467,8 @@ const CSS =
   '.ver code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}';
 
 function page(title, inner, wide) {
+  log.debug("Entering page().");
+  log.debug("Leaving page().");
   return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<title>' + esc(title) + ' — mock STS</title><style>' + CSS +
@@ -481,9 +490,11 @@ function page(title, inner, wide) {
 }
 
 function send(res, status, html) {
+  log.debug("Entering send().");
   // `no-store` on every page: this one draws a person's own account details and
   // is reached from a shared browser as often as not.
   res.status(status).set('Cache-Control', 'no-store').type('html').send(html);
+  log.debug("Leaving send().");
 }
 
 // ===========================================================================
@@ -576,7 +587,10 @@ const NAV_PAGES = NAV.reduce(function (all, section) {
 // heading over it, and the two would be right for exactly as long as nobody
 // looked.
 function headingFor(active) {
-  const row = NAV_PAGES.filter(function (one) { return one.path === active; })[0];
+  log.debug("Entering headingFor().");
+  const row =
+      NAV_PAGES.filter(function (one) { return one.path === active; })[0];
+  log.debug("Leaving headingFor().");
   return row ? row.heading : 'Your account';
 }
 
@@ -673,7 +687,8 @@ const ACTIVATION_REFUSAL =
   'account for a new one.';
 
 // ---------------------------------------------------------------------------
-// WHAT A PASSWORD HERE MUST BE, SAID ON THE FORM THAT ASKS FOR ONE (2026-09-12).
+// WHAT A PASSWORD HERE MUST BE, SAID ON THE FORM THAT ASKS FOR ONE
+// (2026-09-12).
 //
 // The rules are `common/password_policy.js`'s default profile, read through
 // `credentials.passwordRules()` — the function the refusal is built beside —
@@ -682,18 +697,23 @@ const ACTIVATION_REFUSAL =
 // and the note says that rather than listing rules nobody applies.
 // ---------------------------------------------------------------------------
 function passwordRulesNote(username) {
+  log.debug("Entering passwordRulesNote().");
   const said = credentials.passwordRules(username);
   if (!said.enforced) {
-    return '<p class="note">This service is in development mode and checks no ' +
-           'password, so any password is accepted here. In product mode it ' +
-           'must be ' + esc(said.rules.join(', ')) + '.</p>';
+    log.debug("Leaving passwordRulesNote().");
+    return '<p class="note">This service is in development mode and checks ' +
+           'no password, so any password is accepted here. In product mode ' +
+           'it must be ' + esc(said.rules.join(', ')) + '.</p>';
   }
+  log.debug("Leaving passwordRulesNote().");
   return '<p class="note">A password here must be ' +
          esc(said.rules.join(', ')) + '.</p>';
 }
 
 function activationForm(base, username, token, message, error) {
+  log.debug("Entering activationForm().");
   const csrfless = ''; // the form carries the token instead; see below
+  log.debug("Leaving activationForm().");
   return page('Set up your account',
     '<div class="card">' +
     '<h1>Set up your account</h1>' +
@@ -709,27 +729,25 @@ function activationForm(base, username, token, message, error) {
     // credential protecting the first. It is a POST so the token does not end
     // up in a referer or an access log the way a GET's query string does.
     '<input type="hidden" name="user" value="' + esc(username) + '">' +
-    '<input type="hidden" name="token" value="' + esc(token) + '">' +
-    '<h2>1. A password</h2>' +
-    '<label for="password">Password</label>' +
-    '<input type="password" id="password" name="password" autocomplete="new-password">' +
-    '<label for="confirm">Confirm it</label>' +
-    '<input type="password" id="confirm" name="confirm" autocomplete="new-password">' +
+    '<input type="hidden" name="token" value="' + esc(token) + '"><h2>1. A ' +
+    'password</h2><label for="password">Password</label><input ' +
+    'type="password" id="password" name="password" ' +
+    'autocomplete="new-password"><label for="confirm">Confirm ' +
+    'it</label><input type="password" id="confirm" name="confirm" ' +
+    'autocomplete="new-password">' +
     passwordRulesNote(username) +
     '<p class="note">Leave both empty if you would rather sign in with a ' +
-    'security key alone. You need at least one of the two.</p>' +
-    '<h2>2. A security key</h2>' +
-    '<p class="note">A security key can be your ONLY credential (you sign in ' +
-    'with the key and no password) or a SECOND factor beside a password. ' +
-    'This service supports no other second factor.</p>' +
-    '<label class="chk"><input type="radio" name="key_role" value="none" checked> ' +
-    'No security key for now</label>' +
-    '<label class="chk"><input type="radio" name="key_role" value="primary"> ' +
-    'Use a security key instead of a password</label>' +
-    '<label class="chk"><input type="radio" name="key_role" value="mfa"> ' +
-    'Use a security key as a second factor, with the password above</label>' +
-    '<p class="note">Choosing a security key takes you to the enrolment screen ' +
-    'after this step.</p>' +
+    'security key alone. You need at least one of the two.</p><h2>2. A ' +
+    'security key</h2><p class="note">A security key can be your ONLY ' +
+    'credential (you sign in with the key and no password) or a SECOND ' +
+    'factor beside a password. This service supports no other second ' +
+    'factor.</p><label class="chk"><input type="radio" name="key_role" ' +
+    'value="none" checked> No security key for now</label><label ' +
+    'class="chk"><input type="radio" name="key_role" value="primary"> Use a ' +
+    'security key instead of a password</label><label class="chk"><input ' +
+    'type="radio" name="key_role" value="mfa"> Use a security key as a ' +
+    'second factor, with the password above</label><p class="note">Choosing ' +
+    'a security key takes you to the enrolment screen after this step.</p>' +
     // ---------------------------------------------------------------
     // THE AUTHENTICATOR APP (2026-09-10). A CHECKBOX AND NOT A FOURTH
     // RADIO BUTTON, and that is the whole of what it says about itself:
@@ -745,16 +763,15 @@ function activationForm(base, username, token, message, error) {
     // does nothing is worse than an absent one. The door checks the
     // setting again regardless, because a form is markup.
     (totp.offered()
-      ? '<h2>3. An authenticator app</h2>' +
-        '<label class="chk"><input type="checkbox" name="totp" value="1"> ' +
-        'Also set up an authenticator app as a second factor</label>' +
-        '<p class="note">A six-digit code from Google Authenticator, ' +
-        'Microsoft Authenticator, Authy, 1Password, Bitwarden, Aegis, ' +
-        'FreeOTP or any other app that implements RFC 6238. <strong>It is a ' +
-        'SECOND factor</strong> — it works beside the password or security ' +
-        'key above and never instead of one. Ticking this shows you a QR code ' +
-        'on the next step; your account is not set up until you type a code ' +
-        'back from it.</p>'
+      ? '<h2>3. An authenticator app</h2><label class="chk"><input ' +
+        'type="checkbox" name="totp" value="1"> Also set up an authenticator ' +
+        'app as a second factor</label><p class="note">A six-digit code from ' +
+        'Google Authenticator, Microsoft Authenticator, Authy, 1Password, ' +
+        'Bitwarden, Aegis, FreeOTP or any other app that implements RFC ' +
+        '6238. <strong>It is a SECOND factor</strong> — it works beside the ' +
+        'password or security key above and never instead of one. Ticking ' +
+        'this shows you a QR code on the next step; your account is not set ' +
+        'up until you type a code back from it.</p>'
       : '') +
     '<button type="submit">Continue</button>' +
     '</form>' +
@@ -774,11 +791,13 @@ function activationForm(base, username, token, message, error) {
 // this one: nobody is signed in, so there is no session to carry state on.
 // ---------------------------------------------------------------------------
 function activationTotpForm(username, token, enrolment, error) {
+  log.debug("Entering activationTotpForm().");
+  log.debug("Leaving activationTotpForm().");
   return page('Set up your authenticator app',
     '<div class="card">' +
     '<h1>Scan this with your authenticator app</h1>' +
-    '<p class="sub">Almost done. <strong>' + esc(username) + '</strong> has a ' +
-    'password now; this adds the second factor.</p>' +
+    '<p class="sub">Almost done. <strong>' + esc(username) + '</strong> has ' +
+    'a password now; this adds the second factor.</p>' +
     (error ? '<div class="err">' + esc(error) + '</div>' : '') +
     (enrolment.qr
       ? '<p><img src="' + esc(enrolment.qr) + '" width="240" height="240" ' +
@@ -786,10 +805,10 @@ function activationTotpForm(username, token, enrolment, error) {
       : '') +
     '<h2>Or type it in</h2>' +
     '<table class="grid">' +
-    '<tr><th>Secret</th><td><code>' + esc(enrolment.grouped) + '</code></td></tr>' +
-    '<tr><th>Account</th><td><code>' + esc(username) + '</code></td></tr>' +
-    '<tr><th>Issuer</th><td>' + esc(enrolment.issuer) + '</td></tr>' +
-    '<tr><th>Algorithm</th><td>' +
+    '<tr><th>Secret</th><td><code>' + esc(enrolment.grouped) +
+    '</code></td></tr><tr><th>Account</th><td><code>' + esc(username) +
+    '</code></td></tr><tr><th>Issuer</th><td>' + esc(enrolment.issuer) +
+    '</td></tr><tr><th>Algorithm</th><td>' +
     esc('HMAC-' + String(enrolment.algorithm).replace(/^SHA/, 'SHA-') + ', ' +
         String(enrolment.digits) + ' digits, every ' +
         String(enrolment.period) + ' seconds') + '</td></tr>' +
@@ -802,14 +821,11 @@ function activationTotpForm(username, token, enrolment, error) {
     '-digit code your app is showing now</label>' +
     '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
     'inputmode="numeric" maxlength="' + esc(String(enrolment.digits)) + '" ' +
-    'placeholder="' + '0'.repeat(enrolment.digits) + '">' +
-    '<button type="submit">Finish</button>' +
-    '</form>' +
-    '<p class="note">Nothing about the authenticator is stored until this code ' +
-    'checks out, and your activation link is not used up until then either — ' +
-    'so if you cannot finish now, open the link again and leave the ' +
-    'authenticator box unticked.</p>' +
-    '</div>');
+    'placeholder="' + '0'.repeat(enrolment.digits) + '"><button ' +
+    'type="submit">Finish</button></form><p class="note">Nothing about the ' +
+    'authenticator is stored until this code checks out, and your activation ' +
+    'link is not used up until then either — so if you cannot finish now, ' +
+    'open the link again and leave the authenticator box unticked.</p></div>');
 }
 
 // ---------------------------------------------------------------------------
@@ -929,6 +945,23 @@ const ENROL_KEY_FORM = vz.object({
   csrf_token: vt.opt(vt.token)
 });
 
+// ---------------------------------------------------------------------------
+// THE PORTAL RENEWS ITS OWN TOKENS BEFORE ANY PAGE READS ITS SESSION
+// (2026-09-12).
+//
+// `requireSignIn()` is synchronous and is called from inside every handler, so
+// the renewal cannot live there; it is ONE middleware on the whole `/portal`
+// prefix, registered above the first route in this file (rule 1), so a page
+// added tomorrow is renewed by construction. When the session's ID Token and
+// access token run out it redeems the refresh token and writes the new tokens
+// onto the same session — the person stays signed in and on the page they
+// asked for. `common/oidc_rp.js`'s section 4 argues all of it. It answers no
+// request itself; a renewal that could not happen ends the session, and
+// `requireSignIn()` then sends the browser through the code flow as it always
+// did for a request with no session.
+// ---------------------------------------------------------------------------
+app.use(BASE, oidcRp.renewal('portal'));
+
 app.get(ACTIVATE, function (req, res) {
   log.debug('Entering GET ' + ACTIVATE + '.');
   const asked = validation.check(req, 'query', ACTIVATE_QUERY);
@@ -967,7 +1000,8 @@ app.get(ACTIVATE, function (req, res) {
       esc(ACTIVATION_REFUSAL) + '</div></div>'));
   }
   log.debug('Leaving GET ' + ACTIVATE + '. Drawing the setup form.');
-  return send(res, 200, activationForm(baseUrlOf(req), username, token, null, null));
+  return send(res, 200,
+              activationForm(baseUrlOf(req), username, token, null, null));
 });
 
 app.post(ACTIVATE, async function (req, res) {
@@ -1087,8 +1121,8 @@ app.post(ACTIVATE, async function (req, res) {
     return send(res, 400, activationForm(base, username, token, null,
       keyRole === 'mfa'
         ? 'A security key used as a SECOND factor needs a password to be the ' +
-          'first one. Set a password as well, or choose to use the key instead ' +
-          'of a password.'
+          'first one. Set a password as well, or choose to use the key ' +
+          'instead of a password.'
         : 'Set a password, or choose to use a security key instead of one. ' +
           'You need at least one way to sign in.'));
   }
@@ -1104,10 +1138,10 @@ app.post(ACTIVATE, async function (req, res) {
   // ---------------------------------------------------------------------
   // THE AUTHENTICATOR APP, IF IT WAS ASKED FOR (2026-09-10).
   //
-  // **THIS RETURNS WITHOUT FINISHING**, which is the whole shape of the two-step
-  // enrolment: the password is set, the link is NOT spent, and the person is
-  // shown a secret they have to prove they hold. `finishActivation()` runs on
-  // the second POST.
+  // **THIS RETURNS WITHOUT FINISHING**, which is the whole shape of the
+  // two-step enrolment: the password is set, the link is NOT spent, and the
+  // person is shown a secret they have to prove they hold. `finishActivation()`
+  // runs on the second POST.
   //
   // **THE SETTING IS CHECKED HERE AND NOT ONLY WHERE THE BOX IS DRAWN.** The
   // form is markup and this is the door — `authn.js`'s rule about the anonymous
@@ -1226,8 +1260,8 @@ function finishActivation(res, base, username, password, keyRole, withTotp,
     (withTotp
       ? '<p><strong>Your authenticator app is set up.</strong> You will be ' +
         'asked for a code every time you sign in, after your password — a ' +
-        'password alone will not get you in any more. The code you just typed ' +
-        'is spent, so wait for the next one.</p>'
+        'password alone will not get you in any more. The code you just ' +
+        'typed is spent, so wait for the next one.</p>'
       : '') +
     // ---------------------------------------------------------------------
     // THE RECOVERY CODES, ON THE ONE PAGE THIS PERSON WILL EVER SEE THEM
@@ -1253,7 +1287,8 @@ function finishActivation(res, base, username, password, keyRole, withTotp,
         'are issued ONCE — this service will not make a new set.</p>' +
         '<ul class="codes">' +
         recovery.map(function (code) {
-          return '<li><code>' + esc(backupCodes.formatted(code)) + '</code></li>';
+          return '<li><code>' + esc(backupCodes.formatted(code)) +
+                 '</code></li>';
         }).join('') +
         '</ul>' +
         '<p class="note">You can look at them again on your ' +
@@ -1266,10 +1301,10 @@ function finishActivation(res, base, username, password, keyRole, withTotp,
       ? '<p>You asked to use a security key' +
         (keyRole === 'mfa' ? ' as a second factor' : ' instead of a password') +
         '. A key is enrolled DURING A SIGN-IN rather than from your account ' +
-        'pages: tick the security-key box at the sign-in screen and the first ' +
-        'use enrols it. There is no enrol button on your Security keys page, ' +
-        'because a WebAuthn ceremony belongs to a sign-in — which is the ' +
-        'same reason nothing here links to /authn/webauthn.</p>'
+        'pages: tick the security-key box at the sign-in screen and the ' +
+        'first use enrols it. There is no enrol button on your Security keys ' +
+        'page, because a WebAuthn ceremony belongs to a sign-in — which is ' +
+        'the same reason nothing here links to /authn/webauthn.</p>'
       : '') +
     '<p><a href="' + esc(next) + '">Sign in</a></p></div>'));
 }
@@ -1283,6 +1318,7 @@ function finishActivation(res, base, username, password, keyRole, withTotp,
 // somebody adding a page later without reading this comment.
 // ---------------------------------------------------------------------------
 function requireSignIn(req, res, returnTo, want) {
+  log.debug("Entering requireSignIn().");
   // THE PORTAL'S OWN SESSION AND NOT THE SIGN-ON SESSION (2026-09-06). This is
   // a relying party: it reads the session it established from an ID Token, in
   // its own cookie. `authn.sessionOf()` would be this portal reading the
@@ -1331,8 +1367,10 @@ function requireSignIn(req, res, returnTo, want) {
         '<p class="note">This is a policy decision rather than a missing ' +
         'sign-in. You are signed in as <strong>' +
         esc(session.user.username) + '</strong>.</p></div>'));
+      log.debug("Leaving requireSignIn().");
       return null;
     }
+    log.debug("Leaving requireSignIn().");
     return session;
   }
   // ---------------------------------------------------------------------
@@ -1383,7 +1421,8 @@ function requireSignIn(req, res, returnTo, want) {
     // The client entry is gone or has no secret. A refusal with the reason on
     // it rather than a redirect into a flow that cannot complete — and it names
     // the entry, because that is where somebody has to look.
-    log.error(errorCodes.tag('STS-PORTAL-0011') + 'portal: nobody can sign in. ' +
+    log.error(errorCodes.tag('STS-PORTAL-0011') +
+              'portal: nobody can sign in. ' +
               started.why);
     // TWO CAUSES SINCE 2026-09-12, AND THE NOTE USED TO ASSERT THE FIRST. The
     // entry can be gone or secretless — "which is what has happened" — or, in
@@ -1394,19 +1433,20 @@ function requireSignIn(req, res, returnTo, want) {
     errorCodes.mark(res, innerCode(started) || 'STS-PORTAL-0011');
     send(res, 503, page('The portal cannot sign anybody in',
       '<div class="card"><h1>The portal cannot sign anybody in</h1>' +
-      '<div class="err">' + esc(started.why) + '</div>' +
-      '<p class="note">This portal signs people in through this service\'s own ' +
-      'authorization server, as the registered client ' +
-      '<code>sts-user-portal</code>. That entry is seeded at startup and lives ' +
-      'under <code>ou=applications</code> like any other application, so it can ' +
-      'be edited and deleted like any other' +
+      '<div class="err">' + esc(started.why) + '</div><p class="note">This ' +
+      'portal signs people in through this service\'s own authorization ' +
+      'server, as the registered client <code>sts-user-portal</code>. That ' +
+      'entry is seeded at startup and lives under ' +
+      '<code>ou=applications</code> like any other application, so it can be ' +
+      'edited and deleted like any other' +
       (started.reason === 'unregistered-address'
-        ? ' &mdash; and in product mode the addresses it may be reached at are ' +
-          'the redirect URIs on it, which an administrator registers rather ' +
-          'than a request.'
+        ? ' &mdash; and in product mode the addresses it may be reached at ' +
+          'are the redirect URIs on it, which an administrator registers ' +
+          'rather than a request.'
         : ' &mdash; which is what has happened.') +
       '</p></div>'));
   }
+  log.debug("Leaving requireSignIn().");
   return null;
 }
 
@@ -1500,6 +1540,7 @@ function directoryBlock(session, entry) {
       session.user.email ? ['Email', session.user.email] : null,
       session.user.name ? ['Name', session.user.name] : null
     ].filter(Boolean);
+    log.debug("Leaving directoryBlock().");
     return (fallback.length
       ? '<table>' + fallback.map(function (pair) {
           return '<tr><th>' + esc(pair[0]) + '</th><td>' + esc(pair[1]) +
@@ -1521,6 +1562,7 @@ function directoryBlock(session, entry) {
   // ONE ROW. `values` is already a plain array of strings for everything but
   // the two refused kinds, which arrive with none — see the header.
   const row = function (one) {
+    log.debug("Entering row().");
     let value;
     if (one.secret) {
       value = '<span class="set">set</span> <span class="sub">' +
@@ -1541,6 +1583,7 @@ function directoryBlock(session, entry) {
     } else {
       value = esc(one.values[0] || '');
     }
+    log.debug("Leaving row().");
     return '<tr><th title="' + esc(one.ldap + ' — ' + one.rfc +
              (one.note ? '. ' + one.note.replace(/\*\*/g, '') : '')) + '">' +
            esc(one.label) +
@@ -1571,7 +1614,8 @@ function directoryBlock(session, entry) {
                '</summary><table>' + unset.map(function (one) {
                  return '<tr><th title="' + esc(one.ldap + ' — ' + one.rfc) +
                         '">' + esc(one.label) +
-                        (one.must ? ' <span class="must">required</span>' : '') +
+                        (one.must ? ' <span class="must">required</span>' :
+                         '') +
                         '</th><td><span class="unset">not set</span>' +
                         '<div class="attr"><code>' + esc(one.ldap) +
                         '</code> &middot; ' + esc(one.rfc) + '</div></td></tr>';
@@ -1623,8 +1667,9 @@ function overviewPage(session, message, error) {
         '</code></td></tr>'
       : '') +
     '<tr><th>Signed in</th><td>' +
-      esc(new Date((session.authTime || 0) * 1000).toISOString()) + '</td></tr>' +
-    '<tr><th>How</th><td>' + esc((session.amr || []).join(', ') || 'unstated') +
+      esc(new Date((session.authTime || 0) * 1000).toISOString()) +
+    '</td></tr><tr><th>How</th><td>' +
+    esc((session.amr || []).join(', ') || 'unstated') +
       ' (acr ' + esc(session.acr || '') + ')</td></tr>' +
     '<tr><th>This session ends</th><td>' +
       esc(new Date(session.expires || 0).toISOString()) + '</td></tr>' +
@@ -1682,15 +1727,14 @@ function overviewPage(session, message, error) {
     '<div class="card">' +
     '<h2>Sign out of everything</h2>' +
     '<form method="post" action="/logout">' + csrf +
-    '<button class="secondary">Sign out of everything</button></form>' +
-    '<p class="note">Ends every session you hold here, in every protocol, and ' +
+    '<button class="secondary">Sign out of everything</button></form><p ' +
+    'class="note">Ends every session you hold here, in every protocol, and ' +
     'tells the applications that can be told — access and refresh tokens, ' +
     'Kerberos tickets, credential offers, LDAP binds, the lot. <strong>The ' +
-    'Sign out button at the top of every page is the narrower one</strong>: it ' +
-    'ends this browser\'s sessions and leaves what has already been issued to ' +
-    'applications alone. Two different acts, and this is the one that reaches ' +
-    'further.</p>' +
-    '</div>');
+    'Sign out button at the top of every page is the narrower one</strong>: ' +
+    'it ends this browser\'s sessions and leaves what has already been ' +
+    'issued to applications alone. Two different acts, and this is the one ' +
+    'that reaches further.</p></div>');
   log.debug('Leaving overviewPage().');
   return html;
 }
@@ -1715,19 +1759,18 @@ function passwordPage(session, message, error) {
         '<code>/portal/activate</code>.') +
     '</p>' +
     '<form method="post" action="' + BASE + '/password">' + csrf +
-    '<label for="current">Your current password</label>' +
-    '<input type="password" id="current" name="current" autocomplete="current-password">' +
-    '<label for="next">New password</label>' +
-    '<input type="password" id="next" name="next" autocomplete="new-password">' +
-    '<label for="confirm">Confirm it</label>' +
-    '<input type="password" id="confirm" name="confirm" autocomplete="new-password">' +
+    '<label for="current">Your current password</label><input ' +
+    'type="password" id="current" name="current" ' +
+    'autocomplete="current-password"><label for="next">New ' +
+    'password</label><input type="password" id="next" name="next" ' +
+    'autocomplete="new-password"><label for="confirm">Confirm ' +
+    'it</label><input type="password" id="confirm" name="confirm" ' +
+    'autocomplete="new-password">' +
     passwordRulesNote(session.user.username) +
-    '<button type="submit">Change password</button>' +
-    '</form>' +
-    '<p class="note">Your current password is required even though you are ' +
-    'already signed in: a session somebody left open on a shared machine must ' +
-    'not be enough to take the account over.</p>' +
-    '</div>');
+    '<button type="submit">Change password</button></form><p ' +
+    'class="note">Your current password is required even though you are ' +
+    'already signed in: a session somebody left open on a shared machine ' +
+    'must not be enough to take the account over.</p></div>');
   log.debug('Leaving passwordPage().');
   return html;
 }
@@ -1761,7 +1804,8 @@ function keysPage(session, message, error, base) {
         keys.map(function (one) {
           return '<tr><td>' + esc(one.label || 'security key') + '</td>' +
             '<td>' + esc(one.role) + '</td>' +
-            '<td>' + esc(new Date(one.enrolledAt || 0).toISOString().slice(0, 10)) +
+            '<td>' +
+            esc(new Date(one.enrolledAt || 0).toISOString().slice(0, 10)) +
             '</td><td>' +
             '<form method="post" action="' + BASE + '/remove-key">' + csrf +
             '<input type="hidden" name="credentialId" value="' +
@@ -1774,15 +1818,16 @@ function keysPage(session, message, error, base) {
     'You cannot remove your last way in — set another one first.</p>' +
     (keys.length > 1
       ? '<p class="note"><strong>You hold ' + esc(String(keys.length)) +
-        ' keys, which is the point.</strong> If one is lost, the others still ' +
-        'sign you in — and you can remove the lost one from this page without ' +
-        'asking anybody.</p>'
+        ' keys, which is the point.</strong> If one is lost, the others ' +
+        'still sign you in — and you can remove the lost one from this page ' +
+        'without asking anybody.</p>'
       : (keys.length === 1
-          ? '<p class="note"><strong>You hold one key and no backup.</strong> ' +
-            'If it is lost, an operator has to clear it for you before you can ' +
-            'enrol another — there is deliberately no self-service reset of a ' +
-            'credential you cannot produce. Add a second key now, on a ' +
-            'different device, and you never need that conversation.</p>'
+          ? '<p class="note"><strong>You hold one key and no ' +
+            'backup.</strong> If it is lost, an operator has to clear it for ' +
+            'you before you can enrol another — there is deliberately no ' +
+            'self-service reset of a credential you cannot produce. Add a ' +
+            'second key now, on a different device, and you never need that ' +
+            'conversation.</p>'
           : '')) +
     enrolBlock(session, mechanisms, base) +
     '</div>');
@@ -1902,9 +1947,9 @@ function enrolBlock(session, mechanisms, base) {
       // and what it posts is a `finish` with no credential — which the handler
       // answers by saying the browser ran no ceremony, rather than by
       // appearing to do nothing.
-      '<button class="secondary">My browser did not ask &mdash; tell me why</button>' +
-      '</form>' +
-      '<form method="post" action="' + BASE + '/keys">' + csrf +
+      '<button class="secondary">My browser did not ask &mdash; tell me ' +
+      'why</button></form><form method="post" ' +
+      'action="' + BASE + '/keys">' + csrf +
       '<input type="hidden" name="action" value="cancel">' +
       '<button class="secondary">Cancel</button></form>' +
       '<p class="sub">Registering as: <strong>' +
@@ -1996,12 +2041,12 @@ function enrolBlock(session, mechanisms, base) {
 // THE SECRET IS SHOWN ON A PAGE, WHICH IS EXACTLY AS DANGEROUS AS IT SOUNDS,
 // AND THREE THINGS BOUND IT.
 //
-// It is `no-store` like every page here; it is only ever drawn for the SIGNED-IN
-// person and never for a name in a parameter (the rule at the top of this
-// file); and **it stops being shown the moment it is confirmed** — the enrolled
-// page reports that an app is set up and never the secret behind it, so a
-// browser left open on this page does not become a standing copy of somebody's
-// second factor. `totp.enrolmentTtlMinutes` is the fourth bound: an
+// It is `no-store` like every page here; it is only ever drawn for the
+// SIGNED-IN person and never for a name in a parameter (the rule at the top of
+// this file); and **it stops being shown the moment it is confirmed** — the
+// enrolled page reports that an app is set up and never the secret behind it,
+// so a browser left open on this page does not become a standing copy of
+// somebody's second factor. `totp.enrolmentTtlMinutes` is the fourth bound: an
 // unconfirmed secret expires.
 //
 // ---------------------------------------------------------------------------
@@ -2048,11 +2093,13 @@ function mfaPage(session, message, error, enrolment, fresh, revealed) {
     (mechanisms.totp && mechanisms.totpDetail
       ? '<table class="grid">' +
         '<tr><th>Set up</th><td>' +
-        esc(new Date(mechanisms.totpDetail.enrolledAt || 0).toISOString().slice(0, 10)) +
+        esc(new Date(mechanisms.totpDetail.enrolledAt || 0).toISOString()
+          .slice(0, 10)) +
         '</td></tr>' +
         '<tr><th>Last used</th><td>' +
         esc(mechanisms.totpDetail.lastUsedAt
-          ? new Date(mechanisms.totpDetail.lastUsedAt).toISOString().slice(0, 19) + 'Z'
+          ? new Date(mechanisms.totpDetail.lastUsedAt).toISOString()
+            .slice(0, 19) + 'Z'
           : 'never') + '</td></tr>' +
         '<tr><th>Algorithm</th><td>' +
         esc('HMAC-' + String(mechanisms.totpDetail.algorithm || 'SHA1')
@@ -2078,36 +2125,33 @@ function mfaPage(session, message, error, enrolment, fresh, revealed) {
       // THE IMAGE, drawn on the server. `alt` says what it is rather than
       // repeating the secret: a screen reader announcing a shared secret
       // character by character in an open-plan office is not an improvement.
-      '<p><img src="' + esc(setup.qr) + '" width="240" height="240" ' +
-      'alt="QR code carrying this account\'s otpauth setup URI"></p>' +
-      '<h3>Or type it in</h3>' +
-      '<p class="note">If you cannot scan — the phone is showing this page, ' +
-      'the app has no camera, or this service is on <code>localhost</code> ' +
-      'and your phone cannot reach it — add the account by hand with these:</p>' +
-      '<table class="grid">' +
-      '<tr><th>Secret</th><td><code>' + esc(setup.grouped) + '</code></td></tr>' +
-      '<tr><th>Account</th><td><code>' + esc(username) + '</code></td></tr>' +
-      '<tr><th>Issuer</th><td>' + esc(setup.issuer) + '</td></tr>' +
-      '<tr><th>Type</th><td>Time based</td></tr>' +
-      '<tr><th>Algorithm</th><td>' +
+      '<p><img src="' + esc(setup.qr) + '" width="240" height="240" alt="QR ' +
+      'code carrying this account\'s otpauth setup URI"></p><h3>Or type it ' +
+      'in</h3><p class="note">If you cannot scan — the phone is showing this ' +
+      'page, the app has no camera, or this service is on ' +
+      '<code>localhost</code> and your phone cannot reach it — add the ' +
+      'account by hand with these:</p><table ' +
+      'class="grid"><tr><th>Secret</th><td><code>' + esc(setup.grouped) +
+      '</code></td></tr><tr><th>Account</th><td><code>' + esc(username) +
+      '</code></td></tr><tr><th>Issuer</th><td>' + esc(setup.issuer) +
+      '</td></tr><tr><th>Type</th><td>Time ' +
+      'based</td></tr><tr><th>Algorithm</th><td>' +
       esc('HMAC-' + String(setup.algorithm).replace(/^SHA/, 'SHA-')) +
       '</td></tr>' +
       '<tr><th>Digits</th><td>' + esc(String(setup.digits)) + '</td></tr>' +
-      '<tr><th>Period</th><td>' + esc(String(setup.period)) + ' seconds</td></tr>' +
-      '</table>' +
-      '<h3>Then prove it works</h3>' +
-      '<form method="post" action="' + BASE + '/mfa">' + csrf +
+      '<tr><th>Period</th><td>' + esc(String(setup.period)) + ' ' +
+      'seconds</td></tr></table><h3>Then prove it works</h3><form ' +
+      'method="post" action="' + BASE + '/mfa">' + csrf +
       '<input type="hidden" name="action" value="confirm">' +
       '<label for="code">The ' + esc(String(setup.digits)) +
       '-digit code your app is showing now</label>' +
       '<input type="text" id="code" name="code" autocomplete="one-time-code" ' +
       'inputmode="numeric" maxlength="' + esc(String(setup.digits)) + '" ' +
-      'placeholder="' + '0'.repeat(setup.digits) + '">' +
-      '<button type="submit">Finish setting it up</button></form>' +
-      '<p class="note">The code this service accepts here is SPENT — you will ' +
-      'need the next one to sign in, which is RFC 6238 section 5.2 and is why ' +
-      'a code never works twice.</p>' +
-      '</div>'
+      'placeholder="' + '0'.repeat(setup.digits) + '"><button ' +
+      'type="submit">Finish setting it up</button></form><p class="note">The ' +
+      'code this service accepts here is SPENT — you will need the next one ' +
+      'to sign in, which is RFC 6238 section 5.2 and is why a code never ' +
+      'works twice.</p></div>'
     : '';
 
   const startCard = offered
@@ -2121,9 +2165,9 @@ function mfaPage(session, message, error, enrolment, fresh, revealed) {
       (mechanisms.totp
         ? '<p class="note"><strong>Setting up a new one replaces the one you ' +
           'have.</strong> You hold one authenticator here and not a list, ' +
-          'because a six-digit code says nothing about which app produced it. ' +
-          'Delete the old account from your app afterwards — it will keep ' +
-          'showing codes that no longer work.</p>'
+          'because a six-digit code says nothing about which app produced ' +
+          'it. Delete the old account from your app afterwards — it will ' +
+          'keep showing codes that no longer work.</p>'
         : '') +
       '<form method="post" action="' + BASE + '/mfa">' + csrf +
       '<input type="hidden" name="action" value="start">' +
@@ -2146,19 +2190,17 @@ function mfaPage(session, message, error, enrolment, fresh, revealed) {
     'the same ' + esc(String(live.digits)) + '-digit number from it and the ' +
     'clock, so the code proves you have the app without either of you ' +
     'sending the secret anywhere. It changes every ' +
-    esc(String(live.period)) + ' seconds.</p>' +
-    '<p class="note"><strong>It is a SECOND factor and never a first one.</strong> ' +
-    'It cannot replace your password here, because this service holds the ' +
-    'same secret your app does — which is fine for proving you still have ' +
-    'the app, and is not something to hang a whole account on. That is the ' +
-    'difference between this and a security key, which keeps a private key ' +
-    'this service never sees.</p>' +
-    '<p class="note">Codes are checked <strong>properly, in every mode</strong>. ' +
-    'Most credentials on this mock are not — any password is accepted — but a ' +
-    'one-time password verifier that accepted any six digits would not be a ' +
-    'permissive one, it would be a broken one, and there would be nothing ' +
-    'left to test a client against.</p>' +
-    '</div>';
+    esc(String(live.period)) + ' seconds.</p><p class="note"><strong>It is a ' +
+    'SECOND factor and never a first one.</strong> It cannot replace your ' +
+    'password here, because this service holds the same secret your app does ' +
+    '— which is fine for proving you still have the app, and is not ' +
+    'something to hang a whole account on. That is the difference between ' +
+    'this and a security key, which keeps a private key this service never ' +
+    'sees.</p><p class="note">Codes are checked <strong>properly, in every ' +
+    'mode</strong>. Most credentials on this mock are not — any password is ' +
+    'accepted — but a one-time password verifier that accepted any six ' +
+    'digits would not be a permissive one, it would be a broken one, and ' +
+    'there would be nothing left to test a client against.</p></div>';
 
   // THE RECOVERY CODES (2026-09-10), between the authenticator's own cards and
   // the explanation. It is on THIS page rather than a page of its own because
@@ -2197,6 +2239,7 @@ function mfaPage(session, message, error, enrolment, fresh, revealed) {
 // as not-yet-active, and the Cancel beside it says what it throws away.
 // ===========================================================================
 function backupCodesCard(session, fresh, revealed, mechanisms) {
+  log.debug("Entering backupCodesCard().");
   const username = session.user.username;
   log.debug('Entering backupCodesCard(). username=' + username);
   const live = backupCodes.settings();
@@ -2226,14 +2269,13 @@ function backupCodesCard(session, fresh, revealed, mechanisms) {
       esc('They are not saved yet. Nothing has been stored, and none of ' +
           'these codes will work until you press the button below.') +
       '</strong></p>' +
-      '<ul class="codes">' + list + '</ul>' +
-      '<p class="note"><strong>This is the only time they will ever be ' +
-      'shown.</strong> When you confirm, this service stores a <em>hash</em> ' +
-      'of each one &mdash; the same kind of scrypt hash it stores for your ' +
-      'password &mdash; so it can check a code you type and can never print ' +
-      'one back. Write them down, print them, or put them in a password ' +
-      'manager first.</p>' +
-      '<p class="note"><strong>Each code works once.</strong> Type one at the ' +
+      '<ul class="codes">' + list + '</ul><p class="note"><strong>This is ' +
+      'the only time they will ever be shown.</strong> When you confirm, ' +
+      'this service stores a <em>hash</em> of each one &mdash; the same kind ' +
+      'of scrypt hash it stores for your password &mdash; so it can check a ' +
+      'code you type and can never print one back. Write them down, print ' +
+      'them, or put them in a password manager first.</p><p ' +
+      'class="note"><strong>Each code works once.</strong> Type one at the ' +
       'sign-in screen instead of your second factor when you cannot produce ' +
       'it. The dashes and the case do not matter; they are there so you can ' +
       'transcribe it.</p>' +
@@ -2286,8 +2328,8 @@ function backupCodesCard(session, fresh, revealed, mechanisms) {
         ? '<p class="note"><strong>This service will not create a set for ' +
           'you.</strong> It used to, as a side effect of enrolling a second ' +
           'factor &mdash; it cannot any more, because it now stores only a ' +
-          'hash of each code and a hash can only be made while the code is on ' +
-          'the screen in front of you.</p>'
+          'hash of each code and a hash can only be made while the code is ' +
+          'on the screen in front of you.</p>'
         : '') +
       (live.enabled ? generateForm : '') +
       '<p class="note">' + esc(live.count + ' codes of ' + live.length +
@@ -2327,9 +2369,10 @@ function backupCodesCard(session, fresh, revealed, mechanisms) {
       // see a set you already have, so the only reason to press this is that
       // you have lost it — and pressing it destroys the one you lost.
       '<p class="note"><strong>There is no way to see these again.</strong> ' +
-      'Generating a new set shows you ten new codes and <em>replaces</em> the ' +
-      'ones you have &mdash; every code on your current list stops working. ' +
-      'Only do it if you have lost them or have used most of them.</p>' +
+      'Generating a new set shows you ten new codes and <em>replaces</em> ' +
+      'the ones you have &mdash; every code on your current list stops ' +
+      'working. Only do it if you have lost them or have used most of ' +
+      'them.</p>' +
       (live.enabled ? generateForm : '') +
       (status.remaining === 0
         ? '<p class="note"><strong>Every code has been used.</strong> There ' +
@@ -2405,11 +2448,14 @@ function backupCodesCard(session, fresh, revealed, mechanisms) {
 // with no separators in it is one they have to count digits in. An unparseable
 // value says so rather than printing eight characters of whatever is there.
 function readableDate(value) {
+  log.debug("Entering readableDate().");
   const found = /^(\d{4})(\d{2})(\d{2})/.exec(String(value || ''));
+  log.debug("Leaving readableDate().");
   return found ? found[1] + '-' + found[2] + '-' + found[3] : 'unknown';
 }
 
 function signingKeyPage(session, message, error, fresh, base) {
+  log.debug("Entering signingKeyPage().");
   const username = session.user.username;
   log.debug('Entering signingKeyPage(). username=' + username);
   const csrf = websecurity.field(session.id);
@@ -2422,13 +2468,13 @@ function signingKeyPage(session, message, error, fresh, base) {
   // THE CARD THAT ONLY EXISTS FOR ONE RESPONSE: the key itself.
   // -----------------------------------------------------------------------
   const freshCard = (fresh && fresh.privateKeyPem)
-    ? '<div class="card">' +
-      '<h2>Save this private key</h2>' +
-      '<p class="sub"><strong>This is the only time it will be shown.</strong> ' +
+    ? '<div class="card"><h2>Save this private key</h2><p ' +
+      'class="sub"><strong>This is the only time it will be shown.</strong> ' +
       'It is stored on your entry encrypted, and nothing in this service — ' +
-      'not this page, not an administrator — can print it again. Copy it now; ' +
-      'if you lose it, generate a new key pair, which replaces this one.</p>' +
-      '<pre class="pem">' + esc(String(fresh.privateKeyPem)) + '</pre>' +
+      'not this page, not an administrator — can print it again. Copy it ' +
+      'now; if you lose it, generate a new key pair, which replaces this ' +
+      'one.</p><pre ' +
+      'class="pem">' + esc(String(fresh.privateKeyPem)) + '</pre>' +
       '<p class="note"><strong>What to do with it.</strong> Sign a JSON Web ' +
       'Token with it and present that to the token endpoint as an RFC 7523 ' +
       'section 2.1 authorization grant. The claims are <code>iss</code> and ' +
@@ -2454,15 +2500,14 @@ function signingKeyPage(session, message, error, fresh, base) {
   // page somebody arrives at not knowing what a signing key would be for.
   // -----------------------------------------------------------------------
   const what =
-    '<p class="sub">A signing key lets something act as you <strong>without a ' +
-    'browser</strong>: a script or a service signs a short-lived token with ' +
-    'it and this identity provider hands back an access token for you. No ' +
-    'password is typed and no sign-in screen is drawn — the signature is the ' +
-    'whole of it.</p>' +
-    '<p class="note">It is RFC 7523&rsquo;s <em>JWT bearer authorization ' +
-    'grant</em>. This service issues the key pair from its own certificate ' +
-    'authority, keeps the public half on your entry to check signatures ' +
-    'with, and gives you the private half once.</p>';
+    '<p class="sub">A signing key lets something act as you <strong>without ' +
+    'a browser</strong>: a script or a service signs a short-lived token ' +
+    'with it and this identity provider hands back an access token for you. ' +
+    'No password is typed and no sign-in screen is drawn — the signature is ' +
+    'the whole of it.</p><p class="note">It is RFC 7523&rsquo;s <em>JWT ' +
+    'bearer authorization grant</em>. This service issues the key pair from ' +
+    'its own certificate authority, keeps the public half on your entry to ' +
+    'check signatures with, and gives you the private half once.</p>';
 
   const statusBlock = !held
     ? '<p class="sub">This service holds no entry for you, so there is ' +
@@ -2495,8 +2540,9 @@ function signingKeyPage(session, message, error, fresh, base) {
       'something this page can do.</p>';
   } else if (!offered) {
     controls = '<p class="note"><strong>This service does not let people ' +
-      'issue their own signing keys</strong> (<code>pki.personSelfService</code> ' +
-      'is off). An administrator can still issue one to you.' +
+      'issue their own signing keys</strong> ' +
+      '(<code>pki.personSelfService</code> is off). An administrator can ' +
+      'still issue one to you.' +
       (held && held.hasKeyPair
         ? ' The key you already hold is unaffected and goes on working.'
         : '') + '</p>';
@@ -2505,23 +2551,25 @@ function signingKeyPage(session, message, error, fresh, base) {
       '<form method="post" action="' + BASE + '/signing-key">' + csrf +
       '<input type="hidden" name="action" value="generate">' +
       '<button' + (held.hasKeyPair ? ' class="secondary"' : '') + '>' +
-      (held.hasKeyPair ? 'Generate a new key pair' : 'Generate my signing key') +
+      (held.hasKeyPair ? 'Generate a new key pair' :
+       'Generate my signing key') +
       '</button></form>' +
       (held.hasKeyPair
-        ? '<p class="note"><strong>Generating replaces what you have.</strong> ' +
-          'The key you hold now stops being accepted the moment the new one is ' +
-          'written, and anything signing with it starts being refused.</p>'
+        ? '<p class="note"><strong>Generating replaces what you ' +
+          'have.</strong> The key you hold now stops being accepted the ' +
+          'moment the new one is written, and anything signing with it ' +
+          'starts being refused.</p>'
         : '<p class="note">The private half is shown once, on the page that ' +
           'comes back. Nothing here can show it to you again.</p>');
   }
 
   const removeForm = (held && held.hasKeyPair)
     ? '<form method="post" action="' + BASE + '/signing-key">' + csrf +
-      '<input type="hidden" name="action" value="remove">' +
-      '<button class="danger">Take my signing key off</button></form>' +
-      '<p class="note"><strong>This is not revocation.</strong> The ' +
-      'certificate stays valid and still chains to this service&rsquo;s root; ' +
-      'what changes is that this service stops accepting what the key signs, ' +
+      '<input type="hidden" name="action" value="remove"><button ' +
+      'class="danger">Take my signing key off</button></form><p ' +
+      'class="note"><strong>This is not revocation.</strong> The certificate ' +
+      'stays valid and still chains to this service&rsquo;s root; what ' +
+      'changes is that this service stops accepting what the key signs, ' +
       'because the key is no longer registered against you. Your password, ' +
       'your security keys and your authenticator app are untouched — this is ' +
       'not a way you sign in.</p>'
@@ -2720,7 +2768,9 @@ const SIGN_IN_FAMILIES = [
 const SCAN_LIMIT = 1000;
 
 function scanLimit() {
+  log.debug("Entering scanLimit().");
   const n = Number(config.value('portal.applicationScanLimit'));
+  log.debug("Leaving scanLimit().");
   return isFinite(n) && n > 0 ? Math.floor(n) : SCAN_LIMIT;
 }
 
@@ -2735,8 +2785,10 @@ const PER_PAGE = 20;
 // signing people in for a month may never have been declared anything. Either
 // is an answer to "could I sign in to this".
 function signInFamiliesOf(row) {
+  log.debug("Entering signInFamiliesOf().");
   const declared = row.allowedProtocols || [];
   const recorded = row.recordedProtocols || [];
+  log.debug("Leaving signInFamiliesOf().");
   return SIGN_IN_FAMILIES.filter(function (family) {
     return declared.indexOf(family.protocol) >= 0 ||
            recorded.indexOf(family.protocol) >= 0;
@@ -2877,12 +2929,15 @@ function applicationsFor(username) {
 // sign-in starts, and is exactly what a person would type themselves.
 // ---------------------------------------------------------------------------
 function linkedName(row) {
+  log.debug("Entering linkedName().");
   if (!row.homePage) {
+    log.debug("Leaving linkedName().");
     return '<span class="unlinked" title="This application has not told this ' +
       'identity provider where it lives, so there is nothing to link to. ' +
       'Whoever administers this service can set its home page on the ' +
       'application\'s entry.">' + esc(row.name) + '</span>';
   }
+  log.debug("Leaving linkedName().");
   // `rel="noopener"` on a link out of a page somebody is signed in to. There is
   // no `target` — this service opens nothing in a new window anywhere — so the
   // `noopener` is belt over braces; `Referrer-Policy: no-referrer` is already
@@ -2904,7 +2959,8 @@ function applicationsPage(session, message, error, wanted) {
       '<th>You would be issued</th></tr>' +
       shown.map(function (row) {
         return '<tr><td><strong>' + linkedName(row) + '</strong>' +
-          '<span class="ident"><code>' + esc(row.identifier) + '</code></span>' +
+          '<span class="ident"><code>' + esc(row.identifier) +
+          '</code></span>' +
           (row.description
             ? '<span class="ident">' + esc(row.description) + '</span>' : '') +
           '</td><td>' +
@@ -2938,11 +2994,10 @@ function applicationsPage(session, message, error, wanted) {
     : '';
 
   const html = shell(BASE + '/applications', session, message, error,
-    '<div class="card">' +
-    '<p class="sub">Where this identity provider will sign you in. Each row ' +
-    'was decided by the SAME policy the token endpoint, both SAML profiles ' +
-    'and WS-Federation ask before they issue anything — so this page and those ' +
-    'endpoints cannot disagree.</p>' +
+    '<div class="card"><p class="sub">Where this identity provider will sign ' +
+    'you in. Each row was decided by the SAME policy the token endpoint, ' +
+    'both SAML profiles and WS-Federation ask before they issue anything — ' +
+    'so this page and those endpoints cannot disagree.</p>' +
     table + paging +
     '</div>' +
 
@@ -2952,18 +3007,17 @@ function applicationsPage(session, message, error, wanted) {
     '<tr><th>Not permitted to you</th><td>' +
       esc(String(found.refused)) +
       (found.refused === 1 ? ' application' : ' applications') +
-      '. They are counted rather than named: which applications exist here is ' +
-      'not a question this page answers. Whoever administers this service ' +
-      'decides, by giving your account a role the application requires.' +
-      '</td></tr>' +
-    '<tr><th>Not sign-in destinations</th><td>' +
+      '. They are counted rather than named: which applications exist here ' +
+      'is not a question this page answers. Whoever administers this service ' +
+      'decides, by giving your account a role the application ' +
+      'requires.</td></tr><tr><th>Not sign-in destinations</th><td>' +
       esc(String(found.notSignIn)) +
       (found.notSignIn === 1 ? ' entry' : ' entries') +
-      '. A registered application is not necessarily somewhere a person signs ' +
-      'in — a Shared Signals receiver, a SCIM provisioning client, an LDAP ' +
-      'binder, a SPIFFE workload or a WS-Trust relying party is an ' +
-      'application this service knows and not a door you walk through.' +
-      '</td></tr>' +
+      '. A registered application is not necessarily somewhere a person ' +
+      'signs in — a Shared Signals receiver, a SCIM provisioning client, an ' +
+      'LDAP binder, a SPIFFE workload or a WS-Trust relying party is an ' +
+      'application this service knows and not a door you walk ' +
+      'through.</td></tr>' +
     (found.truncated
       ? '<tr><th>Not looked at</th><td>' +
         esc(String(found.total - found.scanned)) + ' of ' +
@@ -2973,18 +3027,16 @@ function applicationsPage(session, message, error, wanted) {
         'because that work happens on the one ' +
         'thread answering every socket this service holds.</td></tr>'
       : '') +
-    '</table>' +
-    '<p class="note">A name in blue links to the application\'s own home page ' +
-    'and hands it nothing — it is where you would go yourself, and a sign-in ' +
-    'starts there. A name in grey means this identity provider has not been ' +
-    'told where that application lives; whoever administers this service can ' +
-    'set a home page on its entry, and until then there is nothing to link ' +
-    'to. Neither is a button that starts a sign-in for you: this service ' +
-    'implements no identity-provider-initiated sign-on in any of the four ' +
-    'browser profiles — <code>/saml2</code> says so on its own page — so a ' +
-    'link that began one would have to invent a request the application never ' +
-    'asked for and is not expecting.</p>' +
-    '</div>');
+    '</table><p class="note">A name in blue links to the application\'s own ' +
+    'home page and hands it nothing — it is where you would go yourself, and ' +
+    'a sign-in starts there. A name in grey means this identity provider has ' +
+    'not been told where that application lives; whoever administers this ' +
+    'service can set a home page on its entry, and until then there is ' +
+    'nothing to link to. Neither is a button that starts a sign-in for you: ' +
+    'this service implements no identity-provider-initiated sign-on in any ' +
+    'of the four browser profiles — <code>/saml2</code> says so on its own ' +
+    'page — so a link that began one would have to invent a request the ' +
+    'application never asked for and is not expecting.</p></div>');
   log.debug('Leaving applicationsPage(). Page ' + at + ' of ' + pages + '.');
   return html;
 }
@@ -3010,23 +3062,25 @@ app.get(BASE + '/callback', function (req, res) {
       errorCodes.mark(res, innerCode(answer) || 'STS-PORTAL-0012');
       send(res, 400, page('Signing in did not complete',
         '<div class="card"><h1>Signing in did not complete</h1>' +
-        '<div class="err">' + esc(answer.why) + '</div>' +
-        '<p>This portal signs you in through this service\'s own sign-in ' +
-        'service, using the ordinary OpenID Connect authorization code flow — ' +
-        'the same one any other application here would use. What failed above ' +
-        'is one step of that flow, named exactly rather than reported as ' +
-        '&ldquo;sign-in failed&rdquo;.</p>' +
-        '<p><a href="' + esc(BASE) + '">Try again</a></p></div>'));
+        '<div class="err">' + esc(answer.why) + '</div><p>This portal signs ' +
+        'you in through this service\'s own sign-in service, using the ' +
+        'ordinary OpenID Connect authorization code flow — the same one any ' +
+        'other application here would use. What failed above is one step of ' +
+        'that flow, named exactly rather than reported as &ldquo;sign-in ' +
+        'failed&rdquo;.</p><p><a ' +
+        'href="' + esc(BASE) + '">Try again</a></p></div>'));
       log.debug('Leaving ' + BASE + '/callback. Refused.');
       return;
     }
     res.status(303).set('Cache-Control', 'no-store')
        .set('Location', answer.returnTo || BASE).end();
-    log.debug('Leaving ' + BASE + '/callback. Signed in as ' + answer.username + '.');
+    log.debug('Leaving ' + BASE + '/callback. Signed in as ' + answer.username +
+              '.');
   }).catch(function (e) {
     // A rejection is a bug here rather than anything a request can cause:
     // handleCallback() resolves its refusals. Reported as one.
-    log.error(errorCodes.tag('STS-PORTAL-0013') + 'The portal OIDC callback threw: ' +
+    log.error(errorCodes.tag('STS-PORTAL-0013') + 'The portal OIDC callback ' +
+                                                  'threw: ' +
               (e.stack || e.message));
     errorCodes.mark(res, 'STS-PORTAL-0013');
     send(res, 500, page('Signing in did not complete',
@@ -3066,7 +3120,8 @@ app.get(BASE, function (req, res) {
     errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
     return refuseShape(res, asked);
   }
-  log.debug('Leaving GET ' + BASE + '. Drawn for ' + session.user.username + '.');
+  log.debug('Leaving GET ' + BASE + '. Drawn for ' + session.user.username +
+            '.');
   return send(res, 200, overviewPage(session,
     asked.value.done ? String(asked.value.done) : null, null));
 });
@@ -3254,31 +3309,25 @@ function signalsPage(session, message, error, wanted) {
     why +
     list +
     paging +
-    '</div>' +
-
-    '<div class="card">' +
-    '<h2>What this list is, and what it is not</h2>' +
-    '<p class="note"><strong>Only the notices about you are here.</strong> ' +
-    'This portal is told about everybody it serves, and what you are shown is ' +
-    'narrowed to the notices whose subject is you. Where a notice names ' +
-    'somebody in a way this service cannot match to an account &mdash; a ' +
-    'phone number, for instance &mdash; it is left out rather than guessed ' +
-    'at, so it is possible for something about you to be missing from this ' +
-    'list. It is never possible for something about somebody else to be on ' +
-    'it.</p>' +
-    '<p class="note"><strong>This is a record and not a control.</strong> ' +
-    'Nothing here can be edited or removed, including by you: a list of what ' +
-    'was said about your account would be worth nothing if the account\'s ' +
-    'owner could empty it. To end a session, use ' +
-    '<a href="/logout">sign out of everything</a>; to change a credential, ' +
-    'use the pages in <em>How you sign in</em>.</p>' +
-    '<p class="note">The notices are OpenID CAEP (what happened to a ' +
-    '<em>session</em>) and OpenID RISC (what happened to an <em>account</em>) ' +
-    'events, carried over the Shared Signals Framework and signed by this ' +
-    'identity provider. Each one was verified against its signature before it ' +
-    'was recorded here; a notice that did not verify is shown saying so ' +
-    'rather than hidden.</p>' +
-    '</div>');
+    '</div><div class="card"><h2>What this list is, and what it is ' +
+    'not</h2><p class="note"><strong>Only the notices about you are ' +
+    'here.</strong> This portal is told about everybody it serves, and what ' +
+    'you are shown is narrowed to the notices whose subject is you. Where a ' +
+    'notice names somebody in a way this service cannot match to an account ' +
+    '&mdash; a phone number, for instance &mdash; it is left out rather than ' +
+    'guessed at, so it is possible for something about you to be missing ' +
+    'from this list. It is never possible for something about somebody else ' +
+    'to be on it.</p><p class="note"><strong>This is a record and not a ' +
+    'control.</strong> Nothing here can be edited or removed, including by ' +
+    'you: a list of what was said about your account would be worth nothing ' +
+    'if the account\'s owner could empty it. To end a session, use <a ' +
+    'href="/logout">sign out of everything</a>; to change a credential, use ' +
+    'the pages in <em>How you sign in</em>.</p><p class="note">The notices ' +
+    'are OpenID CAEP (what happened to a <em>session</em>) and OpenID RISC ' +
+    '(what happened to an <em>account</em>) events, carried over the Shared ' +
+    'Signals Framework and signed by this identity provider. Each one was ' +
+    'verified against its signature before it was recorded here; a notice ' +
+    'that did not verify is shown saying so rather than hidden.</p></div>');
   log.debug('Leaving signalsPage(). ' + shown.length + ' of ' + rows.length +
             ' shown.');
   return html;
@@ -3333,7 +3382,8 @@ app.get(BASE + '/keys', function (req, res) {
   const session = requireSignIn(req, res, BASE + '/keys',
                                 accessGate.ACTION.READ);
   if (!session) {
-    log.debug('Leaving GET ' + BASE + '/keys. Not signed in, or not permitted.');
+    log.debug('Leaving GET ' + BASE +
+              '/keys. Not signed in, or not permitted.');
     return undefined;
   }
   const asked = validation.check(req, 'query', PORTAL_QUERY);
@@ -3376,7 +3426,8 @@ app.get(BASE + '/keys', function (req, res) {
 // ---------------------------------------------------------------------------
 app.get(BASE + '/mfa', async function (req, res) {
   log.debug('Entering GET ' + BASE + '/mfa.');
-  const session = requireSignIn(req, res, BASE + '/mfa', accessGate.ACTION.READ);
+  const session = requireSignIn(req, res, BASE + '/mfa',
+                                accessGate.ACTION.READ);
   if (!session) return undefined;
   const asked = validation.check(req, 'query', PORTAL_QUERY);
   if (!asked.ok) {
@@ -3549,8 +3600,8 @@ app.post(BASE + '/mfa', async function (req, res) {
     // prompt for as long as it stays true.
     log.debug('Leaving POST ' + BASE + '/mfa. Enrolled.');
     res.status(303).set('Location', BASE + '/mfa?done=' +
-      encodeURIComponent('Your authenticator app is set up. You will be asked ' +
-                         'for a code the next time you sign in.' +
+      encodeURIComponent('Your authenticator app is set up. You will be ' +
+                         'asked for a code the next time you sign in.' +
                          (confirmed.recoveryAdvised
                            ? ' You hold no recovery codes — generate a set ' +
                              'below, before you need it.'
@@ -3619,7 +3670,8 @@ app.post(BASE + '/mfa', async function (req, res) {
                                                   String(body.handle || ''));
     audit.record({
       category: 'authentication', action: 'portal.mfa.backup-codes.confirmed',
-      errorCode: stored.ok ? undefined : (innerCode(stored) || 'STS-PORTAL-0025'),
+      errorCode: stored.ok ? undefined :
+                 (innerCode(stored) || 'STS-PORTAL-0025'),
       actor: username, outcome: stored.ok ? 'success' : 'failure',
       summary: stored.ok
         ? username + ' confirmed they had saved their recovery codes, and ' +
@@ -3649,10 +3701,10 @@ app.post(BASE + '/mfa', async function (req, res) {
     }
     log.debug('Leaving POST ' + BASE + '/mfa. Confirmed and stored.');
     res.status(303).set('Location', BASE + '/mfa?done=' +
-      encodeURIComponent('Your ' + stored.total + ' recovery codes are saved. ' +
-                         'Only their hashes are stored, so this service can ' +
-                         'never show them to you again — keep the copy you ' +
-                         'made.')).end();
+      encodeURIComponent('Your ' + stored.total + ' recovery codes are ' +
+                         'saved. Only their hashes are stored, so this ' +
+                         'service can never show them to you again — keep ' +
+                         'the copy you made.')).end();
     return undefined;
   }
 
@@ -3847,8 +3899,8 @@ app.post(BASE + '/signing-key', async function (req, res) {
     });
     log.info('portal: ' + username + ' issued themselves an RFC 7523 signing ' +
              'key pair, kid=' + record.kid + ', valid until ' +
-             record.notAfter + '. The private half was shown to them once and ' +
-             'is not readable again.');
+             record.notAfter + '. The private half was shown to them once ' +
+             'and is not readable again.');
     log.debug('Leaving POST ' + BASE + '/signing-key. Issued and showing.');
     // **RENDERED AND NOT REDIRECTED**, which is the one place this endpoint
     // does that and is `generate-codes`' reason next door: a 303 has nowhere
@@ -3988,7 +4040,8 @@ app.post(BASE + '/keys', function (req, res) {
   const session = requireSignIn(req, res, BASE + '/keys',
                                 accessGate.ACTION.MANAGE_OWN);
   if (!session) {
-    log.debug('Leaving POST ' + BASE + '/keys. Not signed in, or not permitted.');
+    log.debug('Leaving POST ' + BASE +
+              '/keys. Not signed in, or not permitted.');
     return undefined;
   }
   const username = session.user.username;
@@ -4052,6 +4105,8 @@ app.post(BASE + '/keys', function (req, res) {
     try {
       credential = JSON.parse(String(body.credential || 'null'));
     } catch (e) {
+      log.debug("Caught in a callback in module scope: " +
+                ((e && e.message) || e));
       // Not JSON. That is the real button underneath the script being pressed,
       // or a hand-made POST; either way the sentence below is the right answer
       // and a parse error is not.
@@ -4142,9 +4197,11 @@ app.post(BASE + '/keys', function (req, res) {
 // states of this page differ by a form.
 // ---------------------------------------------------------------------------
 function sendKeysPage(res, status, html) {
+  log.debug("Entering sendKeysPage().");
   res.set('Content-Security-Policy',
           app.contentSecurityPolicy({ 'script-src': "'self'" }));
   res.status(status).set('Cache-Control', 'no-store').type('html').send(html);
+  log.debug("Leaving sendKeysPage().");
 }
 
 app.post(BASE + '/remove-key', function (req, res) {
@@ -4152,7 +4209,8 @@ app.post(BASE + '/remove-key', function (req, res) {
   const session = requireSignIn(req, res, BASE, accessGate.ACTION.MANAGE_OWN);
   if (!session) return undefined;
   const username = session.user.username;
-  const posted = validation.checkParsed(parseBody(req), 'body', REMOVE_KEY_FORM);
+  const posted = validation.checkParsed(parseBody(req), 'body',
+                                        REMOVE_KEY_FORM);
   if (!posted.ok) {
     errorCodes.mark(res, innerCode(posted) || 'STS-PORTAL-0001');
     return refuseShape(res, posted);
@@ -4176,7 +4234,8 @@ app.post(BASE + '/remove-key', function (req, res) {
     log.debug('Leaving POST ' + BASE + '/remove-key. Refused.');
     errorCodes.mark(res, innerCode(removed) || 'STS-PORTAL-0037');
     return send(res, 400, keysPage(session, null,
-      (removed.errors || ['The key could not be removed.'])[0], baseUrlOf(req)));
+      (removed.errors || ['The key could not be removed.'])[0],
+      baseUrlOf(req)));
   }
   audit.record({
     category: 'authentication', action: 'portal.key.removed',
@@ -4209,10 +4268,10 @@ app.post(BASE + '/remove-key', function (req, res) {
 // Sign out button in the corner of a page means everywhere else: this browser
 // is done.
 //
-// **NO `requireSignIn()`**, and that is deliberate rather than an omission. That
-// function REDIRECTS a person with no session into the authorization code flow,
-// which for a sign-out would send somebody who is already signed out off to
-// sign in — the exact opposite of what they pressed. A sign-out asked of a
+// **NO `requireSignIn()`**, and that is deliberate rather than an omission.
+// That function REDIRECTS a person with no session into the authorization code
+// flow, which for a sign-out would send somebody who is already signed out off
+// to sign in — the exact opposite of what they pressed. A sign-out asked of a
 // browser with no session is not an error either; it is a page saying they are
 // signed out, which is true.
 // ===========================================================================
@@ -4225,9 +4284,9 @@ app.post(BASE + '/signout', function (req, res) {
     // already in the state they were asking for.
     log.debug('Leaving POST ' + BASE + '/signout. There was no session.');
     return send(res, 200, page('Signed out',
-      '<div class="card"><h1>You are signed out</h1>' +
-      '<p class="note">There was no portal session on this browser to end.</p>' +
-      '<p><a href="' + esc(BASE) + '">Sign in</a></p></div>'));
+      '<div class="card"><h1>You are signed out</h1><p class="note">There ' +
+      'was no portal session on this browser to end.</p><p><a ' +
+      'href="' + esc(BASE) + '">Sign in</a></p></div>'));
   }
   const username = session.user.username;
   const body = parseBody(req);
@@ -4250,7 +4309,8 @@ app.post(BASE + '/signout', function (req, res) {
     return send(res, 403, overviewPage(session, null, csrf.detail));
   }
   const parent = String(session.derivedFrom || '');
-  oidcRp.endSessionFor(req, res, 'portal', 'the Sign out button on the user portal');
+  oidcRp.endSessionFor(req, res, 'portal', 'the Sign out button on the user ' +
+                                           'portal');
   const signOnEnded = parent
     ? !!authn.endSessionById(parent, 'the Sign out button on the user portal')
     : false;
@@ -4271,7 +4331,8 @@ app.post(BASE + '/signout', function (req, res) {
               address: websecurity.addressOf(req) }
   });
   log.info('portal: ' + username + ' signed out. The portal session is gone' +
-           (signOnEnded ? ' and so is the sign-on session behind it (' + parent +
+           (signOnEnded ?
+            ' and so is the sign-on session behind it (' + parent +
                           '), with every session derived from it.'
                         : '; there was no sign-on session left to end.'));
   log.debug('Leaving POST ' + BASE + '/signout. Signed out.');
@@ -4281,16 +4342,15 @@ app.post(BASE + '/signout', function (req, res) {
     (signOnEnded
       ? ', and so has the sign-on session it was built on — so anything else ' +
         'you were signed in to through it is signed out too.'
-      : '. There was no sign-on session left behind it to end.') + '</div>' +
-    '<p class="note">Signing out of the portal alone would not have signed you ' +
+      : '. There was no sign-on session left behind it to end.') + '</div><p ' +
+    'class="note">Signing out of the portal alone would not have signed you ' +
     'out: this portal is an ordinary OpenID Connect client of this service ' +
     '(<code>sts-user-portal</code>), so the next page would have run the ' +
     'sign-in flow again, met the sign-on session and let you back in with ' +
-    'nothing to type.</p>' +
-    '<p class="note">Tokens, tickets and other credentials already issued to ' +
-    'applications are untouched. <a href="/logout">/logout</a> lists all of ' +
-    'them and ends what you choose.</p>' +
-    '<p><a href="' + esc(BASE) + '">Sign in again</a></p></div>'));
+    'nothing to type.</p><p class="note">Tokens, tickets and other ' +
+    'credentials already issued to applications are untouched. <a ' +
+    'href="/logout">/logout</a> lists all of them and ends what you ' +
+    'choose.</p><p><a href="' + esc(BASE) + '">Sign in again</a></p></div>'));
 });
 
 log.info('The User Portal is at ' + BASE + ': a person\'s own account, in ' +
@@ -4298,11 +4358,12 @@ log.info('The User Portal is at ' + BASE + ': a person\'s own account, in ' +
          'what this identity provider knows about them, WHICH APPLICATIONS ' +
          'THEY MAY SIGN IN TO (decided by the same issuance policy the ' +
          'protocol endpoints ask), their password, their ' +
-         'security keys and their AUTHENTICATOR APP. ' + ACTIVATE + ' is the unauthenticated half, where ' +
-         'somebody provisioned through /admin-api or SCIM spends a single-use ' +
-         'activation link to set up a credential. Every form carries a CSRF ' +
-         'token, every credential endpoint is rate limited, and no route here ' +
-         'takes an identity from the request.');
+         'security keys and their AUTHENTICATOR APP. ' + ACTIVATE + ' is the ' +
+         'unauthenticated half, where somebody provisioned through ' +
+         '/admin-api or SCIM spends a single-use activation link to set up a ' +
+         'credential. Every form carries a CSRF token, every credential ' +
+         'endpoint is rate limited, and no route here takes an identity from ' +
+         'the request.');
 
 module.exports = {
   BASE: BASE,
@@ -4316,6 +4377,8 @@ module.exports = {
   // list, and one removed leaves nothing behind for `sts_metadata.js` to report
   // as described-but-not-registered.
   paths: function () {
+    log.debug("Entering paths().");
+    log.debug("Leaving paths().");
     return NAV_PAGES.map(function (one) { return one.path; })
       // The paths that are NOT pages in the column: the activation flow, the
       // OIDC redirect URI, the two form targets — and, since 2026-09-10, this

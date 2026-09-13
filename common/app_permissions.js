@@ -12,10 +12,10 @@
 // advance, before anybody has asked for anything.
 //
 // **THE TWO ARE NOT ONE REGISTER AND MUST NEVER BE DRAWN AS ONE.** That is the
-// most important sentence in this file. An act is evidence; a grant is
-// intent — and this repository already keeps exactly that distinction under two
-// names one attribute apart (`appProtocol` is what happened, `appAllowedProtocol`
-// is what somebody declared, and `applications.js`'s PROTOCOLS header spends a
+// most important sentence in this file. An act is evidence; a grant is intent —
+// and this repository already keeps exactly that distinction under two names
+// one attribute apart (`appProtocol` is what happened, `appAllowedProtocol` is
+// what somebody declared, and `applications.js`'s PROTOCOLS header spends a
 // page on why collapsing them would be wrong). `/admin/delegation` shows both
 // and says which is which on every heading, because the interesting reading is
 // the DIFFERENCE: a grant nobody has used, and a delegation nobody granted.
@@ -57,9 +57,9 @@
 //
 // It registers no route, so its position in the require order does not matter
 // and it cannot be the reason a route is missing. It requires `helpers.js` and
-// `applications.js`, and NOTHING ELSE in this service — no config, no directory,
-// no express app. `applications.js` does not require it back, so there is no
-// cycle and none of rule 3e's slots is needed.
+// `applications.js`, and NOTHING ELSE in this service — no config, no
+// directory, no express app. `applications.js` does not require it back, so
+// there is no cycle and none of rule 3e's slots is needed.
 //
 // **`ou=applications` IS THE STORE AND THERE IS NO SECOND ONE HERE.** Every
 // function below is a read of the registry or a write through
@@ -128,7 +128,8 @@ function register() {
   const resources = [];
 
   rows.forEach(function (row) {
-    const base = applications.permissionBaseOf((row.fields || {}).oauthPermissionBaseUri);
+    const base = applications.permissionBaseOf((row.fields ||
+                                                {}).oauthPermissionBaseUri);
     const permissions = applications.permissionsOf(row);
     if (!base && !permissions.length) {
       return;
@@ -225,7 +226,9 @@ function register() {
   // relationship is looking for a NAME. Both lists are sorted by the names a
   // reader would search for, which also makes two runs of the same service
   // produce the same page.
-  resources.sort(function (a, b) { return a.identifier.localeCompare(b.identifier); });
+  resources.sort(function (a, b) {
+    return a.identifier.localeCompare(b.identifier);
+  });
   grants.sort(function (a, b) {
     return a.client.localeCompare(b.client) ||
            a.permissionId.localeCompare(b.permissionId);
@@ -257,20 +260,26 @@ function register() {
       // The permissions nobody can ask for, counted separately because it is
       // the one number on this page that means something is WRONG rather than
       // merely unused.
-      unidentified: permissions.filter(function (one) { return !one.id; }).length,
+      unidentified: permissions.filter(function (
+          one) { return !one.id; }).length,
       grants: grants.length,
       dangling: grants.filter(function (one) { return one.dangling; }).length,
       // Grants nobody has used, and permissions nobody holds. These two are the
       // whole reason to draw a configured register beside an observed one.
-      unused: grants.filter(function (one) { return !one.asked && !one.dangling; }).length,
-      ungranted: permissions.filter(function (one) { return !one.grantedTo.length; }).length,
+      unused: grants.filter(function (one) {
+        return !one.asked && !one.dangling;
+      }).length,
+      ungranted: permissions.filter(function (one) {
+        return !one.grantedTo.length;
+      }).length,
       clients: grants.reduce(function (all, one) {
         if (all.indexOf(one.client) < 0) all.push(one.client);
         return all;
       }, []).length
     }
   };
-  log.debug("Leaving register(). " + answer.counts.permissions + " permission(s), " +
+  log.debug("Leaving register(). " + answer.counts.permissions + " " +
+      "permission(s), " +
             answer.counts.grants + " grant(s).");
   return answer;
 }
@@ -285,14 +294,17 @@ function forApplication(identifier) {
   const all = register();
   const answer = {
     identifier: wanted,
-    exposes: all.permissions.filter(function (one) { return one.resource === wanted; }),
+    exposes: all.permissions.filter(function (one) {
+      return one.resource === wanted;
+    }),
     holds: all.grants.filter(function (one) { return one.client === wanted; }),
     // Who holds a permission THIS application defines. The third list rather
     // than a member of `exposes`, because it is the question a person asks
     // about the application as a whole — *who can reach me* — and answering it
     // by asking the reader to fold up a column would be the page doing
     // arithmetic on their behalf.
-    grantedToOthers: all.grants.filter(function (one) { return one.resource === wanted; })
+    grantedToOthers: all.grants.filter(function (
+        one) { return one.resource === wanted; })
   };
   log.debug("Leaving forApplication(). exposes=" + answer.exposes.length +
             ", holds=" + answer.holds.length);
@@ -307,8 +319,9 @@ function forApplication(identifier) {
 // is deliberate: the RULES are in that function, where the console's generic
 // attribute editor and the management API's generic `update` operation also go
 // through them, and what is missing there is only that its messages are about
-// an ATTRIBUTE (`added "https://example.com/write" to oauthDelegatedPermission`)
-// where a reader of this feature is thinking about a RELATIONSHIP.
+// an ATTRIBUTE (`added "https://example.com/write" to
+// oauthDelegatedPermission`) where a reader of this feature is thinking about a
+// RELATIONSHIP.
 //
 // They return `applications.updateApplication()`'s shape unchanged —
 // `{ ok, changed, application, message, errors }` — so the console's
@@ -334,16 +347,18 @@ function setBaseUri(resource, value) {
       ? '"' + resource + '" exposes its permissions under ' + normalised +
         (normalised === asked
           ? '. '
-          : ' — a trailing separator was added, because a permission identifier is the ' +
-            'base followed by the name and "' + asked + '" + "write" would otherwise ' +
-            'read as one word. ') +
-        'A permission called `write` on it is now `' + normalised + 'write`, which is ' +
-        'what a client puts in a `scope` and what an access token asking for it is ' +
-        'AUDIENCED to.'
-      : '"' + resource + '" no longer has a permission base URI. Any permission still on ' +
-        'the entry has no identifier now and no client can ask for it — /admin/delegation ' +
-        'lists those rather than hiding them. Grants already made are unaffected on the ' +
-        'clients holding them and become DANGLING, which is the same honest state.'
+          : ' — a trailing separator was added, because a permission ' +
+            'identifier is the base followed by the name and ' +
+            '"' + asked + '" + "write" would ' +
+            'otherwise read as one word. ') +
+        'A permission called `write` on it is now `' + normalised + 'write`, ' +
+        'which is what a client puts in a `scope` and what an access token ' +
+        'asking for it is AUDIENCED to.'
+      : '"' + resource + '" no longer has a permission base URI. Any ' +
+        'permission still on the entry has no identifier now and no client ' +
+        'can ask for it — /admin/delegation lists those rather than hiding ' +
+        'them. Grants already made are unaffected on the clients holding ' +
+        'them and become DANGLING, which is the same honest state.'
   });
 }
 
@@ -352,7 +367,8 @@ function setBaseUri(resource, value) {
 // spelling and a caller should not have to know it — that is exactly the kind
 // of thing that ends up spelled two ways.
 function definePermission(resource, name, description) {
-  log.debug("Entering definePermission(). resource=" + resource + ", name=" + name);
+  log.debug("Entering definePermission(). resource=" + resource + ", name=" +
+            name);
   const leaf = String(name == null ? '' : name).trim();
   const value = applications.permissionValueOf(leaf, description);
   const result = applications.updateApplication(resource, {
@@ -367,11 +383,15 @@ function definePermission(resource, name, description) {
     ((result.application || {}).fields || {}).oauthPermissionBaseUri);
   log.debug("Leaving definePermission(). ok.");
   return Object.assign({}, result, {
-    message: '"' + resource + '" now exposes the permission `' + leaf + '`, identified by ' +
-             '`' + base + leaf + '`. NOTHING HOLDS IT YET — defining a permission grants it ' +
-             'to nobody, which is the ordering this feature is built on. Grant it to a ' +
-             'client and a request carrying `' + base + leaf + '` in its `scope` produces an ' +
-             'access token audienced to ' + base + ' with `' + leaf + '` on its scope claim.'
+    message: '"' + resource + '" now exposes the permission `' + leaf + '`, ' +
+             'identified by ' +
+             '`' + base + leaf + '`. NOTHING HOLDS IT YET — defining a ' +
+             'permission grants it to nobody, which is the ordering this ' +
+             'feature is built on. Grant it to a client and a request ' +
+             'carrying `' + base + leaf + '` in its ' +
+             '`scope` produces an access token audienced ' +
+             'to ' + base + ' with `' + leaf + '` on ' +
+                 'its scope claim.'
   });
 }
 
@@ -380,24 +400,30 @@ function definePermission(resource, name, description) {
 // from what a form typed, which is why the caller passes the NAME and this
 // looks the raw value up.
 function removePermission(resource, name) {
-  log.debug("Entering removePermission(). resource=" + resource + ", name=" + name);
+  log.debug("Entering removePermission(). resource=" + resource + ", name=" +
+            name);
   const leaf = String(name == null ? '' : name).trim();
   const entry = applications.get(resource);
   if (!entry) {
     log.debug("Leaving removePermission(). No such application.");
-    return errorCodes.mark({ ok: false, errors: ['There is no application called "' + resource + '" in this ' +
-                                 'registry.'] }, 'STS-REG-0021');
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+                                                 'called ' +
+                                                 '"' + resource + '" ' +
+                                 'in this registry.'] }, 'STS-REG-0021');
   }
   const found = applications.permissionsOf(entry).filter(function (one) {
     return one.name === leaf;
   })[0];
   if (!found) {
     log.debug("Leaving removePermission(). No such permission.");
-    return errorCodes.mark({ ok: false, errors: ['"' + resource + '" defines no permission called "' + leaf +
+    return errorCodes.mark({ ok: false, errors: ['"' + resource + '" defines ' +
+        'no permission called "' + leaf +
                                  '". It defines: ' +
-                                 (applications.permissionsOf(entry).map(function (one) {
+                                 (applications.permissionsOf(entry)
+                                              .map(function (one) {
                                    return one.name;
-                                 }).join(', ') || '(none)') + '.'] }, 'STS-REG-0027');
+                                 }).join(', ') || '(none)') + '.'] },
+                           'STS-REG-0027');
   }
   const result = applications.updateApplication(resource, {
     attribute: 'oauthPermission', mode: 'remove', value: found.raw,
@@ -415,16 +441,17 @@ function removePermission(resource, name) {
   const stranded = register().grants.filter(function (one) {
     return one.permissionId === found.id;
   });
-  log.debug("Leaving removePermission(). ok, " + stranded.length + " stranded.");
+  log.debug("Leaving removePermission(). ok, " + stranded.length +
+            " stranded.");
   return Object.assign({}, result, {
     message: '"' + resource + '" no longer exposes `' + leaf + '`. ' +
       (stranded.length
         ? '<strong>' + stranded.length + ' grant(s) still name `' + found.id +
           '` and are now DANGLING</strong> — on ' +
           stranded.map(function (one) { return one.client; }).join(', ') +
-          '. They were NOT removed, deliberately: revoking them would be this action ' +
-          'writing to entries you did not name. Revoke each one, or define the permission ' +
-          'again and they resolve exactly as before.'
+          '. They were NOT removed, deliberately: revoking them would be ' +
+          'this action writing to entries you did not name. Revoke each one, ' +
+          'or define the permission again and they resolve exactly as before.'
         : 'Nothing was holding it, so no grant was stranded.')
   });
 }
@@ -447,13 +474,15 @@ function grant(client, permissionId) {
   log.debug("Leaving grant(). ok.");
   return Object.assign({}, result, {
     message: '"' + client + '" is granted `' + id + '`' +
-      (defines ? ', which "' + defines.identifier + '" exposes' : '') + '. A request from ' +
-      'it carrying that string in `scope` produces an access token audienced to ' +
+      (defines ? ', which "' + defines.identifier + '" exposes' : '') + '. A ' +
+      'request from it carrying that string in `scope` produces an access ' +
+      'token audienced to ' +
       (defines ? defines.baseUri : 'the permission\'s base URI') + ' with `' +
-      (defines ? defines.name : id) + '` on its scope claim. <strong>It was already ' +
-      'producing one</strong> — the grant is recorded and reported and refuses nothing ' +
-      'unless `oauth2.delegatedPermissionsEnforced` is on, which is off by default because ' +
-      'a refusal that cannot be turned off removes a test case rather than adding one.'
+      (defines ? defines.name : id) + '` on its scope claim. <strong>It was ' +
+      'already producing one</strong> — the grant is recorded and reported ' +
+      'and refuses nothing unless `oauth2.delegatedPermissionsEnforced` is ' +
+      'on, which is off by default because a refusal that cannot be turned ' +
+      'off removes a test case rather than adding one.'
   });
 }
 
@@ -471,10 +500,11 @@ function revoke(client, permissionId) {
   log.debug("Leaving revoke(). ok.");
   return Object.assign({}, result, {
     message: '"' + client + '" no longer holds `' + id + '`. With ' +
-             '`oauth2.delegatedPermissionsEnforced` OFF this changes nothing about what it ' +
-             'is issued — the permission still becomes an audience and a scope, and ' +
-             '/admin/delegation now shows those requests as UNGRANTED, which is the state ' +
-             'the setting turns into a refusal.'
+             '`oauth2.delegatedPermissionsEnforced` OFF this changes nothing ' +
+             'about what it is issued — the permission still becomes an ' +
+             'audience and a scope, and /admin/delegation now shows those ' +
+             'requests as UNGRANTED, which is the state the setting turns ' +
+             'into a refusal.'
   });
 }
 
@@ -516,6 +546,7 @@ function graph(rows) {
   const edges = new Map();
 
   function nodeFor(identifier, role) {
+    log.debug("Entering nodeFor().");
     let node = nodes.get(identifier);
     if (!node) {
       node = {
@@ -531,8 +562,8 @@ function graph(rows) {
         roles: { initial: 0, intermediary: 0, target: 0 },
         protocols: ['OAuth 2.0 / OIDC'],
         // `acts` MUST STAY ZERO ON EVERY BOX. `edgeLook()` colours an edge RED
-        // when `acts && !issued`, which is its way of saying "this was tried and
-        // refused" — and every line here has been tried nought times. A
+        // when `acts && !issued`, which is its way of saying "this was tried
+        // and refused" — and every line here has been tried nought times. A
         // configured grant drawn in the refusal colour would be the picture
         // asserting the one thing it cannot know.
         acts: 0, issued: 0, refused: 0,
@@ -545,6 +576,7 @@ function graph(rows) {
       nodes.set(identifier, node);
     }
     node.roles[role]++;
+    log.debug("Leaving nodeFor().");
     return node;
   }
 
@@ -637,9 +669,9 @@ function graph(rows) {
 // registry at once. That is the right picture for a service with five
 // applications in it and it is the wrong one for a service with eighty: the
 // interesting reading of a permission register is almost never the whole of it,
-// it is **which applications are joined to each other at all** — the API and the
-// three front ends that hold permissions on it, the batch job that reaches two
-// of them, and the twelve applications elsewhere in the registry that have
+// it is **which applications are joined to each other at all** — the API and
+// the three front ends that hold permissions on it, the batch job that reaches
+// two of them, and the twelve applications elsewhere in the registry that have
 // nothing whatever to do with any of it.
 //
 // So this function partitions the register into GROUPS. A group is a connected
@@ -700,11 +732,15 @@ function clusters(reg) {
   // check rather than trust.
   const parent = {};
   function add(id) {
+    log.debug("Entering add().");
     if (!Object.prototype.hasOwnProperty.call(parent, id)) {
       parent[id] = id;
     }
+    log.debug("Leaving add().");
   }
+
   function find(id) {
+    log.debug("Entering find().");
     let at = id;
     // Path halving. Every lookup shortens the chain it walked, so a register
     // built one grant at a time does not degenerate into a list.
@@ -712,14 +748,18 @@ function clusters(reg) {
       parent[at] = parent[parent[at]];
       at = parent[at];
     }
+    log.debug("Leaving find().");
     return at;
   }
+
   function join(a, b) {
+    log.debug("Entering join().");
     const ra = find(a);
     const rb = find(b);
     if (ra !== rb) {
       parent[ra] = rb;
     }
+    log.debug("Leaving join().");
   }
 
   all.resources.forEach(function (one) {
@@ -830,11 +870,16 @@ function clusters(reg) {
       clusters: list.length,
       applications: Object.keys(parent).length,
       largest: list.length ? list[0].counts.applications : 0,
-      alone: list.filter(function (one) { return one.counts.applications === 1; }).length,
-      joined: list.filter(function (one) { return one.counts.applications > 1; }).length
+      alone: list.filter(function (one) {
+        return one.counts.applications === 1;
+      }).length,
+      joined: list.filter(function (one) {
+        return one.counts.applications > 1;
+      }).length
     }
   };
-  log.debug("Leaving clusters(). " + answer.counts.clusters + " group(s) over " +
+  log.debug("Leaving clusters(). " + answer.counts.clusters +
+            " group(s) over " +
             answer.counts.applications + " application(s); largest " +
             answer.counts.largest + ".");
   return answer;
@@ -846,13 +891,15 @@ function clusters(reg) {
 // identifier, and matching loosely in this one function would be this module
 // deciding a comparison rule on that one's behalf.
 function clusterFor(identifier, reg) {
+  log.debug("Entering clusterFor().");
   const wanted = String(identifier == null ? '' : identifier).trim();
   log.debug("Entering clusterFor(). identifier=" + wanted);
   const all = reg || clusters();
   const key = all.memberOf[wanted];
   const found = key === undefined
     ? null
-    : all.clusters.filter(function (one) { return one.key === key; })[0] || null;
+    : all.clusters.filter(function (one) { return one.key === key; })[0] ||
+      null;
   log.debug("Leaving clusterFor(). " +
             (found ? found.counts.applications + " application(s) in it."
                    : "Not in the configured register."));

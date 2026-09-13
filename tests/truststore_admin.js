@@ -37,9 +37,9 @@
 //
 // Claims 2, 3 and 5 run in a CHILD PROCESS. Requiring `admin-ui/admin.js`
 // registers the whole console on the shared app and pulls the authorization
-// server and both SAML profiles in with it, and a file in `run.js`'s one process
-// that did that would change what every file after it resolved — the failure
-// would land on somebody else's test.
+// server and both SAML profiles in with it, and a file in `run.js`'s one
+// process that did that would change what every file after it resolved — the
+// failure would land on somebody else's test.
 //
 // ---------------------------------------------------------------------------
 // MUTATION RECORD. Each was applied to a copy of the tree, run, seen red, and
@@ -71,6 +71,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'truststore_admin',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 const CHILD_FLAG = 'STS_TRUSTSTORE_ADMIN_CHILD';
 
@@ -84,6 +90,7 @@ const UNREADABLE = '-----BEGIN CERTIFICATE-----\n' +
 // remote PEP's with. Fresh per run, so an anchor this file adds can never
 // collide with one anybody else put in the truststore.
 async function mintAnchors() {
+  log.debug("Entering mintAnchors().");
   const credentials = require('./tools/pep-credential.js');
   const stamp = process.pid + '-' + Date.now();
   const one = await credentials.mint({
@@ -92,6 +99,7 @@ async function mintAnchors() {
   const two = await credentials.mint({
     rootSubject: 'CN=truststore-admin B ' + stamp + ',O=mock-sts tests',
     subject: 'CN=truststore-admin-leaf-b,O=mock-sts tests' });
+  log.debug("Leaving mintAnchors().");
   return { a: one.anchorPem, b: two.anchorPem, spare: two.issuing.pem,
            clientA: { cert: one.certPem, key: one.keyPem } };
 }
@@ -104,6 +112,8 @@ async function mintAnchors() {
 // `server.js` registers the main port, asked-for-never-required like that port,
 // reporting `socket.authorized` back to a client presenting a real chain.
 function listenerVerifies(server, client) {
+  log.debug("Entering listenerVerifies().");
+  log.debug("Leaving listenerVerifies().");
   return new Promise(function (resolve) {
     const https = require('https');
     const req = https.request({
@@ -121,7 +131,9 @@ function listenerVerifies(server, client) {
 }
 
 function fingerprintOfPem(pem) {
+  log.debug("Entering fingerprintOfPem().");
   const crypto = require('crypto');
+  log.debug("Leaving fingerprintOfPem().");
   return new crypto.X509Certificate(pem).fingerprint256;
 }
 
@@ -129,7 +141,9 @@ function fingerprintOfPem(pem) {
 // 1. THE PRIMITIVES, IN THIS PROCESS.
 // ---------------------------------------------------------------------------
 async function thePrimitives(t) {
-  t.log.info('=== 1. strict add, duplicate, remove, and the listeners\' ca ===');
+  log.debug("Entering thePrimitives().");
+  t.log.info('=== 1. strict add, duplicate, remove, and the listeners\' ca ' +
+             '===');
   const tls = require('../tls/tls_server');
   const anchors = await mintAnchors();
   const before = tls.truststore.list().anchors.map(function (one) {
@@ -138,12 +152,15 @@ async function thePrimitives(t) {
   const mine = [fingerprintOfPem(anchors.a), fingerprintOfPem(anchors.b)];
   try {
     const refused = tls.truststore.add(anchors.a + UNREADABLE);
-    t.check(refused.added === 0 && /could not be read by OpenSSL/.test(refused.error || ''),
+    t.check(refused.added === 0 &&
+            /could not be read by OpenSSL/.test(refused.error || ''),
             'a bundle with one unreadable block is refused, naming why',
             JSON.stringify(refused));
     t.check(tls.truststore.list().anchors.length === before.length,
-            'and the READABLE block beside it was not left in force — all or nothing',
-            String(tls.truststore.list().anchors.length) + ' vs ' + before.length);
+            'and the READABLE block beside it was not left in force — all or ' +
+            'nothing',
+            String(tls.truststore.list().anchors.length) + ' vs ' +
+            before.length);
 
     const added = tls.truststore.add(anchors.a + anchors.b);
     t.equal(added.added, 2, 'two readable CAs are added');
@@ -152,8 +169,10 @@ async function thePrimitives(t) {
     });
     t.check(listed.length === 2 && listed.every(function (one) {
       return one.source === 'runtime' && one.readable && one.ca &&
-        one.issuer && one.serial && one.notAfter && /BEGIN CERTIFICATE/.test(one.pem);
-    }), 'and each is listed as a readable runtime CA with issuer, serial and validity',
+        one.issuer && one.serial && one.notAfter &&
+        /BEGIN CERTIFICATE/.test(one.pem);
+    }), 'and each is listed as a readable runtime CA with issuer, serial and ' +
+        'validity',
             JSON.stringify(listed.map(function (one) {
               return { s: one.source, r: one.readable, ca: one.ca };
             })));
@@ -166,12 +185,15 @@ async function thePrimitives(t) {
             JSON.stringify(dup));
 
     const notHeld = tls.truststore.remove(fingerprintOfPem(anchors.spare));
-    t.check(notHeld.removed === 0 && /holds no anchor/.test(notHeld.error || ''),
-            'a fingerprint the truststore does not hold removes nothing, and says so',
+    t.check(notHeld.removed === 0 &&
+            /holds no anchor/.test(notHeld.error || ''),
+            'a fingerprint the truststore does not hold removes nothing, and ' +
+            'says so',
             JSON.stringify(notHeld));
     const malformed = tls.truststore.remove('not-a-fingerprint');
     t.check(malformed.removed === 0 && /64 hex/.test(malformed.error || ''),
-            'a value that is not a SHA-256 fingerprint is refused before any lookup',
+            'a value that is not a SHA-256 fingerprint is refused before any ' +
+            'lookup',
             JSON.stringify(malformed));
 
     // The OTHER spelling: lower case, no colons — what most tools print.
@@ -179,7 +201,8 @@ async function thePrimitives(t) {
     const removed = tls.truststore.remove(plain);
     t.check(removed.removed === 1 && removed.anchor &&
             removed.anchor.fingerprint256 === mine[0],
-            'a remove finds its anchor under the plain-hex spelling of the fingerprint',
+            'a remove finds its anchor under the plain-hex spelling of the ' +
+            'fingerprint',
             JSON.stringify(removed).slice(0, 300));
     t.equal(tls.clientTruststoreOptions().ca.length, tls.anchorCount(),
             'and the listeners\' ca follows the remove too');
@@ -202,12 +225,14 @@ async function thePrimitives(t) {
   t.check(JSON.stringify(after) === JSON.stringify(before),
           'the truststore is exactly what it was before this section',
           after.length + ' vs ' + before.length);
+  log.debug("Leaving thePrimitives().");
 }
 
 // ---------------------------------------------------------------------------
 // 2 AND 3. THE SLOT, THE ACTIONS AND THE VIEW — IN A CHILD.
 // ---------------------------------------------------------------------------
 async function childBody() {
+  log.debug("Entering childBody().");
   const admin = require('../admin-ui/admin');
   const adminActions = require('../admin-core/admin_actions');
   const adminViews = require('../admin-core/admin_views');
@@ -216,16 +241,20 @@ async function childBody() {
   const anchors = await mintAnchors();
   const report = {};
   const view = function (query) {
+    log.debug("Entering view().");
+    log.debug("Leaving view().");
     return adminViews.truststoreJson({ query: query || {} });
   };
   report.installedBefore = view().installed;
   report.actionBefore = adminActions.truststoreAction(
-    { action: 'add', certificates: anchors.a }, { actor: 'tester', via: 'test' });
+    { action: 'add', certificates: anchors.a },
+    { actor: 'tester', via: 'test' });
   report.partial = admin.setTruststore({ list: tls.truststore.list,
                                          add: tls.truststore.add });
   report.installedAfterPartial = view().installed;
   report.actionAfterPartial = adminActions.truststoreAction(
-    { action: 'add', certificates: anchors.a }, { actor: 'tester', via: 'test' });
+    { action: 'add', certificates: anchors.a },
+    { actor: 'tester', via: 'test' });
   report.full = admin.setTruststore(tls.truststore);
   report.installedAfterFull = view().installed;
   report.countBefore = view().total;
@@ -257,7 +286,8 @@ async function childBody() {
   report.remove = adminActions.truststoreAction(
     { action: 'remove', fingerprint: fingerprintOfPem(anchors.a) },
     { actor: 'tester', via: 'test' });
-  report.handshakeAfterRemove = await listenerVerifies(listener, anchors.clientA);
+  report.handshakeAfterRemove = await listenerVerifies(listener,
+                                                       anchors.clientA);
   listener.close();
   report.afterRemove = view().anchors.map(function (one) {
     return one.fingerprint256;
@@ -269,10 +299,12 @@ async function childBody() {
     return { actor: row.actor, target: row.target, detail: row.detail };
   });
   report.viewHasKey = JSON.stringify(view()).indexOf('PRIVATE KEY') >= 0;
+  log.debug("Leaving childBody().");
   return report;
 }
 
 function runChild() {
+  log.debug("Entering runChild().");
   const out = path.join(os.tmpdir(), 'truststore-admin-' + process.pid + '-' +
                         Math.random().toString(36).slice(2) + '.json');
   const clean = {};
@@ -292,6 +324,7 @@ function runChild() {
   try {
     report = JSON.parse(fs.readFileSync(out, 'utf8'));
   } catch (e) {
+    log.debug("Caught in runChild(): " + ((e && e.message) || e));
     // Not written: the child died before it could say anything. The status and
     // its output are what the caller reports instead.
     report = null;
@@ -300,22 +333,29 @@ function runChild() {
     fs.unlinkSync(out);
   } catch (e) {
     // Never written; the read above already said so.
+    log.debug("Caught in runChild(): " + ((e && e.message) || e));
   }
+  log.debug("Leaving runChild().");
   return { status: result.status, report: report,
            output: String(result.stdout || '').slice(-800) +
                    String(result.stderr || '').slice(-800) };
 }
 
 function theSlotAndTheLayer(t) {
-  t.log.info('=== 2 and 3. the slot, the actions and the view (in a child) ===');
+  log.debug("Entering theSlotAndTheLayer().");
+  t.log.info('=== 2 and 3. the slot, the actions and the view (in a child) ' +
+             '===');
   const ran = runChild();
   const r = ran.report;
   if (!t.check(!!r && !r.threw, 'the child ran',
-               r && r.threw ? r.threw : 'exit ' + ran.status + ' ' + ran.output)) {
+               r && r.threw ? r.threw :
+               'exit ' + ran.status + ' ' + ran.output)) {
+    log.debug("Leaving theSlotAndTheLayer().");
     return;
   }
   t.check(r.installedBefore === false && r.actionBefore.ok === false,
-          'before the slot is filled the view says not installed and an action refuses',
+          'before the slot is filled the view says not installed and an ' +
+          'action refuses',
           JSON.stringify(r.actionBefore));
   t.check(r.partial === false && r.installedAfterPartial === false,
           'setTruststore() given list and add without remove is REFUSED whole',
@@ -330,51 +370,63 @@ function theSlotAndTheLayer(t) {
     .match(/Unknown action "[^"]*"\.\s*([^:]*):\s*([^.]+)\./);
   t.check(!!sentence && /There are two/.test(sentence[1]) &&
           sentence[2].split(/,\s*/).sort().join(',') === 'add,remove',
-          'an unknown action — `clear` among them — is refused in the house sentence, ' +
-          'naming exactly add and remove',
+          'an unknown action — `clear` among them — is refused in the house ' +
+          'sentence, naming exactly add and remove',
           JSON.stringify(r.unknown.errors));
 
   t.check(r.add.ok === true && r.add.added === 2 && r.add.persisted === false &&
           /NOT PERSISTED/.test(r.add.message),
-          'add through the action layer adds both, and says it is not persisted',
+          'add through the action layer adds both, and says it is not ' +
+          'persisted',
           JSON.stringify(r.add).slice(0, 300));
   t.check(r.addBad.ok === false && r.countAfterAdd === r.countBefore + 2,
-          'a bundle with an unreadable block is refused through the layer, and the ' +
-          'readable one beside it is not added',
+          'a bundle with an unreadable block is refused through the layer, ' +
+          'and the readable one beside it is not added',
           'count ' + r.countAfterAdd + ' from ' + r.countBefore);
   t.check(r.addEmpty.ok === false && r.removeEmpty.ok === false,
-          'an add with nothing and a remove with nothing are both refused — a bodyless ' +
-          'POST, which the metadata walk sends, removes nothing',
+          'an add with nothing and a remove with nothing are both refused — ' +
+          'a bodyless POST, which the metadata walk sends, removes nothing',
           JSON.stringify([r.addEmpty.errors, r.removeEmpty.errors]));
   t.check(r.pageTwo.anchors.length === 1 && r.pageTwo.page === 2 &&
           r.pageTwo.pages === r.pageTwo.total && r.pageTwo.persisted === false,
-          'the view pages one anchor at a time and reports the page it answered',
+          'the view pages one anchor at a time and reports the page it ' +
+          'answered',
           JSON.stringify({ page: r.pageTwo.page, pages: r.pageTwo.pages,
-                           total: r.pageTwo.total, shown: r.pageTwo.anchors.length }));
-  t.check(r.remove.ok === true && r.afterRemove.indexOf(r.removedFingerprint) < 0 &&
+                           total: r.pageTwo.total,
+                           shown: r.pageTwo.anchors.length }));
+  t.check(r.remove.ok === true &&
+          r.afterRemove.indexOf(r.removedFingerprint) < 0 &&
           /nothing brings it back/.test(r.remove.message),
-          'remove through the layer takes that anchor away and says a runtime anchor ' +
-          'does not come back', JSON.stringify(r.remove).slice(0, 300));
-  t.check(r.handshakeBefore === 'unverified' && r.handshakeAfterAdd === 'verified' &&
+          'remove through the layer takes that anchor away and says a ' +
+          'runtime anchor does not come ' +
+          'back', JSON.stringify(r.remove).slice(0, 300));
+  t.check(r.handshakeBefore === 'unverified' &&
+          r.handshakeAfterAdd === 'verified' &&
           r.handshakeAfterRemove === 'unverified',
-          'A REAL HANDSHAKE on a registered listener follows both changes: a client ' +
-          'certificate chaining to the CA is unverified, verified after the add, and ' +
-          'unverified again after the remove',
-          JSON.stringify([r.handshakeBefore, r.handshakeAfterAdd, r.handshakeAfterRemove]));
+          'A REAL HANDSHAKE on a registered listener follows both changes: a ' +
+          'client certificate chaining to the CA is unverified, verified ' +
+          'after the add, and unverified again after the remove',
+          JSON.stringify([r.handshakeBefore, r.handshakeAfterAdd,
+                          r.handshakeAfterRemove]));
   t.check(r.auditRows.length === 2 && r.auditRows.every(function (row) {
     return row.actor === 'tester';
-  }), 'each successful change wrote ONE admin.truststore.change row naming the actor, ' +
-          'and the refusals wrote none', JSON.stringify(r.auditRows).slice(0, 400));
-  t.check(r.viewHasKey === false, 'no private key appears anywhere in the view');
+  }), 'each successful change wrote ONE admin.truststore.change row naming ' +
+          'the actor, and the refusals wrote ' +
+          'none', JSON.stringify(r.auditRows).slice(0, 400));
+  t.check(r.viewHasKey === false,
+          'no private key appears anywhere in the view');
+  log.debug("Leaving theSlotAndTheLayer().");
 }
 
 // ---------------------------------------------------------------------------
 // 4. THE ROUTING PIN.
 // ---------------------------------------------------------------------------
 function withDispatchEverything(fn) {
+  log.debug("Entering withDispatchEverything().");
   const had = process.env.STS_WORKERS_DISPATCH;
   process.env.STS_WORKERS_DISPATCH = '*';
   try {
+    log.debug("Leaving withDispatchEverything().");
     return fn();
   } finally {
     if (had === undefined) {
@@ -386,47 +438,52 @@ function withDispatchEverything(fn) {
 }
 
 function theRoutingPin(t) {
-  t.log.info('=== 4. both doors are answered by the process holding the listeners ===');
+  log.debug("Entering theRoutingPin().");
+  t.log.info('=== 4. both doors are answered by the process holding the ' +
+             'listeners ===');
   const pool = require('../common/request_pool');
   withDispatchEverything(function () {
     ['/admin-api/tls/trust', '/admin-api/tls/trust/add',
      '/admin-api/tls/trust/remove?x=1', '/realm/x/admin-api/tls/trust/add',
      '/admin/tls/trust', '/admin/tls/trust?page=2&per=10',
      '/realm/acme/admin/tls/trust'].forEach(function (url) {
-      t.check(pool.dispatched(url) === false, 'PINNED to the front process: ' + url,
+      t.check(pool.dispatched(url) === false,
+              'PINNED to the front process: ' + url,
               String(pool.dispatched(url)));
     });
     ['/admin-api/tlsx', '/admin/tls', '/admin-api/tls', '/admin/tls/trustx',
      '/realm/acme/admin/tls'].forEach(function (url) {
       t.check(pool.dispatched(url) === true,
-              'still dispatched — a segment boundary, not a bare prefix: ' + url,
+              'still dispatched — a segment boundary, not a bare prefix: ' +
+              url,
               String(pool.dispatched(url)));
     });
   });
+  log.debug("Leaving theRoutingPin().");
 }
 
 // ---------------------------------------------------------------------------
 // 5. PRODUCT MODE'S REFUSAL NAMES THE NEW DOORS, AS A REQUEST.
 // ---------------------------------------------------------------------------
 function theProductRefusal(t) {
-  t.log.info('=== 5. product mode refuses /tls/trust and names the gated doors ===');
+  log.debug("Entering theProductRefusal().");
+  t.log.info('=== 5. product mode refuses /tls/trust and names the gated ' +
+             'doors ===');
   const script =
     'delete process.env.CONFIG_FILE;' +
-    'const app = require(' + JSON.stringify(path.join(ROOT, 'common', 'app')) + ');' +
-    'require(' + JSON.stringify(path.join(ROOT, 'tls', 'tls_server.js')) + ');' +
-    'const http = require("http");' +
-    'const server = http.createServer(app);' +
-    'server.listen(0, "127.0.0.1", function () {' +
-    '  const req = http.request({ host: "127.0.0.1", port: server.address().port,' +
-    '    path: "/tls/trust", method: "POST", headers: { "content-type": "text/plain",' +
-    '    accept: "application/json" } }, function (res) {' +
-    '    let text = ""; res.on("data", function (c) { text += c; });' +
-    '    res.on("end", function () { process.stdout.write("\\nREPORT" +' +
-    '      JSON.stringify({ status: res.statusCode, body: text }) + "\\n");' +
-    '      process.exit(0); });' +
-    '  });' +
-    '  req.end("");' +
-    '});';
+    'const app = require(' + JSON.stringify(path.join(ROOT, 'common', 'app')) +
+    ');require(' + JSON.stringify(path.join(ROOT, 'tls', 'tls_server.js')) +
+    ');const ' +
+    'http = require("http");const server = ' +
+    'http.createServer(app);server.listen(0, "127.0.0.1", function () {  ' +
+    'const req = http.request({ host: "127.0.0.1", port: ' +
+    'server.address().port,    path: "/tls/trust", method: "POST", headers: ' +
+    '{ "content-type": "text/plain",    accept: "application/json" } }, ' +
+    'function (res) {    let text = ""; res.on("data", function (c) { text ' +
+    '+= c; });    res.on("end", function () { ' +
+    'process.stdout.write("\\nREPORT" +      JSON.stringify({ status: ' +
+    'res.statusCode, body: text }) + "\\n");      process.exit(0); });  });  ' +
+    'req.end("");});';
   const clean = {};
   Object.keys(process.env).forEach(function (key) {
     if (!/^(KRB5_|STS_|LDAP_|LDAPS_|CONFIG_FILE$)/.test(key)) {
@@ -443,6 +500,7 @@ function theProductRefusal(t) {
   try {
     report = line ? JSON.parse(line.slice('REPORT'.length)) : null;
   } catch (e) {
+    log.debug("Caught in theProductRefusal(): " + ((e && e.message) || e));
     // Unparseable — reported as the check failing below, with the output.
     report = null;
   }
@@ -453,31 +511,37 @@ function theProductRefusal(t) {
   try {
     body = report ? (JSON.parse(report.body).errors || []).join(' ') : '';
   } catch (e) {
-    // Not JSON — the check below fails on the empty sentence and prints the reply.
+    log.debug("Caught in theProductRefusal(): " + ((e && e.message) || e));
+    // Not JSON — the check below fails on the empty sentence and prints the
+    // reply.
     body = '';
   }
   t.check(!!report && report.status === 403 &&
           body.indexOf('/admin/tls/trust') >= 0 &&
           body.indexOf('POST /admin-api/tls/trust/add') >= 0 &&
           /tls\.trustAnchorsFile/.test(body),
-          'a product service refuses POST /tls/trust with a 403 naming the console page, ' +
-          'the management-API operation AND tls.trustAnchorsFile',
+          'a product service refuses POST /tls/trust with a 403 naming the ' +
+          'console page, the management-API operation AND tls.trustAnchorsFile',
           report ? JSON.stringify(report).slice(0, 500)
                  : String(result.stderr || result.stdout || '').slice(-500));
+  log.debug("Leaving theProductRefusal().");
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   await thePrimitives(t);
   theSlotAndTheLayer(t);
   theRoutingPin(t);
   theProductRefusal(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'truststore_admin',
-  describe: 'the client-certificate truststore\'s gated doors: strict add, remove by ' +
-            'fingerprint, the thirteenth slot, the actions and view, the front-process ' +
-            'pin, and the product refusal that names them',
+  describe: 'the client-certificate truststore\'s gated doors: strict add, ' +
+            'remove by fingerprint, the thirteenth slot, the actions and ' +
+            'view, the front-process pin, and the product refusal that names ' +
+            'them',
   run: run
 };
 

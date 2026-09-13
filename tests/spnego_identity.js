@@ -45,6 +45,12 @@ delete process.env.CONFIG_FILE;
 const door = require('../kerberos/spnego_authn.js');
 const principals = require('../kerberos/krb5_principals.js');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'spnego_identity',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // The realm this KDC serves, read rather than written down. `krb5.realm` is a
 // setting, so a suite that hard-coded EXAMPLE.COM would pass for the wrong
@@ -55,13 +61,15 @@ const principals = require('../kerberos/krb5_principals.js');
 const REALM = principals.REALM;
 
 function theLocalRealmIsStrippedAndAForeignOneIsNot(t) {
+  log.debug("Entering theLocalRealmIsStrippedAndAForeignOneIsNot().");
   t.equal(door.usernameFor('alice@' + REALM), 'alice',
     'the local realm is stripped: the session username becomes ' +
     'sub urn:sts:user:<name> in every token that follows, and leaving ' +
     'the realm on would make a typed sign-in and a ticket sign-in TWO ' +
     'subjects for one person');
 
-  t.equal(door.usernameFor('bob@PARTNER.EXAMPLE.COM'), 'bob@PARTNER.EXAMPLE.COM',
+  t.equal(door.usernameFor('bob@PARTNER.EXAMPLE.COM'),
+    'bob@PARTNER.EXAMPLE.COM',
     'a FOREIGN realm is kept whole — bob@PARTNER is not this service\'s bob, ' +
     'and issuing a token saying he is would be an assertion nothing here has ' +
     'any basis for');
@@ -80,9 +88,11 @@ function theLocalRealmIsStrippedAndAForeignOneIsNot(t) {
     'case-sensitive by specification, so EXAMPLE.COM and example.com are two ' +
     'realms and folding them here would be this module deciding a question ' +
     'the KDC did not');
+  log.debug("Leaving theLocalRealmIsStrippedAndAForeignOneIsNot().");
 }
 
 function aMultiComponentNameSurvivesWhole(t) {
+  log.debug("Entering aMultiComponentNameSurvivesWhole().");
   t.equal(door.usernameFor('HTTP/web.example.com@' + REALM),
     'HTTP/web.example.com',
     'a service-shaped principal signing in is unusual and not wrong, and the ' +
@@ -102,12 +112,14 @@ function aMultiComponentNameSurvivesWhole(t) {
     'and an empty principal produces an empty name rather than throwing on ' +
     'the way into a sign-in');
   t.equal(door.usernameFor('@' + REALM), '@' + REALM,
-    'a principal that is ONLY a realm keeps its @ — lastIndexOf at position 0 ' +
-    'is not a split, and stripping there would produce an empty username and ' +
-    'a session for nobody');
+    'a principal that is ONLY a realm keeps its @ — lastIndexOf at position ' +
+    '0 is not a split, and stripping there would produce an empty username ' +
+    'and a session for nobody');
+  log.debug("Leaving aMultiComponentNameSurvivesWhole().");
 }
 
 function theFactorsAreReadOffTheTicketAndNotInvented(t) {
+  log.debug("Entering theFactorsAreReadOffTheTicketAndNotInvented().");
   // RFC 4120 section 2.1: pre-authent means the KDC verified
   // pre-authentication before issuing the initial ticket. On this KDC that is
   // PA-ENC-TIMESTAMP, a timestamp encrypted under a key derived from a
@@ -135,9 +147,11 @@ function theFactorsAreReadOffTheTicketAndNotInvented(t) {
     'passwordless WebAuthn path: one factor does not become two by being ' +
     'phishing-resistant, and a relying party that asked for two must not be ' +
     'told it got them');
+  log.debug("Leaving theFactorsAreReadOffTheTicketAndNotInvented().");
 }
 
 function aTicketClaimingNothingMakesThisServiceClaimNothing(t) {
+  log.debug("Entering aTicketClaimingNothingMakesThisServiceClaimNothing().");
   // THE CASE THIS FILE EXISTS FOR. It is unreachable over HTTP against this
   // KDC, and it is the one where an implementation is most tempted to fill in
   // a plausible value.
@@ -156,9 +170,11 @@ function aTicketClaimingNothingMakesThisServiceClaimNothing(t) {
     'got as far as decrypting the ticket, and a caller must not have to know ' +
     'that');
   t.equal(door.factorsFor(null).amr.length, 0, 'with nothing claimed');
+  log.debug("Leaving aTicketClaimingNothingMakesThisServiceClaimNothing().");
 }
 
 function initialIsNotAFactor(t) {
+  log.debug("Entering initialIsNotAFactor().");
   // `initial` says WHERE the credential was minted — straight from the AS
   // exchange rather than through the TGS — and says nothing about what was
   // checked. It is on the page and used for nothing, and reading it as
@@ -179,11 +195,13 @@ function initialIsNotAFactor(t) {
   const secondHand = door.factorsFor(['forwardable', 'pre-authent']);
   t.equal(secondHand.amr.join(','), 'pwd',
     'a ticket from the TGS carries no `initial` and still claims the ' +
-    'pre-authentication it inherited, which is the ordinary case and must not ' +
-    'depend on `initial` being there');
+    'pre-authentication it inherited, which is the ordinary case and must ' +
+    'not depend on `initial` being there');
+  log.debug("Leaving initialIsNotAFactor().");
 }
 
 function theMethodSentenceSaysWhichCaseItWas(t) {
+  log.debug("Entering theMethodSentenceSaysWhichCaseItWas().");
   // It goes on /admin/users through startSession()'s sixth argument, and it is
   // the only place a reader of that page can tell the four cases apart —
   // `amr` is not rendered there. A blank or identical sentence would make all
@@ -201,20 +219,25 @@ function theMethodSentenceSaysWhichCaseItWas(t) {
     'amr is not rendered and this is the only thing that tells them apart');
   sentences.forEach(function (one, i) {
     t.check(/^Kerberos ticket over SPNEGO/.test(one),
-      'sentence ' + i + ' names the mechanism first, so the page groups them: ' +
+      'sentence ' + i +
+      ' names the mechanism first, so the page groups them: ' +
       one);
   });
+  log.debug("Leaving theMethodSentenceSaysWhichCaseItWas().");
 }
 
 module.exports = {
   name: 'spnego_identity',
-  describe: 'the identity and the factors a SPNEGO sign-in claims, off the ticket',
+  describe: 'the identity and the factors a SPNEGO sign-in claims, off the ' +
+            'ticket',
   run: function (t) {
+    log.debug("Entering run().");
     theLocalRealmIsStrippedAndAForeignOneIsNot(t);
     aMultiComponentNameSurvivesWhole(t);
     theFactorsAreReadOffTheTicketAndNotInvented(t);
     aTicketClaimingNothingMakesThisServiceClaimNothing(t);
     initialIsNotAFactor(t);
     theMethodSentenceSaysWhichCaseItWas(t);
+    log.debug("Leaving run().");
   }
 };

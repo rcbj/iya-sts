@@ -81,12 +81,15 @@ const ATTRIBUTE = templates.ISSUANCE_ATTRIBUTE;
 // later unable to decide anything. A repository entry named by
 // `xacml.accessPolicy` overrides it.
 function accessPolicyName() {
+  log.debug("Entering accessPolicyName().");
+  log.debug("Leaving accessPolicyName().");
   return String(config.value('xacml.accessPolicy') || 'access-control');
 }
 
 function builtInPolicy() {
   log.debug('Entering builtInPolicy().');
-  const built = templates.build('access-control', {}, { name: accessPolicyName() });
+  const built = templates.build('access-control', {},
+                                { name: accessPolicyName() });
   if (!built.ok) {
     // A DEFECT AND NOT A STATE — the template is in this repository and takes
     // no required parameter, so it cannot fail for anything an administrator
@@ -173,6 +176,8 @@ function accessPolicy() {
 // deliberate — the two PEPs build different requests and a shared helper would
 // be one module knowing about both.
 function attribute(attributeId, values, type) {
+  log.debug("Entering attribute().");
+  log.debug("Leaving attribute().");
   return {
     attributeId: attributeId,
     issuer: null,
@@ -196,7 +201,9 @@ function attribute(attributeId, values, type) {
 //   ACTION           what is being done to it.
 // ---------------------------------------------------------------------------
 function buildRequest(asked, held, required) {
+  log.debug("Entering buildRequest().");
   const subject = asked.subject || {};
+  log.debug("Leaving buildRequest().");
   return {
     // `returnPolicyIdList` so a refusal can name the policy that produced it —
     // which is most of what makes an access denial actionable rather than
@@ -263,14 +270,18 @@ function buildRequest(asked, held, required) {
 // every request to a gated surface in this service comes through here.
 // ---------------------------------------------------------------------------
 function allowed(why, answer) {
+  log.debug("Entering allowed().");
   const decision = answer ? answer.decision : 'NotApplicable';
   monitor.record('access', { decision: decision, allowed: true });
+  log.debug("Leaving allowed().");
   return { allowed: true, decision: decision,
            why: why, policy: answer ? answer.policyId : null };
 }
 
 function refused(why, decision, answer) {
+  log.debug("Entering refused().");
   monitor.record('access', { decision: decision, allowed: false });
+  log.debug("Leaving refused().");
   return { allowed: false, decision: decision, why: why,
            policy: answer ? answer.policyId : null };
 }
@@ -338,6 +349,7 @@ function decide(asked) {
               'policy; every surface behaves as it did before the policy ' +
               'existed. The roles the console and SCIM already enforce are ' +
               'unaffected — this is the POLICY layer above them.');
+    log.debug("Leaving decide().");
     return allowed('No access policy is loaded: ' + loaded.why);
   }
 
@@ -380,8 +392,8 @@ function decide(asked) {
   } else {
     refusalCode = 'STS-XACML-0046';
     why = 'The access policy did not cover ' + what + ', and its combining ' +
-          'algorithm is deny-unless-permit — so a question it does not answer ' +
-          'is a refusal rather than a permission.';
+          'algorithm is deny-unless-permit — so a question it does not ' +
+          'answer is a refusal rather than a permission.';
   }
   // ---------------------------------------------------------------------
   // AND IT IS AUDITED (2026-09-06), WHICH IT WAS NOT BEFORE.

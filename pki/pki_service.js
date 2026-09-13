@@ -58,18 +58,21 @@ const errorCodes = require('../common/error_codes');
 // **THIS IS THE ONE FAMILY OF DOCUMENTS IN THIS SERVICE THAT IS DELIBERATELY
 // CACHEABLE.** Everything else that publishes key material is `no-store`,
 // because a key regenerated at every start must not be cached. A CRL is the
-// opposite case: it carries its own validity window, and a client that refetches
-// it on every check is a client hammering this service for a document that has
-// not changed.
+// opposite case: it carries its own validity window, and a client that
+// refetches it on every check is a client hammering this service for a document
+// that has not changed.
 // ---------------------------------------------------------------------------
 // The floor is the setting row's own `min: 1`; see `crlLifetimeMs()` in
 // common/pki_revocation.js for why a second floor of 60 here was a bug.
 function cacheSeconds() {
+  log.debug("Entering cacheSeconds().");
   const minutes = Number(config.value('pki.crlLifetimeMinutes'));
+  log.debug("Leaving cacheSeconds().");
   return Math.max(1, Number.isFinite(minutes) ? minutes : 60) * 60;
 }
 
 function sendDer(res, mediaType, der, cacheable) {
+  log.debug("Entering sendDer().");
   res.status(200)
      .set('Content-Type', mediaType)
      .set('Content-Length', String(der.length))
@@ -77,14 +80,17 @@ function sendDer(res, mediaType, der, cacheable) {
        ? 'public, max-age=' + cacheSeconds()
        : 'no-store')
      .send(der);
+  log.debug("Leaving sendDer().");
 }
 
 // A refusal a revocation client can read. **NOT JSON and not a page**: it is
 // text, because there is no error format either protocol defines for the
 // transport layer and a client that meets one is being debugged by a person.
 function refuse(res, status, sentence) {
+  log.debug("Entering refuse().");
   res.status(status).type('text/plain').set('Cache-Control', 'no-store')
      .send(sentence + '\n');
+  log.debug("Leaving refuse().");
 }
 
 // ---------------------------------------------------------------------------
@@ -110,9 +116,9 @@ function crlFor(req, res, scopeSegment, caId) {
     errorCodes.mark(res, 'STS-PKI-0068');
     refuse(res, 404,
            'There is no "' + caId + '" certificate authority in the "' +
-           scopeSegment + '" scope of this service, so there is no revocation ' +
-           'list for it. GET /pki/revocation lists every CRL this service ' +
-           'publishes.');
+           scopeSegment + '" scope of this service, so there is no ' +
+           'revocation list for it. GET /pki/revocation lists every CRL this ' +
+           'service publishes.');
     log.debug('Leaving crlFor(). No such authority.');
     return;
   }
@@ -126,12 +132,14 @@ function crlFor(req, res, scopeSegment, caId) {
     sendDer(res, 'application/pkix-crl', made.der, true);
     log.debug('Leaving crlFor(). ' + made.count + ' entry(ies).');
   }).catch(function (e) {
-    log.error(errorCodes.tag('STS-PKI-0069') + 'pki: the "' + caId + '" CRL could not be built: ' +
+    log.error(errorCodes.tag('STS-PKI-0069') + 'pki: the "' + caId + '" CRL ' +
+        'could not be built: ' +
               (e && e.stack ? e.stack : e));
     errorCodes.mark(res, 'STS-PKI-0069');
     refuse(res, 500, 'That CRL could not be built: ' +
                      (e && e.message ? e.message : e));
   });
+  log.debug("Leaving crlFor().");
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +155,7 @@ app.get('/pki/ca/:scope/:ca', function (req, res) {
 });
 
 function caCertificateFor(req, res, scopeSegment, caId) {
+  log.debug("Entering caCertificateFor().");
   const scope = revocation.scopeFromSegment(scopeSegment);
   const authority = revocation.authorityFor(scope, caId);
   if (!authority) {
@@ -154,6 +163,7 @@ function caCertificateFor(req, res, scopeSegment, caId) {
     refuse(res, 404,
            'There is no "' + caId + '" certificate authority in the "' +
            scopeSegment + '" scope of this service.');
+    log.debug("Leaving caCertificateFor().");
     return;
   }
   const der = Buffer.from(
@@ -165,6 +175,7 @@ function caCertificateFor(req, res, scopeSegment, caId) {
   // name — so a client is entitled to keep it, and the `caIssuers` fetch is
   // meant to happen once.
   sendDer(res, 'application/pkix-cert', der, true);
+  log.debug("Leaving caCertificateFor().");
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +196,8 @@ app.get('/pki/ocsp/:scope/:ca/:request', function (req, res) {
     const text = String(req.params.request).replace(/ /g, '+');
     der = Buffer.from(text, 'base64');
   } catch (e) {
+    log.debug("Caught in a callback in module scope: " +
+              ((e && e.message) || e));
     der = null;
   }
   if (!der || !der.length) {
@@ -277,11 +290,14 @@ function answer(req, res, scopeSegment, caId, der) {
     sendDer(res, 'application/ocsp-response', made.der, false);
     log.debug('Leaving answer(). ' + made.status + '.');
   }).catch(function (e) {
-    log.error(errorCodes.tag('STS-PKI-0074') + 'pki: an OCSP request to the "' + caId + '" responder threw: ' +
+    log.error(errorCodes.tag('STS-PKI-0074') + 'pki: an OCSP request to the "' +
+        caId + '" ' +
+        'responder threw: ' +
               (e && e.stack ? e.stack : e));
     errorCodes.mark(res, 'STS-PKI-0074');
     refuse(res, 500, 'That OCSP request could not be answered.');
   });
+  log.debug("Leaving answer().");
 }
 
 // ---------------------------------------------------------------------------
@@ -303,15 +319,16 @@ app.get('/pki/revocation', function (req, res) {
   const all = revocation.authorities(pki.knownScopes());
   const out = {
     what: 'Every certificate revocation list and OCSP responder this service ' +
-          'publishes. There is one of each PER CERTIFICATE AUTHORITY, because ' +
-          'a CRL is signed by an issuer and lists serials that issuer minted ' +
-          '— a list per realm would be a document with no valid issuer.',
+          'publishes. There is one of each PER CERTIFICATE AUTHORITY, ' +
+          'because a CRL is signed by an issuer and lists serials that ' +
+          'issuer minted — a list per realm would be a document with no ' +
+          'valid issuer.',
     revocationIsPublishedNotEnforced:
       'This service publishes revocation and cannot make anybody consult it. ' +
       'A certificate revoked here goes on the list and its OCSP responder ' +
       'answers `revoked`; whether that stops anything depends entirely on ' +
-      'the relying party, which is true of every certificate authority and is ' +
-      'the reason a client author would point their stack here.',
+      'the relying party, which is true of every certificate authority and ' +
+      'is the reason a client author would point their stack here.',
     crlLifetimeMinutes: Number(config.value('pki.crlLifetimeMinutes')),
     publishedToDirectory: !!config.value('pki.publishCrlToDirectory'),
     authorities: all.map(function (one) {

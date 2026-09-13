@@ -11,8 +11,8 @@
 // it and that nothing here could answer before: **when this service signs,
 // verifies, encrypts or decrypts something, what does it actually use** — which
 // digest, which signature algorithm, which cipher, which key, and which of the
-// several higher-level envelopes (JWS, JWE, XMLDSIG, XML Encryption, WS-Security,
-// COSE, X.509) that primitive is wrapped in.
+// several higher-level envelopes (JWS, JWE, XMLDSIG, XML Encryption,
+// WS-Security, COSE, X.509) that primitive is wrapped in.
 //
 // It was worth a page of its own for a reason this repository has met before:
 // the answer was spread over eleven modules and four vendored ones, and every
@@ -94,10 +94,10 @@
 //
 // server.js requires this module at 20a — after `tls/tls_server` (20) and
 // before `ldap/ldap_server` (21). That position is a DEPENDENCY and not a
-// preference: this file reads a table out of eleven other modules, and requiring
-// one of them that server.js has not yet loaded would REGISTER ITS ROUTES HERE
-// (rule 1). At 20a every one of them is already loaded, so every require below
-// is a cache hit that registers nothing and moves nothing:
+// preference: this file reads a table out of eleven other modules, and
+// requiring one of them that server.js has not yet loaded would REGISTER ITS
+// ROUTES HERE (rule 1). At 20a every one of them is already loaded, so every
+// require below is a cache hit that registers nothing and moves nothing:
 //
 //   common/crypto, common/pq_jose, the vendored xmldsig and bbs2023   leaves
 //   kerberos/krb5_crypto                loaded at 15 by krb5_kdc
@@ -130,11 +130,13 @@ const { log, xmlEscape, baseUrlOf, stsKeysFor, parseBody } =
 const config = require('../common/config');
 // THE ERROR CODES (common/error_codes.js, a leaf). The key export marks its
 // refusals on the RESULT under the non-enumerable Symbol `mark()` uses, so
-// `/admin-api/keys/export` sends the same JSON and this page reads the code back
-// with `errorCodes.codeOf()` to mark its own response.
+// `/admin-api/keys/export` sends the same JSON and this page reads the code
+// back with `errorCodes.codeOf()` to mark its own response.
 const errorCodes = require('../common/error_codes');
 
 function refused(code, result) {
+  log.debug("Entering refused().");
+  log.debug("Leaving refused().");
   return errorCodes.mark(result, code);
 }
 const realms = require('../common/realms');
@@ -231,15 +233,16 @@ const FAMILIES = [
   {
     name: 'PKI',
     signs: 'CERTIFICATES. Three of them when a hierarchy is built — the Root ' +
-           'signs itself, the Intermediate, then the Issuing CA — and one per ' +
-           'application key pair issued afterwards, signed by the Issuing CA. ' +
-           'The signature algorithm is the one chosen for the hierarchy and ' +
-           'is constrained by the ISSUER\'s key family rather than the ' +
-           'subject\'s, which is the mistake `common/vendored/x509.js`\'s own ' +
-           'header spends a paragraph on: importing a key under one digest ' +
-           'and signing with another produces a certificate whose declared ' +
-           'algorithm and actual signature disagree, and `openssl verify` ' +
-           'reports it as a bad signature naming neither.',
+           'signs itself, the Intermediate, then the Issuing CA — and one ' +
+           'per application key pair issued afterwards, signed by the ' +
+           'Issuing CA. The signature algorithm is the one chosen for the ' +
+           'hierarchy and is constrained by the ISSUER\'s key family rather ' +
+           'than the subject\'s, which is the mistake ' +
+           '`common/vendored/x509.js`\'s own header spends a paragraph on: ' +
+           'importing a key under one digest and signing with another ' +
+           'produces a certificate whose declared algorithm and actual ' +
+           'signature disagree, and `openssl verify` reports it as a bad ' +
+           'signature naming neither.',
     verifies: 'A CERTIFICATE PATH. When an RFC 7523 assertion arrives ' +
               'carrying an `x5c` header, every link is checked — the ' +
               'signature, the issuer name and the validity window — and the ' +
@@ -290,7 +293,9 @@ const FAMILIES = [
     // as is a JWK Set carrying `x5c` and `x5t#S256`.
     envelopes: ['x509', 'jwk'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
       const report = pki.report();
+      log.debug("Leaving algorithms().");
       return [
         { what: 'Certificate encoding',
           how: 'X.509 v3, DER, through pkijs and asn1js — ' +
@@ -331,46 +336,48 @@ const FAMILIES = [
         // the check now, which is this page's rule, so it names the policy in
         // force rather than a policy somebody once wrote down.
         { what: 'Revocation checked',
-          how: require('../common/revocation_status').describePolicy().sentence },
+          how:
+            require('../common/revocation_status').describePolicy().sentence },
         { what: 'Revocation check — how a foreign CRL is trusted',
           how: 'Its signature is verified against the ISSUER\'s certificate ' +
-               '(the next certificate up the presented chain), its issuer name ' +
-               'must match, a critical extension this service does not ' +
+               '(the next certificate up the presented chain), its issuer ' +
+               'name must match, a critical extension this service does not ' +
                'implement makes it unusable (RFC 5280 section 6.3.3), and it ' +
                'is used until its nextUpdate or pki.revocationCrlMaxAgeS, ' +
-               'whichever is sooner. The transport is not certificate-checked: ' +
-               'the signature is the authentication, and a CRL server\'s own ' +
-               'certificate commonly chains to the CA being checked. An ' +
-               'INDIRECT CRL is verified against the certificate of the ' +
-               'cRLIssuer the presented certificate names, which must carry ' +
-               'cRLSign and chain to the presented path — taken from the chain, ' +
-               'this service\'s authorities, pki.revocationCrlIssuersFile, or ' +
-               'the caIssuers address in the CRL\'s own Authority Information ' +
-               'Access; a DELTA against the same signer as its base. Lists are ' +
-               'fetched over http, https or ldaps (plain ldap only when ' +
-               'pki.revocationLdap allows it); an ldaps directory\'s ' +
-               'certificate must chain to node\'s store or ' +
-               'pki.revocationLdapCaFile.' },
+               'whichever is sooner. The transport is not ' +
+               'certificate-checked: the signature is the authentication, ' +
+               'and a CRL server\'s own certificate commonly chains to the ' +
+               'CA being checked. An INDIRECT CRL is verified against the ' +
+               'certificate of the cRLIssuer the presented certificate ' +
+               'names, which must carry cRLSign and chain to the presented ' +
+               'path — taken from the chain, this service\'s authorities, ' +
+               'pki.revocationCrlIssuersFile, or the caIssuers address in ' +
+               'the CRL\'s own Authority Information Access; a DELTA against ' +
+               'the same signer as its base. Lists are fetched over http, ' +
+               'https or ldaps (plain ldap only when pki.revocationLdap ' +
+               'allows it); an ldaps directory\'s certificate must chain to ' +
+               'node\'s store or pki.revocationLdapCaFile.' },
         { what: 'Revocation check — how a foreign OCSP response is trusted',
           how: 'The request carries a SHA-1 CertID (the RFC 5019 profile\'s ' +
-               'identifier, not a signature) and a 32-octet nonce. The response ' +
-               'must be signed by the certificate\'s issuer, or by a delegated ' +
-               'responder whose certificate the issuer signed with ' +
-               'id-kp-OCSPSigning (RFC 6960 section 4.2.2.2); a different nonce ' +
-               'echoed back is refused as a replay; thisUpdate and nextUpdate ' +
-               'must be fresh within pki.revocationClockSkewS. A delegated ' +
-               'responder\'s OWN status is looked up on the CRL its certificate ' +
-               'names (never over OCSP) unless it carries ' +
-               'id-pkix-ocsp-nocheck; a revoked one\'s answers are not used, ' +
-               'and an unknown one\'s are not used under hard-fail.' },
+               'identifier, not a signature) and a 32-octet nonce. The ' +
+               'response must be signed by the certificate\'s issuer, or by ' +
+               'a delegated responder whose certificate the issuer signed ' +
+               'with id-kp-OCSPSigning (RFC 6960 section 4.2.2.2); a ' +
+               'different nonce echoed back is refused as a replay; ' +
+               'thisUpdate and nextUpdate must be fresh within ' +
+               'pki.revocationClockSkewS. A delegated responder\'s OWN ' +
+               'status is looked up on the CRL its certificate names (never ' +
+               'over OCSP) unless it carries id-pkix-ocsp-nocheck; a revoked ' +
+               'one\'s answers are not used, and an unknown one\'s are not ' +
+               'used under hard-fail.' },
         { what: 'Revocation check — a REGISTERED certificate',
           how: 'A certificate registered rather than presented — an RFC 7523 ' +
-               'key\'s x5c, an RFC 7522 certificate, fedSigningCertificate or a ' +
-               'federation partner key\'s x5c, a certificate in ' +
-               'oid4vp.trustedIssuerCertificates — is checked the same way when ' +
-               'it verifies a signature, its issuers fetched from its own ' +
-               'caIssuers address. A bare key with no certificate has nothing ' +
-               'to check and is reported as such.' },
+               'key\'s x5c, an RFC 7522 certificate, fedSigningCertificate ' +
+               'or a federation partner key\'s x5c, a certificate in ' +
+               'oid4vp.trustedIssuerCertificates — is checked the same way ' +
+               'when it verifies a signature, its issuers fetched from its ' +
+               'own caIssuers address. A bare key with no certificate has ' +
+               'nothing to check and is reported as such.' },
         { what: 'Where the CA private keys live', how: report.residency }
       ];
     }
@@ -396,23 +403,25 @@ const FAMILIES = [
     decrypts: 'Nothing.',
     keys: 'None of its own. The CSRF token is an HMAC-SHA256 under a key ' +
           'generated per process and deliberately NOT persisted — a CSRF ' +
-          'token is only meaningful for the life of a session, a session does ' +
-          'not survive a restart, so a key that did would protect nothing and ' +
-          'be one more secret at rest.',
+          'token is only meaningful for the life of a session, a session ' +
+          'does not survive a restart, so a key that did would protect ' +
+          'nothing and be one more secret at rest.',
     hashes: 'SCRYPT (RFC 7914, N=2^15, r=8, p=1) for both the password and ' +
             'the activation token, each with 16 random bytes of salt, stored ' +
             'as `$scrypt$N$r$p$salt$hash` so the cost can be raised later ' +
             'without invalidating what is already stored. **NOT a digest**: ' +
-            'a password is low-entropy and a fast hash over one is a wordlist ' +
-            'away from being the password. SHA-256 under an HMAC for the CSRF ' +
-            'token, which is a different job — authenticity of a form, not ' +
-            'protection of a secret at rest.',
+            'a password is low-entropy and a fast hash over one is a ' +
+            'wordlist away from being the password. SHA-256 under an HMAC ' +
+            'for the CSRF token, which is a different job — authenticity of ' +
+            'a form, not protection of a secret at rest.',
     // AN ARRAY, like every other row. Nothing this family protects travels
     // anywhere — every value is at rest in the embedded directory — so the
     // list is empty, and saying that as an empty list rather than as a
     // sentence is what keeps the page able to render it.
     envelopes: [],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         { what: 'Password and activation token at rest',
           how: 'scrypt, N=32768, r=8, p=1, 32-byte key, 16-byte random salt' },
@@ -442,52 +451,61 @@ const FAMILIES = [
     signs: 'THE FIVE ACCESS TOKEN FORMATS, three of which are not JWTs. ' +
            'jwt-signed goes through the same signer as every other JWT here ' +
            '(`typ: GNAP`); biscuit and zcap are signed with the realm\'s ' +
-           'Ed25519 key (Biscuit\'s own block signature, and Ed25519Signature2020 ' +
-           'over a ZCAP-LD capability); a macaroon is an HMAC-SHA256 chain under a ' +
-           'key derived per resource server. It also signs an HTTP response ' +
-           'with RFC 9421 when a client instance asks for one.',
-    verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, by the key it presented: an ' +
-              'RFC 9421 HTTP message signature (with the body covered by an RFC 9530 ' +
-              'Content-Digest), a mutual TLS certificate, a detached JWS over the body ' +
-              'or an attached JWS carrying it. A key rotation is verified under BOTH ' +
-              'keys. A resource server calling introspection or registration is ' +
+           'Ed25519 key (Biscuit\'s own block signature, and ' +
+           'Ed25519Signature2020 over a ZCAP-LD capability); a macaroon is ' +
+           'an HMAC-SHA256 chain under a key derived per resource server. It ' +
+           'also signs an HTTP response with RFC 9421 when a client instance ' +
+           'asks for one.',
+    verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, by the key it ' +
+              'presented: an RFC 9421 HTTP message signature (with the body ' +
+              'covered by an RFC 9530 Content-Digest), a mutual TLS ' +
+              'certificate, a detached JWS over the body or an attached JWS ' +
+              'carrying it. A key rotation is verified under BOTH keys. A ' +
+              'resource server calling introspection or registration is ' +
               'proofed the same way, and every token format is verified at ' +
               'introspection and at the demonstration resource server.',
-    encrypts: 'jwt-encrypted: a signed GNAP JWT inside a JWE — to the resource ' +
-              'server\'s own key (RSA-OAEP-256 or ECDH-ES+A256KW, with ' +
-              '`gnap.jweEnc`) when its application entry carries one, otherwise ' +
-              '`dir` with A256GCM under a realm-derived key so only this ' +
-              'authorization server can open it.',
-    decrypts: 'A jwt-encrypted token encrypted under `dir`, at introspection. A ' +
-              'token encrypted to a resource server\'s key is opaque here, which is ' +
-              'the point of encrypting to it.',
+    encrypts: 'jwt-encrypted: a signed GNAP JWT inside a JWE — to the ' +
+              'resource server\'s own key (RSA-OAEP-256 or ECDH-ES+A256KW, ' +
+              'with `gnap.jweEnc`) when its application entry carries one, ' +
+              'otherwise `dir` with A256GCM under a realm-derived key so ' +
+              'only this authorization server can open it.',
+    decrypts: 'A jwt-encrypted token encrypted under `dir`, at ' +
+              'introspection. A token encrypted to a resource server\'s key ' +
+              'is opaque here, which is the point of encrypting to it.',
     keys: 'The client instance\'s key is the client\'s identity — a JWK, a ' +
-          'certificate, a certificate thumbprint or a reference to a key on the ' +
-          'application entry. A shared symmetric key (gnapSymmetricKey) and a ' +
-          'macaroon root key (gnapMacaroonKey) are sealed at rest under the ' +
-          'process key-encryption key. The macaroon and dir keys are HKDF-SHA256 ' +
-          'derivations of the realm secret with a domain separator each.',
-    hashes: 'SHA-256 and SHA-512 for Content-Digest; the section 4.2.3 interaction ' +
-            'hash in any Named Information hash method node computes (SHA-2 and SHA-3, ' +
-            'truncated forms included); SHA-256 for a JWK thumbprint, a ' +
-            'certificate thumbprint and a remembered approval\'s digest; SHA-256 of ' +
-            'the access token for `ath` in a JWS proof.',
-    whatItDoesNot: 'IT DOES NOT ACCEPT AN UNPROOFED REQUEST FOR A BOUND TOKEN, and ' +
-                   'there is no setting that makes it: a GNAP key proof is the ' +
-                   'protocol rather than a hardening option. What is optional is a ' +
-                   'BEARER token, which gnap.bearerTokens turns off. Macaroon ' +
-                   'third-party caveats, Biscuit third-party blocks and ZCAP ' +
-                   'invocation proofs are not implemented.',
-    envelopes: ['httpsig', 'jws', 'jwe', 'jwt', 'jwk', 'thumbprint', 'mtls', 'tls',
+          'certificate, a certificate thumbprint or a reference to a key on ' +
+          'the application entry. A shared symmetric key (gnapSymmetricKey) ' +
+          'and a macaroon root key (gnapMacaroonKey) are sealed at rest ' +
+          'under the process key-encryption key. The macaroon and dir keys ' +
+          'are HKDF-SHA256 derivations of the realm secret with a domain ' +
+          'separator each.',
+    hashes: 'SHA-256 and SHA-512 for Content-Digest; the section 4.2.3 ' +
+            'interaction hash in any Named Information hash method node ' +
+            'computes (SHA-2 and SHA-3, truncated forms included); SHA-256 ' +
+            'for a JWK thumbprint, a certificate thumbprint and a remembered ' +
+            'approval\'s digest; SHA-256 of the access token for `ath` in a ' +
+            'JWS proof.',
+    whatItDoesNot: 'IT DOES NOT ACCEPT AN UNPROOFED REQUEST FOR A BOUND ' +
+                   'TOKEN, and there is no setting that makes it: a GNAP key ' +
+                   'proof is the protocol rather than a hardening option. ' +
+                   'What is optional is a BEARER token, which ' +
+                   'gnap.bearerTokens turns off. Macaroon third-party ' +
+                   'caveats, Biscuit third-party blocks and ZCAP invocation ' +
+                   'proofs are not implemented.',
+    envelopes: ['httpsig', 'jws', 'jwe', 'jwt', 'jwk', 'thumbprint', 'mtls',
+                'tls',
                 'macaroon', 'biscuit', 'dataintegrity'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
       // Required HERE rather than at the top: this module is 20a in the require
       // order and GNAP is 23d. The libraries register no route, so loading them
       // early would move nothing — but the biscuit format instantiates a
-      // WebAssembly module at load, and a report nobody opened should not pay it.
+      // WebAssembly module at load, and a report nobody opened should not pay
+      // it.
       const httpsig = require('../gnap/gnap_httpsig');
       const gnapKeys = require('../gnap/gnap_keys');
       const gnapTokens = require('../gnap/gnap_tokens');
+      log.debug("Leaving algorithms().");
       return [
         ['Access token formats', gnapTokens.FORMATS],
         ['Key proofing methods', gnapKeys.PROOF_METHODS],
@@ -530,6 +548,8 @@ const FAMILIES = [
     // page draws as an em dash.
     envelopes: [],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Nothing is signed, verified, encrypted or decrypted here', []],
         ['The remote PEP sync token, which is a change detector rather ' +
@@ -539,11 +559,11 @@ const FAMILIES = [
   { name: 'OAuth2 / OIDC',
     signs: 'Every access token and refresh token, and the ID Token, with the ' +
            'realm\'s RSA key as RS256. A client that registers ' +
-           '`id_token_signed_response_alg` gets that algorithm instead, out of ' +
-           'the shared JWS table — every curve, both Edwards curves, and the ' +
-           'post-quantum and composite ones. A signed UserInfo response the ' +
-           'same way, plus the HMAC family (signed with that client\'s own ' +
-           '`client_secret`, which is why it needs no published key) and ' +
+           '`id_token_signed_response_alg` gets that algorithm instead, out ' +
+           'of the shared JWS table — every curve, both Edwards curves, and ' +
+           'the post-quantum and composite ones. A signed UserInfo response ' +
+           'the same way, plus the HMAC family (signed with that client\'s ' +
+           'own `client_secret`, which is why it needs no published key) and ' +
            '`none`.',
     verifies: 'DPoP proofs (RFC 9449), `private_key_jwt` and ' +
               '`client_secret_jwt` client assertions, and every access token ' +
@@ -554,11 +574,11 @@ const FAMILIES = [
               'parameters RFC 7523 puts a JWT in, so the token endpoint ' +
               'verifies an enveloped XML Signature over a <saml:Assertion> ' +
               'through the same vendored engine `/saml2` signs with. It is ' +
-              'checked against a certificate REGISTERED against the asserting ' +
-              'party and never against one that merely chains to this ' +
-              'realm\'s CA — which is stricter than the `x5c` path RFC 7523 ' +
-              'allows, because a chain proves the realm issued a key and says ' +
-              'nothing about which application holds it.',
+              'checked against a certificate REGISTERED against the ' +
+              'asserting party and never against one that merely chains to ' +
+              'this realm\'s CA — which is stricter than the `x5c` path RFC ' +
+              '7523 allows, because a chain proves the realm issued a key ' +
+              'and says nothing about which application holds it.',
     encrypts: 'A UserInfo response for a client that registered ' +
               '`userinfo_encrypted_response_alg`: JWE compact, RSA-OAEP or ' +
               'ECDH-ES to the client\'s own key. **AND EVERY REFRESH TOKEN** ' +
@@ -570,19 +590,23 @@ const FAMILIES = [
               'ever sees or needs those keys.',
     decrypts: 'A JWE encrypted to this service\'s RSA key, RSA-OAEP-256 only ' +
               '— a shorter list than it encrypts with on purpose, because it ' +
-              'holds no EC private key to agree with. **AND A REFRESH TOKEN**, ' +
-              'under whichever algorithm its own header names, before the ' +
-              'refresh grant, introspection, revocation or token exchange ' +
-              'reads anything in it; an unencrypted refresh token is refused.',
+              'holds no EC private key to agree with. **AND A REFRESH ' +
+              'TOKEN**, under whichever algorithm its own header names, ' +
+              'before the refresh grant, introspection, revocation or token ' +
+              'exchange reads anything in it; an unencrypted refresh token ' +
+              'is refused.',
     hashes: '`at_hash` and `c_hash` are the left half of the SHA-256 of the ' +
-            'token; PKCE `S256` is SHA-256 over the verifier; `cnf.jkt` is an ' +
-            'RFC 7638 JWK Thumbprint (SHA-256) and `cnf["x5t#S256"]` is the ' +
-            'SHA-256 of the client certificate\'s DER.',
+            'token; PKCE `S256` is SHA-256 over the verifier; `cnf.jkt` is ' +
+            'an RFC 7638 JWK Thumbprint (SHA-256) and `cnf["x5t#S256"]` is ' +
+            'the SHA-256 of the client certificate\'s DER.',
     whatItDoesNot: 'It verifies no access token it did not issue, except at ' +
-                   'UserInfo, and it follows no `jwks_uri` — an inline `jwks` ' +
-                   'on the registration is the only key it will read.',
-    envelopes: ['jws', 'jwe', 'jwk', 'jwt', 'thumbprint', 'dpop', 'mtls', 'pkce'],
+                   'UserInfo, and it follows no `jwks_uri` — an inline ' +
+                   '`jwks` on the registration is the only key it will read.',
+    envelopes: ['jws', 'jwe', 'jwk', 'jwt', 'thumbprint', 'dpop', 'mtls',
+                'pkce'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Tokens this service mints by default', ['RS256']],
         ['ID Token, when a client registers one', oauth2.ID_TOKEN_SIGNING_ALGS],
@@ -610,7 +634,8 @@ const FAMILIES = [
         // a key THIS SERVICE holds — its own RSA and EC keys and a secret of
         // the realm's — so every family is genuinely in use. Read off the table
         // that performs it, like every row here.
-        ['Refresh token encryption (to this realm\'s own keys)', stsCrypto.JWE_ALGS]
+        ['Refresh token encryption (to this realm\'s own keys)',
+         stsCrypto.JWE_ALGS]
       ];
     } },
 
@@ -620,8 +645,8 @@ const FAMILIES = [
            'signer every other document here goes through.',
     verifies: 'THE WHOLE POINT OF THE FEATURE. A partner\'s SAML Response ' +
               'and the Assertion inside it, each checked SEPARATELY and each ' +
-              'against the certificate configured on the relationship — never ' +
-              'against a certificate the document carries in its own ' +
+              'against the certificate configured on the relationship — ' +
+              'never against a certificate the document carries in its own ' +
               '`ds:KeyInfo`, which is the check a naive implementation ' +
               'skips. A partner\'s ID Token as an ordinary JWS against the ' +
               'partner\'s published keys.',
@@ -629,15 +654,17 @@ const FAMILIES = [
     decrypts: '',
     hashes: 'Whatever the partner\'s `DigestMethod` names, out of the ' +
             'vendored table below.',
-    whatItDoesNot: 'It does not decrypt an assertion a partner encrypted, and ' +
-                   'it does not consume a federated sign-out. THE GATE IS ON ' +
-                   'THE SIGNER AND NOT ON THE SUBJECT: past a verified ' +
+    whatItDoesNot: 'It does not decrypt an assertion a partner encrypted, ' +
+                   'and it does not consume a federated sign-out. THE GATE ' +
+                   'IS ON THE SIGNER AND NOT ON THE SUBJECT: past a verified ' +
                    'signature any username is accepted. This is the one ' +
                    'surface here where a missing check is an authentication ' +
                    'bypass for every protocol in the process — see ' +
                    'federation/CLAUDE.md.',
     envelopes: ['xmldsig', 'c14n', 'jws'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Outbound request signature',
          ['http://www.w3.org/2001/04/xmldsig-more#rsa-sha256']],
@@ -647,33 +674,36 @@ const FAMILIES = [
     } },
 
   { name: 'SAML 2.0',
-    signs: 'Assertions, Responses, LogoutRequests and the per-service-provider ' +
-           'metadata — enveloped, RSA-SHA256, EXCLUSIVE canonicalization, with ' +
-           'the `<ds:Signature>` immediately after `<Issuer>` where the schema ' +
-           'puts it. The HTTP Redirect binding is signed differently and that ' +
-           'is the specification\'s doing rather than this service\'s: it is a ' +
-           'DETACHED signature over the octets of the query string, with ' +
-           '`SigAlg` naming the algorithm as a parameter.',
+    signs: 'Assertions, Responses, LogoutRequests and the ' +
+           'per-service-provider metadata — enveloped, RSA-SHA256, EXCLUSIVE ' +
+           'canonicalization, with the `<ds:Signature>` immediately after ' +
+           '`<Issuer>` where the schema puts it. The HTTP Redirect binding ' +
+           'is signed differently and that is the specification\'s doing ' +
+           'rather than this service\'s: it is a DETACHED signature over the ' +
+           'octets of the query string, with `SigAlg` naming the algorithm ' +
+           'as a parameter.',
     verifies: 'Its own artifacts, and a service provider\'s ' +
               '`<EncryptedID>` is decrypted rather than verified.',
-    encrypts: 'The assertion in a Response, as `<EncryptedAssertion>`, and the ' +
-              'NameID in a LogoutRequest as `<EncryptedID>` — per application, ' +
-              'to the certificate held on its entry. SIGNED FIRST AND THEN ' +
-              'ENCRYPTED, which is the order every service provider expects: ' +
-              'the signature is inside the ciphertext and is what survives ' +
-              'decryption.',
-    decrypts: 'An `<EncryptedID>` a service provider sends in a LogoutRequest, ' +
-              'to the realm\'s RSA key.',
+    encrypts: 'The assertion in a Response, as `<EncryptedAssertion>`, and ' +
+              'the NameID in a LogoutRequest as `<EncryptedID>` — per ' +
+              'application, to the certificate held on its entry. SIGNED ' +
+              'FIRST AND THEN ENCRYPTED, which is the order every service ' +
+              'provider expects: the signature is inside the ciphertext and ' +
+              'is what survives decryption.',
+    decrypts: 'An `<EncryptedID>` a service provider sends in a ' +
+              'LogoutRequest, to the realm\'s RSA key.',
     hashes: 'SHA-256 for the Reference digest; SHA-1 inside RSA-OAEP-MGF1P, ' +
             'because that is what the URI MEANS rather than a choice this ' +
             'service made.',
     whatItDoesNot: 'It does not verify an AuthnRequest\'s signature and it ' +
                    'does not consume service provider metadata — both are ' +
-                   'recorded, neither is checked. A service provider it holds ' +
-                   'no certificate for gets the assertion IN CLEAR, loudly, ' +
-                   'rather than being refused.',
+                   'recorded, neither is checked. A service provider it ' +
+                   'holds no certificate for gets the assertion IN CLEAR, ' +
+                   'loudly, rather than being refused.',
     envelopes: ['xmldsig', 'xmlenc', 'c14n'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Signature', ['http://www.w3.org/2001/04/xmldsig-more#rsa-sha256']],
         ['Block cipher (saml2.encryptionAlgorithm)',
@@ -688,31 +718,33 @@ const FAMILIES = [
   { name: 'SAML 1.1',
     signs: 'Assertions and Browser/POST Responses, RSA-SHA256 over exclusive ' +
            'c14n, through the same signer. The PLACEMENT differs and the ' +
-           'reason is the grammar rather than the crypto: a 1.1 assertion has ' +
-           'no `<Issuer>` ELEMENT — in 1.1 the issuer is an ATTRIBUTE — so ' +
-           '"after the issuer" is not a position that exists and the signature ' +
-           'goes LAST. A Response signs FIRST, ahead of the assertion it ' +
-           'carries.',
+           'reason is the grammar rather than the crypto: a 1.1 assertion ' +
+           'has no `<Issuer>` ELEMENT — in 1.1 the issuer is an ATTRIBUTE — ' +
+           'so "after the issuer" is not a position that exists and the ' +
+           'signature goes LAST. A Response signs FIRST, ahead of the ' +
+           'assertion it carries.',
     verifies: 'Its own artifacts, for the mock relying party.',
     encrypts: '',
     decrypts: '',
     hashes: 'SHA-256 for the Reference digest.',
-    whatItDoesNot: 'SAML 1.1 has no encryption at all — `<EncryptedAssertion>` ' +
-                   'arrived with 2.0 — and no request message to verify a ' +
-                   'signature on. The reference URI names `AssertionID` or ' +
-                   '`ResponseID`, which is the whole reason the shared signer ' +
-                   'resolves an id by SEARCHING for one rather than being told ' +
-                   'its name.',
+    whatItDoesNot: 'SAML 1.1 has no encryption at all — ' +
+                   '`<EncryptedAssertion>` arrived with 2.0 — and no request ' +
+                   'message to verify a signature on. The reference URI ' +
+                   'names `AssertionID` or `ResponseID`, which is the whole ' +
+                   'reason the shared signer resolves an id by SEARCHING for ' +
+                   'one rather than being told its name.',
     envelopes: ['xmldsig', 'c14n'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Signature', ['http://www.w3.org/2001/04/xmldsig-more#rsa-sha256']]
       ];
     } },
 
   { name: 'WS-Federation',
-    signs: 'The SAML assertion inside the `wresult`, in whichever version the ' +
-           'relying party asked for, through the shared signer.',
+    signs: 'The SAML assertion inside the `wresult`, in whichever version ' +
+           'the relying party asked for, through the shared signer.',
     verifies: 'The mock relying party at `/wsfed/rp` verifies that assertion ' +
               'check by check, and is told WHICH element to verify rather ' +
               'than taking the first `<ds:Signature>` in the document — the ' +
@@ -725,6 +757,8 @@ const FAMILIES = [
                    'request forgery with a citation attached.',
     envelopes: ['xmldsig', 'c14n', 'wss'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Signature', ['http://www.w3.org/2001/04/xmldsig-more#rsa-sha256']]
       ];
@@ -737,18 +771,20 @@ const FAMILIES = [
               '`<ds:X509Certificate>` in a signed request — the latter to ' +
               'find out who to ENCRYPT to. It checks no password behind it.',
     encrypts: 'With `?encrypt=1`, the issued 2.0 assertion, to the ' +
-              'certificate found in the request signature. Same two tables as ' +
-              'SAML 2.0, because it is the same code — `saml/saml2.js` ' +
+              'certificate found in the request signature. Same two tables ' +
+              'as SAML 2.0, because it is the same code — `saml/saml2.js` ' +
               're-exports it.',
     decrypts: '',
     hashes: 'SHA-256 for the Reference digest.',
     whatItDoesNot: 'It polices no delegation: an RST asking for a token for ' +
-                   'somebody else is answered. And it produces no signed SOAP ' +
-                   'envelope of its own — see WS-Security below, which is the ' +
-                   'row that says what this service does and does not do with ' +
-                   'that specification.',
+                   'somebody else is answered. And it produces no signed ' +
+                   'SOAP envelope of its own — see WS-Security below, which ' +
+                   'is the row that says what this service does and does not ' +
+                   'do with that specification.',
     envelopes: ['xmldsig', 'xmlenc', 'c14n', 'wss'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Signature', ['http://www.w3.org/2001/04/xmldsig-more#rsa-sha256']],
         ['Block ciphers offered', Object.keys(stsCrypto.BLOCK_CIPHERS)],
@@ -758,10 +794,10 @@ const FAMILIES = [
 
   { name: 'Kerberos',
     signs: 'Nothing, in the public-key sense — THIS IS THE ONE FAMILY HERE ' +
-           'WITH NO ASYMMETRIC CRYPTOGRAPHY IN IT AT ALL. Integrity comes from ' +
-           'a keyed checksum (HMAC-SHA1-96, HMAC-SHA-256-128, HMAC-SHA-384-192 ' +
-           'or HMAC-MD5) under a key derived from the long-term key for that ' +
-           'message\'s key usage number.',
+           'WITH NO ASYMMETRIC CRYPTOGRAPHY IN IT AT ALL. Integrity comes ' +
+           'from a keyed checksum (HMAC-SHA1-96, HMAC-SHA-256-128, ' +
+           'HMAC-SHA-384-192 or HMAC-MD5) under a key derived from the ' +
+           'long-term key for that message\'s key usage number.',
     verifies: 'Pre-authentication, every AP-REQ authenticator, and the ' +
               'checksums above. THIS IS THE ONE DOOR IN THIS SERVICE THAT ' +
               'REALLY VERIFIES A CREDENTIAL, and it is not a policy choice: ' +
@@ -782,6 +818,8 @@ const FAMILIES = [
                    'capture renders honestly, never performed.',
     envelopes: ['krb5', 'gssapi'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [['Encryption types performed', kerberosEtypes().performed
         .map(function (row) { return row.id + ' ' + row.name; })]];
     } },
@@ -789,27 +827,29 @@ const FAMILIES = [
   { name: 'SPNEGO',
     signs: 'Nothing of its own. The MIC in a `negTokenResp` is a Kerberos ' +
            'checksum over the negotiation, computed with the mechanism\'s key.',
-    verifies: 'The AP-REQ inside the GSS token, through the Kerberos acceptor ' +
-              '— including the replay cache, which is the one check at this ' +
-              'door whose absence would be a security bug rather than a ' +
-              'fidelity one.',
+    verifies: 'The AP-REQ inside the GSS token, through the Kerberos ' +
+              'acceptor — including the replay cache, which is the one check ' +
+              'at this door whose absence would be a security bug rather ' +
+              'than a fidelity one.',
     encrypts: '',
     decrypts: 'The AP-REQ authenticator, under the service\'s long-term key.',
     hashes: 'Whatever the negotiated encryption type\'s checksum uses.',
-    whatItDoesNot: 'It adds no check of its own on top of the acceptor\'s, and ' +
-                   'it negotiates no mechanism but Kerberos v5.',
+    whatItDoesNot: 'It adds no check of its own on top of the acceptor\'s, ' +
+                   'and it negotiates no mechanism but Kerberos v5.',
     envelopes: ['krb5', 'gssapi'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [['Negotiated mechanism', ['Kerberos v5 (1.2.840.113554.1.2.2)']]];
     } },
 
   { name: 'SPIFFE',
     signs: 'X509-SVIDs, from a self-signed authority generated at start, and ' +
-           'JWT-SVIDs as ordinary JWS. The authority\'s key type is a setting ' +
-           'and each type fixes both the certificate signature algorithm and ' +
-           'the JWS `alg` — a certificate whose declared algorithm and actual ' +
-           'signature disagree parses perfectly and is refused with a message ' +
-           'about a signature, naming neither hash.',
+           'JWT-SVIDs as ordinary JWS. The authority\'s key type is a ' +
+           'setting and each type fixes both the certificate signature ' +
+           'algorithm and the JWS `alg` — a certificate whose declared ' +
+           'algorithm and actual signature disagree parses perfectly and is ' +
+           'refused with a message about a signature, naming neither hash.',
     verifies: 'An X509-SVID over mutual TLS on the SPIRE Server API\'s TCP ' +
               'port, and a JWT-SVID at `ValidateJWTSVID`.',
     encrypts: '',
@@ -819,13 +859,15 @@ const FAMILIES = [
     whatItDoesNot: 'It attests no workload and no node — what the Workload ' +
                    'API lacks is ATTESTATION, not authentication, and its ' +
                    'specification says it MUST NOT authenticate. It revokes ' +
-                   'no credential either; the directory records who may still ' +
-                   'be ISSUED one, which is a different claim. Ed25519 is ' +
-                   'available for the X.509 authority and NOT for the JWT ' +
+                   'no credential either; the directory records who may ' +
+                   'still be ISSUED one, which is a different claim. Ed25519 ' +
+                   'is available for the X.509 authority and NOT for the JWT ' +
                    'one, which is a limit of `jsonwebtoken` and not of the ' +
                    'specification.',
     envelopes: ['x509', 'jws', 'jwk', 'mtls'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Authority key types', spiffeCa.KEY_TYPES.map(function (t) {
           return t.id + ' (' + t.sigAlg + (t.jwtAlg ? ', ' + t.jwtAlg
@@ -843,8 +885,8 @@ const FAMILIES = [
            'only ever checks them.',
     verifies: 'A credential in any of the six schemes RFC 7644 section 2 ' +
               'names, and TWO OF THE SIX ARE REALLY VERIFIED: HTTP Digest ' +
-              'computes the response over the configured password, and a HOBA ' +
-              'signature is checked against the public key the client ' +
+              'computes the response over the configured password, and a ' +
+              'HOBA signature is checked against the public key the client ' +
               'registered. The other four are turnstiles — any password but ' +
               'one passes Basic, and the OAuth ones need only a token this ' +
               'service issued carrying `scim:read` or `scim:write`.',
@@ -861,6 +903,8 @@ const FAMILIES = [
                    'setting.',
     envelopes: ['digest', 'hoba', 'jws', 'dpop', 'mtls'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Authentication schemes', scimAuth.SCHEMES.map(function (s) {
           return s.name;
@@ -916,6 +960,8 @@ const FAMILIES = [
                    'from a bad one for whoever is being tested.',
     envelopes: ['jws', 'jwt', 'jwk', 'dpop', 'tls'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Security Event Tokens, right now', [ssfEvents.signingAlgorithm()]],
         ['Any of, through ssf.signingAlgorithm',
@@ -946,22 +992,24 @@ const FAMILIES = [
                    'no StartTLS: 636 is TLS from the first byte.',
     envelopes: ['tls'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [['LDAPS transport', ['TLS, on the shared server certificate']]];
     } },
 
   { name: 'PKI / X.509',
     signs: 'Three self-signed certificates, all RSA 2048 with SHA-256, all ' +
            'generated at start and none of them persisted: the SIGNING ' +
-           'certificate (serial 02, five years, no extensions at all) and the ' +
-           'TLS SERVER certificate (serial 03, two years, with the ' +
+           'certificate (serial 02, five years, no extensions at all) and ' +
+           'the TLS SERVER certificate (serial 03, two years, with the ' +
            'subjectAltName that is the only place the names are, because RFC ' +
            '6125 has said the CN is ignored since 2011). SPIFFE\'s authority ' +
            'is the third and is configured separately.',
     verifies: 'A client certificate presented on 9443 or on the main port, ' +
               'against whatever anchors have been added — and then turns it ' +
               'into a THUMBPRINT rather than into a login.',
-    encrypts: 'Every byte on 8443, 9443, LDAPS 636 and, since 2026-08-30, the ' +
-              'main port too. The cipher suite and the key exchange are ' +
+    encrypts: 'Every byte on 8443, 9443, LDAPS 636 and, since 2026-08-30, ' +
+              'the main port too. The cipher suite and the key exchange are ' +
               'node\'s OpenSSL defaults; nothing here narrows them.',
     decrypts: 'The same.',
     hashes: 'SHA-256 over the DER, everywhere a certificate is named: RFC ' +
@@ -974,7 +1022,9 @@ const FAMILIES = [
                    'no plain listener left to fetch it from.',
     envelopes: ['x509', 'tls', 'mtls'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
       const cert = tlsServer.serverCertificate();
+      log.debug("Leaving algorithms().");
       return [
         ['Server certificate', ['RSA 2048, SHA-256, self-signed, valid to ' +
                                 String(cert.notAfter)]],
@@ -987,24 +1037,25 @@ const FAMILIES = [
     signs: 'Nothing. The AUTHENTICATOR signs; this service is the relying ' +
            'party, which is the half that only ever checks.',
     verifies: 'The registration attestation and every assertion: the ' +
-              'signature over `authenticatorData || SHA-256(clientDataJSON)`, ' +
-              'against the COSE public key the credential registered.',
+              'signature over `authenticatorData || ' +
+              'SHA-256(clientDataJSON)`, against the COSE public key the ' +
+              'credential registered.',
     encrypts: '',
     decrypts: '',
     hashes: 'SHA-256 twice over — the client data hash the signature covers, ' +
             'and the RP ID hash inside the authenticator data that is ' +
             'compared byte for byte against SHA-256 of the origin\'s domain.',
     whatItDoesNot: 'It validates no attestation STATEMENT whatever ' +
-                   '`webauthn.attestation` asks for — the certificate chain a ' +
-                   'packed or TPM attestation carries is parsed and not ' +
-                   'chased, and there is no metadata service, no vendor trust ' +
-                   'anchor and no model allow-list here. The registration ' +
-                   'offers fewer algorithms than the verifier ACCEPTS, which ' +
-                   'is deliberate: what a platform authenticator actually ' +
-                   'produces is what a person came here to see. The one ' +
-                   'ceremony option this service also CHECKS is ' +
-                   '`webauthn.userVerification`, because the UV flag is inside ' +
-                   'the bytes the authenticator signed.',
+                   '`webauthn.attestation` asks for — the certificate chain ' +
+                   'a packed or TPM attestation carries is parsed and not ' +
+                   'chased, and there is no metadata service, no vendor ' +
+                   'trust anchor and no model allow-list here. The ' +
+                   'registration offers fewer algorithms than the verifier ' +
+                   'ACCEPTS, which is deliberate: what a platform ' +
+                   'authenticator actually produces is what a person came ' +
+                   'here to see. The one ceremony option this service also ' +
+                   'CHECKS is `webauthn.userVerification`, because the UV ' +
+                   'flag is inside the bytes the authenticator signed.',
     envelopes: ['cose', 'webauthn'],
     // ---------------------------------------------------------------------
     // THE OFFERED LIST WAS TYPED HERE UNTIL 2026-09-10 AND IT IS A SETTING NOW.
@@ -1019,6 +1070,8 @@ const FAMILIES = [
     // last sentence is about.
     // ---------------------------------------------------------------------
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Offered at registration',
          webauthnPolicy.algorithmsOffered().map(function (name) {
@@ -1086,7 +1139,9 @@ const FAMILIES = [
                    'offered for a drifting clock.',
     envelopes: [],
     algorithms: function () {
+      log.debug("Entering algorithms().");
       const report = totp.report();
+      log.debug("Leaving algorithms().");
       return [
         ['HMAC (the enrolled parameter, not a live one)',
          report.algorithms.map(function (one) {
@@ -1118,16 +1173,16 @@ const FAMILIES = [
   // ---------------------------------------------------------------------
   { name: 'Recovery codes',
     signs: 'Nothing. There is no MAC and no signature anywhere in this ' +
-           'mechanism — a recovery code is a random string compared against a ' +
-           'stored one, which is the whole difference from the TOTP row above ' +
-           'where the "code" is a truncated HMAC.',
+           'mechanism — a recovery code is a random string compared against ' +
+           'a stored one, which is the whole difference from the TOTP row ' +
+           'above where the "code" is a truncated HMAC.',
     verifies: 'A presented code, against every code in the person\'s set, in ' +
               'constant time through common/crypto.js\'s ' +
               'constantTimeEquals(). EVERY code is compared even after a ' +
-              'match, deliberately: returning early would make the time taken ' +
-              'depend on WHICH code matched. The shape is checked first, so a ' +
-              'password typed into the box is refused on its characters ' +
-              'rather than compared against the set.',
+              'match, deliberately: returning early would make the time ' +
+              'taken depend on WHICH code matched. The shape is checked ' +
+              'first, so a password typed into the box is refused on its ' +
+              'characters rather than compared against the set.',
     encrypts: 'THE WHOLE SET AS ONE BLOB — AES-256-GCM under the same ' +
               'key-encryption key that protects the signing keys, through ' +
               'common/keystore.js, wherever that key outlives the process. ' +
@@ -1141,26 +1196,28 @@ const FAMILIES = [
     decrypts: 'The same set, to check a code AND to show it to the person it ' +
               'belongs to. **THIS IS THE SECOND CREDENTIAL IN THIS SERVICE ' +
               'THAT CAN BE READ BACK, AND THE ONLY ONE WHOSE REASON IS NOT ' +
-              'ARITHMETIC.** A TOTP secret cannot be hashed because verifying ' +
-              'a code means COMPUTING it. A recovery code COULD be hashed, ' +
-              'and is not, because a person may look at their remaining codes ' +
-              'again on /portal/mfa — a list shown exactly once at the end of ' +
-              'an enrolment is a list most people close without reading, and ' +
-              'the moment it matters is months later.',
+              'ARITHMETIC.** A TOTP secret cannot be hashed because ' +
+              'verifying a code means COMPUTING it. A recovery code COULD be ' +
+              'hashed, and is not, because a person may look at their ' +
+              'remaining codes again on /portal/mfa — a list shown exactly ' +
+              'once at the end of an enrolment is a list most people close ' +
+              'without reading, and the moment it matters is months later.',
     hashes: 'Nothing. Unlike userPassword (scrypt) and stsActivationToken ' +
             '(scrypt), and see the row above for why.',
     whatItDoesNot: 'It never issues a set on request — not from the portal, ' +
                    'the console or /admin-api — because a set is created by ' +
-                   'the ACT of enrolling a second factor and by nothing else. ' +
-                   'It never issues a SECOND set: an operator\'s Clear is the ' +
-                   'only route to one, so a printed list cannot stop working ' +
-                   'underneath somebody. It never shows a code to anybody but ' +
-                   'its owner. And there is no counter-based or derived ' +
-                   'scheme here: these are random strings and nothing about ' +
-                   'one code says anything about the next.',
+                   'the ACT of enrolling a second factor and by nothing ' +
+                   'else. It never issues a SECOND set: an operator\'s Clear ' +
+                   'is the only route to one, so a printed list cannot stop ' +
+                   'working underneath somebody. It never shows a code to ' +
+                   'anybody but its owner. And there is no counter-based or ' +
+                   'derived scheme here: these are random strings and ' +
+                   'nothing about one code says anything about the next.',
     envelopes: [],
     algorithms: function () {
+      log.debug("Entering algorithms().");
       const report = backupCodes.report();
+      log.debug("Leaving algorithms().");
       return [
         ['Generation', [report.source]],
         ['Entropy', [String(report.bitsPerCode) + ' bits per code, ' +
@@ -1177,11 +1234,11 @@ const FAMILIES = [
 
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     signs: 'An SD-JWT VC as an RS256 JWS with `_sd_alg: sha-256`, and a W3C ' +
-           '`ldp_vc` with a `bbs-2023` Data Integrity proof — BLS12-381-SHA-256, ' +
-           'which is a pairing-based signature and the only one in this ' +
-           'service. Its key is not a JWK and is published as ' +
-           '`publicKeyMultibase` rather than being forced into one it does ' +
-           'not fit.',
+           '`ldp_vc` with a `bbs-2023` Data Integrity proof — ' +
+           'BLS12-381-SHA-256, which is a pairing-based signature and the ' +
+           'only one in this service. Its key is not a JWK and is published ' +
+           'as `publicKeyMultibase` rather than being forced into one it ' +
+           'does not fit.',
     verifies: 'A wallet\'s proof of possession at the credential endpoint, ' +
               'which must be an ASYMMETRIC JWS — never a MAC and never ' +
               '`none` — and a presentation at the verifier, including a ' +
@@ -1196,6 +1253,8 @@ const FAMILIES = [
                    'sign-on nowhere.',
     envelopes: ['jws', 'sdjwt', 'dataintegrity', 'did'],
     algorithms: function () {
+      log.debug("Entering algorithms().");
+      log.debug("Leaving algorithms().");
       return [
         ['Credential signing', ['RS256', bbs2023.CRYPTOSUITE]],
         ['Wallet proof of possession', stsCrypto.JWS_ASYMMETRIC_ALGS],
@@ -1238,9 +1297,10 @@ const STANDARDS = [
   { key: 'jws', name: 'JWS — JSON Web Signature',
     specs: ['RFC 7515', 'RFC 7518 (JWA)', 'RFC 8037 (EdDSA)',
             'RFC 8812 (ES256K)', 'RFC 9964 (AKP / ML-DSA)'],
-    coverage: 'full for the algorithms listed below, in compact serialization ' +
-              'only. JSON and flattened serializations are not produced or ' +
-              'read; nothing in any of these protocols asks for one.',
+    coverage: 'full for the algorithms listed below, in compact ' +
+              'serialization only. JSON and flattened serializations are not ' +
+              'produced or read; nothing in any of these protocols asks for ' +
+              'one.',
     what: 'The envelope for every token this service mints and every ' +
           'assertion it is handed. ONE TABLE FOR THE WHOLE SERVICE — ' +
           '`common/crypto.js`\'s `JWS_ALGS` — because there were two once, ' +
@@ -1250,8 +1310,8 @@ const STANDARDS = [
     specs: ['RFC 7516', 'RFC 7518'],
     coverage: 'partial: compact serialization, and it ENCRYPTS with a longer ' +
               'list than it DECRYPTS with. That asymmetry is deliberate — ' +
-              'what it receives is encrypted to the RSA key it publishes, and ' +
-              'it holds no EC private key to agree with.',
+              'what it receives is encrypted to the RSA key it publishes, ' +
+              'and it holds no EC private key to agree with.',
     what: 'An encrypted UserInfo response, and anything a client sends ' +
           'encrypted to this service\'s key. The CBC-HMAC family is here ' +
           'because `A128CBC-HS256` is what an OpenID Connect client gets by ' +
@@ -1296,7 +1356,8 @@ const STANDARDS = [
           'without the key. Its algorithm list is a FILTER over the shared ' +
           'JWS table — asymmetric, and not post-quantum — rather than a ' +
           'table of its own.' },
-  { key: 'mtls', name: 'Mutual TLS client authentication and certificate binding',
+  { key: 'mtls', name: 'Mutual TLS client authentication and certificate ' +
+                       'binding',
     specs: ['RFC 8705'],
     coverage: 'partial: both client authentication methods and the ' +
               'certificate-bound access token. It turns a verified ' +
@@ -1345,8 +1406,8 @@ const STANDARDS = [
               'naming a method it does not perform is worse than an absent ' +
               'one.',
     what: 'EXCLUSIVE IS LOAD-BEARING AND IS THE DEFAULT EVERYWHERE HERE. An ' +
-          'assertion is signed standalone and then embedded inside an RSTR, a ' +
-          'Response or a `wresult` that declares prefixes of its own, so ' +
+          'assertion is signed standalone and then embedded inside an RSTR, ' +
+          'a Response or a `wresult` that declares prefixes of its own, so ' +
           'INCLUSIVE c14n would pull those ancestor declarations into the ' +
           'digest at verification time — the signature then fails for every ' +
           'relying party while verifying perfectly here, which is the worst ' +
@@ -1357,10 +1418,11 @@ const STANDARDS = [
               '"WS-Integrity" or "WS-Encryption" — neither is a document ' +
               'that exists. WSS is one specification whose integrity half is ' +
               'XML Signature over the SOAP Body and Timestamp inside a ' +
-              '`<wsse:Security>` header and whose confidentiality half is XML ' +
-              'Encryption applied the same way. THIS SERVICE DOES NEITHER. ' +
-              'It signs no SOAP envelope, encrypts no SOAP body, produces no ' +
-              'Timestamp and verifies no message-level signature on a request.',
+              '`<wsse:Security>` header and whose confidentiality half is ' +
+              'XML Encryption applied the same way. THIS SERVICE DOES ' +
+              'NEITHER. It signs no SOAP envelope, encrypts no SOAP body, ' +
+              'produces no Timestamp and verifies no message-level signature ' +
+              'on a request.',
     what: 'What it DOES is the SAML Token Profile: a signed SAML assertion ' +
           'carried inside a SOAP body, with a ' +
           '`<wsse:SecurityTokenReference>` naming it by `KeyIdentifier`, and ' +
@@ -1407,9 +1469,9 @@ const STANDARDS = [
               'chooses no cipher suite, no protocol floor and no curve — ' +
               'what it configures is which sockets are TLS and which ' +
               'certificate they serve.',
-    what: 'Four listeners plus the main port share one certificate. `STS_HTTPS' +
-          '=false` is the supported way back to plain HTTP, not an escape ' +
-          'hatch.' },
+    what: 'Four listeners plus the main port share one certificate. ' +
+          '`STS_HTTPS=false` is the supported way back to plain HTTP, not an ' +
+          'escape hatch.' },
   { key: 'cose', name: 'COSE — CBOR Object Signing and Encryption',
     specs: ['RFC 9052', 'RFC 9053'],
     coverage: 'partial: COSE_Key parsing and signature verification for the ' +
@@ -1424,9 +1486,10 @@ const STANDARDS = [
     coverage: 'partial: the relying party\'s half. Registration and ' +
               'assertion signatures are really verified; attestation ' +
               'STATEMENTS are parsed and not chased.',
-    what: 'The signature covers `authenticatorData || SHA-256(clientDataJSON)` ' +
-          'and the RP ID hash inside that authenticator data is compared ' +
-          'byte for byte against SHA-256 of the origin\'s domain.' },
+    what: 'The signature covers `authenticatorData || ' +
+          'SHA-256(clientDataJSON)` and the RP ID hash inside that ' +
+          'authenticator data is compared byte for byte against SHA-256 of ' +
+          'the origin\'s domain.' },
   { key: 'digest', name: 'HTTP Digest Access Authentication',
     specs: ['RFC 7616'],
     coverage: 'partial: `qop=auth` with SHA-256, SHA-512-256 and MD5 and ' +
@@ -1475,32 +1538,32 @@ const STANDARDS = [
           'forced into.' },
   { key: 'httpsig', name: 'HTTP Message Signatures and Digest Fields',
     specs: ['RFC 9421', 'RFC 9530', 'RFC 8941 (Structured Field Values)'],
-    coverage: 'partial: request and response signing and verification with every ' +
-              'derived component and component parameter, multiple signatures, and ' +
-              'Content-Digest with sha-256 and sha-512. Repr-Digest and the Want- ' +
-              'fields are not implemented.',
-    what: 'GNAP\'s preferred key proof. THE SIGNATURE BASE IS THE THING BOTH ENDS ' +
-          'MUST BUILD IDENTICALLY, byte for byte, from a message each of them ' +
-          'parsed separately — so the structured-field serializer is written out in ' +
-          '`gnap/gnap_sf.js` rather than borrowed, and held to the RFC\'s own test ' +
-          'vectors.' },
+    coverage: 'partial: request and response signing and verification with ' +
+              'every derived component and component parameter, multiple ' +
+              'signatures, and Content-Digest with sha-256 and sha-512. ' +
+              'Repr-Digest and the Want- fields are not implemented.',
+    what: 'GNAP\'s preferred key proof. THE SIGNATURE BASE IS THE THING BOTH ' +
+          'ENDS MUST BUILD IDENTICALLY, byte for byte, from a message each ' +
+          'of them parsed separately — so the structured-field serializer is ' +
+          'written out in `gnap/gnap_sf.js` rather than borrowed, and held ' +
+          'to the RFC\'s own test vectors.' },
   { key: 'macaroon', name: 'Macaroons',
     specs: ['Macaroons (NDSS 2014)', 'libmacaroons V2 binary format'],
     coverage: 'partial: first-party caveats and attenuation. No third-party ' +
               'caveats, so no discharge macaroons.',
-    what: 'A bearer credential whose holder can NARROW it without asking anybody, ' +
-          'by appending a caveat and re-keying the HMAC chain. The verifier must ' +
-          'hold the root key, which is why a macaroon is the one GNAP format with ' +
-          'no public verification material.' },
+    what: 'A bearer credential whose holder can NARROW it without asking ' +
+          'anybody, by appending a caveat and re-keying the HMAC chain. The ' +
+          'verifier must hold the root key, which is why a macaroon is the ' +
+          'one GNAP format with no public verification material.' },
   { key: 'biscuit', name: 'Biscuit',
     specs: ['Biscuit specification (biscuitsec.org)'],
-    coverage: 'partial: Ed25519 root and block signatures, Datalog facts, checks ' +
-              'and attenuation blocks, verified by an authorizer run under limits. ' +
-              'No third-party blocks.',
-    what: 'A public-key token a holder can attenuate OFFLINE, like a macaroon, but ' +
-          'verifiable by anybody holding the root public key. Its authorization ' +
-          'logic is Datalog carried inside the token, so the verifier ALWAYS runs ' +
-          'with time and iteration limits.' }
+    coverage: 'partial: Ed25519 root and block signatures, Datalog facts, ' +
+              'checks and attenuation blocks, verified by an authorizer run ' +
+              'under limits. No third-party blocks.',
+    what: 'A public-key token a holder can attenuate OFFLINE, like a ' +
+          'macaroon, but verifiable by anybody holding the root public key. ' +
+          'Its authorization logic is Datalog carried inside the token, so ' +
+          'the verifier ALWAYS runs with time and iteration limits.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -1644,9 +1707,9 @@ function keyMaterial() {
       notAfter: cert.notAfter,
       perRealm: false,
       what: 'RSA 2048, SHA-256, self-signed, serial 03, two years. Shared by ' +
-            '8443, 9443, LDAPS 636 and — when `global.https` is on — the main ' +
-            'port. Two years rather than five because this one is put in ' +
-            'somebody\'s truststore by hand.'
+            '8443, 9443, LDAPS 636 and — when `global.https` is on — the ' +
+            'main port. Two years rather than five because this one is put ' +
+            'in somebody\'s truststore by hand.'
     },
     spiffe: {
       enabled: spiffe.enabled,
@@ -1795,7 +1858,8 @@ function hashing() {
               'of this mock published one name over two different keys — a ' +
               'verifier matches the kid exactly, tries that key, and reports ' +
               'a bad signature.' },
-      { where: 'Kerberos string-to-key', hash: 'PBKDF2-HMAC-SHA1 / SHA-256 / SHA-384',
+      { where: 'Kerberos string-to-key', hash: 'PBKDF2-HMAC-SHA1 / SHA-256 / ' +
+                                               'SHA-384',
         what: 'RFC 3962 for the AES-SHA1 profiles and RFC 8009 for the ' +
               'AES-SHA2 ones. The iteration count and the salt come off the ' +
               'KDC\'s ETYPE-INFO2.' }
@@ -2138,9 +2202,9 @@ function cryptoJson(base) {
     realm: realms.currentId(),
     generatedAt: new Date().toISOString(),
     oneModule: 'common/crypto.js is the one place this service signs, ' +
-               'verifies, encrypts and decrypts. Before 2026-08-27 it did all ' +
-               'four in about twenty places, including six XML signers and ' +
-               'four XML signature verifiers.',
+               'verifies, encrypts and decrypts. Before 2026-08-27 it did ' +
+               'all four in about twenty places, including six XML signers ' +
+               'and four XML signature verifiers.',
     drift: driftReport(),
     keys: keyMaterial(),
     families: FAMILIES.map(function (row) {
@@ -2187,6 +2251,8 @@ function cryptoJson(base) {
 // be put in.
 // ---------------------------------------------------------------------------
 function prose(text) {
+  log.debug("Entering prose().");
+  log.debug("Leaving prose().");
   return esc(String(text == null ? '' : text))
     .replace(/`([^`]+)`/g, '<code>$1</code>');
 }
@@ -2195,9 +2261,12 @@ function prose(text) {
 // than as nothing, because an empty cell and a cell this function has not
 // reached look identical and only one of them is a fact.
 function chips(values) {
+  log.debug("Entering chips().");
   if (!values || !values.length) {
+    log.debug("Leaving chips().");
     return '<span class="why">—</span>';
   }
+  log.debug("Leaving chips().");
   return values.map(function (one) {
     return '<code>' + esc(String(one)) + '</code>';
   }).join(' ');
@@ -2206,22 +2275,27 @@ function chips(values) {
 // One verb's cell in the family table. An empty string means this service does
 // not do it in that family, which is a claim and is drawn as one.
 function verbCell(text) {
+  log.debug("Entering verbCell().");
   if (!text) {
+    log.debug("Leaving verbCell().");
     return '<span class="why">does not</span>';
   }
+  log.debug("Leaving verbCell().");
   return prose(text);
 }
 
 function anchorFor(name) {
+  log.debug("Entering anchorFor().");
+  log.debug("Leaving anchorFor().");
   return 'fam-' + String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 }
 
 function renderFamilies(report) {
   log.debug("Entering renderFamilies().");
-  let html = '<h2 id="families">The identity services this mock advertises</h2>' +
-    '<p class="lead">One row per protocol family on ' +
-    '<a href="/admin/sts-metadata">Service metadata</a>, with what each does ' +
+  let html = '<h2 id="families">The identity services this mock ' +
+    'advertises</h2><p class="lead">One row per protocol family on <a ' +
+    'href="/admin/sts-metadata">Service metadata</a>, with what each does ' +
     'with cryptography. The four verbs are kept apart on purpose: signing is ' +
     'minting something a relying party will believe, verifying is a decision ' +
     'that can be got wrong, encrypting uses somebody else\'s key, and ' +
@@ -2302,8 +2376,8 @@ function renderFamilies(report) {
 function renderKeys(report) {
   log.debug("Entering renderKeys().");
   const keys = report.keys;
-  let html = '<h2 id="keys">The key material this process holds</h2>' +
-    '<p class="lead">Every key here is generated at start and none of them is ' +
+  let html = '<h2 id="keys">The key material this process holds</h2><p ' +
+    'class="lead">Every key here is generated at start and none of them is ' +
     'persisted, in any persistence mode. That is deliberate and two things ' +
     'depend on it: the <code>kid</code> is derived from the key material, so ' +
     'two instances of this mock cannot publish one name over two different ' +
@@ -2439,8 +2513,8 @@ function renderSignatures(report) {
     'which is how DPoP came to accept a different set of algorithms from ' +
     'everything else for no reason anybody chose.</p>';
 
-  html += '<h3>JWS</h3><table><thead><tr><th class="n">alg</th><th>Family</th>' +
-    '<th>Key</th><th>Digest</th><th>Asymmetric</th><th>DPoP</th>' +
+  html += '<h3>JWS</h3><table><thead><tr><th class="n">alg</th><th>' +
+    'Family</th><th>Key</th><th>Digest</th><th>Asymmetric</th><th>DPoP</th>' +
     '</tr></thead><tbody>' +
     s.jws.map(function (row) {
       return '<tr><td class="n"><code>' + esc(row.alg) + '</code></td>' +
@@ -2485,17 +2559,17 @@ function renderSignatures(report) {
           : '<span class="why">read only</span>') + '</td></tr>';
     }).join('') + '</tbody></table>' +
     admin.note('<strong>Exclusive canonicalization is load-bearing here and ' +
-      'not a matter of taste.</strong> An assertion is signed as a standalone ' +
-      'document and then embedded inside an RSTR, a Response or a ' +
+      'not a matter of taste.</strong> An assertion is signed as a ' +
+      'standalone document and then embedded inside an RSTR, a Response or a ' +
       '<code>wresult</code> that declares prefixes of its own. Inclusive ' +
       'c14n would pull those ancestor declarations into the digest at ' +
       'verification time, so the signature would fail for every relying ' +
       'party while verifying perfectly here — the worst shape of bug to ' +
       'chase. C14N 1.1 is not offered at all: its whole difference is how ' +
-      '<code>xml:base</code>, <code>xml:lang</code> and <code>xml:space</code> ' +
-      'inherit into a detached subtree, this engine does not implement that ' +
-      'inheritance, and an option naming a method it does not perform is ' +
-      'worse than an absent one.');
+      '<code>xml:base</code>, <code>xml:lang</code> and ' +
+      '<code>xml:space</code> inherit into a detached subtree, this engine ' +
+      'does not implement that inheritance, and an option naming a method it ' +
+      'does not perform is worse than an absent one.');
 
   html += '<h3>COSE (WebAuthn)</h3><table><thead><tr>' +
     '<th class="n">COSE alg</th><th>JOSE name</th></tr></thead><tbody>' +
@@ -2517,11 +2591,11 @@ function renderSignatures(report) {
 function renderEncryption(report) {
   log.debug("Entering renderEncryption().");
   const e = report.encryption;
-  let html = '<h2 id="encryption">Encryption and key transport</h2>' +
-    '<p class="lead">What this service encrypts with, and — separately — what ' +
-    'it will decrypt. The two lists are different on purpose in both JOSE and ' +
-    'XML, and the reason is the same each time: it holds one private key of ' +
-    'each kind and can encrypt to anybody\'s.</p>';
+  let html = '<h2 id="encryption">Encryption and key transport</h2><p ' +
+    'class="lead">What this service encrypts with, and — separately — what ' +
+    'it will decrypt. The two lists are different on purpose in both JOSE ' +
+    'and XML, and the reason is the same each time: it holds one private key ' +
+    'of each kind and can encrypt to anybody\'s.</p>';
 
   html += '<h3>JWE</h3><table><tbody>' +
     '<tr><th class="n">Key management, encrypting</th><td>' +
@@ -2581,21 +2655,22 @@ function renderEncryption(report) {
         esc(row.scheme) + (row.safe ? '' : ' — <strong>broken</strong>') +
         '</td></tr>';
     }).join('') + '</tbody></table>' +
-    admin.warn('<strong>Two of these are unsafe and are offered anyway.</strong> ' +
-      'The CBC ciphers are not authenticated — that is the property CBC has, ' +
-      'not a defect in this service — and what this service does about it ' +
-      'when READING is parse the result and refuse anything that is not ' +
-      'well-formed XML, which catches ordinary corruption and is not ' +
-      'integrity. <code>rsa-1_5</code> is RSAES-PKCS1-v1_5, which ' +
-      'Bleichenbacher\'s adaptive chosen-ciphertext attack is against ' +
-      'exactly. Both are here because a great many deployed service ' +
-      'providers accept nothing else, which is a fact about the world that a ' +
-      'client library is entitled to be tested against. Nothing this service ' +
-      'encrypts is a real secret. <code>rsa-oaep-mgf1p</code> is SHA-1 by ' +
-      'definition — the URI means it — and the newer <code>rsa-oaep</code> ' +
-      'carries its digest in a child element and is deliberately not ' +
-      'offered, because a service provider that can read that one can do GCM ' +
-      'too and this list exists for the ones that cannot.');
+    admin.warn('<strong>Two of these are unsafe and are offered ' +
+      'anyway.</strong> The CBC ciphers are not authenticated — that is the ' +
+      'property CBC has, not a defect in this service — and what this ' +
+      'service does about it when READING is parse the result and refuse ' +
+      'anything that is not well-formed XML, which catches ordinary ' +
+      'corruption and is not integrity. <code>rsa-1_5</code> is ' +
+      'RSAES-PKCS1-v1_5, which Bleichenbacher\'s adaptive chosen-ciphertext ' +
+      'attack is against exactly. Both are here because a great many ' +
+      'deployed service providers accept nothing else, which is a fact about ' +
+      'the world that a client library is entitled to be tested against. ' +
+      'Nothing this service encrypts is a real secret. ' +
+      '<code>rsa-oaep-mgf1p</code> is SHA-1 by definition — the URI means it ' +
+      '— and the newer <code>rsa-oaep</code> carries its digest in a child ' +
+      'element and is deliberately not offered, because a service provider ' +
+      'that can read that one can do GCM too and this list exists for the ' +
+      'ones that cannot.');
 
   html += '<h3>Kerberos encryption types</h3>' +
     '<table><thead><tr><th class="n">etype</th><th>Name</th>' +
@@ -2611,13 +2686,13 @@ function renderEncryption(report) {
         '</code></td><td><span class="why">decode only</span></td></tr>';
     }).join('') + '</tbody></table>' +
     admin.note('<strong>The decode-only rows are named rather than left as ' +
-      'bare numbers, and that is the whole reason they are in the codec.</strong> ' +
-      'A packet capture or a KDC\'s advertised list containing one of them ' +
-      'renders honestly instead of showing an integer nobody can look up. ' +
-      'DES was removed from Windows Server 2025 and is not performed here ' +
-      'either. This table is read back out of the codec through its own ' +
-      '<code>etypeName()</code>, not copied — those modules are vendored and ' +
-      'cannot be edited to export a list.');
+      'bare numbers, and that is the whole reason they are in the ' +
+      'codec.</strong> A packet capture or a KDC\'s advertised list ' +
+      'containing one of them renders honestly instead of showing an integer ' +
+      'nobody can look up. DES was removed from Windows Server 2025 and is ' +
+      'not performed here either. This table is read back out of the codec ' +
+      'through its own <code>etypeName()</code>, not copied — those modules ' +
+      'are vendored and cannot be edited to export a list.');
 
   html += '<h3>TLS</h3>' + admin.note('<strong>' + prose(e.tls.what) +
     '</strong> The sockets: ' + chips(e.tls.sockets) + '.');
@@ -2648,9 +2723,11 @@ function renderPostQuantum(report) {
 
   html += '<h3>The post-quantum algorithms this service holds</h3>' +
     '<table><tbody>' +
-    '<tr><th class="n">ML-DSA (FIPS 204)</th><td>' + chips(pq.algorithms.mlDsa) +
+    '<tr><th class="n">ML-DSA (FIPS 204)</th><td>' +
+    chips(pq.algorithms.mlDsa) +
     '</td></tr>' +
-    '<tr><th class="n">SLH-DSA (FIPS 205)</th><td>' + chips(pq.algorithms.slhDsa) +
+    '<tr><th class="n">SLH-DSA (FIPS 205)</th><td>' +
+    chips(pq.algorithms.slhDsa) +
     '</td></tr>' +
     '<tr><th class="n">Key type</th><td><code>' + esc(pq.algorithms.keyType) +
     '</code></td></tr>' +
@@ -2666,7 +2743,8 @@ function renderPostQuantum(report) {
     }).join('') + '</tbody></table>' +
     admin.note('<strong>What the composites buy, and what the domain ' +
       'separator is for.</strong> ' + prose(pq.algorithms.what)) +
-    admin.note('<strong>Where the independence is, and where it is not.</strong> ' +
+    admin.note('<strong>Where the independence is, and where it is ' +
+               'not.</strong> ' +
       prose(pq.algorithms.independence));
 
   html += '<h3>Signatures, surface by surface</h3>' +
@@ -2693,15 +2771,15 @@ function renderPostQuantum(report) {
 
 function renderStandards(report) {
   log.debug("Entering renderStandards().");
-  let html = '<h2 id="standards">The higher-level standards</h2>' +
-    '<p class="lead">Knowing that this service signs with RSA-SHA256 does not ' +
+  let html = '<h2 id="standards">The higher-level standards</h2><p ' +
+    'class="lead">Knowing that this service signs with RSA-SHA256 does not ' +
     'say whether that signature is a JWS, an enveloped XMLDSIG, a detached ' +
     'signature over a query string or a <code>&lt;wsse:Security&gt;</code> ' +
     'header — four different documents with four different failure modes. ' +
     'This is that layer. <strong>Every coverage note starts ' +
     '<code>full</code>, <code>partial</code> or <code>mock</code></strong> ' +
-    'and says what is missing, which is the rule ' +
-    '<a href="/admin/sts-metadata">Service metadata</a> follows and which is ' +
+    'and says what is missing, which is the rule <a ' +
+    'href="/admin/sts-metadata">Service metadata</a> follows and which is ' +
     'worth more here: a page about cryptography that overstates what it ' +
     'implements is actively dangerous to somebody using it to learn.</p>';
 
@@ -2710,8 +2788,9 @@ function renderStandards(report) {
       '<table><tbody>' +
       '<tr><th class="n">Specifications</th><td>' + chips(row.specs) +
       '</td></tr>' +
-      '<tr><th class="n">Coverage</th><td>' + prose(row.coverage) + '</td></tr>' +
-      '<tr><th class="n">What it is here</th><td>' + prose(row.what) +
+      '<tr><th class="n">Coverage</th><td>' + prose(row.coverage) +
+      '</td></tr><tr><th ' +
+      'class="n">What it is here</th><td>' + prose(row.what) +
       '</td></tr>' +
       '</tbody></table>';
   }).join('');
@@ -2721,9 +2800,9 @@ function renderStandards(report) {
 
 function renderInner(report) {
   log.debug("Entering renderInner().");
-  let html = '<p class="lead">What this service does when it signs, verifies, ' +
-    'encrypts or decrypts something — for every identity service it ' +
-    'advertises, with the algorithms each one really uses and the ' +
+  let html = '<p class="lead">What this service does when it signs, ' +
+    'verifies, encrypts or decrypts something — for every identity service ' +
+    'it advertises, with the algorithms each one really uses and the ' +
     'higher-level envelope each is wrapped in. <strong>Every algorithm table ' +
     'below is read from the module that performs the algorithm</strong>, the ' +
     'way <a href="/admin/sts-metadata">Service metadata</a> reads its ' +
@@ -2812,7 +2891,8 @@ app.get('/admin/keys', function (req, res) {
   const report = keysJson(baseUrlOf(req));
   admin.respond(req, res, report, 'Key pairs', '/admin/keys',
                 renderKeyPairs(report));
-  log.debug("Leaving the key pairs endpoint. " + report.keys.length + " key(s).");
+  log.debug("Leaving the key pairs endpoint. " + report.keys.length +
+            " key(s).");
 });
 
 app.post('/admin/keys/export', function (req, res) {
@@ -3021,13 +3101,17 @@ const stsPki = require('../common/pki');
 // the key is still carrying the self-signed certificate it was born with. A
 // LEAF read (rule 3w): `pki.js` registers no route and this is a map lookup.
 function certifierOf(useCaseId, slot) {
+  log.debug("Entering certifierOf().");
   try {
     const held = stsPki.certificateFor(realms.currentId() === 'default' ? ''
                                          : realms.currentId(),
                                        useCaseId, slot);
+    log.debug("Leaving certifierOf().");
     return held ? { subject: held.subject, issuedBy: held.useCase,
                     notAfter: held.notAfter, pinned: !!held.pinned } : null;
   } catch (e) {
+    log.debug("Caught in certifierOf(): " + ((e && e.message) || e));
+    log.debug("Leaving certifierOf().");
     // No hierarchy in this process. The key reports none, which is what this
     // service did before one existed.
     return null;
@@ -3055,9 +3139,9 @@ function keyInventory() {
     formats: ['pem', 'der', 'jwk', 'pkcs12'],
     usedFor: [
       'Every access token and refresh token, and the default ID Token (RS256).',
-      'Every XML document this service mints — SAML 2.0 and 1.1 assertions and ' +
-      'responses, WS-Federation, WS-Trust, per-service-provider metadata, and ' +
-      'the outbound federation AuthnRequest.',
+      'Every XML document this service mints — SAML 2.0 and 1.1 assertions ' +
+      'and responses, WS-Federation, WS-Trust, per-service-provider ' +
+      'metadata, and the outbound federation AuthnRequest.',
       'Decrypting a JWE or an EncryptedID sent to this service.',
       'Published at /oauth2/jwks and in every metadata document.'
     ]
@@ -3161,6 +3245,8 @@ function keyInventory() {
 // every key rather than for the two that needed it: a curve key that already
 // arrives as PKCS#8 comes out byte for byte the same.
 function toPkcs8(pem) {
+  log.debug("Entering toPkcs8().");
+  log.debug("Leaving toPkcs8().");
   return nodeCrypto.createPrivateKey(pem).export({ type: 'pkcs8',
                                                    format: 'pem' });
 }
@@ -3228,16 +3314,19 @@ function pemsFor(id) {
 // ---------------------------------------------------------------------------
 async function exportKey(id, format, password) {
   log.debug("Entering exportKey(). id=" + id + ", format=" + format);
-  const row = keyInventory().filter(function (one) { return one.id === id; })[0];
+  const row =
+      keyInventory().filter(function (one) { return one.id === id; })[0];
   if (!row) {
     log.debug("Leaving exportKey(). No such key.");
-    return refused('STS-ADMIN-0589', { ok: false, errors: ['There is no key called "' + id + '" in this ' +
-      'realm. The list on the page is what this process holds; a key named ' +
-      'here and not there is usually a realm switch away.'] });
+    return refused('STS-ADMIN-0589', { ok: false, errors: ['There is no key ' +
+        'called "' + id + '" ' +
+      'in this realm. The list on the page is what this process holds; a key ' +
+      'named here and not there is usually a realm switch away.'] });
   }
   if (!row.formats.length) {
     log.debug("Leaving exportKey(). Nothing to export.");
-    return refused('STS-ADMIN-0590', { ok: false, errors: [row.label + ' cannot be exported' +
+    return refused('STS-ADMIN-0590', { ok: false, errors: [row.label + ' ' +
+        'cannot be exported' +
       (row.generated === false
         ? ' because it has not been generated yet. The post-quantum keys are ' +
           'made on first use — fetch /oauth2/jwks in this realm and come back.'
@@ -3245,7 +3334,8 @@ async function exportKey(id, format, password) {
   }
   if (row.formats.indexOf(format) < 0) {
     log.debug("Leaving exportKey(). Unsupported format.");
-    return refused('STS-ADMIN-0591', { ok: false, errors: [row.label + ' cannot be exported as ' +
+    return refused('STS-ADMIN-0591', { ok: false, errors: [row.label + ' ' +
+        'cannot be exported as ' +
       format + '. It offers ' + row.formats.join(', ') + '.' +
       (format === 'pkcs12' && !row.hasCertificate
         ? ' PKCS#12 wraps a private key in a CERTIFICATE, and this service ' +
@@ -3262,8 +3352,10 @@ async function exportKey(id, format, password) {
       return k.alg === row.alg;
     })[0];
     if (!made) {
-      log.debug("Leaving exportKey(). The key vanished between the list and here.");
-      return refused('STS-ADMIN-0590', { ok: false, errors: [row.label + ' has not been generated yet.'] });
+      log.debug("Leaving exportKey(). The key vanished between the list and " +
+                "here.");
+      return refused('STS-ADMIN-0590', { ok: false, errors: [row.label + ' ' +
+          'has not been generated yet.'] });
     }
     // The PUBLIC half only. There is no interoperable private encoding for an
     // AKP key to hand over — RFC 9964 defines the public members and the seed
@@ -3275,15 +3367,17 @@ async function exportKey(id, format, password) {
     return { ok: true, publicOnly: true,
              files: [{ name: row.alg.toLowerCase() + '-public.jwk.json',
                        data: text, mime: 'application/jwk+json' }],
-             status: 'The PUBLIC half of ' + row.alg + ' as an AKP JWK. There ' +
-                     'is no interoperable private encoding for this key type ' +
-                     'to hand over, so the private half stays in the process.' };
+             status: 'The PUBLIC half of ' + row.alg + ' as an AKP JWK. ' +
+                     'There is no interoperable private encoding for this ' +
+                     'key type to hand over, so the private half stays in ' +
+                     'the process.' };
   }
 
   const pems = pemsFor(id);
   if (!pems) {
     log.debug("Leaving exportKey(). No PEM pair.");
-    return refused('STS-ADMIN-0592', { ok: false, errors: ['No key pair is available for ' + row.label +
+    return refused('STS-ADMIN-0592', { ok: false, errors: ['No key pair is ' +
+        'available for ' + row.label +
       ' in this realm.'] });
   }
   try {
@@ -3348,8 +3442,8 @@ function keysJson(base) {
                  'console goes on verifying against a live JWKS.'
                : 'Every key here is generated at start, lives only in memory ' +
                  'and dies with the process, and none of them protects ' +
-                 'anything — this service checks no password and validates no ' +
-                 'token it did not mint.')
+                 'anything — this service checks no password and validates ' +
+                 'no token it did not mint.')
   };
   log.debug("Leaving keysJson(). " + rows.length + " key(s).");
   return out;
@@ -3387,8 +3481,8 @@ function renderResidency(residency) {
     log.debug("Leaving renderResidency(). Not persisting.");
     return admin.note('<strong>Nothing here is held encrypted in memory, ' +
       'because nothing here is written down.</strong> This service generates ' +
-      'its signing key at start and keeps it for as long as it runs — there is ' +
-      'no ciphertext for a decrypted key to be purged back TO, so ' +
+      'its signing key at start and keeps it for as long as it runs — there ' +
+      'is no ciphertext for a decrypted key to be purged back TO, so ' +
       '<code>keys.plaintextRetention</code> means nothing in this ' +
       'configuration. It is the keystore that makes it apply, and ' +
       '<code>keys.source</code> is what turns that on.');
@@ -3396,22 +3490,23 @@ function renderResidency(residency) {
   const held = residency.plaintextHeld || [];
   const all = residency.realmsHeld || [];
   let html = '<h2 id="residency">How long a private key stays decrypted</h2>';
-  html += admin.note('<strong>What this process holds is the CIPHERTEXT.</strong> ' +
-    'A realm\'s signing key is decrypted when something signs with it and ' +
-    'dropped again — ' + esc(residency.note || '') + '. It narrows a WINDOW ' +
-    'and nothing more: the key-encryption key is resident too, so anybody who ' +
-    'can read this process\'s memory at a moment of their choosing can wait ' +
-    'for the next signature. What it takes away is the value of a SNAPSHOT — a ' +
-    'core dump, a swapped page, a debugger attached for a moment — of material ' +
-    'that used to sit here for weeks.');
+  html += admin.note('<strong>What this process holds is the ' +
+    'CIPHERTEXT.</strong> A realm\'s signing key is decrypted when something ' +
+    'signs with it and dropped again ' +
+    '— ' + esc(residency.note || '') + '. It narrows a WINDOW ' +
+    'and nothing more: the key-encryption key is resident too, so anybody ' +
+    'who can read this process\'s memory at a moment of their choosing can ' +
+    'wait for the next signature. What it takes away is the value of a ' +
+    'SNAPSHOT — a core dump, a swapped page, a debugger attached for a ' +
+    'moment — of material that used to sit here for weeks.');
   html += '<table><thead><tr><th class="n">Realm</th><th>Held</th>' +
     '<th>Decrypted right now</th></tr></thead><tbody>' +
     (all.length
       ? all.map(function (id) {
           const open = held.indexOf(id) >= 0;
-          return '<tr><td class="n"><code>' + esc(id || 'default') + '</code></td>' +
-            '<td>encrypted, AES-256-GCM</td>' +
-            '<td>' + (open ? '<strong>yes</strong>'
+          return '<tr><td class="n"><code>' + esc(id || 'default') +
+            '</code></td><td>encrypted, ' +
+            'AES-256-GCM</td><td>' + (open ? '<strong>yes</strong>'
                            : '<span class="why">no</span>') + '</td></tr>';
         }).join('')
       : '<tr><td colspan="3"><span class="why">no realm has stored key ' +
@@ -3419,10 +3514,10 @@ function renderResidency(residency) {
     '</tbody></table>';
   html += admin.note('A realm reads <strong>no</strong> here until something ' +
     'signs for it, and goes back to <strong>no</strong> on its own. Reading ' +
-    'this page does not decrypt anything: the key list above is built from the ' +
-    'PUBLIC half — certificates, key identifiers, public JWKs — which the key ' +
-    'set holds in the clear precisely so that discovery and this console never ' +
-    'touch a private key. Exporting one does.');
+    'this page does not decrypt anything: the key list above is built from ' +
+    'the PUBLIC half — certificates, key identifiers, public JWKs — which ' +
+    'the key set holds in the clear precisely so that discovery and this ' +
+    'console never touch a private key. Exporting one does.');
   log.debug("Leaving renderResidency(). " + held.length + " decrypted.");
   return html;
 }
@@ -3430,9 +3525,9 @@ function renderResidency(residency) {
 function renderKeyPairs(report) {
   log.debug("Entering renderKeys().");
   const residency = report.residency || {};
-  let html = '<p class="lead">Every key pair this process holds, what each one ' +
-    'is used for, and a way to take it away. <strong>The signing keys are per ' +
-    'trust realm</strong> — this shows <code>' + esc(report.realm) +
+  let html = '<p class="lead">Every key pair this process holds, what each ' +
+    'one is used for, and a way to take it away. <strong>The signing keys ' +
+    'are per trust realm</strong> — this shows <code>' + esc(report.realm) +
     '</code> — and the TLS certificate belongs to the process.</p>';
 
   // **THE OLD WARNING SAID THESE KEYS DIE WITH THE PROCESS, FULL STOP.** That
@@ -3440,31 +3535,31 @@ function renderKeyPairs(report) {
   // the sentence that makes handing a private key to a browser defensible — so
   // leaving it standing on a service whose signing key now OUTLIVES the process
   // would be this console's most consequential untruth. It is computed.
-  html += admin.warn('<strong>THIS PAGE HANDS OVER PRIVATE KEYS, and it is the ' +
-    'only one here that does.</strong> <a href="/admin/crypto-metadata">' +
-    'Cryptography</a> next door publishes key types, identifiers and ' +
-    'fingerprints and deliberately no key material at all; this one is the ' +
-    'other half. ' +
+  html += admin.warn('<strong>THIS PAGE HANDS OVER PRIVATE KEYS, and it is ' +
+    'the only one here that does.</strong> <a ' +
+    'href="/admin/crypto-metadata">Cryptography</a> next door publishes key ' +
+    'types, identifiers and fingerprints and deliberately no key material at ' +
+    'all; this one is the other half. ' +
     (residency.persisting
       ? '<strong>This realm\'s signing keys are PERSISTED</strong>, so a key ' +
-        'exported here is not a throwaway: it goes on signing after a restart, ' +
-        'and anything signed with a copy of it goes on verifying against this ' +
-        'service\'s live JWKS. The TLS and SPIFFE keys below are still per ' +
-        'start. '
-      : 'It is defensible because of what these keys are: generated at start, ' +
-        'held only in memory, dead when the process exits, and protecting ' +
-        'nothing — this service checks no password and validates no token it ' +
-        'did not mint. ') +
+        'exported here is not a throwaway: it goes on signing after a ' +
+        'restart, and anything signed with a copy of it goes on verifying ' +
+        'against this service\'s live JWKS. The TLS and SPIFFE keys below ' +
+        'are still per start. '
+      : 'It is defensible because of what these keys are: generated at ' +
+        'start, held only in memory, dead when the process exits, and ' +
+        'protecting nothing — this service checks no password and validates ' +
+        'no token it did not mint. ') +
     'It needs <strong>Admin Write</strong>, which is a stronger requirement ' +
     'than any other read on this console, because here reading IS taking.');
 
   html += renderResidency(residency);
 
-  html += admin.note('<strong>The exporter is the debugger\'s own, vendored.</strong> ' +
-    '<code>common/vendored/key_material.js</code> does the four formats with a ' +
-    'password — PEM, DER, JWK and PKCS#12 — and is the same code the ' +
-    'debugger\'s PKI page has been exercised through. A second exporter beside ' +
-    'it would be the worse copy.');
+  html += admin.note('<strong>The exporter is the debugger\'s own, ' +
+    'vendored.</strong> <code>common/vendored/key_material.js</code> does ' +
+    'the four formats with a password — PEM, DER, JWK and PKCS#12 — and is ' +
+    'the same code the debugger\'s PKI page has been exercised through. A ' +
+    'second exporter beside it would be the worse copy.');
 
   html += '<h2 id="keys">The key pairs</h2>' +
     '<table><thead><tr><th class="n">Key</th><th>Type</th><th>Identifier</th>' +
@@ -3476,12 +3571,13 @@ function renderKeyPairs(report) {
         '</code>' + (row.crv ? ' <code>' + esc(row.crv) + '</code>' : '') +
         (row.bits ? ' ' + esc(row.bits) + '-bit' : '') + '</td>' +
         '<td>' + (row.kid ? '<code>' + esc(row.kid) + '</code>'
-                  : (row.fingerprint ? '<code>' + esc(row.fingerprint) + '</code>'
+                  : (row.fingerprint ?
+                     '<code>' + esc(row.fingerprint) + '</code>'
                      : '<span class="why">' +
                        (row.generated === false ? 'not made yet' : 'none') +
                        '</span>')) + '</td>' +
-        '<td>' + (row.scope === 'realm' ? 'this realm' : 'the process') + '</td>' +
-        '<td>' + (row.formats.length ? chips(row.formats)
+        '<td>' + (row.scope === 'realm' ? 'this realm' : 'the process') +
+        '</td><td>' + (row.formats.length ? chips(row.formats)
                   : '<span class="why">not exportable</span>') + '</td></tr>';
     }).join('') + '</tbody></table>';
 
@@ -3512,14 +3608,17 @@ function renderKeyPairs(report) {
 // a page saying "your key is ready" would be a page with nothing on it.
 // ---------------------------------------------------------------------------
 function keyExportForm(row) {
+  log.debug("Entering keyExportForm().");
   if (!row.formats.length) {
+    log.debug("Leaving keyExportForm().");
     return admin.note('<strong>Not exportable.</strong> ' +
       (row.generated === false
-        ? 'The post-quantum keys are made on FIRST USE — one SLH-DSA keygen is ' +
-          'most of two seconds — so this page deliberately does not make them. ' +
-          'Fetch <code>/oauth2/jwks</code> in this realm and come back.'
+        ? 'The post-quantum keys are made on FIRST USE — one SLH-DSA keygen ' +
+          'is most of two seconds — so this page deliberately does not make ' +
+          'them. Fetch <code>/oauth2/jwks</code> in this realm and come back.'
         : 'There is no interoperable encoding for this key to hand over.'));
   }
+  log.debug("Leaving keyExportForm().");
   return '<form method="post" action="/admin/keys/export" class="formrow">' +
     '<input type="hidden" name="key" value="' + esc(row.id) + '">' +
     '<label for="fmt-' + esc(row.id) + '">Keystore format</label> ' +
@@ -3530,8 +3629,8 @@ function keyExportForm(row) {
     }).join('') + '</select> ' +
     '<label for="pw-' + esc(row.id) + '">Password</label> ' +
     '<input type="password" id="pw-' + esc(row.id) + '" name="password" ' +
-    'placeholder="required for PKCS#12; encrypts the private half of the rest">' +
-    ' <button type="submit">Download</button>' +
+    'placeholder="required for PKCS#12; encrypts the private half of the ' +
+    'rest"> <button type="submit">Download</button>' +
     (row.kty === 'AKP'
       ? admin.note('<strong>The PUBLIC half only.</strong> RFC 9964 defines ' +
         'the public members of an AKP key and the private seed handling is ' +
@@ -3539,8 +3638,8 @@ function keyExportForm(row) {
         'over. A file no library reads would be worse than saying so.')
       : admin.note('<strong>A password is REQUIRED for PKCS#12 and optional ' +
         'for the other three</strong>, where it encrypts the private half ' +
-        '(PKCS#8 for PEM and DER, PBES2 as a .jwe for JWK). Leave it empty and ' +
-        'the private key comes out in the clear, which is usually what you ' +
-        'want from a mock and is never what you want anywhere else.')) +
+        '(PKCS#8 for PEM and DER, PBES2 as a .jwe for JWK). Leave it empty ' +
+        'and the private key comes out in the clear, which is usually what ' +
+        'you want from a mock and is never what you want anywhere else.')) +
     '</form>';
 }

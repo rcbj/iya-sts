@@ -142,8 +142,8 @@ STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}"
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
 # wants is decided by the level, because the candidates differ in nothing else.
 # env/docker-tests.js exists for this stack and names it in its own header —
-# env/local.js with the log level kept at debug, which is what a failing
-# protocol job is read from — and env/test.js is the same file at `info`.
+# env/local.js with a comment of its own — and env/test.js is the same file.
+# All three are at `info` since 2026-09-12; see THE SERVICE'S LOG LEVEL below.
 # Setting CONFIG_FILE in the environment pins one and that block leaves it be.
 CONFIG_FILE="${CONFIG_FILE:-}"
 
@@ -306,6 +306,12 @@ preflight || exit 1
 # this default OFF rather than being half-overridden, because naming a file
 # says something more specific than a level does and a service logging at
 # `info` out of a file that says `debug` is nobody's idea of an answer.
+#
+# EVERY APPCONFIG FILE IN env/ IS AT `info` SINCE 2026-09-12, env/local.js and
+# env/docker-tests.js included, because every function now logs its entry and
+# exit at debug. So the file this block picks no longer changes the level: a
+# trace or debug run raises what STS_LOG_LEVEL reaches, and the vendored
+# modules stay at info unless CONFIG_FILE names a file that says otherwise.
 #
 # The branches rather than a `:-`: an EMPTY STS_LOG_LEVEL is not a harmless
 # default, because bunyan throws `unknown level name: ""` from config.js while

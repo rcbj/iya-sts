@@ -928,6 +928,20 @@ constant-time path, and is the shape the other two doors have always had.
 `normalizeDn` is absent from the profile; what is left at the top is idle time,
 GC, key generation and scimmy's own coercion.
 
+### AND A SEVENTH: `allApplications()` WAS STILL A WALK OF THE REALM (2026-09-12)
+
+The sixth section moved `allPolicies()`, `allRoles()` and `applicationEntry()`'s
+fallback onto `entriesUnder()` and left `allApplications()` and
+`applicationCount()` walking every entry in the realm. That was cheap while
+nothing asked for the whole registry per request. Then `ssf/ssf_streams.js`
+started asking — once per event, per stream, to find a stream owner named by an
+`ssfReceiverId` — and a SCIM create emits an event per person. A dispatched bulk
+load profiled with half a worker's CPU in `normalizeDn()` under
+`allApplications()`, thousands of barrier timeouts behind it, and creates
+slowing from 11/s to 5/s as the directory filled. Both use the cached listing
+now. Measured in process with ~2,000 people: 200 `applications.list()` calls in
+51 ms against 518 ms for the walk.
+
 ### The mutation record, and two mutants that were equivalent rather than missed
 
 Caught: the group-index stamp applied to group writes as well (6 assertions

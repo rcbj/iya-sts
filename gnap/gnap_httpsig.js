@@ -3,8 +3,8 @@
 // File: gnap_httpsig.js
 //
 // ---------------------------------------------------------------------------
-// HTTP MESSAGE SIGNATURES (RFC 9421) AND CONTENT-DIGEST (RFC 9530): THE `httpsig`
-// PROOF METHOD OF GNAP (RFC 9635 SECTION 7.3.1).
+// HTTP MESSAGE SIGNATURES (RFC 9421) AND CONTENT-DIGEST (RFC 9530): THE
+// `httpsig` PROOF METHOD OF GNAP (RFC 9635 SECTION 7.3.1).
 //
 // GNAP binds a client instance to a KEY rather than to a secret, and the
 // commonest way it proves possession of that key is to sign the HTTP request
@@ -12,8 +12,8 @@
 // a token is bound — the Authorization header, with `tag="gnap"` and a
 // `created` timestamp the verifier checks. This module is the whole of that
 // mechanism and none of the GNAP policy around it: it builds a signature base,
-// signs one, parses the two fields a signature travels in, and verifies — and it
-// is told by its caller which components are required, which tag, how old a
+// signs one, parses the two fields a signature travels in, and verifies — and
+// it is told by its caller which components are required, which tag, how old a
 // signature may be and which key a `keyid` names. `gnap/gnap_proof.js` is where
 // those answers are decided.
 //
@@ -122,12 +122,16 @@ const sf = require('./gnap_sf');
 // else — and marked, per the subsystem contract.
 // ---------------------------------------------------------------------------
 function refuse(code, why) {
+  log.debug("Entering refuse().");
   const result = { ok: false, errorCode: code, why: why };
   log.warn(errorCodes.tag(code) + why);
+  log.debug("Leaving refuse().");
   return errorCodes.mark(result, code);
 }
 
 function isRefusal(value) {
+  log.debug("Entering isRefusal().");
+  log.debug("Leaving isRefusal().");
   return !!value && value.ok === false;
 }
 
@@ -172,15 +176,17 @@ function bodyBytes(body) {
 function contentDigest(body, algorithm) {
   log.debug("Entering contentDigest().");
   const names = Array.isArray(algorithm) ? algorithm
-                                         : [algorithm === undefined ? 'sha-256' : algorithm];
+                                         : [algorithm === undefined ?
+                                            'sha-256' : algorithm];
   const bytes = bodyBytes(body);
   const dictionary = [];
   for (let k = 0; k < names.length; k++) {
     const hash = DIGEST_ALGORITHMS[names[k]];
     if (!hash) {
-      const why = 'Content-Digest cannot be computed with "' + String(names[k]) +
-                  '": only sha-256 and sha-512, the two Active algorithms of the ' +
-                  'RFC 9530 registry, are supported.';
+      const why = 'Content-Digest cannot be computed with "' +
+                  String(names[k]) +
+                  '": only sha-256 and sha-512, the two Active algorithms of ' +
+                  'the RFC 9530 registry, are supported.';
       log.warn(errorCodes.tag('STS-GNAP-0200') + why);
       const err = new Error(why);
       err.errorCode = 'STS-GNAP-0200';
@@ -209,19 +215,22 @@ function verifyContentDigest(headerValue, body, options) {
     ? options.accepted : ['sha-256', 'sha-512'];
   for (let k = 0; k < accepted.length; k++) {
     if (!DIGEST_ALGORITHMS[accepted[k]]) {
-      log.debug("Leaving verifyContentDigest(). Unsupported accepted algorithm.");
+      log.debug("Leaving verifyContentDigest(). Unsupported accepted " +
+                "algorithm.");
       return refuse('STS-GNAP-0200',
-                    'The verifier was configured to accept the Content-Digest ' +
-                    'algorithm "' + String(accepted[k]) + '", which is not supported; ' +
-                    'only sha-256 and sha-512 are.');
+                    'The verifier was configured to accept the ' +
+                    'Content-Digest algorithm ' +
+                    '"' + String(accepted[k]) + '", which is not ' +
+                    'supported; only sha-256 and sha-512 are.');
     }
   }
-  const text = Array.isArray(headerValue) ? headerValue.join(', ') : headerValue;
+  const text = Array.isArray(headerValue) ? headerValue.join(', ') :
+               headerValue;
   if (typeof text !== 'string' || text.trim() === '') {
     log.debug("Leaving verifyContentDigest(). Absent.");
     return refuse('STS-GNAP-0201',
-                  'The message has no Content-Digest field to validate against its ' +
-                  'content (RFC 9530 section 2).');
+                  'The message has no Content-Digest field to validate ' +
+                  'against its content (RFC 9530 section 2).');
   }
   let dictionary;
   try {
@@ -229,7 +238,8 @@ function verifyContentDigest(headerValue, body, options) {
   } catch (e) {
     log.debug("Leaving verifyContentDigest(). Malformed.");
     return refuse('STS-GNAP-0202',
-                  'The Content-Digest field is not a Structured Field Dictionary: ' +
+                  'The Content-Digest field is not a Structured Field ' +
+                  'Dictionary: ' +
                   e.message);
   }
   const bytes = bodyBytes(body);
@@ -247,17 +257,19 @@ function verifyContentDigest(headerValue, body, options) {
       log.debug("Leaving verifyContentDigest(). Not a byte sequence.");
       return refuse('STS-GNAP-0203',
                     'The Content-Digest member "' + name + '" is a ' +
-                    (member ? member.type : 'nothing') + ', not the Byte Sequence ' +
-                    'RFC 9530 section 2 requires.');
+                    (member ? member.type : 'nothing') + ', not the Byte ' +
+                    'Sequence RFC 9530 section 2 requires.');
     }
-    const expected = nodeCrypto.createHash(DIGEST_ALGORITHMS[name]).update(bytes).digest();
+    const expected = nodeCrypto.createHash(DIGEST_ALGORITHMS[name])
+                               .update(bytes)
+                               .digest();
     if (expected.length !== member.value.length ||
         !nodeCrypto.timingSafeEqual(expected, member.value)) {
       log.debug("Leaving verifyContentDigest(). Mismatch.");
       return refuse('STS-GNAP-0204',
-                    'The Content-Digest member "' + name + '" does not match the ' +
-                    'content: the body was changed, or the digest was computed over ' +
-                    'something other than the bytes sent.');
+                    'The Content-Digest member "' + name + '" does not match ' +
+                    'the content: the body was changed, or the digest was ' +
+                    'computed over something other than the bytes sent.');
     }
     matched.push(name);
   }
@@ -266,7 +278,8 @@ function verifyContentDigest(headerValue, body, options) {
     return refuse('STS-GNAP-0205',
                   'The Content-Digest field carries no digest in an accepted ' +
                   'algorithm (' + accepted.join(', ') + '); it carries ' +
-                  (dictionary.length ? dictionary.map(function (p) { return p[0]; }).join(', ')
+                  (dictionary.length ?
+                   dictionary.map(function (p) { return p[0]; }).join(', ')
                                      : 'no members') + '.');
   }
   log.debug("Leaving verifyContentDigest(). " + matched.join(', '));
@@ -323,7 +336,8 @@ function bareItemOf(value) {
   } else if (Buffer.isBuffer(value)) {
     bare = { type: 'bytes', value: value };
   } else if (typeof value === 'number') {
-    bare = { type: Number.isInteger(value) ? 'integer' : 'decimal', value: value };
+    bare = { type: Number.isInteger(value) ? 'integer' : 'decimal',
+             value: value };
   } else if (typeof value === 'string') {
     bare = { type: 'string', value: value };
   }
@@ -342,7 +356,8 @@ function paramsFrom(input) {
     log.debug("Leaving paramsFrom(). None.");
     return [];
   }
-  const pairs = Array.isArray(input) ? input : Object.keys(input).map(function (key) {
+  const pairs = Array.isArray(input) ? input :
+                Object.keys(input).map(function (key) {
     return [key, input[key]];
   });
   const out = [];
@@ -359,8 +374,8 @@ function paramsFrom(input) {
     sf.serializeKey(pair[0]);
     const bare = bareItemOf(pair[1]);
     if (!bare) {
-      throw new Error('the parameter "' + pair[0] + '" has a value that is not a ' +
-                      'Structured Field bare item');
+      throw new Error('the parameter "' + pair[0] + '" has a value that is ' +
+                      'not a Structured Field bare item');
     }
     sf.serializeBareItem(bare);
     let at = -1;
@@ -398,30 +413,37 @@ function componentItem(component) {
       item = sf.parseItem(component);
     } else if (typeof component === 'string') {
       item = { type: 'string', value: component, params: [] };
-    } else if (component && typeof component === 'object' && component.type === 'string') {
-      item = { type: 'string', value: component.value, params: paramsFrom(component.params) };
-    } else if (component && typeof component === 'object' && typeof component.name === 'string') {
-      item = { type: 'string', value: component.name, params: paramsFrom(component.params) };
+    } else if (component && typeof component === 'object' &&
+               component.type === 'string') {
+      item = { type: 'string', value: component.value,
+               params: paramsFrom(component.params) };
+    } else if (component && typeof component === 'object' &&
+               typeof component.name === 'string') {
+      item = { type: 'string', value: component.name,
+               params: paramsFrom(component.params) };
     } else {
-      throw new Error('it is not a name, a serialized identifier or a {name, params} object');
+      throw new Error('it is not a name, a serialized identifier or a {name, ' +
+                      'params} object');
     }
     if (item.type !== 'string') {
-      throw new Error('a component name is an sf-string (RFC 9421 section 2.5), ' +
-                      'and this is a ' + item.type);
+      throw new Error('a component name is an sf-string (RFC 9421 section ' +
+                      '2.5), and this is a ' + item.type);
     }
     sf.serializeItem(item);
   } catch (e) {
     log.debug("Leaving componentItem(). Malformed.");
     return refuse('STS-GNAP-0206',
-                  'A covered component identifier is malformed: ' + e.message + '.');
+                  'A covered component identifier is malformed: ' + e.message +
+                  '.');
   }
   const name = item.value;
   const fieldName = /^[!#$%&'*+\-.^_`|~0-9a-z]+$/;
   if (!(name[0] === '@' && name.length > 1) && !fieldName.test(name)) {
     log.debug("Leaving componentItem(). Bad name.");
     return refuse('STS-GNAP-0206',
-                  'The component name "' + name + '" is neither a derived component ' +
-                  'name nor a lowercased HTTP field name (RFC 9421 sections 2.1 and 2.2).');
+                  'The component name "' + name + '" is neither a derived ' +
+                  'component name nor a lowercased HTTP field name (RFC 9421 ' +
+                  'sections 2.1 and 2.2).');
   }
   log.debug("Leaving componentItem(). " + name);
   return { ok: true, item: item };
@@ -431,9 +453,11 @@ function componentItem(component) {
 // equal AS A SET — section 2: `"foo";bar;baz` and `"foo";baz;bar` "cannot be in
 // the same message".
 function identityOf(item) {
+  log.debug("Entering identityOf().");
   const params = (item.params || []).map(function (pair) {
     return sf.serializeParams([pair]);
   }).sort();
+  log.debug("Leaving identityOf().");
   return JSON.stringify([item.value, params]);
 }
 
@@ -467,6 +491,8 @@ function fieldLines(message, name) {
 // Section 2.1 steps 2 and 3: strip the ends, and replace obsolete line folding
 // (OWS CRLF RWS, RFC 9112 section 5.2) with a single space.
 function normalizeLine(line) {
+  log.debug("Entering normalizeLine().");
+  log.debug("Leaving normalizeLine().");
   return line.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, '')
              .replace(/[ \t]*\r?\n[ \t]+/g, ' ');
 }
@@ -528,7 +554,8 @@ function percentDecode(text) {
   for (let k = 0; k < bytes.length; k++) {
     const b = bytes[k];
     if (b === 0x25 && k + 2 < bytes.length &&
-        /^[0-9A-Fa-f]{2}$/.test(String.fromCharCode(bytes[k + 1], bytes[k + 2]))) {
+        /^[0-9A-Fa-f]{2}$/.test(String.fromCharCode(bytes[k + 1],
+                                                    bytes[k + 2]))) {
       out.push(parseInt(String.fromCharCode(bytes[k + 1], bytes[k + 2]), 16));
       k += 2;
     } else {
@@ -582,33 +609,38 @@ function checkParams(name, params, allowed) {
     if (allowed.indexOf(key) < 0) {
       log.debug("Leaving checkParams(). Not understood.");
       return refuse('STS-GNAP-0207',
-                    'The parameter "' + key + '" is not understood on the component "' +
+                    'The parameter "' + key + '" is not understood on the ' +
+                                              'component "' +
                     name + '" (RFC 9421 section 2.5 step 2.5).');
     }
-    const isFlag = key === 'sf' || key === 'bs' || key === 'req' || key === 'tr';
+    const isFlag = key === 'sf' || key === 'bs' || key === 'req' ||
+                   key === 'tr';
     if (isFlag && !(value.type === 'boolean' && value.value === true)) {
       // A false flag would make `"x";sf=?0` a second identifier for the value
       // `"x"` already names — two identifiers, one value, and a signature over
       // one standing for the other.
       log.debug("Leaving checkParams(). Flag not true.");
       return refuse('STS-GNAP-0207',
-                    'The parameter "' + key + '" on "' + name + '" is a Boolean flag and ' +
-                    'is only meaningful as true (RFC 9421 sections 2.1 and 6.5.2).');
+                    'The parameter "' + key + '" on "' + name + '" is a ' +
+                    'Boolean flag and is only meaningful as true (RFC 9421 ' +
+                    'sections 2.1 and 6.5.2).');
     }
     if ((key === 'key' || key === 'name') && value.type !== 'string') {
       log.debug("Leaving checkParams(). Not a string.");
       return refuse('STS-GNAP-0207',
-                    'The parameter "' + key + '" on "' + name + '" must be a String, ' +
-                    'not a ' + value.type + ' (RFC 9421 sections 2.1.2 and 2.2.8).');
+                    'The parameter "' + key + '" on "' + name + '" must be a ' +
+                    'String, not ' +
+                    'a ' + value.type + ' (RFC 9421 sections 2.1.2 and ' +
+                                            '2.2.8).');
     }
   }
   if (sf.param(params, 'req') !== undefined) {
     log.debug("Leaving checkParams(). req.");
     return refuse('STS-GNAP-0208',
-                  'The component "' + name + '" carries ;req, which names a value from ' +
-                  'the request a response answers (RFC 9421 section 2.4); this verifier ' +
-                  'has no related request, and a signature targeting a request MUST NOT ' +
-                  'use it.');
+                  'The component "' + name + '" carries ;req, which names a ' +
+                  'value from the request a response answers (RFC 9421 ' +
+                  'section 2.4); this verifier has no related request, and a ' +
+                  'signature targeting a request MUST NOT use it.');
   }
   log.debug("Leaving checkParams().");
   return null;
@@ -619,30 +651,34 @@ function derivedValue(message, name, params) {
   if (!Object.prototype.hasOwnProperty.call(DERIVED, name)) {
     log.debug("Leaving derivedValue(). Unknown.");
     return refuse('STS-GNAP-0209',
-                  'The derived component "' + name + '" is not one this verifier ' +
-                  'understands (RFC 9421 sections 2.2 and 2.5).');
+                  'The derived component "' + name + '" is not one this ' +
+                  'verifier understands (RFC 9421 sections 2.2 and 2.5).');
   }
-  const problem = checkParams(name, params, name === '@query-param' ? ['name', 'req'] : ['req']);
+  const problem = checkParams(name, params,
+                              name === '@query-param' ? ['name', 'req'] :
+                              ['req']);
   if (problem) {
     log.debug("Leaving derivedValue(). Parameters.");
     return problem;
   }
-  const isResponse = message && message.status !== undefined && message.status !== null;
+  const isResponse = message && message.status !== undefined &&
+                     message.status !== null;
   if ((DERIVED[name] === 'response') !== isResponse) {
     log.debug("Leaving derivedValue(). Wrong message kind.");
     return refuse('STS-GNAP-0210',
                   name === '@status'
-                    ? '@status MUST NOT be used in a request message (RFC 9421 section 2.2.9).'
-                    : 'The component "' + name + '" targets a request, and this message is ' +
-                      'a response (RFC 9421 section 2.2).');
+                    ? '@status MUST NOT be used in a request message (RFC ' +
+                      '9421 section 2.2.9).'
+                    : 'The component "' + name + '" targets a request, and ' +
+                      'this message is a response (RFC 9421 section 2.2).');
   }
   if (name === '@status') {
     const status = message.status;
     if (!Number.isInteger(status) || status < 100 || status > 999) {
       log.debug("Leaving derivedValue(). Bad status.");
       return refuse('STS-GNAP-0210',
-                    'The response status "' + String(status) + '" is not a three-digit ' +
-                    'integer (RFC 9421 section 2.2.9).');
+                    'The response status "' + String(status) + '" is not a ' +
+                    'three-digit integer (RFC 9421 section 2.2.9).');
     }
     log.debug("Leaving derivedValue(). @status");
     return { ok: true, value: String(status) };
@@ -660,8 +696,10 @@ function derivedValue(message, name, params) {
   if (!parts) {
     log.debug("Leaving derivedValue(). No target.");
     return refuse('STS-GNAP-0211',
-                  'The request has no absolute target URI to derive ' + name + ' from ' +
-                  '(RFC 9421 section 2.2.2); got ' + JSON.stringify(message && message.targetUri) + '.');
+                  'The request has no absolute target URI to derive ' + name +
+                  ' ' +
+                  'from (RFC 9421 section 2.2.2); ' +
+                  'got ' + JSON.stringify(message && message.targetUri) + '.');
   }
   let value;
   switch (name) {
@@ -690,7 +728,8 @@ function derivedValue(message, name, params) {
       if (wanted === undefined) {
         log.debug("Leaving derivedValue(). No name.");
         return refuse('STS-GNAP-0212',
-                      '@query-param requires a name parameter (RFC 9421 section 2.2.8).');
+                      '@query-param requires a name parameter (RFC 9421 ' +
+                      'section 2.2.8).');
       }
       const matches = queryParams(parts.query).filter(function (pair) {
         return pair[0] === wanted;
@@ -698,15 +737,17 @@ function derivedValue(message, name, params) {
       if (matches.length === 0) {
         log.debug("Leaving derivedValue(). Query parameter absent.");
         return refuse('STS-GNAP-0212',
-                      'The query parameter "' + wanted + '" named as a covered component ' +
-                      'does not occur in the target URI (RFC 9421 section 2.2.8).');
+                      'The query parameter "' + wanted + '" named as a ' +
+                      'covered component does not occur in the target URI ' +
+                      '(RFC 9421 section 2.2.8).');
       }
       if (matches.length > 1) {
         log.debug("Leaving derivedValue(). Query parameter repeated.");
         return refuse('STS-GNAP-0213',
-                      'The query parameter "' + wanted + '" occurs ' + matches.length +
-                      ' times; a parameter that occurs more than once MUST NOT be ' +
-                      'covered by name (RFC 9421 section 2.2.8).');
+                      'The query parameter "' + wanted + '" occurs ' +
+                      matches.length +
+                      ' times; a parameter that occurs more than once MUST ' +
+                      'NOT be covered by name (RFC 9421 section 2.2.8).');
       }
       value = matches[0][1];
     }
@@ -725,9 +766,9 @@ function fieldValue(message, name, params, options) {
   if (sf.param(params, 'tr') !== undefined) {
     log.debug("Leaving fieldValue(). Trailer.");
     return refuse('STS-GNAP-0214',
-                  'The component "' + name + '";tr names a trailer field, and trailers ' +
-                  'are not part of the message this verifier is given (RFC 9421 ' +
-                  'section 2.1.4).');
+                  'The component "' + name + '";tr names a trailer field, ' +
+                  'and trailers are not part of the message this verifier is ' +
+                  'given (RFC 9421 section 2.1.4).');
   }
   const bs = sf.param(params, 'bs') !== undefined;
   const key = sf.paramValue(params, 'key');
@@ -736,15 +777,15 @@ function fieldValue(message, name, params, options) {
     log.debug("Leaving fieldValue(). Incompatible.");
     return refuse('STS-GNAP-0215',
                   'The component "' + name + '" combines ;bs with ' +
-                  (strict ? ';sf' : ';key') + ', which are mutually incompatible (RFC 9421 ' +
-                  'sections 2.1 and 2.5 step 2.5).');
+                  (strict ? ';sf' : ';key') + ', which are mutually ' +
+                  'incompatible (RFC 9421 sections 2.1 and 2.5 step 2.5).');
   }
   const lines = fieldLines(message, name);
   if (!lines) {
     log.debug("Leaving fieldValue(). Absent.");
     return refuse('STS-GNAP-0216',
-                  'The HTTP field "' + name + '" is a covered component and is not present ' +
-                  'in the message (RFC 9421 section 2.5).');
+                  'The HTTP field "' + name + '" is a covered component and ' +
+                  'is not present in the message (RFC 9421 section 2.5).');
   }
   const normalized = lines.map(normalizeLine);
   if (bs) {
@@ -752,7 +793,8 @@ function fieldValue(message, name, params, options) {
     return {
       ok: true,
       value: sf.serializeList(normalized.map(function (line) {
-        return { type: 'bytes', value: Buffer.from(line, 'latin1'), params: [] };
+        return { type: 'bytes', value: Buffer.from(line, 'latin1'),
+                 params: [] };
       }))
     };
   }
@@ -761,14 +803,18 @@ function fieldValue(message, name, params, options) {
     log.debug("Leaving fieldValue(). Plain.");
     return { ok: true, value: combined };
   }
-  const types = Object.assign({}, KNOWN_FIELD_TYPES, (options && options.fieldTypes) || {});
+  const types = Object.assign({}, KNOWN_FIELD_TYPES,
+                              (options && options.fieldTypes) || {});
   const type = types[name];
   if (!type || (key !== undefined && type !== 'dictionary')) {
     log.debug("Leaving fieldValue(). Type unknown.");
     return refuse('STS-GNAP-0217',
-                  'The component "' + name + '" asks for ' + (key !== undefined ? ';key' : ';sf') +
-                  ', and "' + name + '" is ' + (type ? 'a Structured Field ' + type +
-                  ', not a Dictionary' : 'not a Structured Field type this verifier knows') +
+                  'The component "' + name + '" asks for ' +
+                  (key !== undefined ? ';key' : ';sf') +
+                  ', and "' + name + '" is ' + (type ?
+                                                'a Structured Field ' + type +
+                  ', not a Dictionary' : 'not a Structured Field type this ' +
+                                         'verifier knows') +
                   ' (RFC 9421 sections 2.1.1 and 2.1.2).');
   }
   let value;
@@ -778,8 +824,9 @@ function fieldValue(message, name, params, options) {
       if (member === undefined) {
         log.debug("Leaving fieldValue(). Key absent.");
         return refuse('STS-GNAP-0218',
-                      'The Dictionary field "' + name + '" has no member "' + key + '", which ' +
-                      'is a covered component (RFC 9421 section 2.1.2).');
+                      'The Dictionary field "' + name + '" has no member "' +
+                      key + '", ' +
+                      'which is a covered component (RFC 9421 section 2.1.2).');
       }
       value = member.type === 'innerList' ? sf.serializeInnerList(member)
                                           : sf.serializeItem(member);
@@ -793,7 +840,8 @@ function fieldValue(message, name, params, options) {
   } catch (e) {
     log.debug("Leaving fieldValue(). Malformed.");
     return refuse('STS-GNAP-0219',
-                  'The field "' + name + '" does not parse as a Structured Field ' + type +
+                  'The field "' + name + '" does not parse as a Structured ' +
+                                         'Field ' + type +
                   ': ' + e.message);
   }
   log.debug("Leaving fieldValue(). Strict.");
@@ -814,27 +862,31 @@ function componentValue(message, component, options) {
   if (name === '@signature-params') {
     log.debug("Leaving componentValue(). @signature-params.");
     return refuse('STS-GNAP-0220',
-                  '@signature-params MUST NOT be listed among the covered components; ' +
-                  'it is always the last line of the signature base (RFC 9421 section 2.3).');
+                  '@signature-params MUST NOT be listed among the covered ' +
+                  'components; it is always the last line of the signature ' +
+                  'base (RFC 9421 section 2.3).');
   }
   const result = name[0] === '@' ? derivedValue(message, name, item.params)
-                                 : fieldValue(message, name, item.params, options);
+                                 : fieldValue(message, name, item.params,
+                                              options);
   if (isRefusal(result)) {
     log.debug("Leaving componentValue(). Refused.");
     return result;
   }
-  // Section 2: a component value MUST NOT contain a newline; section 2.5 step 4:
-  // the base is ASCII. Both are checked on the VALUE, so the refusal can name the
-  // component that broke them.
+  // Section 2: a component value MUST NOT contain a newline; section 2.5 step
+  // 4: the base is ASCII. Both are checked on the VALUE, so the refusal can
+  // name the component that broke them.
   if (/[\r\n]/.test(result.value) || /[^\x20-\x7e\t]/.test(result.value)) {
     log.debug("Leaving componentValue(). Not printable ASCII.");
     return refuse('STS-GNAP-0221',
-                  'The value of the component "' + name + '" contains a newline or a ' +
-                  'character outside ASCII, which a signature base may not (RFC 9421 ' +
-                  'sections 2 and 2.5 step 4); ;bs exists for such a field.');
+                  'The value of the component "' + name + '" contains a ' +
+                  'newline or a character outside ASCII, which a signature ' +
+                  'base may not (RFC 9421 sections 2 and 2.5 step 4); ;bs ' +
+                  'exists for such a field.');
   }
   log.debug("Leaving componentValue().");
-  return { ok: true, value: result.value, identifier: sf.serializeItem(item), item: item };
+  return { ok: true, value: result.value, identifier: sf.serializeItem(item),
+           item: item };
 }
 
 // ===========================================================================
@@ -863,14 +915,15 @@ function checkSignatureParams(params) {
       log.debug("Leaving checkSignatureParams(). Wrong type.");
       return refuse('STS-GNAP-0222',
                     'The signature parameter "' + params[k][0] + '" must be ' +
-                    (wanted === 'integer' ? 'an Integer' : 'a String') + ', not a ' +
+                    (wanted === 'integer' ? 'an Integer' : 'a String') + ', ' +
+                        'not a ' +
                     params[k][1].type + ' (RFC 9421 section 2.3).');
     }
     if (wanted === 'integer' && params[k][1].value < 0) {
       log.debug("Leaving checkSignatureParams(). Negative time.");
       return refuse('STS-GNAP-0222',
-                    'The signature parameter "' + params[k][0] + '" is a negative UNIX ' +
-                    'timestamp (RFC 9421 section 2.3).');
+                    'The signature parameter "' + params[k][0] + '" is a ' +
+                    'negative UNIX timestamp (RFC 9421 section 2.3).');
     }
   }
   log.debug("Leaving checkSignatureParams().");
@@ -903,7 +956,8 @@ function signatureBase(message, covered, signatureParams, options) {
   } catch (e) {
     log.debug("Leaving signatureBase(). Parameters.");
     return refuse('STS-GNAP-0222',
-                  'The signature parameters cannot be serialized: ' + e.message + '.');
+                  'The signature parameters cannot be serialized: ' +
+                  e.message + '.');
   }
   const paramProblem = checkSignatureParams(params);
   if (paramProblem) {
@@ -923,9 +977,10 @@ function signatureBase(message, covered, signatureParams, options) {
     if (seen[identity]) {
       log.debug("Leaving signatureBase(). Duplicate.");
       return refuse('STS-GNAP-0223',
-                    'The component ' + sf.serializeItem(normalized.item) + ' is covered ' +
-                    'more than once; each component identifier MUST occur only once ' +
-                    '(RFC 9421 sections 2 and 2.5 step 2.1).');
+                    'The component ' + sf.serializeItem(normalized.item) + ' ' +
+                    'is covered more than once; each component identifier ' +
+                    'MUST occur only once (RFC 9421 sections 2 and 2.5 step ' +
+                    '2.1).');
     }
     seen[identity] = true;
     const cv = componentValue(message, normalized.item, options);
@@ -936,7 +991,8 @@ function signatureBase(message, covered, signatureParams, options) {
     items.push(normalized.item);
     lines.push(cv.identifier + ': ' + cv.value);
   }
-  const serializedParams = sf.serializeInnerList({ type: 'innerList', value: items, params: params });
+  const serializedParams = sf.serializeInnerList(
+      { type: 'innerList', value: items, params: params });
   lines.push('"@signature-params": ' + serializedParams);
   log.debug("Leaving signatureBase(). " + items.length + " component(s).");
   return {
@@ -953,29 +1009,37 @@ function signatureBase(message, covered, signatureParams, options) {
 // ===========================================================================
 const ALGORITHMS = {
   // RFC 9421 section 3.3, the "HTTP Signature Algorithms" registry.
-  'rsa-pss-sha512': { registry: 'http', kind: 'rsa-pss', hash: 'sha512', saltLength: 64,
+  'rsa-pss-sha512': { registry: 'http', kind: 'rsa-pss', hash: 'sha512',
+                      saltLength: 64,
                       spec: 'RFC 9421 section 3.3.1' },
   'rsa-v1_5-sha256': { registry: 'http', kind: 'rsa-v1_5', hash: 'sha256',
                        spec: 'RFC 9421 section 3.3.2' },
-  'hmac-sha256': { registry: 'http', kind: 'hmac', hash: 'sha256', minKeyBytes: 32,
+  'hmac-sha256': { registry: 'http', kind: 'hmac', hash: 'sha256',
+                   minKeyBytes: 32,
                    spec: 'RFC 9421 section 3.3.3' },
-  'ecdsa-p256-sha256': { registry: 'http', kind: 'ecdsa', hash: 'sha256', curve: 'prime256v1',
+  'ecdsa-p256-sha256': { registry: 'http', kind: 'ecdsa', hash: 'sha256',
+                         curve: 'prime256v1',
                          coordinateBytes: 32, spec: 'RFC 9421 section 3.3.4' },
-  'ecdsa-p384-sha384': { registry: 'http', kind: 'ecdsa', hash: 'sha384', curve: 'secp384r1',
+  'ecdsa-p384-sha384': { registry: 'http', kind: 'ecdsa', hash: 'sha384',
+                         curve: 'secp384r1',
                          coordinateBytes: 48, spec: 'RFC 9421 section 3.3.5' },
   'ed25519': { registry: 'http', kind: 'eddsa', curves: ['ed25519'],
                spec: 'RFC 9421 section 3.3.6' },
   // RFC 9421 section 3.3.7: JWS algorithms (RFC 7518 section 3, RFC 8037).
-  'RS256': { registry: 'jws', kind: 'rsa-v1_5', hash: 'sha256', spec: 'RFC 7518 section 3.3' },
-  'RS384': { registry: 'jws', kind: 'rsa-v1_5', hash: 'sha384', spec: 'RFC 7518 section 3.3' },
-  'RS512': { registry: 'jws', kind: 'rsa-v1_5', hash: 'sha512', spec: 'RFC 7518 section 3.3' },
+  'RS256': { registry: 'jws', kind: 'rsa-v1_5', hash: 'sha256', spec: 'RFC ' +
+      '7518 section 3.3' },
+  'RS384': { registry: 'jws', kind: 'rsa-v1_5', hash: 'sha384', spec: 'RFC ' +
+      '7518 section 3.3' },
+  'RS512': { registry: 'jws', kind: 'rsa-v1_5', hash: 'sha512', spec: 'RFC ' +
+      '7518 section 3.3' },
   'PS256': { registry: 'jws', kind: 'rsa-pss', hash: 'sha256', saltLength: 32,
              spec: 'RFC 7518 section 3.5' },
   'PS384': { registry: 'jws', kind: 'rsa-pss', hash: 'sha384', saltLength: 48,
              spec: 'RFC 7518 section 3.5' },
   'PS512': { registry: 'jws', kind: 'rsa-pss', hash: 'sha512', saltLength: 64,
              spec: 'RFC 7518 section 3.5' },
-  'ES256': { registry: 'jws', kind: 'ecdsa', hash: 'sha256', curve: 'prime256v1',
+  'ES256': { registry: 'jws', kind: 'ecdsa', hash: 'sha256',
+             curve: 'prime256v1',
              coordinateBytes: 32, spec: 'RFC 7518 section 3.4' },
   'ES384': { registry: 'jws', kind: 'ecdsa', hash: 'sha384', curve: 'secp384r1',
              coordinateBytes: 48, spec: 'RFC 7518 section 3.4' },
@@ -992,7 +1056,10 @@ const ALGORITHMS = {
 };
 
 function algorithmNamed(name) {
-  return typeof name === 'string' && Object.prototype.hasOwnProperty.call(ALGORITHMS, name)
+  log.debug("Entering algorithmNamed().");
+  log.debug("Leaving algorithmNamed().");
+  return typeof name === 'string' &&
+         Object.prototype.hasOwnProperty.call(ALGORITHMS, name)
     ? ALGORITHMS[name] : null;
 }
 
@@ -1012,13 +1079,17 @@ function checkKey(name, entry, key, purpose) {
     if (length < 0) {
       log.debug("Leaving checkKey(). Not a secret.");
       return refuse('STS-GNAP-0224',
-                    name + ' needs a shared secret (a Buffer), and the key given is not one.');
+                    name + ' needs a shared secret (a Buffer), and the key ' +
+                           'given is not one.');
     }
     if (length < entry.minKeyBytes) {
       log.debug("Leaving checkKey(). Secret too short.");
       return refuse('STS-GNAP-0224',
-                    name + ' needs a secret of at least ' + entry.minKeyBytes + ' octets, the ' +
-                    'size of its hash; this one has ' + length + ' (RFC 7518 section 3.2).');
+                    name + ' needs a secret of at least ' + entry.minKeyBytes +
+                    ' ' +
+                    'octets, the size of its hash; this one ' +
+                    'has ' + length + ' (RFC 7518 ' +
+                        'section 3.2).');
     }
     log.debug("Leaving checkKey(). Secret.");
     return null;
@@ -1027,7 +1098,8 @@ function checkKey(name, entry, key, purpose) {
       (purpose === 'sign' && key.type !== 'private')) {
     log.debug("Leaving checkKey(). Not an asymmetric key.");
     return refuse('STS-GNAP-0224',
-                  name + ' needs ' + (purpose === 'sign' ? 'a private' : 'a public') +
+                  name + ' needs ' + (purpose === 'sign' ? 'a private' : 'a ' +
+                      'public') +
                   ' asymmetric KeyObject, and the key given is not one.');
   }
   const type = key.asymmetricKeyType;
@@ -1038,15 +1110,16 @@ function checkKey(name, entry, key, purpose) {
       problem = 'is a ' + type + ' key, not an RSA key' +
                 (type === 'rsa-pss' ? ' usable for PKCS#1 v1.5' : '');
     } else if (!(details.modulusLength >= 2048)) {
-      problem = 'is an RSA key of ' + details.modulusLength + ' bits, under the 2048 ' +
-                'RFC 7518 section 3.3 requires';
+      problem = 'is an RSA key of ' + details.modulusLength + ' bits, under ' +
+                'the 2048 RFC 7518 section 3.3 requires';
     } else if (type === 'rsa-pss' && details.hashAlgorithm &&
                details.hashAlgorithm !== entry.hash) {
       problem = 'is an RSASSA-PSS key restricted to ' + details.hashAlgorithm;
     }
   } else if (entry.kind === 'ecdsa') {
     if (type !== 'ec' || details.namedCurve !== entry.curve) {
-      problem = 'is a ' + type + (details.namedCurve ? ' ' + details.namedCurve : '') +
+      problem = 'is a ' + type +
+                (details.namedCurve ? ' ' + details.namedCurve : '') +
                 ' key, not an EC key on ' + entry.curve;
     }
   } else if (entry.kind === 'eddsa') {
@@ -1057,7 +1130,8 @@ function checkKey(name, entry, key, purpose) {
   if (problem) {
     log.debug("Leaving checkKey(). " + problem);
     return refuse('STS-GNAP-0224',
-                  'The key for ' + name + ' ' + problem + ' (' + entry.spec + ').');
+                  'The key for ' + name + ' ' + problem + ' (' + entry.spec +
+                  ').');
   }
   log.debug("Leaving checkKey().");
   return null;
@@ -1076,11 +1150,13 @@ function rawSign(entry, key, data) {
       break;
     case 'rsa-pss':
       out = nodeCrypto.sign(entry.hash, data, {
-        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING, saltLength: entry.saltLength
+        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: entry.saltLength
       });
       break;
     case 'ecdsa':
-      out = nodeCrypto.sign(entry.hash, data, { key: key, dsaEncoding: 'ieee-p1363' });
+      out = nodeCrypto.sign(entry.hash, data,
+                            { key: key, dsaEncoding: 'ieee-p1363' });
       break;
     default:
       out = nodeCrypto.sign(null, data, key);
@@ -1097,7 +1173,9 @@ function rawVerify(entry, key, data, signature) {
   let ok;
   switch (entry.kind) {
     case 'hmac': {
-      const expected = nodeCrypto.createHmac(entry.hash, key).update(data).digest();
+      const expected = nodeCrypto.createHmac(entry.hash, key)
+                                 .update(data)
+                                 .digest();
       ok = expected.length === signature.length &&
            nodeCrypto.timingSafeEqual(expected, signature);
       break;
@@ -1107,14 +1185,17 @@ function rawVerify(entry, key, data, signature) {
       break;
     case 'rsa-pss':
       ok = nodeCrypto.verify(entry.hash, data, {
-        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING, saltLength: entry.saltLength
+        key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: entry.saltLength
       }, signature);
       break;
     case 'ecdsa':
       // r||s at the coordinate size and nothing else: a DER signature, or one
       // of the other curve's length, is not this algorithm's output (3.3.4).
       ok = signature.length === 2 * entry.coordinateBytes &&
-           nodeCrypto.verify(entry.hash, data, { key: key, dsaEncoding: 'ieee-p1363' }, signature);
+           nodeCrypto.verify(entry.hash, data,
+                             { key: key, dsaEncoding: 'ieee-p1363' },
+                             signature);
       break;
     default:
       ok = nodeCrypto.verify(null, data, key, signature);
@@ -1141,8 +1222,9 @@ function sign(message, options) {
   } catch (e) {
     log.debug("Leaving sign(). Label.");
     return refuse('STS-GNAP-0225',
-                  'The signature label ' + JSON.stringify(opts.label) + ' is not a valid ' +
-                  'Dictionary key (RFC 9421 section 4.1): ' + e.message);
+                  'The signature label ' + JSON.stringify(opts.label) + ' is ' +
+                  'not a valid Dictionary key (RFC 9421 section ' +
+                  '4.1): ' + e.message);
   }
   let params;
   try {
@@ -1150,31 +1232,37 @@ function sign(message, options) {
   } catch (e) {
     log.debug("Leaving sign(). Parameters.");
     return refuse('STS-GNAP-0222',
-                  'The signature parameters cannot be serialized: ' + e.message + '.');
+                  'The signature parameters cannot be serialized: ' +
+                  e.message + '.');
   }
   const algParam = sf.paramValue(params, 'alg');
   const name = opts.algorithm !== undefined ? opts.algorithm : algParam;
   if (name === undefined) {
     log.debug("Leaving sign(). No algorithm.");
     return refuse('STS-GNAP-0226',
-                  'No signature algorithm was named, by the caller or by an alg parameter ' +
-                  '(RFC 9421 section 3.1 step 1).');
+                  'No signature algorithm was named, by the caller or by an ' +
+                  'alg parameter (RFC 9421 section 3.1 step 1).');
   }
   const entry = algorithmNamed(name);
   if (!entry) {
     log.debug("Leaving sign(). Unknown algorithm.");
     return refuse('STS-GNAP-0227',
-                  'The signature algorithm ' + JSON.stringify(name) + ' is not supported; ' +
-                  'the supported ones are ' + Object.keys(ALGORITHMS).join(', ') + '.');
+                  'The signature algorithm ' + JSON.stringify(name) + ' is ' +
+                  'not supported; the supported ones ' +
+                  'are ' + Object.keys(ALGORITHMS).join(', ') + '.');
   }
-  if (algParam !== undefined && (entry.registry === 'jws' || algParam !== name)) {
+  if (algParam !== undefined &&
+      (entry.registry === 'jws' || algParam !== name)) {
     log.debug("Leaving sign(). alg conflict.");
     return refuse('STS-GNAP-0228',
                   entry.registry === 'jws'
-                    ? 'The JWS algorithm ' + name + ' cannot be signalled with the alg ' +
-                      'signature parameter (RFC 9421 section 3.3.7).'
-                    : 'The alg parameter "' + algParam + '" names a different algorithm from ' +
-                      'the one signing, ' + name + ' (RFC 9421 section 3.2 step 6.5).');
+                    ? 'The JWS algorithm ' + name + ' cannot be signalled ' +
+                      'with the alg signature parameter (RFC 9421 section ' +
+                      '3.3.7).'
+                    : 'The alg parameter "' + algParam + '" names a ' +
+                      'different algorithm from the one ' +
+                      'signing, ' + name + ' (RFC 9421 section 3.2 ' +
+                                                   'step 6.5).');
   }
   const keyProblem = checkKey(name, entry, opts.key, 'sign');
   if (keyProblem) {
@@ -1192,7 +1280,8 @@ function sign(message, options) {
   } catch (e) {
     log.debug("Leaving sign(). Primitive threw.");
     return refuse('STS-GNAP-0229',
-                  'Signing with ' + name + ' failed inside the cryptographic library: ' +
+                  'Signing with ' + name + ' failed inside the cryptographic ' +
+                                           'library: ' +
                   e.message);
   }
   log.debug("Leaving sign(). " + opts.label);
@@ -1201,7 +1290,9 @@ function sign(message, options) {
     label: opts.label,
     algorithm: name,
     signatureInput: opts.label + '=' + built.signatureParams,
-    signature: opts.label + '=' + sf.serializeItem({ type: 'bytes', value: signatureBytes, params: [] }),
+    signature: opts.label + '=' +
+               sf.serializeItem({ type: 'bytes', value: signatureBytes,
+                                  params: [] }),
     signatureParams: built.signatureParams,
     base: built.base,
     signatureBytes: signatureBytes
@@ -1209,12 +1300,15 @@ function sign(message, options) {
 }
 
 function headerKeyFor(headers, name) {
+  log.debug("Entering headerKeyFor().");
   const keys = Object.keys(headers);
   for (let k = 0; k < keys.length; k++) {
     if (keys[k].toLowerCase() === name) {
+      log.debug("Leaving headerKeyFor().");
       return keys[k];
     }
   }
+  log.debug("Leaving headerKeyFor().");
   return name;
 }
 
@@ -1232,14 +1326,17 @@ function headerKeyFor(headers, name) {
 // first for every last-wins parser.
 function appendSignature(message, result) {
   log.debug("Entering appendSignature().");
-  if (!result || result.ok !== true || typeof result.signatureInput !== 'string' ||
+  if (!result || result.ok !== true ||
+      typeof result.signatureInput !== 'string' ||
       typeof result.signature !== 'string') {
     log.debug("Leaving appendSignature(). Not a signature.");
     return refuse('STS-GNAP-0230',
-                  'Only a successful sign() result can be appended to a message.');
+                  'Only a successful sign() result can be appended to a ' +
+                  'message.');
   }
   const headers = Object.assign({}, (message && message.headers) || {});
-  const fields = [['signature-input', result.signatureInput], ['signature', result.signature]];
+  const fields = [['signature-input', result.signatureInput],
+                  ['signature', result.signature]];
   for (let k = 0; k < fields.length; k++) {
     const lines = fieldLines({ headers: headers }, fields[k][0]);
     if (!lines) {
@@ -1251,15 +1348,17 @@ function appendSignature(message, result) {
     } catch (e) {
       log.debug("Leaving appendSignature(). Existing field malformed.");
       return refuse('STS-GNAP-0231',
-                    'The message\'s existing ' + fields[k][0] + ' field is not a Dictionary, ' +
-                    'so nothing can be appended to it: ' + e.message);
+                    'The message\'s existing ' + fields[k][0] + ' field is ' +
+                    'not a Dictionary, so nothing can be appended to ' +
+                    'it: ' + e.message);
     }
     if (sf.member(dictionary, result.label) !== undefined) {
       log.debug("Leaving appendSignature(). Label taken.");
       return refuse('STS-GNAP-0230',
-                    'The label "' + result.label + '" is already used in the message\'s ' +
-                    fields[k][0] + ' field; a signature label MUST be unique (RFC 9421 ' +
-                    'section 4).');
+                    'The label "' + result.label + '" is already used in the ' +
+                                                   'message\'s ' +
+                    fields[k][0] + ' field; a signature label MUST be unique ' +
+                    '(RFC 9421 section 4).');
     }
   }
   fields.forEach(function (field) {
@@ -1274,7 +1373,8 @@ function appendSignature(message, result) {
     }
   });
   log.debug("Leaving appendSignature(). " + result.label);
-  return { ok: true, message: Object.assign({}, message, { headers: headers }) };
+  return { ok: true,
+           message: Object.assign({}, message, { headers: headers }) };
 }
 
 // ===========================================================================
@@ -1295,30 +1395,38 @@ function parseSignatureField(message, name) {
     // just as much a second signature under one name as one repeated within a
     // line (section 4.1: "unique across all field values").
     dictionary = sf.parseDictionary(lines.join(', '), {
-      onDuplicate: function (key) { duplicates.push(key); }
+      onDuplicate: function (key) {
+        log.debug("Entering onDuplicate().");
+        duplicates.push(key);
+        log.debug("Leaving onDuplicate().");
+      }
     });
   } catch (e) {
     log.debug("Leaving parseSignatureField(). Malformed.");
     return refuse('STS-GNAP-0231',
-                  'The ' + name + ' field is not a Structured Field Dictionary (RFC 9421 ' +
-                  'section 4): ' + e.message);
+                  'The ' + name + ' field is not a Structured Field ' +
+                  'Dictionary (RFC 9421 section 4): ' + e.message);
   }
   if (duplicates.length) {
     log.debug("Leaving parseSignatureField(). Duplicate label.");
     return refuse('STS-GNAP-0232',
-                  'The ' + name + ' field uses the label "' + duplicates[0] + '" more than ' +
-                  'once; labels MUST be unique across all field values (RFC 9421 sections ' +
-                  '4.1 and 4.2).');
+                  'The ' + name + ' field uses the label "' + duplicates[0] +
+                  '" ' +
+                  'more than once; labels MUST be unique across all field ' +
+                  'values (RFC 9421 sections 4.1 and 4.2).');
   }
-  log.debug("Leaving parseSignatureField(). " + dictionary.length + " member(s).");
+  log.debug("Leaving parseSignatureField(). " + dictionary.length + " " +
+      "member(s).");
   return { ok: true, dictionary: dictionary };
 }
 
 function paramsObject(params) {
+  log.debug("Entering paramsObject().");
   const out = {};
   (params || []).forEach(function (pair) {
     out[pair[0]] = pair[1].value;
   });
+  log.debug("Leaving paramsObject().");
   return out;
 }
 
@@ -1340,8 +1448,9 @@ function parseSignatures(message) {
   if (inputs.dictionary.length === 0 && values.dictionary.length === 0) {
     log.debug("Leaving parseSignatures(). None.");
     return refuse('STS-GNAP-0233',
-                  'The message carries no HTTP message signature: it has no Signature-Input ' +
-                  'and no Signature field (RFC 9421 section 4).');
+                  'The message carries no HTTP message signature: it has no ' +
+                  'Signature-Input and no Signature field (RFC 9421 section ' +
+                  '4).');
   }
   const labels = {};
   inputs.dictionary.forEach(function (pair) { labels[pair[0]] = true; });
@@ -1356,27 +1465,34 @@ function parseSignatures(message) {
       log.debug("Leaving parseSignatures(). Label mismatch.");
       return refuse('STS-GNAP-0234',
                     'The signature label "' + label + '" is present in the ' +
-                    (input === undefined ? 'Signature' : 'Signature-Input') + ' field and not ' +
-                    'in the ' + (input === undefined ? 'Signature-Input' : 'Signature') +
-                    ' field; the presence of a label in one field but not the other is an ' +
-                    'error (RFC 9421 section 4).');
+                    (input === undefined ? 'Signature' : 'Signature-Input') +
+                    ' ' +
+                    'field and not in ' +
+                    'the ' +
+                    (input === undefined ? 'Signature-Input' : 'Signature') +
+                    ' field; the presence of a label in one field but not ' +
+                    'the other is an error (RFC 9421 section 4).');
     }
-    const componentsAreStrings = input.type === 'innerList' && input.value.every(function (item) {
+    const componentsAreStrings = input.type === 'innerList' &&
+                                 input.value.every(function (item) {
       return item.type === 'string';
     });
     if (!componentsAreStrings || value.type !== 'bytes') {
       log.debug("Leaving parseSignatures(). Member types.");
       return refuse('STS-GNAP-0235',
                     !componentsAreStrings
-                      ? 'The Signature-Input member "' + label + '" is not an Inner List of ' +
-                        'String component identifiers (RFC 9421 section 4.1).'
-                      : 'The Signature member "' + label + '" is not a Byte Sequence ' +
-                        '(RFC 9421 section 4.2).');
+                      ? 'The Signature-Input member "' + label + '" is not ' +
+                        'an Inner List of String component identifiers (RFC ' +
+                        '9421 section 4.1).'
+                      : 'The Signature member "' + label + '" is not a Byte ' +
+                        'Sequence (RFC 9421 section 4.2).');
     }
     out.push({
       label: label,
       components: input.value,
-      componentIds: input.value.map(function (item) { return sf.serializeItem(item); }),
+      componentIds: input.value.map(function (item) {
+        return sf.serializeItem(item);
+      }),
       params: paramsObject(input.params),
       paramList: input.params,
       signature: value.value,
@@ -1385,18 +1501,22 @@ function parseSignatures(message) {
   }
   // Signature-Input order, which is the order a reader of the message sees.
   out.sort(function (a, b) {
-    return indexOfLabel(inputs.dictionary, a.label) - indexOfLabel(inputs.dictionary, b.label);
+    return indexOfLabel(inputs.dictionary, a.label) -
+           indexOfLabel(inputs.dictionary, b.label);
   });
   log.debug("Leaving parseSignatures(). " + out.length + " signature(s).");
   return { ok: true, signatures: out };
 }
 
 function indexOfLabel(dictionary, label) {
+  log.debug("Entering indexOfLabel().");
   for (let k = 0; k < dictionary.length; k++) {
     if (dictionary[k][0] === label) {
+      log.debug("Leaving indexOfLabel().");
       return k;
     }
   }
+  log.debug("Leaving indexOfLabel().");
   return -1;
 }
 
@@ -1437,20 +1557,26 @@ function verify(message, options) {
   }
   let candidates = parsed.signatures;
   if (opts.label !== undefined) {
-    candidates = candidates.filter(function (s) { return s.label === opts.label; });
+    candidates =
+        candidates.filter(function (s) { return s.label === opts.label; });
     if (candidates.length === 0) {
       log.debug("Leaving verify(). Label absent.");
       return refuse('STS-GNAP-0236',
-                    'The message carries no signature labelled "' + String(opts.label) +
+                    'The message carries no signature labelled "' +
+                    String(opts.label) +
                     '" (RFC 9421 section 3.2 step 1.1).');
     }
   } else if (opts.requireTag !== undefined) {
-    candidates = candidates.filter(function (s) { return s.params.tag === opts.requireTag; });
+    candidates = candidates.filter(function (s) {
+      return s.params.tag === opts.requireTag;
+    });
     if (candidates.length === 0) {
       log.debug("Leaving verify(). No signature with the tag.");
       return refuse('STS-GNAP-0237',
-                    'No signature in the message carries tag="' + String(opts.requireTag) +
-                    '"; the tags present are ' + JSON.stringify(parsed.signatures.map(function (s) {
+                    'No signature in the message carries tag="' +
+                    String(opts.requireTag) +
+                    '"; the tags present are ' + JSON.stringify(
+                        parsed.signatures.map(function (s) {
                       return s.params.tag === undefined ? null : s.params.tag;
                     })) + ' (RFC 9421 section 3.2.1).');
     }
@@ -1488,47 +1614,59 @@ function verifyOne(message, parsed, opts, now) {
     log.debug("Leaving verifyOne(). Tag.");
     return refuse('STS-GNAP-0237',
                   'The signature "' + parsed.label + '" carries ' +
-                  (p.tag === undefined ? 'no tag' : 'tag="' + p.tag + '"') + ' and tag="' +
+                  (p.tag === undefined ? 'no tag' : 'tag="' + p.tag + '"') +
+                      ' ' +
+                      'and tag="' +
                   opts.requireTag + '" is required (RFC 9421 section 3.2.1).');
   }
   if (opts.forbidAlgParam && p.alg !== undefined) {
     log.debug("Leaving verifyOne(). alg present.");
     return refuse('STS-GNAP-0238',
-                  'The signature "' + parsed.label + '" carries the alg parameter, which this ' +
-                  'application forbids (RFC 9635 section 7.3.1: "The explicit alg signature ' +
-                  'parameter MUST NOT be included").');
+                  'The signature "' + parsed.label + '" carries the alg ' +
+                  'parameter, which this application forbids (RFC 9635 ' +
+                  'section 7.3.1: "The explicit alg signature parameter MUST ' +
+                  'NOT be included").');
   }
-  if ((opts.requireCreated || opts.maxAgeS !== undefined) && p.created === undefined) {
+  if ((opts.requireCreated ||
+       opts.maxAgeS !== undefined) && p.created === undefined) {
     log.debug("Leaving verifyOne(). No created.");
     return refuse('STS-GNAP-0239',
-                  'The signature "' + parsed.label + '" has no created parameter, and its age ' +
-                  'must be checked (RFC 9421 section 3.2.1).');
+                  'The signature "' + parsed.label + '" has no created ' +
+                  'parameter, and its age must be checked (RFC 9421 section ' +
+                  '3.2.1).');
   }
   if (p.created !== undefined && opts.maxAgeS !== undefined) {
     const skew = opts.skewS !== undefined ? opts.skewS : opts.maxAgeS;
     if (now - p.created > opts.maxAgeS) {
       log.debug("Leaving verifyOne(). Stale.");
       return refuse('STS-GNAP-0240',
-                    'The signature "' + parsed.label + '" was created ' + (now - p.created) +
-                    ' seconds ago, more than the ' + opts.maxAgeS + ' allowed.');
+                    'The signature "' + parsed.label + '" was created ' +
+                    (now - p.created) +
+                    ' seconds ago, more than the ' + opts.maxAgeS +
+                    ' allowed.');
     }
     if (p.created - now > skew) {
       log.debug("Leaving verifyOne(). Future.");
       return refuse('STS-GNAP-0241',
-                    'The signature "' + parsed.label + '" claims to be created ' +
-                    (p.created - now) + ' seconds in the future, more than the ' + skew +
+                    'The signature "' + parsed.label +
+                    '" claims to be created ' +
+                    (p.created -
+                     now) + ' seconds in the future, more than the ' + skew +
                     ' of clock skew allowed.');
     }
   }
   if (p.expires !== undefined && now >= p.expires) {
     log.debug("Leaving verifyOne(). Expired.");
     return refuse('STS-GNAP-0242',
-                  'The signature "' + parsed.label + '" expired ' + (now - p.expires) +
+                  'The signature "' + parsed.label + '" expired ' +
+                  (now - p.expires) +
                   ' seconds ago (RFC 9421 section 2.3, expires).');
   }
   const required = opts.requireComponents || [];
   const covered = {};
-  parsed.components.forEach(function (item) { covered[identityOf(item)] = true; });
+  parsed.components.forEach(function (item) {
+    covered[identityOf(item)] = true;
+  });
   for (let k = 0; k < required.length; k++) {
     const wanted = componentItem(required[k]);
     if (isRefusal(wanted)) {
@@ -1538,9 +1676,12 @@ function verifyOne(message, parsed, opts, now) {
     if (!covered[identityOf(wanted.item)]) {
       log.debug("Leaving verifyOne(). Required component missing.");
       return refuse('STS-GNAP-0243',
-                    'The signature "' + parsed.label + '" does not cover the required ' +
-                    'component ' + sf.serializeItem(wanted.item) + '; it covers (' +
-                    parsed.componentIds.join(' ') + ') (RFC 9421 section 3.2 step 4).');
+                    'The signature "' + parsed.label + '" does not cover the ' +
+                    'required ' +
+                    'component ' + sf.serializeItem(wanted.item) + '; it ' +
+                        'covers (' +
+                    parsed.componentIds.join(' ') + ') (RFC 9421 section 3.2 ' +
+                                                    'step 4).');
     }
   }
   let keyed = null;
@@ -1556,9 +1697,11 @@ function verifyOne(message, parsed, opts, now) {
   if (!keyed || keyed.key === undefined || keyed.key === null) {
     log.debug("Leaving verifyOne(). No key.");
     return refuse('STS-GNAP-0244',
-                  'No verification key is known for the signature "' + parsed.label + '"' +
+                  'No verification key is known for the signature "' +
+                  parsed.label + '"' +
                   (p.keyid !== undefined ? ' (keyid="' + p.keyid + '")' : '') +
-                  '; an unknown or untrusted key MUST fail (RFC 9421 section 3.2 step 5).');
+                  '; an unknown or untrusted key MUST fail (RFC 9421 section ' +
+                  '3.2 step 5).');
   }
   const fromKey = keyed.algorithm;
   const fromParam = p.alg;
@@ -1567,64 +1710,77 @@ function verifyOne(message, parsed, opts, now) {
     if (!paramEntry || paramEntry.registry !== 'http') {
       log.debug("Leaving verifyOne(). alg parameter unknown.");
       return refuse('STS-GNAP-0227',
-                    'The alg parameter "' + fromParam + '" is not an algorithm in the HTTP ' +
-                    'Signature Algorithms registry this verifier supports (RFC 9421 sections ' +
-                    '2.3 and 3.3.7).');
+                    'The alg parameter "' + fromParam + '" is not an ' +
+                    'algorithm in the HTTP Signature Algorithms registry ' +
+                    'this verifier supports (RFC 9421 sections 2.3 and ' +
+                    '3.3.7).');
     }
     if (fromKey !== undefined && fromKey !== fromParam) {
       log.debug("Leaving verifyOne(). alg conflict.");
       return refuse('STS-GNAP-0228',
-                    'The signature "' + parsed.label + '" says alg="' + fromParam + '" and its ' +
-                    'key is for ' + fromKey + '; when the algorithm is stated in more than one ' +
-                    'place they MUST agree (RFC 9421 section 3.2 step 6.5).');
+                    'The signature "' + parsed.label + '" says alg="' +
+                    fromParam + '" ' +
+                    'and its key is ' +
+                    'for ' + fromKey + '; when the algorithm is ' +
+                    'stated in more than one place they MUST agree (RFC 9421 ' +
+                    'section 3.2 step 6.5).');
     }
   }
   const name = fromKey !== undefined ? fromKey : fromParam;
   if (name === undefined) {
     log.debug("Leaving verifyOne(). No algorithm.");
     return refuse('STS-GNAP-0226',
-                  'No algorithm could be determined for the signature "' + parsed.label +
-                  '": the key names none and the signature carries no alg parameter ' +
-                  '(RFC 9421 section 3.2 step 6).');
+                  'No algorithm could be determined for the signature "' +
+                  parsed.label +
+                  '": the key names none and the signature carries no alg ' +
+                  'parameter (RFC 9421 section 3.2 step 6).');
   }
   const entry = algorithmNamed(name);
   if (!entry) {
     log.debug("Leaving verifyOne(). Unknown algorithm.");
     return refuse('STS-GNAP-0227',
-                  'The signature algorithm ' + JSON.stringify(name) + ' is not supported.');
+                  'The signature algorithm ' + JSON.stringify(name) + ' is ' +
+                      'not supported.');
   }
-  if (Array.isArray(opts.allowedAlgorithms) && opts.allowedAlgorithms.indexOf(name) < 0) {
+  if (Array.isArray(opts.allowedAlgorithms) &&
+      opts.allowedAlgorithms.indexOf(name) < 0) {
     log.debug("Leaving verifyOne(). Not allowed.");
     return refuse('STS-GNAP-0245',
-                  'The algorithm ' + name + ' is not one this verifier allows (' +
-                  opts.allowedAlgorithms.join(', ') + ') (RFC 9421 section 3.2 step 6.1).');
+                  'The algorithm ' + name +
+                  ' is not one this verifier allows (' +
+                  opts.allowedAlgorithms.join(', ') + ') (RFC 9421 section ' +
+                                                      '3.2 step 6.1).');
   }
   const keyProblem = checkKey(name, entry, keyed.key, 'verify');
   if (keyProblem) {
     log.debug("Leaving verifyOne(). Key.");
     return keyProblem;
   }
-  const built = signatureBase(message, parsed.components, parsed.paramList, opts);
+  const built = signatureBase(message, parsed.components, parsed.paramList,
+                              opts);
   if (isRefusal(built)) {
     log.debug("Leaving verifyOne(). Base.");
     return built;
   }
   let good;
   try {
-    good = rawVerify(entry, keyed.key, Buffer.from(built.base, 'ascii'), parsed.signature);
+    good = rawVerify(entry, keyed.key, Buffer.from(built.base, 'ascii'),
+                     parsed.signature);
   } catch (e) {
     log.debug("Leaving verifyOne(). Primitive threw.");
     return refuse('STS-GNAP-0229',
-                  'Verifying with ' + name + ' failed inside the cryptographic library: ' +
+                  'Verifying with ' + name + ' failed inside the ' +
+                                             'cryptographic library: ' +
                   e.message);
   }
   if (!good) {
     log.debug("Leaving verifyOne(). Bad signature.");
     return refuse('STS-GNAP-0246',
-                  'The signature "' + parsed.label + '" does not verify with ' + name +
-                  ' over the signature base rebuilt from the message: the message was ' +
-                  'changed, or it was signed with a different key (RFC 9421 section 3.2 ' +
-                  'step 8).');
+                  'The signature "' + parsed.label + '" does not verify with ' +
+                  name +
+                  ' over the signature base rebuilt from the message: the ' +
+                  'message was changed, or it was signed with a different ' +
+                  'key (RFC 9421 section 3.2 step 8).');
   }
   log.debug("Leaving verifyOne(). " + parsed.label + " verified.");
   return {

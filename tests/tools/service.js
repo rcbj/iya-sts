@@ -100,6 +100,8 @@ const UDP_TOO = { KRB5_KDC_PORT: true };
 // keeping a registry) can disagree with the kernel.
 // ---------------------------------------------------------------------------
 function tcpFree(port) {
+  log.debug("Entering tcpFree().");
+  log.debug("Leaving tcpFree().");
   return new Promise(function (resolve) {
     const s = net.createServer();
     s.once('error', function () { resolve(false); });
@@ -111,6 +113,8 @@ function tcpFree(port) {
 }
 
 function udpFree(port) {
+  log.debug("Entering udpFree().");
+  log.debug("Leaving udpFree().");
   return new Promise(function (resolve) {
     const s = dgram.createSocket('udp4');
     s.once('error', function () { resolve(false); });
@@ -224,6 +228,8 @@ function environmentFor(base, opts) {
 // variable, so that the URL this module publishes and the listener the child
 // binds can never disagree.
 function schemeFor(env) {
+  log.debug("Entering schemeFor().");
+  log.debug("Leaving schemeFor().");
   return String(env.STS_HTTPS) === 'true' ? 'https' : 'http';
 }
 
@@ -232,11 +238,14 @@ function schemeFor(env) {
 // dispatcher takes no per-request `rejectUnauthorized`, and a service that
 // regenerates its key every start can be trusted by nothing that ran before it.
 function probe(url) {
+  log.debug("Entering probe().");
+  log.debug("Leaving probe().");
   return new Promise(function (resolve) {
     let target;
     try {
       target = new URL(url);
     } catch (e) {
+      log.debug("Caught in a callback in probe(): " + ((e && e.message) || e));
       resolve(0);
       return;
     }
@@ -335,6 +344,7 @@ async function start(opts) {
   } catch (e) {
     // Already gone. Nothing to do, and failing here would replace the useful
     // message below with a useless one.
+    log.debug("Caught in start(): " + ((e && e.message) || e));
   }
   log.debug('Leaving start(). Timed out.');
   throw new Error('the mock STS did not answer on ' + url + ' in time; see ' +
@@ -382,6 +392,7 @@ async function stop(instance, log) {
     process.kill(instance.pid, 'SIGKILL');
   } catch (e) {
     // Raced with its own exit, which is the outcome we wanted anyway.
+    log.debug("Caught in stop(): " + ((e && e.message) || e));
   }
   await Promise.race([
     gone,

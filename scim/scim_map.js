@@ -16,11 +16,11 @@
 //   this file               what a SCIM RESOURCE is made of        /admin/scim
 //
 // The first three are SELECTIONS out of one catalogue and are deliberately
-// independent of each other. This one is NOT a selection and there is nothing to
-// tick: SCIM defines its own schema (RFC 7643), so what a User carries is
+// independent of each other. This one is NOT a selection and there is nothing
+// to tick: SCIM defines its own schema (RFC 7643), so what a User carries is
 // decided by that document rather than by this service, and the only question
-// left is which LDAP attribute each member is stored in. That is a mapping and a
-// mapping is a table.
+// left is which LDAP attribute each member is stored in. That is a mapping and
+// a mapping is a table.
 //
 // **THE ATTRIBUTE SPELLINGS ARE NOT A FIFTH LIST.** Every row that names an
 // attribute vc_claims.js already knows is checked against that catalogue at
@@ -28,20 +28,20 @@
 // learnName() follows, and for the same reason: four independently maintained
 // sets of spellings is how one of them comes to be quietly wrong about
 // `schacDateOfBirth` while all four look right read alone. Reported and not
-// thrown, because a table of how to capitalise a name must never be able to stop
-// this service starting.
+// thrown, because a table of how to capitalise a name must never be able to
+// stop this service starting.
 //
 // ---------------------------------------------------------------------------
 // IT IS A LIBRARY (rule 3) AND IT TOUCHES NO DIRECTORY.
 //
-// It registers no route, so its position in the require order is not a position.
-// It requires `helpers.js` and `vc_claims.js` and nothing else here, and neither
-// requires it back — which is what lets `admin.js` require it to draw the
-// mapping table on /admin/scim even though admin.js is required BEFORE
-// ldap_server.js. That is the whole reason the conversions live here rather than
-// in `scim.js`: a require from the console into the SCIM module would drag the
-// /scim routes into the express router ahead of /admin, and /admin/sts-metadata
-// is built by walking that router.
+// It registers no route, so its position in the require order is not a
+// position. It requires `helpers.js` and `vc_claims.js` and nothing else here,
+// and neither requires it back — which is what lets `admin.js` require it to
+// draw the mapping table on /admin/scim even though admin.js is required BEFORE
+// ldap_server.js. That is the whole reason the conversions live here rather
+// than in `scim.js`: a require from the console into the SCIM module would drag
+// the /scim routes into the express router ahead of /admin, and
+// /admin/sts-metadata is built by walking that router.
 //
 // So there are two readers and they read different halves:
 //
@@ -95,18 +95,18 @@
 // the real one.
 //
 // **`active` AND `externalId` ARE THIS SERVICE'S OWN ATTRIBUTES AND NOTHING
-// READS THEM.** There is no standard LDAP attribute for either — `nsAccountLock`
-// and `pwdAccountLockedTime` are vendor inventions and mean something narrower —
-// so they are stored as `scimActive` and `scimExternalId`, named the way every
-// other invention here is. Setting `active` to false DEACTIVATES NOBODY: no
-// endpoint in this service reads it, no bind is refused because of it and no
-// token is withheld. That is the same distinction this service already draws
-// about a group (carrying a fact is not acting on one), it is stated on
-// /admin/scim and in the ServiceProviderConfig's own documentation link, and it
-// matters more here than for a group because deprovisioning is the single most
-// common thing a SCIM client is built to do. A mock that silently pretended to
-// disable an account would teach a provisioning client that its deprovisioning
-// path works.
+// READS THEM.** There is no standard LDAP attribute for either —
+// `nsAccountLock` and `pwdAccountLockedTime` are vendor inventions and mean
+// something narrower — so they are stored as `scimActive` and `scimExternalId`,
+// named the way every other invention here is. Setting `active` to false
+// DEACTIVATES NOBODY: no endpoint in this service reads it, no bind is refused
+// because of it and no token is withheld. That is the same distinction this
+// service already draws about a group (carrying a fact is not acting on one),
+// it is stated on /admin/scim and in the ServiceProviderConfig's own
+// documentation link, and it matters more here than for a group because
+// deprovisioning is the single most common thing a SCIM client is built to do.
+// A mock that silently pretended to disable an account would teach a
+// provisioning client that its deprovisioning path works.
 //
 // **EVERY PERSON UNDER `ou=users` MAPS, INCLUDING THE ONES WITH NO `uid`.**
 // `userName` is RFC 7643's one required User attribute and scimmy enforces it
@@ -126,7 +126,8 @@ const vcClaims = require('../oid4vc/vc_claims');
 // The schema URNs, written once. RFC 7643 sections 4.1, 4.2 and 4.3.
 const USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
 const GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
-const ENTERPRISE_SCHEMA = 'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
+const ENTERPRISE_SCHEMA =
+    'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
 
 // ---------------------------------------------------------------------------
 // THE ATTRIBUTES THIS SERVICE INVENTED FOR SCIM.
@@ -158,8 +159,8 @@ const OWN_NAMES = [
 //   'derived'  read-only: computed rather than stored (`groups`, the meta block)
 //
 // `schema` names the document that defines the LDAP attribute, the way
-// vc_claims.js's rows do, so that a reader can tell an RFC 4519 type from one of
-// this service's own without leaving the page.
+// vc_claims.js's rows do, so that a reader can tell an RFC 4519 type from one
+// of this service's own without leaving the page.
 // ---------------------------------------------------------------------------
 const USER_ATTRIBUTES = [
   { scim: 'userName', ldap: 'uid', kind: 'single', required: true,
@@ -171,17 +172,23 @@ const USER_ATTRIBUTES = [
     schema: "this service's own (no standard type)",
     note: 'The provisioning client\'s own identifier for this person. Stored ' +
           'verbatim and read by nothing here.' },
-  { scim: 'name.formatted', ldap: 'cn', kind: 'single', schema: 'RFC 4519 2.3' },
-  { scim: 'name.familyName', ldap: 'sn', kind: 'single', schema: 'RFC 4519 2.32' },
-  { scim: 'name.givenName', ldap: 'givenName', kind: 'single', schema: 'RFC 4519 2.6' },
-  { scim: 'displayName', ldap: 'displayName', kind: 'single', schema: 'RFC 2798 2.3' },
+  { scim: 'name.formatted', ldap: 'cn', kind: 'single',
+    schema: 'RFC 4519 2.3' },
+  { scim: 'name.familyName', ldap: 'sn', kind: 'single',
+    schema: 'RFC 4519 2.32' },
+  { scim: 'name.givenName', ldap: 'givenName', kind: 'single', schema: 'RFC ' +
+      '4519 2.6' },
+  { scim: 'displayName', ldap: 'displayName', kind: 'single', schema: 'RFC ' +
+      '2798 2.3' },
   { scim: 'title', ldap: 'title', kind: 'single', schema: 'RFC 4519 2.38' },
   // RFC 2798 2.7 is `preferredLanguage`; `employeeType` is 2.5. Corrected
   // 2026-09-11 against the RFC text.
-  { scim: 'userType', ldap: 'employeeType', kind: 'single', schema: 'RFC 2798 2.5' },
+  { scim: 'userType', ldap: 'employeeType', kind: 'single', schema: 'RFC ' +
+      '2798 2.5' },
   { scim: 'preferredLanguage', ldap: 'preferredLanguage', kind: 'single',
     schema: 'RFC 2798 2.10' },
-  { scim: 'profileUrl', ldap: 'labeledURI', kind: 'single', schema: 'RFC 2079 2' },
+  { scim: 'profileUrl', ldap: 'labeledURI', kind: 'single',
+    schema: 'RFC 2079 2' },
   { scim: 'active', ldap: 'scimActive', kind: 'bool',
     schema: "this service's own (no standard type)",
     note: 'DEACTIVATES NOBODY. Nothing in this service reads it: no bind is ' +
@@ -211,8 +218,16 @@ const USER_ATTRIBUTES = [
     // `formatted` is a display string with newlines. The same conversion
     // vc_claims.js does for the OIDC `formatted` member, for the same reason:
     // two documents spelling one address differently.
-    toScim: function (value) { return String(value).split('$').join('\n'); },
-    fromScim: function (value) { return String(value).split('\n').join('$'); } },
+    toScim: function (value) {
+      log.debug("Entering toScim().");
+      log.debug("Leaving toScim().");
+      return String(value).split('$').join('\n');
+    },
+    fromScim: function (value) {
+      log.debug("Entering fromScim().");
+      log.debug("Leaving fromScim().");
+      return String(value).split('\n').join('$');
+    } },
 
   { scim: ENTERPRISE_SCHEMA + ':employeeNumber', ldap: 'employeeNumber',
     kind: 'single', extension: true, schema: 'RFC 2798 2.6' },
@@ -225,20 +240,25 @@ const USER_ATTRIBUTES = [
   { scim: ENTERPRISE_SCHEMA + ':manager.value', ldap: 'manager',
     kind: 'single', extension: true, schema: 'RFC 2798 2.9',
     note: 'A DN in the directory and an id in SCIM. It is passed through ' +
-          'UNCHANGED rather than resolved, because the SCIM id of a person IS ' +
-          'their DN here — so the two spellings coincide, and a resolution ' +
-          'step would only be a place for them to stop coinciding.' },
+          'UNCHANGED rather than resolved, because the SCIM id of a person ' +
+          'IS their DN here — so the two spellings coincide, and a ' +
+          'resolution step would only be a place for them to stop ' +
+          'coinciding.' },
 
   { scim: 'groups', ldap: '(member, uniqueMember, memberUid on the group)',
-    kind: 'derived', readOnly: true, schema: 'RFC 4519 2.17, 2.40; RFC 2307 2.3',
-    note: 'READ-ONLY, as RFC 7643 section 4.1.2 requires. Membership is a fact ' +
-          'about the GROUP\'s entry, so it is changed through a Group resource ' +
-          'and never through a User one. Resolved by ldap_server.js\'s ' +
-          'groupsOfUser(), which is the same function the groups claim reads — ' +
-          'so a token and a SCIM resource cannot disagree about who is in what.' },
-  { scim: 'meta.created', ldap: 'createTimestamp', kind: 'derived', readOnly: true,
+    kind: 'derived', readOnly: true,
+    schema: 'RFC 4519 2.17, 2.40; RFC 2307 2.3',
+    note: 'READ-ONLY, as RFC 7643 section 4.1.2 requires. Membership is a ' +
+          'fact about the GROUP\'s entry, so it is changed through a Group ' +
+          'resource and never through a User one. Resolved by ' +
+          'ldap_server.js\'s groupsOfUser(), which is the same function the ' +
+          'groups claim reads — so a token and a SCIM resource cannot ' +
+          'disagree about who is in what.' },
+  { scim: 'meta.created', ldap: 'createTimestamp', kind: 'derived',
+    readOnly: true,
     schema: 'RFC 4512 3.4' },
-  { scim: 'meta.lastModified', ldap: 'modifyTimestamp', kind: 'derived', readOnly: true,
+  { scim: 'meta.lastModified', ldap: 'modifyTimestamp', kind: 'derived',
+    readOnly: true,
     schema: 'RFC 4512 3.4' }
 ];
 
@@ -261,14 +281,16 @@ const GROUP_ATTRIBUTES = [
     schema: "this service's own (no standard type)" },
   { scim: 'members', ldap: 'member', kind: 'members',
     schema: 'RFC 4519 2.17',
-    note: 'READ resolves member, uniqueMember and memberUid alike; WRITE puts ' +
-          'a new value in `member`, since a SCIM member id is a DN. A dangling ' +
-          'member — a DN nothing is stored at — is returned as a member, ' +
-          'because the group saying so is the fact, and this directory does no ' +
-          'referential integrity on purpose.' },
-  { scim: 'meta.created', ldap: 'createTimestamp', kind: 'derived', readOnly: true,
+    note: 'READ resolves member, uniqueMember and memberUid alike; WRITE ' +
+          'puts a new value in `member`, since a SCIM member id is a DN. A ' +
+          'dangling member — a DN nothing is stored at — is returned as a ' +
+          'member, because the group saying so is the fact, and this ' +
+          'directory does no referential integrity on purpose.' },
+  { scim: 'meta.created', ldap: 'createTimestamp', kind: 'derived',
+    readOnly: true,
     schema: 'RFC 4512 3.4' },
-  { scim: 'meta.lastModified', ldap: 'modifyTimestamp', kind: 'derived', readOnly: true,
+  { scim: 'meta.lastModified', ldap: 'modifyTimestamp', kind: 'derived',
+    readOnly: true,
     schema: 'RFC 4512 3.4' }
 ];
 
@@ -277,9 +299,9 @@ const GROUP_ATTRIBUTES = [
 //
 // Every row whose LDAP attribute is one vc_claims.js already knows is compared
 // against that catalogue's spelling. This is learnName()'s rule applied one
-// module earlier: that function will also see these names (ldap_server.js merges
-// OWN_NAMES below), but it would compare them against the FIRST spelling learnt
-// and could not say which list disagreed. Here the answer is specific.
+// module earlier: that function will also see these names (ldap_server.js
+// merges OWN_NAMES below), but it would compare them against the FIRST spelling
+// learnt and could not say which list disagreed. Here the answer is specific.
 // ---------------------------------------------------------------------------
 function checkSpellings() {
   log.debug("Entering checkSpellings().");
@@ -299,11 +321,12 @@ function checkSpellings() {
                '" and the credential claim catalogue spells it "' + known +
                '". They match identically either way (RFC 4512 section 2.5 ' +
                'makes attribute descriptions case-insensitive) so nothing is ' +
-               'found or missed differently; it is only the spelling shown on ' +
-               'a page, and one of the two tables is wrong.');
+               'found or missed differently; it is only the spelling shown ' +
+               'on a page, and one of the two tables is wrong.');
     }
   });
-  log.debug("Leaving checkSpellings(). " + checked + " row(s) had a spelling to check.");
+  log.debug("Leaving checkSpellings(). " + checked + " row(s) had a spelling " +
+                                                     "to check.");
 }
 
 checkSpellings();
@@ -318,19 +341,24 @@ checkSpellings();
 // produces a resource with an empty userName rather than an error.
 // ---------------------------------------------------------------------------
 function valuesOf(attributes, name) {
+  log.debug("Entering valuesOf().");
   const wanted = String(name || '').toLowerCase();
   const keys = Object.keys(attributes || {});
   for (let i = 0; i < keys.length; i++) {
     if (keys[i].toLowerCase() === wanted) {
       const value = attributes[keys[i]];
+      log.debug("Leaving valuesOf().");
       return Array.isArray(value) ? value.slice(0) : [value];
     }
   }
+  log.debug("Leaving valuesOf().");
   return [];
 }
 
 function firstOf(attributes, name) {
+  log.debug("Entering firstOf().");
   const values = valuesOf(attributes, name);
+  log.debug("Leaving firstOf().");
   return values.length ? String(values[0]) : '';
 }
 
@@ -341,6 +369,7 @@ function firstOf(attributes, name) {
 // here that cannot be spelt as one: an extension attribute's member name holds
 // the schema URN, and that has dots of its own. See egressPath().
 function setPath(target, path, value) {
+  log.debug("Entering setPath().");
   const parts = Array.isArray(path) ? path : String(path).split('.');
   let node = target;
   for (let i = 0; i < parts.length - 1; i++) {
@@ -350,17 +379,21 @@ function setPath(target, path, value) {
     node = node[parts[i]];
   }
   node[parts[parts.length - 1]] = value;
+  log.debug("Leaving setPath().");
 }
 
 function getPath(source, path) {
+  log.debug("Entering getPath().");
   const parts = Array.isArray(path) ? path : String(path).split('.');
   let node = source;
   for (let i = 0; i < parts.length; i++) {
     if (node === null || node === undefined || typeof node !== 'object') {
+      log.debug("Leaving getPath().");
       return undefined;
     }
     node = node[parts[i]];
   }
+  log.debug("Leaving getPath().");
   return node;
 }
 
@@ -369,8 +402,10 @@ function getPath(source, path) {
 // the schema URN, a colon, and then an ordinary (possibly dotted) attribute:
 // `urn:...:extension:enterprise:2.0:User:manager.value`.
 function extensionParts(scimPath) {
+  log.debug("Entering extensionParts().");
   const path = String(scimPath);
   const colon = path.lastIndexOf(':');
+  log.debug("Leaving extensionParts().");
   return { urn: path.slice(0, colon), path: path.slice(colon + 1) };
 }
 
@@ -406,43 +441,55 @@ function extensionParts(scimPath) {
 // page of users, and the converters that call them already log the conversion.
 // ---------------------------------------------------------------------------
 function egressPath(row) {
+  log.debug("Entering egressPath().");
   if (!row.extension) {
+    log.debug("Leaving egressPath().");
     return String(row.scim).split('.');
   }
   const parts = extensionParts(row.scim);
   const steps = String(parts.path).split('.');
+  log.debug("Leaving egressPath().");
   return [parts.urn + ':' + steps[0]].concat(steps.slice(1));
 }
 
 function ingressPath(row) {
+  log.debug("Entering ingressPath().");
   if (!row.extension) {
+    log.debug("Leaving ingressPath().");
     return String(row.scim).split('.');
   }
   const parts = extensionParts(row.scim);
+  log.debug("Leaving ingressPath().");
   return [parts.urn].concat(String(parts.path).split('.'));
 }
 
 // The LDAP boolean strings. RFC 4517 section 3.3.3 spells them in capitals and
-// nothing else is a boolean, so `true` and `1` written by an ldapmodify are read
-// generously on the way out and never written on the way in.
+// nothing else is a boolean, so `true` and `1` written by an ldapmodify are
+// read generously on the way out and never written on the way in.
 function boolFromLdap(text) {
+  log.debug("Entering boolFromLdap().");
   const value = String(text || '').trim().toLowerCase();
+  log.debug("Leaving boolFromLdap().");
   return value === 'true' || value === '1' || value === 'yes';
 }
 
 // A generalized time (RFC 4517 3.3.13, `20260821T...Z` as this service writes
 // it) as the ISO 8601 instant SCIM's `meta` wants. A value this service did not
-// write is passed through rather than guessed at: `meta.created` showing the raw
-// directory value is a reader's clue about where it came from, and a fabricated
-// date is not.
+// write is passed through rather than guessed at: `meta.created` showing the
+// raw directory value is a reader's clue about where it came from, and a
+// fabricated date is not.
 function isoFromGeneralizedTime(text) {
+  log.debug("Entering isoFromGeneralizedTime().");
   const digits = String(text || '').replace(/[^0-9]/g, '');
   if (digits.length < 14) {
+    log.debug("Leaving isoFromGeneralizedTime().");
     return String(text || '') || undefined;
   }
-  const iso = digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' + digits.slice(6, 8) +
+  const iso = digits.slice(0, 4) + '-' + digits.slice(4, 6) + '-' +
+              digits.slice(6, 8) +
               'T' + digits.slice(8, 10) + ':' + digits.slice(10, 12) + ':' +
               digits.slice(12, 14) + 'Z';
+  log.debug("Leaving isoFromGeneralizedTime().");
   return Number.isNaN(new Date(iso).getTime()) ? String(text) : iso;
 }
 
@@ -453,8 +500,8 @@ function isoFromGeneralizedTime(text) {
 // The entry object this is given comes from ldap_server.js's entryObject(),
 // which adds `entryDN` SYNTHESISED from where the entry is stored and includes
 // the two operational timestamps. None of the three is a stored attribute:
-// `entryDN` is the key the entry lives under (RFC 5020), and createTimestamp and
-// modifyTimestamp belong to the entry rather than to whatever wrote it.
+// `entryDN` is the key the entry lives under (RFC 5020), and createTimestamp
+// and modifyTimestamp belong to the entry rather than to whatever wrote it.
 //
 // Carrying them through would WRITE them, because the write replaces the whole
 // attribute set — and it did, until an audit row showed `entryDN` among the
@@ -462,8 +509,8 @@ function isoFromGeneralizedTime(text) {
 // failure the synthesis exists to prevent: a stored copy of the DN, which is a
 // second definition of one fact and the one that goes stale the moment somebody
 // renames the entry with an LDAP modrdn. The timestamps are less dramatic and
-// wrong the same way — writePerson() sets both itself, so a carried-through copy
-// is overwritten a line later and only ever confused an audit row.
+// wrong the same way — writePerson() sets both itself, so a carried-through
+// copy is overwritten a line later and only ever confused an audit row.
 //
 // Dropped HERE rather than in ldap_server.js's write, because that module is
 // right to accept whatever attributes it is handed: what is operational is a
@@ -473,6 +520,7 @@ function isoFromGeneralizedTime(text) {
 const NOT_STORED = ['entrydn', 'createtimestamp', 'modifytimestamp'];
 
 function carryThrough(existing) {
+  log.debug("Entering carryThrough().");
   const out = {};
   Object.keys(existing || {}).forEach(function (name) {
     if (NOT_STORED.indexOf(String(name).toLowerCase()) >= 0) {
@@ -481,6 +529,7 @@ function carryThrough(existing) {
     const value = existing[name];
     out[name] = Array.isArray(value) ? value.slice(0) : [String(value)];
   });
+  log.debug("Leaving carryThrough().");
   return out;
 }
 
@@ -492,16 +541,16 @@ function carryThrough(existing) {
 // Everything else is read off the entry.
 //
 // THE RESULT IS PADDED and that is a route around a defect rather than a style.
-// `SCIMMY.Types.Filter#match()` in scimmy 1.3.5 does `Object.entries(actual)` on
-// the value of a nested attribute without checking it is there, so a filter
+// `SCIMMY.Types.Filter#match()` in scimmy 1.3.5 does `Object.entries(actual)`
+// on the value of a nested attribute without checking it is there, so a filter
 // naming `emails.value` throws — not "does not match", THROWS — for every
 // resource that has no `emails` member at all. That is the ordinary case: a
 // filter like `emails.value co "@example.com"` against a directory where one
-// person has no mail. So every multi-valued and complex member is present, empty
-// where there is nothing, and `prune()` below takes the empties back off before
-// the resource is returned to a client. The two steps are separate on purpose —
-// the padding is for the matcher and the pruning is for the wire, and folding
-// them together is how one of them quietly stops happening.
+// person has no mail. So every multi-valued and complex member is present,
+// empty where there is nothing, and `prune()` below takes the empties back off
+// before the resource is returned to a client. The two steps are separate on
+// purpose — the padding is for the matcher and the pruning is for the wire, and
+// folding them together is how one of them quietly stops happening.
 // ---------------------------------------------------------------------------
 function toScimUser(entry, context) {
   log.debug("Entering toScimUser(). dn=" + (entry && entry.dn));
@@ -518,8 +567,11 @@ function toScimUser(entry, context) {
     groups: [],
     meta: {
       resourceType: 'User',
-      created: isoFromGeneralizedTime(firstOf(attributes, 'createTimestamp') || entry.createdAt),
-      lastModified: isoFromGeneralizedTime(firstOf(attributes, 'modifyTimestamp') || entry.modifiedAt),
+      created: isoFromGeneralizedTime(firstOf(attributes, 'createTimestamp') ||
+                                      entry.createdAt),
+      lastModified: isoFromGeneralizedTime(firstOf(attributes,
+                                                   'modifyTimestamp') ||
+                                           entry.modifiedAt),
       location: (ctx.location || '') + encodeURIComponent(entry.dn)
     }
   };
@@ -566,7 +618,8 @@ function toScimUser(entry, context) {
       return;
     }
     if (row.kind === 'complex') {
-      address[row.scim.split('.').pop()] = row.toScim ? row.toScim(values[0]) : String(values[0]);
+      address[row.scim.split('.').pop()] = row.toScim ? row.toScim(values[0]) :
+                                           String(values[0]);
       return;
     }
     // 'multi'. One SCIM entry per LDAP value, carrying the type this row says —
@@ -639,7 +692,8 @@ function toScimUser(entry, context) {
     });
   });
 
-  log.debug("Leaving toScimUser(). " + Object.keys(resource).length + " member(s).");
+  log.debug("Leaving toScimUser(). " + Object.keys(resource).length + " " +
+      "member(s).");
   return resource;
 }
 
@@ -647,15 +701,17 @@ function toScimUser(entry, context) {
 // A SCIM USER AS ATTRIBUTES, over the attributes the entry already has.
 //
 // `existing` is the entry's current attribute object, or {} for a create. What
-// comes back is the WHOLE attribute set to write, because ldap_server.js's write
-// replaces rather than merges (the reason is written there): so everything
-// outside the mapping's window has to be carried through here, or a SCIM update
-// would silently delete the credential claims and the authentication history.
+// comes back is the WHOLE attribute set to write, because ldap_server.js's
+// write replaces rather than merges (the reason is written there): so
+// everything outside the mapping's window has to be carried through here, or a
+// SCIM update would silently delete the credential claims and the
+// authentication history.
 //
 // Returns `{ attributes, errors }` rather than throwing, the same contract
-// vc_claims.setSelection() has: the caller is a request handler that has to turn
-// a refusal into a SCIM error with the right `scimType`, and an exception thrown
-// through scimmy's ingress handler comes back as a 404 (see the note in scim.js).
+// vc_claims.setSelection() has: the caller is a request handler that has to
+// turn a refusal into a SCIM error with the right `scimType`, and an exception
+// thrown through scimmy's ingress handler comes back as a 404 (see the note in
+// scim.js).
 // ---------------------------------------------------------------------------
 function fromScimUser(resource, existing) {
   log.debug("Entering fromScimUser().");
@@ -663,9 +719,9 @@ function fromScimUser(resource, existing) {
   const out = carryThrough(existing);
 
   // Then take every mapped attribute back off, so that an omitted SCIM member
-  // REMOVES the value rather than leaving the old one behind. That is what makes
-  // this a PUT and not a PATCH, and doing it as a separate pass is what makes it
-  // true for the rows the resource does not mention at all.
+  // REMOVES the value rather than leaving the old one behind. That is what
+  // makes this a PUT and not a PATCH, and doing it as a separate pass is what
+  // makes it true for the rows the resource does not mention at all.
   USER_ATTRIBUTES.forEach(function (row) {
     if (row.kind === 'derived' || row.readOnly) {
       return;
@@ -677,7 +733,8 @@ function fromScimUser(resource, existing) {
     });
   });
 
-  const address = (Array.isArray(resource.addresses) && resource.addresses.length)
+  const address = (Array.isArray(resource.addresses) &&
+                   resource.addresses.length)
     ? resource.addresses[0] : {};
 
   USER_ATTRIBUTES.forEach(function (row) {
@@ -693,7 +750,8 @@ function fromScimUser(resource, existing) {
         return;
       }
       out[row.ldap] = [row.kind === 'bool'
-        ? (value === true || String(value).toLowerCase() === 'true' ? 'TRUE' : 'FALSE')
+        ? (value === true || String(value).toLowerCase() === 'true' ? 'TRUE' :
+           'FALSE')
         : (row.fromScim ? row.fromScim(value) : String(value))];
       return;
     }
@@ -707,8 +765,8 @@ function fromScimUser(resource, existing) {
     }
     // 'multi'. Every value whose `type` names this row, plus — for the row that
     // is the member's DEFAULT — every value carrying no type at all. Without
-    // that second half a client sending `{"value": "a@b.example"}` with no type,
-    // which is legal and common, would have its email accepted and stored
+    // that second half a client sending `{"value": "a@b.example"}` with no
+    // type, which is legal and common, would have its email accepted and stored
     // nowhere.
     const values = (Array.isArray(resource[row.scim]) ? resource[row.scim] : [])
       .filter(function (item) {
@@ -716,7 +774,9 @@ function fromScimUser(resource, existing) {
         return type === String(row.type).toLowerCase() ||
                (type === '' && isDefaultRowFor(row.scim, row));
       })
-      .map(function (item) { return String(item && item.value === undefined ? '' : item.value); })
+      .map(function (item) {
+        return String(item && item.value === undefined ? '' : item.value);
+      })
       .filter(function (value) { return value !== ''; });
     if (values.length) {
       out[row.ldap] = values;
@@ -725,7 +785,8 @@ function fromScimUser(resource, existing) {
 
   const userName = String(getPath(resource, 'userName') || '').trim();
   if (!userName) {
-    errors.push('userName is required (RFC 7643 section 4.1.1) and was not sent.');
+    errors.push('userName is required (RFC 7643 section 4.1.1) and was not ' +
+                'sent.');
   }
 
   log.debug("Leaving fromScimUser(). " + Object.keys(out).length +
@@ -734,13 +795,15 @@ function fromScimUser(resource, existing) {
 }
 
 // Which row of a multi-valued member takes the values that carry no type. The
-// FIRST row for that member in the catalogue, which is why the catalogue's order
-// is not arbitrary: an untyped phone number is a `telephoneNumber` because that
-// row is listed before `mobile`.
+// FIRST row for that member in the catalogue, which is why the catalogue's
+// order is not arbitrary: an untyped phone number is a `telephoneNumber`
+// because that row is listed before `mobile`.
 function isDefaultRowFor(member, row) {
+  log.debug("Entering isDefaultRowFor().");
   const rows = USER_ATTRIBUTES.filter(function (candidate) {
     return candidate.kind === 'multi' && candidate.scim === member;
   });
+  log.debug("Leaving isDefaultRowFor().");
   return rows.length > 0 && rows[0].ldap === row.ldap;
 }
 
@@ -750,8 +813,8 @@ function isDefaultRowFor(member, row) {
 // `members` arrives already resolved — the array ldap_server.js's membersOf()
 // builds, whose items carry `value`, `dn`, `present` and `kind`. This file
 // reshapes it and decides nothing about it, for the reason group_claims.js
-// gives about the same data: that module owns WHAT A GROUP IS and this owns what
-// SCIM says about one.
+// gives about the same data: that module owns WHAT A GROUP IS and this owns
+// what SCIM says about one.
 // ---------------------------------------------------------------------------
 function toScimGroup(entry, context) {
   log.debug("Entering toScimGroup(). dn=" + (entry && entry.dn));
@@ -764,8 +827,11 @@ function toScimGroup(entry, context) {
     members: [],
     meta: {
       resourceType: 'Group',
-      created: isoFromGeneralizedTime(firstOf(attributes, 'createTimestamp') || entry.createdAt),
-      lastModified: isoFromGeneralizedTime(firstOf(attributes, 'modifyTimestamp') || entry.modifiedAt),
+      created: isoFromGeneralizedTime(firstOf(attributes, 'createTimestamp') ||
+                                      entry.createdAt),
+      lastModified: isoFromGeneralizedTime(firstOf(attributes,
+                                                   'modifyTimestamp') ||
+                                           entry.modifiedAt),
       location: (ctx.location || '') + encodeURIComponent(entry.dn)
     }
   };
@@ -791,7 +857,8 @@ function toScimGroup(entry, context) {
     });
   });
 
-  log.debug("Leaving toScimGroup(). " + resource.members.length + " member(s).");
+  log.debug("Leaving toScimGroup(). " + resource.members.length +
+            " member(s).");
   return resource;
 }
 
@@ -806,7 +873,8 @@ function fromScimGroup(resource, existing) {
   const errors = [];
   const out = carryThrough(existing);
 
-  ['cn', 'scimExternalId', 'member', 'uniqueMember', 'memberUid'].forEach(function (name) {
+  ['cn', 'scimExternalId', 'member', 'uniqueMember', 'memberUid'].forEach(
+      function (name) {
     Object.keys(out).forEach(function (key) {
       if (key.toLowerCase() === name.toLowerCase()) {
         delete out[key];
@@ -816,7 +884,8 @@ function fromScimGroup(resource, existing) {
 
   const displayName = String(resource.displayName || '').trim();
   if (!displayName) {
-    errors.push('displayName is required (RFC 7643 section 4.2) and was not sent.');
+    errors.push('displayName is required (RFC 7643 section 4.2) and was not ' +
+                'sent.');
   } else {
     out.cn = [displayName];
   }
@@ -833,7 +902,10 @@ function fromScimGroup(resource, existing) {
   // rules rather than only by where it sits — a client that moves it out of
   // ou=groups should not stop it being one, and `groupOfNames` is what `member`
   // belongs to (RFC 4519 section 3.5).
-  if (!Object.keys(out).some(function (key) { return key.toLowerCase() === 'objectclass'; })) {
+  if (!Object.keys(out)
+             .some(function (key) {
+               return key.toLowerCase() === 'objectclass';
+             })) {
     out.objectClass = ['top', 'groupOfNames'];
   }
 
@@ -889,19 +961,22 @@ function prune(resource) {
 // documentation, and documentation that disagrees with itself is the shape of
 // defect this repository's "one copy of each fact" rule exists for.
 //
-// What turned it up was a reader: `tests/vendored/sts_directory_bulk_load_scim.js`
-// BUILDS every resource it sends out of this table rather than out of a copy,
-// and `type`, `parent` and `extension` are what make that possible — two rows
-// both map to `phoneNumbers` and only `type` tells `telephoneNumber` from
-// `mobile`, five rows are members of one `addresses` entry and only `parent`
-// says so, and an extension member goes under a URN rather than at the top
-// level. Adding those three to one of the two projections would have left the
-// other still unusable, and a reader unable to say which endpoint was right.
+// What turned it up was a reader:
+// `tests/vendored/sts_directory_bulk_load_scim.js` BUILDS every resource it
+// sends out of this table rather than out of a copy, and `type`, `parent` and
+// `extension` are what make that possible — two rows both map to `phoneNumbers`
+// and only `type` tells `telephoneNumber` from `mobile`, five rows are members
+// of one `addresses` entry and only `parent` says so, and an extension member
+// goes under a URN rather than at the top level. Adding those three to one of
+// the two projections would have left the other still unusable, and a reader
+// unable to say which endpoint was right.
 //
 // So the projection is HERE, beside the table it projects, and both endpoints
 // call it. This module is a LIBRARY — rule 3d-iii, `scim/CLAUDE.md` — so it
 // registers nothing and either caller may require it.
 function describeRow(row) {
+  log.debug("Entering describeRow().");
+  log.debug("Leaving describeRow().");
   return { scim: row.scim, ldap: row.ldap, kind: row.kind,
            // `type` and `parent` are null rather than absent where a row has
            // none, so that a client can tell "this mapping has no type" from
@@ -915,6 +990,8 @@ function describeRow(row) {
 }
 
 function describeMapping() {
+  log.debug("Entering describeMapping().");
+  log.debug("Leaving describeMapping().");
   return {
     user: USER_ATTRIBUTES.map(describeRow),
     group: GROUP_ATTRIBUTES.map(describeRow)

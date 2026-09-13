@@ -68,7 +68,14 @@ const pki = require('../common/pki');
 const helpers = require('../common/helpers');
 const realms = require('../common/realms');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'key_agreement_storm',
+  level: process.env.LOG_LEVEL || 'info' });
+
 async function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== A. a realm created at runtime holds no keys yet ===');
 
   // **THE ASSERTION IS ABOUT THE CACHE AND NOT ABOUT WHO WAS CALLED**, and
@@ -98,9 +105,15 @@ async function run(t) {
   // -------------------------------------------------------------------------
   await pki.start({
     realmIds: [],
-    keySetFor: function (realmId) { return helpers.stsKeysFor.of(realmId); },
+    keySetFor: function (realmId) {
+      log.debug("Entering keySetFor().");
+      log.debug("Leaving keySetFor().");
+      return helpers.stsKeysFor.of(realmId);
+    },
     keySetHeldFor: function (realmId) {
+      log.debug("Entering keySetHeldFor().");
       const cache = helpers.stsKeysFor.existing();
+      log.debug("Leaving keySetHeldFor().");
       return !!(cache && typeof cache.has === 'function' &&
                 cache.has(String(realmId || '')));
     }
@@ -112,12 +125,12 @@ async function run(t) {
 
   // ---------------------------------------------------------------------
   // **AND IT IS REMOVED AGAIN IN `finally`, WHICH IS NOT TIDINESS.**
-  // `tests/run.js` runs every file in ONE process, and `tests/realm_isolation.js`
-  // asserts that only the default realm is left — so a realm this file leaves
-  // behind fails a different file, about a service that is correct, with a
-  // message naming neither. (That is the opposite of the rule for a CONTAINER
-  // run, where a realm a job creates is deliberately kept so a failed run can
-  // be read afterwards.)
+  // `tests/run.js` runs every file in ONE process, and
+  // `tests/realm_isolation.js` asserts that only the default realm is left — so
+  // a realm this file leaves behind fails a different file, about a service
+  // that is correct, with a message naming neither. (That is the opposite of
+  // the rule for a CONTAINER run, where a realm a job creates is deliberately
+  // kept so a failed run can be read afterwards.)
   // ---------------------------------------------------------------------
   // `realms.create()` fires `realms.onChange(id, 'create')` — the same event a
   // realm created through `/admin-api/realms/create` produces, and what
@@ -148,9 +161,9 @@ async function run(t) {
     }
 
     t.check(!!(scope && scope.built),
-            'the realm has a certificate authority branch, so the watcher RAN — ' +
-            'without which the assertion below would be measuring a handler ' +
-            'that had not been called yet',
+            'the realm has a certificate authority branch, so the watcher ' +
+            'RAN — without which the assertion below would be measuring a ' +
+            'handler that had not been called yet',
             JSON.stringify({ built: !!(scope && scope.built),
                              intermediate: !!(scope && scope.intermediate) }));
 
@@ -158,14 +171,14 @@ async function run(t) {
             'AND IT HOLDS NO SIGNING KEYS FOR THAT REALM, with the realm ' +
             'created and its certificate authority built. This is the whole ' +
             'fix. `pki.js`\'s realm watcher ended with `certifyKeySet(id, ' +
-            'keySetProvider(id))` under a comment saying it certified keys "if ' +
-            'they have been generated already" — and that provider is ' +
-            '`helpers.stsKeysFor.of()`, which GENERATES a key set for a realm ' +
-            'that has none. So the watcher did not certify a realm\'s keys, it ' +
-            'MADE them, in every process that saw the realm appear. Measured on ' +
-            'a dispatched stack with three request workers: four realms created ' +
-            'and nothing requested produced THIRTEEN key generations before ' +
-            'this change and NONE after');
+            'keySetProvider(id))` under a comment saying it certified keys ' +
+            '"if they have been generated already" — and that provider is ' +
+            '`helpers.stsKeysFor.of()`, which GENERATES a key set for a ' +
+            'realm that has none. So the watcher did not certify a realm\'s ' +
+            'keys, it MADE them, in every process that saw the realm appear. ' +
+            'Measured on a dispatched stack with three request workers: four ' +
+            'realms created and nothing requested produced THIRTEEN key ' +
+            'generations before this change and NONE after');
 
     t.log.info('=== B. the keys are still made, by the first caller that ' +
                'needs them ===');
@@ -186,8 +199,8 @@ async function run(t) {
 
     const again = helpers.stsKeysFor.of(id);
     t.equal(again.kid, keys.kid,
-            'and it is the SAME key set, which is the property one process has ' +
-            'to hold before several processes can agree about it');
+            'and it is the SAME key set, which is the property one process ' +
+            'has to hold before several processes can agree about it');
   } finally {
     realms.remove(id);
   }
@@ -219,8 +232,9 @@ async function run(t) {
   // the file IS the call site and a boundary nobody has to get right is worth
   // more than a tighter match.
   t.check(options.indexOf('pki.start(') >= 0,
-          'common/service_state.js is where pki.start() is called — the check ' +
-          'below is about that call and this is what says it is still here');
+          'common/service_state.js is where pki.start() is called — the ' +
+          'check below is about that call and this is what says it is still ' +
+          'here');
 
   t.check(options.indexOf('keySetFor:') >= 0,
           'common/service_state.js hands pki.start() a key-set provider');
@@ -234,16 +248,17 @@ async function run(t) {
           'rather than `.of()`. `.of()` is the one that generates, so a ' +
           'held-check written with it would answer "yes, this process holds ' +
           'them" by MAKING them — the defect wearing the shape of its own fix');
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'key_agreement_storm',
   describe: 'A realm created at runtime does not make its signing keys in ' +
-            'every process: pki.js\'s realm watcher ASKS whether this process ' +
-            'holds them (keySetHeldFor) rather than reaching for them ' +
-            '(keySetFor, which generates) — the defect that put four key sets ' +
-            'in four processes for one realm and reached the suite as an OAEP ' +
-            'decode failure — and the keys are still made by the first caller ' +
-            'that needs them',
+            'every process: pki.js\'s realm watcher ASKS whether this ' +
+            'process holds them (keySetHeldFor) rather than reaching for ' +
+            'them (keySetFor, which generates) — the defect that put four ' +
+            'key sets in four processes for one realm and reached the suite ' +
+            'as an OAEP decode failure — and the keys are still made by the ' +
+            'first caller that needs them',
   run: run
 };

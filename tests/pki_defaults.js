@@ -45,6 +45,12 @@ const nodeCrypto = require('crypto');
 const config = require('../common/config');
 const pki = require('../common/pki');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'pki_defaults',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A scope per section, so no section passes because of what another built.
 const SIG_SCOPE = 'pki-defaults-sig';
 const YEARS_SCOPE = 'pki-defaults-years';
@@ -54,11 +60,13 @@ const STORE_SCOPE = 'pki-defaults-store';
 // Set, run, and put back whatever happens — a setting left behind is the next
 // file's starting state (tests/CLAUDE.md).
 async function withSettings(pairs, fn) {
+  log.debug("Entering withSettings().");
   const keys = Object.keys(pairs);
   try {
     keys.forEach(function (key) {
       config.setOverride(key, String(pairs[key]));
     });
+    log.debug("Leaving withSettings().");
     return await fn();
   } finally {
     keys.forEach(function (key) {
@@ -68,14 +76,18 @@ async function withSettings(pairs, fn) {
 }
 
 function yearsOf(tier) {
+  log.debug("Entering yearsOf().");
+  log.debug("Leaving yearsOf().");
   return new Date(tier.notAfter).getUTCFullYear() -
          new Date(tier.notBefore).getUTCFullYear();
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   t.log.info('=== 1. pki.signatureAlgorithm is the default of every build ===');
-  await withSettings({ 'pki.signatureAlgorithm': 'sha384-rsa' }, async function () {
+  await withSettings({ 'pki.signatureAlgorithm': 'sha384-rsa' },
+                     async function () {
     const built = await pki.buildScope(SIG_SCOPE, {});
     t.check(built.ok, 'a branch is built with no algorithms named at all — ' +
             'the shape of the auto-build and the drift repair',
@@ -100,12 +112,14 @@ async function run(t) {
     const ecIssuing = ec.chain && ec.chain.tiers &&
                       ec.chain.tiers[ec.chain.tiers.length - 1];
     t.check(ecIssuing && /ecdsa/.test(String(ecIssuing.signatureAlg)),
-            'and its tiers sign with an ECDSA digest', ecIssuing && ecIssuing.signatureAlg);
+            'and its tiers sign with an ECDSA digest',
+            ecIssuing && ecIssuing.signatureAlg);
 
     // A CALLER naming the impossible pair is still refused: that is somebody
     // asking for it rather than a default not fitting.
     const bad = await pki.buildScope(SIG_SCOPE + '-bad',
-                                     { keyAlg: 'ec-p256', signatureAlg: 'sha256-rsa' });
+                                     { keyAlg: 'ec-p256',
+                                       signatureAlg: 'sha256-rsa' });
     t.check(!bad.ok && /cannot produce/.test((bad.errors || []).join(' ')),
             'while a caller that NAMES a mismatched pair is refused by name',
             (bad.errors || []).join(' '));
@@ -136,15 +150,18 @@ async function run(t) {
             'build and a realm created at runtime could not be told before');
   });
   t.equal(pki.tierYearsFrom(undefined, 'issuing'), 0,
-          'and cleared, zero — which issueCaTier() reads as the profile\'s own');
+          'and cleared, zero — which issueCaTier() reads as the profile\'s ' +
+          'own');
 
   // -----------------------------------------------------------------------
   t.log.info('=== 3. an issued key pair lives pki.leafLifetimeDays ===');
   const leafChain = await pki.buildChain(LEAF_SCOPE, {});
-  t.check(leafChain.ok, 'a branch to issue from', (leafChain.errors || []).join(' '));
+  t.check(leafChain.ok, 'a branch to issue from',
+          (leafChain.errors || []).join(' '));
   await withSettings({ 'pki.leafLifetimeDays': 30 }, async function () {
     const issued = await pki.issueSigningKeyPair(LEAF_SCOPE,
-                                                 { identifier: 'defaults-probe' });
+                                                 { identifier:
+                                                     'defaults-probe' });
     t.check(issued.ok, 'a key pair is issued with no lifetime named',
             (issued.errors || []).join(' '));
     const record = issued.issued || {};
@@ -163,9 +180,12 @@ async function run(t) {
   t.log.info('=== 4. a full store refuses rather than evicting ===');
   await withSettings({ 'pki.maxStoredObjects': 2 }, async function () {
     t.equal(pki.MAX_OBJECTS, 2,
-            'pki.MAX_OBJECTS reads the setting, so the pane draws the live cap');
-    const first = pki.putObject(STORE_SCOPE, { id: 'obj-1', privateKeyPem: 'k1' });
-    const second = pki.putObject(STORE_SCOPE, { id: 'obj-2', privateKeyPem: 'k2' });
+            'pki.MAX_OBJECTS reads the setting, so the pane draws the live ' +
+            'cap');
+    const first = pki.putObject(STORE_SCOPE,
+                                { id: 'obj-1', privateKeyPem: 'k1' });
+    const second = pki.putObject(STORE_SCOPE,
+                                 { id: 'obj-2', privateKeyPem: 'k2' });
     t.check(first.ok && second.ok, 'two objects fit in a store of two');
     t.equal(pki.roomForObject(STORE_SCOPE, 'obj-3'), false,
             'and roomForObject() says a third will not, before anybody ' +
@@ -173,19 +193,23 @@ async function run(t) {
     t.equal(pki.roomForObject(STORE_SCOPE, 'obj-2'), true,
             'while it says there IS room to replace one already held — a ' +
             'mutant answering on the count alone survived until this line');
-    const third = pki.putObject(STORE_SCOPE, { id: 'obj-3', privateKeyPem: 'k3' });
+    const third = pki.putObject(STORE_SCOPE,
+                                { id: 'obj-3', privateKeyPem: 'k3' });
     t.check(!third.ok && third.full,
             'the third is REFUSED', (third.errors || []).join(' '));
     t.check(/pki\.maxStoredObjects/.test((third.errors || []).join(' ')),
             'with a sentence naming the setting and what to do');
-    const held = pki.objects(STORE_SCOPE).map(function (one) { return one.id; });
+    const held = pki.objects(STORE_SCOPE)
+                    .map(function (one) { return one.id; });
     t.equal(held.join(','), 'obj-1,obj-2',
-            'and the OLDEST IS STILL THERE — it used to be discarded, private ' +
-            'key and all, for an object somebody else was issuing');
+            'and the OLDEST IS STILL THERE — it used to be discarded, ' +
+            'private key and all, for an object somebody else was issuing');
     t.equal(pki.objectFor(STORE_SCOPE, 'obj-1').privateKeyPem, 'k1',
             'with its private key untouched');
-    const replaced = pki.putObject(STORE_SCOPE, { id: 'obj-2', privateKeyPem: 'k2b' });
-    t.check(replaced.ok && pki.objectFor(STORE_SCOPE, 'obj-2').privateKeyPem === 'k2b',
+    const replaced = pki.putObject(STORE_SCOPE,
+                                   { id: 'obj-2', privateKeyPem: 'k2b' });
+    t.check(replaced.ok &&
+            pki.objectFor(STORE_SCOPE, 'obj-2').privateKeyPem === 'k2b',
             'while REPLACING an object already held is never refused — it ' +
             'does not grow the row');
     // AND THE WORKBENCH'S OWN DOOR SAYS SO. `pki_authoring.issue()` did not
@@ -198,12 +222,14 @@ async function run(t) {
             'pki_authoring.issue() into a full store is REFUSED rather than ' +
             'reporting an issue that stored nothing',
             JSON.stringify((refused && refused.errors) || refused));
-    t.check(/pki\.maxStoredObjects/.test(((refused && refused.errors) || []).join(' ')),
+    t.check(/pki\.maxStoredObjects/.test(((refused &&
+                                           refused.errors) || []).join(' ')),
             'and its sentence names the setting');
     pki.removeObject(STORE_SCOPE, 'obj-1');
     pki.removeObject(STORE_SCOPE, 'obj-2');
   });
   t.equal(pki.MAX_OBJECTS, 200, 'and cleared, the cap is the old constant');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

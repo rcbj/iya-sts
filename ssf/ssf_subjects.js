@@ -198,18 +198,24 @@ const ABSOLUTE_URI = /^[A-Za-z][A-Za-z0-9+.-]*:[^\s]+$/;
 // ---------------------------------------------------------------------------
 const VALUE_CHECKS = {
   'account.uri': function (value) {
+    log.debug("Entering account.uri().");
+    log.debug("Leaving account.uri().");
     return ACCT_URI.test(value)
       ? null
       : 'is not an "acct" URI (RFC 7565) — it has to begin "acct:" and ' +
         'carry a user and a host, as in acct:alice@example.com';
   },
   'email.email': function (value) {
+    log.debug("Entering email.email().");
+    log.debug("Leaving email.email().");
     return ADDR_SPEC.test(value)
       ? null
       : 'is not an email address — one "@", something either side of it, ' +
         'and no whitespace';
   },
   'phone_number.phone_number': function (value) {
+    log.debug("Entering phone_number.phone_number().");
+    log.debug("Leaving phone_number.phone_number().");
     return E164.test(value)
       ? null
       : 'is not an E.164 number — RFC 9493 section 3.2.5 wants a leading ' +
@@ -217,17 +223,23 @@ const VALUE_CHECKS = {
         'from "+12065550100" to any receiver that compares them';
   },
   'decentralized_identifier.url': function (value) {
+    log.debug("Entering decentralized_identifier.url().");
+    log.debug("Leaving decentralized_identifier.url().");
     return DID_URL.test(value)
       ? null
       : 'is not a DID or a DID URL — it has to begin "did:", name a method ' +
         'and carry a method-specific identifier';
   },
   'uri.uri': function (value) {
+    log.debug("Entering uri.uri().");
+    log.debug("Leaving uri.uri().");
     return ABSOLUTE_URI.test(value)
       ? null
       : 'is not an absolute URI — it needs a scheme and a colon';
   },
   'issuer_subject_id.iss': function (value) {
+    log.debug("Entering issuer_subject_id.iss().");
+    log.debug("Leaving issuer_subject_id.iss().");
     return ABSOLUTE_URI.test(value)
       ? null
       : 'is not an absolute URI. An issuer identifier is one, always — it ' +
@@ -517,13 +529,13 @@ function describeSubject(subject) {
 // that asked for `opaque` never sees an email address.
 //
 // ---------------------------------------------------------------------------
-// **`facts` IS WHAT THE CALLER KNOWS ABOUT THE PERSON, AND IT WINS (2026-09-12).**
-// `{ mail, phone, did }`, each optional. This function used to know only the
-// username, so an `email` subject was `<name>@example.com` and a DID was
-// `did:example:<name>` WHEREVER the person had a real address on their entry —
-// `risc.js` holds `mail` on its row and was not passing it. A Security Event
-// Token sent to a real receiver saying that `alice@example.com`'s account was
-// disabled is about somebody at a domain nobody here owns.
+// **`facts` IS WHAT THE CALLER KNOWS ABOUT THE PERSON, AND IT WINS
+// (2026-09-12).** `{ mail, phone, did }`, each optional. This function used to
+// know only the username, so an `email` subject was `<name>@example.com` and a
+// DID was `did:example:<name>` WHEREVER the person had a real address on their
+// entry — `risc.js` holds `mail` on its row and was not passing it. A Security
+// Event Token sent to a real receiver saying that `alice@example.com`'s account
+// was disabled is about somebody at a domain nobody here owns.
 //
 // **AND WHERE THERE IS NO REAL VALUE, `mode.inventsClaimValues()` DECIDES.**
 // Development invents, exactly as before, so a client has something to parse.
@@ -534,13 +546,17 @@ function describeSubject(subject) {
 // can handle. A username that is itself an address is a real value in both.
 // ---------------------------------------------------------------------------
 function realOrInventedMail(name, facts) {
+  log.debug("Entering realOrInventedMail().");
   const mail = String((facts || {}).mail || '').trim();
   if (mail) {
+    log.debug("Leaving realOrInventedMail().");
     return mail;
   }
   if (name.indexOf('@') > 0) {
+    log.debug("Leaving realOrInventedMail().");
     return name;
   }
+  log.debug("Leaving realOrInventedMail().");
   return mode.inventsClaimValues() ? name + '@example.com' : '';
 }
 

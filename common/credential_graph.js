@@ -8,11 +8,11 @@
 // credential that was handed IN to get it, and the one behind that, back to the
 // issuance that started the whole line.
 //
-// It is a LIBRARY, like `user_graph.js` beside it, like `delegation.js` and like
-// `admin_stats.js`: it registers no route, so its position in the require order
-// does not matter and it cannot be the reason a route is missing. `admin.js`
-// renders it at /admin/tokens/credential; this file holds the model and none of
-// the HTML.
+// It is a LIBRARY, like `user_graph.js` beside it, like `delegation.js` and
+// like `admin_stats.js`: it registers no route, so its position in the require
+// order does not matter and it cannot be the reason a route is missing.
+// `admin.js` renders it at /admin/tokens/credential; this file holds the model
+// and none of the HTML.
 //
 // It requires `helpers.js`, `admin_stats.js`, `delegation.js` and
 // `user_graph.js`, and nothing requires IT except the console — so it cannot
@@ -39,55 +39,56 @@
 //
 // **THE JOIN IS ON THE IDENTIFIER AND ON NOTHING ELSE.** A delegation act
 // records what it CONSUMED and what it PRODUCED, each with the identifier the
-// protocol gives it — a `jti`, an `AssertionID` — and that identifier is the one
-// thing the delegation register and the issued register both hold about the same
-// object. So the walk is: the act whose `produced` names this identifier, then
-// the identifiers on that act's `consumed`, and again. Anything cleverer —
+// protocol gives it — a `jti`, an `AssertionID` — and that identifier is the
+// one thing the delegation register and the issued register both hold about the
+// same object. So the walk is: the act whose `produced` names this identifier,
+// then the identifiers on that act's `consumed`, and again. Anything cleverer —
 // matching on a subject and a time window, on a kind and a client — would
 // eventually join two credentials that merely look alike, and a lineage that is
 // WRONG is worse than one that is short, because the whole page is an assertion
-// about causation. It is `user_graph.js`'s dedupe rule read the other way round,
-// and for the same reason.
+// about causation. It is `user_graph.js`'s dedupe rule read the other way
+// round, and for the same reason.
 //
 // **A CREDENTIAL WITH NO IDENTIFIER ENDS THE WALK, AND THE PAGE SAYS SO RATHER
 // THAN GOING QUIET.** Two of the mechanisms here genuinely have nothing to
 // quote: a Kerberos ticket has no jti and no ID in the protocol at all, and
 // WS-Trust's `consumed` is the WS-Security credential the requester presented,
 // which this service never issued. So a trail can stop at a wall rather than at
-// an origin, and those are DIFFERENT ANSWERS: one means "this is where it began"
-// and the other means "it began somewhere this register cannot name". The result
-// carries both, separately, and the console prints the second as a reason.
+// an origin, and those are DIFFERENT ANSWERS: one means "this is where it
+// began" and the other means "it began somewhere this register cannot name".
+// The result carries both, separately, and the console prints the second as a
+// reason.
 //
-// **THE ORIGIN IS DRAWN AS AN ISSUANCE AND NOT AS A DELEGATION.** The credential
-// at the head of the line was issued by an ordinary grant — nobody exchanged
-// anything to get it — so it is drawn with `user_graph.js`'s two relations
-// rather than with the delegation register's: `issued-for` from the person to
-// the application that holds it, labelled with the GRANT, and the dashed `issued`
-// line from this service. Using `acts-for` for it would colour an authorization
-// code grant amber for impersonation, which is a claim about a mechanism that
-// was not involved. The two pictures therefore agree about what an issuance
-// looks like, which is the property that lets somebody read both.
+// **THE ORIGIN IS DRAWN AS AN ISSUANCE AND NOT AS A DELEGATION.** The
+// credential at the head of the line was issued by an ordinary grant — nobody
+// exchanged anything to get it — so it is drawn with `user_graph.js`'s two
+// relations rather than with the delegation register's: `issued-for` from the
+// person to the application that holds it, labelled with the GRANT, and the
+// dashed `issued` line from this service. Using `acts-for` for it would colour
+// an authorization code grant amber for impersonation, which is a claim about a
+// mechanism that was not involved. The two pictures therefore agree about what
+// an issuance looks like, which is the property that lets somebody read both.
 //
 // **THE AUDIENCE IS RESOLVED THROUGH THE APPLICATIONS REGISTRY, exactly as the
-// token exchange resolves one.** A token addressed to `https://esb1.example.com`
-// is addressed to the application that registered that URI on `oauthAudience`,
-// and drawing the URI as a box of its own would put two boxes on this picture
-// for one party — the failure the exchange's own lookup exists to prevent. So
-// the same lookup is asked here, the box is the application, and the URI is on
-// the line. An audience nobody registered is drawn as itself, which is the
-// honest answer and is what a real resource server looks like here. Since
-// 2026-08-26 the lookup is `user_graph.js`'s `audienceParties()` rather than a
-// copy of it here, and it also answers the two questions this copy got wrong:
-// several audiences are several parties, and an audience that is this SERVICE'S
-// own is not a party at all.
+// token exchange resolves one.** A token addressed to
+// `https://esb1.example.com` is addressed to the application that registered
+// that URI on `oauthAudience`, and drawing the URI as a box of its own would
+// put two boxes on this picture for one party — the failure the exchange's own
+// lookup exists to prevent. So the same lookup is asked here, the box is the
+// application, and the URI is on the line. An audience nobody registered is
+// drawn as itself, which is the honest answer and is what a real resource
+// server looks like here. Since 2026-08-26 the lookup is `user_graph.js`'s
+// `audienceParties()` rather than a copy of it here, and it also answers the
+// two questions this copy got wrong: several audiences are several parties, and
+// an audience that is this SERVICE'S own is not a party at all.
 //
 // **IT WALKS BACKWARDS ONLY.** *Where did this come from* is the question a row
-// on the tokens page raises; *what was later made from it* is a different one and
-// its answer is a tree rather than a line — one subject token can be exchanged by
-// any number of clients. Drawing both would make the common case (a token with
-// no ancestry and no descendants at all) into a page that has to explain why it
-// is empty in two directions. The forward direction is what /admin/delegation
-// and its map are for.
+// on the tokens page raises; *what was later made from it* is a different one
+// and its answer is a tree rather than a line — one subject token can be
+// exchanged by any number of clients. Drawing both would make the common case
+// (a token with no ancestry and no descendants at all) into a page that has to
+// explain why it is empty in two directions. The forward direction is what
+// /admin/delegation and its map are for.
 // ---------------------------------------------------------------------------
 
 const { log } = require('./helpers');
@@ -111,8 +112,8 @@ const MAX_GENERATIONS = 50;
 
 // The act that PRODUCED this identifier, or null. `acts` arrives newest first
 // (delegation.list()'s order), and the first match is the answer: an identifier
-// is minted once, so two acts claiming to have produced it would be a bug in the
-// recording rather than a case to resolve here.
+// is minted once, so two acts claiming to have produced it would be a bug in
+// the recording rather than a case to resolve here.
 function producerOf(acts, identifier) {
   log.debug("Entering producerOf(). identifier=" + identifier);
   const wanted = String(identifier || '');
@@ -172,22 +173,22 @@ function subjectOf(record) {
 
 // WHAT A TOKEN IS ADDRESSED TO is `user_graph.js`'s `audienceParties()`, and it
 // was a copy of it here until 2026-08-26. Same argument as `holderOf()` and
-// `detailOf()`: that file draws the same resource at the end of the same line on
-// the person's picture, and two answers to *what is this token for* would be two
-// pictures of one issuance on two pages of one console. The move brought two
-// things this copy did not have — an `aud` naming SEVERAL resources comes back
-// as several parties rather than as one box named after a joined string, and an
-// audience that is this service's OWN (a refresh token's, or the `<base>/resource`
-// stand-in an access token carries when nobody named a resource) is not drawn as
-// a party at all.
+// `detailOf()`: that file draws the same resource at the end of the same line
+// on the person's picture, and two answers to *what is this token for* would be
+// two pictures of one issuance on two pages of one console. The move brought
+// two things this copy did not have — an `aud` naming SEVERAL resources comes
+// back as several parties rather than as one box named after a joined string,
+// and an audience that is this service's OWN (a refresh token's, or the
+// `<base>/resource` stand-in an access token carries when nobody named a
+// resource) is not drawn as a party at all.
 
 // ---------------------------------------------------------------------------
 // THE WALK. One credential in, every generation behind it out, newest first.
 //
-// `generations[0]` is always the credential that was asked about, whether or not
-// either register still holds it — a page that answered nothing at all for an
-// identifier somebody clicked would be indistinguishable from a broken link, and
-// these stores are capped and drop the oldest.
+// `generations[0]` is always the credential that was asked about, whether or
+// not either register still holds it — a page that answered nothing at all for
+// an identifier somebody clicked would be indistinguishable from a broken link,
+// and these stores are capped and drop the oldest.
 // ---------------------------------------------------------------------------
 function trailOf(identifier) {
   log.debug("Entering trailOf(). identifier=" + identifier);
@@ -259,9 +260,9 @@ function trailOf(identifier) {
 // unchanged.
 //
 // The delegation half is `delegation.graph()` over the acts in the trail — one
-// call, that function's own answer, for the reason /admin/delegation/chain gives
-// about drawing a subset. What this adds is the ISSUANCE at the head of the
-// line, which no act recorded and which is therefore in the other register
+// call, that function's own answer, for the reason /admin/delegation/chain
+// gives about drawing a subset. What this adds is the ISSUANCE at the head of
+// the line, which no act recorded and which is therefore in the other register
 // entirely.
 // ---------------------------------------------------------------------------
 // A node from `delegation.graph()` carries that file's fields and not the four
@@ -273,10 +274,12 @@ function trailOf(identifier) {
 // exactly the interesting case (a party that both delegated and was issued
 // something) and never on the boring one.
 function normalise(node) {
+  log.debug("Entering normalise().");
   if (node.credentials === undefined) node.credentials = 0;
   if (!node.flows) node.flows = [];
   if (!node.kinds) node.kinds = [];
   if (node.authentications === undefined) node.authentications = 0;
+  log.debug("Leaving normalise().");
   return node;
 }
 
@@ -316,7 +319,8 @@ function graphOf(trail) {
     if (seed) {
       if (seed.key && !node.key) node.key = seed.key;
       if (seed.presented && !node.presented) node.presented = seed.presented;
-      if (seed.application && !node.application) node.application = seed.application;
+      if (seed.application &&
+          !node.application) node.application = seed.application;
       if (seed.chiefRole && !node.chiefRole) node.chiefRole = seed.chiefRole;
     }
     log.debug("Leaving nodeFor().");
@@ -379,7 +383,8 @@ function graphOf(trail) {
     const holder = userGraph.holderOf(credential);
     const holderId = holder ? stats.identityKeyOf(holder) : '';
     const personId = subject ? stats.identityKeyOf(subject) : '';
-    const addressed = userGraph.audienceParties(credential.audience, credential.iss);
+    const addressed = userGraph.audienceParties(credential.audience,
+                                                credential.iss);
     issuances.push({
       identifier: row.identifier, credential: credential, flow: flow,
       subject: subject, holder: holder,
@@ -387,7 +392,8 @@ function graphOf(trail) {
       // carrying the first, so `?format=json` answers the shape it always did
       // for the ordinary single-audience token rather than changing under a
       // reader who never asked for several.
-      audience: addressed[0] || { identifier: '', audience: '', registered: false },
+      audience: addressed[0] ||
+                { identifier: '', audience: '', registered: false },
       audiences: addressed
     });
 
@@ -450,8 +456,8 @@ function graphOf(trail) {
     // AND THE LINE FROM THIS SERVICE, to whoever holds it — or to the person
     // where nothing does, which is what an X509-SVID with no audience looks
     // like. Its id is the same string user_graph.js and delegation.js both use,
-    // so a party that was both issued a token and asked for a delegation has ONE
-    // line from the hexagon rather than two saying the same thing.
+    // so a party that was both issued a token and asked for a delegation has
+    // ONE line from the hexagon rather than two saying the same thing.
     const to = held ? held.id : (person ? person.id : '');
     if (sts && to) {
       const issuedEdge = edgeFor(' sts > ' + to, {
@@ -495,9 +501,9 @@ function graphOf(trail) {
         protocol: flow.protocol, spec: flow.spec,
         mode: '', policed: false,
         subject: person ? person.id : '', actor: held.id,
-        // The string the token actually carries, which is not always the name of
-        // the box it points at: an audience the applications registry knows is
-        // drawn as that application. See audienceParties().
+        // The string the token actually carries, which is not always the name
+        // of the box it points at: an audience the applications registry knows
+        // is drawn as that application. See audienceParties().
         audience: one.audience,
         audienceRegistered: one.registered,
         // AND WHICH OF THAT RESOURCE'S DELEGATED PERMISSIONS THE TOKEN CARRIES
@@ -511,7 +517,8 @@ function graphOf(trail) {
         // to union. An EMPTY array is the answer where the token asked for none
         // of them, and it is drawn as `default permissions` rather than as
         // nothing — see delegation_map.js.
-        permissions: userGraph.permissionsAddressedTo(credential.scope, one.audience),
+        permissions: userGraph.permissionsAddressedTo(credential.scope,
+                                                      one.audience),
         scopes: String(credential.scope || '').split(/\s+/).filter(Boolean)
       });
       reachEdge.credentials++;
@@ -561,8 +568,8 @@ function lineageOf(identifier) {
     // The identifiers at the head of each line — normally one.
     origins: trail.origins,
     issuances: built.issuances,
-    // Where a line stopped at a credential this register cannot name rather than
-    // at an origin. See the second decision in the header.
+    // Where a line stopped at a credential this register cannot name rather
+    // than at an origin. See the second decision in the header.
     walls: trail.walls,
     truncated: trail.truncated,
     graph: built.graph,

@@ -183,7 +183,9 @@ const MAX_ASSERTIONS = 1000;
 const seenAssertions = realms.map({ persist: 'assertion_grant.seen' });
 
 function maxAssertions() {
+  log.debug("Entering maxAssertions().");
   const count = Number(config.value('oauth2.assertionReplayCacheSize'));
+  log.debug("Leaving maxAssertions().");
   return isFinite(count) && count > 0 ? Math.floor(count) : MAX_ASSERTIONS;
 }
 
@@ -198,12 +200,15 @@ function forgetStaleAssertions() {
     }
   });
   const room = seenAssertions.size < maxAssertions();
-  log.debug('Leaving forgetStaleAssertions(). ' + seenAssertions.size + ' live; ' +
+  log.debug('Leaving forgetStaleAssertions(). ' + seenAssertions.size + ' ' +
+      'live; ' +
             (room ? 'room for another.' : 'FULL.'));
   return room;
 }
 
 function skewSeconds() {
+  log.debug("Entering skewSeconds().");
+  log.debug("Leaving skewSeconds().");
   // THE SAME SETTING SECTION 2.2 USES, deliberately. It answers "how far out
   // may somebody else's clock be", and this service has no reason to hold two
   // different opinions about that depending on which parameter the assertion
@@ -212,15 +217,21 @@ function skewSeconds() {
 }
 
 function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return config.value('oauth2.jwtBearerGrant') !== false;
 }
 
 function requiresRegisteredIssuer() {
+  log.debug("Entering requiresRegisteredIssuer().");
+  log.debug("Leaving requiresRegisteredIssuer().");
   return config.value('oauth2.jwtBearerRequireRegisteredIssuer') !== false;
 }
 
 function maxLifetimeSeconds() {
+  log.debug("Entering maxLifetimeSeconds().");
   const seconds = Number(config.value('oauth2.jwtBearerMaxLifetimeS'));
+  log.debug("Leaving maxLifetimeSeconds().");
   return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0;
 }
 
@@ -241,13 +252,17 @@ function keysFrom(jwksText) {
     document = typeof jwksText === 'string' ? JSON.parse(jwksText) : jwksText;
   } catch (e) {
     log.debug('Leaving keysFrom(). The registered JWKS is not JSON.');
-    return { errorCode: 'STS-OAUTH-0026', error: 'the JWKS registered for this party is not valid JSON: ' +
+    return { errorCode: 'STS-OAUTH-0026', error: 'the JWKS registered for ' +
+                                                 'this party is not valid ' +
+                                                 'JSON: ' +
                     e.message };
   }
   const jwks = (document && Array.isArray(document.keys)) ? document.keys : [];
   if (!jwks.length) {
     log.debug('Leaving keysFrom(). The registered JWKS has no keys.');
-    return { errorCode: 'STS-OAUTH-0027', error: 'the JWKS registered for this party contains no keys' };
+    return { errorCode: 'STS-OAUTH-0027', error: 'the JWKS registered for ' +
+                                                 'this party contains no ' +
+                                                 'keys' };
   }
   const keys = [];
   for (let i = 0; i < jwks.length; i++) {
@@ -263,22 +278,23 @@ function keysFrom(jwksText) {
         continue;
       }
       keys.push({ kid: jwk.kid ? String(jwk.kid) : '', jwk: jwk,
-                  key: nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' }) });
+                  key: nodeCrypto.createPublicKey(
+                      { key: jwk, format: 'jwk' }) });
     } catch (e) {
       // One unreadable key does not spoil the set: a JWKS commonly carries a
       // key this version of node cannot build beside ones it can, and refusing
       // the whole document would make a party unable to present an assertion
       // signed with the key that was fine.
-      log.warn('assertion_grant: a key in a registered JWKS could not be read ' +
-               'and is ignored (' +
+      log.warn('assertion_grant: a key in a registered JWKS could not be ' +
+               'read and is ignored (' +
                (jwk && jwk.kid ? 'kid=' + jwk.kid : 'no kid') + '): ' +
                e.message);
     }
   }
   if (!keys.length) {
     log.debug('Leaving keysFrom(). None of the registered keys could be read.');
-    return { errorCode: 'STS-OAUTH-0028', error: 'none of the keys in the JWKS registered for this party ' +
-                    'could be read' };
+    return { errorCode: 'STS-OAUTH-0028', error: 'none of the keys in the ' +
+                    'JWKS registered for this party could be read' };
   }
   log.debug('Leaving keysFrom(). ' + keys.length + ' usable key(s).');
   return { keys: keys };
@@ -327,9 +343,10 @@ function unwrapAssertion(presented, opts) {
     header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
   } catch (e) {
     log.debug('Leaving unwrapAssertion(). The JWE header is not JSON.');
-    return { ok: false, errorCode: 'STS-OAUTH-0029', description: 'this assertion has five parts, so it is ' +
-             'an encrypted JWT (RFC 7523 section 3, claim 10) — and its ' +
-             'protected header is not valid base64url JSON: ' + e.message };
+    return { ok: false, errorCode: 'STS-OAUTH-0029', description: 'this ' +
+             'assertion has five parts, so it is an encrypted JWT (RFC 7523 ' +
+             'section 3, claim 10) — and its protected header is not valid ' +
+             'base64url JSON: ' + e.message };
   }
   const alg = String((header && header.alg) || '');
   // -------------------------------------------------------------------------
@@ -375,7 +392,8 @@ function unwrapAssertion(presented, opts) {
   }
   if (!candidates.length) {
     log.debug('Leaving unwrapAssertion(). No key of that kind.');
-    return { ok: false, errorCode: 'STS-OAUTH-0030', description: 'this assertion is encrypted "' + alg +
+    return { ok: false, errorCode: 'STS-OAUTH-0030', description: 'this ' +
+        'assertion is encrypted "' + alg +
              '" and this authorization server holds no key it could be ' +
              'encrypted to' +
              (header.epk && header.epk.crv
@@ -399,13 +417,15 @@ function unwrapAssertion(presented, opts) {
   }
   if (!opened) {
     log.debug('Leaving unwrapAssertion(). It would not decrypt.');
-    return { ok: false, errorCode: 'STS-OAUTH-0031', description: 'this assertion is encrypted and could ' +
-             'not be decrypted: ' + lastError };
+    return { ok: false, errorCode: 'STS-OAUTH-0031', description: 'this ' +
+             'assertion is encrypted and could not be ' +
+             'decrypted: ' + lastError };
   }
   if (opened.header.cty && String(opened.header.cty).toUpperCase() !== 'JWT') {
     log.debug('Leaving unwrapAssertion(). The content type is not JWT.');
-    return { ok: false, errorCode: 'STS-OAUTH-0032', description: 'this assertion is an encrypted JWT ' +
-             'whose protected header says cty="' + opened.header.cty + '". ' +
+    return { ok: false, errorCode: 'STS-OAUTH-0032', description: 'this ' +
+             'assertion is an encrypted JWT whose protected header says ' +
+             'cty="' + opened.header.cty + '". ' +
              'An assertion is a signed JWT inside the encryption (RFC 7519 ' +
              'section 5.2), so cty must be "JWT" or absent.' };
   }
@@ -433,6 +453,8 @@ function unwrapAssertion(presented, opts) {
         .toString('utf8'));
       return !!(head && head.alg);
     } catch (e) {
+      log.debug("Caught in a callback in unwrapAssertion(): " +
+                ((e && e.message) || e));
       // Not a protected header. Swallowed rather than reported, because the
       // answer to "is this a JWS" is simply no and the sentence below says
       // what that means.
@@ -441,11 +463,11 @@ function unwrapAssertion(presented, opts) {
   })();
   if (!looksSigned) {
     log.debug('Leaving unwrapAssertion(). The plaintext is not a JWS.');
-    return { ok: false, errorCode: 'STS-OAUTH-0033', description: 'this assertion decrypted to something ' +
-             'that is not a signed JWT. RFC 7523 section 3 claim 9 requires ' +
-             'the assertion to be signed or MACed, and encryption does not ' +
-             'stand in for that: an encrypted document says nothing about ' +
-             'who wrote it.' };
+    return { ok: false, errorCode: 'STS-OAUTH-0033', description: 'this ' +
+             'assertion decrypted to something that is not a signed JWT. RFC ' +
+             '7523 section 3 claim 9 requires the assertion to be signed or ' +
+             'MACed, and encryption does not stand in for that: an encrypted ' +
+             'document says nothing about who wrote it.' };
   }
   if (!opened.header.cty) {
     log.warn('assertion_grant: an encrypted assertion arrived without ' +
@@ -456,8 +478,10 @@ function unwrapAssertion(presented, opts) {
   log.debug('Leaving unwrapAssertion(). Decrypted. alg=' + alg);
   return { ok: true, jws: inner, encrypted: true,
            encryption: { alg: alg, enc: String(opened.header.enc || ''),
-                         kid: opened.header.kid ? String(opened.header.kid) : '',
-                         cty: opened.header.cty ? String(opened.header.cty) : '' } };
+                         kid: opened.header.kid ? String(opened.header.kid) :
+                              '',
+                         cty: opened.header.cty ? String(opened.header.cty) :
+                              '' } };
 }
 
 // ---------------------------------------------------------------------------
@@ -547,7 +571,8 @@ function issuerEntry(iss) {
     const values = Array.isArray(declared) ? declared
       : (declared ? [String(declared)] : []);
     if (values.indexOf(wanted) >= 0) {
-      log.debug('Leaving issuerEntry(). Declared by ' + all[i].identifier + '.');
+      log.debug('Leaving issuerEntry(). Declared by ' + all[i].identifier +
+                '.');
       return { identifier: all[i].identifier, fields: fields, declared: true,
                kind: 'application' };
     }
@@ -626,6 +651,8 @@ async function keyFromChain(header) {
     return null;
   }
   const pem = function (b64) {
+    log.debug("Entering pem().");
+    log.debug("Leaving pem().");
     return '-----BEGIN CERTIFICATE-----\n' +
            String(b64).replace(/(.{64})/g, '$1\n').replace(/\n$/, '') +
            '\n-----END CERTIFICATE-----\n';
@@ -637,7 +664,8 @@ async function keyFromChain(header) {
     checked = await pki.verifyLeaf(undefined, leafPem, rest);
   } catch (e) {
     log.debug('Leaving keyFromChain(). The path would not build.');
-    return { errorCode: 'STS-OAUTH-0034', error: 'the x5c chain could not be checked: ' + e.message };
+    return { errorCode: 'STS-OAUTH-0034', error: 'the x5c chain could not be ' +
+                                                 'checked: ' + e.message };
   }
   if (!checked.ok && checked.revocation && checked.revocation.refused) {
     // IT CHAINS HERE AND SOMETHING ON IT IS REVOKED (2026-09-12) — a different
@@ -646,14 +674,15 @@ async function keyFromChain(header) {
     log.debug('Leaving keyFromChain(). It chains here and is revoked.');
     return { errorCode: checked.revocation.status === 'revoked'
                           ? 'STS-PKI-0118' : 'STS-PKI-0119',
-             error: 'the certificate in this assertion\'s x5c header chains to ' +
-                    'this realm\'s certificate authority and was refused on ' +
-                    'revocation: ' + checked.revocation.why };
+             error: 'the certificate in this assertion\'s x5c header chains ' +
+                    'to this realm\'s certificate authority and was refused ' +
+                    'on revocation: ' + checked.revocation.why };
   }
   if (!checked.ok) {
     log.debug('Leaving keyFromChain(). It does not chain here.');
-    return { errorCode: 'STS-OAUTH-0035', error: 'the certificate in this assertion\'s x5c header does not ' +
-                    'chain to this realm\'s own certificate authority: ' +
+    return { errorCode: 'STS-OAUTH-0035', error: 'the certificate in this ' +
+                    'assertion\'s x5c header does not chain to this realm\'s ' +
+                    'own certificate authority: ' +
                     checked.why + ' A certificate that arrives WITH the ' +
                     'signature proves nothing on its own, so this service ' +
                     'uses one only when it can see that it issued it.' };
@@ -662,8 +691,9 @@ async function keyFromChain(header) {
   try {
     key = new nodeCrypto.X509Certificate(leafPem).publicKey;
   } catch (e) {
-    return { errorCode: 'STS-OAUTH-0036', error: 'the certificate in this assertion\'s x5c header could ' +
-                    'not be read: ' + e.message };
+    log.debug("Leaving keyFromChain().");
+    return { errorCode: 'STS-OAUTH-0036', error: 'the certificate in this ' +
+                    'assertion\'s x5c header could not be read: ' + e.message };
   }
   // ---------------------------------------------------------------------
   // AND WHO IT WAS ISSUED TO, WHICH IS A CHECK THIS PATH DID NOT USED TO
@@ -701,7 +731,8 @@ async function keyFromChain(header) {
   return { key: key, subject: leaf.subject,
            subjectKind: subjectKind, subjectName: subjectName,
            thumbprint: stsCrypto.certificateThumbprint(leafPem,
-                                                       { format: 'base64url' }) };
+                                                       { format:
+                                                           'base64url' }) };
 }
 
 // ---------------------------------------------------------------------------
@@ -722,22 +753,24 @@ async function verify(opts) {
 
   if (!enabled()) {
     log.debug('Leaving verify(). The grant is switched off.');
-    return { ok: false, errorCode: 'STS-OAUTH-0037', error: 'unsupported_grant_type',
-             description: 'This authorization server does not perform the JWT ' +
-                          'bearer grant (RFC 7523 section 2.1). ' +
+    return { ok: false, errorCode: 'STS-OAUTH-0037',
+             error: 'unsupported_grant_type',
+             description: 'This authorization server does not perform the ' +
+                          'JWT bearer grant (RFC 7523 section 2.1). ' +
                           'oauth2.jwtBearerGrant is off.' };
   }
   const presented = String(options.assertion || '');
   if (!presented) {
     log.debug('Leaving verify(). No assertion.');
     return { ok: false, errorCode: 'STS-OAUTH-0038', error: 'invalid_request',
-             description: 'grant_type="' + GRANT_TYPE + '" takes the assertion ' +
-                          'in an `assertion` parameter (RFC 7521 section 4.1). ' +
-                          'This request carried none.' };
+             description: 'grant_type="' + GRANT_TYPE + '" takes the ' +
+                          'assertion in an `assertion` parameter (RFC 7521 ' +
+                          'section 4.1). This request carried none.' };
   }
 
   // --- RFC 7523 section 3 claim 10: it may be encrypted ---------------------
-  const unwrapped = unwrapAssertion(presented, { secret: options.clientSecret });
+  const unwrapped = unwrapAssertion(presented,
+                                    { secret: options.clientSecret });
   if (!unwrapped.ok) {
     log.debug('Leaving verify(). It would not decrypt.');
     return { ok: false, errorCode: unwrapped.errorCode, error: GRANT_ERROR,
@@ -750,7 +783,8 @@ async function verify(opts) {
   try {
     const parts = jws.split('.');
     header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
-    unverified = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    unverified = JSON.parse(Buffer.from(parts[1], 'base64url')
+                                  .toString('utf8'));
   } catch (e) {
     log.debug('Leaving verify(). It is not a JWT.');
     return { ok: false, errorCode: 'STS-OAUTH-0039', error: GRANT_ERROR,
@@ -764,12 +798,13 @@ async function verify(opts) {
     // to be told which rule it broke.
     log.debug('Leaving verify(). alg=none.');
     return { ok: false, errorCode: 'STS-OAUTH-0040', error: GRANT_ERROR,
-             description: 'this assertion says alg="none". RFC 7523 section 3 ' +
-                          'claim 9 requires the assertion to be digitally ' +
+             description: 'this assertion says alg="none". RFC 7523 section ' +
+                          '3 claim 9 requires the assertion to be digitally ' +
                           'signed or MACed — an unsigned assertion is a ' +
                           'request to issue a token for anybody who asks.' };
   }
   if (stsCrypto.JWS_SIGNING_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving verify().");
     return { ok: false, errorCode: 'STS-OAUTH-0041', error: GRANT_ERROR,
              description: 'this assertion is signed "' + alg + '" and this ' +
                           'service verifies ' +
@@ -778,9 +813,10 @@ async function verify(opts) {
 
   const iss = String((unverified && unverified.iss) || '');
   if (!iss) {
+    log.debug("Leaving verify().");
     return { ok: false, errorCode: 'STS-OAUTH-0042', error: GRANT_ERROR,
-             description: 'RFC 7523 section 3 claim 1: an assertion must carry ' +
-                          'an `iss` naming the party that issued it.' };
+             description: 'RFC 7523 section 3 claim 1: an assertion must ' +
+                          'carry an `iss` naming the party that issued it.' };
   }
 
   // --- Which keys could have signed it -------------------------------------
@@ -794,12 +830,12 @@ async function verify(opts) {
     if (read.jwksUriOnly) {
       issuerProblemCode = 'STS-OAUTH-0044';
       issuerProblem = 'the application registered for this issuer has a ' +
-                      'jwks_uri and no jwks. This service will NOT fetch a URL ' +
-                      'somebody registered in order to verify a credential — ' +
-                      'that is a server-side request forgery with a ' +
-                      'specification citation attached. Register the keys by ' +
-                      'value, as `jwks`, or have this service issue a key pair ' +
-                      'from /admin/pki.';
+                      'jwks_uri and no jwks. This service will NOT fetch a ' +
+                      'URL somebody registered in order to verify a ' +
+                      'credential — that is a server-side request forgery ' +
+                      'with a specification citation attached. Register the ' +
+                      'keys by value, as `jwks`, or have this service issue ' +
+                      'a key pair from /admin/pki.';
     } else if (read.problems.length) {
       issuerProblemCode = 'STS-OAUTH-0045';
       issuerProblem = read.problems.join('; ') + '.';
@@ -838,32 +874,34 @@ async function verify(opts) {
     return { ok: false, errorCode: 'STS-OAUTH-0043', error: GRANT_ERROR,
              description: 'nothing in this realm is registered to issue ' +
                           'assertions as "' + iss + '" — no application ' +
-                          'declares it and nobody in ou=users holds a signing ' +
-                          'key pair under it. This is the one grant ' +
-                          'here that cannot be permissive: an assertion IS the ' +
-                          'whole authorization, so accepting one from anybody ' +
-                          'would mean anybody who can reach this port getting ' +
-                          'an access token as anybody. Declare the issuer on ' +
-                          'an application entry as `oauthAssertionIssuer`, and ' +
-                          'give it a `jwks` or a key pair issued from ' +
-                          '/admin/pki — or, for a person asserting about ' +
-                          'THEMSELVES, issue that person a key pair from the ' +
-                          'same page, which writes `stsAssertionJwks` onto ' +
-                          'their entry. `oauth2.jwtBearerRequireRegisteredIssuer` ' +
-                          'turns this refusal off, and reading what it says ' +
-                          'before doing so is the point of it having a ' +
-                          'description.' };
+                          'declares it and nobody in ou=users holds a ' +
+                          'signing key pair under it. This is the one grant ' +
+                          'here that cannot be permissive: an assertion IS ' +
+                          'the whole authorization, so accepting one from ' +
+                          'anybody would mean anybody who can reach this ' +
+                          'port getting an access token as anybody. Declare ' +
+                          'the issuer on an application entry as ' +
+                          '`oauthAssertionIssuer`, and give it a `jwks` or a ' +
+                          'key pair issued from /admin/pki — or, for a ' +
+                          'person asserting about THEMSELVES, issue that ' +
+                          'person a key pair from the same page, which ' +
+                          'writes `stsAssertionJwks` onto their entry. ' +
+                          '`oauth2.jwtBearerRequireRegisteredIssuer` turns ' +
+                          'this refusal off, and reading what it says before ' +
+                          'doing so is the point of it having a description.' };
   }
   if (!candidates.length) {
     log.debug('Leaving verify(). No key to try.');
-    return { ok: false, errorCode: issuerProblem ? issuerProblemCode : 'STS-OAUTH-0046',
+    return { ok: false,
+             errorCode: issuerProblem ? issuerProblemCode : 'STS-OAUTH-0046',
              error: GRANT_ERROR,
              description: issuerProblem ||
-                          ('there is no key registered against "' + iss + '" to ' +
-                           'verify this assertion with. Put a JWKS on the ' +
-                           'application entry as `jwks`, or issue a signing key ' +
-                           'pair from /admin/pki — to the application, or to ' +
-                           'the person, depending on which of the two "' + iss +
+                          ('there is no key registered against "' + iss + '" ' +
+                           'to verify this assertion with. Put a JWKS on the ' +
+                           'application entry as `jwks`, or issue a signing ' +
+                           'key pair from /admin/pki — to the application, ' +
+                           'or to the person, depending on which of the two ' +
+                           '"' + iss +
                            '" names.') };
   }
 
@@ -873,7 +911,9 @@ async function verify(opts) {
   // signature either verifies under a key or it does not, and a party that
   // rotated without updating its kid is a party whose assertion is genuine.
   const narrowed = header.kid
-    ? candidates.filter(function (one) { return one.kid === String(header.kid); })
+    ? candidates.filter(function (one) {
+      return one.kid === String(header.kid);
+    })
     : candidates;
   const attempts = narrowed.length ? narrowed : candidates;
   let claims = null;
@@ -899,7 +939,8 @@ async function verify(opts) {
     log.debug('Leaving verify(). It did not verify.');
     return { ok: false, errorCode: 'STS-OAUTH-0047', error: GRANT_ERROR,
              description: 'the assertion did not verify: ' + lastError +
-                          '. It must be signed by a key registered for "' + iss +
+                          '. It must be signed by a key registered for "' +
+                          iss +
                           '", name one of ' + audiences.join(' or ') +
                           ' as `aud`, and be unexpired.' };
   }
@@ -915,26 +956,31 @@ async function verify(opts) {
   let keyRevocation = null;
   if (usedKey && usedKey.source !== 'x5c') {
     keyRevocation = await revocationStatus.registeredKeyVerdictFor(usedKey.jwk,
-      'the key "' + (usedKey.kid || '(no kid)') + '" in ' + usedKey.source + ' for "' + iss + '"');
+      'the key "' + (usedKey.kid || '(no kid)') + '" in ' + usedKey.source +
+          ' ' +
+          'for "' + iss + '"');
     if (keyRevocation.refused) {
-      log.warn('assertion_grant: the registered key that verified an assertion from "' + iss +
+      log.warn('assertion_grant: the registered key that verified an ' +
+               'assertion from "' + iss +
                '" is refused: ' + keyRevocation.why);
       log.debug('Leaving verify(). The registered key is revoked.');
       return { ok: false, errorCode: 'STS-PKI-0129', error: GRANT_ERROR,
-               description: 'the key registered for "' + iss + '" that verified this ' +
-                            'assertion may no longer be used: ' + keyRevocation.why };
+               description: 'the key registered for "' + iss + '" that ' +
+                            'verified this assertion may no longer be ' +
+                            'used: ' + keyRevocation.why };
     }
   }
 
   // --- RFC 7523 section 3, claim by claim ----------------------------------
   const sub = String(claims.sub || '');
   if (!sub) {
+    log.debug("Leaving verify().");
     return { ok: false, errorCode: 'STS-OAUTH-0048', error: GRANT_ERROR,
-             description: 'RFC 7523 section 3 claim 2: an assertion used as an ' +
-                          'authorization grant must carry a `sub` naming the ' +
-                          'principal the token is for. An assertion with an ' +
-                          '`iss` and no `sub` says who is asking and not who ' +
-                          'they are asking about.' };
+             description: 'RFC 7523 section 3 claim 2: an assertion used as ' +
+                          'an authorization grant must carry a `sub` naming ' +
+                          'the principal the token is for. An assertion with ' +
+                          'an `iss` and no `sub` says who is asking and not ' +
+                          'who they are asking about.' };
   }
   // -------------------------------------------------------------------------
   // THE ONE CHECK THAT IS ABOUT WHO THE ISSUER IS RATHER THAN WHAT THE
@@ -983,30 +1029,35 @@ async function verify(opts) {
     log.debug('Leaving verify(). A person asserted about somebody else.');
     return { ok: false, errorCode: 'STS-OAUTH-0049', error: GRANT_ERROR,
              description: '"' + iss + '" is a PERSON in this realm, and a ' +
-                          'person\'s assertion may only be about themselves — ' +
-                          'this one names "' + sub + '" as its `sub`. RFC 7523 ' +
-                          'section 3 claim 2 says the subject of an ' +
+                          'person\'s assertion may only be about themselves ' +
+                          '— this one names ' +
+                          '"' + sub + '" as its `sub`. RFC ' +
+                          '7523 section 3 claim 2 says the subject of an ' +
                           'authorization grant "typically identifies an ' +
                           'authorized accessor or resource owner", and a key ' +
                           'issued to one resource owner is that person\'s ' +
-                          'credential rather than permission to speak for the ' +
-                          'others. A party that may assert about other people ' +
-                          'is an APPLICATION with the issuer declared on it as ' +
-                          '`oauthAssertionIssuer` — which is a thing an ' +
-                          'operator did, and is exactly the difference.' };
+                          'credential rather than permission to speak for ' +
+                          'the others. A party that may assert about other ' +
+                          'people is an APPLICATION with the issuer declared ' +
+                          'on it as `oauthAssertionIssuer` — which is a ' +
+                          'thing an operator did, and is exactly the ' +
+                          'difference.' };
   }
   if (claims.exp === undefined || claims.exp === null) {
+    log.debug("Leaving verify().");
     // The library only checks an `exp` that is present. Section 3 claim 4
     // makes it REQUIRED, and an assertion with no expiry is a bearer
     // credential that never stops working.
     return { ok: false, errorCode: 'STS-OAUTH-0050', error: GRANT_ERROR,
-             description: 'RFC 7523 section 3 claim 4: an assertion must carry ' +
-                          'an `exp`. One without it never expires, which makes ' +
-                          'it a credential anybody who captures it can use for ' +
-                          'ever.' };
+             description: 'RFC 7523 section 3 claim 4: an assertion must ' +
+                          'carry an `exp`. One without it never expires, ' +
+                          'which makes it a credential anybody who captures ' +
+                          'it can use for ever.' };
   }
   const nowSeconds = Math.floor(Date.now() / 1000);
-  if (claims.iat !== undefined && Number(claims.iat) > nowSeconds + skewSeconds()) {
+  if (claims.iat !== undefined &&
+      Number(claims.iat) > nowSeconds + skewSeconds()) {
+    log.debug("Leaving verify().");
     // RFC 7523 section 3 claim 6 is OPTIONAL and says nothing about the
     // future. Refused anyway: an assertion issued in the future is a clock
     // that is wrong somewhere, and saying so is more useful than accepting it
@@ -1029,6 +1080,7 @@ async function verify(opts) {
   const hasIat = claims.iat !== undefined && claims.iat !== null;
   const from = hasIat ? Number(claims.iat) : nowSeconds;
   if (cap && Number(claims.exp) - from > cap) {
+    log.debug("Leaving verify().");
     // RFC 7521 section 5.2 (6) invites an authorization server to reject an
     // assertion whose lifetime is unreasonable, and leaves "unreasonable" to
     // it. A short life is the whole difference between an assertion and a
@@ -1036,8 +1088,9 @@ async function verify(opts) {
     return { ok: false, errorCode: 'STS-OAUTH-0052', error: GRANT_ERROR,
              description: 'this assertion is valid for ' +
                           (Number(claims.exp) - from) + ' seconds' +
-                          (hasIat ? '' : ' from now (it carries no `iat`, so its ' +
-                                         'lifetime is measured from when it arrived)') +
+                          (hasIat ? '' : ' from now (it carries no `iat`, so ' +
+                                         'its lifetime is measured from when ' +
+                                         'it arrived)') +
                           ' and this authorization server accepts at ' +
                           'most ' + cap + ' (oauth2.jwtBearerMaxLifetimeS). ' +
                           'RFC 7521 section 5.2 leaves the ceiling to the ' +
@@ -1045,14 +1098,15 @@ async function verify(opts) {
                           'seconds of being minted.' };
   }
   if (!claims.jti) {
+    log.debug("Leaving verify().");
     return { ok: false, errorCode: 'STS-OAUTH-0053', error: GRANT_ERROR,
-             description: 'RFC 7523 section 3 claim 7 makes `jti` optional and ' +
-                          'this authorization server requires one, which is ' +
-                          'that section\'s last paragraph read literally: it ' +
-                          'says a server MAY refuse a reused assertion, and an ' +
-                          'assertion with no `jti` cannot be remembered — so ' +
-                          'accepting one means accepting a credential this ' +
-                          'service has no way to spend.' };
+             description: 'RFC 7523 section 3 claim 7 makes `jti` optional ' +
+                          'and this authorization server requires one, which ' +
+                          'is that section\'s last paragraph read literally: ' +
+                          'it says a server MAY refuse a reused assertion, ' +
+                          'and an assertion with no `jti` cannot be ' +
+                          'remembered — so accepting one means accepting a ' +
+                          'credential this service has no way to spend.' };
   }
   const room = forgetStaleAssertions();
   const key = iss + ':' + String(claims.jti);
@@ -1062,24 +1116,26 @@ async function verify(opts) {
              'expires, so a second use of one is refused.');
     log.debug('Leaving verify(). The jti was replayed.');
     return { ok: false, errorCode: 'STS-OAUTH-0054', error: GRANT_ERROR,
-             description: 'this assertion has been used already. Its `jti` is ' +
-                          'remembered until the assertion expires, because a ' +
-                          'signed assertion captured off the wire is a ' +
-                          'credential until then. Mint a fresh one per ' +
+             description: 'this assertion has been used already. Its `jti` ' +
+                          'is remembered until the assertion expires, ' +
+                          'because a signed assertion captured off the wire ' +
+                          'is a credential until then. Mint a fresh one per ' +
                           'request.' };
   }
   if (!room) {
-    log.warn('assertion_grant: the replay cache for this realm is full of unexpired ' +
-             'assertions (oauth2.assertionReplayCacheSize = ' + maxAssertions() + '), so ' +
-             'a new grant from "' + iss + '" is REFUSED rather than a live one being ' +
-             'forgotten.');
+    log.warn('assertion_grant: the replay cache for this realm is full of ' +
+             'unexpired assertions (oauth2.assertionReplayCacheSize ' +
+             '= ' + maxAssertions() + '), ' +
+             'so a new grant from ' +
+             '"' + iss + '" is REFUSED rather than a live ' +
+             'one being forgotten.');
     log.debug('Leaving verify(). The replay cache is full.');
     return { ok: false, errorCode: 'STS-OAUTH-0055', error: GRANT_ERROR,
-             description: 'this authorization server is holding as many unexpired ' +
-                          'assertions as it is configured to remember ' +
-                          '(oauth2.assertionReplayCacheSize), and it will not ' +
-                          'forget one that could still be replayed in order to ' +
-                          'accept yours. Retry shortly.' };
+             description: 'this authorization server is holding as many ' +
+                          'unexpired assertions as it is configured to ' +
+                          'remember (oauth2.assertionReplayCacheSize), and ' +
+                          'it will not forget one that could still be ' +
+                          'replayed in order to accept yours. Retry shortly.' };
   }
   // Remembered until it EXPIRES rather than for a fixed window, so the cache
   // and the `exp` check cover exactly the same span with no gap in which a
@@ -1207,7 +1263,8 @@ function extraClaimsFrom(claims) {
       out[name] = claims[name];
     }
   });
-  log.debug('Leaving extraClaimsFrom(). ' + Object.keys(out).length + ' claim(s).');
+  log.debug('Leaving extraClaimsFrom(). ' + Object.keys(out).length + ' ' +
+      'claim(s).');
   return out;
 }
 
@@ -1230,5 +1287,9 @@ module.exports = {
   verify: verify,
   extraClaimsFrom: extraClaimsFrom,
   // For the pages that report how many assertions are being remembered.
-  assertionsRemembered: function () { return seenAssertions.size; }
+  assertionsRemembered: function () {
+    log.debug("Entering assertionsRemembered().");
+    log.debug("Leaving assertionsRemembered().");
+    return seenAssertions.size;
+  }
 };

@@ -51,6 +51,12 @@ const spiffeGrpc = require('../spiffe/spiffe_grpc');
 const spiffeServer = require('../spiffe/spiffe_server');
 const worker = require('../common/request_worker');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'spiffe_operations',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // A CALL AS THE FRONT PROCESS HANDS ONE OVER. Exactly the two members a
 // handler reads — `request` and `spiffeCaller` — which is what
@@ -58,6 +64,8 @@ const worker = require('../common/request_worker');
 // handler files.
 // ---------------------------------------------------------------------------
 function callerLike(fields) {
+  log.debug("Entering callerLike().");
+  log.debug("Leaving callerLike().");
   return Object.assign({
     surface: 'server',
     transport: 'tcp',
@@ -74,26 +82,31 @@ function callerLike(fields) {
 // The round trip: what the worker is sent, THROUGH THE CHANNEL'S OWN CLONE,
 // and then run the way a worker runs it.
 function dispatched(surface, method, request, caller) {
+  log.debug("Entering dispatched().");
   // **STRUCTURED CLONE AND NOT `JSON.parse(JSON.stringify(...))`**, which is
   // where this file differs from the directory's and is the point of section 2:
   // the request pool forks with `serialization: 'advanced'` precisely because
   // these messages carry Buffers, and cloning through JSON here would be
   // testing a channel this service does not use.
   const args = structuredClone({ request: request, caller: caller || null });
+  log.debug("Leaving dispatched().");
   return spiffeGrpc.performMethod(surface, method, args);
 }
 
 // The same handler called the way the wrapper calls it. This is the CONTROL and
 // it does not go near the codec.
 function directly(surface, method, request, caller) {
+  log.debug("Entering directly().");
   const handler = spiffeGrpc.localMethod(surface, method);
+  log.debug("Leaving directly().");
   return Promise.resolve()
     .then(function () {
       return handler({ request: request, spiffeCaller: caller || null });
     })
     .then(function (reply) { return { ok: true, reply: reply || {} }; },
           function (err) {
-            return { ok: false, code: err && err.code, message: err && err.message };
+            return { ok: false, code: err && err.code,
+                     message: err && err.message };
           });
 }
 
@@ -104,15 +117,17 @@ function directly(surface, method, request, caller) {
 // registry with no arguments worth getting wrong — so what is being compared is
 // the codec and not a handler's opinion.
 //
-// **THE METHOD NAME IS SERVICE-QUALIFIED AND THAT IS THE SPIRE SERVER API'S
-// OWN SHAPE.** Six gRPC services share one surface there — `Entry`, `Agent`,
+// **THE METHOD NAME IS SERVICE-QUALIFIED AND THAT IS THE SPIRE SERVER API'S OWN
+// SHAPE.** Six gRPC services share one surface there — `Entry`, `Agent`,
 // `Bundle`, `SVID`, `TrustDomain`, `Debug` — and two of them would otherwise
 // collide (`Bundle.CountBundles` and `Agent.CountAgents` are fine, but
-// `GetBundle` exists on two). So a kind is `spiffe.<surface>.<Service>.<Method>`
-// and the method half contains a dot, which is why every split below takes the
-// REMAINDER rather than the third segment.
+// `GetBundle` exists on two). So a kind is
+// `spiffe.<surface>.<Service>.<Method>` and the method half contains a dot,
+// which is why every split below takes the REMAINDER rather than the third
+// segment.
 // ---------------------------------------------------------------------------
 async function checkAMethodAgrees(t) {
+  log.debug("Entering checkAMethodAgrees().");
   t.log.info('=== a dispatched method gives the same answer ===');
 
   const caller = callerLike();
@@ -129,6 +144,7 @@ async function checkAMethodAgrees(t) {
           'and the two answers are identical',
           'through the pool: ' + JSON.stringify(viaPool.reply).slice(0, 300) +
           '\n  directly:  ' + JSON.stringify(control.reply).slice(0, 300));
+  log.debug("Leaving checkAMethodAgrees().");
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +173,8 @@ async function checkAMethodAgrees(t) {
 // rather than a restatement of how Buffers work.
 // ---------------------------------------------------------------------------
 function roundTrip(options) {
+  log.debug("Entering roundTrip().");
+  log.debug("Leaving roundTrip().");
   return new Promise(function (resolve, reject) {
     const child = child_process.fork(
       path.join(__dirname, 'tools', 'ipc_echo.js'), [], options);
@@ -178,10 +196,12 @@ function roundTrip(options) {
 }
 
 async function checkBytesSurvive(t) {
+  log.debug("Entering checkBytesSurvive().");
   t.log.info('=== a bytes field crosses the real channel as a Buffer ===');
 
   const advanced = await roundTrip({ serialization: 'advanced',
-                                     stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+                                     stdio: ['ignore', 'ignore', 'ignore',
+                                             'ipc'] });
   t.check(advanced.sawBuffer === true,
           'the child of an advanced-serialization fork sees a Buffer (' +
           advanced.sawType + ')',
@@ -194,7 +214,8 @@ async function checkBytesSurvive(t) {
 
   // THE CONTROL: the channel this replaced. Without it the assertion above is
   // a statement about node rather than about a decision this repository made.
-  const plain = await roundTrip({ stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  const plain = await roundTrip({ stdio: ['ignore', 'ignore', 'ignore',
+                                          'ipc'] });
   t.check(plain.sawBuffer === false,
           'and the default JSON channel did NOT (' + plain.sawType + ')',
           'JSON preserved the Buffer, so the serialization change this ' +
@@ -208,6 +229,7 @@ async function checkBytesSurvive(t) {
           'and the request pool forks its workers asking for it',
           'common/request_pool.js does not pass serialization: advanced, so ' +
           'every bytes field in this family would arrive as a plain object');
+  log.debug("Leaving checkBytesSurvive().");
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +243,7 @@ async function checkBytesSurvive(t) {
 // while a success test went on passing.
 // ---------------------------------------------------------------------------
 function checkARefusalKeepsItsStatus(t) {
+  log.debug("Entering checkARefusalKeepsItsStatus().");
   t.log.info('=== a refusal crosses as its own gRPC status ===');
 
   const codes = [
@@ -235,13 +258,15 @@ function checkARefusalKeepsItsStatus(t) {
                                       message: original.message, stack: '' });
     const rebuilt = spiffeGrpc.errorFromResult(crossed);
     t.check(rebuilt.code === original.code,
-            pair[0] + ' rebuilds with the same status code (' + rebuilt.code + ')',
+            pair[0] + ' rebuilds with the same status code (' + rebuilt.code +
+            ')',
             'the client would be told ' + rebuilt.code + ' where the front ' +
             'process tells it ' + original.code);
     t.check(rebuilt.message === original.message,
             'and the same message',
             JSON.stringify(rebuilt.message));
   });
+  log.debug("Leaving checkARefusalKeepsItsStatus().");
 }
 
 // ---------------------------------------------------------------------------
@@ -253,11 +278,13 @@ function checkARefusalKeepsItsStatus(t) {
 // logged nowhere as the defect it is.
 // ---------------------------------------------------------------------------
 function checkANonStatusThrowIsStillOne(t) {
+  log.debug("Entering checkANonStatusThrowIsStillOne().");
   t.log.info('=== a throw that is not a status does not acquire one ===');
 
   const crossed = structuredClone({ ok: false, code: null,
                                     message: 'x is not a function',
-                                    stack: 'Error: x is not a function\n    at y' });
+                                    stack: 'Error: x is not a function\n    ' +
+                                           'at y' });
   const rebuilt = spiffeGrpc.errorFromResult(crossed);
   t.check(typeof rebuilt.code !== 'number',
           'it is rebuilt with NO status code, so errorToStatus() calls it a ' +
@@ -270,6 +297,7 @@ function checkANonStatusThrowIsStillOne(t) {
   t.check(String(rebuilt.stack || '').indexOf('at y') >= 0,
           'and the worker\'s stack, which is the only copy there is',
           'the stack was lost, so the defect is reported with no place in it');
+  log.debug("Leaving checkANonStatusThrowIsStillOne().");
 }
 
 // ---------------------------------------------------------------------------
@@ -283,6 +311,7 @@ function checkANonStatusThrowIsStillOne(t) {
 // call as nobody.
 // ---------------------------------------------------------------------------
 function checkTheCallerCrosses(t) {
+  log.debug("Entering checkTheCallerCrosses().");
   t.log.info('=== the caller travels with the method ===');
 
   const caller = callerLike({
@@ -321,6 +350,7 @@ function checkTheCallerCrosses(t) {
                          crossed.caller.certificate.subject) +
           ' — callerOf() renders both DNs with dnRfc4514() precisely so that ' +
           'nothing downstream meets node\'s null-prototype name objects');
+  log.debug("Leaving checkTheCallerCrosses().");
 }
 
 // ---------------------------------------------------------------------------
@@ -337,6 +367,7 @@ function checkTheCallerCrosses(t) {
 // on running in the front process with nothing anywhere reporting it.
 // ---------------------------------------------------------------------------
 function checkTheMethodTableAgrees(t) {
+  log.debug("Entering checkTheMethodTableAgrees().");
   t.log.info('=== the dispatchable methods are the unary ones ===');
 
   // PROBE METHODS ARE NOT METHODS. See the note above run(): four sections
@@ -359,7 +390,8 @@ function checkTheMethodTableAgrees(t) {
     .filter(function (m) { return m.responseStream; })
     .map(function (m) { return m.name; });
   t.check(streaming.length === 5,
-          'the Workload API has five server streams (' + streaming.join(', ') + ')',
+          'the Workload API has five server streams (' + streaming.join(', ') +
+          ')',
           'it has ' + streaming.length + ' — the argument for excluding them ' +
           'is about streams, so the count changing means re-reading it');
   const leaked = streaming.filter(function (name) {
@@ -373,7 +405,8 @@ function checkTheMethodTableAgrees(t) {
           'thinks its SVID is being renewed');
 
   t.check(workload.sort().join(',') === 'FetchJWTSVID,ValidateJWTSVID',
-          'the two unary Workload API methods are (' + workload.join(', ') + ')',
+          'the two unary Workload API methods are (' + workload.join(', ') +
+          ')',
           'got ' + JSON.stringify(workload));
 
   const serverKinds = kinds.filter(function (k) {
@@ -399,6 +432,7 @@ function checkTheMethodTableAgrees(t) {
   t.check(unbacked.length === 0,
           'and each has its handler captured',
           'no handler for: ' + unbacked.join(', '));
+  log.debug("Leaving checkTheMethodTableAgrees().");
 }
 
 // ---------------------------------------------------------------------------
@@ -416,9 +450,12 @@ function checkTheMethodTableAgrees(t) {
 // registers everything in the table.
 // ---------------------------------------------------------------------------
 function checkRegistrationIsAWorkerThing(t) {
+  log.debug("Entering checkRegistrationIsAWorkerThing().");
   t.log.info('=== only a request worker fills the worker table ===');
 
   const spiffeKinds = function (withProbes) {
+    log.debug("Entering spiffeKinds().");
+    log.debug("Leaving spiffeKinds().");
     return Array.from(worker.OPERATIONS.keys()).filter(function (k) {
       return k.indexOf('spiffe.') === 0 &&
              (withProbes || k.indexOf('.Probe') < 0);
@@ -428,8 +465,8 @@ function checkRegistrationIsAWorkerThing(t) {
   t.check(spiffeKinds().length === 0,
           'this process is not a worker, so nothing is registered',
           spiffeKinds().length + ' kind(s) are registered in a process that ' +
-          'will never answer one — which is a table nothing reads bought with ' +
-          'a load of service_state.js at a new point in the order');
+          'will never answer one — which is a table nothing reads bought ' +
+          'with a load of service_state.js at a new point in the order');
 
   const hadMarker = process.env.STS_REQUEST_WORKER;
   let registered = [];
@@ -453,6 +490,7 @@ function checkRegistrationIsAWorkerThing(t) {
           'and a worker registers what it wraps',
           'the table holds ' + JSON.stringify(registered) + ' — with the ' +
           'marker set, wrapping a method must reach request_worker.register()');
+  log.debug("Leaving checkRegistrationIsAWorkerThing().");
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +503,7 @@ function checkRegistrationIsAWorkerThing(t) {
 // throws the way forty-two of them do.
 // ---------------------------------------------------------------------------
 async function checkTheWorkerCarriesTheStatus(t) {
+  log.debug("Entering checkTheWorkerCarriesTheStatus().");
   t.log.info('=== the worker half carries the status of a real throw ===');
 
   const hadMarker = process.env.STS_REQUEST_WORKER;
@@ -504,6 +543,7 @@ async function checkTheWorkerCarriesTheStatus(t) {
           'and a handler that throws something else carries NO code',
           'it came back with code ' + JSON.stringify(broke.code) + ', which ' +
           'would turn a defect in this service into a status a client acts on');
+  log.debug("Leaving checkTheWorkerCarriesTheStatus().");
 }
 
 // ---------------------------------------------------------------------------
@@ -514,6 +554,7 @@ async function checkTheWorkerCarriesTheStatus(t) {
 // itself and four of the forty-two handlers look at it.
 // ---------------------------------------------------------------------------
 async function checkTheHandlerSeesTheCaller(t) {
+  log.debug("Entering checkTheHandlerSeesTheCaller().");
   t.log.info('=== the worker rebuilds the call a handler reads ===');
 
   const hadMarker = process.env.STS_REQUEST_WORKER;
@@ -541,6 +582,7 @@ async function checkTheHandlerSeesTheCaller(t) {
   t.check(answer.ok === true && answer.reply.req === 'here',
           'and the request off call.request',
           'it saw ' + JSON.stringify(answer.reply && answer.reply.req));
+  log.debug("Leaving checkTheHandlerSeesTheCaller().");
 }
 
 // ---------------------------------------------------------------------------
@@ -558,6 +600,7 @@ async function checkTheHandlerSeesTheCaller(t) {
 // added a forty-third that is not a method at all.
 // ---------------------------------------------------------------------------
 async function run(t) {
+  log.debug("Entering run().");
   checkTheMethodTableAgrees(t);
   checkRegistrationIsAWorkerThing(t);
   await checkAMethodAgrees(t);
@@ -567,12 +610,13 @@ async function run(t) {
   checkANonStatusThrowIsStillOne(t);
   checkTheCallerCrosses(t);
   await checkTheHandlerSeesTheCaller(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'spiffe_operations',
   describe: 'the two gRPC surfaces as operations: what crosses to a request ' +
-            'worker, that a dispatched method is the same answer, that a bytes ' +
-            'field survives the channel, and that the streams stay put',
+            'worker, that a dispatched method is the same answer, that a ' +
+            'bytes field survives the channel, and that the streams stay put',
   run: run
 };

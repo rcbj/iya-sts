@@ -1,4 +1,10 @@
 'use strict';
+
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'mode_hardcoded_foundation',
+  level: process.env.LOG_LEVEL || 'info' });
 //
 // File: mode_hardcoded_foundation.js
 //
@@ -28,16 +34,21 @@
 delete process.env.CONFIG_FILE;
 
 function fakeRequest(host) {
+  log.debug("Entering fakeRequest().");
+  log.debug("Leaving fakeRequest().");
   return {
     protocol: 'https',
     headers: { host: host },
     get: function (name) {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
       return String(name).toLowerCase() === 'host' ? host : undefined;
     }
   };
 }
 
 function run(t) {
+  log.debug("Entering run().");
   const config = require('../common/config');
   const mode = require('../common/mode');
   const helpers = require('../common/helpers');
@@ -124,28 +135,36 @@ function run(t) {
   const applications = require('../common/applications');
   const suffix = String(Date.now());
   const acsOf = function (id) {
+    log.debug("Entering acsOf().");
     const got = applications.get(id);
-    return got ? [].concat((got.fields || {}).samlAssertionConsumerService || []) : [];
+    log.debug("Leaving acsOf().");
+    return got ?
+           [].concat((got.fields || {}).samlAssertionConsumerService || []) :
+           [];
   };
   try {
     config.setOverride('global.mode', 'development');
     const devId = 'urn:test:mhf-dev-' + suffix;
     applications.seen({ identifier: devId, kind: 'saml2-service-provider',
-      counts: false, fields: { samlAssertionConsumerService: 'https://dev.test/acs' } });
+      counts: false,
+      fields: { samlAssertionConsumerService: 'https://dev.test/acs' } });
     t.check(acsOf(devId).indexOf('https://dev.test/acs') >= 0,
-            'development still records the ACS URL a request named', acsOf(devId));
+            'development still records the ACS URL a request named',
+            acsOf(devId));
 
     const prodId = 'urn:test:mhf-prod-' + suffix;
     const created = applications.createApplication({
       identifier: prodId, kind: 'saml2-service-provider',
       fields: { samlEntityId: prodId,
-                samlAssertionConsumerService: ['https://registered.test/acs'] } });
+                samlAssertionConsumerService:
+                  ['https://registered.test/acs'] } });
     t.check(created && created.ok !== false,
             'a product-mode fixture entry was registered',
             JSON.stringify((created && created.errors) || []));
     config.setOverride('global.mode', 'product');
     applications.seen({ identifier: prodId, kind: 'saml2-service-provider',
-      counts: false, fields: { samlAssertionConsumerService: 'https://evil.test/acs' } });
+      counts: false,
+      fields: { samlAssertionConsumerService: 'https://evil.test/acs' } });
     const held = acsOf(prodId);
     t.check(held.indexOf('https://evil.test/acs') < 0,
             'product mode does NOT let a sighting add an ACS URL', held);
@@ -176,6 +195,7 @@ function run(t) {
       .test(source),
             'pki_revocation.js no longer floors pki.crlLifetimeMinutes at 60');
   }
+  log.debug("Leaving run().");
 }
 
 module.exports = {

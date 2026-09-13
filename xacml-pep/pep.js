@@ -94,30 +94,40 @@ const model = engine.model;
 // still a PEP that enforces. So both misses fall back to a local `tag()` that
 // writes the same `[STS-…] ` prefix, and say so once.
 //
-// It is resolved HERE and not in `engine.js`, deliberately: `tests/xacml_pep.js`
-// loads `engine.js` alone in a child and asserts that not one of the mock's own
-// modules is in its `require.cache`, and in a checkout the registry IS one.
-// `sync.js` and `pip.js` are handed the resulting `tag` on `options`, which is
-// how they are handed everything else this file decides at start.
+// It is resolved HERE and not in `engine.js`, deliberately:
+// `tests/xacml_pep.js` loads `engine.js` alone in a child and asserts that not
+// one of the mock's own modules is in its `require.cache`, and in a checkout
+// the registry IS one. `sync.js` and `pip.js` are handed the resulting `tag` on
+// `options`, which is how they are handed everything else this file decides at
+// start.
 function loadErrorCodes() {
+  log.debug("Entering loadErrorCodes().");
   const candidates = ['./error_codes', '../common/error_codes'];
   for (let i = 0; i < candidates.length; i++) {
     try {
       const registry = require(candidates[i]);
       if (registry && typeof registry.tag === 'function') {
+        log.debug("Leaving loadErrorCodes().");
         return registry;
       }
     } catch (error) {
       // Not this layout. Silent because exactly one of the two is expected to
       // miss on every start; the case worth reporting is BOTH, below.
+      log.debug("Caught in loadErrorCodes(): " +
+                ((error && error.message) || error));
     }
   }
-  const fallback = { tag: function (code) { return '[' + code + '] '; } };
-  log.error(fallback.tag('STS-XPEP-0001') + 'xacml-pep: neither ./error_codes ' +
-            'nor ../common/error_codes could be loaded, so the error-code ' +
-            'registry is not here. Log lines still carry their codes; nothing ' +
-            'else changes. In the image that means the Dockerfile stopped ' +
-            'copying common/error_codes.js.');
+  const fallback = { tag: function (code) {
+    log.debug("Entering tag().");
+    log.debug("Leaving tag().");
+    return '[' + code + '] ';
+  } };
+  log.error(fallback.tag('STS-XPEP-0001') + 'xacml-pep: neither ' +
+            './error_codes nor ../common/error_codes could be loaded, so the ' +
+            'error-code registry is not here. Log lines still carry their ' +
+            'codes; nothing else changes. In the image that means the ' +
+            'Dockerfile stopped copying common/error_codes.js.');
+  log.debug("Leaving loadErrorCodes().");
   return fallback;
 }
 
@@ -156,13 +166,17 @@ const tag = ERROR_CODES.tag;
 // it — and answers a version that SAYS SO rather than throwing. A PEP that
 // cannot name its build is still a PEP that enforces.
 function loadVersion() {
+  log.debug("Entering loadVersion().");
   const candidates = ['./version', '../common/version'];
   for (let i = 0; i < candidates.length; i++) {
     try {
+      log.debug("Leaving loadVersion().");
       return require(candidates[i]).load();
     } catch (error) {
       // Not this layout. Silent because exactly one of the two is expected to
       // miss on every start; the case worth reporting is BOTH, below.
+      log.debug("Caught in loadVersion(): " +
+                ((error && error.message) || error));
     }
   }
   log.error(tag('STS-XPEP-0002') +
@@ -170,6 +184,7 @@ function loadVersion() {
             'loaded, so this PEP cannot name the build it is running. It ' +
             'registers and enforces regardless. In the image that means the ' +
             'Dockerfile stopped copying common/version.js and VERSION.');
+  log.debug("Leaving loadVersion().");
   return { version: 'unknown', build: 'unknown', commit: '',
            builtAt: null, stamped: false };
 }
@@ -186,17 +201,22 @@ const VERSION = APP_VERSION.version;
 // service runs. A PEP has no console.
 // ---------------------------------------------------------------------------
 function intFromEnv(name, dflt) {
+  log.debug("Entering intFromEnv().");
   const raw = process.env[name];
   const n = raw === undefined ? NaN : parseInt(raw, 10);
+  log.debug("Leaving intFromEnv().");
   return isNaN(n) ? dflt : n;
 }
 
 function fileFromEnv(name) {
+  log.debug("Entering fileFromEnv().");
   const path = process.env[name];
   if (!path) {
+    log.debug("Leaving fileFromEnv().");
     return null;
   }
   try {
+    log.debug("Leaving fileFromEnv().");
     return fs.readFileSync(path);
   } catch (error) {
     // NAMED AND FATAL-ADJACENT rather than swallowed: a PEP configured with a
@@ -208,6 +228,7 @@ function fileFromEnv(name) {
               'be read (' + error.message + '). Carrying on WITHOUT it, ' +
               'which means this PEP registers unauthenticated if the PDP ' +
               'allows that and is refused if it does not.');
+    log.debug("Leaving fileFromEnv().");
     return null;
   }
 }
@@ -257,11 +278,13 @@ const options = {
 };
 
 function send(res, status, body) {
+  log.debug("Entering send().");
   const text = JSON.stringify(body, null, 2);
   res.writeHead(status, { 'Content-Type': 'application/json',
                           'Cache-Control': 'no-store',
                           'Content-Length': Buffer.byteLength(text) });
   res.end(text);
+  log.debug("Leaving send().");
 }
 
 // ---------------------------------------------------------------------------
@@ -462,10 +485,12 @@ let lastPipReport = null;
 // dependency to describe four `if`s.
 // ---------------------------------------------------------------------------
 function overview() {
+  log.debug("Entering overview().");
   const s = sync.state();
   const staleAfterMs = options.pollIntervalMs * 3;
   const lastPull = s.held.lastPullAt ? Date.parse(s.held.lastPullAt) : NaN;
   const stale = !(lastPull > 0) || (Date.now() - lastPull) > staleAfterMs;
+  log.debug("Leaving overview().");
   return {
     what: 'A REMOTE XACML Policy Enforcement Point. It holds its own copy of ' +
           'the engine, PULLS the policy repository from the PDP below, and ' +
@@ -491,13 +516,13 @@ function overview() {
       lastQuery: lastPipReport,
       what: options.pipEnabled
         ? 'This PEP resolves attribute designators the request did not carry ' +
-          'against the PDP\'s embedded directory, in ONE batched query before ' +
-          'each evaluation, in XACML\'s own XML both ways. So a policy that ' +
-          'reads employeeType off a person\'s entry decides HERE the way it ' +
-          'decides at the PDP. The endpoint requires a client certificate ' +
-          'whose subject holds the built-in REMOTE_PEPS role; without one ' +
-          'every query is refused and this PEP falls back to deciding on ' +
-          'what the request asserts.'
+          'against the PDP\'s embedded directory, in ONE batched query ' +
+          'before each evaluation, in XACML\'s own XML both ways. So a ' +
+          'policy that reads employeeType off a person\'s entry decides HERE ' +
+          'the way it decides at the PDP. The endpoint requires a client ' +
+          'certificate whose subject holds the built-in REMOTE_PEPS role; ' +
+          'without one every query is refused and this PEP falls back to ' +
+          'deciding on what the request asserts.'
         : 'PEP_PIP is off, so this PEP has NO Policy Information Point: a ' +
           'designator the request did not carry produces an empty bag. Pass ' +
           'extra query parameters to /protected and each becomes a subject ' +
@@ -564,6 +589,7 @@ function overview() {
 }
 
 async function protectedResource(query) {
+  log.debug("Entering protectedResource().");
   const answer = await decide(query);
   const outcome = enforce(answer);
   sync.countDecision(outcome);
@@ -574,7 +600,8 @@ async function protectedResource(query) {
     why: outcome.why,
     status: answer.status,
     obligations: (answer.obligations || []).map(function (one) {
-      return { id: one.id, discharged: outcome.discharged.indexOf(one.id) >= 0 };
+      return { id: one.id,
+               discharged: outcome.discharged.indexOf(one.id) >= 0 };
     }),
     advice: (answer.advice || []).map(function (one) {
       return one.id;
@@ -594,6 +621,7 @@ async function protectedResource(query) {
   if (answer.note) {
     body.note = answer.note;
   }
+  log.debug("Leaving protectedResource().");
   return { status: outcome.allowed ? 200 : 403, body: body };
 }
 
@@ -680,6 +708,7 @@ const server = http.createServer(function (req, res) {
 });
 
 async function start() {
+  log.debug("Entering start().");
   // THE BUILD FIRST, before the configuration tour: it is the one line here
   // that is about the ARTIFACT rather than about how it was pointed at a PDP,
   // and it is the line somebody scrolls this container's log back to find when
@@ -774,6 +803,7 @@ async function start() {
     log.info('xacml-pep: listening on ' + options.port +
              '. The protected resource is GET /protected.');
   });
+  log.debug("Leaving start().");
 }
 
 // Guarded so that `tests/xacml_pep.js` can require this file for `enforce()`

@@ -101,17 +101,23 @@ function codeFor(secret) {
 }
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_portal_directory_attributes",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -124,9 +130,11 @@ var INTRUDER = usernameFor("dir-intruder");
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  [ok] " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
@@ -136,31 +144,40 @@ function check(what, fn) {
 // whichever arrived first.
 // ---------------------------------------------------------------------------
 function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
   return new URLSearchParams(o).toString();
 }
 
 function absolute(location) {
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
 }
 
 function browser(name) {
+  log.debug("Entering browser().");
   const self = {
     name: name,
     cookie: "",
     jar: {},
     cookieHeader: function () {
+      log.debug("Entering cookieHeader().");
+      log.debug("Leaving cookieHeader().");
       return Object.keys(self.jar).map(function (k) {
         return k + "=" + self.jar[k];
       }).join("; ");
     },
     async go(method, path, body) {
+      log.debug("Entering go().");
       const headers = {};
       if (self.cookie) headers.cookie = self.cookie;
       if (body !== undefined) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
-      const r = await fetch(absolute(path), { method: method, redirect: "manual",
+      const r = await fetch(absolute(path),
+                            { method: method, redirect: "manual",
                                               headers: headers, body: body });
       const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
       set.forEach(function (one) {
@@ -174,10 +191,12 @@ function browser(name) {
         }
         self.cookie = self.cookieHeader();
       });
+      log.debug("Leaving go().");
       return { status: r.status, location: r.headers.get("location") || "",
                text: await r.text() };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
@@ -190,6 +209,7 @@ const SCIM_CALLER = usernameFor("dir-scim-caller");
 const ENTERPRISE = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 
 async function scim(method, path, payload) {
+  log.debug("Entering scim().");
   await ensurePerson(SCIM_CALLER);
   const auth = "Basic " +
     Buffer.from(SCIM_CALLER + ":" + PASSWORD).toString("base64");
@@ -205,19 +225,25 @@ async function scim(method, path, payload) {
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in scim(): " + ((e && e.message) || e));
     // An HTML error page from a door that answers JSON is worth quoting whole
     // rather than reporting as a parse failure.
     body = raw;
   }
+  log.debug("Leaving scim().");
   return { status: r.status, body: body, raw: raw };
 }
 
 function csrfOf(text) {
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
+  log.debug("Entering csrfOf().");
+  log.debug("Leaving csrfOf().");
+  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
+          [])[1] || "";
 }
 
 // The management API taking JSON, for creating the person before they sign in.
 async function apiPost(path, payload) {
+  log.debug("Entering apiPost().");
   const r = await fetch(api + path, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
@@ -227,9 +253,11 @@ async function apiPost(path, payload) {
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in apiPost(): " + ((e && e.message) || e));
     // An HTML page from a door that answers JSON is worth quoting whole.
     body = raw;
   }
+  log.debug("Leaving apiPost().");
   return { status: r.status, body: body, raw: raw };
 }
 
@@ -255,8 +283,11 @@ var PASSWORD = "portal-directory-Passw0rd!-" + String(Date.now()).slice(-6);
 var MAIL_DOMAIN = "portal-directory.test";
 
 function personAttributes(who) {
+  log.debug("Entering personAttributes().");
+  log.debug("Leaving personAttributes().");
   return { cn: "Directory Person " + who, givenName: "Directory", sn: who,
-           displayName: "Directory Person " + who, mail: who + "@" + MAIL_DOMAIN };
+           displayName: "Directory Person " + who,
+           mail: who + "@" + MAIL_DOMAIN };
 }
 
 // Create `who` with a password and real attributes, once per run.
@@ -306,7 +337,8 @@ async function signIn(who) {
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
     String(r.text).slice(0, 300));
-  r = await b.go("GET", r.location);   // the authorization endpoint, with a code
+  r = await b.go("GET",
+                 r.location);   // the authorization endpoint, with a code
   r = await b.go("GET", r.location);   // the callback, which mints the session
   assert.ok(b.cookie, "completing the flow should establish a session cookie.");
   log.debug("Leaving signIn().");
@@ -323,6 +355,7 @@ async function signIn(who) {
 // change for good reasons.
 // ---------------------------------------------------------------------------
 function sectionOf(text) {
+  log.debug("Entering sectionOf().");
   // **SLICED BETWEEN TWO MARKERS RATHER THAN MATCHED TO A CLOSING TAG.** The
   // first version of this ended at the first `</div>`, which is the one that
   // closes the `<div class="attr">` under the very first value — so it
@@ -332,16 +365,19 @@ function sectionOf(text) {
   const html = String(text);
   const from = html.indexOf('<h3 class="dirhead">Your directory entry</h3>');
   if (from < 0) {
+    log.debug("Leaving sectionOf().");
     return "";
   }
   // The next card's heading. There is exactly one `<h2>` after this section
   // (`How you sign in`), and it is outside the card this section is in.
   const to = html.indexOf("<h2>", from);
+  log.debug("Leaving sectionOf().");
   return to < 0 ? html.slice(from) : html.slice(from, to);
 }
 
 // Every attribute the section names, mapped to what was drawn in its cell.
 function attributesOn(text) {
+  log.debug("Entering attributesOn().");
   const section = sectionOf(text);
   const out = new Map();
   // Each row is  <th …>Label</th><td>VALUE<div class="attr"><code>name</code>…
@@ -350,11 +386,13 @@ function attributesOn(text) {
   while ((m = re.exec(section)) !== null) {
     out.set(m[2], m[1]);
   }
+  log.debug("Leaving attributesOn().");
   return out;
 }
 
 // Which object classes the section drew, in order.
 function classesOn(text) {
+  log.debug("Entering classesOn().");
   const section = sectionOf(text);
   const out = [];
   const re = /<h3 class="dirclass" title="[^"]*"><code>([^<]+)<\/code>/g;
@@ -362,6 +400,7 @@ function classesOn(text) {
   while ((m = re.exec(section)) !== null) {
     out.push(m[1]);
   }
+  log.debug("Leaving classesOn().");
   return out;
 }
 
@@ -369,6 +408,7 @@ function classesOn(text) {
 // 1 AND 2. THE DIRECTORY, AND THE WHOLE SCHEMA.
 // ===========================================================================
 async function itDrawsTheDirectory() {
+  log.debug("Entering itDrawsTheDirectory().");
   log.info("=== 1/2. the entry, and every standard attribute ===");
 
   // SIGN IN FIRST, so the entry exists: a person gets one the first time they
@@ -423,7 +463,8 @@ async function itDrawsTheDirectory() {
   check("the ones this person does not hold are drawn as NOT SET rather than " +
         "left out", function () {
     assert.ok(/not set/.test(String(drawn.get("carLicense") || "")),
-      "carLicense is drawn as: " + String(drawn.get("carLicense")).slice(0, 120));
+      "carLicense is drawn as: " +
+      String(drawn.get("carLicense")).slice(0, 120));
   });
 
   check("and the empty ones are behind a <details> fold, which is MARKUP and " +
@@ -435,6 +476,7 @@ async function itDrawsTheDirectory() {
       "the Overview has grown a script.");
   });
 
+  log.debug("Leaving itDrawsTheDirectory().");
   return b;
 }
 
@@ -446,6 +488,7 @@ async function itDrawsTheDirectory() {
 // assertion for claim 1 rather than the section merely existing.
 // ===========================================================================
 async function itReadsTheEntryAndNotTheSession(b) {
+  log.debug("Entering itReadsTheEntryAndNotTheSession().");
   log.info("=== 1. an attribute SCIM wrote, which no session carried ===");
 
   const found = await scim("GET",
@@ -487,18 +530,20 @@ async function itReadsTheEntryAndNotTheSession(b) {
   });
 
   check("and the SCIM spelling is not what is shown — the page names the " +
-        "LDAP attribute, because that is what somebody reading this on a mock " +
-        "is about to go and write", function () {
+        "LDAP attribute, because that is what somebody reading this on a " +
+        "mock is about to go and write", function () {
     assert.ok(!attributesOn(after.text).has("userType"),
       "the page names SCIM's `userType` rather than the directory's " +
       "`employeeType`.");
   });
+  log.debug("Leaving itReadsTheEntryAndNotTheSession().");
 }
 
 // ===========================================================================
 // 3 AND 4. THE TWO KINDS THAT MAY NOT BE RENDERED.
 // ===========================================================================
 async function theRefusalsHold(b) {
+  log.debug("Entering theRefusalsHold().");
   log.info("=== 3/4. the password, and the binary attributes ===");
 
   // A PASSWORD, through the management API, so there is something in
@@ -539,8 +584,8 @@ async function theRefusalsHold(b) {
   // below still holds on the EMPTY case, which is the one every ordinary
   // person is in.
   check("a binary attribute is drawn as a size or as not set, and never as " +
-        "octets — `userPKCS12` conventionally carries a PRIVATE KEY, which is " +
-        "why the refusal is on the KIND rather than on a list of names",
+        "octets — `userPKCS12` conventionally carries a PRIVATE KEY, which " +
+        "is why the refusal is on the KIND rather than on a list of names",
         function () {
     ["jpegPhoto", "photo", "audio", "userCertificate", "userSMIMECertificate",
      "userPKCS12"].forEach(function (name) {
@@ -550,6 +595,7 @@ async function theRefusalsHold(b) {
         name + " is drawn as: " + cell.slice(0, 200));
     });
   });
+  log.debug("Leaving theRefusalsHold().");
 }
 
 // ===========================================================================
@@ -565,6 +611,7 @@ async function theRefusalsHold(b) {
 // HTML, and that none of the four attribute names is either.
 // ===========================================================================
 async function theCredentialsAreNotOnIt(b) {
+  log.debug("Entering theCredentialsAreNotOnIt().");
   log.info("=== 5. the sts credentials are not on the page ===");
 
   // ---------------------------------------------------------------------
@@ -644,8 +691,8 @@ async function theCredentialsAreNotOnIt(b) {
   });
 
   check("and neither is any of this service's own credential attributes, by " +
-        "NAME or by value — the page draws a FIXED LIST, so an attribute this " +
-        "service invents cannot arrive on it by accident", function () {
+        "NAME or by value — the page draws a FIXED LIST, so an attribute " +
+        "this service invents cannot arrive on it by accident", function () {
     const whole = String(overview.text);
     ["stsTotpCredential", "stsBackupCodes", "stsWebauthnCredential",
      "stsActivationToken", "stsActivationExpires",
@@ -672,6 +719,7 @@ async function theCredentialsAreNotOnIt(b) {
         "service stores beside the schema attributes.");
     });
   });
+  log.debug("Leaving theCredentialsAreNotOnIt().");
 }
 
 // ===========================================================================
@@ -684,7 +732,9 @@ async function theCredentialsAreNotOnIt(b) {
 // anybody signed in.
 // ===========================================================================
 async function oneUserCannotReadAnother() {
-  log.info("=== 6. the identity is the session's and there is no parameter ===");
+  log.debug("Entering oneUserCannotReadAnother().");
+  log.info("=== 6. the identity is the session's and there is no parameter " +
+           "===");
   const intruder = await signIn(INTRUDER);
   const theirs = await intruder.go("GET",
     "/portal?user=" + encodeURIComponent(OWNER) +
@@ -706,9 +756,11 @@ async function oneUserCannotReadAnother() {
     assert.ok(dn.indexOf(INTRUDER) >= 0,
       "the DN drawn is " + dn + ", for a browser signed in as " + INTRUDER);
   });
+  log.debug("Leaving oneUserCannotReadAnother().");
 }
 
 async function test() {
+  log.debug("Entering test().");
   log.info("Running the /portal directory-attribute checks against " + base);
   const b = await itDrawsTheDirectory();
   await itReadsTheEntryAndNotTheSession(b);
@@ -717,6 +769,7 @@ async function test() {
   await oneUserCannotReadAnother();
   log.info(checks + " assertion(s).");
   log.info("Test completed successfully.");
+  log.debug("Leaving test().");
 }
 
 test().catch(function (e) {

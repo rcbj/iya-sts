@@ -19,13 +19,13 @@
 // goes to: the admin console and the user portal. It is a signpost, not a
 // second documentation site.
 //
-// **IT DOES NOT LIST ENDPOINTS, AND THAT IS THE ONE RULE TO KEEP.**
-// `GET /admin/sts-metadata` builds that list by walking the running Express
-// router, so it cannot go stale by omission, and the parent project's
-// `tests/vendored/sts_metadata.js` fails on drift in either direction. A hand-written
-// list of highlights here would be a second, unchecked copy of it — wrong
-// within a month, on the page most likely to be read first and least likely to
-// be re-read. The documentation site makes the same argument in
+// **IT DOES NOT LIST ENDPOINTS, AND THAT IS THE ONE RULE TO KEEP.** `GET
+// /admin/sts-metadata` builds that list by walking the running Express router,
+// so it cannot go stale by omission, and the parent project's
+// `tests/vendored/sts_metadata.js` fails on drift in either direction. A
+// hand-written list of highlights here would be a second, unchecked copy of it
+// — wrong within a month, on the page most likely to be read first and least
+// likely to be re-read. The documentation site makes the same argument in
 // `docs/endpoints.md` and this page holds to it: LINK to the thing that
 // generates the list.
 //
@@ -48,9 +48,9 @@
 // rather than at require time — and a missing image is the least important
 // thing that could go wrong here. With no image the page is drawn without one
 // and `/logo.png` answers 404 with a sentence saying why, which is also what
-// keeps that route honest for the link check in `tests/vendored/sts_metadata.js`: it
-// fails on Express's own `Cannot GET`, so an endpoint answering for itself is
-// the distinction it is looking for.
+// keeps that route honest for the link check in
+// `tests/vendored/sts_metadata.js`: it fails on Express's own `Cannot GET`, so
+// an endpoint answering for itself is the distinction it is looking for.
 //
 // ---------------------------------------------------------------------------
 // THE IMAGE IS ON A BLACK BAND AND THAT IS NOT A STYLE CHOICE.
@@ -207,6 +207,8 @@ try {
 // it is a front door, and it is drawn from what is true now.
 // ---------------------------------------------------------------------------
 function signInMeans() {
+  log.debug("Entering signInMeans().");
+  log.debug("Leaving signInMeans().");
   return mode.verifiesCredentials()
     ? 'It asks you to sign in, and this instance is in product mode, so the ' +
       'password is checked against the account.'
@@ -214,6 +216,8 @@ function signInMeans() {
 }
 
 function linkRow(href, label, external, note) {
+  log.debug("Entering linkRow().");
+  log.debug("Leaving linkRow().");
   return '<li><a href="' + xmlEscape(href) + '"' +
     (external ? ' target="_blank" rel="noopener noreferrer"' : '') + '>' +
     xmlEscape(label) + '</a><span class="note">' + xmlEscape(note) +
@@ -227,14 +231,14 @@ function homePage() {
       'height="240" alt="OAuth2 / OIDC / SAML2 Debugger — Iya Cyber ' +
       'Security"></div>'
     : '';
-  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-    '<title>mock-sts</title><style>' +
-    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;' +
-    'background:#f4f4f7;margin:0;padding:2rem 1rem;color:#222;line-height:1.45}' +
-    '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;' +
-    'padding:0 0 26px;max-width:44rem;margin:0 auto;overflow:hidden;' +
-    'box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
+  const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
+    'initial-scale=1"><title>mock-sts</title><style>' +
+    'body{font-family:system-ui,-apple-system,"Segoe ' +
+    'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
+    '1rem;color:#222;line-height:1.45}.card{background:#fff;border:1px solid ' +
+    '#d5d5dd;border-radius:10px;padding:0 0 26px;max-width:44rem;margin:0 ' +
+    'auto;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.08)}' +
     // The band the artwork was drawn for. See the header.
     '.hero{background:#000;padding:22px 24px;text-align:center}' +
     '.hero img{width:100%;max-width:360px;height:auto;display:inline-block}' +
@@ -335,12 +339,12 @@ app.get('/realms', function (req, res) {
     // one, in a test — needs the rule and not just the answers.
     pathSegment: realms.pathSegment(),
     // TWO FLAGS RATHER THAN ONE, because they answer different questions and a
-    // single `enabled` was ambiguous in exactly the case that matters. `enabled`
-    // is the `realms.enabled` SETTING — whether an operator has switched the
-    // feature off. `active` is whether any prefix actually answers, which is
-    // false when the setting is on and nobody has defined a realm. A client
-    // told "enabled: false" when the truth was "nobody has defined one yet"
-    // would look for the wrong problem.
+    // single `enabled` was ambiguous in exactly the case that matters.
+    // `enabled` is the `realms.enabled` SETTING — whether an operator has
+    // switched the feature off. `active` is whether any prefix actually
+    // answers, which is false when the setting is on and nobody has defined a
+    // realm. A client told "enabled: false" when the truth was "nobody has
+    // defined one yet" would look for the wrong problem.
     enabled: config.value('realms.enabled'),
     active: realms.active(),
     current: realms.currentId(),
@@ -363,7 +367,9 @@ app.get('/realms', function (req, res) {
   };
   res.set('Cache-Control', 'no-store').type('application/json')
      .send(JSON.stringify(body, null, 2));
-  log.debug('Leaving the realm directory endpoint. ' + body.realms.length + ' realm(s).');
+  log.debug('Leaving the realm directory endpoint. ' + body.realms.length +
+      ' ' +
+      'realm(s).');
 });
 
 app.get(LOGO_ROUTE, function (req, res) {
@@ -371,8 +377,9 @@ app.get(LOGO_ROUTE, function (req, res) {
   if (!logoBytes) {
     // 404 in this service's own words rather than Express's. The difference is
     // load-bearing for the link check in the parent project's
-    // tests/vendored/sts_metadata.js, which fails on `Cannot GET` and passes on an
-    // endpoint answering for itself — and it is the more useful answer anyway.
+    // tests/vendored/sts_metadata.js, which fails on `Cannot GET` and passes on
+    // an endpoint answering for itself — and it is the more useful answer
+    // anyway.
     errorCodes.mark(res, 'STS-CORE-0038');
     res.status(404).type('text/plain')
       .send('The logo could not be read from disk at startup. The service ' +

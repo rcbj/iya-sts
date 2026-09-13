@@ -90,17 +90,30 @@ const CSRF_FIELD = 'csrf_token';
 // The token for a session. A pure function of the id, so it is the same on
 // every page of one session and needs no storage.
 function tokenFor(sessionId) {
+  log.debug("Entering tokenFor().");
   const id = String(sessionId || '');
-  if (!id) return '';
-  return nodeCrypto.createHmac('sha256', CSRF_KEY).update(id).digest('base64url');
+  if (!id) {
+    log.debug("Leaving tokenFor().");
+    return '';
+  }
+  log.debug("Leaving tokenFor().");
+  return nodeCrypto.createHmac('sha256', CSRF_KEY)
+                   .update(id)
+                   .digest('base64url');
 }
 
 // The hidden input a form carries. Returns '' when there is no session, so a
 // form on an unauthenticated page renders unchanged.
 function field(sessionId) {
+  log.debug("Entering field().");
   const token = tokenFor(sessionId);
-  if (!token) return '';
-  return '<input type="hidden" name="' + CSRF_FIELD + '" value="' + token + '">';
+  if (!token) {
+    log.debug("Leaving field().");
+    return '';
+  }
+  log.debug("Leaving field().");
+  return '<input type="hidden" name="' + CSRF_FIELD + '" value="' + token +
+         '">';
 }
 
 // Does this POST carry the right token for this session?
@@ -108,19 +121,24 @@ function field(sessionId) {
 // `ok: true` with `reason: 'no-session'` for a request with no session — see
 // the header for why that is not a hole.
 function checkCsrf(sessionId, body) {
+  log.debug("Entering checkCsrf().");
   const id = String(sessionId || '');
   if (!id) {
+    log.debug("Leaving checkCsrf().");
     return { ok: true, reason: 'no-session' };
   }
   const presented = String((body || {})[CSRF_FIELD] || '');
   if (!presented) {
+    log.debug("Leaving checkCsrf().");
     return errorCodes.mark({ ok: false, reason: 'missing',
              detail: 'this form carried no ' + CSRF_FIELD + '. Every ' +
                      'state-changing form in this service does; a request ' +
-                     'without one did not come from a page this service drew.' },
+                     'without one did not come from a page this service ' +
+                     'drew.' },
                            'STS-HTTP-0015');
   }
   const same = stsCrypto.constantTimeEquals(presented, tokenFor(id));
+  log.debug("Leaving checkCsrf().");
   return same
     ? { ok: true, reason: 'verified' }
     : errorCodes.mark({ ok: false, reason: 'mismatch',
@@ -133,15 +151,16 @@ function checkCsrf(sessionId, body) {
 // THE RATE LIMITER.
 //
 // PER PROCESS and not per realm, deliberately: an attacker choosing which realm
-// to guess in must not get a fresh allowance for each, and the buckets are keyed
-// by a string the caller composes — which is where the realm goes if a caller
-// wants it counted separately.
+// to guess in must not get a fresh allowance for each, and the buckets are
+// keyed by a string the caller composes — which is where the realm goes if a
+// caller wants it counted separately.
 // ---------------------------------------------------------------------------
 // -------------------------------------------------------------------------
-// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
-// is a plain Map that reports its writes so product mode can write them down;
-// `scope: 'shared'` is what says the store deliberately has no realm in it,
-// which is the discriminator `tests/realm_isolation.js` checks against.
+// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06).
+// `realms.sharedMap()` is a plain Map that reports its writes so product mode
+// can write them down; `scope: 'shared'` is what says the store deliberately
+// has no realm in it, which is the discriminator `tests/realm_isolation.js`
+// checks against.
 // -------------------------------------------------------------------------
 // **AND PERSISTED FOR THE SAME REASON IT IS PER PROCESS**: an attacker who
 // could empty the buckets by making the service restart would have a fresh
@@ -152,12 +171,17 @@ const buckets = realms.sharedMap({ persist: 'security.rateLimitBuckets',
 const MAX_BUCKETS = 20000;
 
 function windowMs() {
-  return Math.max(1, Number(config.value('security.rateLimitWindowS') || 60)) * 1000;
+  log.debug("Entering windowMs().");
+  log.debug("Leaving windowMs().");
+  return Math.max(1, Number(config.value('security.rateLimitWindowS') || 60)) *
+         1000;
 }
 
 function limitFor(kind) {
+  log.debug("Entering limitFor().");
   const key = kind === 'address' ? 'security.rateLimitPerAddress'
                                  : 'security.rateLimitPerIdentity';
+  log.debug("Leaving limitFor().");
   return Math.max(1, Number(config.value(key) || 5));
 }
 
@@ -165,17 +189,29 @@ function limitFor(kind) {
 // already has — a limiter that counted every request from one load balancer as
 // one address would lock out the world on the first attacker.
 function addressOf(req) {
-  if (!req) return 'unknown';
+  log.debug("Entering addressOf().");
+  if (!req) {
+    log.debug("Leaving addressOf().");
+    return 'unknown';
+  }
   if (config.value('global.trustProxy')) {
     const forwarded = String((req.headers || {})['x-forwarded-for'] || '');
     const first = forwarded.split(',')[0].trim();
-    if (first) return first;
+    if (first) {
+      log.debug("Leaving addressOf().");
+      return first;
+    }
   }
+  log.debug("Leaving addressOf().");
   return String((req.socket && req.socket.remoteAddress) || 'unknown');
 }
 
 function prune(now) {
-  if (buckets.size < MAX_BUCKETS) return;
+  log.debug("Entering prune().");
+  if (buckets.size < MAX_BUCKETS) {
+    log.debug("Leaving prune().");
+    return;
+  }
   // Oldest first — Map iterates in insertion order — which is the same rule
   // admin_stats.js's caps follow. A limiter that grew without bound would be a
   // denial of service of its own.
@@ -189,6 +225,7 @@ function prune(now) {
   log.warn('websecurity: the rate-limit table reached ' + MAX_BUCKETS +
            ' entries and the oldest ' + dropped + ' were dropped. That is a ' +
            'cap on memory rather than a decision about any one caller.');
+  log.debug("Leaving prune().");
 }
 
 // Count one attempt. Answers whether it is allowed, and says which bucket
@@ -230,7 +267,9 @@ function prune(now) {
 // bucket, and a bare number means exactly what it always did.
 // ---------------------------------------------------------------------------
 function namedLimit(limit, kind) {
+  log.debug("Entering namedLimit().");
   const raw = (limit && typeof limit === 'object') ? limit[kind] : limit;
+  log.debug("Leaving namedLimit().");
   return Number(raw) > 0 ? Math.floor(Number(raw)) : 0;
 }
 
@@ -241,7 +280,8 @@ function attempt(what, req, identity, limit) {
   const checks = [
     { kind: 'identity',
       key: what + '|id|' + String(identity || '').toLowerCase(),
-      limit: namedLimit(limit, 'identity') || limitFor('identity'), on: !!identity },
+      limit: namedLimit(limit, 'identity') || limitFor('identity'),
+      on: !!identity },
     { kind: 'address', key: what + '|ip|' + addressOf(req),
       limit: namedLimit(limit, 'address') || limitFor('address'), on: true }
   ];
@@ -262,12 +302,14 @@ function attempt(what, req, identity, limit) {
   });
   if (refusal) {
     const code = refusal.kind === 'address' ? 'STS-HTTP-0018' : 'STS-HTTP-0017';
-    log.warn(errorCodes.tag(code) + 'websecurity: too many "' + what + '" attempts (' +
+    log.warn(errorCodes.tag(code) + 'websecurity: too many "' + what + '" ' +
+        'attempts (' +
              refusal.kind + ' bucket, limit ' + refusal.limit + ' per ' +
              Math.round(span / 1000) + 's). Refusing for another ' +
              refusal.retryAfterS + 's.');
     log.debug('Leaving attempt(). Refused.');
-    return errorCodes.mark({ ok: false, kind: refusal.kind, limit: refusal.limit,
+    return errorCodes.mark({ ok: false, kind: refusal.kind,
+             limit: refusal.limit,
              retryAfterS: refusal.retryAfterS,
              detail: 'Too many attempts. Wait ' + refusal.retryAfterS +
                      ' seconds and try again.' }, code);
@@ -300,7 +342,8 @@ function blocked(what, req, identity, limit) {
   const checks = [
     { kind: 'identity',
       key: what + '|id|' + String(identity || '').toLowerCase(),
-      limit: namedLimit(limit, 'identity') || limitFor('identity'), on: !!identity },
+      limit: namedLimit(limit, 'identity') || limitFor('identity'),
+      on: !!identity },
     { kind: 'address', key: what + '|ip|' + addressOf(req),
       limit: namedLimit(limit, 'address') || limitFor('address'), on: true }
   ];
@@ -332,22 +375,26 @@ function blocked(what, req, identity, limit) {
 // that somebody who mistyped a password four times is not still near the limit
 // once they get it right.
 //
-// `options.keepAddress` LEAVES THE ADDRESS BUCKET ALONE (2026-09-12), and a door
-// whose successes are cheap to come by needs it. On an LDAP bind, anybody
+// `options.keepAddress` LEAVES THE ADDRESS BUCKET ALONE (2026-09-12), and a
+// door whose successes are cheap to come by needs it. On an LDAP bind, anybody
 // holding ONE working password could otherwise clear their address's failure
 // count between guesses at every other DN by binding as themselves once — the
 // address limit would never be reached by the one caller it exists for.
 function succeeded(what, req, identity, options) {
+  log.debug("Entering succeeded().");
   if (identity) {
     buckets.delete(what + '|id|' + String(identity).toLowerCase());
   }
   if (!(options && options.keepAddress)) {
     buckets.delete(what + '|ip|' + addressOf(req));
   }
+  log.debug("Leaving succeeded().");
 }
 
 // For the console and the tests.
 function report() {
+  log.debug("Entering report().");
+  log.debug("Leaving report().");
   return {
     csrf: { field: CSRF_FIELD,
             how: 'HMAC-SHA256 of the session id under a per-process key, ' +
@@ -366,7 +413,9 @@ function report() {
 
 // Tests only — see the same note on keystore.reset().
 function reset() {
+  log.debug("Entering reset().");
   buckets.clear();
+  log.debug("Leaving reset().");
 }
 
 module.exports = {

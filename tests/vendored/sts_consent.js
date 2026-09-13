@@ -53,17 +53,23 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_consent",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -106,10 +112,14 @@ var PERMISSION = RESOURCE_BASE + "read";
 // that followed them would answer the question by hiding it.
 // ---------------------------------------------------------------------------
 function form(o) {
+  log.debug("Entering form().");
+  log.debug("Leaving form().");
   return new URLSearchParams(o).toString();
 }
 
 function absolute(location) {
+  log.debug("Entering absolute().");
+  log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
 }
@@ -117,6 +127,7 @@ function absolute(location) {
 // One browser. `cookie` is the whole jar: this service sets exactly one cookie
 // and every assertion here is about whose session is presenting it.
 function browser(name) {
+  log.debug("Entering browser().");
   const self = {
     name: name,
     cookie: "",
@@ -129,34 +140,41 @@ function browser(name) {
       if (body !== undefined) {
         headers["Content-Type"] = "application/x-www-form-urlencoded";
       }
-      const r = await fetch(absolute(path), { method: method, redirect: "manual",
+      const r = await fetch(absolute(path),
+                            { method: method, redirect: "manual",
                                               headers: headers, body: body });
       const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
       set.forEach(function (one) { self.cookie = String(one).split(";")[0]; });
       const text = await r.text();
       log.debug("Leaving go(). status=" + r.status);
       return { status: r.status, location: r.headers.get("location") || "",
-               csp: r.headers.get("content-security-policy") || "", text: text };
+               csp: r.headers.get("content-security-policy") || "",
+               text: text };
     }
   };
+  log.debug("Leaving browser().");
   return self;
 }
 
 async function get(path) {
+  log.debug("Entering get().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in get(): " + ((e && e.message) || e));
     // Not JSON — an HTML error page. The caller reports the status and the raw
     // text, which says more than a parse error would.
     body = raw;
   }
+  log.debug("Leaving get().");
   return { status: r.status, body: body, raw: raw };
 }
 
 async function post(path, payload) {
+  log.debug("Entering post().");
   const r = await fetch(api + path, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload || {})
@@ -166,18 +184,23 @@ async function post(path, payload) {
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in post(): " + ((e && e.message) || e));
     // As above: an HTML page from a door that answers JSON is worth quoting
     // whole rather than reporting as a parse failure.
     body = raw;
   }
+  log.debug("Leaving post().");
   return { status: r.status, body: body, raw: raw };
 }
 
 async function ok(path, payload, what) {
+  log.debug("Entering ok().");
   const r = await post(path, payload);
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
-    "POST " + path + " should have " + what + "; it answered " + r.status + " " +
+    "POST " + path + " should have " + what + "; it answered " + r.status +
+    " " +
     JSON.stringify((r.body && r.body.errors) || r.body).slice(0, 400));
+  log.debug("Leaving ok().");
   return r.body;
 }
 
@@ -189,6 +212,8 @@ async function ok(path, payload, what) {
 // these sections.
 // ---------------------------------------------------------------------------
 function authorizeUrl(clientId, scope, extra) {
+  log.debug("Entering authorizeUrl().");
+  log.debug("Leaving authorizeUrl().");
   return "/oauth2/authorize?" + form(Object.assign({
     response_type: "code", client_id: clientId, redirect_uri: REDIRECT_URI,
     scope: scope, state: "consent-" + RUN
@@ -205,7 +230,8 @@ async function signIn(who, clientId, scope, extra) {
                   sn: who, displayName: "Consent Person " + who,
                   mail: who + "@" + MAIL_DOMAIN },
     credential: "password", password: PASSWORD
-  }, "created " + who + " with a password and real attributes before they sign in");
+  }, "created " + who + " with a password and real attributes before they " +
+                        "sign in");
   const b = browser(who);
   let r = await b.go("GET", authorizeUrl(clientId, scope, extra));
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
@@ -245,7 +271,10 @@ async function screen(b, location) {
 // The scopes the screen is ASKING about, out of its own list, so a section can
 // assert what is on the page rather than what this file expected to be.
 function askedOn(page) {
-  const list = (String(page).match(/<ul class="scopes">([\s\S]*?)<\/ul>/) || [])[1] || "";
+  log.debug("Entering askedOn().");
+  const list = (String(page).match(/<ul class="scopes">([\s\S]*?)<\/ul>/) ||
+                [])[1] || "";
+  log.debug("Leaving askedOn().");
   // THE FIRST `<code>` OF EACH `<li>` AND NOT EVERY `<code>` IN THE LIST. A row
   // for a delegated permission carries two more of them in its explanation —
   // the application that exposes it and the base URI the token will be
@@ -258,9 +287,11 @@ function askedOn(page) {
 
 // Every consent recorded for one person, off /admin-api/consent.
 async function recordedFor(username) {
+  log.debug("Entering recordedFor().");
   const r = await get("/consent");
   assert.strictEqual(r.status, 200,
     "GET /admin-api/consent should answer the register, got " + r.status);
+  log.debug("Leaving recordedFor().");
   return (r.body.users || []).filter(function (one) {
     return one.username === username;
   });
@@ -271,15 +302,16 @@ async function recordedFor(username) {
 // ---------------------------------------------------------------------------
 async function theFirstSignInIsAsked() {
   log.debug("Entering theFirstSignInIsAsked().");
-  log.info("=== The first sign-in for a scope is asked, and issues nothing ===");
+  log.info("=== The first sign-in for a scope is asked, and issues nothing " +
+           "===");
   const who = usernameFor("consent-first");
   const { b, r } = await signIn(who, CLIENT, "openid profile");
   assert.ok(/\/oauth2\/consent\?consent=/.test(r.location),
     "a first sign-in should be sent to the consent screen; it went to " +
     r.location);
   assert.ok(!/[?&]code=/.test(r.location),
-    "AND NOTHING WAS ISSUED. A consent screen that arrives beside a code is a " +
-    "consent screen that is decoration: got " + r.location);
+    "AND NOTHING WAS ISSUED. A consent screen that arrives beside a code is " +
+    "a consent screen that is decoration: got " + r.location);
 
   const shown = await screen(b, r.location);
   assert.deepStrictEqual(askedOn(shown.page), ["openid", "profile"],
@@ -306,8 +338,9 @@ async function theFirstSignInIsAsked() {
   await b.go("GET", r.location);
   assert.strictEqual((await recordedFor(who)).length, 0,
     "LOOKING AT THE SCREEN IS NOT ANSWERING IT. Nothing may be recorded by a " +
-    "GET: a browser's prefetch, a chat client unfurling the URL and a scanner " +
-    "all issue one, and any of them would otherwise have consented for " + who);
+    "GET: a browser's prefetch, a chat client unfurling the URL and a " +
+    "scanner all issue one, and any of them would otherwise have consented " +
+    "for " + who);
 
   const allowed = await b.go("POST", "/oauth2/consent",
                              form({ consent_id: shown.id, action: "allow" }));
@@ -350,7 +383,8 @@ async function theFirstSignInIsAsked() {
 // ---------------------------------------------------------------------------
 async function theSecondSignInIsSilent(first) {
   log.debug("Entering theSecondSignInIsSilent().");
-  log.info("=== The second request is silent; a new scope asks about itself ===");
+  log.info("=== The second request is silent; a new scope asks about itself " +
+           "===");
   const b = first.b;
   let r = await b.go("GET", authorizeUrl(CLIENT, "openid profile"));
   assert.ok(/[?&]code=/.test(r.location),
@@ -371,19 +405,21 @@ async function theSecondSignInIsSilent(first) {
   const shown = await screen(b, r.location);
   assert.deepStrictEqual(askedOn(shown.page), ["email"],
     "AND IT SHOULD ASK ABOUT THE NEW ONE ALONE. A screen that re-listed the " +
-    "two already agreed to would be asking a question that has been answered, " +
-    "which is how people learn to press Allow without reading; it asked about " +
+    "two already agreed to would be asking a question that has been " +
+    "answered, which is how people learn to press Allow without reading; it " +
+    "asked about " +
     JSON.stringify(askedOn(shown.page)));
   assert.ok(/already agreed to/.test(shown.page),
-    "the two already agreed to are on the page under a fold, so a screen that " +
-    "somebody has seen before explains why it is shorter this time");
+    "the two already agreed to are on the page under a fold, so a screen " +
+    "that somebody has seen before explains why it is shorter this time");
 
   // -----------------------------------------------------------------------
   // DENY. The client is told, and NOTHING is written down.
   // -----------------------------------------------------------------------
   const denied = await b.go("POST", "/oauth2/consent",
                             form({ consent_id: shown.id, action: "deny" }));
-  assert.strictEqual(denied.status, 303, "Deny should redirect, got " + denied.status);
+  assert.strictEqual(denied.status, 303,
+                     "Deny should redirect, got " + denied.status);
   const backAfterDeny = await b.go("GET", denied.location);
   assert.ok(/[?&]error=access_denied/.test(backAfterDeny.location),
     "Deny should reach the CLIENT as access_denied — the screen names the " +
@@ -426,8 +462,8 @@ async function thePromptParameterIsHonoured(first) {
   assert.ok(/[?&]error=consent_required/.test(r.location),
     "OIDC Core section 3.1.2.6: prompt=none with a scope outstanding is " +
     "`consent_required` and not `interaction_required` — a client that gets " +
-    "the general one cannot tell a missing session from a missing consent. It " +
-    "went to " + r.location);
+    "the general one cannot tell a missing session from a missing consent. " +
+    "It went to " + r.location);
 
   r = await b.go("GET", authorizeUrl(CLIENT, "openid profile",
                                      { prompt: "consent" }));
@@ -502,8 +538,8 @@ async function theScreenRefusesWhatItShould() {
   assert.strictEqual(stolenAnswer.status, 400,
     "AND MUST NOT BE ANSWERED BY THEM. This is the one refusal at this door " +
     "whose absence would write something UNTRUE into the directory rather " +
-    "than merely letting something through: the answer would be filed against " +
-    "whoever happened to be signed in. Got " + stolenAnswer.status);
+    "than merely letting something through: the answer would be filed " +
+    "against whoever happened to be signed in. Got " + stolenAnswer.status);
   assert.strictEqual((await recordedFor(who)).length, 0,
     "and nothing was recorded for " + who + " by somebody else's press");
   assert.strictEqual((await recordedFor(other)).length, 0,
@@ -562,7 +598,8 @@ async function theGlobalOverrideWorks() {
            "given the resource its base URI");
   await ok("/permissions/define-permission",
            { resource: RESOURCE, name: "read",
-             description: "Read the consent test resource on somebody's behalf" },
+             description:
+               "Read the consent test resource on somebody's behalf" },
            "defined the permission");
   await ok("/permissions/grant-permission",
            { client: CLIENT, permission: PERMISSION },
@@ -581,9 +618,9 @@ async function theGlobalOverrideWorks() {
     return one === PERMISSION;
   }), [PERMISSION],
     "AND BY ITS WHOLE IDENTIFIER, never by the bare permission name: two " +
-    "resources may each expose a `read`, and a screen that asked about `read` " +
-    "would be asking a question whose answer covers an API nobody mentioned. " +
-    "It asked about " + JSON.stringify(askedOn(shown.page)));
+    "resources may each expose a `read`, and a screen that asked about " +
+    "`read` would be asking a question whose answer covers an API nobody " +
+    "mentioned. It asked about " + JSON.stringify(askedOn(shown.page)));
   assert.ok(shown.page.indexOf("Read the consent test resource") >= 0,
     "the description somebody typed on the permission is on the screen — a " +
     "page listing opaque URLs is a page that teaches people to press Allow");
@@ -605,7 +642,8 @@ async function theGlobalOverrideWorks() {
   const overrides = (register.body.globals || []).filter(function (one) {
     return one.client === CLIENT;
   });
-  assert.deepStrictEqual(overrides.map(function (one) { return one.scope; }).sort(),
+  assert.deepStrictEqual(overrides.map(function (one) { return one.scope; })
+                                  .sort(),
     ["openid", PERMISSION].sort(),
     "both overrides are on the register; got " +
     JSON.stringify(overrides.map(function (one) { return one.scope; })));
@@ -622,14 +660,14 @@ async function theGlobalOverrideWorks() {
   const skipped = usernameFor("consent-perm-skipped");
   const second = await signIn(skipped, CLIENT, "openid " + PERMISSION);
   assert.ok(/[?&]code=/.test(second.r.location),
-    "A PERSON WHO HAS NEVER BEEN HERE IS NOT ASKED. That is the whole of what " +
-    "the override buys, and it is what distinguishes it from every other " +
-    "consent in this register. They went to " + second.r.location);
+    "A PERSON WHO HAS NEVER BEEN HERE IS NOT ASKED. That is the whole of " +
+    "what the override buys, and it is what distinguishes it from every " +
+    "other consent in this register. They went to " + second.r.location);
   assert.strictEqual((await recordedFor(skipped)).length, 0,
     "AND NOTHING WAS WRITTEN ABOUT THEM. An override that recorded a consent " +
-    "on the way past would be indistinguishable from an answer they gave, and " +
-    "taking the override away would then leave them silently consented for " +
-    "ever");
+    "on the way past would be indistinguishable from an answer they gave, " +
+    "and taking the override away would then leave them silently consented " +
+    "for ever");
 
   // AND IT IS KEYED ON THE PAIR. A second application asking for the same
   // permission identifier is still asked. It was REGISTERED in test(), with
@@ -691,7 +729,8 @@ async function aRecordedAnswerCanBeTakenBack(first) {
            { username: first.who, client: CLIENT, scope: "profile" },
            "revoked one answer");
   const left = await recordedFor(first.who);
-  assert.deepStrictEqual(left.map(function (one) { return one.scope; }), ["openid"],
+  assert.deepStrictEqual(left.map(function (one) { return one.scope; }),
+    ["openid"],
     "ONE ROW WENT AND THE OTHER STAYED. A revoke keyed on the pair rather " +
     "than the triple would have taken both; got " +
     JSON.stringify(left.map(function (one) { return one.scope; })));
@@ -701,8 +740,8 @@ async function aRecordedAnswerCanBeTakenBack(first) {
     "and the revoked scope is asked about again; it went to " + r.location);
   const shown = await screen(first.b, r.location);
   assert.deepStrictEqual(askedOn(shown.page), ["profile"],
-    "about the revoked one ALONE — `openid` is still on their entry; it asked " +
-    "about " + JSON.stringify(askedOn(shown.page)));
+    "about the revoked one ALONE — `openid` is still on their entry; it " +
+    "asked about " + JSON.stringify(askedOn(shown.page)));
   await first.b.go("POST", "/oauth2/consent",
                    form({ consent_id: shown.id, action: "allow" }));
 
@@ -710,7 +749,8 @@ async function aRecordedAnswerCanBeTakenBack(first) {
            "forgot everything for one person");
   assert.strictEqual((await recordedFor(first.who)).length, 0,
     "and their entry holds nothing at all afterwards");
-  const empty = await post("/consent/forget-user-consent", { username: first.who });
+  const empty = await post("/consent/forget-user-consent",
+                           { username: first.who });
   assert.strictEqual(empty.status, 400,
     "forgetting nothing is refused rather than reported as done; got " +
     empty.status);
@@ -746,8 +786,9 @@ async function restore() {
 
 async function test() {
   log.debug("Entering test().");
-  log.info("Driving the consent screen at " + base + "/oauth2/consent, and the " +
-           "register at " + base + "/admin-api/consent. Run id " + RUN + ".");
+  log.info("Driving the consent screen at " + base + "/oauth2/consent, and " +
+           "the register " +
+           "at " + base + "/admin-api/consent. Run id " + RUN + ".");
 
   // The client this job signs in to. Created up front so that the screen has a
   // NAME to show rather than a bare client_id — which is also what makes the

@@ -685,6 +685,43 @@ SCIM's identical grant; `ssf.authBasic` turns the scheme off (and out of
 `authorization_schemes`) for a deployment that wants the scope split enforced
 for every caller.
 
+**A THIRD SCHEME SINCE 2026-09-12: GNAP.** `ssf_auth.js`'s `attemptGnap()` accepts
+a key-bound GNAP access token whose access names `ssf:read` / `ssf:write`, so a
+GNAP web application owns a stream as ITSELF — which is what
+`gnap/gnap_signals.js`'s subject scope needs. It takes only the `GNAP` scheme;
+`Bearer` on these endpoints stays OAuth 2.0.
+
+## `ssfAllowedEvents`: THE ONE PLACE AN APPLICATION ENTRY LIMITS A STREAM (2026-09-12)
+
+rcbj asked for it after asking whether ticking Shared Signals on the application
+screen enabled CAEP and RISC. It did not, because no declaration does anything:
+a receiver chose its event types in `events_requested` and nothing on its entry
+could narrow that. **This attribute can**, and it is the first thing on an
+application entry that limits this family — so the registry's "declaring grants
+nothing" sentence now names it as one of two exceptions.
+
+* **Values** are `caep`, `risc`, or event type URIs this transmitter knows;
+  anything else is refused at both write doors (`STS-REG-0053`), and the
+  attribute is family-scoped to `ssf` like `oauthTokenExchangeRefreshToken` is
+  to OAuth (`STS-REG-0010`). **Empty means unrestricted**, which is every entry
+  that existed before it.
+* **The owner is `createdBy`** — whatever authenticated to `/ssf/stream` —
+  matched as an application identifier or among an entry's `ssfReceiverId`s.
+* **It is asked twice, and a mutation run showed why both matter.**
+  `ssf_streams.js` narrows `events_delivered` when a stream is created or
+  updated, and `deliversEvent()` asks again at every delivery — the candidate
+  filters in `ssf.js`, `transmit()` itself (`STS-SSF-0081`), and the per-receiver
+  "takes" columns all go through it, and `streamConfiguration()` reports the
+  effective list. Delivery alone would let a limit lifted later hand back types
+  withheld at agreement; agreement alone would let a receiver escape a tightened
+  limit by having created its stream first.
+* **SSF's own two events are always allowed**, because a receiver refused its
+  verification event cannot learn that its stream works.
+
+`tests/vendored/sts_ssf_allowed_events.js` holds all of it against an
+unrestricted control stream; six mutants, all caught, two only after the job
+was tightened.
+
 ---
 
 ## WHAT THIS FAMILY DELIBERATELY DOES NOT DO

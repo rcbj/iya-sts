@@ -84,16 +84,22 @@ const errorCodes = require('./error_codes');
 // The module's own logger, made the way pq_jose.js makes its own. A worker's
 // lines are named `worker` and carry the pid, because the whole point of
 // several of them is that a reader has to be able to tell which one spoke.
+let logLevelProblem = null;
 const log = bunyan.createLogger({
   name: 'worker',
   level: (function () {
     try {
       return config.value('global.logLevel') || 'info';
     } catch (e) {
+      logLevelProblem = e;
       return 'info';
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug('No log level could be read, so info: ' +
+            logLevelProblem.message);
+}
 
 // ---------------------------------------------------------------------------
 // THE JOBS. One entry per unit of work the front process may hand out.

@@ -81,6 +81,12 @@
 const ldapServer = require('../ldap/ldap_server');
 const worker = require('../common/request_worker');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'ldap_operations',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const BASE = 'dc=example,dc=com';
 const USERS = 'ou=users,' + BASE;
 
@@ -95,6 +101,7 @@ const USERS = 'ou=users,' + BASE;
 // of a bind.
 // ---------------------------------------------------------------------------
 function socketRequest(fields) {
+  log.debug("Entering socketRequest().");
   const ldap = require('ldapjs');
   const req = {
     connection: { encrypted: false,
@@ -103,23 +110,32 @@ function socketRequest(fields) {
                   remoteAddress: '127.0.0.1', remotePort: 40000 }
   };
   req.dn = ldap.parseDN(fields.dn === undefined ? BASE : fields.dn);
-  if (fields.credentials !== undefined) { req.credentials = fields.credentials; }
+  if (fields.credentials !== undefined) {
+    req.credentials = fields.credentials;
+  }
   if (fields.attributes !== undefined) { req.attributes = fields.attributes; }
   if (fields.changes !== undefined) { req.changes = fields.changes; }
   if (fields.newRdn !== undefined) { req.newRdn = fields.newRdn; }
-  if (fields.newSuperior !== undefined) { req.newSuperior = fields.newSuperior; }
+  if (fields.newSuperior !== undefined) {
+    req.newSuperior = fields.newSuperior;
+  }
   if (fields.attribute !== undefined) { req.attribute = fields.attribute; }
   if (fields.value !== undefined) { req.value = fields.value; }
   if (fields.scope !== undefined) { req.scope = fields.scope; }
-  if (fields.filter !== undefined) { req.filter = ldap.parseFilter(fields.filter); }
+  if (fields.filter !== undefined) {
+    req.filter = ldap.parseFilter(fields.filter);
+  }
   if (fields.sizeLimit !== undefined) { req.sizeLimit = fields.sizeLimit; }
+  log.debug("Leaving socketRequest().");
   return req;
 }
 
 // The whole round trip: describe the request the way the front process does,
 // then run it the way a worker does.
 function dispatched(operation, fields) {
+  log.debug("Entering dispatched().");
   const shape = ldapServer.operationRequest(operation, socketRequest(fields));
+  log.debug("Leaving dispatched().");
   // THROUGH JSON, WHICH IS NOT DECORATION. The channel is a structured clone,
   // so anything that survives JSON survives it — and a shape carrying a class
   // instance, a function or an `undefined` would pass a comparison made on the
@@ -133,12 +149,14 @@ function dispatched(operation, fields) {
 // wrote. This is the CONTROL — the answer the front process would give — and
 // it deliberately does not go near the codec.
 function directly(operation, fields) {
+  log.debug("Entering directly().");
   const handler = ldapServer.localHandler(operation);
   const req = socketRequest(fields);
   const out = { entries: [], ended: false, endArg: undefined, failure: null };
   const res = {
     messageId: 7,
     send: function (entry) {
+      log.debug("Entering send().");
       out.entries.push({
         objectName: String(entry.objectName),
         attributes: (entry.attributes || []).map(function (a) {
@@ -146,10 +164,17 @@ function directly(operation, fields) {
                    values: (a.values || []).map(String) };
         })
       });
+      log.debug("Leaving send().");
     },
-    end: function (arg) { out.ended = true; out.endArg = arg; }
+    end: function (arg) {
+      log.debug("Entering end().");
+      out.ended = true;
+      out.endArg = arg;
+      log.debug("Leaving end().");
+    }
   };
   handler(req, res, function (err) { if (err) { out.failure = err; } });
+  log.debug("Leaving directly().");
   return out;
 }
 
@@ -168,6 +193,7 @@ function directly(operation, fields) {
 // would answer the right number of entries with the wrong contents in them.
 // ---------------------------------------------------------------------------
 function checkASearchAgrees(t) {
+  log.debug("Entering checkASearchAgrees().");
   t.log.info('=== a search gives the same answer through the codec ===');
 
   const fields = { dn: USERS, scope: 2, filter: '(objectClass=*)' };
@@ -178,7 +204,8 @@ function checkASearchAgrees(t) {
           'the dispatched search succeeded',
           'it answered ' + JSON.stringify(viaPool.error || '(no error)'));
   t.check(control.entries.length > 0,
-          'the directory has entries to compare (' + control.entries.length + ')',
+          'the directory has entries to compare (' + control.entries.length +
+          ')',
           'a search returning nothing would make every comparison below pass ' +
           'by having nothing to compare — which is the way a test like this ' +
           'is usually wrong');
@@ -188,6 +215,7 @@ function checkASearchAgrees(t) {
           JSON.stringify(viaPool.entries).slice(0, 400) +
           '\n  directly:        ' +
           JSON.stringify(control.entries).slice(0, 400));
+  log.debug("Leaving checkASearchAgrees().");
 }
 
 // ---------------------------------------------------------------------------
@@ -199,6 +227,7 @@ function checkASearchAgrees(t) {
 // red while section 1 stays green, because section 1 asks for everything.
 // ---------------------------------------------------------------------------
 function checkTheAttributeSelectionCrosses(t) {
+  log.debug("Entering checkTheAttributeSelectionCrosses().");
   t.log.info('=== a narrowed attribute list is honoured in the worker ===');
 
   const narrow = dispatched('search', { dn: USERS, scope: 2,
@@ -220,6 +249,7 @@ function checkTheAttributeSelectionCrosses(t) {
           (names.join(', ') || 'none') + ')',
           'the selection did not cross the codec — the answer carries ' +
           names.length + ' attribute name(s) where it should carry one');
+  log.debug("Leaving checkTheAttributeSelectionCrosses().");
 }
 
 // ---------------------------------------------------------------------------
@@ -236,6 +266,7 @@ function checkTheAttributeSelectionCrosses(t) {
 // that the refusal is refused at all rather than arriving as a success.
 // ---------------------------------------------------------------------------
 function checkARefusalKeepsItsResultCode(t) {
+  log.debug("Entering checkARefusalKeepsItsResultCode().");
   t.log.info('=== a refusal crosses as its own LDAP result code ===');
 
   const missing = 'uid=nobody-at-all,' + USERS;
@@ -252,12 +283,14 @@ function checkARefusalKeepsItsResultCode(t) {
 
   const rebuilt = ldapServer.ldapErrorNamed(viaPool.errorName, viaPool.error);
   t.check(rebuilt.code === control.failure.code,
-          'the rebuilt error carries the same result code (' + rebuilt.code + ')',
+          'the rebuilt error carries the same result code (' + rebuilt.code +
+          ')',
           'the client would be told ' + rebuilt.code + ' where the front ' +
           'process tells it ' + control.failure.code);
   t.check(rebuilt.name === control.failure.name,
           'and the same error (' + rebuilt.name + ')',
           'rebuilt as ' + rebuilt.name + ', not ' + control.failure.name);
+  log.debug("Leaving checkARefusalKeepsItsResultCode().");
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +307,7 @@ function checkARefusalKeepsItsResultCode(t) {
 // one and hand the client something that is not an error at all.
 // ---------------------------------------------------------------------------
 function checkAnUnknownRefusalIsStillARefusal(t) {
+  log.debug("Entering checkAnUnknownRefusalIsStillARefusal().");
   t.log.info('=== an unrebuildable error name is still an LDAP error ===');
 
   const unknown = ldapServer.ldapErrorNamed('NoSuchThingError', 'invented');
@@ -283,8 +317,8 @@ function checkAnUnknownRefusalIsStillARefusal(t) {
           'the client would be handed an object with no result code on it');
   t.check(unknown.message.indexOf('invented') >= 0,
           'and keeps the original wording',
-          'the reason the worker gave was lost, which leaves the one sentence ' +
-          'that says what happened nowhere at all');
+          'the reason the worker gave was lost, which leaves the one ' +
+          'sentence that says what happened nowhere at all');
 
   const notAnError = ldapServer.ldapErrorNamed('createServer', 'not an error');
   t.check(typeof notAnError.code === 'number' && notAnError.code === 1,
@@ -292,6 +326,7 @@ function checkAnUnknownRefusalIsStillARefusal(t) {
           'LDAP_OPERATIONS_ERROR',
           'it came back as code ' + notAnError.code + ' — a name lookup that ' +
           'accepts any callable export can hand a client an ldapjs Server');
+  log.debug("Leaving checkAnUnknownRefusalIsStillARefusal().");
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +340,9 @@ function checkAnUnknownRefusalIsStillARefusal(t) {
 // luck.
 // ---------------------------------------------------------------------------
 function checkAWriteCrosses(t) {
-  t.log.info('=== an add through the codec is visible to a search through it ===');
+  log.debug("Entering checkAWriteCrosses().");
+  t.log.info('=== an add through the codec is visible to a search through it ' +
+             '===');
 
   const dn = 'uid=codec-probe,' + USERS;
   const added = dispatched('add', {
@@ -340,6 +377,7 @@ function checkAWriteCrosses(t) {
   const removed = dispatched('del', { dn: dn });
   t.check(removed.ok === true, 'and the probe entry is deleted again',
           removed.error || '');
+  log.debug("Leaving checkAWriteCrosses().");
 }
 
 // ---------------------------------------------------------------------------
@@ -355,6 +393,7 @@ function checkAWriteCrosses(t) {
 // pass a test that only checked the other.
 // ---------------------------------------------------------------------------
 function checkACompareCarriesItsAnswer(t) {
+  log.debug("Entering checkACompareCarriesItsAnswer().");
   t.log.info('=== a compare carries its true/false answer across ===');
 
   const hit = dispatched('compare', { dn: USERS, attribute: 'ou',
@@ -368,6 +407,7 @@ function checkACompareCarriesItsAnswer(t) {
   t.check(miss.ok === true && miss.endArg === false,
           'and one that does not match answers false',
           'endArg came back as ' + JSON.stringify(miss.endArg));
+  log.debug("Leaving checkACompareCarriesItsAnswer().");
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +426,7 @@ function checkACompareCarriesItsAnswer(t) {
 // distinction.
 // ---------------------------------------------------------------------------
 function checkTheBoundIdentityCrosses(t) {
+  log.debug("Entering checkTheBoundIdentityCrosses().");
   t.log.info('=== the bound DN travels with the operation ===');
 
   const bound = 'uid=alice,' + USERS;
@@ -418,6 +459,7 @@ function checkTheBoundIdentityCrosses(t) {
   t.check(channel.channel === 'ldap',
           'and the channel crosses, so an audit row says LDAP or LDAPS',
           'the channel came across as ' + JSON.stringify(channel.channel));
+  log.debug("Leaving checkTheBoundIdentityCrosses().");
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +475,7 @@ function checkTheBoundIdentityCrosses(t) {
 // nothing anywhere would report.
 // ---------------------------------------------------------------------------
 function checkTheOperationTableAgrees(t) {
+  log.debug("Entering checkTheOperationTableAgrees().");
   t.log.info('=== the registered operations are the dispatchable ones ===');
 
   // ---------------------------------------------------------------------
@@ -492,8 +535,9 @@ function checkTheOperationTableAgrees(t) {
   });
   t.check(unbacked.length === 0,
           'and each has its handler captured',
-          'no handler captured for: ' + unbacked.join(', ') + '. This is what ' +
-          'registering before the handlers are installed looks like');
+          'no handler captured for: ' + unbacked.join(', ') + '. This is ' +
+          'what registering before the handlers are installed looks like');
+  log.debug("Leaving checkTheOperationTableAgrees().");
 }
 
 // ---------------------------------------------------------------------------
@@ -513,22 +557,34 @@ function checkTheOperationTableAgrees(t) {
 // is structurally unable to perform.
 // ---------------------------------------------------------------------------
 function applied(operation, fields, result) {
+  log.debug("Entering applied().");
   const req = socketRequest(fields || {});
   const out = { sent: [], ended: false, endArg: undefined, failure: null,
                 nexted: false, req: req };
   const res = {
     messageId: 99,
-    send: function (entry) { out.sent.push(entry); },
-    end: function (arg) { out.ended = true; out.endArg = arg; }
+    send: function (entry) {
+      log.debug("Entering send().");
+      out.sent.push(entry);
+      log.debug("Leaving send().");
+    },
+    end: function (arg) {
+      log.debug("Entering end().");
+      out.ended = true;
+      out.endArg = arg;
+      log.debug("Leaving end().");
+    }
   };
   ldapServer.applyOperationResult(operation, req, res, function (err) {
     out.nexted = true;
     if (err) { out.failure = err; }
   }, result);
+  log.debug("Leaving applied().");
   return out;
 }
 
 function checkTheFrontProcessHalf(t) {
+  log.debug("Entering checkTheFrontProcessHalf().");
   t.log.info('=== the front process writes what the worker decided ===');
 
   // A SEARCH: the entries become real messages carrying THIS response's id.
@@ -588,6 +644,7 @@ function checkTheFrontProcessHalf(t) {
           'and nothing is sent or ended beside it',
           'a refusal that also ends sends two result messages for one ' +
           'operation');
+  log.debug("Leaving checkTheFrontProcessHalf().");
 }
 
 // ---------------------------------------------------------------------------
@@ -607,6 +664,7 @@ function checkTheFrontProcessHalf(t) {
 // go unnoticed: stamping a refused bind dates a session that never started.
 // ---------------------------------------------------------------------------
 function checkTheBindTouchesTheSocket(t, done) {
+  log.debug("Entering checkTheBindTouchesTheSocket().");
   t.log.info('=== a dispatched bind still reaches the socket ===');
 
   let published = 0;
@@ -645,6 +703,7 @@ function checkTheBindTouchesTheSocket(t, done) {
     ldapServer.setConnectionWatcher(null);
     done();
   });
+  log.debug("Leaving checkTheBindTouchesTheSocket().");
 }
 
 // ---------------------------------------------------------------------------
@@ -672,6 +731,7 @@ function checkTheBindTouchesTheSocket(t, done) {
 // two, so the branch is reachable against a seeded directory.
 // ---------------------------------------------------------------------------
 function checkAPartialAnswerSurvives(t) {
+  log.debug("Entering checkAPartialAnswerSurvives().");
   t.log.info('=== a size-limited search keeps its entries AND its code ===');
 
   const fields = { dn: USERS, scope: 2, filter: '(objectClass=*)',
@@ -714,8 +774,9 @@ function checkAPartialAnswerSurvives(t) {
           (written.failure ? written.failure.code : '(nothing)'));
   t.check(written.ended === false,
           'and no result message beside the refusal',
-          'ldapjs turns the error handed to next() into the SearchResultDone, ' +
-          'so an end() as well would be two of them');
+          'ldapjs turns the error handed to next() into the ' +
+          'SearchResultDone, so an end() as well would be two of them');
+  log.debug("Leaving checkAPartialAnswerSurvives().");
 }
 
 // ---------------------------------------------------------------------------
@@ -735,6 +796,7 @@ function checkAPartialAnswerSurvives(t) {
 //     a missing one; the handler derives the parent from the original DN.
 // ---------------------------------------------------------------------------
 function checkTheRemainingShapes(t) {
+  log.debug("Entering checkTheRemainingShapes().");
   t.log.info('=== the root DSE and modifyDN cross ===');
 
   const dse = dispatched('search', { dn: '', scope: 0,
@@ -818,9 +880,11 @@ function checkTheRemainingShapes(t) {
 
   dispatched('del', { dn: moveTo });
   dispatched('del', { dn: dst });
+  log.debug("Leaving checkTheRemainingShapes().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkASearchAgrees(t);
   checkTheAttributeSelectionCrosses(t);
   checkARefusalKeepsItsResultCode(t);
@@ -832,6 +896,7 @@ function run(t) {
   checkTheFrontProcessHalf(t);
   checkAPartialAnswerSurvives(t);
   checkTheRemainingShapes(t);
+  log.debug("Leaving run().");
   // The one section with a tick in it, so `run()` answers a promise the runner
   // awaits — see tests/run.js, which handles both shapes.
   return new Promise(function (resolve) {
@@ -841,8 +906,8 @@ function run(t) {
 
 module.exports = {
   name: 'ldap_operations',
-  describe: 'the directory as an operation: what crosses to a request worker, ' +
-            'that a dispatched answer is the same answer, and that a refusal ' +
-            'keeps its LDAP result code',
+  describe: 'the directory as an operation: what crosses to a request ' +
+            'worker, that a dispatched answer is the same answer, and that a ' +
+            'refusal keeps its LDAP result code',
   run: run
 };

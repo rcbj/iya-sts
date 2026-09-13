@@ -12,23 +12,24 @@
 //   * the LOG and the artifact log. This mock exists to show what it did, so
 //     every module writes to one logger at one level.
 //   * the KEYS. One RSA key pair signs everything (SAML assertions, every JWT,
-//     the RFC 8414 and OID4VCI metadata, the DID documents) and one BBS key pair
-//     signs every ldp_vc credential. They are generated once per start, so they
-//     cannot be per-module: two modules generating their own would publish two
-//     keys under one issuer and the symptom is "the signature does not verify".
+//     the RFC 8414 and OID4VCI metadata, the DID documents) and one BBS key
+//     pair signs every ldp_vc credential. They are generated once per start, so
+//     they cannot be per-module: two modules generating their own would publish
+//     two keys under one issuer and the symptom is "the signature does not
+//     verify".
 //   * the small helpers that more than one protocol needs — base64url, the
-//     request's own base URL, a body parser that copes with form or JSON, the two
-//     error-response shapes, and the mock's one user.
+//     request's own base URL, a body parser that copes with form or JSON, the
+//     two error-response shapes, and the mock's one user.
 //
 // The last group is why this file exists at all rather than each protocol
-// keeping its own: `userFor`, `parseBody`, `bodyValues`, `oauthError`, `signJwt` and `vciError`
-// were used across the OAuth2, OID4VCI and OID4VP sections, and leaving them in
-// any one of those made the modules require each other in a CYCLE (the offer
-// pages need the mock user; the authorization server needs the offer state).
-// A cycle in node does not fail loudly — it hands back a half-initialised module
-// whose exports are undefined, and the failure surfaces later as a function that
-// is not a function. Keeping the shared leaves here is what makes the dependency
-// graph a tree.
+// keeping its own: `userFor`, `parseBody`, `bodyValues`, `oauthError`,
+// `signJwt` and `vciError` were used across the OAuth2, OID4VCI and OID4VP
+// sections, and leaving them in any one of those made the modules require each
+// other in a CYCLE (the offer pages need the mock user; the authorization
+// server needs the offer state). A cycle in node does not fail loudly — it
+// hands back a half-initialised module whose exports are undefined, and the
+// failure surfaces later as a function that is not a function. Keeping the
+// shared leaves here is what makes the dependency graph a tree.
 // ---------------------------------------------------------------------------
 
 // CONFIG_FILE is made ABSOLUTE before it is read. This module lives in a
@@ -88,11 +89,11 @@ const errorCodes = require('./error_codes');
 const log = bunyan.createLogger({ name: 'sts',
                                 level: config.value('global.logLevel') });
 // Registering it is what makes global.logLevel a setting rather than a claim:
-// bunyan takes a level when the logger is created, so without this /admin/config
-// could change the setting and every line after it would still be written at the
-// level the process started with. This is the logger every protocol module
-// destructures, so it is nearly all of them; see the note in config.js for the
-// eight vendored krb5_* modules that cannot be registered.
+// bunyan takes a level when the logger is created, so without this
+// /admin/config could change the setting and every line after it would still be
+// written at the level the process started with. This is the logger every
+// protocol module destructures, so it is nearly all of them; see the note in
+// config.js for the eight vendored krb5_* modules that cannot be registered.
 config.registerLogger(log);
 log.info("Log initialized. logLevel=" + log.level());
 
@@ -111,23 +112,33 @@ log.info("Log initialized. logLevel=" + log.level());
 //   stage  'before signing' / 'after signing' / 'before encryption' / ...
 //   value  the object or string itself, recorded in full
 function logArtifact(what, stage, value) {
+  log.debug("Entering logArtifact().");
   log.debug({ artifact: what,
               stage: stage,
-              value: (typeof value === 'string') ? value : JSON.stringify(value) },
+              value: (typeof value === 'string') ? value :
+                      JSON.stringify(value) },
             what + ' ' + stage + '.');
+  log.debug("Leaving logArtifact().");
 }
 
 // Headers with nothing removed: this mock issues test credentials only, and the
 // point of the log is to be able to see exactly what was exchanged.
 function headersOf(source) {
+  log.debug("Entering headersOf().");
   const out = {};
   Object.keys(source || {}).forEach(function (k) { out[k] = source[k]; });
+  log.debug("Leaving headersOf().");
   return out;
 }
 
 // Bodies arrive (and leave) as strings or objects; either way they go in whole.
 function bodyOf(value) {
-  if (value === undefined || value === null) return '';
+  log.debug("Entering bodyOf().");
+  if (value === undefined || value === null) {
+    log.debug("Leaving bodyOf().");
+    return '';
+  }
+  log.debug("Leaving bodyOf().");
   return (typeof value === 'string') ? value : JSON.stringify(value);
 }
 
@@ -138,25 +149,29 @@ function bodyOf(value) {
 // The admin console has to know about every JWT this service issues, and
 // signJwt() below is the single place all of them are minted — so counting them
 // anywhere else would mean counting them at five call sites and forgetting the
-// sixth. But `admin_stats.js` requires THIS file (it needs the log), so this file
-// cannot require it back: a cycle in node hands back a half-initialised module
-// whose exports are undefined, and the symptom arrives later as something that is
-// not a function.
+// sixth. But `admin_stats.js` requires THIS file (it needs the log), so this
+// file cannot require it back: a cycle in node hands back a half-initialised
+// module whose exports are undefined, and the symptom arrives later as
+// something that is not a function.
 //
-// So the direction is inverted. This file, the leaf, offers a slot; admin_stats.js
-// installs itself in it at ITS require time. app.js requires admin_stats.js — which
-// is not a trick to make the ordering work but a genuine dependency, since the call
-// log in app.js is where the per-endpoint statistics are collected — and every
-// protocol module requires app.js, so the recorder is installed before any route
-// exists and therefore before any token can be minted.
+// So the direction is inverted. This file, the leaf, offers a slot;
+// admin_stats.js installs itself in it at ITS require time. app.js requires
+// admin_stats.js — which is not a trick to make the ordering work but a genuine
+// dependency, since the call log in app.js is where the per-endpoint statistics
+// are collected — and every protocol module requires app.js, so the recorder is
+// installed before any route exists and therefore before any token can be
+// minted.
 //
-// The recorder is called for its side effect only and its return value is ignored:
-// statistics must never be able to stop a token being issued.
+// The recorder is called for its side effect only and its return value is
+// ignored: statistics must never be able to stop a token being issued.
 let jwtRecorder = null;
 
 function setJwtRecorder(fn) {
+  log.debug("Entering setJwtRecorder().");
   jwtRecorder = fn;
-  log.debug("A JWT recorder was installed; every token this service signs will now be counted.");
+  log.debug("A JWT recorder was installed; every token this service signs " +
+            "will now be counted.");
+  log.debug("Leaving setJwtRecorder().");
 }
 
 // Read once, because the listener is bound with it before anything can ask
@@ -233,8 +248,11 @@ const VCI_REQUEST_ENC_ALG = 'RSA-OAEP-256';
 // key with a kid MUST repeat it), `use` and `key_ops`. The kid prefix is the
 // one `vc_issuer.js` used, so a wallet sees the same shape it always did.
 function requestEncryptionJwkOf(privateKey) {
-  const publicJwk = crypto.createPublicKey(privateKey).export({ format: 'jwk' });
+  log.debug("Entering requestEncryptionJwkOf().");
+  const publicJwk = crypto.createPublicKey(privateKey)
+                          .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  log.debug("Leaving requestEncryptionJwkOf().");
   return Object.assign({}, publicJwk, {
     kid: 'sts-req-enc-' + thumbprint,
     alg: VCI_REQUEST_ENC_ALG,
@@ -260,7 +278,8 @@ function makeRequestEncryptionKey() {
 // Every refresh token this service issues is a signed JWT ENCRYPTED to its own
 // realm — `oauth-oidc/refresh_token_crypto.js` does the sealing and argues it.
 // These are the keys, and there are three because JWE key management comes in
-// three kinds and the algorithm is a setting (`oauth2.refreshTokenEncryptionAlg`):
+// three kinds and the algorithm is a setting
+// (`oauth2.refreshTokenEncryptionAlg`):
 //
 //   rsa     RSA-OAEP and RSA-OAEP-256
 //   ec      ECDH-ES and its three key-wrapping variants
@@ -273,8 +292,8 @@ function makeRequestEncryptionKey() {
 // kind means changing the setting never strands one, and the decrypt path
 // simply picks the key the JWE header's `alg` names.
 //
-// **UNIQUE PER REALM** because the set is (`stsKeysFor` is `realms.keyed()`), and
-// that is a property worth having rather than an accident: a refresh token
+// **UNIQUE PER REALM** because the set is (`stsKeysFor` is `realms.keyed()`),
+// and that is a property worth having rather than an accident: a refresh token
 // minted in one realm does not open in another, so a realm is a cryptographic
 // boundary for its refresh tokens and not merely a routing one.
 //
@@ -295,8 +314,11 @@ const REFRESH_TOKEN_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
                                'P-521': 'secp521r1' };
 
 function refreshTokenJwkOf(privateKey, kind) {
-  const publicJwk = crypto.createPublicKey(privateKey).export({ format: 'jwk' });
+  log.debug("Entering refreshTokenJwkOf().");
+  const publicJwk = crypto.createPublicKey(privateKey)
+                          .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  log.debug("Leaving refreshTokenJwkOf().");
   return Object.assign({}, publicJwk, {
     kid: 'sts-rt-' + kind + '-' + thumbprint,
     use: 'enc'
@@ -305,23 +327,32 @@ function refreshTokenJwkOf(privateKey, kind) {
 
 function makeRefreshTokenEncryptionKeys() {
   log.debug("Entering makeRefreshTokenEncryptionKeys().");
-  const bits = Number(config.value('oauth2.refreshTokenEncryptionKeyBits')) || 2048;
-  const curveName = String(config.value('oauth2.refreshTokenEncryptionCurve') || 'P-256');
-  const curve = REFRESH_TOKEN_CURVES[curveName] || REFRESH_TOKEN_CURVES['P-256'];
+  const bits = Number(config.value('oauth2.refreshTokenEncryptionKeyBits')) ||
+               2048;
+  const curveName = String(config.value('oauth2.refreshTokenEncryptionCurve') ||
+                           'P-256');
+  const curve = REFRESH_TOKEN_CURVES[curveName] ||
+                REFRESH_TOKEN_CURVES['P-256'];
   const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: bits });
   const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
   const secret = crypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
   const out = {
-    rsa: { privateKey: rsa.privateKey, publicJwk: refreshTokenJwkOf(rsa.privateKey, 'rsa') },
-    ec: { privateKey: ec.privateKey, publicJwk: refreshTokenJwkOf(ec.privateKey, 'ec') },
+    rsa: { privateKey: rsa.privateKey,
+           publicJwk: refreshTokenJwkOf(rsa.privateKey, 'rsa') },
+    ec: { privateKey: ec.privateKey,
+          publicJwk: refreshTokenJwkOf(ec.privateKey, 'ec') },
     secret: secret,
     // A kid for the secret too, so a JWE sealed under a symmetric algorithm
     // names which realm's secret opened it. A hash of 64 random bytes reveals
     // nothing usable about them, and it is never published anyway.
     secretKid: 'sts-rt-secret-' +
-      crypto.createHash('sha256').update(secret).digest('base64url').slice(0, 16)
+      crypto.createHash('sha256')
+            .update(secret)
+            .digest('base64url')
+            .slice(0, 16)
   };
-  log.debug("Leaving makeRefreshTokenEncryptionKeys(). rsa " + bits + " bits, " +
+  log.debug("Leaving makeRefreshTokenEncryptionKeys(). rsa " + bits +
+            " bits, " +
             curveName + ", kid=" + out.rsa.publicJwk.kid);
   return out;
 }
@@ -413,7 +444,11 @@ function makeStsKeys() {
       publicJwk: Object.assign({ use: 'sig', alg: spec.alg }, publicJwk,
         { kid: 'sts-' +
           (spec.curve || spec.alg).toLowerCase() + '-' +
-          forge.md.sha256.create().update(material).digest().toHex().slice(0, 8) })
+          forge.md.sha256.create()
+                         .update(material)
+                         .digest()
+                         .toHex()
+                         .slice(0, 8) })
     };
   });
 
@@ -439,18 +474,18 @@ function makeStsKeys() {
     // A `kid` names a KEY, so it is derived from the key material rather than
     // hard-coded. This key is regenerated on every start, and the kid was
     // previously a constant — so two instances of this mock (a stale container
-    // beside a fresh one, or two ports during development) published the SAME kid
-    // over DIFFERENT keys. A verifier matches the kid exactly, tries that one key,
-    // fails, and reports "the signature does not verify", which reads like a
-    // corrupt document instead of what it is: keys fetched from the wrong
-    // instance. A per-key kid cannot collide, so the mismatch names itself.
-    // **DERIVED FROM THE BASE64 TEXT AND NOT FROM THE DER**, which is why this
-    // is not `stsCrypto.certificateThumbprint()`. That function hashes the DER,
-    // as RFC 8705's `x5t#S256` and SPIRE's authority id both require, and would
-    // produce a DIFFERENT value here. A kid is an opaque name and either would
-    // do — but changing it would change every JWKS this service has ever
-    // published, and a verifier matching a cached kid would report "the
-    // signature does not verify" rather than "the key was renamed".
+    // beside a fresh one, or two ports during development) published the SAME
+    // kid over DIFFERENT keys. A verifier matches the kid exactly, tries that
+    // one key, fails, and reports "the signature does not verify", which reads
+    // like a corrupt document instead of what it is: keys fetched from the
+    // wrong instance. A per-key kid cannot collide, so the mismatch names
+    // itself. **DERIVED FROM THE BASE64 TEXT AND NOT FROM THE DER**, which is
+    // why this is not `stsCrypto.certificateThumbprint()`. That function hashes
+    // the DER, as RFC 8705's `x5t#S256` and SPIRE's authority id both require,
+    // and would produce a DIFFERENT value here. A kid is an opaque name and
+    // either would do — but changing it would change every JWKS this service
+    // has ever published, and a verifier matching a cached kid would report
+    // "the signature does not verify" rather than "the key was renamed".
     kid: kidOf(keys.certB64)
   };
 }
@@ -520,6 +555,8 @@ function makeStsKeys() {
 // was that nobody had edited one of them yet. Changing it changes every JWKS
 // this service has ever published, so it changes here or nowhere.
 function kidOf(certB64) {
+  log.debug("Entering kidOf().");
+  log.debug("Leaving kidOf().");
   return 'sts-' +
     forge.md.sha256.create().update(certB64).digest().toHex().slice(0, 12);
 }
@@ -616,11 +653,14 @@ function plainKeySet(realmId, stored) {
 // `certifiedView()` — and so that the fire-and-forget is written down once
 // rather than at each of the three places a key set is built.
 function certifyLater(realmId, keys) {
+  log.debug("Entering certifyLater().");
   setImmediate(function () {
     let pki = null;
     try {
       pki = require('./pki');
     } catch (e) {
+      log.debug("Caught in a callback in certifyLater(): " +
+                ((e && e.message) || e));
       // No certificate authority in this process. The key set keeps the
       // self-signed certificate it was born with, which is what this service
       // did before the hierarchy existed.
@@ -639,15 +679,18 @@ function certifyLater(realmId, keys) {
                 'this service\'s Root.');
     });
   });
+  log.debug("Leaving certifyLater().");
 }
 
 function certifiedView(set, realmId, stored) {
+  log.debug("Entering certifiedView().");
   // The certificate this key set was BORN with, captured before the getters
   // below are installed — they fall back to it, and reading it off the object
   // they are being defined on would recurse.
   const selfSignedPem = stored.certPem;
   const selfSignedB64 = stored.certB64;
   const published = function () {
+    log.debug("Entering published().");
     // `pki.js` is required lazily HERE and not at the top of this file, and it
     // is the one require in helpers.js that is: that module requires
     // `keystore.js`, which this file also requires, and hoisting it would put
@@ -658,24 +701,30 @@ function certifiedView(set, realmId, stored) {
     try {
       held = require('./pki').publishedCertificateFor(realmId, 'jose', 'RS256');
     } catch (e) {
+      log.debug("Caught in published(): " + ((e && e.message) || e));
       // The hierarchy is not built, or could not be read. The self-signed
       // certificate below is the honest answer and the service goes on
       // exactly as it did before this existed.
       held = null;
     }
+    log.debug("Leaving published().");
     return held;
   };
   Object.defineProperty(set, 'certPem', {
     enumerable: true, configurable: true,
     get: function () {
+      log.debug("Entering get().");
       const held = published();
+      log.debug("Leaving get().");
       return held ? held.certificatePem : selfSignedPem;
     }
   });
   Object.defineProperty(set, 'certB64', {
     enumerable: true, configurable: true,
     get: function () {
+      log.debug("Entering get().");
       const held = published();
+      log.debug("Leaving get().");
       return held ? stsCrypto.stripPem(held.certificatePem) : selfSignedB64;
     }
   });
@@ -686,7 +735,9 @@ function certifiedView(set, realmId, stored) {
   Object.defineProperty(set, 'certChainPem', {
     enumerable: true, configurable: true,
     get: function () {
+      log.debug("Entering get().");
       const held = published();
+      log.debug("Leaving get().");
       return held ? held.chainPem.slice() : [];
     }
   });
@@ -717,6 +768,7 @@ function certifiedView(set, realmId, stored) {
   // time, and every process in a dispatched service went on signing ML-DSA and
   // SLH-DSA with eleven keys of its own while publishing somebody else's JWKS.
   set.selfSignedCertB64 = selfSignedB64;
+  log.debug("Leaving certifiedView().");
   return set;
 }
 
@@ -738,6 +790,7 @@ function lazyKeySet(realmId, stored) {
       Object.defineProperty(entry, 'privateKey', {
         enumerable: true, configurable: true,
         get: function () {
+          log.debug("Entering get().");
           const held = keystore.privateMaterialFor(realmId);
           // A null here means the keystore could not open its own record, and
           // it has already said so loudly. Throwing names the key rather than
@@ -748,6 +801,7 @@ function lazyKeySet(realmId, stored) {
               ' signing key is held encrypted and could not be decrypted; ' +
               'see the keystore errors above.');
           }
+          log.debug("Leaving get().");
           return held.extra.get(kid);
         }
       });
@@ -757,22 +811,28 @@ function lazyKeySet(realmId, stored) {
   Object.defineProperty(set, 'privateKeyPem', {
     enumerable: true, configurable: true,
     get: function () {
+      log.debug("Entering get().");
       const held = keystore.privateMaterialFor(realmId);
       if (!held) {
         throw new Error('the "' + realmId + '" realm\'s signing key is held ' +
-          'encrypted and could not be decrypted; see the keystore errors above.');
+          'encrypted and could not be decrypted; see the keystore errors ' +
+          'above.');
       }
+      log.debug("Leaving get().");
       return held.privateKeyPem;
     }
   });
   Object.defineProperty(set, 'privateKey', {
     enumerable: true, configurable: true,
     get: function () {
+      log.debug("Entering get().");
       const held = keystore.privateMaterialFor(realmId);
       if (!held) {
         throw new Error('the "' + realmId + '" realm\'s signing key is held ' +
-          'encrypted and could not be decrypted; see the keystore errors above.');
+          'encrypted and could not be decrypted; see the keystore errors ' +
+          'above.');
       }
+      log.debug("Leaving get().");
       return held.privateKey;
     }
   });
@@ -800,14 +860,19 @@ function lazyKeySet(realmId, stored) {
   Object.defineProperty(set, 'pqKeys', {
     enumerable: true, configurable: true,
     get: function () {
+      log.debug("Entering get().");
       if (pqGenerated) {
+        log.debug("Leaving get().");
         return pqGenerated;
       }
       const held = keystore.privateMaterialFor(realmId);
+      log.debug("Leaving get().");
       return (held && held.pq && held.pq.length) ? held.pq : undefined;
     },
     set: function (made) {
+      log.debug("Entering set().");
       pqGenerated = made;
+      log.debug("Leaving set().");
     }
   });
   // ---------------------------------------------------------------------
@@ -822,34 +887,43 @@ function lazyKeySet(realmId, stored) {
   // `requestEncryptionKeyFor()` backfills that case and assigns through the
   // setter, which is `pqKeys`'s setter and for its reason.
   // ---------------------------------------------------------------------
-  const vciPublic = (stored.vciRequestEncKey && stored.vciRequestEncKey.publicJwk) || null;
+  const vciPublic = (stored.vciRequestEncKey &&
+                     stored.vciRequestEncKey.publicJwk) || null;
   let vciGenerated = null;
   Object.defineProperty(set, 'vciRequestEncKey', {
     enumerable: true, configurable: true,
     get: function () {
+      log.debug("Entering get().");
       if (vciGenerated) {
+        log.debug("Leaving get().");
         return vciGenerated;
       }
       if (!vciPublic) {
+        log.debug("Leaving get().");
         return undefined;
       }
       const entry = { publicJwk: vciPublic };
       Object.defineProperty(entry, 'privateKey', {
         enumerable: true, configurable: true,
         get: function () {
+          log.debug("Entering get().");
           const held = keystore.privateMaterialFor(realmId);
           if (!held || !held.vci) {
             throw new Error('the "' + realmId + '" realm\'s OpenID4VCI ' +
               'request-encryption key is held encrypted and could not be ' +
               'decrypted; see the keystore errors above.');
           }
+          log.debug("Leaving get().");
           return held.vci;
         }
       });
+      log.debug("Leaving get().");
       return entry;
     },
     set: function (made) {
+      log.debug("Entering set().");
       vciGenerated = made || null;
+      log.debug("Leaving set().");
     }
   });
   // ---------------------------------------------------------------------
@@ -867,41 +941,63 @@ function lazyKeySet(realmId, stored) {
     : null;
   let rtGenerated = null;
   const rtHeld = function (part) {
+    log.debug("Entering rtHeld().");
     const held = keystore.privateMaterialFor(realmId);
     if (!held || !held.rt) {
-      throw new Error('the "' + realmId + '" realm\'s refresh-token encryption ' +
-        part + ' is held encrypted and could not be decrypted; see the keystore ' +
-        'errors above.');
+      throw new Error('the "' + realmId +
+        '" realm\'s refresh-token encryption ' +
+        part + ' is held encrypted and could not be decrypted; see the ' +
+        'keystore errors above.');
     }
+    log.debug("Leaving rtHeld().");
     return held.rt;
   };
   Object.defineProperty(set, 'refreshTokenEncKeys', {
     enumerable: true, configurable: true,
     get: function () {
+      log.debug("Entering get().");
       if (rtGenerated) {
+        log.debug("Leaving get().");
         return rtGenerated;
       }
       if (!rtPublic) {
+        log.debug("Leaving get().");
         return undefined;
       }
-      const view = { rsa: { publicJwk: rtPublic.rsa }, ec: { publicJwk: rtPublic.ec },
+      const view = { rsa: { publicJwk: rtPublic.rsa },
+                     ec: { publicJwk: rtPublic.ec },
                      secretKid: rtPublic.secretKid };
       Object.defineProperty(view.rsa, 'privateKey', {
         enumerable: true, configurable: true,
-        get: function () { return rtHeld('RSA key').rsa.privateKey; }
+        get: function () {
+          log.debug("Entering get().");
+          log.debug("Leaving get().");
+          return rtHeld('RSA key').rsa.privateKey;
+        }
       });
       Object.defineProperty(view.ec, 'privateKey', {
         enumerable: true, configurable: true,
-        get: function () { return rtHeld('EC key').ec.privateKey; }
+        get: function () {
+          log.debug("Entering get().");
+          log.debug("Leaving get().");
+          return rtHeld('EC key').ec.privateKey;
+        }
       });
       Object.defineProperty(view, 'secret', {
         enumerable: true, configurable: true,
-        get: function () { return rtHeld('secret').secret; }
+        get: function () {
+          log.debug("Entering get().");
+          log.debug("Leaving get().");
+          return rtHeld('secret').secret;
+        }
       });
+      log.debug("Leaving get().");
       return view;
     },
     set: function (made) {
+      log.debug("Entering set().");
       rtGenerated = made || null;
+      log.debug("Leaving set().");
     }
   });
   certifiedView(set, realmId, stored);
@@ -949,9 +1045,9 @@ const stsKeysFor = realms.keyed(function (realm) {
     const restored = lazyKeySet(realm.id, stored);
     log.info('A signing key was RESTORED for the "' + realm.id + '" realm: ' +
              'kid=' + restored.kid + '. It was generated on ' +
-             new Date(restored.createdAt || 0).toISOString() + ' and read back ' +
-             'from the persistence store, so every token issued under it still ' +
-             'verifies. ' + keystore.retentionSentence() + '.');
+             new Date(restored.createdAt || 0).toISOString() + ' and read ' +
+             'back from the persistence store, so every token issued under ' +
+             'it still verifies. ' + keystore.retentionSentence() + '.');
     return restored;
   }
   // ---------------------------------------------------------------------
@@ -986,9 +1082,9 @@ const stsKeysFor = realms.keyed(function (realm) {
   if (fromSibling) {
     const adopted = plainKeySet(realm.id, fromSibling);
     log.info('The "' + realm.id + '" realm\'s signing keys came from another ' +
-             'process in this service: kid=' + adopted.kid + '. Every process ' +
-             'here presents one key set, exactly as they all present one TLS ' +
-             'certificate.');
+             'process in this service: kid=' + adopted.kid + '. Every ' +
+             'process here presents one key set, exactly as they all present ' +
+             'one TLS certificate.');
     // AND WRITTEN DOWN, WHERE THIS SERVICE PERSISTS. A no-op in development.
     // The process that GENERATED this set has already called `remember()`, so
     // this is usually a second write of identical bytes — and it is here for
@@ -1014,8 +1110,8 @@ const stsKeysFor = realms.keyed(function (realm) {
   // that string into a key before it can sign with it — every single time. That
   // parse is not a rounding error: under load it measured 21% of this service's
   // non-idle CPU, against 48% for the RSA signature it was preparing for, so
-  // roughly a third of the cost of issuing a token was re-reading a key that had
-  // not changed since startup. Parsing it once here took one signature from
+  // roughly a third of the cost of issuing a token was re-reading a key that
+  // had not changed since startup. Parsing it once here took one signature from
   // 1.08ms to 0.48ms and rather more than doubled the token endpoint's
   // throughput.
   //
@@ -1058,7 +1154,8 @@ const stsKeysFor = realms.keyed(function (realm) {
   // `pki.start()` certifies it before the listener binds.
   // ---------------------------------------------------------------------
   certifyLater(realm.id, keys);
-  log.info('A signing key was generated for the "' + realm.id + '" realm: kid=' +
+  log.info('A signing key was generated for the "' + realm.id +
+           '" realm: kid=' +
            keys.kid + '.');
   // WRITE IT DOWN, where the keystore is in use. A no-op in development mode.
   // The write is asynchronous and deliberately not awaited — this is a property
@@ -1130,7 +1227,8 @@ function requestEncryptionKeyFor(keySet) {
   const held = keystore.requestEncryptionKeyHeldFor(realmId);
   if (held) {
     keys.vciRequestEncKey = held;
-    log.debug("Leaving requestEncryptionKeyFor(). Already made by this service.");
+    log.debug("Leaving requestEncryptionKeyFor(). Already made by this " +
+              "service.");
     return held;
   }
   const realm = realms.get(realmId) || realms.DEFAULT_REALM;
@@ -1171,8 +1269,9 @@ function refreshTokenKeysFor(keySet) {
   const made = realms.run(realm, makeRefreshTokenEncryptionKeys);
   keys.refreshTokenEncKeys = made;
   log.info('Refresh-token encryption keys were added to the "' + realmId +
-           '" realm\'s key set, which was written by a build from before they ' +
-           'joined it: ' + made.rsa.publicJwk.kid + ', ' + made.ec.publicJwk.kid +
+           '" realm\'s key set, which was written by a build from before ' +
+           'they joined ' +
+           'it: ' + made.rsa.publicJwk.kid + ', ' + made.ec.publicJwk.kid +
            ', ' + made.secretKid + '.');
   keystore.remember(realmId, keys);
   keystore.publishShared(realmId, keys);
@@ -1191,18 +1290,34 @@ function refreshTokenKeysFor(keySet) {
 // invalidate every token it had issued, which is precisely what the keystore
 // exists to prevent.
 function resetStsKeys() {
+  log.debug("Entering resetStsKeys().");
   const held = stsKeysFor.existing();
   if (held && typeof held.clear === 'function') {
     held.clear();
   }
+  log.debug("Leaving resetStsKeys().");
 }
 
 const STS = new Proxy({}, {
-  get: function (target, prop) { return stsKeysFor()[prop]; },
-  has: function (target, prop) { return prop in stsKeysFor(); },
-  ownKeys: function () { return Reflect.ownKeys(stsKeysFor()); },
+  get: function (target, prop) {
+    log.debug("Entering get().");
+    log.debug("Leaving get().");
+    return stsKeysFor()[prop];
+  },
+  has: function (target, prop) {
+    log.debug("Entering has().");
+    log.debug("Leaving has().");
+    return prop in stsKeysFor();
+  },
+  ownKeys: function () {
+    log.debug("Entering ownKeys().");
+    log.debug("Leaving ownKeys().");
+    return Reflect.ownKeys(stsKeysFor());
+  },
   getOwnPropertyDescriptor: function (target, prop) {
+    log.debug("Entering getOwnPropertyDescriptor().");
     const d = Object.getOwnPropertyDescriptor(stsKeysFor(), prop);
+    log.debug("Leaving getOwnPropertyDescriptor().");
     // A proxy may not report a property as non-configurable when its target has
     // no such property, and this target is permanently empty. Marking every
     // descriptor configurable is what keeps Object.keys() and a spread legal
@@ -1214,19 +1329,24 @@ const STS = new Proxy({}, {
 
 // Every document that carries or describes this key is served `Cache-Control:
 // no-store` (the RFC 8414 metadata, the OID4VCI credential issuer metadata, the
-// jwt-vc-issuer document and the JWKS). The key is regenerated on every start, so
-// a cached copy of any of them outlives the key it describes — and the resulting
-// failure is a signature that does not verify, which looks like a broken document
-// rather than a stale one. Nothing about a mock is worth caching.
+// jwt-vc-issuer document and the JWKS). The key is regenerated on every start,
+// so a cached copy of any of them outlives the key it describes — and the
+// resulting failure is a signature that does not verify, which looks like a
+// broken document rather than a stale one. Nothing about a mock is worth
+// caching.
 
 // --- helpers ---------------------------------------------------------------
 function xmlEscape(s) {
+  log.debug("Entering xmlEscape().");
+  log.debug("Leaving xmlEscape().");
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
 function genId() {
+  log.debug("Entering genId().");
+  log.debug("Leaving genId().");
   return '_' + forge.util.bytesToHex(forge.random.getBytesSync(16));
 }
 
@@ -1236,29 +1356,35 @@ function genId() {
 // Shared rather than owned because three readers need exactly this: WS-Trust
 // parses an RST, WS-Federation parses the `wreq` RST that may ride on a sign-in
 // request, and the mock relying party parses the `wresult` it is POSTed. All
-// three are given XML written by somebody else, so the prefix is not knowable in
-// advance and neither is the namespace: the trust namespace alone has four
-// versions in use (2004/04, 2005/02, ws-sx 200512 and whatever a client invents),
-// and WS-Federation's own responses are usually written with `t:` where this
-// service writes `wst:`. Matching the local name is what lets one parser answer
-// WS-Trust 1.0 through 1.4 instead of four, and it is the reason these are here
-// and not in wstrust.js where they were written.
+// three are given XML written by somebody else, so the prefix is not knowable
+// in advance and neither is the namespace: the trust namespace alone has four
+// versions in use (2004/04, 2005/02, ws-sx 200512 and whatever a client
+// invents), and WS-Federation's own responses are usually written with `t:`
+// where this service writes `wst:`. Matching the local name is what lets one
+// parser answer WS-Trust 1.0 through 1.4 instead of four, and it is the reason
+// these are here and not in wstrust.js where they were written.
 //
 // getElementsByTagNameNS('*', name) searches DESCENDANTS ONLY, which is what
 // every caller wants (find the UsernameToken anywhere in the SOAP envelope) but
 // is worth stating: firstByLocal(el, 'Assertion') will not return `el` itself
 // even when `el` IS the Assertion.
 function firstByLocal(root, name) {
+  log.debug("Entering firstByLocal().");
   const els = root.getElementsByTagNameNS('*', name);
+  log.debug("Leaving firstByLocal().");
   return els && els.length ? els[0] : null;
 }
 
 function textByLocal(root, name) {
+  log.debug("Entering textByLocal().");
   const e = firstByLocal(root, name);
+  log.debug("Leaving textByLocal().");
   return e ? (e.textContent || '').trim() : '';
 }
 
 function iso(offsetMin) {
+  log.debug("Entering iso().");
+  log.debug("Leaving iso().");
   return new Date(Date.now() + (offsetMin || 0) * 60000).toISOString();
 }
 
@@ -1273,15 +1399,26 @@ function iso(offsetMin) {
 const b64u = stsCrypto.b64u;
 
 function b64uDecode(s) {
+  log.debug("Entering b64uDecode().");
+  log.debug("Leaving b64uDecode().");
   return Buffer.from(String(s).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
 }
 
-function jsonFromB64u(s) { return JSON.parse(b64uDecode(s).toString('utf8')); }
+function jsonFromB64u(s) {
+  log.debug("Entering jsonFromB64u().");
+  log.debug("Leaving jsonFromB64u().");
+  return JSON.parse(b64uDecode(s).toString('utf8'));
+}
 
-// Small and called constantly: no entering/leaving logs, they would drown the log.
+// Small and called constantly: no entering/leaving logs, they would drown the
+// log.
 function nowSec() { return Math.floor(Date.now() / 1000); }
 
-function randomId(bytes) { return b64u(crypto.randomBytes(bytes || 24)); }
+function randomId(bytes) {
+  log.debug("Entering randomId().");
+  log.debug("Leaving randomId().");
+  return b64u(crypto.randomBytes(bytes || 24));
+}
 
 // One BBS key pair per start, like the RSA one. Generated lazily because key
 // generation is async and the module loads synchronously.
@@ -1307,7 +1444,9 @@ let bbsKeys = null;
 // putting it there would have meant inventing a realm for it.
 // ---------------------------------------------------------------------------
 async function bbsKeyPair() {
+  log.debug("Entering bbsKeyPair().");
   if (bbsKeys) {
+    log.debug("Leaving bbsKeyPair().");
     return bbsKeys;
   }
   const handed = process.env.STS_BBS_KEYPAIR || '';
@@ -1320,6 +1459,7 @@ async function bbsKeyPair() {
       };
       log.info('The BBS key pair came from another process in this service, ' +
                'so every process signs and publishes the same one.');
+      log.debug("Leaving bbsKeyPair().");
       return bbsKeys;
     } catch (e) {
       log.error(errorCodes.tag('STS-CORE-0025') +
@@ -1329,6 +1469,7 @@ async function bbsKeyPair() {
     }
   }
   bbsKeys = await bbs2023.generateKeyPair();
+  log.debug("Leaving bbsKeyPair().");
   return bbsKeys;
 }
 
@@ -1336,7 +1477,9 @@ async function bbsKeyPair() {
 // process has not needed one yet, which is the front process's ordinary case:
 // nothing has issued a credential when the pool starts.
 async function bbsKeyPairForSharing() {
+  log.debug("Entering bbsKeyPairForSharing().");
   const pair = await bbsKeyPair();
+  log.debug("Leaving bbsKeyPairForSharing().");
   return Buffer.from(JSON.stringify({
     secret: Buffer.from(pair.secretKey).toString('base64'),
     public: Buffer.from(pair.publicKey).toString('base64')
@@ -1361,11 +1504,14 @@ async function bbsKeyPairForSharing() {
 // asking for exactly what it looks like it is asking for.
 // ---------------------------------------------------------------------------
 function hasScope(scope, name) {
+  log.debug("Entering hasScope().");
+  log.debug("Leaving hasScope().");
   return String(scope || '').split(/\s+/).indexOf(name) >= 0;
 }
 
 function parseBody(req) {
-  log.debug("Entering parseBody(). content-type=" + (req.headers['content-type'] || '(none)'));
+  log.debug("Entering parseBody(). content-type=" +
+            (req.headers['content-type'] || '(none)'));
   const raw = typeof req.body === 'string' ? req.body : '';
   const type = String(req.headers['content-type'] || '');
   if (/json/i.test(type)) {
@@ -1374,7 +1520,8 @@ function parseBody(req) {
       log.debug("Leaving parseBody(). Parsed a JSON body.");
       return parsed;
     } catch (e) {
-      log.error(errorCodes.tag('STS-CORE-0026') + 'the request body is not JSON: ' + e.message);
+      log.error(errorCodes.tag('STS-CORE-0026') + 'the request body is not ' +
+                                                  'JSON: ' + e.message);
       log.debug("Leaving parseBody(). Nothing could be parsed.");
       return {};
     }
@@ -1391,20 +1538,20 @@ function parseBody(req) {
 //
 // `parseBody()` above builds a PLAIN OBJECT, so a repeated field keeps only its
 // last value — `resource=a&resource=b` arrives as `b` and the first is silently
-// gone. That is not a bug there and it is not going to be fixed there: sixty-odd
-// call sites across fourteen modules read that object with `String(body.x)`, and
-// giving them an array for a repeat would change what every one of them sees to
-// fix the two parameters that need it.
+// gone. That is not a bug there and it is not going to be fixed there:
+// sixty-odd call sites across fourteen modules read that object with
+// `String(body.x)`, and giving them an array for a repeat would change what
+// every one of them sees to fix the two parameters that need it.
 //
-// So the repetition is read HERE, from the raw body, beside the parsed one — and
-// only by the callers whose specification says the parameter may repeat. Two of
-// them do: RFC 8707 section 2's `resource` (repeating it asks for the "small
-// set" of resource servers RFC 9700 section 2.3 allows) and RFC 8693 section
-// 2.1's `audience` and `resource` on a token exchange. Until 2026-08-26 neither
-// could actually be repeated at the token endpoint whatever the RFC said,
-// because this function did not exist and `parseBody()` had already thrown the
-// extras away. `parseResourceIndicators()` in `oauth2.js` had handled an array
-// since it was written; nothing could ever hand it one.
+// So the repetition is read HERE, from the raw body, beside the parsed one —
+// and only by the callers whose specification says the parameter may repeat.
+// Two of them do: RFC 8707 section 2's `resource` (repeating it asks for the
+// "small set" of resource servers RFC 9700 section 2.3 allows) and RFC 8693
+// section 2.1's `audience` and `resource` on a token exchange. Until 2026-08-26
+// neither could actually be repeated at the token endpoint whatever the RFC
+// said, because this function did not exist and `parseBody()` had already
+// thrown the extras away. `parseResourceIndicators()` in `oauth2.js` had
+// handled an array since it was written; nothing could ever hand it one.
 //
 // **THE AUTHORIZATION ENDPOINT NEEDS NONE OF THIS**, which is worth knowing
 // before somebody looks for a bug there: it reads `req.query`, and express's
@@ -1419,20 +1566,24 @@ function parseBody(req) {
 // ---------------------------------------------------------------------------
 function bodyValues(req, body, name) {
   log.debug("Entering bodyValues(). name=" + name);
-  const type = String((req && req.headers && req.headers['content-type']) || '');
+  const type = String((req && req.headers &&
+                       req.headers['content-type']) || '');
   if (/json/i.test(type)) {
     // A JSON body carries its own repetition, as an array. Read off the PARSED
     // object rather than the raw text, because that is where JSON.parse already
     // put it.
     const value = body ? body[name] : undefined;
     const out = Array.isArray(value) ? value.map(String)
-              : (value === undefined || value === null || value === '' ? [] : [String(value)]);
-    log.debug("Leaving bodyValues(). " + out.length + " value(s) from a JSON body.");
+              : (value === undefined || value === null || value === '' ? [] :
+                 [String(value)]);
+    log.debug("Leaving bodyValues(). " + out.length + " value(s) from a JSON " +
+                                                      "body.");
     return out;
   }
   const raw = typeof req.body === 'string' ? req.body : '';
   const out = new URLSearchParams(raw).getAll(name);
-  log.debug("Leaving bodyValues(). " + out.length + " value(s) from a form body.");
+  log.debug("Leaving bodyValues(). " + out.length + " value(s) from a form " +
+                                                    "body.");
   return out;
 }
 
@@ -1449,13 +1600,14 @@ function oauthError(res, status, error, description) {
 // Every OAuth token this server issues goes through here, so this is where each
 // one is recorded: the claim set before it is signed, and the JWT after.
 //
-// `context` is optional and is NOT part of the token: nothing in it is signed, read
-// back or sent anywhere. It is how a caller states what the payload cannot say — at
-// present the browser sign-on session the token was issued under and the grant that
-// issued it, neither of which appears in any claim, because OIDC's `sid` is for
-// front-channel logout and adding claims to every token to make an admin page easier
-// to draw would change what every client receives. A caller that passes nothing is
-// unaffected, which is why the parameter is at the end and optional.
+// `context` is optional and is NOT part of the token: nothing in it is signed,
+// read back or sent anywhere. It is how a caller states what the payload cannot
+// say — at present the browser sign-on session the token was issued under and
+// the grant that issued it, neither of which appears in any claim, because
+// OIDC's `sid` is for front-channel logout and adding claims to every token to
+// make an admin page easier to draw would change what every client receives. A
+// caller that passes nothing is unaffected, which is why the parameter is at
+// the end and optional.
 // ---------------------------------------------------------------------------
 // WHICH KEY SIGNS A GIVEN ALGORITHM — the one answer, for the whole service.
 //
@@ -1662,6 +1814,7 @@ function warmPqKeys(realmId) {
   try {
     keys = stsKeysFor.of(realmId);
   } catch (e) {
+    log.debug("Caught in warmPqKeys(): " + ((e && e.message) || e));
     // A realm that has gone between the change and this line. Nothing to warm
     // and nothing wrong: the next request to it would make its keys anyway.
     log.debug("Leaving warmPqKeys(). No keys for that realm.");
@@ -1845,6 +1998,7 @@ function signingKeyForAsync(alg) {
 // hand-rolled ones ignored it, so the same call produced a different header
 // depending on which algorithm was chosen.
 function signJwtAs(payload, alg, secret, opts) {
+  log.debug("Entering signJwtAs().");
   const options = opts || {};
   log.debug("Entering signJwtAs(). alg=" + alg);
   const spec = stsCrypto.JWS_ALGS[alg];
@@ -1881,6 +2035,7 @@ function signJwtAs(payload, alg, secret, opts) {
 // saving. `opts.session` is the pool's routing hint and may be omitted.
 // ---------------------------------------------------------------------------
 function signJwtAsAsync(payload, alg, secret, opts) {
+  log.debug("Entering signJwtAsAsync().");
   const options = opts || {};
   log.debug("Entering signJwtAsAsync(). alg=" + alg);
   const spec = stsCrypto.JWS_ALGS[alg];
@@ -1905,21 +2060,24 @@ function signJwtAsAsync(payload, alg, secret, opts) {
 
 function signJwt(payload, context) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
-  logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before signing',
+  logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
+      'signing',
               { header: { alg: 'RS256', kid: STS.kid }, payload: payload });
   const signed = stsCrypto.signJws(payload, STS.privateKey,
                                    { algorithm: 'RS256', keyid: STS.kid });
-  logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'after signing', signed);
-  // Every token this service issues passes through here, which is what makes the
-  // admin console's count a count and not an estimate. Wrapped because a throw in
-  // the statistics would otherwise fail the request that was issuing the token —
-  // the tail wagging the dog.
+  logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'after ' +
+      'signing', signed);
+  // Every token this service issues passes through here, which is what makes
+  // the admin console's count a count and not an estimate. Wrapped because a
+  // throw in the statistics would otherwise fail the request that was issuing
+  // the token — the tail wagging the dog.
   if (jwtRecorder) {
     try {
       jwtRecorder(payload, signed, context || null);
     } catch (e) {
       log.error(errorCodes.tag('STS-CORE-0027') +
-                'the JWT recorder threw and was ignored; the token itself is unaffected: ' + e.message);
+                'the JWT recorder threw and was ignored; the token itself is ' +
+                'unaffected: ' + e.message);
     }
   }
   log.debug("Leaving signJwt().");
@@ -1966,6 +2124,8 @@ function vciError(res, status, error, description) {
 // believable. One function now, and one setting.
 // ---------------------------------------------------------------------------
 function trustProxy() {
+  log.debug("Entering trustProxy().");
+  log.debug("Leaving trustProxy().");
   return !!config.value('global.trustProxy');
 }
 
@@ -1976,7 +2136,8 @@ function trustProxy() {
 function forwardedFrom(req) {
   log.debug("Entering forwardedFrom().");
   const socketProto = (req && req.protocol) || 'http';
-  const socketHost = (req && req.get && req.get('host')) || ('localhost:' + PORT);
+  const socketHost = (req && req.get && req.get('host')) || ('localhost:' +
+      PORT);
   if (!trustProxy()) {
     log.debug("Leaving forwardedFrom().");
     return { proto: socketProto, host: socketHost, forwarded: false };
@@ -2017,7 +2178,9 @@ function forwardedFrom(req) {
 // container names does not. The realm prefix is still appended.
 // ---------------------------------------------------------------------------
 function pinnedBaseUrl() {
+  log.debug("Entering pinnedBaseUrl().");
   const raw = String(config.value('global.publicBaseUrl') || '').trim();
+  log.debug("Leaving pinnedBaseUrl().");
   return raw ? raw.replace(/\/+$/, '') : '';
 }
 
@@ -2032,7 +2195,8 @@ function baseUrlOf(req) {
   const from = forwardedFrom(req);
   const base = from.proto + '://' + from.host + realms.currentPrefix();
   log.debug("Leaving baseUrlOf(). base=" + base +
-            (from.forwarded ? " (from forwarded headers; global.trustProxy is on)" : ""));
+            (from.forwarded ? " (from forwarded headers; global.trustProxy " +
+                              "is on)" : ""));
   return base;
 }
 
@@ -2053,33 +2217,47 @@ function baseUrlOf(req) {
 // wildcard's own family; a specific address is dialled as itself.
 // ---------------------------------------------------------------------------
 function listenHost() {
+  log.debug("Entering listenHost().");
+  log.debug("Leaving listenHost().");
   return String(config.value('global.host') || '0.0.0.0');
 }
 
 function loopbackHost() {
+  log.debug("Entering loopbackHost().");
   const host = listenHost();
-  if (host === '0.0.0.0' || host === '') return '127.0.0.1';
-  if (host === '::' || host === '[::]') return '::1';
+  if (host === '0.0.0.0' || host === '') {
+    log.debug("Leaving loopbackHost().");
+    return '127.0.0.1';
+  }
+  if (host === '::' || host === '[::]') {
+    log.debug("Leaving loopbackHost().");
+    return '::1';
+  }
+  log.debug("Leaving loopbackHost().");
   return host.replace(/^\[|\]$/g, '');
 }
 
 // A host as it goes into a URL: an IPv6 literal needs its brackets there and
 // nowhere else.
 function hostForUrl(host) {
+  log.debug("Entering hostForUrl().");
   const h = String(host);
+  log.debug("Leaving hostForUrl().");
   return h.indexOf(':') >= 0 && h[0] !== '[' ? '[' + h + ']' : h;
 }
 
 
 // Where the wallet lives, as a URL the BROWSER can use. Shared because the
-// Credential Offer pages and the OID4VP request pages both hand the End-User back
-// to it (oid4vp.walletUrl falls back to this one).
+// Credential Offer pages and the OID4VP request pages both hand the End-User
+// back to it (oid4vp.walletUrl falls back to this one).
 //
 // A FUNCTION rather than the constant it used to be, and that is the shape
 // every runtime-settable value takes here: a constant is read once at require
 // time, so /admin/config could change the setting and every caller would go
 // on using what it captured at startup.
 function walletBaseUrl() {
+  log.debug("Entering walletBaseUrl().");
+  log.debug("Leaving walletBaseUrl().");
   return config.value('oid4vci.walletUrl');
 }
 
@@ -2091,14 +2269,14 @@ function walletBaseUrl() {
 // true of anybody — which is what a client exercising claim handling wants from
 // a server that asks nobody for anything.
 //
-// **IN PRODUCT MODE IT INVENTS NOTHING** (`mode.inventsClaimValues()`). A relying
-// party that links accounts on `email` because `email_verified` said so would
-// be linking on a fact this service made up, and that is not a fidelity problem
-// but an account-takeover one. So the persona fields are OMITTED here and the
-// issuance sites fill them from the person's own directory entry, through the
-// same claim-attribute resolver every other directory attribute reaches a
-// token by. What stays is what this function genuinely knows: the name that
-// authenticated, and the subject derived from it.
+// **IN PRODUCT MODE IT INVENTS NOTHING** (`mode.inventsClaimValues()`). A
+// relying party that links accounts on `email` because `email_verified` said so
+// would be linking on a fact this service made up, and that is not a fidelity
+// problem but an account-takeover one. So the persona fields are OMITTED here
+// and the issuance sites fill them from the person's own directory entry,
+// through the same claim-attribute resolver every other directory attribute
+// reaches a token by. What stays is what this function genuinely knows: the
+// name that authenticated, and the subject derived from it.
 function userFor(username) {
   log.debug("Entering userFor(). username=" + username);
   const name = String(username || 'mock-user');
@@ -2135,11 +2313,12 @@ function userFor(username) {
 // WHY THIS FORM AT ALL, and why it is not what a report shows. Node hands a
 // subject back most-significant-first (`C=US, O=Example, CN=alice`) and
 // `openssl x509 -subject` prints it that way too. A DN as LDAP and every RFC
-// 4514 document writes it is the REVERSE — leaf first, `CN=alice,O=Example,C=US`
-// — with no spaces after the commas, and THAT is the form this service files an
-// identity under and the directory builds an entry from. One form used for both
-// would be wrong in whichever direction it was wrong: a report that disagreed
-// with openssl, or a DN nothing in LDAP would accept.
+// 4514 document writes it is the REVERSE — leaf first,
+// `CN=alice,O=Example,C=US` — with no spaces after the commas, and THAT is the
+// form this service files an identity under and the directory builds an entry
+// from. One form used for both would be wrong in whichever direction it was
+// wrong: a report that disagreed with openssl, or a DN nothing in LDAP would
+// accept.
 //
 // TWO SPELLINGS OF ONE DN IS TWO PEOPLE ON /admin/users, which is the whole
 // reason this is one function. A verified TLS client certificate, a client
@@ -2163,12 +2342,14 @@ function userFor(username) {
 // unescaped would turn one RDN into two and name an object that does not exist.
 // ---------------------------------------------------------------------------
 function escapeRdnValue(value) {
+  log.debug("Entering escapeRdnValue().");
   const text = String(value == null ? '' : value);
   // RFC 4514 section 2.4: these are escaped anywhere, '#' only leading, and a
   // space only when it leads or trails.
   let out = text.replace(/([\\,+"<>;=])/g, '\\$1');
   if (out.indexOf('#') === 0) out = '\\' + out;
   out = out.replace(/^ /, '\\ ').replace(/ $/, '\\ ');
+  log.debug("Leaving escapeRdnValue().");
   return out;
 }
 
@@ -2238,10 +2419,13 @@ const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
                       'thirteen', 'fourteen', 'fifteen'];
 
 function numberWord(count) {
+  log.debug("Entering numberWord().");
   const n = Number(count);
   if (!Number.isInteger(n) || n < 0 || n >= NUMBER_WORDS.length) {
+    log.debug("Leaving numberWord().");
     return String(count);
   }
+  log.debug("Leaving numberWord().");
   return NUMBER_WORDS[n];
 }
 
@@ -2276,30 +2460,44 @@ function capturingResponse() {
   const captured = { status: 0, headers: {}, body: '' };
   const res = {
     set: function (name, value) {
+      log.debug("Entering set().");
       captured.headers[name] = value;
+      log.debug("Leaving set().");
       return res;
     },
     setHeader: function (name, value) {
+      log.debug("Entering setHeader().");
       captured.headers[name] = value;
+      log.debug("Leaving setHeader().");
       return res;
     },
     status: function (code) {
+      log.debug("Entering status().");
       captured.status = code;
+      log.debug("Leaving status().");
       return res;
     },
     type: function () {
+      log.debug("Entering type().");
+      log.debug("Leaving type().");
       return res;
     },
     send: function (body) {
+      log.debug("Entering send().");
       captured.body = String(body === undefined ? '' : body);
+      log.debug("Leaving send().");
       return res;
     },
     json: function (body) {
+      log.debug("Entering json().");
       captured.body = JSON.stringify(body);
+      log.debug("Leaving json().");
       return res;
     },
     end: function (body) {
+      log.debug("Entering end().");
       captured.body = String(body === undefined ? '' : body);
+      log.debug("Leaving end().");
       return res;
     }
   };
@@ -2318,6 +2516,7 @@ function capturedDescription(captured) {
     log.debug("Leaving capturedDescription(). JSON.");
     return String(parsed.error_description || parsed.error || '').trim();
   } catch (e) {
+    log.debug("Caught in capturedDescription(): " + ((e && e.message) || e));
     log.debug("Leaving capturedDescription(). Not JSON.");
     return String((captured && captured.body) || '').trim();
   }

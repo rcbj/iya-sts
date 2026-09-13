@@ -97,10 +97,14 @@ const AUTO_ACTS = {
 // default); read per event. `caep.historyPerSession` is the same thing for the
 // credential-change list below, which was a literal 10.
 function eventsPerSession() {
+  log.debug("Entering eventsPerSession().");
+  log.debug("Leaving eventsPerSession().");
   return config.value('caep.eventsPerSession');
 }
 
 function historyPerSession() {
+  log.debug("Entering historyPerSession().");
+  log.debug("Leaving historyPerSession().");
   return config.value('caep.historyPerSession');
 }
 
@@ -109,10 +113,11 @@ function historyPerSession() {
 //
 // PER TRUST REALM — a session belongs to the realm that minted it, and so does
 // what CAEP has said about it. The realm is the AMBIENT one: `observe()` is
-// reached from `authn.js`'s session store inside the request or the realm-scoped
-// expiry sweep, and `noteTransmitted()` from `ssf.js`'s `transmit()`, whose
-// streams are per realm already. `caep.maxSessionsTracked` caps each realm's
-// partition rather than the process, which is what a cap read in a realm means.
+// reached from `authn.js`'s session store inside the request or the
+// realm-scoped expiry sweep, and `noteTransmitted()` from `ssf.js`'s
+// `transmit()`, whose streams are per realm already. `caep.maxSessionsTracked`
+// caps each realm's partition rather than the process, which is what a cap read
+// in a realm means.
 const register = realms.map({ persist: 'caep.register' });
 
 // A ROW EDITED IN PLACE, REPORTED TO THE JOURNAL. `realms.map()` journals a
@@ -125,12 +130,15 @@ const register = realms.map({ persist: 'caep.register' });
 // handed is still the one held: the edit belongs to a row the register has
 // already let go.
 function touch(row) {
+  log.debug("Entering touch().");
   if (!row || !row.sessionId) {
+    log.debug("Leaving touch().");
     return;
   }
   if (register.get(row.sessionId) === row) {
     register.set(row.sessionId, row);
   }
+  log.debug("Leaving touch().");
 }
 
 function enabled() {

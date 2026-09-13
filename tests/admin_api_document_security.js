@@ -61,12 +61,21 @@
 const fs = require('fs');
 const path = require('path');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log =
+    require('bunyan').createLogger({ name: 'admin_api_document_security',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.resolve(__dirname, '..');
 
 const spec = require('../mgmt-api/admin_api_spec');
 const adminApi = require('../mgmt-api/admin_api');
 
 function codeOf(rel) {
+  log.debug("Entering codeOf().");
+  log.debug("Leaving codeOf().");
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
@@ -74,6 +83,8 @@ function codeOf(rel) {
 // the given state. `baseUrl` is a real-looking one because the token URL and
 // the `resource` hint below are built from it.
 function documentWith(authRequired) {
+  log.debug("Entering documentWith().");
+  log.debug("Leaving documentWith().");
   return spec.buildSpec(adminApi.ROUTES, {
     baseUrl: 'https://sts.example:8081',
     version: '0.1.20260910000000',
@@ -82,16 +93,20 @@ function documentWith(authRequired) {
 }
 
 function operationsOf(document) {
+  log.debug("Entering operationsOf().");
   const out = [];
   Object.keys(document.paths).forEach(function (p) {
     Object.keys(document.paths[p]).forEach(function (method) {
-      out.push({ path: p, method: method, operation: document.paths[p][method] });
+      out.push({ path: p, method: method,
+                 operation: document.paths[p][method] });
     });
   });
+  log.debug("Leaving operationsOf().");
   return out;
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   t.log.info('=== with the gate ON, which is the default ===');
   const guarded = documentWith(true);
@@ -112,7 +127,8 @@ async function run(t) {
              guarded.components.securitySchemes.bearerAuth),
           'and names both ways to present it — the flow that MINTS a token ' +
           'and the header that carries one somebody already holds',
-          Object.keys((guarded.components || {}).securitySchemes || {}).join(', '));
+          Object.keys((guarded.components || {}).securitySchemes || {})
+                .join(', '));
 
   const flow = ((((guarded.components || {}).securitySchemes || {}).oauth2 ||
                  {}).flows || {}).clientCredentials || {};
@@ -129,7 +145,8 @@ async function run(t) {
   // nowhere a client will look, and every token a reader mints is refused for
   // a reason the document never mentions.
   const oauthDescription = String(
-    (((guarded.components || {}).securitySchemes || {}).oauth2 || {}).description || '');
+    (((guarded.components ||
+       {}).securitySchemes || {}).oauth2 || {}).description || '');
   t.check(oauthDescription.indexOf('resource=') >= 0 &&
           oauthDescription.indexOf('/admin-api') >= 0,
           'the oauth2 scheme names the `resource` a token must be audienced ' +
@@ -147,8 +164,8 @@ async function run(t) {
     return named.length !== 1 || named[0] !== wanted;
   });
   t.check(disagreed.length === 0,
-          'all ' + guardedOps.length + ' operations declare exactly the scope ' +
-          'the middleware would ask for',
+          'all ' + guardedOps.length + ' operations declare exactly the ' +
+          'scope the middleware would ask for',
           disagreed.length
             ? disagreed.slice(0, 5).map(function (r) {
                 return r.method.toUpperCase() + ' ' + r.path + ' -> ' +
@@ -191,7 +208,9 @@ async function run(t) {
           JSON.stringify(open.security));
   t.check(!(open.components || {}).securitySchemes,
           'and no scheme is offered, because there is nothing to present');
-  t.check(openOps.filter(function (r) { return r.operation.security; }).length === 0,
+  t.check(openOps.filter(function (r) {
+    return r.operation.security;
+  }).length === 0,
           'no operation asks for one either',
           openOps.length + ' operations, none with security');
   t.check(open.info.description.indexOf('Nothing here is protected') >= 0,
@@ -202,7 +221,8 @@ async function run(t) {
   // THE DEFAULT, which is the one thing no running service can be asked.
   // -----------------------------------------------------------------------
   t.log.info('=== a caller that says nothing about the gate ===');
-  const silent = spec.buildSpec(adminApi.ROUTES, { baseUrl: 'https://x', version: '0' });
+  const silent = spec.buildSpec(adminApi.ROUTES,
+                                { baseUrl: 'https://x', version: '0' });
   t.check(Array.isArray(silent.security) && silent.security.length > 0,
           'defaults to REQUIRED, which is the setting\'s own default and the ' +
           'safe direction: over-stating costs a client one unnecessary ' +
@@ -261,6 +281,7 @@ async function run(t) {
           'disagree about what the API requires',
           handRolled.map(function (s) { return s.file + ': ' + s.call; })
             .join('; ') || 'none assembled its own');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

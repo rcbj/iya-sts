@@ -100,8 +100,8 @@ const { URL } = require('url');
 const config = require('./../common/config');
 const { log } = require('./../common/helpers');
 // THE ERROR CODES. Every way a request fails carries its code as `errorCode` on
-// the result, and `federation_sp.js` marks the refusal page's response with it —
-// the result object itself is never sent to anybody. A leaf, so no cycle.
+// the result, and `federation_sp.js` marks the refusal page's response with it
+// — the result object itself is never sent to anybody. A leaf, so no cycle.
 const errorCodes = require('./../common/error_codes');
 // WHO IS CALLING, AND WHICH BUILD OF IT. This is the STRONGEST of this
 // repository's outbound requesters, and the one whose requests carry a client
@@ -128,18 +128,26 @@ const DIALLABLE = ['fedTokenUrl', 'fedUserinfoUrl', 'fedJwksUri'];
 // MAX_BODY_BYTES. Read once per REQUEST, so a change reaches the next one and a
 // response already being read keeps the cap it started under.
 function maxBodyBytes() {
+  log.debug("Entering maxBodyBytes().");
+  log.debug("Leaving maxBodyBytes().");
   return Number(config.value('federation.maxResponseBytes'));
 }
 
 function outboundAllowed() {
+  log.debug("Entering outboundAllowed().");
+  log.debug("Leaving outboundAllowed().");
   return !!config.value('federation.outbound');
 }
 
 function allowInsecure() {
+  log.debug("Entering allowInsecure().");
+  log.debug("Leaving allowInsecure().");
   return !!config.value('federation.outboundAllowInsecure');
 }
 
 function timeoutMs() {
+  log.debug("Entering timeoutMs().");
+  log.debug("Leaving timeoutMs().");
   return config.value('federation.outboundTimeoutMs');
 }
 
@@ -174,13 +182,14 @@ function urlProblem(raw) {
       return '';
     }
     log.debug('Leaving urlProblem(). http, refused.');
-    return 'it is an http:// URL and federation.outboundAllowInsecure is off. ' +
-           'A client secret and an authorization code travel on this request, ' +
-           'so plain http is refused unless that setting says otherwise';
+    return 'it is an http:// URL and federation.outboundAllowInsecure is ' +
+           'off. A client secret and an authorization code travel on this ' +
+           'request, so plain http is refused unless that setting says ' +
+           'otherwise';
   }
   log.debug('Leaving urlProblem(). Wrong scheme.');
-  return 'its scheme is "' + parsed.protocol.replace(':', '') + '", and only https ' +
-         '(or http, with federation.outboundAllowInsecure on) is dialled';
+  return 'its scheme is "' + parsed.protocol.replace(':', '') + '", and only ' +
+         'https (or http, with federation.outboundAllowInsecure on) is dialled';
 }
 
 // ---------------------------------------------------------------------------
@@ -206,44 +215,55 @@ function fetchJson(record, attribute, options) {
     // A programming error rather than a configuration one, so it is loud. See
     // the header: this is the mechanism that keeps the SSRF position honest,
     // and it must never be possible to slip past it by passing a string.
-    log.error(errorCodes.tag('STS-FED-0046') + 'federation: something asked to dial "' + attribute + '" on ' + id +
+    log.error(errorCodes.tag('STS-FED-0046') + 'federation: something asked ' +
+                                               'to dial ' +
+                                               '"' + attribute + '" ' +
+        'on ' + id +
               ', which is not one of the three attributes this service will ' +
-              'follow (' + DIALLABLE.join(', ') + '). Refused. This is a bug in ' +
-              'the caller, not a misconfiguration — see the header of ' +
+              'follow (' + DIALLABLE.join(', ') + '). Refused. This is a bug ' +
+              'in the caller, not a misconfiguration — see the header of ' +
               'federation_http.js.');
     log.debug('Leaving fetchJson(). Not a diallable attribute.');
     log.debug('Leaving fetchJson().');
-    return Promise.resolve({ ok: false, status: 0, json: null, text: '', url: '',
+    return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+                             url: '',
                              errorCode: 'STS-FED-0046',
-                             why: 'this service will not follow a URL from "' + attribute + '"' });
+                             why: 'this service will not follow a URL from "' +
+                                  attribute + '"' });
   }
   if (!outboundAllowed()) {
     log.debug('Leaving fetchJson(). Outbound is off.');
     log.debug('Leaving fetchJson().');
-    return Promise.resolve({ ok: false, status: 0, json: null, text: '', url: '',
+    return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+                             url: '',
                              errorCode: 'STS-FED-0047',
-                             why: 'federation.outbound is off, so this service makes no ' +
-                                  'back-channel request at all. SAML, SAML 1.1 and ' +
-                                  'WS-Federation need none; an OIDC partner can be used ' +
-                                  'with fedResponseType=id_token and its keys in fedJwks' });
+                             why: 'federation.outbound is off, so this ' +
+                                  'service makes no back-channel request at ' +
+                                  'all. SAML, SAML 1.1 and WS-Federation ' +
+                                  'need none; an OIDC partner can be used ' +
+                                  'with fedResponseType=id_token and its ' +
+                                  'keys in fedJwks' });
   }
   const raw = String((record && record[attribute]) || '');
   const problem = urlProblem(raw);
   if (problem) {
     log.debug('Leaving fetchJson(). ' + problem);
     log.debug('Leaving fetchJson().');
-    return Promise.resolve({ ok: false, status: 0, json: null, text: '', url: raw,
+    return Promise.resolve({ ok: false, status: 0, json: null, text: '',
+                             url: raw,
                              errorCode: 'STS-FED-0048',
-                             why: attribute + ' cannot be dialled: ' + problem });
+                             why: attribute + ' cannot be dialled: ' +
+                                  problem });
   }
 
   const target = new URL(raw);
   const secure = target.protocol === 'https:';
   if (!secure) {
     // Every insecure request, not just the setting. See the header.
-    log.warn('federation: dialling ' + target.origin + ' over plain http for ' + id +
-             ' because federation.outboundAllowInsecure is ON. A client secret ' +
-             'and an authorization code travel on this request.');
+    log.warn('federation: dialling ' + target.origin + ' over plain http for ' +
+             id +
+             ' because federation.outboundAllowInsecure is ON. A client ' +
+             'secret and an authorization code travel on this request.');
   }
   const method = String(opts.method || 'GET').toUpperCase();
   const headers = Object.assign({ 'Accept': 'application/json',
@@ -258,15 +278,19 @@ function fetchJson(record, attribute, options) {
   if (opts.bearer) headers['Authorization'] = 'Bearer ' + opts.bearer;
   if (opts.basic) {
     headers['Authorization'] = 'Basic ' +
-      Buffer.from(String(opts.basic.user) + ':' + String(opts.basic.pass)).toString('base64');
+      Buffer.from(String(opts.basic.user) + ':' + String(opts.basic.pass))
+            .toString('base64');
   }
 
   const cap = maxBodyBytes();
   log.debug('Leaving fetchJson().');
   return new Promise(function (resolve) {
     const done = function (result) {
-      log.debug('Leaving fetchJson(). ok=' + result.ok + ', status=' + result.status);
+      log.debug("Entering done().");
+      log.debug('Leaving fetchJson(). ok=' + result.ok + ', status=' +
+                result.status);
       resolve(Object.assign({ url: raw }, result));
+      log.debug("Leaving done().");
     };
     let request = null;
     try {
@@ -293,10 +317,12 @@ function fetchJson(record, attribute, options) {
           response.destroy();
           return done({ ok: false, status: status, json: null, text: '',
                         errorCode: 'STS-FED-0049',
-                        why: 'it answered ' + status + ' redirecting to "' + location +
-                             '", and this service does not follow a redirect on a ' +
-                             'back-channel request — the credential in the ' +
-                             'Authorization header would go wherever that pointed' });
+                        why: 'it answered ' + status + ' redirecting to "' +
+                             location +
+                             '", and this service does not follow a redirect ' +
+                             'on a back-channel request — the credential in ' +
+                             'the Authorization header would go wherever ' +
+                             'that pointed' });
         }
         let text = '';
         let bytes = 0;
@@ -317,23 +343,28 @@ function fetchJson(record, attribute, options) {
             return done({ ok: false, status: status, json: null, text: '',
                           errorCode: 'STS-FED-0050',
                           why: 'it answered with more than ' + cap +
-                               ' bytes (federation.maxResponseBytes), which is not a ' +
-                               'token response, a UserInfo ' +
-                               'document or a JWKS' });
+                               ' bytes (federation.maxResponseBytes), which ' +
+                               'is not a token response, a UserInfo document ' +
+                               'or a JWKS' });
           }
           let json = null;
           try {
             json = JSON.parse(text);
           } catch (e) {
+            log.debug("Caught in a callback in fetchJson(): " +
+                      ((e && e.message) || e));
             // Not JSON. Kept rather than failed here, because an OAuth error is
             // often served as HTML by a proxy in front of the partner and the
-            // TEXT is the diagnosis — the caller decides whether it needed JSON.
+            // TEXT is the diagnosis — the caller decides whether it needed
+            // JSON.
             json = null;
           }
-          done({ ok: status >= 200 && status < 300, status: status, json: json, text: text,
+          done({ ok: status >= 200 && status < 300, status: status, json: json,
+                 text: text,
                  errorCode: status >= 200 && status < 300 ? '' : 'STS-FED-0051',
                  why: status >= 200 && status < 300 ? ''
-                   : 'it answered ' + status + (json && json.error ? ' ' + json.error : '') });
+                   : 'it answered ' + status +
+                     (json && json.error ? ' ' + json.error : '') });
         });
         response.on('error', function (e) {
           done({ ok: false, status: status, json: null, text: text,
@@ -354,8 +385,8 @@ function fetchJson(record, attribute, options) {
       done({ ok: false, status: 0, json: null, text: '',
              errorCode: 'STS-FED-0054',
              why: 'it did not answer within ' + timeoutMs() + 'ms ' +
-                  '(federation.outboundTimeoutMs). A browser is waiting on this ' +
-                  'request, which is why the wait is short' });
+                  '(federation.outboundTimeoutMs). A browser is waiting on ' +
+                  'this request, which is why the wait is short' });
     });
     request.on('error', function (e) {
       // The one that actually happens: DNS, connection refused, a certificate
@@ -364,12 +395,13 @@ function fetchJson(record, attribute, options) {
       // completely different places.
       done({ ok: false, status: 0, json: null, text: '',
              errorCode: 'STS-FED-0055',
-             why: 'the request failed: ' + (e.code ? e.code + ' — ' : '') + e.message +
+             why: 'the request failed: ' + (e.code ? e.code + ' — ' : '') +
+                  e.message +
                   (e.code === 'DEPTH_ZERO_SELF_SIGNED_CERT' ||
                    e.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
                    e.code === 'SELF_SIGNED_CERT_IN_CHAIN'
-                     ? '. Set federation.outboundAllowInsecure to dial a partner whose ' +
-                       'certificate nothing here trusts'
+                     ? '. Set federation.outboundAllowInsecure to dial a ' +
+                       'partner whose certificate nothing here trusts'
                      : '') });
     });
     if (body) request.write(body);

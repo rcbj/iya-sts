@@ -39,6 +39,13 @@ const fs = require('fs');
 const path = require('path');
 const authn = require('../authn/authn');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log =
+    require('bunyan').createLogger({ name: 'caep_presented_every_protocol',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The four browser SSO profiles: a module, and the identifier it passes as
 // `via` so the event says which door the session came back through. A profile
 // added here without a `notePresented()` fails section B by name.
@@ -56,12 +63,15 @@ const PROFILES = [
 // makes the sign-in's own return trip free. Spelling it out rather than
 // calling startSession() keeps this test off `res` and the cookie.
 function sessionAfterSignIn(id) {
+  log.debug("Entering sessionAfterSignIn().");
+  log.debug("Leaving sessionAfterSignIn().");
   return { id: id, user: { sub: 'urn:sts:user:tester',
     username: 'tester' }, acr: '1', amr: ['pwd'],
     firstPresentationIsTheSignIn: true };
 }
 
 function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   t.log.info('A. notePresented() is about the SESSION, so it behaves the ' +
              'same whichever protocol presents one');
@@ -153,6 +163,7 @@ function run(t) {
             name + " names the protocol as '" + profile.via + "', the same " +
             'spelling it hands startSession() and recordServiceProvider()');
   });
+  log.debug("Leaving run().");
 }
 
 module.exports = {

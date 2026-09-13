@@ -5,14 +5,14 @@
 // ===========================================================================
 // THE ERROR CODES: ONE NAME FOR EVERY WAY THIS SERVICE CAN FAIL OR REFUSE.
 //
-// A failure here used to be identified by its SENTENCE — the `error_description`
-// a client was sent, the line a handler logged, the summary on an audit row.
-// A sentence is the right thing to put in front of a person and the wrong thing
-// to search for: it is reworded, it carries a value that differs per request,
-// and the same condition is described in three places in three wordings. So an
-// operator asking "how often does federation refuse a signature" had a grep
-// and a guess, and a maintainer asking "where is the thing that produced this
-// row" had the same.
+// A failure here used to be identified by its SENTENCE — the
+// `error_description` a client was sent, the line a handler logged, the summary
+// on an audit row. A sentence is the right thing to put in front of a person
+// and the wrong thing to search for: it is reworded, it carries a value that
+// differs per request, and the same condition is described in three places in
+// three wordings. So an operator asking "how often does federation refuse a
+// signature" had a grep and a guess, and a maintainer asking "where is the
+// thing that produced this row" had the same.
 //
 // Every failure condition this service can produce now has a CODE in the table
 // below, `STS-<SUBSYSTEM>-<NNNN>`, and the code is recorded in two places:
@@ -128,8 +128,8 @@ const SUBSYSTEMS = [
     what: 'Every HTTP request passes through here before it reaches a ' +
           'protocol: the security headers, the body parsers, the validation ' +
           'guard, the rate limiter, and the call-log funnel that records the ' +
-          'answer. The three generic codes below are what that funnel records ' +
-          'for a failed response nothing more specific claimed.' },
+          'answer. The three generic codes below are what that funnel ' +
+          'records for a failed response nothing more specific claimed.' },
   { id: 'CORE', label: 'Service core',
     where: 'server.js, common/protocol_stack.js, common/config.js, ' +
            'common/config_file.js, common/realms.js, common/helpers.js, ' +
@@ -148,12 +148,13 @@ const SUBSYSTEMS = [
   { id: 'KEYS', label: 'Cryptography, keys and secrets',
     where: 'common/crypto.js, common/pq_jose.js, common/keystore.js, ' +
            'common/secrets.js',
-    what: 'Signing, verification, encryption and decryption; the signing keys ' +
-          'that survive a restart; the key-encryption key and the database ' +
-          'password read from a secret store.' },
+    what: 'Signing, verification, encryption and decryption; the signing ' +
+          'keys that survive a restart; the key-encryption key and the ' +
+          'database password read from a secret store.' },
   { id: 'PKI', label: 'Certificate authority',
-    where: 'common/pki.js, common/pki_authoring.js, common/pki_revocation.js, ' +
-           'common/revocation_status.js, pki/, admin-ui/pki_admin.js',
+    where: 'common/pki.js, common/pki_authoring.js, ' +
+           'common/pki_revocation.js, common/revocation_status.js, pki/, ' +
+           'admin-ui/pki_admin.js',
     what: 'The Root, Intermediate and Issuing CAs, certificate authoring, ' +
           'the CRL and OCSP responders, and the revocation check a presented ' +
           'certificate is held to.' },
@@ -223,9 +224,9 @@ const SUBSYSTEMS = [
   { id: 'XACML', label: 'XACML and access policy',
     where: 'xacml/, common/access_gate.js, common/issuance_gate.js, ' +
            'common/roles.js',
-    what: 'The PDP, the policy repository, the embedded PEPs that decide this ' +
-          'service\'s own access and issuance, the PIP over HTTP, and the ' +
-          'remote-PEP endpoints.' },
+    what: 'The PDP, the policy repository, the embedded PEPs that decide ' +
+          'this service\'s own access and issuance, the PIP over HTTP, and ' +
+          'the remote-PEP endpoints.' },
   // THE ONE SUBSYSTEM THAT IS NOT THIS PROCESS. The remote PEP is a second
   // container with no audit log of its own, so its codes are recorded in its
   // log lines (tag()) — which is where an operator of that container reads. It
@@ -237,9 +238,9 @@ const SUBSYSTEMS = [
     where: 'xacml-pep/',
     what: 'The second container: the remote Policy Enforcement Point that ' +
           'pulls the policy repository from this service, registers and ' +
-          'heartbeats, asks the PIP over HTTP and decides in its own process. ' +
-          'It has no audit log, so these codes appear at the front of its log ' +
-          'lines rather than on an audit row.' },
+          'heartbeats, asks the PIP over HTTP and decides in its own ' +
+          'process. It has no audit log, so these codes appear at the front ' +
+          'of its log lines rather than on an audit row.' },
   { id: 'ADMIN', label: 'Admin console',
     where: 'admin-ui/ (except pki_admin.js), admin-core/',
     what: 'The console at /admin, its gate, and the actions behind its ' +
@@ -258,9 +259,10 @@ const SUBSYSTEMS = [
   { id: 'REG', label: 'Registries',
     where: 'common/applications.js, common/consent.js, ' +
            'common/app_permissions.js, common/delegation.js, ' +
-           'common/admin_stats.js, common/audit.js, common/claim_attributes.js, ' +
-           'common/group_claims.js, common/user_graph.js, ' +
-           'common/credential_graph.js, common/inetorgperson.js',
+           'common/admin_stats.js, common/audit.js, ' +
+           'common/claim_attributes.js, common/group_claims.js, ' +
+           'common/user_graph.js, common/credential_graph.js, ' +
+           'common/inetorgperson.js',
     what: 'The application registry, consent, delegated permissions, the ' +
           'delegation register, the statistics and the claim configuration.' }
 ];
@@ -461,9 +463,8 @@ const CODES = [
       '/admin/tokens.',
     spec: '' },
   { code: 'STS-CORE-0028',
-    summary: 'A trust realm\'s post-quantum keys could not be generated ahead ' +
-      'of time; the first JWKS fetch in that realm makes them ' +
-      'instead.',
+    summary: 'A trust realm\'s post-quantum keys could not be generated ' +
+      'ahead of time; the first JWKS fetch in that realm makes them instead.',
     spec: '' },
   { code: 'STS-CORE-0029',
     summary: 'The Kerberos KDC\'s TCP/UDP listeners could not start (often ' +
@@ -849,8 +850,8 @@ const CODES = [
       'runs uncoordinated and keeps retrying.',
     spec: '' },
   { code: 'STS-STORE-0038',
-    summary: 'A pull of other processes\' changes from the change log failed; ' +
-      'this process is behind until a retry succeeds.',
+    summary: 'A pull of other processes\' changes from the change log ' +
+      'failed; this process is behind until a retry succeeds.',
     spec: '' },
   { code: 'STS-STORE-0039',
     summary: 'A read barrier gave up before catching up with the change log; ' +
@@ -1328,8 +1329,8 @@ const CODES = [
       'SPIFFE) could not be built.',
     spec: '' },
   { code: 'STS-PKI-0050',
-    summary: 'At startup a realm\'s certificate-authority branch could not be ' +
-      'built.',
+    summary: 'At startup a realm\'s certificate-authority branch could not ' +
+      'be built.',
     spec: '' },
   { code: 'STS-PKI-0051',
     summary: 'At startup the default realm\'s signing keys could not be ' +
@@ -1410,8 +1411,8 @@ const CODES = [
     summary: 'The CRL endpoint failed while building a CRL.',
     spec: 'HTTP 500 text/plain' },
   { code: 'STS-PKI-0070',
-    summary: 'An authority\'s CA certificate (caIssuers) was requested for an ' +
-      'authority this service does not hold.',
+    summary: 'An authority\'s CA certificate (caIssuers) was requested for ' +
+      'an authority this service does not hold.',
     spec: 'HTTP 404 text/plain' },
   { code: 'STS-PKI-0071',
     summary: 'An OCSP GET request path segment was not a base64 DER request.',
@@ -1656,50 +1657,52 @@ const CODES = [
       'be walked at all.',
     spec: '' },
   { code: 'STS-PKI-0122',
-    summary: 'The OCSP responder named by a presented certificate\'s Authority ' +
-      'Information Access could not be asked: a network failure, a timeout, a ' +
-      'non-2xx status, a redirect, a body over pki.revocationMaxCrlBytes, or ' +
-      'a responseStatus other than successful (common/revocation_status.js).',
+    summary: 'The OCSP responder named by a presented certificate\'s ' +
+      'Authority Information Access could not be asked: a network failure, a ' +
+      'timeout, a non-2xx status, a redirect, a body over ' +
+      'pki.revocationMaxCrlBytes, or a responseStatus other than successful ' +
+      '(common/revocation_status.js).',
     spec: '' },
   { code: 'STS-PKI-0123',
-    summary: 'An OCSP response could not be used: it did not parse, carried no ' +
-      'answer for the certificate asked about, was signed by neither the ' +
+    summary: 'An OCSP response could not be used: it did not parse, carried ' +
+      'no answer for the certificate asked about, was signed by neither the ' +
       'issuer nor a delegated responder the issuer certified with ' +
       'id-kp-OCSPSigning, failed its signature, echoed a different nonce (or ' +
       'none, under pki.revocationOcspRequireNonce) or was not fresh.',
     spec: '' },
   { code: 'STS-PKI-0124',
-    summary: 'A delta CRL named by freshestCRL could not be applied: it did not ' +
-      'parse or verify, carried no deltaCRLIndicator, named a different issuer ' +
-      'or scope from its base, or its BaseCRLNumber and cRLNumber do not fit ' +
-      'the base CRL it would be merged into.',
+    summary: 'A delta CRL named by freshestCRL could not be applied: it did ' +
+      'not parse or verify, carried no deltaCRLIndicator, named a different ' +
+      'issuer or scope from its base, or its BaseCRLNumber and cRLNumber do ' +
+      'not fit the base CRL it would be merged into.',
     spec: '' },
   { code: 'STS-PKI-0125',
     summary: 'An indirect CRL could not be trusted: the cRLIssuer a ' +
       'certificate names has no certificate in the presented chain, among ' +
-      'this service\'s authorities or in pki.revocationCrlIssuersFile that may ' +
-      'sign CRLs and chains to the presented path — or the list at that point ' +
-      'was not signed by it or does not declare itself indirect.',
+      'this service\'s authorities or in pki.revocationCrlIssuersFile that ' +
+      'may sign CRLs and chains to the presented path — or the list at that ' +
+      'point was not signed by it or does not declare itself indirect.',
     spec: '' },
   { code: 'STS-PKI-0126',
-    summary: 'The certificate of a CRL\'s signer could not be fetched from the ' +
-      'caIssuers address in the CRL\'s own Authority Information Access (RFC ' +
-      '5280 section 5.2.7), or none fetched there may sign that list: a fetch ' +
-      'failure, a document that is not a certificate, or a certificate without ' +
-      'cRLSign that does not chain to the presented path.',
+    summary: 'The certificate of a CRL\'s signer could not be fetched from ' +
+      'the caIssuers address in the CRL\'s own Authority Information Access ' +
+      '(RFC 5280 section 5.2.7), or none fetched there may sign that list: a ' +
+      'fetch failure, a document that is not a certificate, or a certificate ' +
+      'without cRLSign that does not chain to the presented path.',
     spec: '' },
   { code: 'STS-PKI-0127',
-    summary: 'A delegated OCSP responder\'s answers were not used because its own ' +
-      'certificate is REVOKED on the CRL it names, or because its status could ' +
-      'not be established under pki.revocationCheck=hard-fail (RFC 6960 section ' +
-      '4.2.2.2.1).',
+    summary: 'A delegated OCSP responder\'s answers were not used because ' +
+      'its own certificate is REVOKED on the CRL it names, or because its ' +
+      'status could not be established under pki.revocationCheck=hard-fail ' +
+      '(RFC 6960 section 4.2.2.2.1).',
     spec: '' },
   { code: 'STS-PKI-0128',
     summary: 'An ldap: or ldaps: revocation address was not dialled or not ' +
-      'answered usably: plain ldap is not permitted by pki.revocationLdap, the ' +
-      'URL names no host or a critical extension, a name relative to the CRL ' +
-      'issuer has no pki.revocationLdapDirectory to be looked up in, or the ' +
-      'directory answered with a referral, several entries or no such attribute.',
+      'answered usably: plain ldap is not permitted by pki.revocationLdap, ' +
+      'the URL names no host or a critical extension, a name relative to the ' +
+      'CRL issuer has no pki.revocationLdapDirectory to be looked up in, or ' +
+      'the directory answered with a referral, several entries or no such ' +
+      'attribute.',
     spec: '' },
   { code: 'STS-PKI-0129',
     summary: 'A certificate REGISTERED on an application entry (an RFC 7523 ' +
@@ -1838,8 +1841,8 @@ const CODES = [
     spec: 'HTTP 200 security-key page with the reason; on the portal, its ' +
       'own refusal' },
   { code: 'STS-AUTHN-0028',
-    summary: 'WebAuthn verification failed: clientDataJSON\'s type is not the ' +
-      'ceremony\'s (webauthn.create / webauthn.get).',
+    summary: 'WebAuthn verification failed: clientDataJSON\'s type is not ' +
+      'the ceremony\'s (webauthn.create / webauthn.get).',
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0029',
     summary: 'WebAuthn verification failed: the challenge in clientDataJSON ' +
@@ -1882,8 +1885,8 @@ const CODES = [
       'authn/webauthn_policy.js is behind the verifier.',
     spec: 'HTTP 200 page naming the failed check' },
   { code: 'STS-AUTHN-0038',
-    summary: 'A security key\'s signature counter could not be recorded after ' +
-      'a successful assertion; the sign-in stands and the replay ' +
+    summary: 'A security key\'s signature counter could not be recorded ' +
+      'after a successful assertion; the sign-in stands and the replay ' +
       'defence has nothing new to check next time.',
     spec: '' },
   { code: 'STS-AUTHN-0039',
@@ -1917,8 +1920,8 @@ const CODES = [
       '(webauthn.mfaAllowed).',
     spec: 'HTTP 200 page / action result with the reason' },
   { code: 'STS-AUTHN-0047',
-    summary: 'The credential store\'s setDirectory() hooks were refused whole ' +
-      'because readPassword or writePassword was missing.',
+    summary: 'The credential store\'s setDirectory() hooks were refused ' +
+      'whole because readPassword or writePassword was missing.',
     spec: '' },
   { code: 'STS-AUTHN-0048',
     summary: 'A password was refused because it is the reserved refusal ' +
@@ -2013,8 +2016,8 @@ const CODES = [
       'enrolled for that person.',
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0070',
-    summary: 'Removing a security key was refused because it is the person\'s ' +
-      'last way in (no password and no other primary key).',
+    summary: 'Removing a security key was refused because it is the ' +
+      'person\'s last way in (no password and no other primary key).',
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0071',
     summary: 'Reading a person\'s authenticator-app enrolment from the ' +
@@ -2080,8 +2083,8 @@ const CODES = [
       'is still pending and confirming again retries.',
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0086',
-    summary: 'A request to show a person\'s recovery codes again was refused: ' +
-      'only hashes are stored.',
+    summary: 'A request to show a person\'s recovery codes again was ' +
+      'refused: only hashes are stored.',
     spec: 'action result with the reason' },
   { code: 'STS-AUTHN-0087',
     summary: 'No recovery codes have been issued for the person a ' +
@@ -2089,8 +2092,8 @@ const CODES = [
     spec: 'invalid_request (HTTP 400) at the sign-in screen; action ' +
       'result elsewhere' },
   { code: 'STS-AUTHN-0088',
-    summary: 'Every recovery code in the person\'s set has already been used, ' +
-      'so the recovery-code screen was refused.',
+    summary: 'Every recovery code in the person\'s set has already been ' +
+      'used, so the recovery-code screen was refused.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-AUTHN-0089',
     summary: 'The person\'s stored recovery codes cannot be read, so a ' +
@@ -2230,8 +2233,8 @@ const CODES = [
     summary: 'A hosted surface\'s callback carried no code or no state.',
     spec: 'the console\'s or portal\'s sign-in refusal page' },
   { code: 'STS-AUTHN-0123',
-    summary: 'A hosted surface\'s callback named a state this service did not ' +
-      'start, already completed, or has forgotten.',
+    summary: 'A hosted surface\'s callback named a state this service did ' +
+      'not start, already completed, or has forgotten.',
     spec: 'the console\'s or portal\'s sign-in refusal page' },
   { code: 'STS-AUTHN-0124',
     summary: 'A hosted surface\'s callback presented a state that belongs to ' +
@@ -2279,6 +2282,35 @@ const CODES = [
     summary: 'The ID Token issued to a hosted surface names nobody: no ' +
       'preferred_username and no sub.',
     spec: 'the console\'s or portal\'s sign-in refusal page' },
+  { code: 'STS-AUTHN-0136',
+    summary: 'A console or portal session\'s ID Token and access token ran ' +
+      'out and its sign-in was issued no refresh token to renew them with; ' +
+      'the session was ended.',
+    spec: 'none — the next page runs the authorization code flow again' },
+  { code: 'STS-AUTHN-0137',
+    summary: 'The token endpoint refused the refresh token grant a console ' +
+      'or portal session made to renew its tokens (a revoked, replayed or ' +
+      'expired refresh token); the session was ended.',
+    spec: 'none — the next page runs the authorization code flow again' },
+  { code: 'STS-AUTHN-0138',
+    summary: 'The ID Token a console or portal renewal was issued names a ' +
+      'different issuer, subject or authentication time from the sign-in ' +
+      '(OpenID Connect Core section 12.2); the session was ended.',
+    spec: 'none — the next page runs the authorization code flow again' },
+  { code: 'STS-AUTHN-0139',
+    summary: 'A console or portal session could not renew its tokens because ' +
+      'the trust realm its sign-in ran in no longer exists; the session was ' +
+      'ended.',
+    spec: 'none — the next page runs the authorization code flow again' },
+  { code: 'STS-AUTHN-0140',
+    summary: 'Renewing a console or portal session\'s tokens threw; the ' +
+      'request went on and the renewal is tried again on the next one.',
+    spec: 'none' },
+  { code: 'STS-AUTHN-0141',
+    summary: 'A console or portal session\'s tokens ran out after the window ' +
+      'it could renew them in (the refresh token\'s lifetime from the ' +
+      'sign-in) had closed; the session was ended.',
+    spec: 'none — the next page runs the authorization code flow again' },
   // ===== OAUTH =============================================================
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
@@ -2380,8 +2412,8 @@ const CODES = [
       'other than RFC 7522\'s.',
     spec: 'invalid_client (HTTP 401)' },
   { code: 'STS-OAUTH-0025',
-    summary: 'The client\'s registry entry names a token_endpoint_auth_method ' +
-      'this service cannot verify.',
+    summary: 'The client\'s registry entry names a ' +
+      'token_endpoint_auth_method this service cannot verify.',
     spec: 'invalid_client (HTTP 401)' },
   { code: 'STS-OAUTH-0026',
     summary: 'A JWKS registered for an RFC 7523 party (client or assertion ' +
@@ -2642,8 +2674,8 @@ const CODES = [
       'process has no directory, or no person was named.',
     spec: '' },
   { code: 'STS-OAUTH-0090',
-    summary: 'Taking a person\'s RFC 7523 key pair off was refused: nobody by ' +
-      'that name holds one.',
+    summary: 'Taking a person\'s RFC 7523 key pair off was refused: nobody ' +
+      'by that name holds one.',
     spec: '' },
   { code: 'STS-OAUTH-0091',
     summary: 'A certificate-bound token (cnf x5t#S256) was presented on a ' +
@@ -2694,8 +2726,8 @@ const CODES = [
     summary: 'The DPoP proof is missing one of jti, htm, htu or iat.',
     spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
   { code: 'STS-OAUTH-0104',
-    summary: 'The DPoP proof\'s signature does not verify with the key in its ' +
-      'own header.',
+    summary: 'The DPoP proof\'s signature does not verify with the key in ' +
+      'its own header.',
     spec: 'invalid_dpop_proof (HTTP 400 / 401)' },
   { code: 'STS-OAUTH-0105',
     summary: 'The DPoP proof\'s htm does not match the request method.',
@@ -2836,8 +2868,8 @@ const CODES = [
       'presented again; its whole family was revoked (section 2.2.2).',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0139',
-    summary: 'In RFC 9700 mode, a refresh token\'s grant had been idle longer ' +
-      'than oauth2.refreshIdleSeconds.',
+    summary: 'In RFC 9700 mode, a refresh token\'s grant had been idle ' +
+      'longer than oauth2.refreshIdleSeconds.',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0140',
     summary: 'In RFC 9700 mode, a refresh request carried no client_id.',
@@ -3011,8 +3043,8 @@ const CODES = [
     summary: 'The DPoP nonce setting could not be written.',
     spec: 'server_error (HTTP 500)' },
   { code: 'STS-OAUTH-0181',
-    summary: 'The directory threw while a person\'s profile claims were being ' +
-      'read; the claims were omitted from what was issued.',
+    summary: 'The directory threw while a person\'s profile claims were ' +
+      'being read; the claims were omitted from what was issued.',
     spec: '' },
   { code: 'STS-OAUTH-0182',
     summary: 'A token this service had just issued could not be re-read for ' +
@@ -3230,17 +3262,17 @@ const CODES = [
     spec: 'invalid_token (HTTP 401, WWW-Authenticate challenge)' },
   { code: 'STS-OAUTH-0237',
     summary: 'A refresh token was presented unencrypted. Every refresh token ' +
-      'this service issues is a signed JWT encrypted to its realm, so a plain ' +
-      'signed one is refused (or reported inactive at introspection).',
+      'this service issues is a signed JWT encrypted to its realm, so a ' +
+      'plain signed one is refused (or reported inactive at introspection).',
     spec: 'invalid_grant (HTTP 400); active: false at introspection' },
   { code: 'STS-OAUTH-0238',
-    summary: 'A refresh token could not be decrypted: it is not a compact JWE, ' +
-      'names a key this realm does not hold (another realm, or keys since ' +
-      'rotated), or its authentication tag did not verify.',
+    summary: 'A refresh token could not be decrypted: it is not a compact ' +
+      'JWE, names a key this realm does not hold (another realm, or keys ' +
+      'since rotated), or its authentication tag did not verify.',
     spec: 'invalid_grant (HTTP 400); active: false at introspection' },
   { code: 'STS-OAUTH-0239',
-    summary: 'A refresh token decrypted to something that is not a signed JWT ' +
-      '(its JWE did not carry cty JWT around a JWS).',
+    summary: 'A refresh token decrypted to something that is not a signed ' +
+      'JWT (its JWE did not carry cty JWT around a JWS).',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0240',
     summary: 'A refresh token could not be encrypted at issuance, or the ' +
@@ -3249,8 +3281,8 @@ const CODES = [
     spec: 'server_error (HTTP 500)' },
   { code: 'STS-OAUTH-0241',
     summary: 'oauth2.refreshTokenEncryptionAlg or …Enc names an algorithm ' +
-      'common/crypto.js does not implement; refresh tokens were encrypted with ' +
-      'the default instead.',
+      'common/crypto.js does not implement; refresh tokens were encrypted ' +
+      'with the default instead.',
     spec: '' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
@@ -3709,8 +3741,8 @@ const CODES = [
       'beyond oauth2.clockSkewS); a replay or clock disagreement.',
     spec: 'HTTP 401 page' },
   { code: 'STS-FED-0019',
-    summary: 'A partner\'s SAML 2.0 assertion carries no AudienceRestriction, ' +
-      'which the Web Browser SSO profile requires.',
+    summary: 'A partner\'s SAML 2.0 assertion carries no ' +
+      'AudienceRestriction, which the Web Browser SSO profile requires.',
     spec: 'HTTP 401 page' },
   { code: 'STS-FED-0020',
     summary: 'A partner\'s assertion is addressed to an audience other than ' +
@@ -4066,8 +4098,8 @@ const CODES = [
       'does not know.',
     spec: 'KDC_ERR_S_PRINCIPAL_UNKNOWN (7)' },
   { code: 'STS-KRB-0029',
-    summary: 'A TGS-REQ\'s ticket did not decrypt with this KDC\'s key for the ' +
-      'service it names.',
+    summary: 'A TGS-REQ\'s ticket did not decrypt with this KDC\'s key for ' +
+      'the service it names.',
     spec: 'KRB_AP_ERR_BAD_INTEGRITY (31)' },
   { code: 'STS-KRB-0030',
     summary: 'A TGS-REQ\'s Authenticator did not decrypt with the ticket\'s ' +
@@ -4091,8 +4123,8 @@ const CODES = [
       'clock-skew tolerance.',
     spec: 'KRB_AP_ERR_SKEW (37)' },
   { code: 'STS-KRB-0036',
-    summary: 'A TGS-REQ\'s Authenticator carried no checksum over the request ' +
-      'body.',
+    summary: 'A TGS-REQ\'s Authenticator carried no checksum over the ' +
+      'request body.',
     spec: 'KRB_AP_ERR_INAPP_CKSUM (50)' },
   { code: 'STS-KRB-0037',
     summary: 'A TGS-REQ\'s Authenticator checksum did not match the request ' +
@@ -4343,38 +4375,41 @@ const CODES = [
     spec: 'HTTP 500 page' },
   // --- stored Kerberos keys: directory people and service principals (2026-09-12)
   { code: 'STS-KRB-0100',
-    summary: 'The principal database\'s key source slot was offered something ' +
-      'incomplete and refused it whole; no person and no stored service key ' +
-      'will be used.',
+    summary: 'The principal database\'s key source slot was offered ' +
+      'something incomplete and refused it whole; no person and no stored ' +
+      'service key will be used.',
     spec: '' },
   { code: 'STS-KRB-0101',
-    summary: 'A product-mode AS-REQ named a person and this process has no key ' +
-      'source (no directory) to read Kerberos keys from.',
+    summary: 'A product-mode AS-REQ named a person and this process has no ' +
+      'key source (no directory) to read Kerberos keys from.',
     spec: 'KRB-ERROR KDC_ERR_C_PRINCIPAL_UNKNOWN (6)' },
   { code: 'STS-KRB-0102',
-    summary: 'A product-mode AS-REQ named a person while krb5.personKeys is off.',
+    summary: 'A product-mode AS-REQ named a person while krb5.personKeys is ' +
+             'off.',
     spec: 'KRB-ERROR KDC_ERR_C_PRINCIPAL_UNKNOWN (6)' },
   { code: 'STS-KRB-0103',
     summary: 'A product-mode AS-REQ named a person who is not in the default ' +
       'trust realm\'s directory.',
     spec: 'KRB-ERROR KDC_ERR_C_PRINCIPAL_UNKNOWN (6)' },
   { code: 'STS-KRB-0104',
-    summary: 'A product-mode AS-REQ named a person who has no Kerberos keys, or ' +
-      'whose keys were derived from a password they no longer have; they are ' +
-      'told to sign in once with the password.',
-    spec: 'KRB-ERROR KDC_ERR_C_PRINCIPAL_UNKNOWN (6) with an e-text saying so' },
+    summary: 'A product-mode AS-REQ named a person who has no Kerberos keys, ' +
+      'or whose keys were derived from a password they no longer have; they ' +
+      'are told to sign in once with the password.',
+    spec:
+      'KRB-ERROR KDC_ERR_C_PRINCIPAL_UNKNOWN (6) with an e-text saying so' },
   { code: 'STS-KRB-0105',
-    summary: 'A person\'s stored Kerberos keys could not be opened (sealed under ' +
-      'another key-encryption key, not this service\'s shape, or bound to ' +
-      'another name).',
+    summary: 'A person\'s stored Kerberos keys could not be opened (sealed ' +
+      'under another key-encryption key, not this service\'s shape, or bound ' +
+      'to another name).',
     spec: 'KRB-ERROR KDC_ERR_C_PRINCIPAL_UNKNOWN (6)' },
   { code: 'STS-KRB-0106',
     summary: 'Reading a stored service principal key threw; the configured ' +
       'account, if any, answered instead.',
     spec: '' },
   { code: 'STS-KRB-0107',
-    summary: 'Deriving a person\'s Kerberos keys from a password that was just ' +
-      'set or verified failed; the sign-in or password change was unaffected.',
+    summary: 'Deriving a person\'s Kerberos keys from a password that was ' +
+      'just set or verified failed; the sign-in or password change was ' +
+      'unaffected.',
     spec: '' },
   { code: 'STS-KRB-0108',
     summary: 'Kerberos key material could not be sealed under the ' +
@@ -4390,10 +4425,11 @@ const CODES = [
     spec: '' },
   // --- the principal store across a restart and across processes (2026-09-12)
   { code: 'STS-KRB-0111',
-    summary: 'A restored or replicated row for a CONFIGURED principal carried ' +
-      'configuration (password, salt, etypes, kvno, PAC identity, delegation, ' +
-      'description or type) that differs from what the current settings ' +
-      'build; the settings were kept and only the runtime state was taken.',
+    summary: 'A restored or replicated row for a CONFIGURED principal ' +
+      'carried configuration (password, salt, etypes, kvno, PAC identity, ' +
+      'delegation, description or type) that differs from what the current ' +
+      'settings build; the settings were kept and only the runtime state was ' +
+      'taken.',
     spec: '' },
   { code: 'STS-KRB-0112',
     summary: 'A restored or replicated principal row was neither configured ' +
@@ -4413,11 +4449,11 @@ const CODES = [
     spec: '' },
   // --- previous key versions (2026-09-12)
   { code: 'STS-KRB-0115',
-    summary: 'A ticket presented in a TGS-REQ (the ticket-granting ticket or an ' +
-      'S4U2Proxy evidence ticket) names a key version of a stored-key ' +
-      'principal that is neither its current kvno nor a previous version still ' +
-      'retained (krb5.retainedKeyVersions, krb5.retainedKeyTtlS), or one retained ' +
-      'without that enctype.',
+    summary: 'A ticket presented in a TGS-REQ (the ticket-granting ticket or ' +
+      'an S4U2Proxy evidence ticket) names a key version of a stored-key ' +
+      'principal that is neither its current kvno nor a previous version ' +
+      'still retained (krb5.retainedKeyVersions, krb5.retainedKeyTtlS), or ' +
+      'one retained without that enctype.',
     spec: 'KRB-ERROR KRB_AP_ERR_BADKEYVER (44)' },
   // ===== LDAP ==============================================================
   { code: 'STS-LDAP-0001',
@@ -4635,16 +4671,16 @@ const CODES = [
       'an entry other than its own.',
     spec: 'LDAP result code 50, insufficientAccessRights' },
   { code: 'STS-LDAP-0054',
-    summary: 'In product mode, a person asked to change an attribute on their ' +
-      'own entry that ldap.selfWritableAttributes does not name.',
+    summary: 'In product mode, a person asked to change an attribute on ' +
+      'their own entry that ldap.selfWritableAttributes does not name.',
     spec: 'LDAP result code 50, insufficientAccessRights' },
   { code: 'STS-LDAP-0070',
     summary: 'In product mode, an anonymous LDAP bind (no DN) was refused; a ' +
       'bind as somebody is required.',
     spec: 'LDAP result code 48, inappropriateAuthentication' },
   { code: 'STS-LDAP-0071',
-    summary: 'In product mode, a bind was made on the plain LDAP listener and ' +
-      'refused before its password was read; binds require LDAPS.',
+    summary: 'In product mode, a bind was made on the plain LDAP listener ' +
+      'and refused before its password was read; binds require LDAPS.',
     spec: 'LDAP result code 13, confidentialityRequired' },
   { code: 'STS-LDAP-0072',
     summary: 'In product mode, an unauthenticated bind (a DN with an empty ' +
@@ -4923,8 +4959,8 @@ const CODES = [
       'account that does not exist, and none is created.',
     spec: 'HTTP 404 JSON' },
   { code: 'STS-SCIM-0071',
-    summary: 'A HOBA key registration\'s kid is already registered to another ' +
-      'account.',
+    summary: 'A HOBA key registration\'s kid is already registered to ' +
+      'another account.',
     spec: 'HTTP 409 JSON' },
   { code: 'STS-SCIM-0072',
     summary: 'The directory refused to create the account a HOBA key ' +
@@ -5081,8 +5117,8 @@ const CODES = [
       'JWT-SVID names, so it cannot be validated.',
     spec: 'gRPC INVALID_ARGUMENT' },
   { code: 'STS-SPIFFE-0036',
-    summary: 'No key in the trust domain\'s JWT bundle has the kid a JWT-SVID ' +
-      'names.',
+    summary: 'No key in the trust domain\'s JWT bundle has the kid a ' +
+      'JWT-SVID names.',
     spec: 'gRPC INVALID_ARGUMENT' },
   { code: 'STS-SPIFFE-0037',
     summary: 'A JWT-SVID did not verify: its signature, expiry or audience ' +
@@ -5340,8 +5376,8 @@ const CODES = [
       'Root and re-issuing it produced the same certificate.',
     spec: '' },
   { code: 'STS-TLS-0027',
-    summary: 'The runtime trust anchor store was installed without one of its ' +
-      'list, write and remove functions, and was refused whole; runtime ' +
+    summary: 'The runtime trust anchor store was installed without one of ' +
+      'its list, write and remove functions, and was refused whole; runtime ' +
       'anchors are not persisted.',
     spec: '' },
   { code: 'STS-TLS-0028',
@@ -5349,8 +5385,9 @@ const CODES = [
       'ou=trustAnchors, so it will not survive a restart.',
     spec: '' },
   { code: 'STS-TLS-0029',
-    summary: 'A runtime trust anchor was removed from every listener but could ' +
-      'not be removed from ou=trustAnchors, so it will come back on a restart.',
+    summary: 'A runtime trust anchor was removed from every listener but ' +
+      'could not be removed from ou=trustAnchors, so it will come back on a ' +
+      'restart.',
     spec: '' },
   { code: 'STS-TLS-0030',
     summary: 'The stored trust anchors could not be read; the truststore was ' +
@@ -5534,8 +5571,8 @@ const CODES = [
       'state it has no record of.',
     spec: 'invalid_request (HTTP 404)' },
   { code: 'STS-VC-0043',
-    summary: 'The key credentials are signed with is not in this realm\'s key ' +
-      'set, so the DID document cannot publish it.',
+    summary: 'The key credentials are signed with is not in this realm\'s ' +
+      'key set, so the DID document cannot publish it.',
     spec: '' },
   { code: 'STS-VC-0044',
     summary: 'The BBS public key could not be published in the DID document.',
@@ -5700,9 +5737,9 @@ const CODES = [
       '(ssf.pushDelivery); the event stays on the queue.',
     spec: '' },
   { code: 'STS-SSF-0034',
-    summary: 'A push was not made because the stream\'s delivery endpoint may ' +
-      'not be dialled (not a URL, wrong scheme, plain http, or a ' +
-      'host outside ssf.pushAllowedHosts).',
+    summary: 'A push was not made because the stream\'s delivery endpoint ' +
+      'may not be dialled (not a URL, wrong scheme, plain http, or a host ' +
+      'outside ssf.pushAllowedHosts).',
     spec: '' },
   { code: 'STS-SSF-0035',
     summary: 'A push to one of this service\'s own receivers was not made ' +
@@ -5897,22 +5934,27 @@ const CODES = [
       'being decided; it was ignored (narrows nothing).',
     spec: '' },
   { code: 'STS-SSF-0077',
-    summary: 'A GNAP access token was presented to an SSF endpoint while GNAP ' +
-      'is switched off in the realm (gnap.enabled), or the GNAP family is not ' +
-      'loaded in this process.',
+    summary: 'A GNAP access token was presented to an SSF endpoint while ' +
+      'GNAP is switched off in the realm (gnap.enabled), or the GNAP family ' +
+      'is not loaded in this process.',
     spec: 'HTTP 401 authentication_failed' },
   { code: 'STS-SSF-0078',
     summary: 'A GNAP access token presented to an SSF endpoint was refused ' +
       'and the GNAP resource-server check named no code of its own.',
     spec: 'HTTP 401 invalid_token' },
   { code: 'STS-SSF-0079',
-    summary: 'A GNAP access token presented to an SSF endpoint was issued for ' +
-      'a named resource server, which this transmitter is not.',
+    summary: 'A GNAP access token presented to an SSF endpoint was issued ' +
+      'for a named resource server, which this transmitter is not.',
     spec: 'HTTP 401 invalid_token' },
   { code: 'STS-SSF-0080',
-    summary: 'A GNAP access token presented to an SSF endpoint does not carry ' +
-      'the ssf:read or ssf:write access the operation needs.',
+    summary: 'A GNAP access token presented to an SSF endpoint does not ' +
+      'carry the ssf:read or ssf:write access the operation needs.',
     spec: 'HTTP 403 access_denied' },
+  { code: 'STS-SSF-0081',
+    summary: 'A Security Event Token was not transmitted because the ' +
+      'application that owns the stream is not allowed that event type ' +
+      '(ssfAllowedEvents on its entry).',
+    spec: '' },
   // ===== GNAP ==============================================================
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
@@ -7386,8 +7428,8 @@ const CODES = [
       'redirect, which is not followed.',
     spec: '' },
   { code: 'STS-XACML-0068',
-    summary: 'A PEP\'s notify endpoint answered a change nudge with a non-2xx ' +
-      'status.',
+    summary: 'A PEP\'s notify endpoint answered a change nudge with a ' +
+      'non-2xx status.',
     spec: '' },
   { code: 'STS-XACML-0069',
     summary: 'A PEP\'s notify endpoint did not answer a change nudge within ' +
@@ -7584,9 +7626,9 @@ const CODES = [
       'session establishment failed).',
     spec: 'HTTP 400 page' },
   { code: 'STS-ADMIN-0011',
-    summary: 'The admin console\'s OIDC callback threw rather than resolving; ' +
-      'this is a defect in the relying-party code, not something a ' +
-      'request can cause.',
+    summary: 'The admin console\'s OIDC callback threw rather than ' +
+      'resolving; this is a defect in the relying-party code, not something ' +
+      'a request can cause.',
     spec: 'HTTP 500 page' },
   { code: 'STS-ADMIN-0012',
     summary: 'A console action was refused (its result was not ok) and the ' +
@@ -7608,12 +7650,12 @@ const CODES = [
       'to a path that is not a console page.',
     spec: '' },
   { code: 'STS-ADMIN-0016',
-    summary: 'The new-user form\'s Fill with example data was refused because ' +
-      'the service is running in product mode.',
+    summary: 'The new-user form\'s Fill with example data was refused ' +
+      'because the service is running in product mode.',
     spec: 'HTTP 200 form page with a warning, or HTTP 400 JSON' },
   { code: 'STS-ADMIN-0017',
-    summary: 'The new-user form\'s Fill with example data was pressed with no ' +
-      'username to seed the example person from.',
+    summary: 'The new-user form\'s Fill with example data was pressed with ' +
+      'no username to seed the example person from.',
     spec: 'HTTP 200 form page with a warning' },
   { code: 'STS-ADMIN-0018',
     summary: 'The new-user form was posted with an action other than create ' +
@@ -7974,8 +8016,8 @@ const CODES = [
       'console does not write.',
     spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-ADMIN-0587',
-    summary: 'The console roles\' directory slot was offered a filler missing ' +
-      'required functions and was not installed; the roles read as ' +
+    summary: 'The console roles\' directory slot was offered a filler ' +
+      'missing required functions and was not installed; the roles read as ' +
       'having no directory.',
     spec: '' },
   { code: 'STS-ADMIN-0588',
@@ -8036,13 +8078,13 @@ const CODES = [
       'have.',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   { code: 'STS-ADMIN-0603',
-    summary: 'A Kerberos service principal action named something that is not ' +
-      'a usable service principal name (fewer than two components, a foreign ' +
-      'realm, krbtgt, or characters a principal may not carry).',
+    summary: 'A Kerberos service principal action named something that is ' +
+      'not a usable service principal name (fewer than two components, a ' +
+      'foreign realm, krbtgt, or characters a principal may not carry).',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   { code: 'STS-ADMIN-0604',
-    summary: 'A service principal was created for an SPN that already holds a ' +
-      'stored key; rotate it instead.',
+    summary: 'A service principal was created for an SPN that already holds ' +
+      'a stored key; rotate it instead.',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   { code: 'STS-ADMIN-0605',
     summary: 'A service principal was rotated or deleted and holds no stored ' +
@@ -8057,12 +8099,12 @@ const CODES = [
       'stored and no keytab was handed out.',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   { code: 'STS-ADMIN-0608',
-    summary: 'A clear-person-keys action named nobody, or somebody not in the ' +
-      'default trust realm\'s directory.',
+    summary: 'A clear-person-keys action named nobody, or somebody not in ' +
+      'the default trust realm\'s directory.',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   { code: 'STS-ADMIN-0609',
-    summary: 'The Kerberos key register has no directory in this process, so a ' +
-      'principal could be neither listed nor changed.',
+    summary: 'The Kerberos key register has no directory in this process, so ' +
+      'a principal could be neither listed nor changed.',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
   // ===== API ===============================================================
   { code: 'STS-API-0001',
@@ -8420,8 +8462,8 @@ const CODES = [
       'the rate limiter refused it.',
     spec: 'HTTP 429 page' },
   { code: 'STS-PORTAL-0021',
-    summary: 'Removing the person\'s own authenticator app was refused (there ' +
-      'was none, or the store refused the write).',
+    summary: 'Removing the person\'s own authenticator app was refused ' +
+      '(there was none, or the store refused the write).',
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0022',
     summary: 'An authenticator app enrolment could not be started (the ' +
@@ -8485,9 +8527,8 @@ const CODES = [
       'verify, or the key was refused on the write.',
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0037',
-    summary: 'Removing one of the person\'s own security keys was refused (no ' +
-      'such key on their entry, or removing it would leave no way ' +
-      'in).',
+    summary: 'Removing one of the person\'s own security keys was refused ' +
+      '(no such key on their entry, or removing it would leave no way in).',
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0038',
     summary: 'The portal\'s Shared Signals receive endpoint refused a push ' +
@@ -8515,8 +8556,8 @@ const CODES = [
       'inventory; the page reports that family as unreadable.',
     spec: '' },
   { code: 'STS-LOGOUT-0005',
-    summary: 'One family\'s live items could not be read while a sign-out was ' +
-      'ending them, so nothing in that family was ended.',
+    summary: 'One family\'s live items could not be read while a sign-out ' +
+      'was ending them, so nothing in that family was ended.',
     spec: '' },
   { code: 'STS-LOGOUT-0006',
     summary: 'Ending one live item during a sign-out failed with an ' +
@@ -8655,8 +8696,8 @@ const CODES = [
       'application and scope it needs.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0032',
-    summary: 'A consent was revoked or forgotten that is not on the person\'s ' +
-      'entry.',
+    summary: 'A consent was revoked or forgotten that is not on the ' +
+      'person\'s entry.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0033',
     summary: 'A delegation act could not be recorded; the protocol exchange ' +
@@ -8745,6 +8786,10 @@ const CODES = [
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
   { code: 'STS-REG-0052',
     summary: 'A confirm-address or discard-address carried no address.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0053',
+    summary: 'An ssfAllowedEvents value was neither caep, risc nor an event ' +
+      'type URI this transmitter knows.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' }
   // ===== END ===============================================================
 ];
@@ -8773,19 +8818,27 @@ CODES.forEach(function (row) {
 });
 
 function subsystemOf(code) {
+  log.debug("Entering subsystemOf().");
   const parts = String(code || '').split('-');
+  log.debug("Leaving subsystemOf().");
   return parts.length === 3 ? parts[1] : '';
 }
 
 function isWellFormed(code) {
+  log.debug("Entering isWellFormed().");
+  log.debug("Leaving isWellFormed().");
   return CODE_PATTERN.test(String(code || ''));
 }
 
 function isKnown(code) {
+  log.debug("Entering isKnown().");
+  log.debug("Leaving isKnown().");
   return Object.prototype.hasOwnProperty.call(BY_CODE, String(code || ''));
 }
 
 function describe(code) {
+  log.debug("Entering describe().");
+  log.debug("Leaving describe().");
   return BY_CODE[String(code || '')] || null;
 }
 
@@ -8819,7 +8872,9 @@ function describe(code) {
 const MARK = Symbol.for('mock-sts.errorCode');
 
 function mark(res, code) {
+  log.debug("Entering mark().");
   if (!res || (typeof res !== 'object' && typeof res !== 'function')) {
+    log.debug("Leaving mark().");
     return res;
   }
   try {
@@ -8835,13 +8890,17 @@ function mark(res, code) {
     // generic code for its status, which is weaker and not wrong.
     log.warn('an error code could not be marked on a response: ' + e.message);
   }
+  log.debug("Leaving mark().");
   return res;
 }
 
 function codeOf(res) {
+  log.debug("Entering codeOf().");
   if (!res || (typeof res !== 'object' && typeof res !== 'function')) {
+    log.debug("Leaving codeOf().");
     return '';
   }
+  log.debug("Leaving codeOf().");
   return res[MARK] || '';
 }
 
@@ -8856,11 +8915,25 @@ function codeOf(res) {
 // nothing.
 // ---------------------------------------------------------------------------
 function fallbackFor(status, matched) {
+  log.debug("Entering fallbackFor().");
   const code = parseInt(status, 10) || 0;
-  if (code === 404 && !matched) return 'STS-HTTP-0001';
-  if (code === 413) return 'STS-HTTP-0004';
-  if (code >= 500) return 'STS-HTTP-0003';
-  if (code >= 400) return 'STS-HTTP-0002';
+  if (code === 404 && !matched) {
+    log.debug("Leaving fallbackFor().");
+    return 'STS-HTTP-0001';
+  }
+  if (code === 413) {
+    log.debug("Leaving fallbackFor().");
+    return 'STS-HTTP-0004';
+  }
+  if (code >= 500) {
+    log.debug("Leaving fallbackFor().");
+    return 'STS-HTTP-0003';
+  }
+  if (code >= 400) {
+    log.debug("Leaving fallbackFor().");
+    return 'STS-HTTP-0002';
+  }
+  log.debug("Leaving fallbackFor().");
   return '';
 }
 
@@ -8876,6 +8949,8 @@ function fallbackFor(status, matched) {
 // and a grep for `[STS-` finds every tagged line.
 // ---------------------------------------------------------------------------
 function tag(code) {
+  log.debug("Entering tag().");
+  log.debug("Leaving tag().");
   return '[' + String(code || '') + '] ';
 }
 
@@ -8891,6 +8966,8 @@ function tag(code) {
 // what keeps it current.
 // ---------------------------------------------------------------------------
 function escapeCell(text) {
+  log.debug("Entering escapeCell().");
+  log.debug("Leaving escapeCell().");
   return String(text || '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 }
 
@@ -8902,50 +8979,73 @@ function markdown() {
   lines.push('nav_order: 18');
   lines.push('---');
   lines.push('');
-  lines.push('<!-- GENERATED by `node common/error_codes.js --docs` from the table in');
-  lines.push('     common/error_codes.js. Do not edit this file by hand: tests/error_codes.js');
+  lines.push('<!-- GENERATED by `node common/error_codes.js --docs` from the ' +
+             'table in');
+  lines.push('     common/error_codes.js. Do not edit this file by hand: ' +
+             'tests/error_codes.js');
   lines.push('     fails when it differs from what the table generates. -->');
   lines.push('');
   lines.push('# Error codes');
   lines.push('');
-  lines.push('Every way this service can fail or refuse has a code of the form');
-  lines.push('`STS-<SUBSYSTEM>-<NNNN>`. There are **' + CODES.filter(function (r) {
+  lines.push('Every way this service can fail or refuse has a code of the ' +
+             'form');
+  lines.push('`STS-<SUBSYSTEM>-<NNNN>`. There are **' +
+             CODES.filter(function (r) {
     return !r.retired;
   }).length + '** of them, in **' + SUBSYSTEMS.length + '** subsystems.');
   lines.push('');
   lines.push('## Where a code appears');
   lines.push('');
-  lines.push('* **On the audit row** for the event, as `errorCode`, and at the front of');
+  lines.push('* **On the audit row** for the event, as `errorCode`, and at ' +
+             'the front of');
   lines.push('  its summary. Filter for one at `/admin/audit?code=STS-…` or');
-  lines.push('  `GET /admin-api/audit?code=STS-…`; a prefix such as `STS-OAUTH` matches a');
+  lines.push('  `GET /admin-api/audit?code=STS-…`; a prefix such as ' +
+             '`STS-OAUTH` matches a');
   lines.push('  whole subsystem.');
-  lines.push('* **On the admin console** at `/admin/error-codes` (Monitoring), which');
-  lines.push('  lists this table with how many rows in the audit log carry each code');
+  lines.push('* **On the admin console** at `/admin/error-codes` ' +
+             '(Monitoring), which');
+  lines.push('  lists this table with how many rows in the audit log carry ' +
+             'each code');
   lines.push('  right now, and at `GET /admin-api/error-codes`.');
-  lines.push('* **In the service log**, at the front of the line `[STS-…]`, for every');
-  lines.push('  audit row that carries one and for failures that have no row — chiefly');
-  lines.push('  the ones that stop the service starting, which happen before there is an');
+  lines.push('* **In the service log**, at the front of the line `[STS-…]`, ' +
+             'for every');
+  lines.push('  audit row that carries one and for failures that have no row ' +
+             '— chiefly');
+  lines.push('  the ones that stop the service starting, which happen before ' +
+             'there is an');
   lines.push('  audit log to hold them.');
   lines.push('');
   lines.push('## Where a code never appears');
   lines.push('');
-  lines.push('**A code is never sent to a client** — not in a response body, a header or');
-  lines.push('a redirect. Each protocol this service speaks already defines how it reports');
-  lines.push('an error (`invalid_grant`, `KDC_ERR_PREAUTH_FAILED`, an LDAP result code, a');
-  lines.push('SOAP fault, a gRPC status, a SAML `StatusCode`), and a client under test must');
-  lines.push('see exactly that. The **Client sees** column below says what the client is');
-  lines.push('sent for each condition; it describes the response, and the code changes');
+  lines.push('**A code is never sent to a client** — not in a response body, ' +
+             'a header or');
+  lines.push('a redirect. Each protocol this service speaks already defines ' +
+             'how it reports');
+  lines.push('an error (`invalid_grant`, `KDC_ERR_PREAUTH_FAILED`, an LDAP ' +
+             'result code, a');
+  lines.push('SOAP fault, a gRPC status, a SAML `StatusCode`), and a client ' +
+             'under test must');
+  lines.push('see exactly that. The **Client sees** column below says what ' +
+             'the client is');
+  lines.push('sent for each condition; it describes the response, and the ' +
+             'code changes');
   lines.push('nothing about it.');
   lines.push('');
-  lines.push('A code is an operator\'s name for a condition. It is never renumbered or');
-  lines.push('reused, so it is safe to put in an alert rule or a saved search.');
+  lines.push('A code is an operator\'s name for a condition. It is never ' +
+             'renumbered or');
+  lines.push('reused, so it is safe to put in an alert rule or a saved ' +
+             'search.');
   lines.push('');
   lines.push('## The three generic codes');
   lines.push('');
-  lines.push('`STS-HTTP-0002` and `STS-HTTP-0003` are what the HTTP call log records for a');
-  lines.push('4xx or 5xx response that no handler gave a more specific code. **Seeing one');
-  lines.push('means a failure site is missing its code** — please report it with the');
-  lines.push('request path from the audit row. `STS-HTTP-0001` is an unrouted path, which');
+  lines.push('`STS-HTTP-0002` and `STS-HTTP-0003` are what the HTTP call log ' +
+             'records for a');
+  lines.push('4xx or 5xx response that no handler gave a more specific code. ' +
+             '**Seeing one');
+  lines.push('means a failure site is missing its code** — please report it ' +
+             'with the');
+  lines.push('request path from the audit row. `STS-HTTP-0001` is an ' +
+             'unrouted path, which');
   lines.push('is an ordinary outcome.');
   lines.push('');
   lines.push('## Contents');
@@ -8954,7 +9054,8 @@ function markdown() {
     const count = CODES.filter(function (r) {
       return subsystemOf(r.code) === s.id;
     }).length;
-    lines.push('* [' + s.label + ' (`STS-' + s.id + '`)](#sts-' + s.id.toLowerCase() +
+    lines.push('* [' + s.label + ' (`STS-' + s.id + '`)](#sts-' +
+               s.id.toLowerCase() +
                ') — ' + count);
   });
   lines.push('');
@@ -8976,7 +9077,9 @@ function markdown() {
     lines.push('| Code | What failed | Client sees |');
     lines.push('|---|---|---|');
     rows.forEach(function (r) {
-      lines.push('| `' + r.code + '`' + (r.retired ? ' *(retired)*' : '') + ' | ' +
+      lines.push('| `' + r.code + '`' + (r.retired ? ' *(retired)*' : '') +
+          ' ' +
+          '| ' +
                  escapeCell(r.summary) + ' | ' +
                  (r.spec ? escapeCell(r.spec) : '—') + ' |');
     });
@@ -8984,9 +9087,12 @@ function markdown() {
   });
   lines.push('## Adding a code');
   lines.push('');
-  lines.push('This page is generated. A new failure is a row in the `CODES` table in');
-  lines.push('`common/error_codes.js`, a `mark()`, `errorCode` or `tag()` where the');
-  lines.push('failure is detected, and `node common/error_codes.js --docs`. The test suite');
+  lines.push('This page is generated. A new failure is a row in the `CODES` ' +
+             'table in');
+  lines.push('`common/error_codes.js`, a `mark()`, `errorCode` or `tag()` ' +
+             'where the');
+  lines.push('failure is detected, and `node common/error_codes.js --docs`. ' +
+             'The test suite');
   lines.push('fails until all three are done.');
   lines.push('');
   log.debug("Leaving markdown(). " + lines.length + " line(s).");
@@ -8994,7 +9100,9 @@ function markdown() {
 }
 
 function docsPath() {
+  log.debug("Entering docsPath().");
   const path = require('path');
+  log.debug("Leaving docsPath().");
   return path.join(__dirname, '..', 'docs', 'error-codes.md');
 }
 
@@ -9026,6 +9134,8 @@ if (require.main === module) {
     try {
       current = fs.readFileSync(docsPath(), 'utf8');
     } catch (e) {
+      log.debug("Caught in the load of common/error_codes.js: " +
+                ((e && e.message) || e));
       // A missing page is a stale page; the message below says how to make it.
       current = '';
     }
@@ -9034,8 +9144,10 @@ if (require.main === module) {
                     'node common/error_codes.js --docs');
       process.exit(1);
     }
-    console.log('docs/error-codes.md matches the table (' + CODES.length + ' codes)');
+    console.log('docs/error-codes.md matches the table (' + CODES.length + ' ' +
+        'codes)');
   } else {
-    console.log(JSON.stringify({ subsystems: SUBSYSTEMS, codes: CODES }, null, 2));
+    console.log(JSON.stringify({ subsystems: SUBSYSTEMS, codes: CODES }, null,
+                               2));
   }
 }

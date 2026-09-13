@@ -56,9 +56,10 @@
 // store mode and shown on every consent surface. Its values are RFC 6749 scope
 // tokens and a GNAP right is not one (a reference string may carry spaces; an
 // object is JSON), so each approved right is stored as `gnap:` + a truncated
-// SHA-256 of its CANONICAL JSON (keys and string arrays sorted), approved by the
-// user on 2026-09-12. What that costs is said where it is paid: the register
-// shows an opaque value, and the readable right is on the grant record.
+// SHA-256 of its CANONICAL JSON (keys and string arrays sorted), approved by
+// the user on 2026-09-12. What that costs is said where it is paid: the
+// register shows an opaque value, and the readable right is on the grant
+// record.
 // ---------------------------------------------------------------------------
 
 const nodeCrypto = require('crypto');
@@ -100,41 +101,58 @@ const USER_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 // `/:as/gnap` route would otherwise capture `POST /admin/gnap` and CREATE an
 // authorization server called "admin" on sight (authorization_servers.js
 // ensure()).
-const RESERVED_AS_NAMES = ['admin', 'admin-api', 'realm', 'realms', 'portal', 'authn', 'oauth2',
-  'gnap', 'ssf', 'scim', 'xacml', 'saml2', 'saml11', 'wsfed', 'wstrust', 'tls', 'pki',
-  'federation', 'spiffe', 'logout', 'ldap', 'krb5', 'sts', '.well-known', 'vci', 'vp',
+const RESERVED_AS_NAMES = ['admin', 'admin-api', 'realm', 'realms', 'portal',
+  'authn', 'oauth2',
+  'gnap', 'ssf', 'scim', 'xacml', 'saml2', 'saml11', 'wsfed', 'wstrust', 'tls',
+  'pki',
+  'federation', 'spiffe', 'logout', 'ldap', 'krb5', 'sts', '.well-known', 'vci',
+  'vp',
   'did', 'dpop', 'home', 'KdcProxy'];
 
 function refusal(code, why, gnapError, status) {
-  const out = { ok: false, errorCode: code, why: why, gnapError: gnapError || 'invalid_request',
+  log.debug("Entering refusal().");
+  const out = { ok: false, errorCode: code, why: why,
+                gnapError: gnapError || 'invalid_request',
                 status: status || null };
+  log.debug("Leaving refusal().");
   return errorCodes.mark(out, code);
 }
 
 function bool(value) {
-  return value === true || /^(true|1|yes)$/i.test(String(value == null ? '' : value));
+  log.debug("Entering bool().");
+  log.debug("Leaving bool().");
+  return value === true ||
+         /^(true|1|yes)$/i.test(String(value == null ? '' : value));
 }
 
 function csv(key) {
+  log.debug("Entering csv().");
   const raw = config.value(key);
   const list = Array.isArray(raw) ? raw : String(raw || '').split(',');
+  log.debug("Leaving csv().");
   return list.map(function (one) {
     return String(one).trim();
   }).filter(Boolean);
 }
 
 function fieldValues(app, name) {
+  log.debug("Entering fieldValues().");
   if (!app || !app.fields) {
+    log.debug("Leaving fieldValues().");
     return [];
   }
   const value = app.fields[name];
   if (value === undefined || value === null || value === '') {
+    log.debug("Leaving fieldValues().");
     return [];
   }
+  log.debug("Leaving fieldValues().");
   return (Array.isArray(value) ? value : [value]).map(String);
 }
 
 function field(app, name) {
+  log.debug("Entering field().");
+  log.debug("Leaving field().");
   return fieldValues(app, name)[0] || null;
 }
 
@@ -145,14 +163,20 @@ function field(app, name) {
 // of them identifies a grant or a token that already records its AS.
 // ---------------------------------------------------------------------------
 function asPath(asId) {
+  log.debug("Entering asPath().");
+  log.debug("Leaving asPath().");
   return asId && asId !== authorizationServers.DEFAULT_ID ? '/' + asId : '';
 }
 
 function grantEndpointOf(req, asId) {
+  log.debug("Entering grantEndpointOf().");
+  log.debug("Leaving grantEndpointOf().");
   return baseUrlOf(req) + asPath(asId) + '/gnap';
 }
 
 function realmBase(req) {
+  log.debug("Entering realmBase().");
+  log.debug("Leaving realmBase().");
   return baseUrlOf(req);
 }
 
@@ -160,25 +184,31 @@ function realmBase(req) {
 // THE AUTHORIZATION SERVER'S GNAP CAPABILITIES.
 //
 // "GNAP incorporates the existing authorization server concept": a named
-// authorization server (`/:as/...`) is one profile with one set of capabilities,
-// and since 2026-09-12 that profile carries GNAP's section 9 discovery members
-// beside its RFC 8414 ones. The defaults come from the `gnap.*` settings; the
-// profile's overrides and removals apply on top; and the RESULT is both what
-// OPTIONS publishes and what the grant endpoint enforces — the rule
-// `authorization_servers.js` states for OAuth, for the same reason: there is no
-// second table of what this server does that could disagree with what it says.
+// authorization server (`/:as/...`) is one profile with one set of
+// capabilities, and since 2026-09-12 that profile carries GNAP's section 9
+// discovery members beside its RFC 8414 ones. The defaults come from the
+// `gnap.*` settings; the profile's overrides and removals apply on top; and the
+// RESULT is both what OPTIONS publishes and what the grant endpoint enforces —
+// the rule `authorization_servers.js` states for OAuth, for the same reason:
+// there is no second table of what this server does that could disagree with
+// what it says.
 // ---------------------------------------------------------------------------
-const GNAP_MEMBERS = ['interaction_start_modes_supported', 'interaction_finish_methods_supported',
-  'key_proofs_supported', 'sub_id_formats_supported', 'assertion_formats_supported',
+const GNAP_MEMBERS = ['interaction_start_modes_supported',
+  'interaction_finish_methods_supported',
+  'key_proofs_supported', 'sub_id_formats_supported',
+  'assertion_formats_supported',
   'key_rotation_supported', 'token_formats_supported'];
 
 function defaultCapabilities(req, asId) {
+  log.debug("Entering defaultCapabilities().");
   const startModes = csv('gnap.interactionStartModes').filter(function (m) {
     return request.START_MODES.indexOf(m) >= 0;
   });
   const finish = csv('gnap.finishMethods').filter(function (m) {
-    return request.FINISH_METHODS.indexOf(m) >= 0 && (m !== 'push' || config.value('gnap.pushFinish'));
+    return request.FINISH_METHODS.indexOf(m) >= 0 &&
+           (m !== 'push' || config.value('gnap.pushFinish'));
   });
+  log.debug("Leaving defaultCapabilities().");
   return {
     grant_request_endpoint: grantEndpointOf(req, asId),
     interaction_start_modes_supported: startModes,
@@ -189,7 +219,8 @@ function defaultCapabilities(req, asId) {
     sub_id_formats_supported: csv('gnap.subIdFormats').filter(function (f) {
       return subject.SUB_ID_FORMATS_SUPPORTED.indexOf(f) >= 0;
     }),
-    assertion_formats_supported: csv('gnap.assertionFormats').filter(function (f) {
+    assertion_formats_supported: csv('gnap.assertionFormats').filter(
+        function (f) {
       return subject.ASSERTION_FORMATS_SUPPORTED.indexOf(f) >= 0;
     }),
     key_rotation_supported: !!config.value('gnap.keyRotation'),
@@ -200,8 +231,10 @@ function defaultCapabilities(req, asId) {
 }
 
 function capabilities(req, asId) {
+  log.debug("Entering capabilities().");
   const defaults = defaultCapabilities(req, asId);
-  const merged = authorizationServers.capabilitiesOf(asId || authorizationServers.DEFAULT_ID,
+  const merged = authorizationServers.capabilitiesOf(
+      asId || authorizationServers.DEFAULT_ID,
                                                      defaults, 'gnap');
   const out = { grant_request_endpoint: defaults.grant_request_endpoint };
   GNAP_MEMBERS.forEach(function (member) {
@@ -209,6 +242,7 @@ function capabilities(req, asId) {
       out[member] = merged[member];
     }
   });
+  log.debug("Leaving capabilities().");
   return out;
 }
 
@@ -216,14 +250,19 @@ function capabilities(req, asId) {
 // OAuth side reads as "enforce nothing" (authorization_servers.js), and so does
 // this one.
 function capabilityList(req, asId, member) {
+  log.debug("Entering capabilityList().");
   const value = capabilities(req, asId)[member];
   if (value === undefined) {
+    log.debug("Leaving capabilityList().");
     return null;
   }
+  log.debug("Leaving capabilityList().");
   return Array.isArray(value) ? value.map(String) : [String(value)];
 }
 
 function allows(list, value) {
+  log.debug("Entering allows().");
+  log.debug("Leaving allows().");
   return list === null || list.indexOf(value) >= 0;
 }
 
@@ -233,6 +272,8 @@ function allows(list, value) {
 // instance identifier, or by a dynamic one this AS issued.
 // ---------------------------------------------------------------------------
 function gnapApplications() {
+  log.debug("Entering gnapApplications().");
+  log.debug("Leaving gnapApplications().");
   return applications.list().filter(function (app) {
     return (app.kinds || []).some(function (kind) {
       return kind === KIND_CLIENT || kind === KIND_RS;
@@ -242,38 +283,52 @@ function gnapApplications() {
 }
 
 function registeredKeyIdentity(app) {
+  log.debug("Entering registeredKeyIdentity().");
   const raw = field(app, 'gnapKey');
   if (!raw) {
+    log.debug("Leaving registeredKeyIdentity().");
     return null;
   }
   try {
     const described = keys.describe(JSON.parse(raw), {});
+    log.debug("Leaving registeredKeyIdentity().");
     return described.ok ? described.identity : null;
   } catch (e) {
     // A registered key that is not JSON. The console refuses to write one; an
     // LDAP modify can. It identifies nobody, and the log says which entry.
-    log.warn(errorCodes.tag('STS-GNAP-0652') + 'gnap: the application "' + app.identifier +
+    log.warn(errorCodes.tag('STS-GNAP-0652') + 'gnap: the application "' +
+             app.identifier +
              '" carries a gnapKey that is not a JSON key object: ' + e.message);
+    log.debug("Leaving registeredKeyIdentity().");
     return null;
   }
 }
 
 function appByKeyIdentity(identity) {
+  log.debug("Entering appByKeyIdentity().");
+  log.debug("Leaving appByKeyIdentity().");
   return gnapApplications().filter(function (app) {
-    return registeredKeyIdentity(app) === identity || field(app, 'gnapKeyIdentity') === identity;
+    return registeredKeyIdentity(app) === identity ||
+           field(app, 'gnapKeyIdentity') === identity;
   })[0] || null;
 }
 
 function appByInstanceId(instanceId) {
+  log.debug("Entering appByInstanceId().");
   const dynamic = store.instanceById(instanceId);
   if (dynamic) {
     const app = applications.get(dynamic.identifier);
+    log.debug("Leaving appByInstanceId().");
     return app ? { app: app, key: dynamic.key, dynamic: true } : null;
   }
   const app = gnapApplications().filter(function (one) {
     return field(one, 'gnapInstanceId') === instanceId;
   })[0];
-  return app ? { app: app, key: field(app, 'gnapKey') ? JSON.parse(field(app, 'gnapKey')) : null,
+  log.debug("Leaving appByInstanceId().");
+  return app ?
+         { app: app,
+                 key: field(app, 'gnapKey') ?
+                      JSON.parse(field(app, 'gnapKey')) : null,
                  dynamic: false } : null;
 }
 
@@ -297,19 +352,23 @@ function resolveKeyReference(reference) {
       // Still ciphertext: the opened view could not open it. Refused rather
       // than used — a MAC keyed with ciphertext would verify nothing any client
       // could produce, and the log names the entry.
-      log.warn(errorCodes.tag('STS-GNAP-0653') + 'gnap: the shared key on "' + app.identifier +
-               '" could not be opened with this process\'s key-encryption key.');
+      log.warn(errorCodes.tag('STS-GNAP-0653') + 'gnap: the shared key on "' +
+               app.identifier +
+               '" could not be opened with this process\'s key-encryption ' +
+               'key.');
       log.debug("Leaving resolveKeyReference(). Sealed and unopenable.");
       return null;
     }
     if (bytes.length < 32) {
-      // Section 7.1.2: a symmetric key "MUST NOT be a human-memorable password".
-      // Thirty-two bytes is HS256's own key length.
+      // Section 7.1.2: a symmetric key "MUST NOT be a human-memorable
+      // password". Thirty-two bytes is HS256's own key length.
       bytes = null;
     }
     log.debug("Leaving resolveKeyReference(). Shared secret.");
-    return bytes ? { secret: bytes, proof: field(app, 'gnapKeyProof') || 'httpsig',
-                     alg: field(app, 'gnapSymmetricAlg') || 'HS256', app: app } : null;
+    return bytes ?
+           { secret: bytes, proof: field(app, 'gnapKeyProof') || 'httpsig',
+                     alg: field(app, 'gnapSymmetricAlg') ||
+                          'HS256', app: app } : null;
   }
   const raw = field(app, 'gnapKey');
   log.debug("Leaving resolveKeyReference(). Registered public key.");
@@ -332,37 +391,52 @@ function identifyCaller(req, body, member, kind, options) {
     const found = appByInstanceId(member.reference);
     if (!found) {
       log.debug("Leaving identifyCaller(). Unknown instance identifier.");
-      return refusal('STS-GNAP-0080', 'the instance identifier is not one this authorization ' +
-                     'server knows (RFC 9635 section 2.3.1).',
-                     kind === KIND_RS ? 'invalid_resource_server' : 'invalid_client', 401);
+      return refusal('STS-GNAP-0080', 'the instance identifier is not one ' +
+                     'this authorization server knows (RFC 9635 section ' +
+                     '2.3.1).',
+                     kind === KIND_RS ? 'invalid_resource_server' :
+                     'invalid_client', 401);
     }
     app = found.app;
     instanceId = member.reference;
     if (found.key) {
-      descriptor = keys.describe(found.key, { resolveReference: resolveKeyReference });
+      descriptor = keys.describe(found.key,
+                                 { resolveReference: resolveKeyReference });
     } else if (field(app, 'gnapKeyReference')) {
-      descriptor = keys.describe(field(app, 'gnapKeyReference'), { resolveReference: resolveKeyReference });
+      descriptor = keys.describe(field(app, 'gnapKeyReference'),
+                                 { resolveReference: resolveKeyReference });
     } else {
-      descriptor = refusal('STS-GNAP-0081', 'the application "' + app.identifier + '" has no key ' +
-                           'registered to verify its requests with.', 'invalid_client', 401);
+      descriptor = refusal('STS-GNAP-0081',
+                           'the application "' + app.identifier + '" ' +
+                           'has no key registered to verify its requests ' +
+                           'with.', 'invalid_client', 401);
     }
   } else {
-    descriptor = keys.describe(member.key, { resolveReference: resolveKeyReference });
+    descriptor = keys.describe(member.key,
+                               { resolveReference: resolveKeyReference });
   }
   if (!descriptor.ok) {
-    log.debug("Leaving identifyCaller(). The key is refused: " + descriptor.why);
+    log.debug("Leaving identifyCaller(). The key is refused: " +
+              descriptor.why);
     descriptor.status = 401;
     if (kind === KIND_RS && descriptor.gnapError === 'invalid_client') {
       descriptor.gnapError = 'invalid_resource_server';
     }
+    log.debug("Leaving identifyCaller().");
     return descriptor;
   }
-  const verified = proof.verifyRequest(req, body, descriptor, { accessToken: opts.accessToken || null });
+  const verified = proof.verifyRequest(req, body, descriptor,
+                                       { accessToken: opts.accessToken ||
+                                                      null });
   if (!verified.ok) {
     log.debug("Leaving identifyCaller(). Proof refused: " + verified.why);
     monitor.record(app ? app.identifier : '(unidentified)', 'proof.failed',
-                   { gnapError: kind === KIND_RS ? 'invalid_resource_server' : 'invalid_client' });
-    return Object.assign(verified, { gnapError: kind === KIND_RS ? 'invalid_resource_server'
+                   { gnapError: kind === KIND_RS ? 'invalid_resource_server' :
+                                'invalid_client' });
+    log.debug("Leaving identifyCaller().");
+    return Object.assign(verified,
+                         { gnapError: kind === KIND_RS ?
+                                      'invalid_resource_server'
                                                                   : 'invalid_client', status: 401 });
   }
   if (!app && descriptor.reference) {
@@ -379,44 +453,59 @@ function identifyCaller(req, body, member, kind, options) {
     // product does not (the header).
     if (!mode.autoCreates()) {
       log.debug("Leaving identifyCaller(). Unregistered key in product mode.");
-      return refusal('STS-GNAP-0082', 'this key is not registered with this authorization ' +
-                     'server, and in product mode an application must be provisioned before it ' +
-                     'can make requests (RFC 9635 section 2.3.3).',
-                     kind === KIND_RS ? 'invalid_resource_server' : 'invalid_client', 401);
+      return refusal('STS-GNAP-0082', 'this key is not registered with this ' +
+                     'authorization server, and in product mode an ' +
+                     'application must be provisioned before it can make ' +
+                     'requests (RFC 9635 section 2.3.3).',
+                     kind === KIND_RS ? 'invalid_resource_server' :
+                     'invalid_client', 401);
     }
-    const identifier = 'gnap-' + descriptor.identity.replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 48);
-    const fields = { gnapKey: JSON.stringify(descriptor.value), gnapKeyIdentity: descriptor.identity };
+    const identifier = 'gnap-' +
+                       descriptor.identity.replace(/[^A-Za-z0-9_-]/g, '-')
+                                          .slice(0, 48);
+    const fields = { gnapKey: JSON.stringify(descriptor.value),
+                     gnapKeyIdentity: descriptor.identity };
     if (member.classId) {
       fields.gnapClassId = member.classId;
     }
     if (member.display && member.display.uri) {
       fields.gnapDisplayUri = member.display.uri;
     }
-    if (member.display && member.display.logoUri && member.display.logoUri.length < 2048) {
+    if (member.display && member.display.logoUri &&
+        member.display.logoUri.length < 2048) {
       fields.gnapLogoUri = member.display.logoUri;
     }
     applications.seen({ identifier: identifier, kind: kind, protocol: PROTOCOL,
-                        name: (member.display && member.display.name) || undefined,
+                        name: (member.display &&
+                               member.display.name) || undefined,
                         counts: false, fields: fields,
-                        note: 'Created on first sight of a proved GNAP key (development mode).' });
+                        note: 'Created on first sight of a proved GNAP key ' +
+                              '(development mode).' });
     app = applications.get(identifier);
     created = true;
     if (!app) {
       log.debug("Leaving identifyCaller(). The entry could not be created.");
-      return refusal('STS-GNAP-0083', 'the application entry for this key could not be created.',
+      return refusal('STS-GNAP-0083', 'the application entry for this key ' +
+                                      'could not be created.',
                      'invalid_client', 401);
     }
   } else {
-    applications.seen({ identifier: app.identifier, kind: kind, protocol: PROTOCOL, counts: false });
+    applications.seen({ identifier: app.identifier, kind: kind,
+                        protocol: PROTOCOL, counts: false });
   }
-  log.debug("Leaving identifyCaller(). app=" + app.identifier + ", created=" + created);
-  return { ok: true, app: app, descriptor: descriptor, proof: verified, instanceId: instanceId,
+  log.debug("Leaving identifyCaller(). app=" + app.identifier + ", created=" +
+            created);
+  return { ok: true, app: app, descriptor: descriptor, proof: verified,
+           instanceId: instanceId,
            created: created,
           // Section 2.3: "the pre-registered values MUST take precedence".
            display: {
-             name: app.name || (member.display && member.display.name) || app.identifier,
-             uri: field(app, 'gnapDisplayUri') || (member.display && member.display.uri) || null,
-             logoUri: field(app, 'gnapLogoUri') || (member.display && member.display.logoUri) || null
+             name: app.name || (member.display && member.display.name) ||
+                   app.identifier,
+             uri: field(app, 'gnapDisplayUri') ||
+                  (member.display && member.display.uri) || null,
+             logoUri: field(app, 'gnapLogoUri') ||
+                      (member.display && member.display.logoUri) || null
            },
            classId: field(app, 'gnapClassId') || member.classId || null };
 }
@@ -425,21 +514,29 @@ function identifyCaller(req, body, member, kind, options) {
 // ACCESS POLICY for one requested token.
 // ---------------------------------------------------------------------------
 function canonicalJson(value) {
+  log.debug("Entering canonicalJson().");
   if (Array.isArray(value)) {
     const items = value.map(canonicalJson);
-    return '[' + (value.every(function (one) { return typeof one === 'string'; })
+    log.debug("Leaving canonicalJson().");
+    return '[' +
+           (value.every(function (one) { return typeof one === 'string'; })
       ? items.slice().sort() : items).join(',') + ']';
   }
   if (value && typeof value === 'object') {
+    log.debug("Leaving canonicalJson().");
     return '{' + Object.keys(value).sort().map(function (name) {
       return JSON.stringify(name) + ':' + canonicalJson(value[name]);
     }).join(',') + '}';
   }
+  log.debug("Leaving canonicalJson().");
   return JSON.stringify(value);
 }
 
 function digestTokenOf(right) {
-  return 'gnap:' + nodeCrypto.createHash('sha256').update(canonicalJson(right), 'utf8')
+  log.debug("Entering digestTokenOf().");
+  log.debug("Leaving digestTokenOf().");
+  return 'gnap:' +
+         nodeCrypto.createHash('sha256').update(canonicalJson(right), 'utf8')
     .digest('base64url').slice(0, 22);
 }
 
@@ -453,14 +550,16 @@ function accessProblem(app, access) {
     const name = typeof right === 'string' ? right : right.type;
     if (allowed.length && allowed.indexOf(name) < 0) {
       log.debug("Leaving accessProblem(). Not allowed for this client.");
-      return 'the right "' + name + '" is not one this client instance may request';
+      return 'the right "' + name + '" is not one this client instance may ' +
+                                    'request';
     }
     if (typeof right === 'string' && !store.resourceByReference(right) &&
-        String(config.value('gnap.unknownAccessReferences') || 'accept') === 'refuse' &&
+        String(config.value('gnap.unknownAccessReferences') ||
+               'accept') === 'refuse' &&
         allowed.indexOf(right) < 0) {
       log.debug("Leaving accessProblem(). Unknown reference refused.");
-      return 'the access reference "' + right + '" names nothing registered with this ' +
-             'authorization server';
+      return 'the access reference "' + right + '" names nothing registered ' +
+             'with this authorization server';
     }
   }
   log.debug("Leaving accessProblem().");
@@ -471,6 +570,7 @@ function accessProblem(app, access) {
 // RESOURCE SERVERS AND TOKEN FORMAT for a set of rights.
 // ---------------------------------------------------------------------------
 function resourceServersFor(access) {
+  log.debug("Entering resourceServersFor().");
   const found = {};
   (access || []).forEach(function (right) {
     if (typeof right === 'string') {
@@ -490,12 +590,14 @@ function resourceServersFor(access) {
       });
     });
   });
+  log.debug("Leaving resourceServersFor().");
   return Object.keys(found);
 }
 
 function chooseFormat(req, grant, access, rsIds) {
   log.debug("Entering chooseFormat().");
-  const enabled = capabilityList(req, grant.as, 'token_formats_supported') || tokens.FORMATS;
+  const enabled = capabilityList(req, grant.as, 'token_formats_supported') ||
+                  tokens.FORMATS;
   let candidates = enabled.slice();
   (access || []).forEach(function (right) {
     if (typeof right === 'string') {
@@ -508,7 +610,8 @@ function chooseFormat(req, grant, access, rsIds) {
     }
   });
   if (!candidates.length) {
-    log.debug("Leaving chooseFormat(). No format satisfies every resource set.");
+    log.debug("Leaving chooseFormat(). No format satisfies every resource " +
+              "set.");
     return null;
   }
   const preferences = [];
@@ -522,7 +625,8 @@ function chooseFormat(req, grant, access, rsIds) {
   if (field(client, 'gnapAccessTokenFormat')) {
     preferences.push(field(client, 'gnapAccessTokenFormat'));
   }
-  preferences.push(String(config.value('gnap.accessTokenFormat') || 'jwt-signed'));
+  preferences.push(String(config.value('gnap.accessTokenFormat') ||
+                          'jwt-signed'));
   const chosen = preferences.filter(function (format) {
     return candidates.indexOf(format) >= 0;
   })[0] || candidates[0];
@@ -539,7 +643,9 @@ function chooseFormat(req, grant, access, rsIds) {
 // token the AS refused (section 3.2.2 allows that).
 // ---------------------------------------------------------------------------
 async function issueTokens(req, grant, requests, multiple) {
-  log.debug("Entering issueTokens(). grant=" + grant.id + ", " + requests.length + " token(s)");
+  log.debug("Entering issueTokens(). grant=" + grant.id + ", " +
+      requests.length + " " +
+      "token(s)");
   const out = [];
   const base = realmBase(req);
   const client = applications.get(grant.client.identifier);
@@ -553,13 +659,16 @@ async function issueTokens(req, grant, requests, multiple) {
       application: grant.client.identifier,
       kind: gate.ISSUANCE.ACCESS_TOKEN,
       subject: username ? { kind: 'user', name: username, authenticated: true }
-                        : { kind: 'application', name: grant.client.identifier, authenticated: true },
+                        : { kind: 'application', name: grant.client.identifier,
+                            authenticated: true },
       claims: null
     });
     if (!allowed.allowed) {
-      log.info('gnap: the issuance policy refused a token for grant ' + grant.id + ': ' + allowed.why);
+      log.info('gnap: the issuance policy refused a token for grant ' +
+               grant.id + ': ' + allowed.why);
       audit.failure('STS-GNAP-0090', { protocol: PROTOCOL, channel: 'http',
-        target: grant.client.identifier, summary: 'The issuance policy refused a GNAP access token',
+        target: grant.client.identifier, summary: 'The issuance policy ' +
+                                                  'refused a GNAP access token',
         detail: { grant: grant.id, why: String(allowed.why || '') } });
       continue;
     }
@@ -567,13 +676,16 @@ async function issueTokens(req, grant, requests, multiple) {
     const format = chooseFormat(req, grant, asked.access, rsIds);
     if (!format) {
       audit.failure('STS-GNAP-0091', { protocol: PROTOCOL, channel: 'http',
-        target: grant.client.identifier, summary: 'No token format satisfies every requested resource set',
+        target: grant.client.identifier, summary: 'No token format satisfies ' +
+                                                  'every requested resource ' +
+                                                  'set',
         detail: { grant: grant.id } });
       continue;
     }
     const iat = nowSec();
     const lifetime = Number(applications.settingFor(grant.client.identifier,
-                                                    'gnap.accessTokenLifetimeS', config)) || 3600;
+                                                    'gnap.accessTokenLifetimeS',
+                                                    config)) || 3600;
     const durable = !!config.value('gnap.durableTokens');
     const flags = [];
     if (asked.bearer) {
@@ -582,9 +694,12 @@ async function issueTokens(req, grant, requests, multiple) {
     if (durable) {
       flags.push('durable');
     }
-    const keyDescriptor = keys.describe(grant.client.key, { resolveReference: resolveKeyReference });
+    const keyDescriptor = keys.describe(grant.client.key,
+                                        { resolveReference:
+                                            resolveKeyReference });
     const audience = rsIds.slice();
-    if (!audience.length && (config.value('gnap.demoResourceServer') !== false)) {
+    if (!audience.length &&
+        (config.value('gnap.demoResourceServer') !== false)) {
       // A token for nobody in particular is valid at the demonstration RS,
       // which is how a client can present one somewhere at all.
       audience.push(base + '/gnap/rs/resource');
@@ -610,9 +725,11 @@ async function issueTokens(req, grant, requests, multiple) {
         jweKey = JSON.parse(field(rs, 'gnapJweKey'));
       } catch (e) {
         // Not a JWK: encrypted to this AS instead, and said so.
-        log.warn(errorCodes.tag('STS-GNAP-0654') + 'gnap: "' + rs.identifier + '" carries a ' +
-                 'gnapJweKey that is not JSON; jwt-encrypted tokens for it are encrypted to this ' +
-                 'authorization server instead: ' + e.message);
+        log.warn(errorCodes.tag('STS-GNAP-0654') + 'gnap: "' + rs.identifier +
+                 '" ' +
+                 'carries a gnapJweKey that is not JSON; jwt-encrypted ' +
+                 'tokens for it are encrypted to this authorization server ' +
+                 'instead: ' + e.message);
       }
     }
     let minted;
@@ -621,16 +738,20 @@ async function issueTokens(req, grant, requests, multiple) {
         rs: rs ? { identity: rs.identifier, jweKey: jweKey } : null,
         sessionId: grant.ro ? grant.ro.sessionId : null, setId: grant.id });
     } catch (e) {
-      log.error(errorCodes.tag('STS-GNAP-0092') + 'gnap: a ' + format + ' access token could not ' +
-                'be minted for grant ' + grant.id + ': ' + e.message);
+      log.error(errorCodes.tag('STS-GNAP-0092') + 'gnap: a ' + format + ' ' +
+                'access token could not be minted for ' +
+                'grant ' + grant.id + ': ' + e.message);
       continue;
     }
     const record = store.putToken(Object.assign({}, model, {
-      format: format, grantId: grant.id, as: grant.as, key: asked.bearer ? null : grant.client.key,
-      proof: asked.bearer ? null : keyDescriptor.proof, revoked: false, createdAt: iat,
+      format: format, grantId: grant.id, as: grant.as,
+      key: asked.bearer ? null : grant.client.key,
+      proof: asked.bearer ? null :
+             keyDescriptor.proof, revoked: false, createdAt: iat,
       rsIdentifiers: rsIds, username: username
     }), minted.value);
-    const response = { value: minted.value, access: asked.access, expires_in: lifetime };
+    const response = { value: minted.value, access: asked.access,
+                       expires_in: lifetime };
     if (asked.label) {
       response.label = asked.label;
     }
@@ -648,23 +769,30 @@ async function issueTokens(req, grant, requests, multiple) {
     if (rsIds.length === 1) {
       monitor.record(rsIds[0], 'rs.presented', {});
     }
-    audit.audit({ action: 'gnap.token.issue', category: 'protocol', protocol: PROTOCOL,
-      channel: 'http', outcome: 'success', actor: username || grant.client.identifier,
+    audit.audit({ action: 'gnap.token.issue', category: 'protocol',
+      protocol: PROTOCOL,
+      channel: 'http', outcome: 'success', actor: username ||
+                                                  grant.client.identifier,
       target: grant.client.identifier,
       summary: 'A GNAP ' + format + ' access token was issued',
-      detail: { grant: grant.id, jti: record.jti, format: format, bearer: !!asked.bearer,
+      detail: { grant: grant.id, jti: record.jti, format: format,
+                bearer: !!asked.bearer,
                 label: asked.label || '' } });
     out.push(response);
   }
   if (client) {
-    applications.seen({ identifier: client.identifier, kind: KIND_CLIENT, protocol: PROTOCOL,
-                        counts: true, user: grant.ro ? grant.ro.username : undefined,
+    applications.seen({ identifier: client.identifier, kind: KIND_CLIENT,
+                        protocol: PROTOCOL,
+                        counts: true, user: grant.ro ? grant.ro.username :
+                                            undefined,
                         sessionId: grant.ro ? grant.ro.sessionId : undefined });
   }
   log.debug("Leaving issueTokens(). " + out.length + " issued.");
   if (!out.length) {
+    log.debug("Leaving issueTokens().");
     return null;
   }
+  log.debug("Leaving issueTokens().");
   return multiple ? out : out[0];
 }
 
@@ -678,10 +806,13 @@ async function releaseSubject(req, grant) {
   const oauth2 = require('../oauth-oidc/oauth2');
   const issuer = oauth2.issuerOf(realmBase(req));
   const formats = grant.request.subject.subIdFormats.filter(function (format) {
-    return allows(capabilityList(req, grant.as, 'sub_id_formats_supported'), format);
+    return allows(capabilityList(req, grant.as, 'sub_id_formats_supported'),
+                  format);
   });
-  const assertionFormats = grant.request.subject.assertionFormats.filter(function (format) {
-    return allows(capabilityList(req, grant.as, 'assertion_formats_supported'), format);
+  const assertionFormats = grant.request.subject.assertionFormats.filter(
+      function (format) {
+    return allows(capabilityList(req, grant.as, 'assertion_formats_supported'),
+                  format);
   });
   const out = {};
   const ids = subject.subIdsFor(grant.ro.username, formats, { issuer: issuer });
@@ -689,18 +820,22 @@ async function releaseSubject(req, grant) {
     out.sub_ids = ids;
   }
   const wanted = assertionFormats.filter(function (format) {
-    const kind = format === 'id_token' ? gate.ISSUANCE.ID_TOKEN : gate.ISSUANCE.SAML_ASSERTION;
+    const kind = format === 'id_token' ? gate.ISSUANCE.ID_TOKEN :
+                 gate.ISSUANCE.SAML_ASSERTION;
     return gate.check({ application: grant.client.identifier, kind: kind,
-                        subject: { kind: 'user', name: grant.ro.username, authenticated: true },
+                        subject: { kind: 'user', name: grant.ro.username,
+                                   authenticated: true },
                         claims: null }).allowed;
   });
   if (wanted.length) {
     out.assertions = await subject.assertionsFor(grant.ro.username, wanted, {
-      oauthBase: realmBase(req), instanceId: grant.client.identifier, issuer: issuer,
+      oauthBase: realmBase(req), instanceId: grant.client.identifier,
+      issuer: issuer,
       authTime: grant.ro.authTime, amr: grant.ro.amr, acr: grant.ro.acr,
       sessionId: grant.ro.sessionId, setId: grant.id });
   }
-  out.updated_at = new Date((grant.ro.authTime || nowSec()) * 1000).toISOString();
+  out.updated_at = new Date((grant.ro.authTime ||
+                             nowSec()) * 1000).toISOString();
   monitor.record(grant.client.identifier, 'subject.released', {});
   log.debug("Leaving releaseSubject().");
   return out;
@@ -713,15 +848,22 @@ async function releaseSubject(req, grant) {
 // that.
 // ---------------------------------------------------------------------------
 function continueMember(req, grant) {
+  log.debug("Entering continueMember().");
   const value = store.issueContinuation(grant);
   const wait = Math.max(0, Number(config.value('gnap.continueWaitS')));
   grant.continueNotBefore = nowSec() + (Number.isFinite(wait) ? wait : 5);
-  return { access_token: { value: value }, uri: realmBase(req) + '/gnap/continue/' + grant.id,
+  log.debug("Leaving continueMember().");
+  return { access_token: { value: value },
+           uri: realmBase(req) + '/gnap/continue/' + grant.id,
            wait: Number.isFinite(wait) ? wait : 5 };
 }
 
 function newUserCode() {
-  const length = Math.min(8, Math.max(6, Number(config.value('gnap.userCodeLength')) || 8));
+  log.debug("Entering newUserCode().");
+  const length = Math.min(8,
+                          Math.max(6,
+                                   Number(config.value(
+                                       'gnap.userCodeLength')) || 8));
   for (let attempt = 0; attempt < 20; attempt++) {
     let code = '';
     const bytes = nodeCrypto.randomBytes(length);
@@ -729,14 +871,18 @@ function newUserCode() {
       code += USER_CODE_ALPHABET[bytes[i] % USER_CODE_ALPHABET.length];
     }
     if (!store.userCodeTaken(code)) {
+      log.debug("Leaving newUserCode().");
       return code;
     }
   }
+  log.debug("Leaving newUserCode().");
   return null;
 }
 
 // Section 4.1.2: strip what is not in the alphabet, compare case-insensitively.
 function normaliseUserCode(input) {
+  log.debug("Entering normaliseUserCode().");
+  log.debug("Leaving normaliseUserCode().");
   return String(input || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
@@ -747,37 +893,47 @@ function normaliseUserCode(input) {
 // ---------------------------------------------------------------------------
 function startInteraction(req, grant, app, interact) {
   log.debug("Entering startInteraction(). grant=" + grant.id);
-  const supportedStarts = capabilityList(req, grant.as, 'interaction_start_modes_supported');
+  const supportedStarts = capabilityList(req, grant.as,
+                                         'interaction_start_modes_supported');
   const appModes = fieldValues(app, 'gnapInteractionStartModes');
   const usable = interact.start.filter(function (mode) {
-    return request.START_MODES.indexOf(mode) >= 0 && allows(supportedStarts, mode) &&
+    return request.START_MODES.indexOf(mode) >= 0 &&
+           allows(supportedStarts, mode) &&
       (!appModes.length || appModes.indexOf(mode) >= 0);
   });
-  const finishMethods = capabilityList(req, grant.as, 'interaction_finish_methods_supported');
+  const finishMethods = capabilityList(req, grant.as,
+                                       'interaction_finish_methods_supported');
   let finish = null;
-  if (interact.finish && request.FINISH_METHODS.indexOf(interact.finish.method) >= 0 &&
+  if (interact.finish &&
+      request.FINISH_METHODS.indexOf(interact.finish.method) >= 0 &&
       allows(finishMethods, interact.finish.method)) {
     finish = interact.finish;
   }
   if (!usable.length && !(finish && finish.method === 'push')) {
     log.debug("Leaving startInteraction(). No usable start mode.");
-    return refusal('STS-GNAP-0100', 'none of the interaction start modes offered (' +
-                   (interact.start.join(', ') || 'none') + ') is supported for this client, and ' +
-                   'this authorization server cannot reach the resource owner another way ' +
-                   '(RFC 9635 section 2.5).', 'invalid_interaction');
+    return refusal('STS-GNAP-0100', 'none of the interaction start modes ' +
+                                    'offered (' +
+                   (interact.start.join(', ') || 'none') + ') is supported ' +
+                   'for this client, and this authorization server cannot ' +
+                   'reach the resource owner another way (RFC 9635 section ' +
+                   '2.5).', 'invalid_interaction');
   }
   if (finish) {
     const addresses = applications.returnAddressesOf(app, 'gnapFinishUri');
     const registered = (addresses.registered || []).indexOf(finish.uri) >= 0;
     if (!mode.acceptsUnregisteredAddresses() && !registered) {
-      log.debug("Leaving startInteraction(). Finish URI not registered (product).");
-      return refusal('STS-GNAP-0101', 'the interaction finish URI is not registered for this ' +
-                     'client instance, and in product mode only a registered one is used ' +
-                     '(RFC 9635 sections 2.5.2 and 11.18).', 'invalid_interaction');
+      log.debug("Leaving startInteraction(). Finish URI not registered " +
+                "(product).");
+      return refusal('STS-GNAP-0101', 'the interaction finish URI is not ' +
+                     'registered for this client instance, and in product ' +
+                     'mode only a registered one is used (RFC 9635 sections ' +
+                     '2.5.2 and 11.18).', 'invalid_interaction');
     }
     if (mode.acceptsUnregisteredAddresses() && !registered) {
-      applications.seen({ identifier: app.identifier, kind: KIND_CLIENT, protocol: PROTOCOL,
-                          counts: false, fields: { gnapFinishUri: finish.uri } });
+      applications.seen({ identifier: app.identifier, kind: KIND_CLIENT,
+                          protocol: PROTOCOL,
+                          counts: false, fields: {
+                            gnapFinishUri: finish.uri } });
     }
     if (finish.method === 'push') {
       const problem = transport.urlProblem(finish.uri);
@@ -790,16 +946,20 @@ function startInteraction(req, grant, app, interact) {
     if (!/^https:/i.test(finish.uri) && !mode.acceptsUnregisteredAddresses() &&
         !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/)/i.test(finish.uri) &&
         /^http:/i.test(finish.uri)) {
-      log.debug("Leaving startInteraction(). Plain http finish URI in product.");
-      return refusal('STS-GNAP-0103', 'the finish URI must be https, localhost, or an ' +
-                     'application scheme (RFC 9635 section 2.5.2.1).', 'invalid_interaction');
+      log.debug("Leaving startInteraction(). Plain http finish URI in " +
+                "product.");
+      return refusal('STS-GNAP-0103', 'the finish URI must be https, ' +
+                     'localhost, or an application scheme (RFC 9635 section ' +
+                     '2.5.2.1).', 'invalid_interaction');
     }
   }
   const base = realmBase(req);
   const lifetime = Number(config.value('gnap.interactionLifetimeS')) || 600;
   const out = {};
-  const interaction = { modes: {}, finish: finish, serverNonce: null, expiresAt: nowSec() + lifetime,
-                        started: null, decided: false, decision: null, interactRef: null,
+  const interaction = { modes: {}, finish: finish, serverNonce: null,
+                        expiresAt: nowSec() + lifetime,
+                        started: null, decided: false, decision: null,
+                        interactRef: null,
                         approvalId: store.mint(18), hints: interact.hints };
   store.putInteraction('approve:' + interaction.approvalId, grant.id);
   usable.forEach(function (mode) {
@@ -807,13 +967,17 @@ function startInteraction(req, grant, app, interact) {
       const id = store.mint(18);
       interaction.modes[mode] = { id: id, used: false };
       store.putInteraction(mode + ':' + id, grant.id);
-      out[mode] = base + '/gnap/' + (mode === 'redirect' ? 'interact' : 'app') + '/' + id;
+      out[mode] = base + '/gnap/' + (mode === 'redirect' ? 'interact' : 'app') +
+                  '/' + id;
     } else if (mode === 'user_code' || mode === 'user_code_uri') {
-      const code = interaction.modes.user_code ? interaction.modes.user_code.code
-        : (interaction.modes.user_code_uri ? interaction.modes.user_code_uri.code : newUserCode());
+      const code = interaction.modes.user_code ?
+                   interaction.modes.user_code.code
+        : (interaction.modes.user_code_uri ?
+           interaction.modes.user_code_uri.code : newUserCode());
       interaction.modes[mode] = { code: code, used: false };
       store.putUserCode(code, grant.id);
-      out[mode] = mode === 'user_code' ? code : { code: code, uri: base + '/gnap/code' };
+      out[mode] = mode === 'user_code' ? code :
+                  { code: code, uri: base + '/gnap/code' };
     }
   });
   if (finish) {
@@ -827,16 +991,21 @@ function startInteraction(req, grant, app, interact) {
   usable.forEach(function (mode) {
     monitor.record(app.identifier, 'interaction.' + mode, {});
   });
-  log.debug("Leaving startInteraction(). modes=" + usable.join(',') + ", finish=" +
+  log.debug("Leaving startInteraction(). modes=" + usable.join(',') + ", " +
+      "finish=" +
             (finish ? finish.method : 'none'));
   return { ok: true, interact: out };
 }
 
 // Section 4.2.3.
-function interactionHash(clientNonce, serverNonce, interactRef, grantEndpoint, hashMethod) {
+function interactionHash(clientNonce, serverNonce, interactRef, grantEndpoint,
+                         hashMethod) {
+  log.debug("Entering interactionHash().");
   const spec = request.HASH_METHODS[hashMethod || 'sha-256'];
   const digest = nodeCrypto.createHash(spec.node)
-    .update([clientNonce, serverNonce, interactRef, grantEndpoint].join('\n'), 'ascii').digest();
+    .update([clientNonce, serverNonce, interactRef, grantEndpoint].join('\n'),
+            'ascii').digest();
+  log.debug("Leaving interactionHash().");
   return digest.subarray(0, spec.bits / 8).toString('base64url');
 }
 
@@ -857,26 +1026,32 @@ async function createGrant(req, asId) {
   }
   const asked = parsed.request;
   const proofList = capabilityList(req, asId, 'key_proofs_supported');
-  const caller = identifyCaller(req, body, asked.client, asked.existingAccessToken ? KIND_RS : KIND_CLIENT);
+  const caller = identifyCaller(req, body, asked.client,
+                                asked.existingAccessToken ? KIND_RS :
+                                KIND_CLIENT);
   if (!caller.ok) {
     log.debug("Leaving createGrant(). Caller refused.");
     return caller;
   }
   if (!allows(proofList, caller.descriptor.proof.method)) {
     log.debug("Leaving createGrant(). Proof method not supported by this AS.");
-    return refusal('STS-GNAP-0110', 'this authorization server does not accept the "' +
-                   caller.descriptor.proof.method + '" proofing method (see key_proofs_supported).',
+    return refusal('STS-GNAP-0110', 'this authorization server does not ' +
+                                    'accept the "' +
+                   caller.descriptor.proof.method + '" proofing method (see ' +
+                                                    'key_proofs_supported).',
                    'invalid_client', 401);
   }
   const app = caller.app;
   const identifier = app.identifier;
   monitor.record(identifier, 'grant.requested', {});
   for (let i = 0; i < asked.tokens.length; i++) {
-    if (asked.tokens[i].bearer && (config.value('gnap.bearerTokens') === false ||
+    if (asked.tokens[i].bearer &&
+        (config.value('gnap.bearerTokens') === false ||
         field(app, 'gnapBearerTokens') === 'FALSE')) {
       log.debug("Leaving createGrant(). Bearer not allowed.");
-      return refusal('STS-GNAP-0111', 'this client instance may not be issued bearer tokens ' +
-                     '(RFC 9635 section 2.1.1).', 'invalid_flag');
+      return refusal('STS-GNAP-0111', 'this client instance may not be ' +
+                     'issued bearer tokens (RFC 9635 section ' +
+                     '2.1.1).', 'invalid_flag');
     }
     const problem = accessProblem(app, asked.tokens[i].access);
     if (problem) {
@@ -885,7 +1060,9 @@ async function createGrant(req, asId) {
     }
   }
   const oauth2 = require('../oauth-oidc/oauth2');
-  const resolved = subject.resolveUser(asked.user, { issuer: oauth2.issuerOf(realmBase(req)),
+  const resolved = subject.resolveUser(asked.user,
+                                       { issuer: oauth2.issuerOf(
+                                           realmBase(req)),
                                                      oauthIssuer: oauth2.issuerOf(realmBase(req)) });
   if (!resolved.ok) {
     log.debug("Leaving createGrant(). User refused.");
@@ -895,10 +1072,13 @@ async function createGrant(req, asId) {
     as: asId || authorizationServers.DEFAULT_ID,
     grantEndpoint: grantEndpointOf(req, asId),
     referer: String(req.headers.referer || '').slice(0, 512) || null,
-    client: { identifier: identifier, instanceId: caller.instanceId, key: caller.descriptor.value,
-              keyIdentity: caller.descriptor.identity, proof: caller.descriptor.proof.method,
+    client: { identifier: identifier, instanceId: caller.instanceId,
+              key: caller.descriptor.value,
+              keyIdentity: caller.descriptor.identity,
+              proof: caller.descriptor.proof.method,
               display: caller.display, classId: caller.classId },
-    request: { tokens: asked.tokens, multiple: asked.multiple, subject: asked.subject,
+    request: { tokens: asked.tokens, multiple: asked.multiple,
+               subject: asked.subject,
                interact: asked.interact },
     userHint: resolved.username,
     userVerified: resolved.verified,
@@ -907,11 +1087,16 @@ async function createGrant(req, asId) {
     delivered: false,
     polls: 0
   });
-  store.saveGrant(grant, 'requested by ' + identifier + ' (' + caller.descriptor.proof.method + ')');
-  audit.audit({ action: 'gnap.grant.request', category: 'protocol', protocol: PROTOCOL,
+  store.saveGrant(grant,
+                  'requested by ' + identifier + ' (' +
+                  caller.descriptor.proof.method + ')');
+  audit.audit({ action: 'gnap.grant.request', category: 'protocol',
+    protocol: PROTOCOL,
     channel: 'http', outcome: 'success', actor: identifier, target: identifier,
-    summary: 'A GNAP grant was requested', detail: { grant: grant.id, as: grant.as,
-      tokens: asked.tokens.length, subject: !!asked.subject, created: caller.created } });
+    summary: 'A GNAP grant was requested', detail: { grant: grant.id,
+      as: grant.as,
+      tokens: asked.tokens.length, subject: !!asked.subject,
+      created: caller.created } });
 
   // RFC 9767 section 4: a resource server deriving a downstream token.
   if (asked.existingAccessToken) {
@@ -921,9 +1106,11 @@ async function createGrant(req, asId) {
   }
 
   const response = {};
-  if (config.value('gnap.instanceIds') !== false && !caller.instanceId && caller.descriptor.format !== 'reference') {
+  if (config.value('gnap.instanceIds') !== false && !caller.instanceId &&
+      caller.descriptor.format !== 'reference') {
     const instanceId = store.mint(18);
-    store.putInstance(instanceId, { identifier: identifier, key: caller.descriptor.value });
+    store.putInstance(instanceId,
+                      { identifier: identifier, key: caller.descriptor.value });
     response.instance_id = instanceId;
   }
   // WITHOUT INTERACTION. A registered client marked `gnapSkipInteraction`
@@ -932,11 +1119,15 @@ async function createGrant(req, asId) {
   // with the RO") gets tokens with no RO, when it asks for no subject
   // information; with a VERIFIED user assertion it gets them for that person
   // (section 2.4).
-  const trusted = field(app, 'gnapSkipInteraction') === 'TRUE' && !caller.created;
+  const trusted = field(app, 'gnapSkipInteraction') === 'TRUE' &&
+                  !caller.created;
   if (trusted && (!asked.subject || resolved.verified)) {
-    grant.ro = resolved.verified ? { username: resolved.username, sessionId: null, authTime: nowSec(),
+    grant.ro = resolved.verified ?
+               { username: resolved.username, sessionId: null,
+                                     authTime: nowSec(),
                                      amr: ['assertion'], acr: null } : null;
-    grant.decision = { approved: true, tokens: asked.tokens, subject: !!asked.subject };
+    grant.decision = { approved: true, tokens: asked.tokens,
+                       subject: !!asked.subject };
     const released = await release(req, grant);
     Object.assign(response, released);
     monitor.record(identifier, 'grant.immediate', {});
@@ -945,17 +1136,21 @@ async function createGrant(req, asId) {
   }
   if (!asked.interact) {
     grant.state = STATE.FINALIZED;
-    store.saveGrant(grant, 'refused: interaction required and the client offers none');
-    monitor.record(identifier, 'grant.refused', { gnapError: 'invalid_interaction' });
+    store.saveGrant(grant, 'refused: interaction required and the client ' +
+                           'offers none');
+    monitor.record(identifier, 'grant.refused',
+                   { gnapError: 'invalid_interaction' });
     log.debug("Leaving createGrant(). Interaction needed, none offered.");
-    return refusal('STS-GNAP-0113', 'this request needs the resource owner\'s approval and the ' +
-                   'client offered no way to interact (RFC 9635 section 2.5).', 'invalid_interaction');
+    return refusal('STS-GNAP-0113', 'this request needs the resource ' +
+                   'owner\'s approval and the client offered no way to ' +
+                   'interact (RFC 9635 section 2.5).', 'invalid_interaction');
   }
   const started = startInteraction(req, grant, app, asked.interact);
   if (!started.ok) {
     grant.state = STATE.FINALIZED;
     store.saveGrant(grant, 'refused: ' + started.why);
-    monitor.record(identifier, 'grant.refused', { gnapError: started.gnapError });
+    monitor.record(identifier, 'grant.refused',
+                   { gnapError: started.gnapError });
     log.debug("Leaving createGrant(). Interaction refused.");
     return started;
   }
@@ -972,7 +1167,8 @@ async function release(req, grant) {
   const out = {};
   const requests = grant.decision.tokens || [];
   if (requests.length) {
-    const issued = await issueTokens(req, grant, requests, grant.request.multiple);
+    const issued = await issueTokens(req, grant, requests,
+                                     grant.request.multiple);
     if (issued) {
       out.access_token = issued;
     }
@@ -985,9 +1181,11 @@ async function release(req, grant) {
   }
   grant.state = STATE.APPROVED;
   grant.delivered = true;
-  grant.approvedAccess = accessRights.union ? accessRights.union((grant.approvedAccess || []),
+  grant.approvedAccess = accessRights.union ?
+                         accessRights.union((grant.approvedAccess || []),
     requests.reduce(function (all, one) { return all.concat(one.access); }, []))
-    : requests.reduce(function (all, one) { return all.concat(one.access); }, grant.approvedAccess || []);
+    : requests.reduce(function (all, one) { return all.concat(one.access); },
+                      grant.approvedAccess || []);
   if (config.value('gnap.continueAfterApproval') !== false) {
     out.continue = continueMember(req, grant);
   } else {
@@ -995,10 +1193,14 @@ async function release(req, grant) {
   }
   store.saveGrant(grant, 'approved and released');
   monitor.record(grant.client.identifier, 'grant.approved', {});
-  audit.audit({ action: 'gnap.grant.approve', category: 'protocol', protocol: PROTOCOL,
-    channel: 'http', outcome: 'success', actor: grant.ro ? grant.ro.username : grant.client.identifier,
-    target: grant.client.identifier, summary: 'A GNAP grant was approved and released',
-    detail: { grant: grant.id, tokens: out.access_token ? (Array.isArray(out.access_token)
+  audit.audit({ action: 'gnap.grant.approve', category: 'protocol',
+    protocol: PROTOCOL,
+    channel: 'http', outcome: 'success', actor: grant.ro ? grant.ro.username :
+                                                grant.client.identifier,
+    target: grant.client.identifier, summary: 'A GNAP grant was approved and ' +
+                                              'released',
+    detail: { grant: grant.id,
+              tokens: out.access_token ? (Array.isArray(out.access_token)
       ? out.access_token.length : 1) : 0, subject: !!out.subject } });
   log.debug("Leaving release().");
   return out;
@@ -1011,41 +1213,51 @@ async function deriveToken(req, grant, app, asked) {
   log.debug("Entering deriveToken().");
   if (config.value('gnap.tokenDerivation') === false) {
     log.debug("Leaving deriveToken(). Off.");
-    return refusal('STS-GNAP-0510', 'token derivation is not offered by this authorization server ' +
-                   '(RFC 9767 section 4).', 'request_denied', 403);
+    return refusal('STS-GNAP-0510', 'token derivation is not offered by this ' +
+                   'authorization server (RFC 9767 section ' +
+                   '4).', 'request_denied', 403);
   }
   const existing = store.tokenByValue(asked.existingAccessToken);
-  if (!existing || existing.revoked || (existing.exp && existing.exp < nowSec()) ||
+  if (!existing || existing.revoked ||
+      (existing.exp && existing.exp < nowSec()) ||
       tokens.isRevokedJti(existing.jti)) {
     log.debug("Leaving deriveToken(). Existing token not active.");
-    return refusal('STS-GNAP-0511', 'the existing access token is not active at this authorization ' +
-                   'server (RFC 9767 section 4).', 'invalid_request');
+    return refusal('STS-GNAP-0511', 'the existing access token is not active ' +
+                   'at this authorization server (RFC 9767 section ' +
+                   '4).', 'invalid_request');
   }
-  const rsNames = [app.identifier].concat(fieldValues(app, 'gnapResourceServerUri'));
+  const rsNames = [app.identifier].concat(fieldValues(app,
+                                                      'gnapResourceServerUri'));
   const forThisRs = !existing.aud.length || existing.aud.some(function (aud) {
     return rsNames.indexOf(aud) >= 0;
   });
   if (!forThisRs) {
     log.debug("Leaving deriveToken(). Existing token not for this RS.");
-    return refusal('STS-GNAP-0512', 'the existing access token was not issued for use at this ' +
-                   'resource server, so it cannot derive a token (RFC 9767 section 4).',
+    return refusal('STS-GNAP-0512', 'the existing access token was not ' +
+                   'issued for use at this resource server, so it cannot ' +
+                   'derive a token (RFC 9767 section 4).',
                    'request_denied', 403);
   }
   const requested = asked.tokens.length ? asked.tokens : [];
   for (let i = 0; i < requested.length; i++) {
     const covered = requested[i].access.every(function (right) {
-      return accessRights.accessCovers(existing.access, [right]) || typeof right === 'string' &&
-        !!store.resourceByReference(right) && resourceServersFor([right]).length;
+      return accessRights.accessCovers(existing.access, [right]) ||
+             typeof right === 'string' &&
+        !!store.resourceByReference(right) && resourceServersFor(
+            [right]).length;
     });
     if (!covered) {
-      log.debug("Leaving deriveToken(). Asks for more than the existing token.");
-      return refusal('STS-GNAP-0513', 'a derived token must not carry more access than the token ' +
-                     'it is derived from, except rights registered for a downstream resource ' +
+      log.debug("Leaving deriveToken(). Asks for more than the existing " +
+                "token.");
+      return refusal('STS-GNAP-0513', 'a derived token must not carry more ' +
+                     'access than the token it is derived from, except ' +
+                     'rights registered for a downstream resource ' +
                      'server.', 'request_denied', 403);
     }
   }
   grant.ro = existing.username ? { username: existing.username, sessionId: null,
-                                   authTime: existing.iat, amr: ['derived'], acr: null } : null;
+                                   authTime: existing.iat, amr: ['derived'],
+                                   acr: null } : null;
   grant.derivedFrom = existing.jti;
   grant.decision = { approved: true, tokens: requested, subject: false };
   const body = await release(req, grant);
@@ -1063,7 +1275,8 @@ async function deriveToken(req, grant, app, asked) {
 // what the page does next: the finish method's redirect URI, or a sentence.
 // ---------------------------------------------------------------------------
 async function decide(req, grant, session, selection) {
-  log.debug("Entering decide(). grant=" + grant.id + ", approve=" + selection.approve);
+  log.debug("Entering decide(). grant=" + grant.id + ", approve=" +
+            selection.approve);
   const interaction = grant.interaction;
   interaction.decided = true;
   const username = subject.normaliseName(session.user.username);
@@ -1074,8 +1287,10 @@ async function decide(req, grant, session, selection) {
     // error." Recorded as the decision, so the continuation says it.
     grant.decision = { approved: false, error: 'unknown_user' };
   } else if (selection.approve) {
-    grant.decision = { approved: true, tokens: selection.tokens, subject: !!selection.subject };
-    grant.ro = { username: username, sessionId: session.id, authTime: session.authTime,
+    grant.decision = { approved: true, tokens: selection.tokens,
+                       subject: !!selection.subject };
+    grant.ro = { username: username, sessionId: session.id,
+                 authTime: session.authTime,
                  amr: session.amr, acr: session.acr };
     if (config.value('gnap.rememberApprovals') !== false) {
       const digests = [];
@@ -1091,22 +1306,30 @@ async function decide(req, grant, session, selection) {
     signals.noteApprover(grant.client.identifier, username);
   } else {
     grant.decision = { approved: false, error: 'user_denied' };
-    grant.ro = { username: username, sessionId: session.id, authTime: session.authTime,
+    grant.ro = { username: username, sessionId: session.id,
+                 authTime: session.authTime,
                  amr: session.amr, acr: session.acr };
   }
-  monitor.record(grant.client.identifier, grant.decision.approved ? 'grant.approved' : 'grant.denied',
+  monitor.record(grant.client.identifier,
+                 grant.decision.approved ? 'grant.approved' : 'grant.denied',
                  { gnapError: grant.decision.error });
-  audit.audit({ action: grant.decision.approved ? 'gnap.grant.consent' : 'gnap.grant.deny',
+  audit.audit({ action: grant.decision.approved ? 'gnap.grant.consent' :
+                        'gnap.grant.deny',
     category: 'protocol', protocol: PROTOCOL, channel: 'http',
     outcome: grant.decision.approved ? 'success' : 'refused',
     errorCode: grant.decision.approved ? undefined : 'STS-GNAP-0120',
     actor: username, target: grant.client.identifier,
     summary: grant.decision.approved ? 'A resource owner approved a GNAP grant'
-                                     : 'A resource owner did not approve a GNAP grant',
+                                     : 'A resource owner did not approve a ' +
+                                       'GNAP grant',
     detail: { grant: grant.id, why: grant.decision.error || '' } });
   const finished = await finishInteraction(req, grant);
-  store.saveGrant(grant, 'resource owner ' + (grant.decision.approved ? 'approved' : 'did not approve') +
-                  (grant.decision.error ? ' (' + grant.decision.error + ')' : ''));
+  store.saveGrant(grant,
+                  'resource owner ' +
+                  (grant.decision.approved ? 'approved' : 'did ' +
+      'not approve') +
+                  (grant.decision.error ? ' (' + grant.decision.error + ')' :
+                   ''));
   log.debug("Leaving decide().");
   return finished;
 }
@@ -1114,10 +1337,13 @@ async function decide(req, grant, session, selection) {
 // A decision already remembered for every requested right — the approval page
 // is skipped, the way the OAuth consent screen is.
 function rememberedFor(grant, username) {
+  log.debug("Entering rememberedFor().");
   if (config.value('gnap.consentRequired') === false) {
+    log.debug("Leaving rememberedFor().");
     return true;
   }
   if (config.value('gnap.rememberApprovals') === false) {
+    log.debug("Leaving rememberedFor().");
     return false;
   }
   const held = consent.consentsOf(username).filter(function (row) {
@@ -1131,7 +1357,9 @@ function rememberedFor(grant, username) {
       all.push(digestTokenOf(right));
     });
   });
-  return all.length > 0 && !grant.request.subject && all.every(function (digest) {
+  log.debug("Leaving rememberedFor().");
+  return all.length > 0 && !grant.request.subject &&
+         all.every(function (digest) {
     return held.indexOf(digest) >= 0;
   });
 }
@@ -1144,14 +1372,17 @@ async function finishInteraction(req, grant) {
   interaction.interactRef = store.mint(15);
   const finish = interaction.finish;
   if (!finish) {
-    log.debug("Leaving finishInteraction(). No finish method; the client polls.");
+    log.debug("Leaving finishInteraction(). No finish method; the client " +
+              "polls.");
     return { none: true };
   }
-  const hash = interactionHash(finish.nonce, interaction.serverNonce, interaction.interactRef,
+  const hash = interactionHash(finish.nonce, interaction.serverNonce,
+                               interaction.interactRef,
                                grant.grantEndpoint, finish.hashMethod);
   if (finish.method === 'redirect') {
     const target = finish.uri + (finish.uri.indexOf('?') >= 0 ? '&' : '?') +
-      'hash=' + encodeURIComponent(hash) + '&interact_ref=' + encodeURIComponent(interaction.interactRef);
+      'hash=' + encodeURIComponent(hash) + '&interact_ref=' +
+      encodeURIComponent(interaction.interactRef);
     monitor.record(grant.client.identifier, 'finish.redirect', {});
     log.debug("Leaving finishInteraction(). Redirect.");
     return { redirect: target };
@@ -1162,7 +1393,8 @@ async function finishInteraction(req, grant) {
     monitor.record(grant.client.identifier, 'finish.push', {});
   } else {
     monitor.record(grant.client.identifier, 'finish.push_failed', {});
-    audit.failure(pushed.errorCode || 'STS-GNAP-0604', { protocol: PROTOCOL, channel: 'http',
+    audit.failure(pushed.errorCode || 'STS-GNAP-0604',
+                  { protocol: PROTOCOL, channel: 'http',
       outcome: 'error', target: grant.client.identifier,
       summary: 'A GNAP push interaction finish was not delivered',
       detail: { grant: grant.id, why: pushed.why, status: pushed.status } });
@@ -1185,12 +1417,14 @@ function continuationCaller(req, grantId) {
   // unknown one — it must not even reveal that the URI names a grant.
   if (!grant || !byToken || byToken.id !== grant.id) {
     log.debug("Leaving continuationCaller(). No grant for that URI and token.");
-    return refusal('STS-GNAP-0130', 'the continuation URI and access token do not identify an ' +
-                   'active grant request (RFC 9635 section 5).', 'invalid_continuation', 401);
+    return refusal('STS-GNAP-0130', 'the continuation URI and access token ' +
+                   'do not identify an active grant request (RFC 9635 ' +
+                   'section 5).', 'invalid_continuation', 401);
   }
   if (grant.state === STATE.FINALIZED) {
     log.debug("Leaving continuationCaller(). Finalized.");
-    return refusal('STS-GNAP-0131', 'this grant request is finalized and cannot be continued.',
+    return refusal('STS-GNAP-0131', 'this grant request is finalized and ' +
+                                    'cannot be continued.',
                    'invalid_continuation', 400);
   }
   const body = proof.readBody(req);
@@ -1198,29 +1432,40 @@ function continuationCaller(req, grantId) {
     log.debug("Leaving continuationCaller(). Body refused.");
     return body;
   }
-  const descriptor = keys.describe(grant.client.key, { resolveReference: resolveKeyReference });
+  const descriptor = keys.describe(grant.client.key,
+                                   { resolveReference: resolveKeyReference });
   if (!descriptor.ok) {
-    log.debug("Leaving continuationCaller(). The grant's key no longer describes.");
-    return Object.assign(descriptor, { status: 401, gnapError: 'invalid_client' });
+    log.debug("Leaving continuationCaller(). The grant's key no longer " +
+              "describes.");
+    return Object.assign(descriptor,
+                         { status: 401, gnapError: 'invalid_client' });
   }
-  const verified = proof.verifyRequest(req, body, descriptor, { accessToken: token });
+  const verified = proof.verifyRequest(req, body, descriptor,
+                                       { accessToken: token });
   if (!verified.ok) {
-    monitor.record(grant.client.identifier, 'proof.failed', { gnapError: 'invalid_client' });
+    monitor.record(grant.client.identifier, 'proof.failed',
+                   { gnapError: 'invalid_client' });
     log.debug("Leaving continuationCaller(). Proof refused.");
-    return Object.assign(verified, { status: 401, gnapError: 'invalid_client' });
+    return Object.assign(verified,
+                         { status: 401, gnapError: 'invalid_client' });
   }
   log.debug("Leaving continuationCaller().");
   return { ok: true, grant: grant, body: body, token: token };
 }
 
 function expired(grant) {
-  return grant.state === STATE.PENDING && grant.expiresAt && grant.expiresAt < nowSec();
+  log.debug("Entering expired().");
+  log.debug("Leaving expired().");
+  return grant.state === STATE.PENDING && grant.expiresAt &&
+         grant.expiresAt < nowSec();
 }
 
 function finalize(grant, note) {
+  log.debug("Entering finalize().");
   grant.state = STATE.FINALIZED;
   store.dropContinuation(grant);
   store.saveGrant(grant, note);
+  log.debug("Leaving finalize().");
 }
 
 async function continueGrant(req, grantId) {
@@ -1235,10 +1480,12 @@ async function continueGrant(req, grantId) {
   if (expired(grant)) {
     finalize(grant, 'expired');
     log.debug("Leaving continueGrant(). Expired.");
-    return refusal('STS-GNAP-0132', 'this grant request expired before it was approved.',
+    return refusal('STS-GNAP-0132', 'this grant request expired before it ' +
+                                    'was approved.',
                    'invalid_continuation');
   }
   if (req.method === 'DELETE') {
+    log.debug("Leaving continueGrant().");
     return revokeGrant(req, grant);
   }
   if (grant.continueNotBefore && nowSec() < grant.continueNotBefore) {
@@ -1246,13 +1493,16 @@ async function continueGrant(req, grantId) {
     const keepGoing = { continue: continueMember(req, grant) };
     store.saveGrant(grant, 'continued too fast');
     log.debug("Leaving continueGrant(). Too fast.");
-    return Object.assign(refusal('STS-GNAP-0133', 'the client continued before the wait period ' +
-                         'ended (RFC 9635 section 5).', 'too_fast'), { extra: keepGoing });
+    return Object.assign(refusal('STS-GNAP-0133', 'the client continued ' +
+                         'before the wait period ended (RFC 9635 section ' +
+                         '5).', 'too_fast'), { extra: keepGoing });
   }
   if (req.method === 'PATCH') {
+    log.debug("Leaving continueGrant().");
     return modifyGrant(req, grant, caller.body);
   }
-  const parsed = request.parseContinuation(caller.body.json, caller.body.hadContent);
+  const parsed = request.parseContinuation(caller.body.json,
+                                           caller.body.hadContent);
   if (!parsed.ok) {
     log.debug("Leaving continueGrant(). Continuation body refused.");
     return parsed;
@@ -1261,23 +1511,29 @@ async function continueGrant(req, grantId) {
     const interaction = grant.interaction;
     if (grant.state !== STATE.PENDING || !interaction) {
       // Section 5.1: MUST return too_many_attempts, SHOULD finalize.
-      finalize(grant, 'interaction reference presented outside the pending state');
-      monitor.record(identifier, 'grant.refused', { gnapError: 'too_many_attempts' });
+      finalize(grant, 'interaction reference presented outside the pending ' +
+                      'state');
+      monitor.record(identifier, 'grant.refused',
+                     { gnapError: 'too_many_attempts' });
       log.debug("Leaving continueGrant(). interact_ref when not pending.");
-      return refusal('STS-GNAP-0134', 'an interaction reference was presented for a grant request ' +
-                     'that is not pending (RFC 9635 section 5.1).', 'too_many_attempts');
+      return refusal('STS-GNAP-0134', 'an interaction reference was ' +
+                     'presented for a grant request that is not pending (RFC ' +
+                     '9635 section 5.1).', 'too_many_attempts');
     }
-    if (!interaction.interactRef || interaction.interactRef !== parsed.interactRef) {
+    if (!interaction.interactRef ||
+        interaction.interactRef !== parsed.interactRef) {
       const keepGoing = { continue: continueMember(req, grant) };
       store.saveGrant(grant, 'wrong interaction reference presented');
       log.debug("Leaving continueGrant(). Wrong interact_ref.");
-      return Object.assign(refusal('STS-GNAP-0135', 'the interaction reference is not the one ' +
-                           'issued for this grant request.', 'invalid_interaction'),
+      return Object.assign(refusal('STS-GNAP-0135', 'the interaction ' +
+                           'reference is not the one issued for this grant ' +
+                           'request.', 'invalid_interaction'),
                            { extra: keepGoing });
     }
     interaction.interactRef = null;
     interaction.refUsed = true;
     monitor.record(identifier, 'continue.interact_ref', {});
+    log.debug("Leaving continueGrant().");
     return settle(req, grant);
   }
   // A POLL (section 5.2).
@@ -1287,21 +1543,29 @@ async function continueGrant(req, grantId) {
   if (grant.state === STATE.PENDING && grant.polls > maxPolls) {
     finalize(grant, 'too many polls');
     log.debug("Leaving continueGrant(). Too many polls.");
-    return refusal('STS-GNAP-0136', 'the client polled more than ' + maxPolls + ' times before ' +
-                   'the resource owner decided (RFC 9635 section 5.2).', 'too_many_attempts');
+    return refusal('STS-GNAP-0136',
+                   'the client polled more than ' + maxPolls + ' ' +
+                   'times before the resource owner decided (RFC 9635 ' +
+                   'section 5.2).', 'too_many_attempts');
   }
-  if (grant.state === STATE.PENDING && grant.interaction && grant.interaction.finish &&
+  if (grant.state === STATE.PENDING && grant.interaction &&
+      grant.interaction.finish &&
       !grant.interaction.refUsed) {
     // Section 3.3.5: a client given a finish nonce "MUST NOT continue a grant
     // request before it receives the associated interaction reference".
     const keepGoing = { continue: continueMember(req, grant) };
-    store.saveGrant(grant, 'polled before presenting the interaction reference');
-    log.debug("Leaving continueGrant(). Poll before the interaction reference.");
-    return Object.assign(refusal('STS-GNAP-0137', 'this grant request finishes with a ' +
-                         grant.interaction.finish.method + ' carrying an interaction reference; ' +
-                         'the client must present it rather than poll (RFC 9635 section 3.3.5).',
+    store.saveGrant(grant,
+                    'polled before presenting the interaction reference');
+    log.debug("Leaving continueGrant(). Poll before the interaction " +
+              "reference.");
+    return Object.assign(refusal('STS-GNAP-0137', 'this grant request ' +
+                                                  'finishes with a ' +
+                         grant.interaction.finish.method + ' carrying an ' +
+                         'interaction reference; the client must present it ' +
+                         'rather than poll (RFC 9635 section 3.3.5).',
                          'invalid_continuation'), { extra: keepGoing });
   }
+  log.debug("Leaving continueGrant().");
   return settle(req, grant);
 }
 
@@ -1327,9 +1591,12 @@ async function settle(req, grant) {
     const keepGoing = { continue: continueMember(req, grant) };
     store.saveGrant(grant, 'told the client: ' + code);
     log.debug("Leaving settle(). " + code);
-    return Object.assign(refusal(code === 'unknown_user' ? 'STS-GNAP-0121' : 'STS-GNAP-0120',
-      code === 'unknown_user' ? 'the person who signed in is not the user the request named ' +
-      '(RFC 9635 section 2.4).' : 'the resource owner did not approve the request.', code, 403),
+    return Object.assign(refusal(code === 'unknown_user' ? 'STS-GNAP-0121' :
+                                 'STS-GNAP-0120',
+      code === 'unknown_user' ? 'the person who signed in is not the user ' +
+      'the request named (RFC 9635 section ' +
+      '2.4).' : 'the resource owner did not approve the ' +
+                                  'request.', code, 403),
       { extra: keepGoing });
   }
   const body = await release(req, grant);
@@ -1342,8 +1609,9 @@ async function modifyGrant(req, grant, bodyRead) {
   log.debug("Entering modifyGrant().");
   if (grant.state !== STATE.APPROVED && grant.state !== STATE.PENDING) {
     log.debug("Leaving modifyGrant(). Wrong state.");
-    return refusal('STS-GNAP-0140', 'only a pending or approved grant request can be modified ' +
-                   '(RFC 9635 section 5.3).', 'invalid_continuation');
+    return refusal('STS-GNAP-0140', 'only a pending or approved grant ' +
+                   'request can be modified (RFC 9635 section ' +
+                   '5.3).', 'invalid_continuation');
   }
   const parsed = request.parseModification(bodyRead.json || {});
   if (!parsed.ok) {
@@ -1371,15 +1639,18 @@ async function modifyGrant(req, grant, bodyRead) {
   const requested = grant.request.tokens.reduce(function (all, one) {
     return all.concat(one.access);
   }, []);
-  const withinApproval = grant.state === STATE.APPROVED && grant.ro !== undefined &&
+  const withinApproval = grant.state === STATE.APPROVED &&
+    grant.ro !== undefined &&
     accessRights.accessCovers(previouslyApproved, requested) && !asked.subject;
   grant.state = STATE.PROCESSING;
   if (withinApproval) {
     // Section 5.3's worked example: narrower access, no new consent.
-    if (config.value('gnap.revokeOnModify') !== false && config.value('gnap.durableTokens') !== true) {
+    if (config.value('gnap.revokeOnModify') !== false &&
+        config.value('gnap.durableTokens') !== true) {
       revokeTokens(grant, 'grant modified');
     }
-    grant.decision = { approved: true, tokens: grant.request.tokens, subject: false };
+    grant.decision = { approved: true, tokens: grant.request.tokens,
+                       subject: false };
     const body = await release(req, grant);
     signals.grantModified(req, grant, requested);
     log.debug("Leaving modifyGrant(). Within the earlier approval.");
@@ -1388,10 +1659,12 @@ async function modifyGrant(req, grant, bodyRead) {
   if (!asked.interact) {
     grant.state = previouslyApproved.length ? STATE.APPROVED : STATE.PENDING;
     const keepGoing = { continue: continueMember(req, grant) };
-    store.saveGrant(grant, 'modification needs approval and no interaction was offered');
+    store.saveGrant(grant, 'modification needs approval and no interaction ' +
+                           'was offered');
     log.debug("Leaving modifyGrant(). Needs interaction, none offered.");
-    return Object.assign(refusal('STS-GNAP-0141', 'the modified request asks for more than was ' +
-      'approved and offers no way to interact with the resource owner (RFC 9635 section 5.3).',
+    return Object.assign(refusal('STS-GNAP-0141', 'the modified request asks ' +
+      'for more than was approved and offers no way to interact with the ' +
+      'resource owner (RFC 9635 section 5.3).',
       'request_denied', 403), { extra: keepGoing });
   }
   grant.decision = null;
@@ -1403,13 +1676,15 @@ async function modifyGrant(req, grant, bodyRead) {
     log.debug("Leaving modifyGrant(). Interaction refused.");
     return started;
   }
-  const body = { interact: started.interact, continue: continueMember(req, grant) };
+  const body = { interact: started.interact,
+                 continue: continueMember(req, grant) };
   store.saveGrant(grant, 'modified; pending interaction');
   log.debug("Leaving modifyGrant(). Pending interaction.");
   return { ok: true, status: 200, body: body };
 }
 
 function revokeTokens(grant, why) {
+  log.debug("Entering revokeTokens().");
   (grant.tokens || []).forEach(function (jti) {
     const record = store.tokenByJti(jti);
     if (record && !record.revoked) {
@@ -1423,6 +1698,7 @@ function revokeTokens(grant, why) {
       }
     }
   });
+  log.debug("Leaving revokeTokens().");
 }
 
 // Section 5.4.
@@ -1431,9 +1707,11 @@ function revokeGrant(req, grant) {
   revokeTokens(grant, 'grant revoked by the client instance');
   finalize(grant, 'revoked by the client instance');
   monitor.record(grant.client.identifier, 'grant.revoked', {});
-  audit.audit({ action: 'gnap.grant.revoke', category: 'protocol', protocol: PROTOCOL,
+  audit.audit({ action: 'gnap.grant.revoke', category: 'protocol',
+    protocol: PROTOCOL,
     channel: 'http', outcome: 'success', actor: grant.client.identifier,
-    target: grant.client.identifier, summary: 'A GNAP grant was revoked by its client instance',
+    target: grant.client.identifier, summary: 'A GNAP grant was revoked by ' +
+                                              'its client instance',
     detail: { grant: grant.id, tokens: (grant.tokens || []).length } });
   signals.grantRevoked(req, grant, 'The client instance revoked the grant.');
   log.debug("Leaving revokeGrant().");
@@ -1449,8 +1727,9 @@ async function manageToken(req, handle) {
   const record = presented ? store.tokenByManagement(handle, presented) : null;
   if (!record) {
     log.debug("Leaving manageToken(). Unknown management URI or token.");
-    return refusal('STS-GNAP-0150', 'the token management URI and access token do not identify a ' +
-                   'token (RFC 9635 section 6).', req.method === 'DELETE' ? 'invalid_request'
+    return refusal('STS-GNAP-0150', 'the token management URI and access ' +
+                   'token do not identify a token (RFC 9635 section ' +
+                   '6).', req.method === 'DELETE' ? 'invalid_request'
                                                                           : 'invalid_rotation', 401);
   }
   const grant = store.getGrant(record.grantId);
@@ -1462,17 +1741,22 @@ async function manageToken(req, handle) {
   // Section 7.3: bound to the token's own key or, for a bearer token, the
   // client instance's.
   const keyJson = record.key || (grant ? grant.client.key : null);
-  const descriptor = keys.describe(keyJson, { resolveReference: resolveKeyReference });
+  const descriptor = keys.describe(keyJson,
+                                   { resolveReference: resolveKeyReference });
   if (!descriptor.ok) {
     log.debug("Leaving manageToken(). No key to verify with.");
-    return Object.assign(descriptor, { status: 401, gnapError: 'invalid_client' });
+    return Object.assign(descriptor,
+                         { status: 401, gnapError: 'invalid_client' });
   }
   if (req.method === 'DELETE') {
-    const verified = proof.verifyRequest(req, body, descriptor, { accessToken: presented });
+    const verified = proof.verifyRequest(req, body, descriptor,
+                                         { accessToken: presented });
     if (!verified.ok) {
-      monitor.record(record.instanceId, 'proof.failed', { gnapError: 'invalid_client' });
+      monitor.record(record.instanceId, 'proof.failed',
+                     { gnapError: 'invalid_client' });
       log.debug("Leaving manageToken(). DELETE proof refused.");
-      return Object.assign(verified, { status: 401, gnapError: 'invalid_client' });
+      return Object.assign(verified,
+                           { status: 401, gnapError: 'invalid_client' });
     }
     record.revoked = true;
     record.revokedAt = nowSec();
@@ -1483,8 +1767,10 @@ async function manageToken(req, handle) {
       stats.revoke(record.jti, 'GNAP token management');
     }
     monitor.record(record.instanceId, 'token.revoked', {});
-    audit.audit({ action: 'gnap.token.revoke', category: 'protocol', protocol: PROTOCOL,
-      channel: 'http', outcome: 'success', actor: record.instanceId, target: record.instanceId,
+    audit.audit({ action: 'gnap.token.revoke', category: 'protocol',
+      protocol: PROTOCOL,
+      channel: 'http', outcome: 'success', actor: record.instanceId,
+      target: record.instanceId,
       summary: 'A GNAP access token was revoked by its client instance',
       detail: { jti: record.jti, format: record.format } });
     signals.tokenRevoked(req, record, grant);
@@ -1502,59 +1788,80 @@ async function manageToken(req, handle) {
     if (!config.value('gnap.keyRotation') ||
         capabilities(req, record.as).key_rotation_supported === false) {
       log.debug("Leaving manageToken(). Key rotation off.");
-      return refusal('STS-GNAP-0151', 'this authorization server does not allow rotating an access ' +
-                     'token\'s key (RFC 9635 section 6.1.1).', 'key_rotation_not_supported');
+      return refusal('STS-GNAP-0151', 'this authorization server does not ' +
+                     'allow rotating an access token\'s key (RFC 9635 ' +
+                     'section 6.1.1).', 'key_rotation_not_supported');
     }
     if (!record.key) {
       log.debug("Leaving manageToken(). Bearer token has no key to rotate.");
-      return refusal('STS-GNAP-0152', 'a bearer token has no key to rotate (RFC 9635 section 6.1.1).',
+      return refusal('STS-GNAP-0152', 'a bearer token has no key to rotate ' +
+                                      '(RFC 9635 section 6.1.1).',
                      'invalid_rotation');
     }
-    newDescriptor = keys.describe(parsed.key, { resolveReference: resolveKeyReference });
+    newDescriptor = keys.describe(parsed.key,
+                                  { resolveReference: resolveKeyReference });
     if (!newDescriptor.ok) {
       log.debug("Leaving manageToken(). New key refused.");
       return Object.assign(newDescriptor, { gnapError: 'invalid_rotation' });
     }
   }
   const verified = proof.verifyRequest(req, body, descriptor,
-                                       { accessToken: presented, rotation: newDescriptor });
+                                       { accessToken: presented,
+                                         rotation: newDescriptor });
   if (!verified.ok) {
-    monitor.record(record.instanceId, 'proof.failed', { gnapError: verified.gnapError });
+    monitor.record(record.instanceId, 'proof.failed',
+                   { gnapError: verified.gnapError });
     log.debug("Leaving manageToken(). Rotation proof refused.");
-    return Object.assign(verified, { status: verified.gnapError === 'key_rotation_not_supported' ? 400 : 401,
-                                     gnapError: newDescriptor ? verified.gnapError : 'invalid_client' });
+    return Object.assign(verified,
+                         { status: verified.gnapError === 'key_rotation_not_supported' ? 400 : 401,
+                                     gnapError: newDescriptor ?
+                                                verified.gnapError :
+                                                'invalid_client' });
   }
   if (record.revoked || tokens.isRevokedJti(record.jti)) {
     log.debug("Leaving manageToken(). Revoked tokens do not rotate.");
-    return refusal('STS-GNAP-0153', 'a revoked access token cannot be rotated.', 'invalid_rotation');
+    return refusal('STS-GNAP-0153', 'a revoked access token cannot be rotated.',
+                   'invalid_rotation');
   }
   if (grant && grant.state === STATE.FINALIZED) {
     log.debug("Leaving manageToken(). The grant is finalized.");
-    return refusal('STS-GNAP-0154', 'the grant this token belongs to is finalized.', 'invalid_rotation');
+    return refusal('STS-GNAP-0154', 'the grant this token belongs to is ' +
+                                    'finalized.', 'invalid_rotation');
   }
   const iat = nowSec();
   const lifetime = Math.max(1, (record.exp || iat) - (record.iat || iat)) ||
     (Number(config.value('gnap.accessTokenLifetimeS')) || 3600);
   const cnf = newDescriptor ? keys.confirmationOf(newDescriptor) : record.cnf;
-  const model = { jti: store.mint(16), iss: record.iss, sub: record.sub, aud: record.aud,
-                  instanceId: record.instanceId, access: record.access, flags: record.flags,
-                  cnf: cnf, iat: iat, nbf: iat, exp: iat + lifetime, label: record.label };
+  const model = { jti: store.mint(16), iss: record.iss, sub: record.sub,
+                  aud: record.aud,
+                  instanceId: record.instanceId, access: record.access,
+                  flags: record.flags,
+                  cnf: cnf, iat: iat, nbf: iat, exp: iat +
+                                                     lifetime,
+                  label: record.label };
   let minted;
   try {
     const rs = record.rsIdentifiers && record.rsIdentifiers.length === 1
       ? applications.get(record.rsIdentifiers[0]) : null;
     minted = await tokens.mint(record.format, model, { base: realmBase(req),
-      rs: rs ? { identity: rs.identifier, jweKey: field(rs, 'gnapJweKey') ? JSON.parse(field(rs, 'gnapJweKey')) : null } : null,
+      rs: rs ?
+          { identity: rs.identifier,
+            jweKey: field(rs, 'gnapJweKey') ?
+                    JSON.parse(field(rs, 'gnapJweKey')) : null } : null,
       setId: record.grantId });
   } catch (e) {
-    log.error(errorCodes.tag('STS-GNAP-0155') + 'gnap: a rotated ' + record.format + ' token could ' +
-              'not be minted: ' + e.message);
-    return refusal('STS-GNAP-0155', 'the token could not be rotated.', 'invalid_rotation');
+    log.error(errorCodes.tag('STS-GNAP-0155') + 'gnap: a rotated ' +
+              record.format + ' ' +
+              'token could not be minted: ' + e.message);
+    log.debug("Leaving manageToken().");
+    return refusal('STS-GNAP-0155', 'the token could not be rotated.',
+                   'invalid_rotation');
   }
   const next = store.putToken(Object.assign({}, record, model, {
     key: newDescriptor ? newDescriptor.value : record.key,
     proof: newDescriptor ? newDescriptor.proof : record.proof,
-    rotatedFrom: record.jti, revoked: false, createdAt: iat, manageHandle: null, manageHash: null
+    rotatedFrom: record.jti, revoked: false, createdAt: iat, manageHandle: null,
+    manageHash: null
   }), minted.value);
   // Section 6.1: "the AS MUST invalidate the current access token value".
   record.revoked = true;
@@ -1571,20 +1878,28 @@ async function manageToken(req, handle) {
   if (grant) {
     grant.tokens = (grant.tokens || []).concat([next.jti]);
     if (newDescriptor) {
-      // Section 6.1.1: the grant's key follows the token's most recent rotation.
+      // Section 6.1.1: the grant's key follows the token's most recent
+      // rotation.
       grant.client.key = newDescriptor.value;
       grant.client.keyIdentity = newDescriptor.identity;
     }
-    store.saveGrant(grant, newDescriptor ? 'token key rotated' : 'token rotated');
+    store.saveGrant(grant,
+                    newDescriptor ? 'token key rotated' : 'token rotated');
   }
-  monitor.record(record.instanceId, newDescriptor ? 'token.key_rotated' : 'token.rotated',
+  monitor.record(record.instanceId,
+                 newDescriptor ? 'token.key_rotated' : 'token.rotated',
                  { format: record.format });
-  audit.audit({ action: 'gnap.token.rotate', category: 'protocol', protocol: PROTOCOL,
-    channel: 'http', outcome: 'success', actor: record.instanceId, target: record.instanceId,
-    summary: 'A GNAP access token was rotated' + (newDescriptor ? ' onto a new key' : ''),
+  audit.audit({ action: 'gnap.token.rotate', category: 'protocol',
+    protocol: PROTOCOL,
+    channel: 'http', outcome: 'success', actor: record.instanceId,
+    target: record.instanceId,
+    summary: 'A GNAP access token was rotated' + (newDescriptor ? ' onto a ' +
+        'new key' : ''),
     detail: { from: record.jti, to: next.jti, format: record.format } });
-  const response = { value: minted.value, access: next.access, expires_in: lifetime,
-                     manage: { uri: realmBase(req) + '/gnap/token/' + next.manageHandle,
+  const response = { value: minted.value, access: next.access,
+                     expires_in: lifetime,
+                     manage: { uri: realmBase(req) + '/gnap/token/' +
+                                    next.manageHandle,
                                access_token: { value: manageValue } } };
   if (next.label) {
     response.label = next.label;

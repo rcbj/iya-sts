@@ -163,6 +163,8 @@ const PEPS = [
     // not permitted does not happen — and a setting that appeared to change
     // that would silently do nothing.
     bias: function () {
+      log.debug("Entering bias().");
+      log.debug("Leaving bias().");
       return config.value('xacml.pepBias') === 'permit-biased'
         ? 'permit-biased' : 'deny-biased';
     },
@@ -179,7 +181,11 @@ const PEPS = [
             'WS-Trust token, a Kerberos ticket, a verifiable credential, a ' +
             'sign-on session.',
     enforces: true,
-    bias: function () { return 'deny-biased (fixed)'; },
+    bias: function () {
+      log.debug("Entering bias().");
+      log.debug("Leaving bias().");
+      return 'deny-biased (fixed)';
+    },
     obligations: false },
 
   { id: 'access',
@@ -190,7 +196,11 @@ const PEPS = [
     guards: 'The admin console, the user portal, /scim/v2, the SPIRE Server ' +
             'API, and /admin-api in product mode.',
     enforces: true,
-    bias: function () { return 'deny-biased (fixed)'; },
+    bias: function () {
+      log.debug("Entering bias().");
+      log.debug("Leaving bias().");
+      return 'deny-biased (fixed)';
+    },
     obligations: false },
 
   { id: 'pdp',
@@ -203,7 +213,11 @@ const PEPS = [
             'process. This service saw the decision and never the ' +
             'enforcement.',
     enforces: false,
-    bias: function () { return null; },
+    bias: function () {
+      log.debug("Entering bias().");
+      log.debug("Leaving bias().");
+      return null;
+    },
     obligations: false }
 ];
 
@@ -221,6 +235,8 @@ const DECISIONS = { Permit: 'permit', Deny: 'deny',
                     Indeterminate: 'indeterminate' };
 
 function emptyRow() {
+  log.debug("Entering emptyRow().");
+  log.debug("Leaving emptyRow().");
   return { decisions: 0, allowed: 0, refused: 0,
            permit: 0, deny: 0, notApplicable: 0, indeterminate: 0, other: 0,
            undischargeable: 0,
@@ -230,7 +246,8 @@ function emptyRow() {
 // PER TRUST REALM. See the header: `ou=policies` is per realm, so a decision
 // made under /realm/acme was made against acme's policies, and one total over
 // both would be counting two logical services as one.
-const counters = realms.map({ persist: 'xacml_monitor.counters', merge: 'own' });
+const counters = realms.map({ persist: 'xacml_monitor.counters',
+                              merge: 'own' });
 
 // WHEN THE COUNTING STARTED. Declared here, above its one reader, because a
 // module-level `const` used by a function defined above it is legal and reads
@@ -239,9 +256,11 @@ const counters = realms.map({ persist: 'xacml_monitor.counters', merge: 'own' })
 const startedAt = new Date().toISOString();
 
 function rowFor(id) {
+  log.debug("Entering rowFor().");
   if (!counters.has(id)) {
     counters.set(id, emptyRow());
   }
+  log.debug("Leaving rowFor().");
   return counters.get(id);
 }
 
@@ -265,6 +284,7 @@ function rowFor(id) {
 // direction.
 // ---------------------------------------------------------------------------
 function record(id, outcome) {
+  log.debug("Entering record().");
   try {
     if (!BY_ID[id]) {
       // A NAME THAT IS NOT IN THE CATALOGUE IS LOGGED AND NOT COUNTED. It
@@ -272,11 +292,13 @@ function record(id, outcome) {
       // lists every asker of the PDP in this process, and a row nothing
       // describes is worse than a missing one.
       log.warn(errorCodes.tag('STS-XACML-0063') +
-               'xacml: a decision was recorded against "' + id + '", which is ' +
-               'not one of the ' + PEPS.length + ' askers xacml_monitor.js ' +
+               'xacml: a decision was recorded against "' + id + '", which ' +
+               'is not one of ' +
+               'the ' + PEPS.length + ' askers xacml_monitor.js ' +
                'knows about. It is NOT counted — /admin/xacml/monitor claims ' +
                'to list every one of them, and a row with no description ' +
                'would break that claim rather than extend it. Add it to PEPS.');
+      log.debug("Leaving record().");
       return;
     }
     // -----------------------------------------------------------------
@@ -331,6 +353,7 @@ function record(id, outcome) {
               'xacml: a decision counter threw and was ignored; the decision ' +
               'itself is unaffected: ' + error.message);
   }
+  log.debug("Leaving record().");
 }
 
 // ---------------------------------------------------------------------------
@@ -361,9 +384,12 @@ function record(id, outcome) {
 // Object.keys.
 // ---------------------------------------------------------------------------
 function merge(id) {
+  log.debug("Entering merge().");
   const mine = counters.has(id) ? counters.get(id) : emptyRow();
-  const theirs = replication.remoteRows('xacml_monitor.counters', undefined, id);
+  const theirs = replication.remoteRows('xacml_monitor.counters', undefined,
+                                        id);
   if (!theirs.length) {
+    log.debug("Leaving merge().");
     return mine;
   }
   const out = Object.assign(emptyRow(), mine);
@@ -383,6 +409,7 @@ function merge(id) {
       out.lastAllowed = row.lastAllowed;
     }
   });
+  log.debug("Leaving merge().");
   return out;
 }
 
@@ -542,6 +569,7 @@ function snapshot(policies) {
 // kind of thing that makes somebody distrust every other number beside it.
 // ---------------------------------------------------------------------------
 function totalOf(rows) {
+  log.debug("Entering totalOf().");
   const out = { decisions: 0, allowed: 0, refused: 0, unenforced: 0,
                 undischargeable: 0 };
   rows.forEach(function (row) {
@@ -556,6 +584,7 @@ function totalOf(rows) {
     }
     out.undischargeable += Number(row.undischargeable || 0);
   });
+  log.debug("Leaving totalOf().");
   return out;
 }
 

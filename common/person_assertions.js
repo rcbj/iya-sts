@@ -192,10 +192,14 @@ function setDirectory(hooks) {
 // Is there a store at all? Read by `/admin/pki` and by the report, which say
 // so rather than letting somebody press a button that quietly writes nothing.
 function storable() {
+  log.debug("Entering storable().");
+  log.debug("Leaving storable().");
   return !!directory;
 }
 
 function isSealed(value) {
+  log.debug("Entering isSealed().");
+  log.debug("Leaving isSealed().");
   return String(value == null ? '' : value).indexOf('$aesgcm$') === 0;
 }
 
@@ -206,19 +210,25 @@ function isSealed(value) {
 // credential in every directory dump, and doing it silently after being asked
 // not to is worse than refusing.
 function sealValue(name, value) {
+  log.debug("Entering sealValue().");
   if (SEALED_ATTRIBUTES.indexOf(name) < 0 || !value) {
+    log.debug("Leaving sealValue().");
     return String(value == null ? '' : value);
   }
   if (isSealed(value)) {
+    log.debug("Leaving sealValue().");
     return String(value);
   }
   if (!keystore.persists()) {
+    log.debug("Leaving sealValue().");
     return String(value);
   }
   const out = keystore.seal(String(value), SEAL_LABEL);
   if (!out) {
+    log.debug("Leaving sealValue().");
     return null;
   }
+  log.debug("Leaving sealValue().");
   return out;
 }
 
@@ -229,7 +239,9 @@ function sealValue(name, value) {
 // the person is a truer answer than an empty attribute — which would read as
 // *no key pair was ever issued*.
 function openValue(name, value, username) {
+  log.debug("Entering openValue().");
   if (SEALED_ATTRIBUTES.indexOf(name) < 0 || !value || !isSealed(value)) {
+    log.debug("Leaving openValue().");
     return String(value == null ? '' : value);
   }
   const opened = keystore.open(String(value), SEAL_LABEL);
@@ -241,15 +253,20 @@ function openValue(name, value, username) {
              'is reported as it is stored rather than as absent, because ' +
              'absent would read as no key pair having been issued. Issue ' +
              'again on /admin/pki.');
+    log.debug("Leaving openValue().");
     return String(value);
   }
+  log.debug("Leaving openValue().");
   return opened;
 }
 
 function valuesOf(value) {
+  log.debug("Entering valuesOf().");
   if (value === undefined || value === null || value === '') {
+    log.debug("Leaving valuesOf().");
     return [];
   }
+  log.debug("Leaving valuesOf().");
   return (Array.isArray(value) ? value : [value])
     .map(function (one) { return String(one); })
     .filter(Boolean);
@@ -357,10 +374,13 @@ function issuerFor(iss) {
 // where both are the username — and refusing that would be refusing the
 // natural spelling of *this is me*.
 function subjectIsSelf(record, sub) {
+  log.debug("Entering subjectIsSelf().");
   const wanted = String(sub || '');
   if (!record || !wanted) {
+    log.debug("Leaving subjectIsSelf().");
     return false;
   }
+  log.debug("Leaving subjectIsSelf().");
   return wanted === String(record.username) ||
          record.effectiveIssuers.indexOf(wanted) >= 0;
 }
@@ -422,7 +442,8 @@ function write(username, record, opts) {
       return { ok: false, errorCode: 'STS-OAUTH-0087', written: written,
                errors: ['`' + attribute + '` could not be written onto "' +
                         name + '". This service keeps no second copy of a ' +
-                        'private key, so that key pair is gone. Issue again.'] };
+                        'private key, so that key pair is gone. Issue ' +
+                        'again.'] };
     }
     written.push(attribute);
   }
@@ -441,8 +462,14 @@ function write(username, record, opts) {
 // strictly refuses the whole value, which is the defect
 // `tests/pki_anchor_drift.js` was written for.
 function generalizedTime(when) {
+  log.debug("Entering generalizedTime().");
   const d = when ? new Date(when) : new Date();
-  const pad = function (n) { return String(n).padStart(2, '0'); };
+  const pad = function (n) {
+    log.debug("Entering pad().");
+    log.debug("Leaving pad().");
+    return String(n).padStart(2, '0');
+  };
+  log.debug("Leaving generalizedTime().");
   return d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate()) +
          pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
          pad(d.getUTCSeconds()) + 'Z';
@@ -464,7 +491,8 @@ function clear(username) {
   const before = recordFor(name);
   if (!before) {
     log.debug('Leaving clear(). Nobody by that name.');
-    return { ok: false, errorCode: 'STS-OAUTH-0090', removed: 0, unknown: true };
+    return { ok: false, errorCode: 'STS-OAUTH-0090', removed: 0,
+             unknown: true };
   }
   let removed = 0;
   ATTRIBUTES.forEach(function (attribute) {

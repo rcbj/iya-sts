@@ -194,6 +194,8 @@ const POOL_COOKIE = (function () {
     source = fs.readFileSync(path.join(ROOT, "common", "request_pool.js"),
                              "utf8");
   } catch (e) {
+    log.debug("Caught in a callback in module scope: " +
+              ((e && e.message) || e));
     // Not readable from here. The exemption closes rather than widening — see
     // the block above.
     return "";
@@ -205,6 +207,7 @@ const POOL_COOKIE = (function () {
 // What a document actually set, with the pool's routing pin taken out. A
 // document that set nothing else answers "".
 function applicationCookies(header) {
+  log.debug("Entering applicationCookies().");
   const list = String(header || "").split(/,(?=[^;]+=)/)
     .map(function (one) { return one.trim(); })
     .filter(function (one) {
@@ -213,14 +216,17 @@ function applicationCookies(header) {
       }
       return !(POOL_COOKIE && one.indexOf(POOL_COOKIE + "=") === 0);
     });
+  log.debug("Leaving applicationCookies().");
   return list.join(", ");
 }
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.debug("check passed: " + what);
+  log.debug("Leaving check().");
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +253,8 @@ const TEXT_TYPE = /^text\/plain\b/;
 const PRIVATE_JWK_MEMBERS = ["d", "p", "q", "dp", "dq", "qi", "k", "priv"];
 
 function privateMembersIn(jwk) {
+  log.debug("Entering privateMembersIn().");
+  log.debug("Leaving privateMembersIn().");
   return PRIVATE_JWK_MEMBERS.filter(function (m) {
     return Object.prototype.hasOwnProperty.call(jwk || {}, m);
   });
@@ -255,10 +263,12 @@ function privateMembersIn(jwk) {
 // A key set, whatever wraps it: the complaint list for "these are public keys
 // and there is at least one of them".
 function publicKeySet(keys, where) {
+  log.debug("Entering publicKeySet().");
   const bad = [];
   if (!Array.isArray(keys) || keys.length === 0) {
-    bad.push(where + " carries no keys at all, so a client configured from it " +
-             "can verify nothing");
+    bad.push(where + " carries no keys at all, so a client configured from " +
+             "it can verify nothing");
+    log.debug("Leaving publicKeySet().");
     return bad;
   }
   keys.forEach(function (k, i) {
@@ -268,10 +278,11 @@ function publicKeySet(keys, where) {
     const secret = privateMembersIn(k);
     if (secret.length) {
       bad.push(where + " key " + i + " (" + (k.kid || k.kty) + ") CARRIES A " +
-               "PRIVATE COMPONENT: " + secret.join(", ") + ". This document is " +
-               "served to anybody who can reach the port.");
+               "PRIVATE COMPONENT: " + secret.join(", ") + ". This document " +
+               "is served to anybody who can reach the port.");
     }
   });
+  log.debug("Leaving publicKeySet().");
   return bad;
 }
 
@@ -279,6 +290,7 @@ function publicKeySet(keys, where) {
 // `/tls/server-certificate` both publish one, and the failure worth catching
 // is not a malformed document — it is the wrong half of the pair.
 function certificatePem(text, where) {
+  log.debug("Entering certificatePem().");
   const bad = [];
   if (!/-----BEGIN CERTIFICATE-----/.test(String(text))) {
     bad.push(where + " is not a PEM certificate");
@@ -287,6 +299,7 @@ function certificatePem(text, where) {
     bad.push(where + " CONTAINS A PRIVATE KEY, and this endpoint needs no " +
              "credential to read");
   }
+  log.debug("Leaving certificatePem().");
   return bad;
 }
 
@@ -307,6 +320,7 @@ const DOCUMENTS = [
     path: "/.well-known/oauth-authorization-server",
     type: JSON_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (d.issuer !== base) {
         bad.push("issuer is " + d.issuer + " and the document was fetched " +
@@ -319,12 +333,14 @@ const DOCUMENTS = [
           !d.grant_types_supported.length) {
         bad.push("no grant_types_supported");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "OAuth2 / OIDC", spec: "OpenID Connect Discovery 1.0",
     path: "/.well-known/openid-configuration",
     type: JSON_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (d.issuer !== base) { bad.push("issuer is " + d.issuer); }
       if (!d.authorization_endpoint) { bad.push("no authorization_endpoint"); }
@@ -341,17 +357,23 @@ const DOCUMENTS = [
         bad.push("no tls_client_certificate_bound_access_tokens — RFC 8705 " +
                  "is advertised in this document and nowhere else");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "OAuth2 / OIDC", spec: "RFC 7517 / RFC 9794", path: "/oauth2/jwks",
     type: JSON_TYPE, json: true, badCredential: "ignored",
-    must: function (d) { return publicKeySet(d.keys, "the JWKS"); } },
+    must: function (d) {
+      log.debug("Entering must().");
+      log.debug("Leaving must().");
+      return publicKeySet(d.keys, "the JWKS");
+    } },
 
   // -- Verifiable credentials, and the DID documents behind them ----------
   { family: "Verifiable Credentials (OID4VCI / OID4VP)", spec: "OpenID4VCI 1.0",
     path: "/.well-known/openid-credential-issuer",
     type: JSON_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (d.credential_issuer !== base) {
         bad.push("credential_issuer is " + d.credential_issuer);
@@ -362,6 +384,7 @@ const DOCUMENTS = [
         bad.push("credential_configurations_supported is empty, so a wallet " +
                  "reading this can ask for nothing");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "Verifiable Credentials (OID4VCI / OID4VP)",
@@ -369,18 +392,21 @@ const DOCUMENTS = [
     path: "/.well-known/jwt-vc-issuer",
     type: JSON_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (d.issuer !== base) { bad.push("issuer is " + d.issuer); }
       if (!d.jwks_uri && !d.jwks) {
         bad.push("neither jwks_uri nor jwks, which is the whole content of " +
                  "this document");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "Verifiable Credentials (OID4VCI / OID4VP)", spec: "W3C DID Core",
     path: "/.well-known/did.json",
     type: DID_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (!/^did:web:/.test(String(d.id || ""))) {
         bad.push("id is " + d.id + " and a did:web document must be named by " +
@@ -396,6 +422,7 @@ const DOCUMENTS = [
           bad.push("verificationMethod " + i + " carries " + secret.join(", "));
         }
       });
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "Verifiable Credentials (OID4VCI / OID4VP)",
@@ -403,17 +430,20 @@ const DOCUMENTS = [
     path: "/.well-known/did-configuration.json",
     type: JSON_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (!d["@context"]) { bad.push("no @context"); }
       if (!Array.isArray(d.linked_dids) || !d.linked_dids.length) {
         bad.push("no linked_dids, which is the only claim this document makes");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "Verifiable Credentials (OID4VCI / OID4VP)",
     spec: "Data Integrity BBS Cryptosuites", path: "/bbs/keys/1",
     type: JSON_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (d.type !== "Multikey") { bad.push("type is " + d.type); }
       if (!d.publicKeyMultibase) { bad.push("no publicKeyMultibase"); }
@@ -421,6 +451,7 @@ const DOCUMENTS = [
         bad.push("CARRIES secretKeyMultibase, and this endpoint needs no " +
                  "credential to read");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
 
@@ -429,6 +460,7 @@ const DOCUMENTS = [
     path: "/.well-known/ssf-configuration",
     type: JSON_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (d.issuer !== base) { bad.push("issuer is " + d.issuer); }
       if (!d.jwks_uri) { bad.push("no jwks_uri"); }
@@ -438,6 +470,7 @@ const DOCUMENTS = [
         bad.push("no delivery_methods_supported, so a receiver cannot know " +
                  "whether to expect push or poll");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
 
@@ -450,18 +483,22 @@ const DOCUMENTS = [
   { family: "GNAP", spec: "RFC 9767", path: "/.well-known/gnap-as-rs",
     type: JSON_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (d.grant_request_endpoint !== base + "/gnap") {
         bad.push("grant_request_endpoint is " + d.grant_request_endpoint);
       }
       if (!d.introspection_endpoint) { bad.push("no introspection_endpoint"); }
-      if (!Array.isArray(d.key_proofs_supported) || !d.key_proofs_supported.length) {
+      if (!Array.isArray(d.key_proofs_supported) ||
+          !d.key_proofs_supported.length) {
         bad.push("no key_proofs_supported, so a resource server cannot know " +
                  "how to sign its introspection call");
       }
-      if (!Array.isArray(d.token_formats_supported) || !d.token_formats_supported.length) {
+      if (!Array.isArray(d.token_formats_supported) ||
+          !d.token_formats_supported.length) {
         bad.push("no token_formats_supported");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
 
@@ -469,6 +506,7 @@ const DOCUMENTS = [
   { family: "SAML 2.0", spec: "SAML 2.0 metadata", path: "/saml2/metadata",
     type: SAML_TYPE, json: false, badCredential: "ignored",
     must: function (text) {
+      log.debug("Entering must().");
       const bad = [];
       if (!/<md:EntityDescriptor[\s>]/.test(text)) {
         bad.push("no EntityDescriptor");
@@ -487,11 +525,13 @@ const DOCUMENTS = [
                  "certificate out of this document, and it is fetched by " +
                  "somebody who cannot yet check anything else");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "SAML 1.1", spec: "SAML 1.1 metadata", path: "/saml11/metadata",
     type: SAML_TYPE, json: false, badCredential: "ignored",
     must: function (text) {
+      log.debug("Entering must().");
       const bad = [];
       if (!/<md:EntityDescriptor[\s>]/.test(text)) {
         bad.push("no EntityDescriptor");
@@ -502,6 +542,7 @@ const DOCUMENTS = [
                  "one member that tells this document from /saml2/metadata");
       }
       if (!/<ds:Signature[\s>]/.test(text)) { bad.push("UNSIGNED"); }
+      log.debug("Leaving must().");
       return bad;
     } },
 
@@ -510,8 +551,11 @@ const DOCUMENTS = [
     path: "/FederationMetadata/2007-06/FederationMetadata.xml",
     type: XML_TYPE, json: false, badCredential: "ignored",
     must: function (text) {
+      log.debug("Entering must().");
       const bad = [];
-      if (!/<EntityDescriptor[\s>]/.test(text)) { bad.push("no EntityDescriptor"); }
+      if (!/<EntityDescriptor[\s>]/.test(text)) {
+        bad.push("no EntityDescriptor");
+      }
       if (!/fed:SecurityTokenServiceType/.test(text)) {
         bad.push("no RoleDescriptor of type fed:SecurityTokenServiceType, " +
                  "which is what makes this a WS-Federation document rather " +
@@ -522,6 +566,7 @@ const DOCUMENTS = [
                  "this has nowhere to send anybody");
       }
       if (!/<ds:Signature[\s>]/.test(text)) { bad.push("UNSIGNED"); }
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "WS-Trust", spec: "WS-Trust 1.3", path: "/sts/cert",
@@ -531,6 +576,8 @@ const DOCUMENTS = [
     // certificate a client verifies issued tokens against is the whole of
     // what it can read before it sends anything.
     must: function (text) {
+      log.debug("Entering must().");
+      log.debug("Leaving must().");
       return certificatePem(text, "the WS-Trust STS certificate");
     } },
 
@@ -542,12 +589,16 @@ const DOCUMENTS = [
     // a bundle endpoint is what a workload in ANOTHER trust domain reads, and
     // it holds no credential this domain would recognise.
     must: function (d) {
+      log.debug("Entering must().");
       const bad = publicKeySet(d.keys, "the trust bundle");
       const uses = (d.keys || []).map(function (k) { return k.use; });
-      if (!uses.some(function (u) { return u === "x509-svid" || u === "jwt-svid"; })) {
+      if (!uses.some(function (u) {
+        return u === "x509-svid" || u === "jwt-svid";
+      })) {
         bad.push("no key is marked x509-svid or jwt-svid, so nothing in this " +
                  "bundle is usable as a SPIFFE root");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
 
@@ -556,6 +607,7 @@ const DOCUMENTS = [
     path: "/scim/v2/ServiceProviderConfig",
     type: SCIM_TYPE, json: true, badCredential: "refused",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if ((d.schemas || []).indexOf(
           "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig") < 0) {
@@ -567,25 +619,30 @@ const DOCUMENTS = [
                  "document is readable without a credential at all: it is " +
                  "where a client learns HOW to authenticate");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "SCIM", spec: "RFC 7643 section 6", path: "/scim/v2/ResourceTypes",
     type: SCIM_TYPE, json: true, badCredential: "refused",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       const ids = (d.Resources || []).map(function (r) { return r.id; });
       if (ids.indexOf("User") < 0) { bad.push("no User resource type"); }
       if (ids.indexOf("Group") < 0) { bad.push("no Group resource type"); }
+      log.debug("Leaving must().");
       return bad;
     } },
   { family: "SCIM", spec: "RFC 7643 section 7", path: "/scim/v2/Schemas",
     type: SCIM_TYPE, json: true, badCredential: "refused",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       const ids = (d.Resources || []).map(function (r) { return r.id; });
       if (ids.indexOf("urn:ietf:params:scim:schemas:core:2.0:User") < 0) {
         bad.push("no core User schema");
       }
+      log.debug("Leaving must().");
       return bad;
     } },
 
@@ -596,6 +653,8 @@ const DOCUMENTS = [
     // two facts rather than one tick — so the document a client pins from has
     // to be fetchable before that client trusts anything.
     must: function (text) {
+      log.debug("Entering must().");
+      log.debug("Leaving must().");
       return certificatePem(text, "the server certificate");
     } },
 
@@ -608,13 +667,16 @@ const DOCUMENTS = [
   { family: null, spec: "this service's own", path: "/realms",
     type: JSON_TYPE, json: true, badCredential: "ignored",
     must: function (d) {
+      log.debug("Entering must().");
       const bad = [];
       if (!Array.isArray(d.realms) || !d.realms.length) {
-        bad.push("no realms listed, and the default realm is always one of them");
+        bad.push("no realms listed, and the default realm is always one of " +
+                 "them");
       }
       if (!d.realms.some(function (r) { return r.id === "default"; })) {
         bad.push("the default realm is not in the list");
       }
+      log.debug("Leaving must().");
       return bad;
     } }
 ];
@@ -669,8 +731,9 @@ const CONTROLS = [
          "— which is why it is a 403 and not a 401" },
   { path: "/admin/sts-metadata", expect: [302, 303],
     why: "the console is an OIDC relying party and sends a stranger to " +
-         "/oauth2/authorize. THIS is the one that catches a redirect-following " +
-         "fetch: follow it and the sign-in screen answers 200" }
+         "/oauth2/authorize. THIS is the one that catches a " +
+         "redirect-following fetch: follow it and the sign-in screen answers " +
+         "200" }
 ];
 
 // ---------------------------------------------------------------------------
@@ -687,17 +750,17 @@ const NO_PUBLIC_METADATA = {
     "TCP/UDP 88 and MS-KKDCP where there is nothing to GET.",
   "SPNEGO":
     "RFC 4559 negotiates in the WWW-Authenticate header of the protected " +
-    "resource itself. There is no document to fetch first, which is the whole " +
-    "shape of the mechanism.",
+    "resource itself. There is no document to fetch first, which is the " +
+    "whole shape of the mechanism.",
   "XACML":
     "XACML 3.0 defines no discovery document, and since 2026-09-06 the whole " +
     "surface requires a role — GET /xacml/policies is a CONTROL in section 3 " +
     "for exactly that reason.",
   "LDAP":
     "the rootDSE (RFC 4512 section 5.1) IS this family's metadata and an " +
-    "anonymous client reads it before it binds — but it is on the directory's " +
-    "own socket, which no stack here publishes to this job. See the header " +
-    "for what covering it would cost.",
+    "anonymous client reads it before it binds — but it is on the " +
+    "directory's own socket, which no stack here publishes to this job. See " +
+    "the header for what covering it would cost.",
   "PKI":
     "the one place an X.509 authority normally answers a stranger is a CRL " +
     "distribution point or an OCSP responder, and this service publishes " +
@@ -711,8 +774,8 @@ const NO_PUBLIC_METADATA = {
     "the application rather than to this family. An anonymous GET of " +
     "anything here is meant to fail.",
   "WebAuthn / CTAP":
-    "Level 3 has no relying-party metadata document; the creation and request " +
-    "options are minted per ceremony at /authn/webauthn.",
+    "Level 3 has no relying-party metadata document; the creation and " +
+    "request options are minted per ceremony at /authn/webauthn.",
   "One-time passwords (TOTP)":
     "RFC 6238 defines no discovery document and there is nothing a stranger " +
     "could usefully be told. The one thing this family publishes is an " +
@@ -730,8 +793,8 @@ const NO_PUBLIC_METADATA = {
     "anything here is meant to fail.",
   "Federation":
     "there is no service-wide document — /federation/metadata/:id is one per " +
-    "CONFIGURED relationship, and section 5 asserts the surface is ungated by " +
-    "asking for a relationship that does not exist.",
+    "CONFIGURED relationship, and section 5 asserts the surface is ungated " +
+    "by asking for a relationship that does not exist.",
   "User portal":
     "not a protocol. Its own card on /admin/sts-metadata says so in a field."
 };
@@ -743,9 +806,11 @@ const NO_PUBLIC_METADATA = {
 // ---------------------------------------------------------------------------
 const WELL_KNOWN_ELSEWHERE = {
   "/.well-known/openid-configuration/*": "the inserted-path form, section 4",
-  "/.well-known/oauth-authorization-server/*": "the inserted-path form, section 4",
+  "/.well-known/oauth-authorization-server/*": "the inserted-path form, " +
+                                               "section 4",
   "/*/.well-known/openid-configuration": "the issuer-path form, section 4",
-  "/.well-known/openid-credential-issuer/*": "the inserted-path form, section 4",
+  "/.well-known/openid-credential-issuer/*":
+    "the inserted-path form, section 4",
   "/.well-known/jwt-vc-issuer/*": "the inserted-path form, section 4",
   "/.well-known/gnap-as-rs/:as":
     "the same handler as /.well-known/gnap-as-rs for a NAMED authorization " +
@@ -772,6 +837,7 @@ async function fetchDocument(target, headers) {
   try {
     body = JSON.parse(text);
   } catch (e) {
+    log.debug("Caught in fetchDocument(): " + ((e && e.message) || e));
     // Not JSON, which several of these documents legitimately are not. The
     // caller decides whether that matters; the raw text is what gets reported.
     body = null;
@@ -814,8 +880,8 @@ async function everyDocumentAnswersAStranger() {
     check(where + " is served as " + doc.type, function () {
       assert.ok(doc.type.test(r.type),
         where + " came back as " + (r.type || "no content type at all") +
-        " and this specification names " + doc.type + ". A discovery document " +
-        "served as text/html is usually an error page answering 200.");
+        " and this specification names " + doc.type + ". A discovery " +
+        "document served as text/html is usually an error page answering 200.");
     });
 
     check(where + " is the document it claims to be", function () {
@@ -843,10 +909,11 @@ async function everyDocumentAnswersAStranger() {
       assert.ok(/no-store/.test(r.cache),
         where + " was served with Cache-Control: " +
         (r.cache || "nothing at all") + ". Every document in this table " +
-        "describes key material this service regenerates on every start, so a " +
-        "cached copy outlives the key it names and the far end verifies " +
-        "today's signatures against yesterday's certificate. CLAUDE.md states " +
-        "the rule under *The signing key is regenerated on every start*.");
+        "describes key material this service regenerates on every start, so " +
+        "a cached copy outlives the key it names and the far end verifies " +
+        "today's signatures against yesterday's certificate. CLAUDE.md " +
+        "states the rule under *The signing key is regenerated on every " +
+        "start*.");
     });
   }
   log.info("[anonymous] OK — " + DOCUMENTS.length + " documents, each " +
@@ -859,7 +926,8 @@ async function everyDocumentAnswersAStranger() {
 // ===========================================================================
 async function aBadCredentialIsNotTheAbsenceOfOne() {
   log.debug("Entering aBadCredentialIsNotTheAbsenceOfOne().");
-  log.info("=== the same documents, with a credential that does not verify ===");
+  log.info("=== the same documents, with a credential that does not verify " +
+           "===");
 
   for (const doc of DOCUMENTS) {
     const r = await fetchDocument(doc.path,
@@ -890,8 +958,8 @@ async function aBadCredentialIsNotTheAbsenceOfOne() {
     }
   }
   log.info("[bad credential] OK — " + DOCUMENTS.length + " documents; the " +
-           "three SCIM discovery endpoints refuse a failed credential and the " +
-           "rest are unmoved by one.");
+           "three SCIM discovery endpoints refuse a failed credential and " +
+           "the rest are unmoved by one.");
   log.debug("Leaving aBadCredentialIsNotTheAbsenceOfOne().");
 }
 
@@ -909,11 +977,11 @@ async function theGatedSurfacesStillRefuse() {
         control.path + " answered " + r.status + " to a caller with nothing, " +
         "and it must answer one of " + control.expect.join(" or ") +
         " — " + control.why + ".\n\nTHIS IS A CONTROL, and it fails in two " +
-        "very different situations. Either that surface has stopped requiring " +
-        "a credential, which is a defect in the service; or this file's " +
-        "notion of an anonymous read has gone soft — a fetch that follows " +
-        "redirects, a status compared loosely — in which case section 1 above " +
-        "is passing without checking anything.\n  body: " +
+        "very different situations. Either that surface has stopped " +
+        "requiring a credential, which is a defect in the service; or this " +
+        "file's notion of an anonymous read has gone soft — a fetch that " +
+        "follows redirects, a status compared loosely — in which case " +
+        "section 1 above is passing without checking anything.\n  body: " +
         r.text.slice(0, 200));
     });
   }
@@ -964,7 +1032,8 @@ async function theSuitesTokenShimIsNarrow() {
       assert.strictEqual(plain.status, 200,
         "STS_ADMIN_API_TOKEN is in this job's environment, so " +
         "tests/tools/attach-admin-token.js should have attached it to a " +
-        "request that carried no Authorization header — and /admin-api/status " +
+        "request that carried no Authorization header — and " +
+        "/admin-api/status " +
         "answered " + plain.status + " instead of 200. Either the preload is " +
         "no longer being applied, or that API's gate has changed. It matters " +
         "here because the control above sends `Authorization: none` " +
@@ -983,9 +1052,9 @@ async function theSuitesTokenShimIsNarrow() {
   check("`Authorization: none` reaches the API unauthenticated", function () {
     assert.strictEqual(refused.status, 401,
       "/admin-api/status answered " + refused.status + " to a caller " +
-      "presenting `Authorization: none`, which this service cannot parse as a " +
-      "credential. That is the shim's own documented way for a job to drive " +
-      "this API as nobody, and the control above depends on it.");
+      "presenting `Authorization: none`, which this service cannot parse as " +
+      "a credential. That is the shim's own documented way for a job to " +
+      "drive this API as nobody, and the control above depends on it.");
   });
 
   log.info("[shim] OK — the one path the suite's preload touches, and it " +
@@ -1026,14 +1095,16 @@ async function theIssuerPathFormsAnswerToo() {
     });
     check(form.path + " names its own issuer", function () {
       assert.ok(r.body && r.body.issuer === expected,
-        form.what + " claims issuer " + (r.body && r.body.issuer) + " and was " +
-        "fetched from a URL naming " + expected + ". RFC 8414 section 3.3 " +
+        form.what + " claims issuer " + (r.body && r.body.issuer) + " and " +
+        "was fetched from a URL " +
+        "naming " + expected + ". RFC 8414 section 3.3 " +
         "makes a conforming client reject that document, which is a failure " +
         "no status code would show.");
     });
     check(form.path + " is no-store", function () {
       assert.ok(/no-store/.test(r.cache),
-        form.what + " was served with Cache-Control: " + (r.cache || "nothing"));
+        form.what + " was served with Cache-Control: " +
+        (r.cache || "nothing"));
     });
   }
 
@@ -1103,12 +1174,12 @@ async function thePerPartnerDocuments() {
     assert.strictEqual(fed.status, 404,
       "/federation/metadata/<unknown> answered " + fed.status +
       (fed.location ? " -> " + fed.location : "") + ", and it must answer " +
-      "404. The difference matters: 404 means the reader was admitted and the " +
-      "relationship does not exist, while 401 or a redirect would mean this " +
-      "service had put a gate on READING metadata. Federation's gate is on " +
-      "the SIGNER of an incoming assertion and is the one refusal here that " +
-      "cannot be made permissive — which is exactly why it must not spread " +
-      "to the document a partner reads while being configured.");
+      "404. The difference matters: 404 means the reader was admitted and " +
+      "the relationship does not exist, while 401 or a redirect would mean " +
+      "this service had put a gate on READING metadata. Federation's gate is " +
+      "on the SIGNER of an incoming assertion and is the one refusal here " +
+      "that cannot be made permissive — which is exactly why it must not " +
+      "spread to the document a partner reads while being configured.");
   });
 
   log.info("[per partner] OK — two minted documents and one honest 404.");
@@ -1154,7 +1225,8 @@ function everyFamilyIsAccountedFor() {
 
   const uncovered = [];
   families.forEach(function (family) {
-    const covered = DOCUMENTS.some(function (d) { return d.family === family; });
+    const covered =
+        DOCUMENTS.some(function (d) { return d.family === family; });
     if (covered) { return; }
     if (Object.prototype.hasOwnProperty.call(NO_PUBLIC_METADATA, family)) {
       return;
@@ -1164,8 +1236,9 @@ function everyFamilyIsAccountedFor() {
 
   check("every family is covered or excused", function () {
     assert.deepStrictEqual(uncovered, [],
-      "these protocol families are advertised on /admin/sts-metadata and this " +
-      "job says nothing about them: " + uncovered.join(", ") + ".\n\nEvery " +
+      "these protocol families are advertised on /admin/sts-metadata and " +
+      "this job says nothing about " +
+      "them: " + uncovered.join(", ") + ".\n\nEvery " +
       "family either publishes a document a stranger reads first — add it to " +
       "DOCUMENTS — or it does not, in which case say so in " +
       "NO_PUBLIC_METADATA with the reason. There is no third answer, and a " +
@@ -1176,7 +1249,9 @@ function everyFamilyIsAccountedFor() {
   const invented = [];
   DOCUMENTS.forEach(function (d) {
     if (d.family === null) { return; }
-    if (families.indexOf(d.family) < 0) { invented.push(d.path + " -> " + d.family); }
+    if (families.indexOf(d.family) < 0) {
+      invented.push(d.path + " -> " + d.family);
+    }
   });
   Object.keys(NO_PUBLIC_METADATA).forEach(function (family) {
     if (families.indexOf(family) < 0) {
@@ -1225,8 +1300,11 @@ function everyWellKnownPathIsAccountedFor() {
   dirs.forEach(function (dir) {
     let entries = [];
     try {
-      entries = fs.readdirSync(dir).filter(function (f) { return /\.js$/.test(f); });
+      entries = fs.readdirSync(dir)
+                  .filter(function (f) { return /\.js$/.test(f); });
     } catch (e) {
+      log.debug("Caught in a callback in everyWellKnownPathIsAccountedFor(): " +
+                ((e && e.message) || e));
       // Not a readable directory, so not a route module. The floor below is
       // what catches a systematic loss rather than this one.
       return;
@@ -1236,12 +1314,14 @@ function everyWellKnownPathIsAccountedFor() {
       try {
         text = fs.readFileSync(path.join(dir, file), "utf8");
       } catch (e) {
+        log.debug("Caught in a callback in everyWellKnownPathIsAccountedFor(): " + ((e && e.message) || e));
         // Same as above: unreadable is not a route module.
         return;
       }
       // The literal form.
       let m;
-      const literal = /app\.(?:get|all)\(\s*['"]([^'"]*\/\.well-known\/[^'"]*)['"]/g;
+      const literal =
+          /app\.(?:get|all)\(\s*['"]([^'"]*\/\.well-known\/[^'"]*)['"]/g;
       m = literal.exec(text);
       while (m) {
         found.add(m[1]);
@@ -1276,10 +1356,11 @@ function everyWellKnownPathIsAccountedFor() {
 
   check("every registered /.well-known path is accounted for", function () {
     assert.deepStrictEqual(unaccounted, [],
-      "this tree registers " + unaccounted.join(", ") + " and nothing in this " +
-      "file mentions it. A /.well-known path is by definition a document " +
-      "somebody fetches without being invited — add it to DOCUMENTS, or to " +
-      "WELL_KNOWN_ELSEWHERE naming the section that covers it.");
+      "this tree registers " + unaccounted.join(", ") + " and nothing in " +
+      "this file mentions it. A /.well-known path is by definition a " +
+      "document somebody fetches without being invited — add it to " +
+      "DOCUMENTS, or to WELL_KNOWN_ELSEWHERE naming the section that covers " +
+      "it.");
   });
 
   log.info("[well-known] OK — " + paths.length + " registrations, all " +
@@ -1313,7 +1394,11 @@ async function whatTheyPointAtIsReadableToo() {
     if (!uri || seen.has(uri)) { continue; }
     seen.add(uri);
     const key = await fetch(uri, { redirect: "manual", headers: {} });
-    const body = await key.json().catch(function () { return null; });
+    const body = await key.json().catch(function (e) {
+      // Not JSON; the check below reports the body as missing.
+      log.debug("Caught parsing " + uri + ": " + ((e && e.message) || e));
+      return null;
+    });
     check(uri + " answers a stranger", function () {
       assert.strictEqual(key.status, 200,
         source + " points every client at " + uri + ", which answered " +

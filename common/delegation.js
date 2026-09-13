@@ -160,7 +160,8 @@ const TYPES = [
           'other means gets a Kerberos identity for them, and it is not a ' +
           'privilege: the ticket is to yourself.' },
   { type: 'krb5-s4u2proxy-classic', protocol: 'Kerberos v5', mode: 'delegation',
-    label: 'S4U2Proxy — classic constrained delegation', spec: '[MS-SFU] 3.2.5.2',
+    label: 'S4U2Proxy — classic constrained delegation', spec: '[MS-SFU] ' +
+        '3.2.5.2',
     policed: true,
     what: 'The front end then reached ANOTHER service as that user. ' +
           'Authorized by msDS-AllowedToDelegateTo on the FRONT-END account, ' +
@@ -171,8 +172,8 @@ const TYPES = [
     policed: true,
     what: 'The same messages, authorized from the opposite direction: ' +
           'msDS-AllowedToActOnBehalfOfOtherIdentity on the BACK-END account, ' +
-          'which whoever controls that object can set themselves. That is the ' +
-          'entire security story of RBCD, and it needs no forwardable ' +
+          'which whoever controls that object can set themselves. That is ' +
+          'the entire security story of RBCD, and it needs no forwardable ' +
           'evidence — but does need PA-PAC-OPTIONS.' },
   { type: 'krb5-forwarded', protocol: 'Kerberos v5', mode: 'impersonation',
     label: 'Forwarded TGT (unconstrained delegation)', spec: 'RFC 4120 5.8.1',
@@ -258,8 +259,8 @@ const TYPES = [
     mode: 'delegation',
     label: 'SAML 2.0 bearer assertion grant', spec: 'RFC 7522 §2.1',
     policed: true,
-    what: 'A trusted party signs a SAML 2.0 assertion saying who the token is ' +
-          'for, and this authorization server issues one. No browser, no ' +
+    what: 'A trusted party signs a SAML 2.0 assertion saying who the token ' +
+          'is for, and this authorization server issues one. No browser, no ' +
           'password and no consent step: the XML Signature is the whole of ' +
           'the authorization, which is why the Issuer must be declared on an ' +
           'application entry as `oauthSamlAssertionIssuer` and the ' +
@@ -325,7 +326,9 @@ let dropped = 0;
 // `runtime: true` on the setting claims. Lowering the cap trims on the very
 // next act rather than one row per act thereafter.
 function maxRecords() {
+  log.debug("Entering maxRecords().");
   const value = parseInt(config.value('delegation.maxRecords'), 10);
+  log.debug("Leaving maxRecords().");
   return (isFinite(value) && value > 0) ? value : 1;
 }
 
@@ -364,7 +367,8 @@ function party(detail) {
   log.debug("Entering party().");
   const info = detail || {};
   const presented = String(info.presented == null ? '' : info.presented).trim();
-  const application = String(info.application == null ? '' : info.application).trim();
+  const application = String(info.application == null ? '' :
+                             info.application).trim();
   log.debug("Leaving party().");
   return {
     key: presented ? stats.identityKeyOf(presented) : '',
@@ -394,7 +398,13 @@ function party(detail) {
 // otherwise, so a chain does not fork the first time somebody's realm is
 // spelled differently.
 function chainKeyOf(record) {
-  const at = function (p) { return p.key || p.presented || p.application || '(none)'; };
+  log.debug("Entering chainKeyOf().");
+  const at = function (p) {
+    log.debug("Entering at().");
+    log.debug("Leaving at().");
+    return p.key || p.presented || p.application || '(none)';
+  };
+  log.debug("Leaving chainKeyOf().");
   return [record.type, at(record.initial), at(record.intermediary),
           at(record.target)].join(' | ');
 }
@@ -408,7 +418,9 @@ function chainKeyOf(record) {
 // delegation act is precisely the request that carries two credentials at once,
 // so it is the row most likely to put a pasted assertion on a web page.
 function credential(detail) {
+  log.debug("Entering credential().");
   const info = detail || {};
+  log.debug("Leaving credential().");
   return {
     kind: String(info.kind == null ? '' : info.kind).trim(),
     identifier: String(info.identifier == null ? '' : info.identifier).trim(),
@@ -417,7 +429,12 @@ function credential(detail) {
 }
 
 function credentials(list) {
-  if (!list) return [];
+  log.debug("Entering credentials().");
+  if (!list) {
+    log.debug("Leaving credentials().");
+    return [];
+  }
+  log.debug("Leaving credentials().");
   return (Array.isArray(list) ? list : [list])
     .filter(Boolean)
     .map(credential)
@@ -456,7 +473,9 @@ function credentials(list) {
 //   note          one sentence of context for the row
 // ---------------------------------------------------------------------------
 function record(detail) {
+  log.debug("Entering record().");
   try {
+    log.debug("Leaving record().");
     return recordUnguarded(detail || {});
   } catch (e) {
     // Swallowed on purpose, and loudly: see the header above. A malformed call
@@ -464,6 +483,7 @@ function record(detail) {
     log.error(errorCodes.tag('STS-REG-0033') +
               'delegation: an act could not be recorded and the protocol was ' +
               'left alone: ' + e.message);
+    log.debug("Leaving record().");
     return null;
   }
 }
@@ -517,8 +537,10 @@ function recordUnguarded(info) {
     acts.shift();
     dropped++;
   }
-  log.info('delegation: ' + record.protocol + ' ' + (record.typeLabel || record.type) +
-    ' — ' + (record.intermediary.presented || record.intermediary.application || 'something') +
+  log.info('delegation: ' + record.protocol + ' ' +
+    (record.typeLabel || record.type) +
+    ' — ' + (record.intermediary.presented || record.intermediary.application ||
+             'something') +
     ' ' + (outcome === 'issued' ? 'acted for ' : 'was REFUSED acting for ') +
     (record.initial.presented || '(nobody named)') +
     (record.target.application || record.target.presented
@@ -561,9 +583,11 @@ function recordUnguarded(info) {
 // holds affinity but the `/admin-api` read that draws the picture fans out.
 // ---------------------------------------------------------------------------
 function merged() {
+  log.debug("Entering merged().");
   const mine = acts.slice(0);
   const others = replication.remoteRows('delegation.acts', undefined, '');
   if (!others.length) {
+    log.debug("Leaving merged().");
     // THE OVERWHELMINGLY COMMON CASE — one process — and it costs one array
     // copy and a length check rather than a sort of everything.
     return mine;
@@ -585,6 +609,7 @@ function merged() {
     }
     return (a.seq || 0) - (b.seq || 0);
   });
+  log.debug("Leaving merged().");
   return all;
 }
 
@@ -593,7 +618,8 @@ function merged() {
 function list() {
   log.debug("Entering list(). " + acts.length + " act(s) held here.");
   const out = merged().reverse();
-  log.debug("Leaving list(). " + out.length + " act(s) returned, newest first.");
+  log.debug("Leaving list(). " + out.length +
+            " act(s) returned, newest first.");
   return out;
 }
 
@@ -623,7 +649,8 @@ function summary() {
     byType[row.type] = (byType[row.type] || 0) + 1;
     if (row.mode) byMode[row.mode] = (byMode[row.mode] || 0) + 1;
     byOutcome[row.outcome] = (byOutcome[row.outcome] || 0) + 1;
-    if (row.protocol) byProtocol[row.protocol] = (byProtocol[row.protocol] || 0) + 1;
+    if (row.protocol) byProtocol[row.protocol] = (byProtocol[row.protocol] ||
+                                                  0) + 1;
     chains[row.chainKey] = (chains[row.chainKey] || 0) + 1;
   });
   const out = {
@@ -671,7 +698,8 @@ function chainList(rows) {
         chainKey: row.chainKey,
         protocol: row.protocol, type: row.type, typeLabel: row.typeLabel,
         mode: row.mode,
-        initial: row.initial, intermediary: row.intermediary, target: row.target,
+        initial: row.initial, intermediary: row.intermediary,
+        target: row.target,
         acts: 0, issued: 0, refused: 0,
         firstAt: row.at, lastAt: row.at,
         // The most recent explanation, whichever kind it was. A chain that was
@@ -719,9 +747,10 @@ function chainList(rows) {
 // chainKeyOf() collapses on — so a box in the picture and a column in the table
 // cannot come to disagree about who is who. It means a party that is the target
 // of one chain and the intermediary of the next is ONE box with a line in and a
-// line out, which is exactly the middle tier a reader came here to find. It also
-// means the node carries `roles`, because "this box was an initial identity 40
-// times and a target once" is the sentence that says which box to look at first.
+// line out, which is exactly the middle tier a reader came here to find. It
+// also means the node carries `roles`, because "this box was an initial
+// identity 40 times and a target once" is the sentence that says which box to
+// look at first.
 //
 // **AN ABSENT PARTY IS NOT A BOX, AND THE EDGE JUMPS IT.** A forwarded
 // ticket-granting ticket has NO intermediary and cannot have one — the client
@@ -736,19 +765,19 @@ function chainList(rows) {
 // **A SELF-EDGE IS A FACT ABOUT THE BOX, NOT A LOOP ON IT.** S4U2Self names the
 // requester as the intermediary AND as the target, because the ticket is to
 // itself. Drawn as an arrow leaving a box and re-entering it, that is a picture
-// of nothing; it is recorded as `selfTarget` on the node instead and the drawing
-// says so in words. The initial-to-intermediary edge still carries the whole
-// act, which is where the interesting half of S4U2Self is anyway.
+// of nothing; it is recorded as `selfTarget` on the node instead and the
+// drawing says so in words. The initial-to-intermediary edge still carries the
+// whole act, which is where the interesting half of S4U2Self is anyway.
 //
-// **THE ISSUER IS IN THE PICTURE AND IT IS NOT A PARTY.** Every edge here exists
-// because THIS service issued or refused a credential, and a picture that left
-// it out would show a delegation happening between three strangers. It is one
-// node — `kind: 'sts'`, carrying the TRUST REALM, because a realm is a whole
-// logical copy of this service and two realms' pictures are two different
-// services' pictures — with an edge to whoever ASKED. That is the intermediary
-// where there is one and the initial identity where there is not, which is the
-// forwarded-TGT case again: the client asking to have its own ticket forwarded
-// is the party this service handed something to.
+// **THE ISSUER IS IN THE PICTURE AND IT IS NOT A PARTY.** Every edge here
+// exists because THIS service issued or refused a credential, and a picture
+// that left it out would show a delegation happening between three strangers.
+// It is one node — `kind: 'sts'`, carrying the TRUST REALM, because a realm is
+// a whole logical copy of this service and two realms' pictures are two
+// different services' pictures — with an edge to whoever ASKED. That is the
+// intermediary where there is one and the initial identity where there is not,
+// which is the forwarded-TGT case again: the client asking to have its own
+// ticket forwarded is the party this service handed something to.
 //
 // `rows` is a list of acts newest first — list()'s answer, or the filtered
 // subset a page is showing. Everything below is derived from it and nothing is
@@ -770,34 +799,39 @@ function chainList(rows) {
 // only when something was PRESENTED; a target names an application and presents
 // nothing, so its identifier arrives exactly as the protocol spelled it. On an
 // S4U2Self that is the same principal twice: `HTTP/frontend@EXAMPLE.COM` as the
-// intermediary, normalised to `HTTP/frontend` because it presented a ticket, and
-// `HTTP/frontend@EXAMPLE.COM` raw as the target, because a ticket was issued TO
-// it. Unnormalised, the picture draws the requester and the service it asked for
-// a ticket to ITSELF as two boxes with a line between them, which is a drawing
-// of something that did not happen. **Two spellings of one identity is two
-// people** is the rule the directory already follows at `dnRfc4514()` and at
-// `userFor()`; this is the same rule one layer up.
+// intermediary, normalised to `HTTP/frontend` because it presented a ticket,
+// and `HTTP/frontend@EXAMPLE.COM` raw as the target, because a ticket was
+// issued TO it. Unnormalised, the picture draws the requester and the service
+// it asked for a ticket to ITSELF as two boxes with a line between them, which
+// is a drawing of something that did not happen. **Two spellings of one
+// identity is two people** is the rule the directory already follows at
+// `dnRfc4514()` and at `userFor()`; this is the same rule one layer up.
 //
 // The table is deliberately left alone: it shows both spellings side by side in
 // two columns, where seeing them is the point, and changing `chainKey` would
 // change what `/admin-api/delegation` calls a chain.
 function nodeIdOf(party) {
+  log.debug("Entering nodeIdOf().");
   if (party.key) {
+    log.debug("Leaving nodeIdOf().");
     return party.key;
   }
   if (party.application) {
+    log.debug("Leaving nodeIdOf().");
     return stats.identityKeyOf(party.application);
   }
+  log.debug("Leaving nodeIdOf().");
   return party.presented || '';
 }
 
 // The three roles of one chain, in the order a request moves through them, with
 // the ones nobody named left out. What comes back is what the edges are drawn
 // between — consecutive survivors — and `skipped` on each edge names the roles
-// that were jumped, so the drawing can say "through an intermediary this service
-// was never told the name of" rather than silently connecting two boxes that
-// never spoke.
+// that were jumped, so the drawing can say "through an intermediary this
+// service was never told the name of" rather than silently connecting two boxes
+// that never spoke.
 function presentParties(row) {
+  log.debug("Entering presentParties().");
   const out = [];
   ROLE_IDS.forEach(function (role) {
     const party = row[role];
@@ -806,6 +840,7 @@ function presentParties(row) {
       out.push({ role: role, id: id, party: party });
     }
   });
+  log.debug("Leaving presentParties().");
   return out;
 }
 
@@ -828,17 +863,17 @@ function foldCredentials(into, list) {
     held.count++;
     if (one.identifier) {
       if (held.identifiers.indexOf(one.identifier) >= 0) {
-        // Already quoted. Not counted as "more", because more means what the cap
-        // hid and this is the same credential seen twice.
+        // Already quoted. Not counted as "more", because more means what the
+        // cap hid and this is the same credential seen twice.
       } else if (held.identifiers.length < MAX_IDENTIFIERS_PER_KIND) {
         held.identifiers.push(one.identifier);
       } else {
         held.moreIdentifiers++;
       }
     }
-    // ONE note per kind rather than one per act: every S4U2Proxy row carries the
-    // same sentence about the evidence ticket, and a label repeating it eleven
-    // times would be eleven copies of the thing that does not vary.
+    // ONE note per kind rather than one per act: every S4U2Proxy row carries
+    // the same sentence about the evidence ticket, and a label repeating it
+    // eleven times would be eleven copies of the thing that does not vary.
     if (one.note && held.notes.indexOf(one.note) < 0 && held.notes.length < 3) {
       held.notes.push(one.note);
     }
@@ -847,6 +882,8 @@ function foldCredentials(into, list) {
 }
 
 function credentialList(folded) {
+  log.debug("Entering credentialList().");
+  log.debug("Leaving credentialList().");
   return Object.keys(folded).map(function (kind) {
     return folded[kind];
   }).sort(function (a, b) {
@@ -855,8 +892,8 @@ function credentialList(folded) {
 }
 
 // How many token rows the list beneath the picture carries. It is a cap on the
-// LIST and not on the graph — every act is still counted into its edge — so what
-// a reader loses when it bites is the individual identifiers of the oldest
+// LIST and not on the graph — every act is still counted into its edge — so
+// what a reader loses when it bites is the individual identifiers of the oldest
 // credentials. What was left off is COUNTED, for the reason the store counts
 // what it dropped: a truncated list must say it was truncated.
 const MAX_TOKEN_ROWS = 250;
@@ -881,7 +918,8 @@ function graph(rows) {
   const sts = {
     id: ' sts',
     kind: 'sts',
-    realm: { id: realm.id, name: realm.name, isDefault: realms.isDefault(realm) },
+    realm: { id: realm.id, name: realm.name,
+             isDefault: realms.isDefault(realm) },
     issuer: String(config.value('wstrust.issuer') || ''),
     roles: { initial: 0, intermediary: 0, target: 0 },
     acts: 0, issued: 0, refused: 0
@@ -899,9 +937,9 @@ function graph(rows) {
         // party can arrive as a bare name on one act and with its application
         // identifier on the next, and the box should carry both.
         key: '', presented: '', application: '',
-        // What the party IS, in the protocol's own words, from the act that said
-        // it first. They are per-role sentences, and the box's role is whichever
-        // it played most, which is settled below.
+        // What the party IS, in the protocol's own words, from the act that
+        // said it first. They are per-role sentences, and the box's role is
+        // whichever it played most, which is settled below.
         what: '',
         roles: { initial: 0, intermediary: 0, target: 0 },
         protocols: [],
@@ -918,7 +956,8 @@ function graph(rows) {
     if (party) {
       if (party.key && !node.key) node.key = party.key;
       if (party.presented && !node.presented) node.presented = party.presented;
-      if (party.application && !node.application) node.application = party.application;
+      if (party.application &&
+          !node.application) node.application = party.application;
       if (party.what && !node.what) node.what = party.what;
     }
     log.debug("Leaving nodeFor().");
@@ -946,7 +985,8 @@ function graph(rows) {
     chains[row.chainKey] = true;
     const present = presentParties(row);
     // Every party of the act, whether or not an edge reaches it. A target that
-    // is the same box as the intermediary draws no edge and must still be a box.
+    // is the same box as the intermediary draws no edge and must still be a
+    // box.
     present.forEach(function (at) {
       const node = nodeFor(at.id, at.party);
       node.roles[at.role]++;
@@ -968,10 +1008,10 @@ function graph(rows) {
         nodeFor(to.id, to.party).selfTarget = true;
         continue;
       }
-      // The roles jumped between these two. presentParties() has already dropped
-      // them, so this is the only place the fact survives, and it is the
-      // difference between "alice reached the back end" and "alice reached the
-      // back end through something this KDC was never told the name of".
+      // The roles jumped between these two. presentParties() has already
+      // dropped them, so this is the only place the fact survives, and it is
+      // the difference between "alice reached the back end" and "alice reached
+      // the back end through something this KDC was never told the name of".
       const skipped = ROLE_IDS.slice(ROLE_IDS.indexOf(from.role) + 1,
                                     ROLE_IDS.indexOf(to.role));
       // The chain key is IN the edge id, so two chains that happen to share a
@@ -982,10 +1022,11 @@ function graph(rows) {
       const edge = edgeFor(row.chainKey + ' | ' + from.role + ' > ' + to.role, {
         from: from.id, to: to.id,
         fromRole: from.role, toRole: to.role,
-        // What this line MEANS, which is not the same on both halves of a chain.
-        // The first is the DELEGATION relationship — who is acting for whom. The
-        // second is the TRUST relationship — what the credential is for, which
-        // is the question "what is this token's audience" asked as a picture.
+        // What this line MEANS, which is not the same on both halves of a
+        // chain. The first is the DELEGATION relationship — who is acting for
+        // whom. The second is the TRUST relationship — what the credential is
+        // for, which is the question "what is this token's audience" asked as a
+        // picture.
         relation: to.role === 'target' ? 'reaches' : 'acts-for',
         skipped: skipped,
         chainKey: row.chainKey,
@@ -993,7 +1034,8 @@ function graph(rows) {
         mode: row.mode, spec: row.spec, policed: row.policed,
         // Carried so a line can be labelled with WHO it is about without the
         // renderer having to walk back to the chain: on a `reaches` edge the
-        // interesting sentence is "as alice", and alice is not either end of it.
+        // interesting sentence is "as alice", and alice is not either end of
+        // it.
         subject: nodeIdOf(row.initial),
         actor: nodeIdOf(row.intermediary)
       });
@@ -1001,26 +1043,27 @@ function graph(rows) {
       if (row.outcome === 'issued') edge.issued++; else edge.refused++;
       edge.firstAt = edge.firstAt ? Math.min(edge.firstAt, row.at) : row.at;
       edge.lastAt = Math.max(edge.lastAt, row.at);
-      // Newest first in `source`, so the FIRST explanation seen is the latest one
-      // and nothing below overwrites it — the rule chainList() states.
-      if (!edge.authorizedBy && row.authorizedBy) edge.authorizedBy = row.authorizedBy;
+      // Newest first in `source`, so the FIRST explanation seen is the latest
+      // one and nothing below overwrites it — the rule chainList() states.
+      if (!edge.authorizedBy &&
+          row.authorizedBy) edge.authorizedBy = row.authorizedBy;
       if (!edge.reason && row.reason) edge.reason = row.reason;
       foldCredentials(edge.consumedFold, row.consumed);
-      // What came OUT hangs on the edge that reaches the TARGET, because that is
-      // what the credential is for. Hanging it on the acts-for edge as well would
-      // count it twice in a picture whose whole claim is that each line says a
-      // different thing — and where there is no target edge (nobody named the
-      // target) the one edge there is carries it, or the drawing would show a
-      // delegation that produced nothing.
+      // What came OUT hangs on the edge that reaches the TARGET, because that
+      // is what the credential is for. Hanging it on the acts-for edge as well
+      // would count it twice in a picture whose whole claim is that each line
+      // says a different thing — and where there is no target edge (nobody
+      // named the target) the one edge there is carries it, or the drawing
+      // would show a delegation that produced nothing.
       if (to.role === 'target' || present.length < 3) {
         foldCredentials(edge.producedFold, row.produced);
       }
     }
 
-    // WHO ASKED, which is who this service handed something to. The intermediary
-    // where the chain has one; the initial identity where it does not, which is
-    // the forwarded-TGT case — the client asking for its own ticket to be made
-    // forwardable.
+    // WHO ASKED, which is who this service handed something to. The
+    // intermediary where the chain has one; the initial identity where it does
+    // not, which is the forwarded-TGT case — the client asking for its own
+    // ticket to be made forwardable.
     const asker = nodeIdOf(row.intermediary) || nodeIdOf(row.initial);
     if (asker) {
       const edge = edgeFor(' sts > ' + asker, {
@@ -1048,10 +1091,10 @@ function graph(rows) {
       if (row.outcome === 'issued') sts.issued++; else sts.refused++;
     }
 
-    // WHAT WAS ISSUED, one row per credential, newest first because `source` is.
-    // Refusals produce nothing by definition, so they are not here — which is why
-    // the count under this list and the count of acts disagree, and why the page
-    // says so rather than leaving the difference to be noticed.
+    // WHAT WAS ISSUED, one row per credential, newest first because `source`
+    // is. Refusals produce nothing by definition, so they are not here — which
+    // is why the count under this list and the count of acts disagree, and why
+    // the page says so rather than leaving the difference to be noticed.
     if (row.outcome === 'issued') {
       (row.produced || []).forEach(function (one) {
         if (tokens.length >= MAX_TOKEN_ROWS) {
@@ -1133,10 +1176,13 @@ function graph(rows) {
 // a renderer would be a second opinion about it.
 // ---------------------------------------------------------------------------
 function actsOfChain(rows, chainKey) {
+  log.debug("Entering actsOfChain().");
   const wanted = String(chainKey == null ? '' : chainKey);
   if (!wanted) {
+    log.debug("Leaving actsOfChain().");
     return [];
   }
+  log.debug("Leaving actsOfChain().");
   return (rows || list()).filter(function (row) {
     return row.chainKey === wanted;
   });
@@ -1151,17 +1197,17 @@ function actsOfChain(rows, chainKey) {
 // opinion about it in a renderer is the drift this file's headers keep warning
 // about.
 //
-// **THE KEY IS `nodeIdOf()`'s ANSWER AND DELIBERATELY NOT `applicationKeyOf()`'s**,
-// which is the same distinction those three make read the other way round. An
-// application is keyed on the identifier a protocol NAMED — the `client_id`, the
-// `AppliesTo`, the SPN — because "everything delegated through this client" is a
-// question about the client. A person is keyed on the identity they PRESENTED,
-// normalised by `identityKeyOf()`, because `alice`, `alice@STS.MOCK` and
-// `urn:sts:user:alice` are one person and the console files them under one
-// row on /admin/users. Using one key for both would lose exactly the case each
-// is for: an RFC 8693 exchange's intermediary is an ACTOR (a party) beside a
-// `client_id` (an application), and they are two different strings naming two
-// different things in one column.
+// **THE KEY IS `nodeIdOf()`'s ANSWER AND DELIBERATELY NOT
+// `applicationKeyOf()`'s**, which is the same distinction those three make read
+// the other way round. An application is keyed on the identifier a protocol
+// NAMED — the `client_id`, the `AppliesTo`, the SPN — because "everything
+// delegated through this client" is a question about the client. A person is
+// keyed on the identity they PRESENTED, normalised by `identityKeyOf()`,
+// because `alice`, `alice@STS.MOCK` and `urn:sts:user:alice` are one person and
+// the console files them under one row on /admin/users. Using one key for both
+// would lose exactly the case each is for: an RFC 8693 exchange's intermediary
+// is an ACTOR (a party) beside a `client_id` (an application), and they are two
+// different strings naming two different things in one column.
 //
 // So this key is the same one `/admin/users` uses, which is what lets a link
 // from that page reach this store and get the acts naming that person — in any
@@ -1197,10 +1243,13 @@ function identityRolesIn(row, key) {
 // `actsForApplication()` gives: the page that says which role somebody played
 // and the page that decides whether to show the act cannot come to disagree.
 function actsForIdentity(rows, key) {
+  log.debug("Entering actsForIdentity().");
   const wanted = String(key == null ? '' : key);
   if (!wanted) {
+    log.debug("Leaving actsForIdentity().");
     return [];
   }
+  log.debug("Leaving actsForIdentity().");
   return (rows || list()).filter(function (row) {
     return identityRolesIn(row, wanted).length > 0;
   });
@@ -1319,12 +1368,12 @@ function identityList(rows) {
 // question somebody actually arrives with.
 //
 // One identifier, normalised the way `nodeIdOf()` normalises an application, so
-// that `HTTP/backend` and `HTTP/backend@EXAMPLE.COM` are ONE application and not
-// two. **Two spellings of one identity is two people** is the rule the directory
-// follows at `dnRfc4514()`; this is that rule applied to the other kind of
-// party. Every spelling seen is kept beside the key, because the collapse is
-// something a reader has to be able to SEE rather than take on trust — the same
-// reason `party()` keeps `presented` next to `key`.
+// that `HTTP/backend` and `HTTP/backend@EXAMPLE.COM` are ONE application and
+// not two. **Two spellings of one identity is two people** is the rule the
+// directory follows at `dnRfc4514()`; this is that rule applied to the other
+// kind of party. Every spelling seen is kept beside the key, because the
+// collapse is something a reader has to be able to SEE rather than take on
+// trust — the same reason `party()` keeps `presented` next to `key`.
 //
 // An INITIAL identity is counted too, although no call site here names an
 // application for one today. The model allows it, and a role that is counted
@@ -1332,7 +1381,9 @@ function identityList(rows) {
 // a fourth mechanism was recorded.
 // ---------------------------------------------------------------------------
 function applicationKeyOf(identifier) {
+  log.debug("Entering applicationKeyOf().");
   const raw = String(identifier == null ? '' : identifier).trim();
+  log.debug("Leaving applicationKeyOf().");
   return raw ? stats.identityKeyOf(raw) : '';
 }
 
@@ -1362,10 +1413,13 @@ function applicationRolesIn(row, key) {
 // that says which role it played and the page that decides whether to show the
 // act cannot come to disagree.
 function actsForApplication(rows, key) {
+  log.debug("Entering actsForApplication().");
   const wanted = String(key == null ? '' : key);
   if (!wanted) {
+    log.debug("Leaving actsForApplication().");
     return [];
   }
+  log.debug("Leaving actsForApplication().");
   return (rows || list()).filter(function (row) {
     return applicationRolesIn(row, wanted).length > 0;
   });
@@ -1430,10 +1484,10 @@ function applicationList(rows) {
         entry.protocols.push(row.protocol);
       }
     });
-    // The act's OWN counters are added once per application rather than once per
-    // role, or an S4U2Self — which names its requester twice — would report two
-    // acts where there was one, and the total under the chooser would not add up
-    // to the number of acts on the page above it.
+    // The act's OWN counters are added once per application rather than once
+    // per role, or an S4U2Self — which names its requester twice — would report
+    // two acts where there was one, and the total under the chooser would not
+    // add up to the number of acts on the page above it.
     const seen = {};
     ROLE_IDS.forEach(function (role) {
       const party = row[role];

@@ -48,6 +48,12 @@ const config = require('../common/config');
 const realms = require('../common/realms');
 const bcp = require('../oauth-oidc/oauth2_bcp');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'config_realm_layer',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The phrase config.js uses to refuse a restart-only setting. Matched rather
 // than the whole message so a reworded reason does not fail this, but matched
 // at all so that a refusal for some OTHER reason — a type check, say — cannot
@@ -61,6 +67,7 @@ const RESTART_REFUSAL = 'cannot be changed while this service is running';
 // `global.https` is only derived when nothing above the default layer answers.
 // ---------------------------------------------------------------------------
 function withEnv(vars, fn) {
+  log.debug("Entering withEnv().");
   const saved = {};
   Object.keys(vars).forEach(function (key) {
     saved[key] = Object.prototype.hasOwnProperty.call(process.env, key)
@@ -73,6 +80,7 @@ function withEnv(vars, fn) {
     }
   });
   try {
+    log.debug("Leaving withEnv().");
     return fn();
   } finally {
     Object.keys(saved).forEach(function (key) {
@@ -91,15 +99,18 @@ function withEnv(vars, fn) {
 // one behind would change what a later test in the same run resolves.
 // ---------------------------------------------------------------------------
 function withRealm(t, id, overrides, fn) {
+  log.debug("Entering withRealm().");
   const made = realms.create({ id: id, name: id,
                                description: 'Created by ' + __filename,
                                overrides: overrides || {} });
   if (!made.ok) {
     t.bad('could not create the realm "' + id + '"',
           (made.errors || []).join(' '));
+    log.debug("Leaving withRealm().");
     return undefined;
   }
   try {
+    log.debug("Leaving withRealm().");
     return fn(made.realm);
   } finally {
     realms.remove(id);
@@ -113,7 +124,9 @@ function withRealm(t, id, overrides, fn) {
 // checked nothing. The point of the flip is only that the realm carries
 // SOMETHING different, so each type gets the cheapest other legal value.
 function differentValue(setting) {
+  log.debug("Entering differentValue().");
   if (setting.type === 'bool') {
+    log.debug("Leaving differentValue().");
     return !config.value(setting.key);
   }
   if (setting.type === 'enum') {
@@ -121,13 +134,16 @@ function differentValue(setting) {
     const other = (setting.enumValues || []).filter(function (v) {
       return v !== now;
     })[0];
+    log.debug("Leaving differentValue().");
     return other === undefined ? now : other;
   }
   if (setting.type === 'port' || setting.type === 'int') {
     const now = Number(config.value(setting.key)) || 0;
     const max = setting.max === undefined ? 65535 : setting.max;
+    log.debug("Leaving differentValue().");
     return now + 1 <= max ? now + 1 : Math.max(setting.min || 0, now - 1);
   }
+  log.debug("Leaving differentValue().");
   // A string. Suffixed rather than replaced so that a row with a grammar —
   // `spiffe.trustDomain` takes letters, digits, dots, dashes and underscores —
   // is still given something it accepts.
@@ -145,6 +161,7 @@ function differentValue(setting) {
 // paragraph.
 // ---------------------------------------------------------------------------
 function checkMarker(t) {
+  log.debug("Entering checkMarker().");
   t.log.info('the realmRuntime marker');
   // **THE LIST AND NOT THE COUNT, SINCE 2026-09-12.** It was `length === 1`
   // and `oauth2.rfc9700` while there was one holder, and the point of the
@@ -191,12 +208,14 @@ function checkMarker(t) {
             s.key + ' says why it is restart-only',
             JSON.stringify(s.restartReason));
   });
+  log.debug("Leaving checkMarker().");
 }
 
 // ---------------------------------------------------------------------------
 // 2. THE WRITING END: who may set what, on a realm and on the process.
 // ---------------------------------------------------------------------------
 function checkWritingEnd(t) {
+  log.debug("Entering checkWritingEnd().");
   t.log.info('the writing end — config.checkOverride()');
 
   const processWide = config.checkOverride('oauth2.rfc9700', true);
@@ -238,12 +257,14 @@ function checkWritingEnd(t) {
   t.check(typeof scheme === 'string',
           'a realm may NOT carry global.https — it binds no socket',
           JSON.stringify(scheme));
+  log.debug("Leaving checkWritingEnd().");
 }
 
 // ---------------------------------------------------------------------------
 // 3. THE WRITING END, THROUGH realms.js — where two of the three defects were.
 // ---------------------------------------------------------------------------
 function checkRealmWrites(t) {
+  log.debug("Entering checkRealmWrites().");
   t.log.info('the writing end — realms.create() / realms.setOverride()');
 
   // Defect 1: create() documented `overrides` and ignored it. Asserting the
@@ -286,12 +307,14 @@ function checkRealmWrites(t) {
               JSON.stringify(refused.errors));
     });
   });
+  log.debug("Leaving checkRealmWrites().");
 }
 
 // ---------------------------------------------------------------------------
 // 4. THE READING END: the derived default that leaked, and the general rule.
 // ---------------------------------------------------------------------------
 function checkReadingEnd(t) {
+  log.debug("Entering checkReadingEnd().");
   t.log.info('the reading end — a derived default is about the PROCESS');
 
   withRealm(t, 'trl-derived', { 'oauth2.rfc9700': true }, function (realm) {
@@ -361,6 +384,7 @@ function checkReadingEnd(t) {
   });
   t.check(derived.length > 0, 'there are derived settings to check at all',
           derived.length + ' found');
+  log.debug("Leaving checkReadingEnd().");
 }
 
 // ---------------------------------------------------------------------------
@@ -373,6 +397,7 @@ function checkReadingEnd(t) {
 // the writing lock would carry it.
 // ---------------------------------------------------------------------------
 function checkReadingLock(t) {
+  log.debug("Entering checkReadingLock().");
   t.log.info('the reading end — realms.* is ignored on a realm');
   withRealm(t, 'trl-legacy', {}, function (realm) {
     realm.overrides['realms.pathSegment'] = 'zone';
@@ -388,6 +413,7 @@ function checkReadingLock(t) {
     t.equal(on, config.value('realms.enabled'),
             'and so is realms.enabled — a realm cannot switch realms off');
   });
+  log.debug("Leaving checkReadingLock().");
 }
 
 // ---------------------------------------------------------------------------
@@ -400,6 +426,7 @@ function checkReadingLock(t) {
 // connection that had none.
 // ---------------------------------------------------------------------------
 function checkComplianceReport(t) {
+  log.debug("Entering checkComplianceReport().");
   t.log.info('the consequence — oauth2_bcp.js over a plain socket');
   withEnv({ STS_HTTPS: undefined, STS_OAUTH2_RFC9700: undefined },
           function () {
@@ -427,15 +454,18 @@ function checkComplianceReport(t) {
       });
     });
   });
+  log.debug("Leaving checkComplianceReport().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkMarker(t);
   checkWritingEnd(t);
   checkRealmWrites(t);
   checkReadingEnd(t);
   checkReadingLock(t);
   checkComplianceReport(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

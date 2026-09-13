@@ -66,6 +66,12 @@ const keystore = require('../common/keystore');
 const pki = require('../common/pki');
 const ca = require('../spiffe/spiffe_ca');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'spiffe_pki',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The realm this file works in. A realm of its own for `tests/roles.js`'s
 // reason — what is asserted is that this realm's authority is not that
 // realm's, which needs two — and both are LEFT STANDING, because
@@ -75,6 +81,8 @@ const REALM_A = 'spiffe-pki-a';
 const REALM_B = 'spiffe-pki-b';
 
 function certificateOf(pem) {
+  log.debug("Entering certificateOf().");
+  log.debug("Leaving certificateOf().");
   return new nodeCrypto.X509Certificate(pem);
 }
 
@@ -84,21 +92,26 @@ function certificateOf(pem) {
 // the authority key identifier and `verify()` checks the signature, and both
 // are OpenSSL rather than the encoder that wrote these bytes.
 function pathVerifies(chainPem, anchorPem) {
+  log.debug("Entering pathVerifies().");
   const chain = chainPem.map(certificateOf).concat([certificateOf(anchorPem)]);
   for (let i = 0; i < chain.length - 1; i++) {
     if (!chain[i].checkIssued(chain[i + 1])) {
+      log.debug("Leaving pathVerifies().");
       return 'certificate ' + i + ' (' + chain[i].subject +
              ') is not issued by ' + chain[i + 1].subject;
     }
     if (!chain[i].verify(chain[i + 1].publicKey)) {
+      log.debug("Leaving pathVerifies().");
       return 'certificate ' + i + ' (' + chain[i].subject +
              ') does not verify under ' + chain[i + 1].subject;
     }
   }
   const anchor = chain[chain.length - 1];
   if (anchor.subject !== anchor.issuer || !anchor.verify(anchor.publicKey)) {
+    log.debug("Leaving pathVerifies().");
     return 'the anchor (' + anchor.subject + ') is not self-signed';
   }
+  log.debug("Leaving pathVerifies().");
   return '';
 }
 
@@ -123,18 +136,23 @@ function pathVerifies(chainPem, anchorPem) {
 // rather than about an optional surface.
 // ---------------------------------------------------------------------------
 function pathLenOf(pem) {
+  log.debug("Entering pathLenOf().");
   let text;
   try {
     text = execFileSync('openssl',
                         ['x509', '-noout', '-ext', 'basicConstraints'],
                         { input: pem, encoding: 'utf8', stdio: 'pipe' });
   } catch (e) {
+    log.debug("Caught in pathLenOf(): " + ((e && e.message) || e));
+    log.debug("Leaving pathLenOf().");
     return undefined;
   }
   const match = text.match(/CA:TRUE(?:,\s*pathlen:\s*(\d+))?/i);
   if (!match) {
+    log.debug("Leaving pathLenOf().");
     return undefined;
   }
+  log.debug("Leaving pathLenOf().");
   return match[1] === undefined ? null : Number(match[1]);
 }
 
@@ -144,8 +162,10 @@ function pathLenOf(pem) {
 // string, and the throw arrives from `common/config.js` naming neither the
 // realm nor the caller. So this hands back the object.
 function makeRealm(t, id) {
+  log.debug("Entering makeRealm().");
   const held = realms.get(id);
   if (held) {
+    log.debug("Leaving makeRealm().");
     return held;
   }
   const made = realms.create({ id: id, name: id,
@@ -153,12 +173,15 @@ function makeRealm(t, id) {
   if (!made.ok) {
     t.bad('could not create the realm "' + id + '"',
           (made.errors || []).join(' '));
+    log.debug("Leaving makeRealm().");
     return null;
   }
+  log.debug("Leaving makeRealm().");
   return made.realm;
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   await keystore.start();
   const rooted = await pki.ensureRoot({});
   if (!rooted.ok) {
@@ -170,6 +193,7 @@ async function run(t) {
   const realmA = makeRealm(t, REALM_A);
   const realmB = makeRealm(t, REALM_B);
   if (!realmA || !realmB) {
+    log.debug("Leaving run().");
     return;
   }
   // The realm watcher builds a branch for a realm created at runtime, and it
@@ -343,9 +367,9 @@ async function run(t) {
   if (certified.ok) {
     t.check(certificateOf(certified.record.certificatePem)
               .verify(issuingCert.publicKey),
-            'AND THE CERTIFICATE VERIFIES UNDER THAT AUTHORITY\'S KEY — which ' +
-            'it does not when the algorithm is taken from what SIGNED the ' +
-            'authority rather than from what the authority can PRODUCE',
+            'AND THE CERTIFICATE VERIFIES UNDER THAT AUTHORITY\'S KEY — ' +
+            'which it does not when the algorithm is taken from what SIGNED ' +
+            'the authority rather than from what the authority can PRODUCE',
             certified.record.signatureAlg);
     // Left behind rather than forgotten: `forgetCertificate()` takes it out of
     // the register, because a probe slot on a realm somebody may read later is
@@ -393,6 +417,7 @@ async function run(t) {
           'while its chain still says which realm issued it, which is the ' +
           'boundary that moved down a tier rather than going away',
           'two different SPIFFE Issuing CAs');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

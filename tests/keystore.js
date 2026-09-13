@@ -38,6 +38,12 @@ const nodeCrypto = require('crypto');
 
 const crypto = require('../common/crypto');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'keystore',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A directory of its own per run, removed at the end. The KEK file lives in it
 // too, which is not how a deployment would do it — the whole point of a KEK is
 // that it is somewhere the ciphertext is not — but a test that put them apart
@@ -50,8 +56,10 @@ const crypto = require('../common/crypto');
 // is the ordinary shape of this mistake: the error names the file rather than
 // the lifetime.
 async function withTempDir(fn) {
+  log.debug("Entering withTempDir().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-keystore-'));
   try {
+    log.debug("Leaving withTempDir().");
     return await fn(dir);
   } finally {
     try {
@@ -69,26 +77,35 @@ async function withTempDir(fn) {
 // against a running service by the persistence job; what this needs is
 // something that keeps rows so the round trip can be made twice.
 function fakeStore() {
+  log.debug("Entering fakeStore().");
   const rows = new Map();
+  log.debug("Leaving fakeStore().");
   return {
     rows: rows,
     loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
       return Promise.resolve(Array.from(rows.entries()).map(function (pair) {
         return { realm: pair[0], material: pair[1] };
       }));
     },
     saveKeys: function (realm, material) {
+      log.debug("Entering saveKeys().");
       rows.set(realm, material);
+      log.debug("Leaving saveKeys().");
       return Promise.resolve();
     },
     deleteKeys: function (realm) {
+      log.debug("Entering deleteKeys().");
       rows.delete(realm);
+      log.debug("Leaving deleteKeys().");
       return Promise.resolve();
     }
   };
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   // -----------------------------------------------------------------------
   // 1. THE ENCRYPTION. Everything else rests on these four.
   // -----------------------------------------------------------------------
@@ -102,8 +119,8 @@ async function run(t) {
   t.check(sealed.indexOf(secret) < 0,
           'AND THE PLAINTEXT IS NOT IN THE STORED FORM, which is the whole ' +
           'point and is worth asserting rather than assuming: a bug that ' +
-          'stored the value beside its ciphertext would pass every round-trip ' +
-          'check ever written',
+          'stored the value beside its ciphertext would pass every ' +
+          'round-trip check ever written',
           sealed.slice(0, 40));
   t.check(crypto.isEncryptedWithKek(sealed) &&
           !crypto.isEncryptedWithKek('plain text'),
@@ -114,6 +131,7 @@ async function run(t) {
   try {
     crypto.decryptWithKek(nodeCrypto.randomBytes(32), sealed);
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     refusedWrongKey = true;
   }
   t.check(refusedWrongKey,
@@ -128,6 +146,7 @@ async function run(t) {
   try {
     crypto.decryptWithKek(kek, sealed.slice(0, sealed.length - 8) + 'AAAAAAAA');
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     refusedTampering = true;
   }
   t.check(refusedTampering,
@@ -141,6 +160,7 @@ async function run(t) {
   try {
     crypto.kekBytes('too-short');
   } catch (e) {
+    log.debug("Caught in run(): " + ((e && e.message) || e));
     refusedShort = true;
   }
   t.check(refusedShort,
@@ -318,9 +338,21 @@ async function run(t) {
     delete process.env.STS_KEYS_KEK_PROVIDER;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
-    keystore.setStore({ loadKeys: function () { return Promise.resolve([]); },
-                        saveKeys: function () { return Promise.resolve(); },
-                        deleteKeys: function () { return Promise.resolve(); } });
+    keystore.setStore({ loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
+      return Promise.resolve([]);
+    },
+                        saveKeys: function () {
+                          log.debug("Entering saveKeys().");
+                          log.debug("Leaving saveKeys().");
+                          return Promise.resolve();
+                        },
+                        deleteKeys: function () {
+                          log.debug("Entering deleteKeys().");
+                          log.debug("Leaving deleteKeys().");
+                          return Promise.resolve();
+                        } });
     helpers.resetStsKeys();
   });
 
@@ -465,9 +497,21 @@ async function run(t) {
     delete process.env.STS_KEYS_KEK_PROVIDER;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
-    keystore.setStore({ loadKeys: function () { return Promise.resolve([]); },
-                        saveKeys: function () { return Promise.resolve(); },
-                        deleteKeys: function () { return Promise.resolve(); } });
+    keystore.setStore({ loadKeys: function () {
+      log.debug("Entering loadKeys().");
+      log.debug("Leaving loadKeys().");
+      return Promise.resolve([]);
+    },
+                        saveKeys: function () {
+                          log.debug("Entering saveKeys().");
+                          log.debug("Leaving saveKeys().");
+                          return Promise.resolve();
+                        },
+                        deleteKeys: function () {
+                          log.debug("Entering deleteKeys().");
+                          log.debug("Leaving deleteKeys().");
+                          return Promise.resolve();
+                        } });
     helpers.resetStsKeys();
   }());
 
@@ -478,7 +522,8 @@ async function run(t) {
   t.log.info('=== development mode ===');
   t.equal(require('../common/keystore').persists(), false,
           'with keys.source at its default, a development service persists ' +
-          'nothing and generates a key on every start exactly as it always did');
+          'nothing and generates a key on every start exactly as it always ' +
+          'did');
 
   // -----------------------------------------------------------------------
   // 5. THE BLOB A PROCESS SHARES IS IDENTIFIED BY THE KEY AND NOT BY WHAT IT
@@ -518,16 +563,25 @@ async function run(t) {
       privateKeyPem: pair.privateKey.export({ type: 'pkcs8', format: 'pem' }),
       extraKeys: [],
       pqKeys: null,
-      selfSignedCertPem: '-----BEGIN CERTIFICATE-----\nBORN\n-----END CERTIFICATE-----\n',
+      selfSignedCertPem: '-----BEGIN CERTIFICATE-----\nBORN\n-----END ' +
+                         'CERTIFICATE-----\n',
       selfSignedCertB64: born
     };
     // The moving pair, exactly as certifiedView() installs it.
     Object.defineProperty(keys, 'certB64', {
       enumerable: true, configurable: true,
-      get: function () { return certified ? issued : born; } });
+      get: function () {
+        log.debug("Entering get().");
+        log.debug("Leaving get().");
+        return certified ? issued : born;
+      } });
     Object.defineProperty(keys, 'certPem', {
       enumerable: true, configurable: true,
-      get: function () { return certified ? 'ISSUED-PEM' : keys.selfSignedCertPem; } });
+      get: function () {
+        log.debug("Entering get().");
+        log.debug("Leaving get().");
+        return certified ? 'ISSUED-PEM' : keys.selfSignedCertPem;
+      } });
 
     const offered = [];
     keystore.setKeyPublisher(function (realmId, blob) { offered.push(blob); });
@@ -557,8 +611,8 @@ async function run(t) {
     keystore.publishShared('', keys);
     t.equal(offered.length, 2,
             'THE POST-QUANTUM KEYS ARE OFFERED ON — the same key set gaining ' +
-            'its second half is an ENRICHMENT and not a second key set, and a ' +
-            'certificate issued in between must not make it look like one');
+            'its second half is an ENRICHMENT and not a second key set, and ' +
+            'a certificate issued in between must not make it look like one');
     t.equal((offered[1].pqKeys || []).length, 1,
             'and the offer carries them');
     t.equal(offered[1].certB64, born,
@@ -566,10 +620,12 @@ async function run(t) {
 
     keystore.reset();
   }());
+  log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'keystore',
-  describe: 'a signing key that survives a restart, and a wrong key that must not',
+  describe: 'a signing key that survives a restart, and a wrong key that ' +
+            'must not',
   run: run
 };

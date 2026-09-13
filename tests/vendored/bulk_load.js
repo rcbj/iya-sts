@@ -62,6 +62,12 @@
 
 const names = require("./random_username.js");
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'bulk_load',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // THE SIZES. 5000 / 50 / 100 is what these jobs were asked for and what they do
 // by default. The three environment variables override them, for two honest
@@ -87,17 +93,19 @@ const SIZES = {
 // silently puts the same person in two groups and reports a membership count
 // nobody can read. Called by each job before it writes anything.
 function checkSizes(assert) {
+  log.debug("Entering checkSizes().");
   assert.ok(SIZES.USERS > 0 && SIZES.GROUPS > 0 && SIZES.PER_GROUP > 0,
-    "BULK_USERS, BULK_GROUPS and BULK_MEMBERS_PER_GROUP must all be positive; " +
-    "they are " + SIZES.USERS + ", " + SIZES.GROUPS + " and " +
+    "BULK_USERS, BULK_GROUPS and BULK_MEMBERS_PER_GROUP must all be " +
+    "positive; they are " + SIZES.USERS + ", " + SIZES.GROUPS + " and " +
     SIZES.PER_GROUP + ".");
   assert.ok(SIZES.GROUPS * SIZES.PER_GROUP <= SIZES.USERS,
     SIZES.GROUPS + " groups of " + SIZES.PER_GROUP + " needs " +
     (SIZES.GROUPS * SIZES.PER_GROUP) + " people and only " + SIZES.USERS +
     " are being created. These jobs put each person in exactly one group so " +
-    "that `a hundred members` is an exact claim; overlapping the blocks would " +
-    "make the read-back check assert something the job arranged rather than " +
-    "something the service did.");
+    "that `a hundred members` is an exact claim; overlapping the blocks " +
+    "would make the read-back check assert something the job arranged rather " +
+    "than something the service did.");
+  log.debug("Leaving checkSizes().");
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +121,7 @@ function checkSizes(assert) {
 // failure would arrive as a refusal about one entry per person.
 // ---------------------------------------------------------------------------
 function stampFor(door) {
+  log.debug("Entering stampFor().");
   const run = String(names.runStamp()).toLowerCase().replace(/[^a-z0-9]/g, "")
       .slice(0, 12);
   const which = String(door || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -122,6 +131,7 @@ function stampFor(door) {
                     "carries it, because the three run in one suite against " +
                     "one directory and none of them deletes anything.");
   }
+  log.debug("Leaving stampFor().");
   return { door: which, run: run, prefix: "bulk-" + which + "-" + run };
 }
 
@@ -134,31 +144,53 @@ function stampFor(door) {
 // are different defects.
 // ---------------------------------------------------------------------------
 function Stopwatch(what) {
+  log.debug("Entering Stopwatch().");
+  log.debug("Leaving Stopwatch().");
   return {
     what: what,
     laps: [],
     startedAt: 0,
     finishedAt: 0,
-    begin: function () { this.startedAt = Date.now(); return this; },
-    lap: function (ms) { this.laps.push(ms); },
-    end: function () { this.finishedAt = Date.now(); return this; }
+    begin: function () {
+      log.debug("Entering begin().");
+      this.startedAt = Date.now();
+      log.debug("Leaving begin().");
+      return this;
+    },
+    lap: function (ms) {
+      log.debug("Entering lap().");
+      this.laps.push(ms);
+      log.debug("Leaving lap().");
+    },
+    end: function () {
+      log.debug("Entering end().");
+      this.finishedAt = Date.now();
+      log.debug("Leaving end().");
+      return this;
+    }
   };
 }
 
 function percentile(sorted, fraction) {
+  log.debug("Entering percentile().");
   if (!sorted.length) {
+    log.debug("Leaving percentile().");
     return 0;
   }
   // The nearest-rank definition, which is the one that cannot invent a value no
   // request ever took: p95 of five thousand laps is a lap that happened.
   const rank = Math.ceil(fraction * sorted.length);
+  log.debug("Leaving percentile().");
   return sorted[Math.min(sorted.length, Math.max(1, rank)) - 1];
 }
 
 function summaryOf(watch) {
+  log.debug("Entering summaryOf().");
   const sorted = watch.laps.slice(0).sort(function (a, b) { return a - b; });
   const total = watch.laps.reduce(function (n, ms) { return n + ms; }, 0);
-  const wall = (watch.finishedAt || Date.now()) - (watch.startedAt || Date.now());
+  const wall = (watch.finishedAt || Date.now()) - (watch.startedAt ||
+                                                   Date.now());
+  log.debug("Leaving summaryOf().");
   return {
     operation: watch.what,
     count: watch.laps.length,
@@ -179,19 +211,27 @@ function summaryOf(watch) {
   };
 }
 
-function ms(n) { return n.toFixed(2) + "ms"; }
+function ms(n) {
+  log.debug("Entering ms().");
+  log.debug("Leaving ms().");
+  return n.toFixed(2) + "ms";
+}
 
 // A counter of assertions, so that each job can put a floor under its own —
 // `sts_admin_console.js`'s rule: a section that stops being called takes its
 // assertions with it and the run still says "passed", which is the one failure
 // mode a suite cannot report about itself.
 function checker(log) {
+  log.debug("Entering checker().");
   const state = { count: 0 };
   state.check = function (what, fn) {
+    log.debug("Entering check().");
     fn();
     state.count += 1;
     log.debug("check passed: " + what);
+    log.debug("Leaving check().");
   };
+  log.debug("Leaving checker().");
   return state;
 }
 
@@ -210,7 +250,8 @@ const FAMILY = ["Abara", "Bergström", "Castellanos", "Dvorak", "Eriksen",
                 "Zeleny"];
 const TITLES = ["Systems Engineer", "Security Analyst", "Product Manager",
                 "Staff Accountant", "Field Technician", "Research Fellow",
-                "Support Specialist", "Data Steward", "Site Reliability Engineer",
+                "Support Specialist", "Data Steward", "Site Reliability " +
+                                                      "Engineer",
                 "Programme Director"];
 const DEPARTMENTS = ["Engineering", "Security", "Finance", "Operations",
                      "Research", "Support", "Legal", "Facilities"];
@@ -238,45 +279,113 @@ const ORGANISATIONS = ["Northwind Trading", "Fabrikam Industrial",
 // rather than a second set of generators, so a person written over SCIM and a
 // person written over LDAP differ in how they got there and in nothing else.
 const FIELDS = {
-  givenName: function (p) { return p.given; },
-  sn: function (p) { return p.family; },
-  cn: function (p) { return p.given + " " + p.family; },
-  displayName: function (p) { return p.given + " " + p.family.charAt(0) + "."; },
-  mail: function (p) { return p.username + "@example.test"; },
+  givenName: function (p) {
+    log.debug("Entering givenName().");
+    log.debug("Leaving givenName().");
+    return p.given;
+  },
+  sn: function (p) {
+    log.debug("Entering sn().");
+    log.debug("Leaving sn().");
+    return p.family;
+  },
+  cn: function (p) {
+    log.debug("Entering cn().");
+    log.debug("Leaving cn().");
+    return p.given + " " + p.family;
+  },
+  displayName: function (p) {
+    log.debug("Entering displayName().");
+    log.debug("Leaving displayName().");
+    return p.given + " " + p.family.charAt(0) + ".";
+  },
+  mail: function (p) {
+    log.debug("Entering mail().");
+    log.debug("Leaving mail().");
+    return p.username + "@example.test";
+  },
   telephoneNumber: function (p) {
+    log.debug("Entering telephoneNumber().");
+    log.debug("Leaving telephoneNumber().");
     return "+44 1632 " + String(100000 + (p.i % 900000)).slice(0, 6);
   },
   mobile: function (p) {
+    log.debug("Entering mobile().");
+    log.debug("Leaving mobile().");
     return "+44 7700 " + String(900000 + (p.i % 99999)).slice(0, 6);
   },
-  title: function (p) { return TITLES[p.i % TITLES.length]; },
-  o: function (p) { return ORGANISATIONS[p.i % ORGANISATIONS.length]; },
-  ou: function (p) { return DEPARTMENTS[p.i % DEPARTMENTS.length]; },
+  title: function (p) {
+    log.debug("Entering title().");
+    log.debug("Leaving title().");
+    return TITLES[p.i % TITLES.length];
+  },
+  o: function (p) {
+    log.debug("Entering o().");
+    log.debug("Leaving o().");
+    return ORGANISATIONS[p.i % ORGANISATIONS.length];
+  },
+  ou: function (p) {
+    log.debug("Entering ou().");
+    log.debug("Leaving ou().");
+    return DEPARTMENTS[p.i % DEPARTMENTS.length];
+  },
   departmentNumber: function (p) {
+    log.debug("Entering departmentNumber().");
+    log.debug("Leaving departmentNumber().");
     return "D-" + String(100 + (p.i % 800));
   },
-  employeeNumber: function (p) { return "E" + String(1000000 + p.i); },
+  employeeNumber: function (p) {
+    log.debug("Entering employeeNumber().");
+    log.debug("Leaving employeeNumber().");
+    return "E" + String(1000000 + p.i);
+  },
   employeeType: function (p) {
+    log.debug("Entering employeeType().");
+    log.debug("Leaving employeeType().");
     return EMPLOYEE_TYPES[p.i % EMPLOYEE_TYPES.length];
   },
   street: function (p) {
+    log.debug("Entering street().");
+    log.debug("Leaving street().");
     return String(1 + (p.i % 400)) + " " + STREETS[p.i % STREETS.length];
   },
-  l: function (p) { return p.city[0]; },
-  st: function (p) { return p.city[1]; },
-  postalCode: function (p) { return p.city[2]; },
-  c: function (p) { return p.city[3]; },
+  l: function (p) {
+    log.debug("Entering l().");
+    log.debug("Leaving l().");
+    return p.city[0];
+  },
+  st: function (p) {
+    log.debug("Entering st().");
+    log.debug("Leaving st().");
+    return p.city[1];
+  },
+  postalCode: function (p) {
+    log.debug("Entering postalCode().");
+    log.debug("Leaving postalCode().");
+    return p.city[2];
+  },
+  c: function (p) {
+    log.debug("Entering c().");
+    log.debug("Leaving c().");
+    return p.city[3];
+  },
   preferredLanguage: function (p) {
+    log.debug("Entering preferredLanguage().");
+    log.debug("Leaving preferredLanguage().");
     return LANGUAGES[p.i % LANGUAGES.length];
   },
   description: function (p) {
+    log.debug("Entering description().");
+    log.debug("Leaving description().");
     return "Created by tests/vendored/sts_directory_bulk_load_" + p.door +
            ".js, run " + p.run + ", person " + p.i + " of " + SIZES.USERS + ".";
   }
 };
 
 function personAt(stamp, i) {
+  log.debug("Entering personAt().");
   const username = stamp.prefix + "-" + String(i).padStart(6, "0");
+  log.debug("Leaving personAt().");
   return {
     i: i,
     door: stamp.door,
@@ -289,14 +398,18 @@ function personAt(stamp, i) {
 }
 
 function attributesFor(person, catalogue) {
+  log.debug("Entering attributesFor().");
   const out = {};
   catalogue.forEach(function (attribute) {
     out[attribute] = FIELDS[attribute](person);
   });
+  log.debug("Leaving attributesFor().");
   return out;
 }
 
 function groupNameAt(stamp, g) {
+  log.debug("Entering groupNameAt().");
+  log.debug("Leaving groupNameAt().");
   return stamp.prefix + "-grp-" + String(g).padStart(3, "0");
 }
 
@@ -313,6 +426,7 @@ function groupNameAt(stamp, g) {
 // and the job's own door writes.
 // ---------------------------------------------------------------------------
 function httpFor(base, log) {
+  log.debug("Entering httpFor().");
   const at = String(base).replace(/\/+$/, "");
   async function timed(url, options) {
     log.debug("Entering timed(). url=" + url);
@@ -324,6 +438,7 @@ function httpFor(base, log) {
     try {
       body = JSON.parse(text);
     } catch (e) {
+      log.debug("Caught in timed(): " + ((e && e.message) || e));
       // Not JSON — an HTML page or an empty body. The caller reports the status
       // and the raw text, which says more than a parse error would.
       body = null;
@@ -332,16 +447,27 @@ function httpFor(base, log) {
               took.toFixed(1) + "ms");
     return { status: r.status, body: body, text: text, ms: took };
   }
+  log.debug("Leaving httpFor().");
   return {
     base: at,
     timed: timed,
-    get: function (url) { return timed(url); },
+    get: function (url) {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return timed(url);
+    },
     postJson: function (url, payload) {
+      log.debug("Entering postJson().");
+      log.debug("Leaving postJson().");
       return timed(url, { method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(payload || {}) });
     },
-    api: function (path) { return at + "/admin-api" + path; }
+    api: function (path) {
+      log.debug("Entering api().");
+      log.debug("Leaving api().");
+      return at + "/admin-api" + path;
+    }
   };
 }
 
@@ -350,7 +476,9 @@ function httpFor(base, log) {
 // want the TOTAL, and a paging field renamed under them should leave the run
 // reporting "unknown" rather than failing on arithmetic.
 function entryCountOf(body) {
+  log.debug("Entering entryCountOf().");
   if (!body) {
+    log.debug("Leaving entryCountOf().");
     return 0;
   }
   const paging = body.paging || body.entriesPaging || {};
@@ -358,9 +486,11 @@ function entryCountOf(body) {
                       (body.entries || []).length];
   for (const value of candidates) {
     if (typeof value === "number") {
+      log.debug("Leaving entryCountOf().");
       return value;
     }
   }
+  log.debug("Leaving entryCountOf().");
   return 0;
 }
 
@@ -439,10 +569,11 @@ async function preflight(options) {
            "will create, so the next create by anybody, in any protocol, " +
            "would be refused.");
 
-  // THE CATALOGUE, read rather than written down. `POST /admin-api/users/create`
-  // REFUSES an attribute that is not on it and fails the whole create, so a
-  // field invented here that the document has never heard of would fail five
-  // thousand creates for a reason that is not about the load at all.
+  // THE CATALOGUE, read rather than written down. `POST
+  // /admin-api/users/create` REFUSES an attribute that is not on it and fails
+  // the whole create, so a field invented here that the document has never
+  // heard of would fail five thousand creates for a reason that is not about
+  // the load at all.
   //
   // **ALL THREE JOBS FILL THE SAME SET, AND THAT IS WHY THIS IS SHARED.** The
   // LDAP door would accept any attribute name at all — the directory is
@@ -469,8 +600,8 @@ async function preflight(options) {
     // honest: the catalogue is allowed to change, and this file having a
     // generator for something it no longer offers is a stale generator rather
     // than a broken service.
-    log.warn("bulk_load.js has generators for " + unknown.join(", ") + ", and " +
-             "GET /admin-api/users/new does not offer them. They are NOT " +
+    log.warn("bulk_load.js has generators for " + unknown.join(", ") + ", " +
+             "and GET /admin-api/users/new does not offer them. They are NOT " +
              "sent — a create carrying an attribute that is not on the " +
              "catalogue is refused whole.");
   }
@@ -542,12 +673,12 @@ function report(log, summaries, meta) {
   // that has just started.
   // ---------------------------------------------------------------------
   log.info("  This run started against " + meta.held + " directory " +
-           "entry(ies). A create here is NOT constant-time in the size of the " +
-           "store, and the three bulk-load jobs run one after another against " +
-           "one directory that nothing deletes from — so compare the " +
-           "`users.create` row with a run that started from a similar number, " +
-           "not with the other two doors' rows in the same suite. The " +
-           "membership rows are the comparison that holds.");
+           "entry(ies). A create here is NOT constant-time in the size of " +
+           "the store, and the three bulk-load jobs run one after another " +
+           "against one directory that nothing deletes from — so compare the " +
+           "`users.create` row with a run that started from a similar " +
+           "number, not with the other two doors' rows in the same suite. " +
+           "The membership rows are the comparison that holds.");
 
   // The first column is 30 wide because the operation name carries the door
   // (`group.add-member [admin-api]` is 28) and a name wider than its column
@@ -557,6 +688,8 @@ function report(log, summaries, meta) {
   const header = ["operation", "count", "total", "mean", "median", "p95",
                   "p99", "fastest", "slowest", "rate"];
   function row(cells) {
+    log.debug("Entering row().");
+    log.debug("Leaving row().");
     return cells.map(function (cell, n) {
       return String(cell).padEnd(widths[n]);
     }).join("");

@@ -39,14 +39,14 @@
 // that it means the same thing at all four doors instead of two.
 //
 // ---------------------------------------------------------------------------
-// THE DIRECTORY ARRIVES THROUGH `setDirectory()`, filled by `ldap/ldap_server.js`
-// at require time, and it is an INVERTED HOOK for the reason every other one on
-// this path is (rule 3e): this file is required by `authn.js` at 8 and the
-// directory is at 21, so a require in the obvious direction would drag every
-// `/ldap` route to the front of the router. It carries TWO functions and is
-// validated whole — a filler that installed the read and not the write would
-// leave a service that can verify a password and can never set one, which is a
-// product-mode deployment nobody can get into.
+// THE DIRECTORY ARRIVES THROUGH `setDirectory()`, filled by
+// `ldap/ldap_server.js` at require time, and it is an INVERTED HOOK for the
+// reason every other one on this path is (rule 3e): this file is required by
+// `authn.js` at 8 and the directory is at 21, so a require in the obvious
+// direction would drag every `/ldap` route to the front of the router. It
+// carries TWO functions and is validated whole — a filler that installed the
+// read and not the write would leave a service that can verify a password and
+// can never set one, which is a product-mode deployment nobody can get into.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `config`, `crypto` and
 // `mode`, none of which requires it back.
@@ -74,7 +74,8 @@ const backupCodes = require('./backup_codes');
 // THE PASSWORD POLICY (2026-09-12). What a password here must look like, which
 // of a person's old ones it may not be, and how one is made up. A LEAF that
 // requires `helpers`, `mode` and an npm package, so it cannot reach back here;
-// its directory arrives through a slot `ldap_server.js` fills, like this file's.
+// its directory arrives through a slot `ldap_server.js` fills, like this
+// file's.
 const passwordPolicy = require('./password_policy');
 // THE SECURITY KEY'S POLICY, AND IT IS THE ONE REQUIRE IN THIS FILE THAT
 // POINTS OUT OF `common/` (2026-09-10).
@@ -109,6 +110,8 @@ const webauthnVerifier = require('../authn/webauthn');
 const errorCodes = require('./error_codes');
 
 function coded(code, verdict) {
+  log.debug("Entering coded().");
+  log.debug("Leaving coded().");
   return errorCodes.mark(verdict, code);
 }
 
@@ -121,11 +124,11 @@ const PASSWORD_ATTRIBUTE = 'userPassword';
 // THE SECURITY KEY, ON THE PERSON'S OWN ENTRY (2026-09-06).
 //
 // **IT WAS AN IN-MEMORY MAP IN `authn.js` AND THAT WAS THE WRONG PLACE.**
-// `webauthnCredentials` is a `realms.map()` keyed by username, which means a key
-// somebody enrolled did not survive a restart, could not be provisioned, could
-// not be seen on any page, and could not be persisted by product mode. For a
-// PASSWORDLESS key that is the whole account: the credential is the only one
-// there is, so losing it on a restart loses the account.
+// `webauthnCredentials` is a `realms.map()` keyed by username, which means a
+// key somebody enrolled did not survive a restart, could not be provisioned,
+// could not be seen on any page, and could not be persisted by product mode.
+// For a PASSWORDLESS key that is the whole account: the credential is the only
+// one there is, so losing it on a restart loses the account.
 //
 // So it lives beside `userPassword`, on the entry, in the same store — one
 // object per person carrying everything about how they authenticate.
@@ -222,6 +225,8 @@ function setDirectory(hooks) {
 // say so rather than letting somebody switch to product mode and discover at
 // the sign-in screen that nothing can be verified.
 function storable() {
+  log.debug("Entering storable().");
+  log.debug("Leaving storable().");
   return !!directory;
 }
 
@@ -264,13 +269,14 @@ function setPasswordObserver(fn) {
   log.debug('Entering setPasswordObserver().');
   if (fn !== null && typeof fn !== 'function') {
     log.error(errorCodes.tag('STS-AUTHN-0047') +
-              'credentials: setPasswordObserver() was given something that is ' +
-              'not a function, so it was refused.');
+              'credentials: setPasswordObserver() was given something that ' +
+              'is not a function, so it was refused.');
     log.debug('Leaving setPasswordObserver(). Refused.');
     return false;
   }
   passwordObserver = fn;
-  log.debug('Leaving setPasswordObserver(). ' + (fn ? 'Installed.' : 'Cleared.'));
+  log.debug('Leaving setPasswordObserver(). ' +
+            (fn ? 'Installed.' : 'Cleared.'));
   return true;
 }
 
@@ -281,11 +287,15 @@ function setPasswordObserver(fn) {
 // sign-in, and the old keys were refused in between. Called by the handler
 // AFTER it has committed, for setPassword()'s reason.
 function passwordWritten(name, password) {
+  log.debug("Entering passwordWritten().");
   notifyPassword(name, password, 'set');
+  log.debug("Leaving passwordWritten().");
 }
 
 function notifyPassword(name, password, event) {
+  log.debug("Entering notifyPassword().");
   if (!passwordObserver || !name || !password) {
+    log.debug("Leaving notifyPassword().");
     return;
   }
   try {
@@ -295,9 +305,11 @@ function notifyPassword(name, password, event) {
     // observer derives, and the log says so; the credential act it observed
     // has already happened and must answer as though nothing was watching.
     log.warn('credentials: the password observer threw while observing a ' +
-             event + ' for ' + name + ', and the ' + event + ' is unaffected: ' +
+             event + ' for ' + name + ', and the ' + event +
+             ' is unaffected: ' +
              e.message);
   }
+  log.debug("Leaving notifyPassword().");
 }
 
 // ---------------------------------------------------------------------------
@@ -328,17 +340,21 @@ function notifyPassword(name, password, event) {
 // eventually say it in two different sets of circumstances.
 // ---------------------------------------------------------------------------
 function verifyPrepare(username, password, opts) {
+  log.debug("Entering verifyPrepare().");
   const name = String(username == null ? '' : username).trim();
   log.debug('Entering verifyPrepare(). username=' + name);
   const via = (opts && opts.via) || 'unstated';
 
   // BOTH MODES. A mock that cannot be made to say no is not a test fixture.
   if (String(password) === RESERVED_REFUSAL) {
-    log.debug('Leaving verifyPrepare(). The reserved refusal password was presented.');
-    return { done: coded('STS-AUTHN-0048', { ok: false, reason: 'reserved-refusal',
-             detail: 'the password "' + RESERVED_REFUSAL + '" is reserved and ' +
-                     'is refused in every mode, so that a client can be tested ' +
-                     'against a refusal without anything being configured' }) };
+    log.debug('Leaving verifyPrepare(). The reserved refusal password was ' +
+              'presented.');
+    return { done: coded('STS-AUTHN-0048',
+                         { ok: false, reason: 'reserved-refusal',
+             detail: 'the password "' + RESERVED_REFUSAL + '" is reserved ' +
+                     'and is refused in every mode, so that a client can be ' +
+                     'tested against a refusal without anything being ' +
+                     'configured' }) };
   }
 
   if (!mode.verifiesCredentials()) {
@@ -360,9 +376,9 @@ function verifyPrepare(username, password, opts) {
     // everybody while reporting that it authenticates nobody.
     log.error(errorCodes.tag('STS-AUTHN-0050') +
               'credentials: product mode is in force and no credential store ' +
-              'is installed, so every verification is REFUSED. ldap_server.js ' +
-              'fills setDirectory() at require time; a process without it ' +
-              'cannot verify anybody.');
+              'is installed, so every verification is REFUSED. ' +
+              'ldap_server.js fills setDirectory() at require time; a ' +
+              'process without it cannot verify anybody.');
     log.debug('Leaving verifyPrepare(). No store.');
     return { done: coded('STS-AUTHN-0050', { ok: false, reason: 'no-store',
              detail: 'product mode is in force and no credential store is ' +
@@ -403,7 +419,8 @@ function verifyPrepare(username, password, opts) {
              ' that this service did not write and cannot read. It is being ' +
              'REFUSED rather than compared as plaintext.');
     log.debug('Leaving verifyPrepare(). Unreadable stored form.');
-    return { done: coded('STS-AUTHN-0053', { ok: false, reason: 'unreadable-credential',
+    return { done: coded('STS-AUTHN-0053',
+                         { ok: false, reason: 'unreadable-credential',
              detail: 'the stored ' + PASSWORD_ATTRIBUTE + ' is not in the ' +
                      'form this service writes, so it cannot be verified' }) };
   }
@@ -414,7 +431,8 @@ function verifyPrepare(username, password, opts) {
 
 // The answer, once the comparison has been made in whichever process made it.
 function verifyFinish(ok, name, via) {
-  log.debug('Entering verifyFinish(). ' + (ok ? 'It matches.' : 'It does not.'));
+  log.debug('Entering verifyFinish(). ' +
+            (ok ? 'It matches.' : 'It does not.'));
   if (!ok) {
     // At INFO rather than WARN: a wrong password is an ordinary event and a
     // log that treats it as a fault is a log nobody reads.
@@ -503,6 +521,8 @@ function verifyAsync(username, password, opts) {
 // hash: this service cannot produce the value a second time, only replace it.
 // ---------------------------------------------------------------------------
 function generatePassword(username) {
+  log.debug("Entering generatePassword().");
+  log.debug("Leaving generatePassword().");
   return passwordPolicy.generate(passwordPolicy.profileFor(username));
 }
 
@@ -514,10 +534,10 @@ function generatePassword(username) {
 // that may not be reused, a symbol count, an uppercase letter and a digit.
 // **THEY ARE ASKED HERE**, for the reason this file exists: `setPassword()` is
 // the one door behind the console, `/admin-api`, the portal's password form and
-// an activation link, and `preparePassword()` beside it is what the LDAP add and
-// modify handlers use for a `userPassword` written over the socket — so five
-// ways of setting a password meet one rule, and none of them is `>=` where the
-// others are `>`.
+// an activation link, and `preparePassword()` beside it is what the LDAP add
+// and modify handlers use for a `userPassword` written over the socket — so
+// five ways of setting a password meet one rule, and none of them is `>=` where
+// the others are `>`.
 //
 // **IT REPLACED A LENGTH-ONLY RULE THAT WAS HOURS OLD**, read from
 // `security.passwordMinLength`, whose comment quoted NIST SP 800-63B section
@@ -538,14 +558,18 @@ function generatePassword(username) {
 // the length-only rule had, kept so that a caller written against it reads the
 // same answer. It does not look at the history, which needs a person.
 function passwordProblem(password, username) {
+  log.debug("Entering passwordProblem().");
   if (!mode.verifiesCredentials()) {
+    log.debug("Leaving passwordProblem().");
     return '';
   }
   const profile = passwordPolicy.profileFor(username);
   const problems = passwordPolicy.problemsWith(password, profile);
   if (!problems.length) {
+    log.debug("Leaving passwordProblem().");
     return '';
   }
+  log.debug("Leaving passwordProblem().");
   return 'That password does not meet this realm\'s password policy, which ' +
          'asks for ' + problems.join(', ') + '. The rules are on ' +
          '/admin/policies (profile "' + profile.name + '").';
@@ -555,7 +579,9 @@ function passwordProblem(password, username) {
 // the forms that ask somebody for a password, so a page says what it will
 // refuse BEFORE it refuses it.
 function passwordRules(username) {
+  log.debug("Entering passwordRules().");
   const profile = passwordPolicy.profileFor(username);
+  log.debug("Leaving passwordRules().");
   return { enforced: mode.verifiesCredentials(),
            profile: profile.name,
            rules: passwordPolicy.describe(profile) };
@@ -568,6 +594,7 @@ function passwordRules(username) {
 // hash one — is compared as the string it is, in constant time, because a
 // person whose current password is stored in the clear is still reusing it.
 function reusedPassword(password, current, historyHashes, depth) {
+  log.debug("Entering reusedPassword().");
   const candidates = [current].concat(historyHashes.slice(0, depth))
     .filter(function (one) { return !!one; });
   for (let i = 0; i < candidates.length; i++) {
@@ -576,21 +603,23 @@ function reusedPassword(password, current, historyHashes, depth) {
       ? crypto.verifySecret(password, stored)
       : crypto.constantTimeEquals(password, stored);
     if (same) {
+      log.debug("Leaving reusedPassword().");
       return true;
     }
   }
+  log.debug("Leaving reusedPassword().");
   return false;
 }
 
 // ---------------------------------------------------------------------------
 // PREPARING ONE: everything setting a password decides, and nothing it writes.
 //
-// Answers `{ ok: true, hash, history }` — the scrypt hash to store and the WHOLE
-// history to leave on the entry — or `{ ok: false, reason, errors }`. Split out
-// of `setPassword()` for the LDAP handlers, which must apply a password change
-// inside a modify that is atomic across several changes (RFC 4511 section 4.6)
-// and so cannot have it written for them half way through; and so that the two
-// doors cannot disagree about a single rule.
+// Answers `{ ok: true, hash, history }` — the scrypt hash to store and the
+// WHOLE history to leave on the entry — or `{ ok: false, reason, errors }`.
+// Split out of `setPassword()` for the LDAP handlers, which must apply a
+// password change inside a modify that is atomic across several changes (RFC
+// 4511 section 4.6) and so cannot have it written for them half way through;
+// and so that the two doors cannot disagree about a single rule.
 //
 // `opts.current` and `opts.history` let a caller that already holds the entry
 // supply both, which is what a modify in flight does. Otherwise they are read
@@ -600,12 +629,14 @@ function reusedPassword(password, current, historyHashes, depth) {
 // scrypt derivations on the one thread every socket is answered from.
 // ---------------------------------------------------------------------------
 function preparePassword(username, password, opts) {
+  log.debug("Entering preparePassword().");
   const options = opts || {};
   const name = String(username == null ? '' : username).trim();
   log.debug('Entering preparePassword(). username=' + name);
   if (!password) {
     log.debug('Leaving preparePassword(). No password.');
-    return coded('STS-AUTHN-0055', { ok: false, errors: ['Give a password. To take one away, remove ' +
+    return coded('STS-AUTHN-0055', { ok: false, errors: ['Give a password. ' +
+                                 'To take one away, remove ' +
                                  'the ' + PASSWORD_ATTRIBUTE + ' attribute ' +
                                  'from the entry.'] });
   }
@@ -641,9 +672,10 @@ function preparePassword(username, password, opts) {
              ' before it.');
     log.debug('Leaving preparePassword(). Reused.');
     return coded('STS-AUTHN-0057', { ok: false, reason: 'password-history',
-             errors: ['That password has been used for this account recently. ' +
-                      'This realm\'s password policy refuses the current ' +
-                      'password and the ' + profile.history + ' before it ' +
+             errors: ['That password has been used for this account ' +
+                      'recently. This realm\'s password policy refuses the ' +
+                      'current password and ' +
+                      'the ' + profile.history + ' before it ' +
                       '(profile "' + profile.name + '"). Choose one you have ' +
                       'not used here.'] });
   }
@@ -671,11 +703,13 @@ function preparePassword(username, password, opts) {
 // `generatePassword()`; see `preparePassword()` for what it skips.
 // ---------------------------------------------------------------------------
 function setPassword(username, password, opts) {
+  log.debug("Entering setPassword().");
   const name = String(username == null ? '' : username).trim();
   log.debug('Entering setPassword(). username=' + name);
   if (!name) {
     log.debug('Leaving setPassword(). No username.');
-    return coded('STS-AUTHN-0058', { ok: false, errors: ['Name the person whose password to set.'] });
+    return coded('STS-AUTHN-0058', { ok: false, errors: ['Name the person ' +
+        'whose password to set.'] });
   }
   if (!directory) {
     // Before the policy, not after it: a policy read with no directory answers
@@ -683,13 +717,15 @@ function setPassword(username, password, opts) {
     // fix a password that could not have been stored whatever it was.
     if (!password) {
       log.debug('Leaving setPassword(). No password.');
-      return coded('STS-AUTHN-0055', { ok: false, errors: ['Give a password. To take one away, remove ' +
+      return coded('STS-AUTHN-0055', { ok: false, errors: ['Give a password. ' +
+                                   'To take one away, remove ' +
                                    'the ' + PASSWORD_ATTRIBUTE + ' attribute ' +
                                    'from the entry.'] });
     }
     log.debug('Leaving setPassword(). No store.');
-    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential store is installed in this ' +
-                                 'process, so a password cannot be set.'] });
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                 'store is installed in this process, so a ' +
+                                 'password cannot be set.'] });
   }
   const prepared = preparePassword(name, password, opts);
   if (!prepared.ok) {
@@ -705,20 +741,22 @@ function setPassword(username, password, opts) {
               'credentials: writing the password for ' + name + ' threw: ' +
               e.message);
     log.debug('Leaving setPassword(). The store threw.');
-    return coded('STS-AUTHN-0060', { ok: false, errors: ['The credential store refused the write: ' +
+    return coded('STS-AUTHN-0060', { ok: false, errors: ['The credential ' +
+        'store refused the write: ' +
                                  e.message] });
   }
   if (!written) {
     log.debug('Leaving setPassword(). Nobody by that name.');
-    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody called "' + name + '" in ' +
-                                 'this realm\'s directory. In product mode ' +
-                                 'every referenced object must be created ' +
-                                 'ahead of time.'] });
+    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" ' +
+                                 'in this realm\'s directory. In product ' +
+                                 'mode every referenced object must be ' +
+                                 'created ahead of time.'] });
   }
   log.info('credentials: a password was set for ' + name + '. It is stored ' +
-           'as a scrypt hash and CANNOT BE READ BACK — this service can never ' +
-           'show it again, which is why the caller is given it once and only ' +
-           'at the moment it is created.');
+           'as a scrypt hash and CANNOT BE READ BACK — this service can ' +
+           'never show it again, which is why the caller is given it once ' +
+           'and only at the moment it is created.');
   // The plaintext was just WRITTEN — see the password observer above. After
   // the write and not before it, so an observer reading the stored hash back
   // reads the one this password produced.
@@ -732,8 +770,13 @@ function setPassword(username, password, opts) {
 // Is there an entry for them at all, credential or not? Asked only by the
 // bootstrap, which has to tell "nobody has a password" from "nobody exists".
 function hasEntry(username) {
-  if (!directory || typeof directory.readPassword !== 'function') return false;
+  log.debug("Entering hasEntry().");
+  if (!directory || typeof directory.readPassword !== 'function') {
+    log.debug("Leaving hasEntry().");
+    return false;
+  }
   try {
+    log.debug("Leaving hasEntry().");
     // `readPassword()` answers '' both for an absent entry and for one with no
     // credential, so it cannot distinguish them — which is right for a
     // verification and useless here. The store's own creator is idempotent
@@ -742,6 +785,8 @@ function hasEntry(username) {
     // first. This returns false so the attempt is always made.
     return false;
   } catch (e) {
+    log.debug("Caught in hasEntry(): " + ((e && e.message) || e));
+    log.debug("Leaving hasEntry().");
     return false;
   }
 }
@@ -750,12 +795,18 @@ function hasEntry(username) {
 // them and what the mode report counts, so that switching to product mode is a
 // decision somebody makes knowing how many people it locks out.
 function hasPassword(username) {
-  if (!directory) return false;
+  log.debug("Entering hasPassword().");
+  if (!directory) {
+    log.debug("Leaving hasPassword().");
+    return false;
+  }
   try {
+    log.debug("Leaving hasPassword().");
     return !!directory.readPassword(String(username || '').trim());
   } catch (e) {
     // Reported as "no credential" rather than thrown: this is drawn in a table.
     log.debug('hasPassword(): the store threw: ' + e.message);
+    log.debug("Leaving hasPassword().");
     return false;
   }
 }
@@ -818,7 +869,8 @@ function bootstrap(opts) {
   } catch (e) {
     log.error(errorCodes.tag('STS-AUTHN-0062') +
               'credentials: the store could not be asked whether anybody ' +
-              'holds a credential, so no bootstrap was attempted: ' + e.message);
+              'holds a credential, so no bootstrap was attempted: ' +
+              e.message);
     log.debug('Leaving bootstrap(). The store threw.');
     return { ran: false, why: 'the credential store could not be read' };
   }
@@ -848,8 +900,8 @@ function bootstrap(opts) {
               'credentials: PRODUCT MODE AND NOBODY CAN SIGN IN. A bootstrap ' +
               'account could not be created: ' +
               (written.errors || []).join(' ') + ' There is no way into this ' +
-              'service until a credential is set — start in development mode, ' +
-              'provision one, and restart.');
+              'service until a credential is set — start in development ' +
+              'mode, provision one, and restart.');
     log.debug('Leaving bootstrap(). The write failed.');
     return { ran: false, why: (written.errors || []).join(' ') };
   }
@@ -857,14 +909,12 @@ function bootstrap(opts) {
            'PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n' +
            '\n' +
            '  username: ' + username + '\n' +
-           '  password: ' + password + '\n' +
-           '\n' +
-           'Nobody in this realm\'s directory held a credential, so this one ' +
-           'was generated so that the service is reachable. It is stored as a ' +
-           'scrypt hash and CANNOT be recovered — only reset.\n' +
-           '\n' +
-           'CHANGE IT. Sign in at /admin, or POST /admin-api/users/set-password.\n' +
-           '=======================================================');
+           '  password: ' + password + '\n\nNobody in this realm\'s ' +
+           'directory held a credential, so this one was generated so that ' +
+           'the service is reachable. It is stored as a scrypt hash and ' +
+           'CANNOT be recovered — only reset.\n\nCHANGE IT. Sign in at ' +
+           '/admin, or POST ' +
+           '/admin-api/users/set-password.\n=======================================================');
   log.debug('Leaving bootstrap(). An account was created.');
   return { ran: true, username: username };
 }
@@ -885,6 +935,7 @@ function keysOf(username) {
     log.error(errorCodes.tag('STS-AUTHN-0065') +
               'credentials: reading the security keys for ' + username +
               ' threw: ' + e.message);
+    log.debug("Leaving keysOf().");
     return [];
   }
   const out = [];
@@ -909,16 +960,21 @@ function keysOf(username) {
 // Add one. The caller has already verified the registration ceremony — this
 // records what it produced.
 function addKey(username, credential, role) {
+  log.debug("Entering addKey().");
   const name = String(username || '').trim();
   log.debug('Entering addKey(). username=' + name + ', role=' + role);
   if (!directory || typeof directory.writeWebauthn !== 'function') {
-    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential store is installed, so a ' +
-                                 'security key cannot be recorded.'] });
+    log.debug("Leaving addKey().");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                 'store is installed, so a security key ' +
+                                 'cannot be recorded.'] });
   }
   if (ROLES.indexOf(String(role)) < 0) {
-    return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key is either "primary" (it ' +
-                                 'signs somebody in on its own) or "mfa" (it ' +
-                                 'is a second factor beside a password). ' +
+    log.debug("Leaving addKey().");
+    return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key is ' +
+                                 'either "primary" (it signs somebody in on ' +
+                                 'its own) or "mfa" (it is a second factor ' +
+                                 'beside a password). ' +
                                  '"' + role + '" is neither.'] });
   }
   // ---------------------------------------------------------------------
@@ -939,8 +995,10 @@ function addKey(username, credential, role) {
   // whole account.
   const allowed = webauthnPolicy.roleAllowed(role);
   if (!allowed.ok) {
-    log.info('credentials: a "' + role + '" security key was NOT enrolled for ' +
+    log.info('credentials: a "' + role +
+             '" security key was NOT enrolled for ' +
              name + '. ' + allowed.why);
+    log.debug("Leaving addKey().");
     return coded(errorCodes.codeOf(allowed) || 'STS-AUTHN-0044',
                  { ok: false, errors: [allowed.why] });
   }
@@ -956,6 +1014,7 @@ function addKey(username, credential, role) {
     log.info('credentials: ' + name + ' already holds ' + held.length +
              ' security key(s) and webauthn.maxKeysPerPerson is ' + cap +
              ', so another was not enrolled.');
+    log.debug("Leaving addKey().");
     return coded('STS-AUTHN-0067', { ok: false,
              errors: [name + ' already holds ' + held.length + ' security ' +
                       'key(s), which is the most this realm allows ' +
@@ -978,12 +1037,16 @@ function addKey(username, credential, role) {
     log.error(errorCodes.tag('STS-AUTHN-0068') +
               'credentials: writing a security key for ' + name + ' threw: ' +
               e.message);
-    return coded('STS-AUTHN-0068', { ok: false, errors: ['The credential store refused the write: ' +
+    log.debug("Leaving addKey().");
+    return coded('STS-AUTHN-0068', { ok: false, errors: ['The credential ' +
+        'store refused the write: ' +
                                  e.message] });
   }
   if (!written) {
-    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody called "' + name + '" in ' +
-                                 'this realm\'s directory.'] });
+    log.debug("Leaving addKey().");
+    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" ' +
+                                 'in this realm\'s directory.'] });
   }
   log.info('credentials: a security key was enrolled for ' + name +
            ' as a ' + role + ' credential.');
@@ -1010,6 +1073,7 @@ function addKey(username, credential, role) {
   // from.
   const advised = role === 'mfa' && backupCodes.offered() &&
                   !backupCodesOf(name);
+  log.debug("Leaving addKey().");
   return { ok: true, username: name, role: role,
            credentialId: record.credentialId,
            recoveryAdvised: advised,
@@ -1027,15 +1091,22 @@ function addKey(username, credential, role) {
 // new value so the next assertion has something to check against.
 function noteKeyUsed(username, credentialId, signCount) {
   log.debug('Entering noteKeyUsed().');
-  if (!directory || typeof directory.replaceWebauthn !== 'function') return false;
+  if (!directory || typeof directory.replaceWebauthn !== 'function') {
+    log.debug("Leaving noteKeyUsed().");
+    return false;
+  }
   const keys = keysOf(username);
   const found = keys.filter(function (one) {
     return one.credentialId === String(credentialId);
   })[0];
-  if (!found) return false;
+  if (!found) {
+    log.debug("Leaving noteKeyUsed().");
+    return false;
+  }
   found.signCount = Number(signCount || 0);
   found.lastUsedAt = Date.now();
   try {
+    log.debug("Leaving noteKeyUsed().");
     return directory.replaceWebauthn(String(username || '').trim(),
       keys.map(function (one) { return JSON.stringify(one); }));
   } catch (e) {
@@ -1045,6 +1116,7 @@ function noteKeyUsed(username, credentialId, signCount) {
     log.error(errorCodes.tag('STS-AUTHN-0038') +
               'credentials: the signature counter for ' + username +
               ' could not be recorded: ' + e.message);
+    log.debug("Leaving noteKeyUsed().");
     return false;
   }
 }
@@ -1052,7 +1124,9 @@ function noteKeyUsed(username, credentialId, signCount) {
 function removeKey(username, credentialId) {
   log.debug('Entering removeKey().');
   if (!directory || typeof directory.replaceWebauthn !== 'function') {
-    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential store is installed.'] });
+    log.debug("Leaving removeKey().");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+        'store is installed.'] });
   }
   const name = String(username || '').trim();
   const keys = keysOf(name);
@@ -1060,7 +1134,9 @@ function removeKey(username, credentialId) {
     return one.credentialId !== String(credentialId);
   });
   if (kept.length === keys.length) {
-    return coded('STS-AUTHN-0069', { ok: false, errors: ['No security key of that id is enrolled for ' +
+    log.debug("Leaving removeKey().");
+    return coded('STS-AUTHN-0069', { ok: false, errors: ['No security key of ' +
+        'that id is enrolled for ' +
                                  name + '.'] });
   }
   // ---------------------------------------------------------------------
@@ -1085,9 +1161,9 @@ function removeKey(username, credentialId) {
   //
   // It surfaced through the door it costs most at: `POST
   // /admin-api/users/clear-key`, which `admin-ui/CLAUDE.md` calls the way back
-  // for somebody who lost their key. `tests/vendored/sts_webauthn_second_factor.js`
-  // found it in its first run, in the section after the one that made keys
-  // reachable at all.
+  // for somebody who lost their key.
+  // `tests/vendored/sts_webauthn_second_factor.js` found it in its first run,
+  // in the section after the one that made keys reachable at all.
   //
   // **THE PERSON MAY STILL BE UNABLE TO SIGN IN AFTERWARDS**, and that is not
   // this function's to fix: an account holding only a second factor is one
@@ -1097,23 +1173,29 @@ function removeKey(username, credentialId) {
   const removed = keys.filter(function (one) {
     return one.credentialId === String(credentialId);
   })[0];
-  const stillHasPrimary = kept.some(function (one) { return one.role === 'primary'; });
+  const stillHasPrimary =
+      kept.some(function (one) { return one.role === 'primary'; });
   if (removed && removed.role === 'primary' &&
       !hasPassword(name) && !stillHasPrimary) {
-    return coded('STS-AUTHN-0070', { ok: false, errors: ['That is the only way ' + name + ' can sign ' +
-                                 'in — there is no password and no other ' +
-                                 'primary security key. Set a password first, ' +
-                                 'or enrol another key.'] });
+    log.debug("Leaving removeKey().");
+    return coded('STS-AUTHN-0070',
+                 { ok: false, errors: ['That is the only way ' + name + ' ' +
+                                 'can sign in — there is no password and no ' +
+                                 'other primary security key. Set a password ' +
+                                 'first, or enrol another key.'] });
   }
   try {
     directory.replaceWebauthn(name, kept.map(function (one) {
       return JSON.stringify(one);
     }));
   } catch (e) {
-    return coded('STS-AUTHN-0068', { ok: false, errors: ['The credential store refused the write: ' +
+    log.debug("Leaving removeKey().");
+    return coded('STS-AUTHN-0068', { ok: false, errors: ['The credential ' +
+        'store refused the write: ' +
                                  e.message] });
   }
   log.info('credentials: a security key was removed for ' + name + '.');
+  log.debug("Leaving removeKey().");
   return { ok: true, remaining: kept.length };
 }
 
@@ -1151,8 +1233,8 @@ function removeKey(username, credentialId) {
 // "shared secret" means, and it is exactly why this mechanism is a SECOND
 // factor here and can never be made a first one.
 //
-// It changes what a directory dump is worth, though, and `/admin/ldap/directory`
-// prints every attribute of every entry by design. So:
+// It changes what a directory dump is worth, though, and
+// `/admin/ldap/directory` prints every attribute of every entry by design. So:
 //
 //   * **IN PRODUCT MODE THE SECRET IS SEALED**, with `keystore.seal()` — the
 //     same AES-256-GCM under the same operator-supplied key-encryption key
@@ -1215,16 +1297,20 @@ const TOTP_ATTRIBUTE = 'stsTotpCredential';
 const pendingTotp = realms.map();
 
 function pendingKeyOf(username) {
+  log.debug("Entering pendingKeyOf().");
+  log.debug("Leaving pendingKeyOf().");
   return String(username || '').trim().toLowerCase();
 }
 
 function sweepPendingTotp() {
+  log.debug("Entering sweepPendingTotp().");
   const now = Date.now();
   pendingTotp.forEach(function (value, key) {
     if (!value || Number(value.expires || 0) < now) {
       pendingTotp.delete(key);
     }
   });
+  log.debug("Leaving sweepPendingTotp().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1242,6 +1328,7 @@ function sweepPendingTotp() {
 // SECOND FACTOR silently removes a security control.
 // ---------------------------------------------------------------------------
 function totpOf(username) {
+  log.debug("Entering totpOf().");
   const name = String(username || '').trim();
   log.debug('Entering totpOf(). username=' + name);
   if (!directory || typeof directory.readTotp !== 'function') {
@@ -1255,6 +1342,7 @@ function totpOf(username) {
     log.error(errorCodes.tag('STS-AUTHN-0071') +
               'credentials: reading the authenticator enrolment for ' + name +
               ' threw: ' + e.message);
+    log.debug("Leaving totpOf().");
     return null;
   }
   if (!raw) {
@@ -1268,6 +1356,7 @@ function totpOf(username) {
     log.warn('credentials: the ' + TOTP_ATTRIBUTE + ' value on ' + name +
              ' is not JSON this service wrote and is being reported as an ' +
              'unusable enrolment rather than ignored: ' + e.message);
+    log.debug("Leaving totpOf().");
     return { unusable: true, why: 'the stored value is not readable' };
   }
   if (parsed && parsed.sealed) {
@@ -1278,6 +1367,7 @@ function totpOf(username) {
                'key-encryption key. It is reported as UNUSABLE rather than ' +
                'as absent, because absent would sign them in with one ' +
                'factor.');
+      log.debug("Leaving totpOf().");
       return { unusable: true,
                why: 'the stored secret is sealed under a different ' +
                     'key-encryption key' };
@@ -1289,7 +1379,9 @@ function totpOf(username) {
 }
 
 function hasTotp(username) {
+  log.debug("Entering hasTotp().");
   const record = totpOf(username);
+  log.debug("Leaving hasTotp().");
   return !!record;
 }
 
@@ -1307,12 +1399,14 @@ function writeTotpRecord(username, record) {
     const sealedSecret = keystore.seal(out.secret, 'totp-secret');
     if (!sealedSecret) {
       log.error(errorCodes.tag('STS-AUTHN-0072') +
-                'credentials: the authenticator secret for ' + name + ' could ' +
-                'not be sealed, so it was NOT written. Storing it in the ' +
-                'clear in product mode would put a working second factor in ' +
-                'every directory dump.');
-      return coded('STS-AUTHN-0072', { ok: false, errors: ['The shared secret could not be encrypted, ' +
-                                   'so it was not stored.'] });
+                'credentials: the authenticator secret for ' + name + ' ' +
+                'could not be sealed, so it was NOT written. Storing it in ' +
+                'the clear in product mode would put a working second factor ' +
+                'in every directory dump.');
+      log.debug("Leaving writeTotpRecord().");
+      return coded('STS-AUTHN-0072', { ok: false, errors: ['The shared ' +
+                                   'secret could not be encrypted, so it was ' +
+                                   'not stored.'] });
     }
     out.secret = sealedSecret;
     out.sealed = true;
@@ -1326,12 +1420,16 @@ function writeTotpRecord(username, record) {
     log.error(errorCodes.tag('STS-AUTHN-0073') +
               'credentials: writing the authenticator enrolment for ' + name +
               ' threw: ' + e.message);
-    return coded('STS-AUTHN-0073', { ok: false, errors: ['The credential store refused the write: ' +
+    log.debug("Leaving writeTotpRecord().");
+    return coded('STS-AUTHN-0073', { ok: false, errors: ['The credential ' +
+        'store refused the write: ' +
                                  e.message] });
   }
   if (!written) {
-    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody called "' + name + '" in ' +
-                                 'this realm\'s directory.'] });
+    log.debug("Leaving writeTotpRecord().");
+    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" ' +
+                                 'in this realm\'s directory.'] });
   }
   log.debug('Leaving writeTotpRecord(). Written.');
   return { ok: true };
@@ -1347,27 +1445,36 @@ function writeTotpRecord(username, record) {
 // referenced them is what product mode removes.
 // ---------------------------------------------------------------------------
 function beginTotpEnrolment(username, opts) {
+  log.debug("Entering beginTotpEnrolment().");
   const name = String(username || '').trim();
   log.debug('Entering beginTotpEnrolment(). username=' + name);
   const options = opts || {};
   if (!directory || typeof directory.writeTotp !== 'function') {
-    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential store is installed, so an ' +
-                                 'authenticator app cannot be enrolled.'] });
+    log.debug("Leaving beginTotpEnrolment().");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                 'store is installed, so an authenticator ' +
+                                 'app cannot be enrolled.'] });
   }
   if (!totp.offered()) {
-    return coded('STS-AUTHN-0074', { ok: false, errors: ['Authenticator apps are turned off on this ' +
-                                 'service (totp.enabled).'] });
+    log.debug("Leaving beginTotpEnrolment().");
+    return coded('STS-AUTHN-0074', { ok: false, errors: ['Authenticator apps ' +
+                                 'are turned off on this service ' +
+                                 '(totp.enabled).'] });
   }
   if (!name) {
-    return coded('STS-AUTHN-0058', { ok: false, errors: ['There is no name to enrol an authenticator ' +
-                                 'for.'] });
+    log.debug("Leaving beginTotpEnrolment().");
+    return coded('STS-AUTHN-0058', { ok: false, errors: ['There is no name ' +
+                                 'to enrol an authenticator for.'] });
   }
   if (!mode.autoCreates() && !hasEntry(name)) {
-    log.info('credentials: product mode, so an authenticator was NOT enrolled ' +
-             'for "' + name + '" — there is no entry for them.');
-    return coded('STS-AUTHN-0024', { ok: false, errors: ['There is nobody called "' + name + '" in ' +
-                                 'this realm\'s directory. In product mode ' +
-                                 'every referenced object must exist first.'] });
+    log.info('credentials: product mode, so an authenticator was NOT ' +
+             'enrolled for "' + name + '" — there is no entry for them.');
+    log.debug("Leaving beginTotpEnrolment().");
+    return coded('STS-AUTHN-0024', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" ' +
+                                 'in this realm\'s directory. In product ' +
+                                 'mode every referenced object must exist ' +
+                                 'first.'] });
   }
   const live = totp.settings();
   const secret = totp.generateSecret();
@@ -1398,13 +1505,17 @@ function beginTotpEnrolment(username, opts) {
 // after a wrong code was typed — regenerating the secret there would mean a
 // person who mistypes once has to scan again.
 function pendingTotpFor(username) {
+  log.debug("Entering pendingTotpFor().");
   sweepPendingTotp();
   const held = pendingTotp.get(pendingKeyOf(username));
+  log.debug("Leaving pendingTotpFor().");
   return held || null;
 }
 
 function abandonTotpEnrolment(username) {
+  log.debug("Entering abandonTotpEnrolment().");
   pendingTotp.delete(pendingKeyOf(username));
+  log.debug("Leaving abandonTotpEnrolment().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1415,6 +1526,7 @@ function abandonTotpEnrolment(username) {
 // 5.2 applied from the first moment rather than from the second.
 // ---------------------------------------------------------------------------
 function confirmTotpEnrolment(username, code) {
+  log.debug("Entering confirmTotpEnrolment().");
   const name = String(username || '').trim();
   log.debug('Entering confirmTotpEnrolment(). username=' + name);
   const held = pendingTotpFor(name);
@@ -1430,7 +1542,8 @@ function confirmTotpEnrolment(username, code) {
              ' was not confirmed (' + verdict.reason + ').');
     log.debug('Leaving confirmTotpEnrolment(). The code did not verify.');
     return coded(errorCodes.codeOf(verdict) || 'STS-AUTHN-0105',
-                 { ok: false, reason: verdict.reason, errors: [verdict.detail] });
+                 { ok: false, reason: verdict.reason,
+                   errors: [verdict.detail] });
   }
   const written = writeTotpRecord(name, {
     secret: held.secret,
@@ -1443,6 +1556,7 @@ function confirmTotpEnrolment(username, code) {
     label: 'authenticator app'
   });
   if (!written.ok) {
+    log.debug("Leaving confirmTotpEnrolment().");
     return written;
   }
   abandonTotpEnrolment(name);
@@ -1490,6 +1604,7 @@ function confirmTotpEnrolment(username, code) {
 // service where a credential presented by an end user is actually checked.
 // ---------------------------------------------------------------------------
 function verifyTotp(username, code, opts) {
+  log.debug("Entering verifyTotp().");
   const name = String(username || '').trim();
   log.debug('Entering verifyTotp(). username=' + name);
   const options = opts || {};
@@ -1585,7 +1700,9 @@ function verifyTotp(username, code, opts) {
 const FACTOR_SCAN_LIMIT = 5000;
 
 function factorScanLimit() {
+  log.debug("Entering factorScanLimit().");
   const n = Number(config.value('credentials.factorScanLimit'));
+  log.debug("Leaving factorScanLimit().");
   return isFinite(n) && n > 0 ? Math.floor(n) : FACTOR_SCAN_LIMIT;
 }
 
@@ -1595,13 +1712,18 @@ function secondFactorHolders(alsoKnown, opts) {
   const limit = Math.max(1, Number(options.limit || factorScanLimit()));
   const seen = new Map();
   const add = function (name, source) {
+    log.debug("Entering add().");
     const value = String(name == null ? '' : name).trim();
-    if (!value) return;
+    if (!value) {
+      log.debug("Leaving add().");
+      return;
+    }
     const key = value.toLowerCase();
     if (!seen.has(key)) {
       seen.set(key, { username: value, inDirectory: false, known: false });
     }
     seen.get(key)[source] = true;
+    log.debug("Leaving add().");
   };
   let scanned = 0;
   let capped = false;
@@ -1611,7 +1733,8 @@ function secondFactorHolders(alsoKnown, opts) {
       people = directory.persons() || [];
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0079') +
-                'credentials: listing this realm\'s people threw: ' + e.message);
+                'credentials: listing this realm\'s people threw: ' +
+                e.message);
     }
     scanned = people.length;
     if (people.length > limit) {
@@ -1653,27 +1776,34 @@ function secondFactorHolders(alsoKnown, opts) {
   rows.sort(function (a, b) {
     return a.username.toLowerCase() < b.username.toLowerCase() ? -1 : 1;
   });
-  log.debug('Leaving secondFactorHolders(). ' + rows.length + ' person/people.');
+  log.debug('Leaving secondFactorHolders(). ' + rows.length +
+            ' person/people.');
   return { rows: rows, scanned: scanned, capped: capped, limit: limit,
            store: !!directory };
 }
 
 function removeTotp(username) {
+  log.debug("Entering removeTotp().");
   const name = String(username || '').trim();
   log.debug('Entering removeTotp(). username=' + name);
   if (!directory || typeof directory.writeTotp !== 'function') {
-    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential store is installed.'] });
+    log.debug("Leaving removeTotp().");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+        'store is installed.'] });
   }
   abandonTotpEnrolment(name);
   if (!totpOf(name)) {
     log.debug('Leaving removeTotp(). There was none.');
-    return coded('STS-AUTHN-0076', { ok: false, errors: ['No authenticator app is enrolled for ' +
+    return coded('STS-AUTHN-0076', { ok: false, errors: ['No authenticator ' +
+        'app is enrolled for ' +
                                  name + '.'] });
   }
   try {
     directory.writeTotp(name, null);
   } catch (e) {
-    return coded('STS-AUTHN-0073', { ok: false, errors: ['The credential store refused the write: ' +
+    log.debug("Leaving removeTotp().");
+    return coded('STS-AUTHN-0073', { ok: false, errors: ['The credential ' +
+        'store refused the write: ' +
                                  e.message] });
   }
   log.info('credentials: the authenticator enrolment for ' + name +
@@ -1796,9 +1926,10 @@ function removeTotp(username) {
 //     Making those readable without opening the vault means the console can
 //     be honest about an account whose codes this process cannot decrypt.
 //
-// **THE VAULT IS AUTHORITATIVE AND THE COUNTS ARE A RENDERING OF IT**, rewritten
-// from the array on every write. A reader that needs to be right about how many
-// are left opens the vault; a reader that needs to draw a page reads the count.
+// **THE VAULT IS AUTHORITATIVE AND THE COUNTS ARE A RENDERING OF IT**,
+// rewritten from the array on every write. A reader that needs to be right
+// about how many are left opens the vault; a reader that needs to draw a page
+// reads the count.
 // ===========================================================================
 
 // Invented, like the three beside it — nothing in RFC 4519 or any other schema
@@ -1815,6 +1946,7 @@ const BACKUP_CODES_ATTRIBUTE = 'stsBackupCodes';
 // set be issued over a list somebody is holding on paper.
 // ---------------------------------------------------------------------------
 function backupCodesOf(username) {
+  log.debug("Entering backupCodesOf().");
   const name = String(username || '').trim();
   log.debug('Entering backupCodesOf(). username=' + name);
   if (!directory || typeof directory.readBackupCodes !== 'function') {
@@ -1893,7 +2025,8 @@ function backupCodesOf(username) {
   // instead.
   const normalised = codes.map(function (one) {
     const stored = one && one.hash !== undefined ? one.hash : (one || {}).code;
-    return { hash: String(stored || ''), usedAt: Number((one || {}).usedAt || 0) };
+    return { hash: String(stored || ''),
+             usedAt: Number((one || {}).usedAt || 0) };
   });
   const legacy = normalised.some(function (one) {
     return one.hash && !backupCodes.isHash(one.hash);
@@ -1965,13 +2098,15 @@ function writeBackupCodesRecord(username, codes, meta) {
               'credentials: writing the recovery codes for ' + name +
               ' threw: ' + e.message);
     log.debug('Leaving writeBackupCodesRecord(). It threw.');
-    return coded('STS-AUTHN-0081', { ok: false, errors: ['The credential store refused the write: ' +
+    return coded('STS-AUTHN-0081', { ok: false, errors: ['The credential ' +
+        'store refused the write: ' +
                                  e.message] });
   }
   if (!written) {
     log.debug('Leaving writeBackupCodesRecord(). No entry.');
-    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody called "' + name + '" in ' +
-                                 'this realm\'s directory.'] });
+    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" ' +
+                                 'in this realm\'s directory.'] });
   }
   log.debug('Leaving writeBackupCodesRecord(). ' + out.remaining + ' of ' +
             out.total + ' unused, sealed=' + out.sealed + '.');
@@ -2006,17 +2141,21 @@ const pendingBackupCodes = realms.map();
 // in which it can be confirmed should be the window in which somebody is
 // actually looking at the page.
 function pendingTtlMs() {
+  log.debug("Entering pendingTtlMs().");
+  log.debug("Leaving pendingTtlMs().");
   return Math.max(60, Math.min(3600,
     Number(config.value('backupCodes.pendingTtlS') || 900))) * 1000;
 }
 
 function forgetExpiredPending() {
+  log.debug("Entering forgetExpiredPending().");
   const now = Date.now();
   pendingBackupCodes.forEach(function (record, handle) {
     if (record.expires < now) {
       pendingBackupCodes.delete(handle);
     }
   });
+  log.debug("Leaving forgetExpiredPending().");
 }
 
 // ---------------------------------------------------------------------------
@@ -2032,6 +2171,7 @@ function forgetExpiredPending() {
 // this and walks away still holds whatever they held before.
 // ---------------------------------------------------------------------------
 function beginBackupCodes(username, opts) {
+  log.debug("Entering beginBackupCodes().");
   const name = String(username || '').trim();
   log.debug('Entering beginBackupCodes(). username=' + name);
   const options = opts || {};
@@ -2056,7 +2196,8 @@ function beginBackupCodes(username, opts) {
   }
   const live = backupCodes.settings();
   const minted = backupCodes.generate({ count: options.count || live.count,
-                                        length: options.length || live.length });
+                                        length: options.length ||
+                                                live.length });
   if (!minted) {
     log.error(errorCodes.tag('STS-AUTHN-0083') +
               'credentials: no recovery codes could be generated for ' + name +
@@ -2100,11 +2241,14 @@ function beginBackupCodes(username, opts) {
 
 // What is pending for this person, for a page that has to redraw itself.
 function pendingBackupCodesFor(username, handle) {
+  log.debug("Entering pendingBackupCodesFor().");
   forgetExpiredPending();
   const record = pendingBackupCodes.get(String(handle || ''));
   if (!record || record.username !== String(username || '').trim()) {
+    log.debug("Leaving pendingBackupCodesFor().");
     return null;
   }
+  log.debug("Leaving pendingBackupCodesFor().");
   return record;
 }
 
@@ -2124,6 +2268,7 @@ function pendingBackupCodesFor(username, handle) {
 // moment somebody is choosing.
 // ---------------------------------------------------------------------------
 function confirmBackupCodes(username, handle) {
+  log.debug("Entering confirmBackupCodes().");
   const name = String(username || '').trim();
   log.debug('Entering confirmBackupCodes(). username=' + name);
   const record = pendingBackupCodesFor(name, handle);
@@ -2155,7 +2300,8 @@ function confirmBackupCodes(username, handle) {
               'stored (' + (written.errors || []).join(' ') + '). The set is ' +
               'still pending, so confirming again will retry.');
     log.debug('Leaving confirmBackupCodes(). The write failed.');
-    return coded('STS-AUTHN-0085', { ok: false, reason: 'store', retryable: true,
+    return coded('STS-AUTHN-0085',
+                 { ok: false, reason: 'store', retryable: true,
              errors: written.errors });
   }
   pendingBackupCodes.delete(handle);
@@ -2170,13 +2316,16 @@ function confirmBackupCodes(username, handle) {
 // a person who decides they are not ready should not leave a live list in this
 // process's memory for the rest of the TTL.
 function discardBackupCodes(username, handle) {
+  log.debug("Entering discardBackupCodes().");
   const record = pendingBackupCodesFor(username, handle);
   if (!record) {
+    log.debug("Leaving discardBackupCodes().");
     return { ok: true, discarded: false };
   }
   pendingBackupCodes.delete(handle);
   log.info('credentials: a pending set of recovery codes for ' +
            String(username) + ' was discarded without being stored.');
+  log.debug("Leaving discardBackupCodes().");
   return { ok: true, discarded: true };
 }
 
@@ -2192,6 +2341,7 @@ function discardBackupCodes(username, handle) {
 // this one and there is no call site anywhere in the console for the other.
 // ---------------------------------------------------------------------------
 function backupCodeStatus(username) {
+  log.debug("Entering backupCodeStatus().");
   const name = String(username || '').trim();
   log.debug('Entering backupCodeStatus(). username=' + name);
   const held = backupCodesOf(name);
@@ -2208,7 +2358,9 @@ function backupCodeStatus(username) {
     return { present: true, usable: false,
              total: Number(held.total || 0),
              remaining: Number(held.remaining || 0),
-             used: Math.max(0, Number(held.total || 0) - Number(held.remaining || 0)),
+             used: Math.max(0,
+                            Number(held.total || 0) -
+                            Number(held.remaining || 0)),
              generatedAt: Number(held.generatedAt || 0),
              lastUsedAt: Number(held.lastUsedAt || 0),
              sealed: !!held.sealed, why: held.why || '' };
@@ -2248,6 +2400,7 @@ function backupCodeStatus(username) {
 // over from an older build gets a sentence rather than `is not a function`.
 // ---------------------------------------------------------------------------
 function revealBackupCodes(username) {
+  log.debug("Entering revealBackupCodes().");
   const name = String(username || '').trim();
   log.debug('Entering revealBackupCodes(). username=' + name);
   const held = backupCodesOf(name);
@@ -2301,16 +2454,20 @@ function revealBackupCodes(username) {
 // in generation order.
 // ---------------------------------------------------------------------------
 function compareOne(presented, entry) {
+  log.debug("Entering compareOne().");
   const stored = String((entry || {}).hash || '');
   if (!stored) {
+    log.debug("Leaving compareOne().");
     return false;
   }
+  log.debug("Leaving compareOne().");
   return backupCodes.isHash(stored)
     ? backupCodes.matchesHash(presented, stored)
     : backupCodes.matches(presented, stored);
 }
 
 function matchAgainstSet(presented, entries, hits) {
+  log.debug("Entering matchAgainstSet().");
   let matchedIndex = -1;
   let spentIndex = -1;
   for (let i = 0; i < entries.length; i++) {
@@ -2325,6 +2482,7 @@ function matchAgainstSet(presented, entries, hits) {
       }
     }
   }
+  log.debug("Leaving matchAgainstSet().");
   return { matchedIndex: matchedIndex, spentIndex: spentIndex };
 }
 
@@ -2336,9 +2494,11 @@ function matchAgainstSet(presented, entries, hits) {
 // to disagree about when to say no. Here the expensive half is scrypt over up
 // to ten codes, and every refusal below costs none of it.
 function backupPrepare(name, presented) {
+  log.debug("Entering backupPrepare().");
   const held = backupCodesOf(name);
   if (!held) {
     log.debug('backupPrepare(): none issued.');
+    log.debug("Leaving backupPrepare().");
     return { done: coded('STS-AUTHN-0087', { ok: false, reason: 'none',
                      detail: 'No recovery codes have been issued for ' + name +
                              '.' }) };
@@ -2348,6 +2508,7 @@ function backupPrepare(name, presented) {
               'credentials: ' + name + ' holds a set of recovery codes this ' +
               'process cannot read (' + held.why + '), so they cannot be ' +
               'checked. They are refused rather than let through.');
+    log.debug("Leaving backupPrepare().");
     return { done: coded('STS-AUTHN-0089', { ok: false, reason: 'unusable',
                      detail: 'Your recovery codes cannot be read by this ' +
                              'service, so they cannot be checked. An ' +
@@ -2360,15 +2521,18 @@ function backupPrepare(name, presented) {
   // ten worker jobs — for something that cannot possibly be a code.
   if (!backupCodes.wellFormed(presented)) {
     log.debug('backupPrepare(): not the shape of a code.');
+    log.debug("Leaving backupPrepare().");
     return { done: coded('STS-AUTHN-0090', { ok: false, reason: 'shape',
                      detail: 'A recovery code is letters and digits only — ' +
                              'the ones this service printed for you, in ' +
                              'groups. Dashes and spaces are ignored.' }) };
   }
+  log.debug("Leaving backupPrepare().");
   return { held: held };
 }
 
 function backupFinish(name, held, found) {
+  log.debug("Entering backupFinish().");
   const matchedIndex = found.matchedIndex;
   const spentIndex = found.spentIndex;
   if (matchedIndex < 0 && spentIndex >= 0) {
@@ -2379,12 +2543,14 @@ function backupFinish(name, held, found) {
     // replayed step.
     log.info('credentials: a recovery code for ' + name + ' was refused as ' +
              'already spent.');
+    log.debug("Leaving backupFinish().");
     return coded('STS-AUTHN-0091', { ok: false, reason: 'spent',
              detail: 'That recovery code has already been used. Each one ' +
                      'works once — use the next unused code on your list.' });
   }
   if (matchedIndex < 0) {
     log.info('credentials: a recovery code for ' + name + ' did not match.');
+    log.debug("Leaving backupFinish().");
     return coded('STS-AUTHN-0092', { ok: false, reason: 'mismatch',
              detail: 'That is not one of your recovery codes.' });
   }
@@ -2393,7 +2559,8 @@ function backupFinish(name, held, found) {
   // and re-hashing what IS here would hash a hash.
   const list = held.codes.map(function (one, i) {
     return { hash: one.hash,
-             usedAt: i === matchedIndex ? Date.now() : Number(one.usedAt || 0) };
+             usedAt: i === matchedIndex ? Date.now() :
+                     Number(one.usedAt || 0) };
   });
   const written = writeBackupCodesRecord(name, list,
     { generatedAt: held.generatedAt, lastUsedAt: Date.now() });
@@ -2406,6 +2573,7 @@ function backupFinish(name, held, found) {
               'could NOT be marked as spent (' +
               (written.errors || []).join(' ') + '), so it was REFUSED. A ' +
               'code that cannot be spent is a code that works for ever.');
+    log.debug("Leaving backupFinish().");
     return coded('STS-AUTHN-0093', { ok: false, reason: 'store',
              detail: 'That code is right and this service could not record ' +
                      'that it has been used, so it was not accepted. Try ' +
@@ -2413,10 +2581,12 @@ function backupFinish(name, held, found) {
   }
   log.info('credentials: ' + name + ' signed in with a recovery code. ' +
            written.remaining + ' of ' + written.total + ' remain.');
+  log.debug("Leaving backupFinish().");
   return { ok: true, remaining: written.remaining, total: written.total };
 }
 
 function verifyBackupCode(username, presented) {
+  log.debug("Entering verifyBackupCode().");
   const name = String(username || '').trim();
   log.debug('Entering verifyBackupCode(). username=' + name);
   const ready = backupPrepare(name, presented);
@@ -2451,12 +2621,14 @@ function verifyBackupCode(username, presented) {
 // asynchronous is better off blocking than wrong.
 // ---------------------------------------------------------------------------
 function verifyBackupCodeAsync(username, presented) {
+  log.debug("Entering verifyBackupCodeAsync().");
   const name = String(username || '').trim();
   log.debug('Entering verifyBackupCodeAsync(). username=' + name);
   let ready;
   try {
     ready = backupPrepare(name, presented);
   } catch (e) {
+    log.debug("Leaving verifyBackupCodeAsync().");
     return Promise.reject(e);
   }
   if (ready.done) {
@@ -2464,6 +2636,7 @@ function verifyBackupCodeAsync(username, presented) {
     return Promise.resolve(ready.done);
   }
   const entries = ready.held.codes;
+  log.debug("Leaving verifyBackupCodeAsync().");
   return Promise.all(entries.map(function (entry) {
     const stored = String((entry || {}).hash || '');
     if (!stored) {
@@ -2490,28 +2663,33 @@ function verifyBackupCodeAsync(username, presented) {
 // and the ONLY way to a second set — the next second factor they enrol issues
 // one.
 //
-// **IT CANNOT LOCK ANYBODY OUT AND SO HAS NO REFUSAL**, which is `removeTotp()`'s
-// position exactly: a recovery code is never a way in on its own, so clearing
-// the set drops the account to whatever it already had. What it removes is the
-// way BACK, which is a real change and is why every caller audits it.
+// **IT CANNOT LOCK ANYBODY OUT AND SO HAS NO REFUSAL**, which is
+// `removeTotp()`'s position exactly: a recovery code is never a way in on its
+// own, so clearing the set drops the account to whatever it already had. What
+// it removes is the way BACK, which is a real change and is why every caller
+// audits it.
 // ---------------------------------------------------------------------------
 function removeBackupCodes(username) {
+  log.debug("Entering removeBackupCodes().");
   const name = String(username || '').trim();
   log.debug('Entering removeBackupCodes(). username=' + name);
   if (!directory || typeof directory.writeBackupCodes !== 'function') {
     log.debug('Leaving removeBackupCodes(). No store.');
-    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential store is installed.'] });
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+        'store is installed.'] });
   }
   if (!backupCodesOf(name)) {
     log.debug('Leaving removeBackupCodes(). There was none.');
-    return coded('STS-AUTHN-0087', { ok: false, errors: ['No recovery codes have been issued for ' +
+    return coded('STS-AUTHN-0087', { ok: false, errors: ['No recovery codes ' +
+        'have been issued for ' +
                                  name + '.'] });
   }
   try {
     directory.writeBackupCodes(name, null);
   } catch (e) {
     log.debug('Leaving removeBackupCodes(). The write threw.');
-    return coded('STS-AUTHN-0081', { ok: false, errors: ['The credential store refused the write: ' +
+    return coded('STS-AUTHN-0081', { ok: false, errors: ['The credential ' +
+        'store refused the write: ' +
                                  e.message] });
   }
   log.info('credentials: the recovery codes for ' + name + ' were cleared. ' +
@@ -2519,6 +2697,7 @@ function removeBackupCodes(username) {
   log.debug('Leaving removeBackupCodes(). Cleared.');
   return { ok: true, username: name };
 }
+
 // ---------------------------------------------------------------------------
 // HOW CAN THIS PERSON SIGN IN? The question the sign-in screen, the activation
 // flow and the portal all ask, answered once.
@@ -2528,8 +2707,8 @@ function removeBackupCodes(username) {
 // reachable — enrol a key as a second factor, then remove the password — and it
 // is exactly the lockout `removeKey()` above refuses to create.
 //
-// **THERE ARE TWO SECOND FACTORS SINCE 2026-09-10 AND `usable` DID NOT CHANGE**,
-// which is the property to check first if this is ever reworked: an
+// **THERE ARE TWO SECOND FACTORS SINCE 2026-09-10 AND `usable` DID NOT
+// CHANGE**, which is the property to check first if this is ever reworked: an
 // authenticator app can never be a primary credential (see the TOTP section
 // above), so it cannot make an unusable account usable and it cannot be the
 // thing whose removal locks somebody out.
@@ -2540,16 +2719,19 @@ function removeBackupCodes(username) {
 // meaning of *a user configured to use it*.
 // ---------------------------------------------------------------------------
 function mechanismsFor(username) {
+  log.debug("Entering mechanismsFor().");
   const name = String(username || '').trim();
   const keys = keysOf(name);
   const password = hasPassword(name);
-  const primaryKeys = keys.filter(function (one) { return one.role === 'primary'; });
+  const primaryKeys =
+      keys.filter(function (one) { return one.role === 'primary'; });
   const mfaKeys = keys.filter(function (one) { return one.role === 'mfa'; });
   const authenticator = totpOf(name);
   // An enrolment this process cannot READ is not an enrolment it can ignore:
   // it still means this person configured two factors, and reporting it as
   // absent would sign them in with one. `verifyTotp()` refuses it by name.
   const totpEnrolled = !!authenticator;
+  log.debug("Leaving mechanismsFor().");
   return {
     username: name,
     password: password,
@@ -2604,7 +2786,8 @@ function mechanismsFor(username) {
     // the stronger of the two and the ceremony is the one that is bound to this
     // origin; the code is what they fall back to when they are at a machine
     // with no authenticator attached, and `authn.js` draws that link.
-    secondFactor: mfaKeys.length > 0 ? 'webauthn' : (totpEnrolled ? 'totp' : ''),
+    secondFactor: mfaKeys.length > 0 ? 'webauthn' :
+                  (totpEnrolled ? 'totp' : ''),
     // Has this person finished setting themselves up? What product mode asks
     // before it will let an activation link be spent, and what the sign-in
     // screen asks before it refuses somebody with nothing. **An authenticator
@@ -2716,9 +2899,9 @@ function mechanismsFor(username) {
 // same device, which is a backup that is lost with the original.
 //
 // **IT IS THE BROWSER THAT ENFORCES IT AND THIS SERVICE CHECKS ANYWAY.** The
-// list is a request like every other ceremony option, so `confirmKeyEnrolment()`
-// refuses a credential id already on the entry — one authenticator, one row,
-// however the ceremony was driven.
+// list is a request like every other ceremony option, so
+// `confirmKeyEnrolment()` refuses a credential id already on the entry — one
+// authenticator, one row, however the ceremony was driven.
 //
 // ---------------------------------------------------------------------------
 // THE ROLE IS CHOSEN AT THE START AND CARRIED, never read back off the answer.
@@ -2738,21 +2921,26 @@ function mechanismsFor(username) {
 const pendingKeys = realms.map();
 
 // Long enough to find the key in a drawer, short enough that an abandoned
-// ceremony is not sitting in memory. It rides the SAME setting the authenticator
-// app's unconfirmed enrolment does, because they are the same question asked
-// about two mechanisms and two settings would be two answers to it.
+// ceremony is not sitting in memory. It rides the SAME setting the
+// authenticator app's unconfirmed enrolment does, because they are the same
+// question asked about two mechanisms and two settings would be two answers to
+// it.
 function keyEnrolmentTtlMs() {
+  log.debug("Entering keyEnrolmentTtlMs().");
+  log.debug("Leaving keyEnrolmentTtlMs().");
   return Math.max(1, Number(config.value('totp.enrolmentTtlMinutes') || 10)) *
          60 * 1000;
 }
 
 function sweepPendingKeys() {
+  log.debug("Entering sweepPendingKeys().");
   const now = Date.now();
   pendingKeys.forEach(function (value, key) {
     if (!value || value.expires < now) {
       pendingKeys.delete(key);
     }
   });
+  log.debug("Leaving sweepPendingKeys().");
 }
 
 // ---------------------------------------------------------------------------
@@ -2767,14 +2955,16 @@ function sweepPendingKeys() {
 // enforcement, and the enforcement has to be at the write.
 // ---------------------------------------------------------------------------
 function beginKeyEnrolment(username, opts) {
+  log.debug("Entering beginKeyEnrolment().");
   const name = String(username || '').trim();
   log.debug('Entering beginKeyEnrolment(). username=' + name);
   const options = opts || {};
   const role = String(options.role || 'mfa');
   if (ROLES.indexOf(role) < 0) {
     log.debug('Leaving beginKeyEnrolment(). Not a role.');
-    return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key is either "primary" or ' +
-                                 '"mfa". "' + role + '" is neither.'] });
+    return coded('STS-AUTHN-0066', { ok: false, errors: ['A security key is ' +
+                                 'either "primary" or "mfa". ' +
+                                 '"' + role + '" is neither.'] });
   }
   const allowed = webauthnPolicy.roleAllowed(role);
   if (!allowed.ok) {
@@ -2783,19 +2973,24 @@ function beginKeyEnrolment(username, opts) {
                  { ok: false, errors: [allowed.why] });
   }
   if (!directory || typeof directory.writeWebauthn !== 'function') {
-    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential store is installed, so a ' +
-                                 'security key cannot be enrolled.'] });
+    log.debug("Leaving beginKeyEnrolment().");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                 'store is installed, so a security key ' +
+                                 'cannot be enrolled.'] });
   }
   // PRODUCT MODE REFUSES TO ENROL FOR SOMEBODY WHO DOES NOT EXIST, which is
   // `addKey()`'s own refusal made early — see the header.
   if (!mode.autoCreates() && !hasAnyEntry(name)) {
-    return coded('STS-AUTHN-0024', { ok: false, errors: ['This service is in product mode, where a ' +
-                                 'security key can only be enrolled for ' +
-                                 'somebody who already exists.'] });
+    log.debug("Leaving beginKeyEnrolment().");
+    return coded('STS-AUTHN-0024', { ok: false, errors: ['This service is in ' +
+                                 'product mode, where a security key can ' +
+                                 'only be enrolled for somebody who already ' +
+                                 'exists.'] });
   }
   const held = keysOf(name);
   const cap = webauthnPolicy.settings().maxKeysPerPerson;
   if (held.length >= cap) {
+    log.debug("Leaving beginKeyEnrolment().");
     return coded('STS-AUTHN-0067', { ok: false,
              errors: ['You already hold ' + held.length + ' security key(s), ' +
                       'which is the most this service allows. Remove one ' +
@@ -2833,10 +3028,17 @@ function beginKeyEnrolment(username, opts) {
 // `readWebauthn()` returns an array for an entry and throws or answers nothing
 // for a name that is not there.
 function hasAnyEntry(username) {
-  if (!directory || typeof directory.readWebauthn !== 'function') return false;
+  log.debug("Entering hasAnyEntry().");
+  if (!directory || typeof directory.readWebauthn !== 'function') {
+    log.debug("Leaving hasAnyEntry().");
+    return false;
+  }
   try {
+    log.debug("Leaving hasAnyEntry().");
     return Array.isArray(directory.readWebauthn(String(username || '').trim()));
   } catch (e) {
+    log.debug("Caught in hasAnyEntry(): " + ((e && e.message) || e));
+    log.debug("Leaving hasAnyEntry().");
     // Not there, or the store refused. Either way this is not somebody a key
     // may be enrolled for in product mode.
     return false;
@@ -2844,13 +3046,17 @@ function hasAnyEntry(username) {
 }
 
 function pendingKeyEnrolmentFor(username) {
+  log.debug("Entering pendingKeyEnrolmentFor().");
   sweepPendingKeys();
   const held = pendingKeys.get(String(username || '').trim().toLowerCase());
+  log.debug("Leaving pendingKeyEnrolmentFor().");
   return held || null;
 }
 
 function abandonKeyEnrolment(username) {
+  log.debug("Entering abandonKeyEnrolment().");
   pendingKeys.delete(String(username || '').trim().toLowerCase());
+  log.debug("Leaving abandonKeyEnrolment().");
 }
 
 // ---------------------------------------------------------------------------
@@ -2862,6 +3068,7 @@ function abandonKeyEnrolment(username) {
 // stop being made twice.
 // ---------------------------------------------------------------------------
 function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
+  log.debug("Entering confirmKeyEnrolment().");
   const name = String(username || '').trim();
   log.debug('Entering confirmKeyEnrolment(). username=' + name);
   const options = opts || {};
@@ -2889,7 +3096,8 @@ function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
       ? credential.error + ': ' + (credential.message || '')
       : 'the browser sent no credential';
     log.debug('Leaving confirmKeyEnrolment(). No credential.');
-    return coded('STS-AUTHN-0022', { ok: false, reason: 'browser', errors: [said] });
+    return coded('STS-AUTHN-0022',
+                 { ok: false, reason: 'browser', errors: [said] });
   }
 
   let verdict;
@@ -2911,7 +3119,8 @@ function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
     log.info('credentials: a security key enrolment for ' + name +
              ' did not verify — ' + (verdict.failed || []).join('; '));
     log.debug('Leaving confirmKeyEnrolment(). It did not verify.');
-    return coded(webauthnPolicy.failureCodeFor(verdict), { ok: false, reason: 'invalid',
+    return coded(webauthnPolicy.failureCodeFor(verdict),
+                 { ok: false, reason: 'invalid',
              errors: ['The registration did not verify — ' +
                       (verdict.failed || []).join('; ') + '.'] });
   }
@@ -2959,7 +3168,11 @@ function confirmKeyEnrolment(username, enrolmentId, credential, opts) {
 }
 
 function activationTtlMs() {
-  return Math.max(1, Number(config.value('security.activationTtlMinutes') || 1440)) *
+  log.debug("Entering activationTtlMs().");
+  log.debug("Leaving activationTtlMs().");
+  return Math.max(1,
+                  Number(config.value('security.activationTtlMinutes') ||
+                         1440)) *
          60 * 1000;
 }
 
@@ -2967,39 +3180,51 @@ function activationTtlMs() {
 // caller shows it and forgets it, because what is stored is a hash and this
 // service can never produce it again.
 function issueActivation(username) {
+  log.debug("Entering issueActivation().");
   const name = String(username || '').trim();
   log.debug('Entering issueActivation(). username=' + name);
   if (!name) {
-    return coded('STS-AUTHN-0058', { ok: false, errors: ['Name the person to issue a link for.'] });
+    log.debug("Leaving issueActivation().");
+    return coded('STS-AUTHN-0058', { ok: false, errors: ['Name the person to ' +
+        'issue a link for.'] });
   }
   if (!directory || typeof directory.writeActivation !== 'function') {
-    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential store is installed, so an ' +
-                                 'activation link cannot be issued.'] });
+    log.debug("Leaving issueActivation().");
+    return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
+                                 'store is installed, so an activation link ' +
+                                 'cannot be issued.'] });
   }
   const token = require('crypto').randomBytes(32).toString('base64url');
   const expires = Date.now() + activationTtlMs();
   let written = false;
   try {
-    written = directory.writeActivation(name, crypto.hashSecret(token), expires);
+    written = directory.writeActivation(name, crypto.hashSecret(token),
+                                        expires);
   } catch (e) {
     log.error(errorCodes.tag('STS-AUTHN-0101') +
               'credentials: writing an activation token for ' + name +
               ' threw: ' + e.message);
-    return coded('STS-AUTHN-0101', { ok: false, errors: ['The credential store refused the write: ' +
+    log.debug("Leaving issueActivation().");
+    return coded('STS-AUTHN-0101', { ok: false, errors: ['The credential ' +
+        'store refused the write: ' +
                                  e.message] });
   }
   if (!written) {
-    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody called "' + name + '" in ' +
-                                 'this realm\'s directory. A person is ' +
+    log.debug("Leaving issueActivation().");
+    return coded('STS-AUTHN-0061', { ok: false, errors: ['There is nobody ' +
+        'called "' + name + '" ' +
+                                 'in this realm\'s directory. A person is ' +
                                  'provisioned first — through /admin-api, ' +
-                                 'SCIM or an LDAP add — and activated after.'] });
+                                 'SCIM or an LDAP add — and activated ' +
+                                 'after.'] });
   }
   // **THE TOKEN IS NOT LOGGED.** Every other credential event in this file logs
   // that it happened; this one logs that it happened and nothing about what.
   log.info('credentials: an activation link was issued for ' + name +
            ', valid until ' + new Date(expires).toISOString() + '. It is ' +
-           'shown to the caller ONCE and stored only as a hash — this service ' +
-           'cannot produce it again, only replace it.');
+           'shown to the caller ONCE and stored only as a hash — this ' +
+           'service cannot produce it again, only replace it.');
+  log.debug("Leaving issueActivation().");
   return { ok: true, username: name, token: token, expires: expires,
            expiresAt: new Date(expires).toISOString() };
 }
@@ -3011,12 +3236,15 @@ function issueActivation(username) {
 // distinguishing them tells an attacker whether a username is worth grinding.
 // The `reason` is for the LOG.
 function checkActivation(username, token) {
+  log.debug("Entering checkActivation().");
   const name = String(username || '').trim();
   log.debug('Entering checkActivation(). username=' + name);
   if (!name || !token) {
+    log.debug("Leaving checkActivation().");
     return coded('STS-AUTHN-0096', { ok: false, reason: 'incomplete' });
   }
   if (!directory || typeof directory.readActivation !== 'function') {
+    log.debug("Leaving checkActivation().");
     return coded('STS-AUTHN-0059', { ok: false, reason: 'no-store' });
   }
   let held = null;
@@ -3026,17 +3254,23 @@ function checkActivation(username, token) {
     log.error(errorCodes.tag('STS-AUTHN-0097') +
               'credentials: reading the activation token for ' + name +
               ' threw: ' + e.message);
+    log.debug("Leaving checkActivation().");
     return coded('STS-AUTHN-0097', { ok: false, reason: 'store-error' });
   }
   if (!held || !held.hash) {
+    log.debug("Leaving checkActivation().");
     return coded('STS-AUTHN-0098', { ok: false, reason: 'none-issued' });
   }
   if (held.expires && held.expires <= Date.now()) {
-    return coded('STS-AUTHN-0099', { ok: false, reason: 'expired', expired: true });
+    log.debug("Leaving checkActivation().");
+    return coded('STS-AUTHN-0099',
+                 { ok: false, reason: 'expired', expired: true });
   }
   if (!crypto.verifySecret(token, held.hash)) {
+    log.debug("Leaving checkActivation().");
     return coded('STS-AUTHN-0100', { ok: false, reason: 'mismatch' });
   }
+  log.debug("Leaving checkActivation().");
   return { ok: true, reason: 'valid', expires: held.expires };
 }
 
@@ -3045,30 +3279,45 @@ function checkActivation(username, token) {
 // who reloaded the page.
 function consumeActivation(username) {
   log.debug('Entering consumeActivation(). username=' + username);
-  if (!directory || typeof directory.writeActivation !== 'function') return false;
+  if (!directory || typeof directory.writeActivation !== 'function') {
+    log.debug("Leaving consumeActivation().");
+    return false;
+  }
   try {
     directory.writeActivation(String(username || '').trim(), '', 0);
   } catch (e) {
     log.error(errorCodes.tag('STS-AUTHN-0102') +
               'credentials: the activation token for ' + username +
               ' could not be cleared: ' + e.message);
+    log.debug("Leaving consumeActivation().");
     return false;
   }
   log.info('credentials: the activation link for ' + username + ' was spent ' +
            'and is now invalid.');
+  log.debug("Leaving consumeActivation().");
   return true;
 }
 
 // Is one outstanding? What /admin/users draws beside somebody who cannot yet
 // sign in, so an operator can tell "never activated" from "link already sent".
 function activationPending(username) {
-  if (!directory || typeof directory.readActivation !== 'function') return null;
+  log.debug("Entering activationPending().");
+  if (!directory || typeof directory.readActivation !== 'function') {
+    log.debug("Leaving activationPending().");
+    return null;
+  }
   try {
     const held = directory.readActivation(String(username || '').trim());
-    if (!held || !held.hash) return null;
+    if (!held || !held.hash) {
+      log.debug("Leaving activationPending().");
+      return null;
+    }
+    log.debug("Leaving activationPending().");
     return { expires: held.expires,
              expired: !!(held.expires && held.expires <= Date.now()) };
   } catch (e) {
+    log.debug("Caught in activationPending(): " + ((e && e.message) || e));
+    log.debug("Leaving activationPending().");
     return null;
   }
 }
@@ -3138,7 +3387,8 @@ module.exports = {
   // The password policy, for a door that wants to say so before it tries —
   // `passwordRules()` for a form to print, `passwordProblem()` for the shape of
   // one password, and `preparePassword()` for the LDAP handlers, which have to
-  // apply a change inside an atomic modify rather than have it written for them.
+  // apply a change inside an atomic modify rather than have it written for
+  // them.
   passwordProblem: passwordProblem,
   passwordRules: passwordRules,
   preparePassword: preparePassword,

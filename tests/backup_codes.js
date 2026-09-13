@@ -94,13 +94,21 @@ const totp = require('../common/totp');
 // vacuously.
 const ldap = require('../ldap/ldap_server');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'backup_codes',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // A name per section, because the directory is a process-wide store here and a
 // shared one would make each section depend on the order of the ones above it.
 let counter = 0;
 function somebody() {
+  log.debug("Entering somebody().");
   counter++;
   const name = 'backupprobe' + counter;
   ldap.createUser(name, {});
+  log.debug("Leaving somebody().");
   return name;
 }
 
@@ -108,9 +116,11 @@ function somebody() {
 // code computed here. It is written out rather than stubbed because the WHOLE
 // POINT of claims 1 and 2 is which real call issues a set.
 function enrolAuthenticator(name) {
+  log.debug("Entering enrolAuthenticator().");
   const begun = credentials.beginTotpEnrolment(name,
                                                { base: 'https://localhost' });
   const code = totp.codeAt(begun.secret, Date.now(), begun);
+  log.debug("Leaving enrolAuthenticator().");
   return credentials.confirmTotpEnrolment(name, code);
 }
 
@@ -120,16 +130,20 @@ function enrolAuthenticator(name) {
 // codes it returns are the ONLY copy that will ever exist, which is the whole
 // of what the change means for a caller.
 function enrolAndTakeCodes(name) {
+  log.debug("Entering enrolAndTakeCodes().");
   enrolAuthenticator(name);
   const begun = credentials.beginBackupCodes(name);
   if (!begun.ok) {
+    log.debug("Leaving enrolAndTakeCodes().");
     return null;
   }
   const done = credentials.confirmBackupCodes(name, begun.handle);
+  log.debug("Leaving enrolAndTakeCodes().");
   return done.ok ? begun.codes : null;
 }
 
 function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== a code: the shape, and the properties that are chosen ===');
   const set = backupCodes.generate({ count: 10, length: 10 });
   t.equal(set.length, 10, 'a set is the number of codes asked for');
@@ -203,8 +217,8 @@ function run(t) {
   t.check(enrolled.ok, 'the authenticator app enrolled',
           (enrolled.errors || []).join(' '));
   t.check(!credentials.backupCodeStatus(alice).present,
-          'AND THE ENROLMENT ISSUED NOTHING. A set is no longer a side effect ' +
-          'of enrolling a second factor');
+          'AND THE ENROLMENT ISSUED NOTHING. A set is no longer a side ' +
+          'effect of enrolling a second factor');
   t.check(enrolled.recoveryAdvised,
           'but it SAYS SO — `recoveryAdvised` is what replaced the automatic ' +
           'issue, and it is the whole of what is left of that protection');
@@ -268,7 +282,8 @@ function run(t) {
   // the entry rather than against a flag this service sets about itself.
   const entryView = ldap.objectFor(alice);
   const raw = String(((entryView && entryView.entry &&
-    (entryView.entry.attributes || entryView.entry)) || {}).stsBackupCodes || '');
+    (entryView.entry.attributes ||
+     entryView.entry)) || {}).stsBackupCodes || '');
   t.check(raw.length > 0, 'the set really is on the directory entry');
   t.check(!begun.codes.some(function (code) { return raw.indexOf(code) >= 0; }),
           'AND NOT ONE OF THE CODES APPEARS IN IT. This is the assertion the ' +
@@ -349,7 +364,8 @@ function run(t) {
           'out needs to be told to use the next one, not that their list is ' +
           'dead');
   const wrong = credentials.verifyBackupCode(bob, 'AAAAAAAAAA');
-  t.equal(wrong.reason, 'mismatch', 'a code that was never issued is a mismatch');
+  t.equal(wrong.reason, 'mismatch',
+          'a code that was never issued is a mismatch');
   const junk = credentials.verifyBackupCode(bob, 'hunter2!');
   t.equal(junk.reason, 'shape',
           'and something that is not the shape of a code is refused before ' +
@@ -407,8 +423,8 @@ function run(t) {
           'with the authenticator cleared she still holds the set');
   t.check(!after.mfaRequired,
           'AND NO SECOND FACTOR IS DEMANDED. Recovery codes must never make ' +
-          'this true on their own, or an account whose only second factor was ' +
-          'cleared would be asked for one it cannot produce');
+          'this true on their own, or an account whose only second factor ' +
+          'was cleared would be asked for one it cannot produce');
   t.equal(after.secondFactor, '', 'and there is no factor to ask for');
   t.check(after.usable,
           'and she can still sign in — a recovery code has never been a way ' +
@@ -448,7 +464,8 @@ function run(t) {
           'and the person can then generate one, which is the only way a set ' +
           'now comes to exist');
 
-  t.log.info('=== a set this process cannot read is UNUSABLE, never absent ===');
+  t.log.info('=== a set this process cannot read is UNUSABLE, never absent ' +
+             '===');
   // The distinction that stops a second set being written over one somebody is
   // holding on paper. It is asserted through `backupCodeStatus()` on a person
   // who holds a NORMAL set, and then on the two states that are reachable —
@@ -568,13 +585,15 @@ function run(t) {
     ['hunter2!', 'shape'],
     ['AAAAAAAAAA', 'mismatch']
   ];
+  log.debug("Leaving run().");
   return cases.reduce(function (chain, pair) {
     return chain.then(function () {
       const sync = credentials.verifyBackupCode(gail, pair[0]);
       return credentials.verifyBackupCodeAsync(gail, pair[0])
         .then(function (async) {
           t.equal(sync.reason, pair[1],
-                  'the synchronous door refuses "' + pair[0] + '" as ' + pair[1]);
+                  'the synchronous door refuses "' + pair[0] + '" as ' +
+                  pair[1]);
           t.equal(async.reason, sync.reason,
                   'and the asynchronous door gives the SAME reason — one ' +
                   'reading, two doors');
@@ -600,6 +619,7 @@ function run(t) {
 }
 
 function rest(t) {
+  log.debug("Entering rest().");
   t.log.info('=== the report the console and /admin/crypto-metadata draw ===');
   const report = backupCodes.report();
   t.equal(report.alphabetSize, 32, 'the alphabet size is reported');
@@ -628,13 +648,16 @@ function rest(t) {
     t.equal(backupCodes.settings().groupSize, 0,
             'backupCodes.groupSize=0 is honoured as zero rather than read as ' +
             'absent and replaced with five');
-    t.equal(backupCodes.formatted('ABCDEFGHJK', backupCodes.settings().groupSize),
-            'ABCDEFGHJK', 'and a code is then printed unbroken, as the row says');
+    t.equal(backupCodes.formatted('ABCDEFGHJK',
+                                  backupCodes.settings().groupSize),
+            'ABCDEFGHJK',
+            'and a code is then printed unbroken, as the row says');
   } finally {
     config.clearOverride('backupCodes.groupSize');
   }
   t.equal(backupCodes.settings().groupSize, 5,
           'and cleared, the default is five again');
+  log.debug("Leaving rest().");
 }
 
 module.exports = {

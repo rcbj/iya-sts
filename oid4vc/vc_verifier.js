@@ -21,19 +21,20 @@
 //                                  the tests can read what the Verifier decided
 //   GET  /oid4vp/done              the Verifier's "thank you" page
 //
-// What it checks is the whole point, so it checks properly (RFC 9901 section 7.3
-// plus OID4VP's rules for the Key Binding JWT):
+// What it checks is the whole point, so it checks properly (RFC 9901 section
+// 7.3 plus OID4VP's rules for the Key Binding JWT):
 //
-//   * the presentation is an SD-JWT+KB: <Issuer-signed JWT>~<Disclosure>*~<KB-JWT>
-//   * the Issuer-signed JWT verifies against the issuer's key, and its typ is an
-//     SD-JWT VC media type
+//   * the presentation is an SD-JWT+KB: <Issuer-signed
+//     JWT>~<Disclosure>*~<KB-JWT>
+//   * the Issuer-signed JWT verifies against the issuer's key, and its typ is
+//     an SD-JWT VC media type
 //   * every Disclosure presented hashes to a digest in _sd — a Disclosure the
 //     issuer never signed is the forgery this catches
 //   * the KB-JWT has typ kb+jwt, an alg that is not none, and verifies against
-//     the cnf key IN THE CREDENTIAL — key binding means nothing if the presenter
-//     may nominate the key
-//   * its sd_hash equals the hash of exactly the bytes presented, so disclosures
-//     cannot be added or removed after it was signed
+//     the cnf key IN THE CREDENTIAL — key binding means nothing if the
+//     presenter may nominate the key
+//   * its sd_hash equals the hash of exactly the bytes presented, so
+//     disclosures cannot be added or removed after it was signed
 //   * its nonce is the nonce from THIS request (replay) and its aud is this
 //     Verifier's Client Identifier (an honest presentation to someone else is
 //     not a presentation to us)
@@ -41,19 +42,20 @@
 //     query asked for is actually there
 // ===========================================================================
 //
-// WHAT it asks for, and in which credential format, is CONFIGURATION rather than a
-// constant: vc_verifier_config.js holds it and /admin/vc-verifier-config sets it.
-// Read that module's header before changing anything about the DCQL query — the
-// grouping of claims, the per-format paths and the "ask for a claim nothing here
-// issues" case are all decisions with reasons written down there. What one request
-// asked for is frozen onto its transaction in buildVpRequest(), because the
-// configuration can change while a presentation is in flight.
+// WHAT it asks for, and in which credential format, is CONFIGURATION rather
+// than a constant: vc_verifier_config.js holds it and /admin/vc-verifier-config
+// sets it. Read that module's header before changing anything about the DCQL
+// query — the grouping of claims, the per-format paths and the "ask for a claim
+// nothing here issues" case are all decisions with reasons written down there.
+// What one request asked for is frozen onto its transaction in
+// buildVpRequest(), because the configuration can change while a presentation
+// is in flight.
 //
-// It shares nothing with vc_issuer.js but the key: this is the OTHER side of the
-// exchange, and it verifies what arrives from first principles rather than by
-// asking the issuer module what it produced. That is deliberate — a verifier that
-// called the issuer's own code to check a presentation would agree with it about
-// any mistake they had in common.
+// It shares nothing with vc_issuer.js but the key: this is the OTHER side of
+// the exchange, and it verifies what arrives from first principles rather than
+// by asking the issuer module what it produced. That is deliberate — a verifier
+// that called the issuer's own code to check a presentation would agree with it
+// about any mistake they had in common.
 // ---------------------------------------------------------------------------
 
 const crypto = require('crypto');
@@ -67,25 +69,27 @@ const stsCrypto = require('../common/crypto');
 const qrcode = require('qrcode');
 const app = require('../common/app');
 const bbs2023 = require('../common/vendored/bbs2023.js');
-const { log, logArtifact, STS, baseUrlOf, b64u, b64uDecode, jsonFromB64u, nowSec,
+const { log, logArtifact, STS, baseUrlOf, b64u, b64uDecode, jsonFromB64u,
+        nowSec,
         randomId, xmlEscape, bbsKeyPair, parseBody, oauthError, signJwt,
-        walletBaseUrl, signingKeyFor, stsKeysFor } = require('../common/helpers');
+        walletBaseUrl, signingKeyFor,
+        stsKeysFor } = require('../common/helpers');
 const config = require('../common/config');
 // THE MODE (2026-09-12), for one question: may a response go to an address the
 // request named — the `wallet` query parameter. A LEAF requiring only `config`.
 const mode = require('../common/mode');
-// The error codes (common/error_codes.js). A LEAF that requires nothing; a code is
-// marked on the response object and never written into a response.
+// The error codes (common/error_codes.js). A LEAF that requires nothing; a code
+// is marked on the response object and never written into a response.
 const errorCodes = require('../common/error_codes');
 // A library (rule 3) that registers no route: the revocation check a configured
 // trusted issuer certificate gets once it has verified a credential.
 const revocationStatus = require('../common/revocation_status');
 // The identity registry, for ONE call: a presentation that verified names a
-// holder, and this is the funnel every other family here already goes through at
-// the moment a credential is accepted. A library like dpop.js — it registers no
-// route and requires only helpers.js — so requiring it cannot move a route or
-// make a cycle. See the call site in the response endpoint for what it does and
-// does NOT claim about the holder.
+// holder, and this is the funnel every other family here already goes through
+// at the moment a credential is accepted. A library like dpop.js — it registers
+// no route and requires only helpers.js — so requiring it cannot move a route
+// or make a cycle. See the call site in the response endpoint for what it does
+// and does NOT claim about the holder.
 const stats = require('../common/admin_stats');
 const { VCI_JWT_TYPES, VCI_VCT } = require('./vc_configs');
 
@@ -98,20 +102,25 @@ const VCI_FORMATS = Array.from(new Set(
     return require('./vc_configs').VCI_CONFIGS[id].format;
   }).filter(Boolean)));
 // What this Verifier asks for, and which credential format it asks for it in.
-// Configuration rather than a constant since /admin/vc-verifier-config existed: a
-// library like dpop.js and vc_claims.js, registering no route, so requiring it
-// here cannot move a route or make a cycle. See its header for why the unit of
-// request is the top-level claim and why a claim that is not in the catalogue can
-// still be asked for.
+// Configuration rather than a constant since /admin/vc-verifier-config existed:
+// a library like dpop.js and vc_claims.js, registering no route, so requiring
+// it here cannot move a route or make a cycle. See its header for why the unit
+// of request is the top-level claim and why a claim that is not in the
+// catalogue can still be asked for.
 const vpConfig = require('./vc_verifier_config');
 function vpClientId() {
+  log.debug("Entering vpClientId().");
+  log.debug("Leaving vpClientId().");
   return config.value('oid4vp.clientId');
 }
+
 // oid4vp.walletUrl falls back to the OID4VCI one in config.js's table, which
 // is why walletBaseUrl() is not consulted here any more — the fallback moved
 // to where the setting is declared rather than being spelt out at one of the
 // two places that read it.
 function vpWalletUrl() {
+  log.debug("Entering vpWalletUrl().");
+  log.debug("Leaving vpWalletUrl().");
   return config.value('oid4vp.walletUrl');
 }
 
@@ -121,8 +130,11 @@ function vpWalletUrl() {
 const VP_TTL_MS = 10 * 60 * 1000;
 
 function vpTtlMs() {
+  log.debug("Entering vpTtlMs().");
   const seconds = Number(config.value('oid4vp.presentationRequestTtlS'));
-  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 : VP_TTL_MS;
+  log.debug("Leaving vpTtlMs().");
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 :
+         VP_TTL_MS;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,12 +191,14 @@ function verifyIssuerSignature(token) {
     header = jsonFromB64u(String(token || '').split('.')[0]);
   } catch (e) {
     log.debug("Leaving verifyIssuerSignature(). The header is unreadable.");
-    throw new Error('the issuer-signed JWT header cannot be read: ' + e.message);
+    throw new Error('the issuer-signed JWT header cannot be read: ' +
+                    e.message);
   }
   const alg = String(header.alg || '');
   if (ISSUER_ALGS.indexOf(alg) < 0) {
     log.debug("Leaving verifyIssuerSignature(). Unacceptable alg.");
-    throw new Error('the credential is signed with "' + alg + '", and this Verifier accepts ' +
+    throw new Error('the credential is signed with "' + alg + '", and this ' +
+        'Verifier accepts ' +
                     ISSUER_ALGS.join(', ') + '.');
   }
   const candidates = [];
@@ -193,18 +207,23 @@ function verifyIssuerSignature(token) {
     candidates.push({ label: 'this issuer\'s RSA key', key: STS.certPem });
   } else {
     (stsKeysFor().extraKeys || []).forEach(function (one) {
-      if (one.publicJwk && one.alg === alg && (!header.kid || one.publicJwk.kid === header.kid)) {
+      if (one.publicJwk && one.alg === alg &&
+          (!header.kid || one.publicJwk.kid === header.kid)) {
         candidates.push({ label: 'this issuer\'s ' + alg + ' key',
-                          key: crypto.createPublicKey({ key: one.publicJwk, format: 'jwk' }) });
+                          key: crypto.createPublicKey(
+                              { key: one.publicJwk, format: 'jwk' }) });
       }
     });
   }
   trustedIssuerKeys().forEach(function (one) { candidates.push(one); });
-  let lastError = 'no key this Verifier trusts can verify a ' + alg + ' signature';
+  let lastError = 'no key this Verifier trusts can verify a ' + alg + ' ' +
+      'signature';
   for (let i = 0; i < candidates.length; i++) {
     try {
-      const claims = stsCrypto.verifyJws(token, candidates[i].key, { algorithms: [alg] });
-      log.debug("Leaving verifyIssuerSignature(). Verified by " + candidates[i].label + ".");
+      const claims = stsCrypto.verifyJws(token, candidates[i].key,
+                                         { algorithms: [alg] });
+      log.debug("Leaving verifyIssuerSignature(). Verified by " +
+                candidates[i].label + ".");
       // `certificatePem` is set only for a CONFIGURED trusted issuer
       // certificate, which the response endpoint then checks for revocation.
       return { claims: claims, alg: alg, by: candidates[i].label,
@@ -221,12 +240,13 @@ function verifyIssuerSignature(token) {
 // THE CONFIGURED TRUSTED ISSUER CERTIFICATE THAT VERIFIED A CREDENTIAL,
 // checked for revocation once it has been used (2026-09-12).
 //
-// It is a certificate an operator wrote into `oid4vp.trustedIssuerCertificates`,
-// so it gets `common/revocation_status.js`'s registered-certificate check — the
-// register for one this service issued, its issuer's OCSP responder and CRL
-// otherwise, under `pki.revocationCheck`. The two verifiers are synchronous and
-// the response endpoint is not, so the check is made THERE, on the certificate
-// the verifier reports having used, rather than inside them. A credential this
+// It is a certificate an operator wrote into
+// `oid4vp.trustedIssuerCertificates`, so it gets
+// `common/revocation_status.js`'s registered-certificate check — the register
+// for one this service issued, its issuer's OCSP responder and CRL otherwise,
+// under `pki.revocationCheck`. The two verifiers are synchronous and the
+// response endpoint is not, so the check is made THERE, on the certificate the
+// verifier reports having used, rather than inside them. A credential this
 // service signed itself verified against no configured certificate and has
 // nothing to check. It adds a check row either way and turns `ok` off on a
 // refusal; `revocationRefused` is what lets the endpoint name the code.
@@ -234,18 +254,21 @@ function verifyIssuerSignature(token) {
 async function issuerCertificateRevocation(verified) {
   log.debug("Entering issuerCertificateRevocation().");
   if (!verified || !verified.ok || !verified.issuerCertificatePem) {
-    log.debug("Leaving issuerCertificateRevocation(). Nothing configured was used.");
+    log.debug("Leaving issuerCertificateRevocation(). Nothing configured was " +
+              "used.");
     return verified;
   }
   const issuerRevocation = await revocationStatus.registeredVerdictFor({
     certificate: verified.issuerCertificatePem,
     source: 'a certificate in oid4vp.trustedIssuerCertificates'
   });
-  vpCheck(verified.checks, 'Issuer certificate revocation', !issuerRevocation.refused,
+  vpCheck(verified.checks, 'Issuer certificate revocation',
+    !issuerRevocation.refused,
     issuerRevocation.why);
   verified.ok = !issuerRevocation.refused;
   verified.revocationRefused = !!issuerRevocation.refused;
-  log.debug("Leaving issuerCertificateRevocation(). " + issuerRevocation.status);
+  log.debug("Leaving issuerCertificateRevocation(). " +
+            issuerRevocation.status);
   return verified;
 }
 
@@ -262,38 +285,48 @@ async function issuerCertificateRevocation(verified) {
 function vpWalletFor(req) {
   log.debug("Entering vpWalletFor().");
   const configured = String(vpWalletUrl() || '').replace(/\/+$/, '');
-  const asked = req.query.wallet ? String(req.query.wallet).replace(/\/+$/, '') : '';
+  const asked = req.query.wallet ?
+                String(req.query.wallet).replace(/\/+$/, '') : '';
   if (asked && asked !== configured && !mode.acceptsUnregisteredAddresses()) {
-    const allowed = (config.value('oid4vp.allowedWalletUrls') || []).map(function (one) {
+    const allowed = (config.value('oid4vp.allowedWalletUrls') || []).map(
+        function (one) {
       return String(one).replace(/\/+$/, '');
     });
     if (allowed.indexOf(asked) < 0) {
-      log.debug("Leaving vpWalletFor(). An unregistered wallet URL was refused.");
-      return { error: 'The wallet URL "' + asked + '" is neither oid4vp.walletUrl nor one ' +
-                      'listed in oid4vp.allowedWalletUrls, and this realm does not send a ' +
-                      'presentation request to an address the request named. Add it to that ' +
-                      'setting, or leave the wallet parameter off.' };
+      log.debug("Leaving vpWalletFor(). An unregistered wallet URL was " +
+                "refused.");
+      return { error: 'The wallet URL "' + asked + '" is neither ' +
+                      'oid4vp.walletUrl nor one listed in ' +
+                      'oid4vp.allowedWalletUrls, and this realm does not ' +
+                      'send a presentation request to an address the request ' +
+                      'named. Add it to that setting, or leave the wallet ' +
+                      'parameter off.' };
     }
   }
   log.debug("Leaving vpWalletFor().");
-  return { url: (asked || configured) + String(config.value('oid4vp.walletPresentationPath') || '') };
+  return { url: (asked ||
+                 configured) + String(config.value(
+                     'oid4vp.walletPresentationPath') || '') };
 }
 
-// How old a Key Binding JWT may be. It is signed for one presentation, so this is
-// short on purpose.
+// How old a Key Binding JWT may be. It is signed for one presentation, so this
+// is short on purpose.
 function vpKbMaxAgeS() {
+  log.debug("Entering vpKbMaxAgeS().");
+  log.debug("Leaving vpKbMaxAgeS().");
   return config.value('oid4vp.kbMaxAgeS');
 }
 
-// The claims this Verifier asks for used to be here, read once from OID4VP_CLAIMS
-// at require time. They are now vpConfig's, read at the moment a request is BUILT
-// and then frozen onto that request — see buildVpRequest(). OID4VP_CLAIMS is still
-// what the process starts with and what Reset on the console goes back to.
+// The claims this Verifier asks for used to be here, read once from
+// OID4VP_CLAIMS at require time. They are now vpConfig's, read at the moment a
+// request is BUILT and then frozen onto that request — see buildVpRequest().
+// OID4VP_CLAIMS is still what the process starts with and what Reset on the
+// console goes back to.
 
 // The DCQL credential query's id, and therefore the key the vp_token arrives
-// under. It is the configuration module's, because the query is built there — two
-// copies of this string would mean a response this Verifier could not find the
-// presentation in.
+// under. It is the configuration module's, because the query is built there —
+// two copies of this string would mean a response this Verifier could not find
+// the presentation in.
 const VP_DCQL_ID = vpConfig.DCQL_ID;
 
 // state -> { id, nonce, state, responseMode, clientId, requestObject, dcql,
@@ -305,15 +338,17 @@ const VP_DCQL_ID = vpConfig.DCQL_ID;
 // this behaves as the plain Map it replaced. See common/realms.js.
 const vpTransactions = realms.map({ persist: 'vc_verifier.vpTransactions' });
 
-// id -> state, so a Request Object fetched by reference can find its transaction.
-// PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
-// realm and hands out the ambient realm's — so every reader below is
-// unchanged and every one of them is now realm-correct. In the default realm,
-// and in a service with no realms defined, there is exactly one partition and
-// this behaves as the plain Map it replaced. See common/realms.js.
+// id -> state, so a Request Object fetched by reference can find its
+// transaction. PER TRUST REALM. `realms.map()` is a Map that holds a separate
+// one for each realm and hands out the ambient realm's — so every reader below
+// is unchanged and every one of them is now realm-correct. In the default
+// realm, and in a service with no realms defined, there is exactly one
+// partition and this behaves as the plain Map it replaced. See
+// common/realms.js.
 const vpRequests = realms.map({ persist: 'vc_verifier.vpRequests' });
 
 function sweepVpTransactions() {
+  log.debug("Entering sweepVpTransactions().");
   const now = Date.now();
   vpTransactions.forEach(function (v, k) {
     if (v.expires < now) {
@@ -321,21 +356,23 @@ function sweepVpTransactions() {
       vpTransactions.delete(k);
     }
   });
+  log.debug("Leaving sweepVpTransactions().");
 }
 
 // The DCQL query (OID4VP section 6): which credential, of which format, with
-// which claims. `claims` is what makes this a selective-disclosure request — the
-// Verifier names the paths it needs rather than asking for the credential.
+// which claims. `claims` is what makes this a selective-disclosure request —
+// the Verifier names the paths it needs rather than asking for the credential.
 //
 // The query differs by format in two ways, and both of them now live in
 // vc_verifier_config.js rather than here: how the credential is IDENTIFIED (a
 // vct against a type array) and where the CLAIMS live (the top level, or
 // credentialSubject, or credentialSubject under a JSON-LD term that is not the
-// claim's own name). Getting the second wrong does not fail loudly — it asks for
-// a claim that is not there, and the presentation looks as though it withheld
-// something.
+// claim's own name). Getting the second wrong does not fail loudly — it asks
+// for a claim that is not there, and the presentation looks as though it
+// withheld something.
 function vpDcqlQuery(format) {
-  log.debug("Entering vpDcqlQuery(). format=" + (format || vpConfig.defaultFormatId()));
+  log.debug("Entering vpDcqlQuery(). format=" +
+            (format || vpConfig.defaultFormatId()));
   const wanted = vpConfig.formatOf(format);
   const query = vpConfig.dcqlQuery(wanted);
   logArtifact('OID4VP DCQL query', 'as built (' + wanted + ')', query);
@@ -359,7 +396,8 @@ function buildVpRequest(req, opts) {
   const id = randomId(16);
   const nonce = randomId(18);
   const state = randomId(18);
-  const clientId = opts.byReference ? vpClientId() : ('redirect_uri:' + responseUri);
+  const clientId = opts.byReference ? vpClientId() :
+                   ('redirect_uri:' + responseUri);
   const request = {
     client_id: clientId,
     response_type: 'vp_token',
@@ -370,8 +408,8 @@ function buildVpRequest(req, opts) {
     dcql_query: vpDcqlQuery(opts.format),
     client_metadata: {
       client_name: 'Mock Verifier (bar door)',
-      // Both formats are advertised whichever one this request asks for: this is
-      // what the Verifier CAN accept, not what it wants this time — the DCQL
+      // Both formats are advertised whichever one this request asks for: this
+      // is what the Verifier CAN accept, not what it wants this time — the DCQL
       // query is what says that.
       vp_formats_supported: {
         // From the shared table, not written out: the KB-JWT is checked by
@@ -388,7 +426,8 @@ function buildVpRequest(req, opts) {
   };
   const record = {
     id: id, nonce: nonce, state: state, clientId: clientId,
-    responseMode: 'direct_post', request: request, byReference: !!opts.byReference,
+    responseMode: 'direct_post', request: request,
+    byReference: !!opts.byReference,
     // The claims asked for, FROZEN onto the transaction rather than read again
     // when the presentation arrives. That is not tidiness: the list is editable
     // from /admin/vc-verifier-config while a presentation is in flight, and a
@@ -415,7 +454,8 @@ function buildVpRequest(req, opts) {
       iat: nowSec(),
       exp: nowSec() + Math.floor(vpTtlMs() / 1000)
     }, request);
-    record.requestObject = signJwt(Object.assign({ typ: 'oauth-authz-req+jwt' }, payload));
+    record.requestObject = signJwt(Object.assign({ typ: 'oauth-authz-req+jwt' },
+                                                 payload));
     logArtifact('OID4VP Request Object', 'after signing', record.requestObject);
     vpRequests.set(id, state);
   }
@@ -431,7 +471,8 @@ function vpRequestQuery(req, record) {
   log.debug("Entering vpRequestQuery().");
   const base = baseUrlOf(req);
   const params = record.byReference
-    ? { client_id: record.clientId, request_uri: base + '/oid4vp/request/' + record.id,
+    ? { client_id: record.clientId,
+        request_uri: base + '/oid4vp/request/' + record.id,
         request_uri_method: 'get' }
     : {
         client_id: record.clientId,
@@ -444,9 +485,12 @@ function vpRequestQuery(req, record) {
         client_metadata: JSON.stringify(record.request.client_metadata)
       };
   const query = Object.keys(params)
-    .map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); })
+    .map(function (k) {
+      return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    })
     .join('&');
-  log.debug("Leaving vpRequestQuery(). " + Object.keys(params).length + " parameter(s).");
+  log.debug("Leaving vpRequestQuery(). " + Object.keys(params).length + " " +
+      "parameter(s).");
   return query;
 }
 
@@ -482,7 +526,8 @@ const OID4VC_QUERY = validation.z.looseObject({
 });
 
 app.get('/oid4vp/verifier', function (req, res) {
-  log.debug("Entering the verifier web page. format=" + (req.query.format || 'dc+sd-jwt'));
+  log.debug("Entering the verifier web page. format=" +
+            (req.query.format || 'dc+sd-jwt'));
   const base = baseUrlOf(req);
   // Which format this verifier will ask for. A wallet arriving from the
   // debugger's presentation step 0 names the format it is actually holding,
@@ -496,66 +541,82 @@ app.get('/oid4vp/verifier', function (req, res) {
     return res.status(400).type('text/plain').send(askedPage.detail + '\n');
   }
   const pageFormat = String(req.query.format || '');
-  // Recognised through the configuration's own lookup rather than compared here,
-  // which is what makes `?format=dc+sd-jwt` work: a plus in a query string is a
-  // space by the time express has parsed it, so the literal comparison this
-  // replaced answered "no such format" for the one format whose id contains one.
+  // Recognised through the configuration's own lookup rather than compared
+  // here, which is what makes `?format=dc+sd-jwt` work: a plus in a query
+  // string is a space by the time express has parsed it, so the literal
+  // comparison this replaced answered "no such format" for the one format whose
+  // id contains one.
   const named = vpConfig.formatById(pageFormat);
   const knownFormat = named ? named.id : '';
   const withFormat = function (path) {
-    if (!knownFormat) return path;
-    return path + (path.indexOf('?') === -1 ? '?' : '&') + 'format=' + encodeURIComponent(knownFormat);
+    log.debug("Entering withFormat().");
+    if (!knownFormat) {
+      log.debug("Leaving withFormat().");
+      return path;
+    }
+    log.debug("Leaving withFormat().");
+    return path + (path.indexOf('?') === -1 ? '?' : '&') + 'format=' +
+           encodeURIComponent(knownFormat);
   };
   const askingFor = vpConfig.formatOf(knownFormat);
   // What this door is currently configured to ask for. Read here rather than at
   // require time, so that the page a tester is looking at and the request the
-  // button builds cannot disagree — the console can change this between the two.
+  // button builds cannot disagree — the console can change this between the
+  // two.
   const wantedClaims = vpConfig.requestedClaims();
   // The claims an ldp_vc request will silently NOT carry, because the vendored
   // JSON-LD context defines no term for them. Said on the page rather than left
   // to be found in a presentation that disclosed less than was asked for.
   const ldpOmitted = askingFor === 'ldp_vc' ? vpConfig.ldpOmitted() : [];
-  // What the request will name the credential by: a vct for an SD-JWT VC, a type
-  // array for the two W3C formats. Read from the configuration rather than
-  // decided again here — this page saying "type urn:idptools:sd-jwt-vc:identity"
-  // over a request that named a type array is exactly the kind of small lie that
-  // costs somebody an afternoon.
+  // What the request will name the credential by: a vct for an SD-JWT VC, a
+  // type array for the two W3C formats. Read from the configuration rather than
+  // decided again here — this page saying "type
+  // urn:idptools:sd-jwt-vc:identity" over a request that named a type array is
+  // exactly the kind of small lie that costs somebody an afternoon.
   const askingType = vpConfig.formatById(askingFor).identifierText;
-  const page = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<title>The Bar Door — are you over 21?</title><style>' +
-    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-    'display:flex;align-items:center;justify-content:center;min-height:100vh;color:#222}' +
-    '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;padding:30px 34px;width:560px;' +
-    'box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 0 6px}' +
-    'p{line-height:1.5;color:#333}a.cta{display:inline-block;margin-top:14px;margin-right:10px;padding:10px 16px;' +
-    'border-radius:6px;background:#12107c;color:#fff;text-decoration:none;font-weight:600}' +
+  const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+    'charset="utf-8"><title>The Bar Door — are you over ' +
+    '21?</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
+    'Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
+    'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
+    '.card{background:#fff;border:1px solid ' +
+    '#d5d5dd;border-radius:10px;padding:30px 34px;width:560px;box-shadow:0 ' +
+    '6px 24px rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 0 6px}' +
+    'p{line-height:1.5;color:#333}a.cta{display:inline-block;margin-top:14px;' +
+    'margin-right:10px;padding:10px 16px;border-radius:6px;' +
+    'background:#12107c;color:#fff;text-decoration:none;font-weight:600}' +
     'a.cta.secondary{background:#fff;color:#12107c;border:1px solid #12107c}' +
-    'p.alt{margin-top:20px;font-size:.92em;color:#555}' +
-    '.meta{margin-top:22px;padding-top:14px;border-top:1px solid #eee;font-size:.78em;color:#777}' +
-    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}</style></head><body><div class="card">' +
-    '<h1>The Bar Door</h1>' +
+    'p.alt{margin-top:20px;font-size:.92em;color:#555}.meta{margin-top:22px;' +
+    'padding-top:14px;border-top:1px solid #eee;font-size:.78em;color:#777}' +
+    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}</style>' +
+    '</head><body><div class="card"><h1>The Bar Door</h1>' +
     (wantedClaims.length
-      ? '<p>We need to see that you are who you say you are — but only that. Present the ' +
-        '<code>' + xmlEscape(wantedClaims.join(', ')) + '</code> claim(s) from a credential of type ' +
+      ? '<p>We need to see that you are who you say you are — but only that. ' +
+        'Present the ' +
+        '<code>' + xmlEscape(wantedClaims.join(', ')) + '</code> claim(s) ' +
+        'from a credential of type ' +
         '<code>' + xmlEscape(askingType) + '</code>, and nothing else.</p>'
-      // A configuration naming no claims is a real setting and not an empty page:
-      // DCQL with no `claims` member asks for the whole credential, which is the
-      // opposite of everything else this door says, so it says THAT instead of
-      // printing an empty list.
-      : '<p>This door is currently asking for <strong>no particular claim</strong>, which in DCQL ' +
-        'means the whole credential: the request carries no <code>claims</code> member, so your ' +
-        'wallet is being asked for a credential of type <code>' +
+      // A configuration naming no claims is a real setting and not an empty
+      // page: DCQL with no `claims` member asks for the whole credential, which
+      // is the opposite of everything else this door says, so it says THAT
+      // instead of printing an empty list.
+      : '<p>This door is currently asking for <strong>no particular ' +
+        'claim</strong>, which in DCQL means the whole credential: the ' +
+        'request carries no <code>claims</code> member, so your wallet is ' +
+        'being asked for a credential of type <code>' +
         xmlEscape(askingType) + '</code> and everything in it.</p>') +
     (ldpOmitted.length
       ? '<p class="alt">' + ldpOmitted.length +
         (ldpOmitted.length === 1 ? ' of these is' : ' of these are') +
         ' asked for in the other formats and not in this one: ' +
-        '<code>' + xmlEscape(ldpOmitted.join(', ')) + '</code> — an <code>ldp_vc</code> credential ' +
-        'is signed over canonicalized JSON-LD, so a claim the vendored context defines no term for ' +
-        'cannot be named at all, and it is dropped from the query rather than asked for under a ' +
-        'name that would fail canonicalization.</p>'
+        '<code>' + xmlEscape(ldpOmitted.join(', ')) + '</code> — an ' +
+        '<code>ldp_vc</code> credential is signed over canonicalized ' +
+        'JSON-LD, so a claim the vendored context defines no term for cannot ' +
+        'be named at all, and it is dropped from the query rather than asked ' +
+        'for under a name that would fail canonicalization.</p>'
       : '') +
-    '<p><a class="cta" id="present_by_value" href="' + xmlEscape(withFormat('/oid4vp/start')) +
+    '<p><a class="cta" id="present_by_value" href="' +
+    xmlEscape(withFormat('/oid4vp/start')) +
     '">Present your credential</a>' +
     '<a class="cta secondary" id="present_by_reference" href="' +
     xmlEscape(withFormat('/oid4vp/start?by=reference')) + '">' +
@@ -564,34 +625,40 @@ app.get('/oid4vp/verifier', function (req, res) {
     '<a class="cta secondary" id="present_cross_device" href="' +
     xmlEscape(withFormat('/oid4vp/start?mode=cross-device')) + '">' +
     'Show a QR code (cross-device)</a></p>' +
-    '<p class="alt">This request asks for a <code>' + xmlEscape(askingFor) + '</code> credential. ' +
-    'A presentation cannot convert between formats, so a wallet holding a different one has nothing ' +
-    'to answer with — pick the format you hold:<br>' +
-    '<a class="cta secondary" id="present_sd_jwt_vc" href="/oid4vp/start?format=dc%2Bsd-jwt">' +
-    'Present an SD-JWT VC</a> ' +
-    '<a class="cta secondary" id="present_jwt_vc_json" href="/oid4vp/start?format=jwt_vc_json">' +
-    'Present a JWT VC</a> ' +
-    '<a class="cta secondary" id="present_ldp_vc" href="/oid4vp/start?format=ldp_vc">' +
-    'Present an LDP VC (BBS)</a></p>' +
-    '<p class="alt"><code>jwt_vc_json</code> has no selective disclosure, so presenting it hands over ' +
-    'every claim it carries. <code>ldp_vc</code> discloses over canonical statements with a bbs-2023 ' +
-    'derived proof, and each presentation is unlinkable to the last.</p>' +
-    '<div class="meta">This is the Verifier in OID4VP. It builds an Authorization Request with ' +
-    '<code>response_type=vp_token</code>, a <code>dcql_query</code> naming the claims above, a fresh ' +
-    '<code>nonce</code>, and <code>response_mode=direct_post</code> — so your wallet POSTs the presentation ' +
-    'to <code>' + xmlEscape(base) + '/oid4vp/response</code> rather than putting it in a URL. The wallet is at ' +
-    '<code>' + xmlEscape(vpWalletUrl()) + '</code>. What it asks for is configuration, not a ' +
-    'constant: <a href="/admin/vc-verifier-config">/admin/vc-verifier-config</a> chooses the claims ' +
-    'and the format, from the same catalogue of LDAP attribute types the issuer fills a credential ' +
-    'from.</div>' +
-    '</div></body></html>\n';
+    '<p class="alt">This request asks for a <code>' + xmlEscape(askingFor) +
+    '</code> ' +
+    'credential. A presentation cannot convert between formats, so a wallet ' +
+    'holding a different one has nothing to answer with — pick the format ' +
+    'you hold:<br><a class="cta secondary" id="present_sd_jwt_vc" ' +
+    'href="/oid4vp/start?format=dc%2Bsd-jwt">Present an SD-JWT VC</a> <a ' +
+    'class="cta secondary" id="present_jwt_vc_json" ' +
+    'href="/oid4vp/start?format=jwt_vc_json">Present a JWT VC</a> <a ' +
+    'class="cta secondary" id="present_ldp_vc" ' +
+    'href="/oid4vp/start?format=ldp_vc">Present an LDP VC (BBS)</a></p><p ' +
+    'class="alt"><code>jwt_vc_json</code> has no selective disclosure, so ' +
+    'presenting it hands over every claim it carries. <code>ldp_vc</code> ' +
+    'discloses over canonical statements with a bbs-2023 derived proof, and ' +
+    'each presentation is unlinkable to the last.</p><div class="meta">This ' +
+    'is the Verifier in OID4VP. It builds an Authorization Request with ' +
+    '<code>response_type=vp_token</code>, a <code>dcql_query</code> naming ' +
+    'the claims above, a fresh <code>nonce</code>, and ' +
+    '<code>response_mode=direct_post</code> — so your wallet POSTs the ' +
+    'presentation to ' +
+    '<code>' + xmlEscape(base) + '/oid4vp/response</code> rather than ' +
+    'putting it in a URL. The wallet is at ' +
+    '<code>' + xmlEscape(vpWalletUrl()) + '</code>. What it asks for is ' +
+    'configuration, not a constant: <a ' +
+    'href="/admin/vc-verifier-config">/admin/vc-verifier-config</a> chooses ' +
+    'the claims and the format, from the same catalogue of LDAP attribute ' +
+    'types the issuer fills a credential from.</div></div></body></html>\n';
   res.status(200).type('text/html').send(page);
   log.debug("Leaving the verifier web page.");
 });
 
 // The link on that page: build the request and hand it to the wallet.
 app.get('/oid4vp/start', function (req, res) {
-  log.debug("Entering the presentation start endpoint. mode=" + (req.query.mode || 'same-device') +
+  log.debug("Entering the presentation start endpoint. mode=" +
+            (req.query.mode || 'same-device') +
             ", format=" + (req.query.format || 'dc+sd-jwt'));
   const askedStart = validation.check(req, 'query', OID4VC_QUERY);
   if (!askedStart.ok) {
@@ -603,10 +670,12 @@ app.get('/oid4vp/start', function (req, res) {
   const startMode = String(req.query.mode || 'same-device');
   // Which credential format to ask for. Anything unrecognised — and a link that
   // names none, which is the ordinary case — falls back to the CONFIGURED
-  // default rather than to a constant; dc+sd-jwt is what that default starts as,
-  // so a link that worked before this page existed asks for what it always did.
+  // default rather than to a constant; dc+sd-jwt is what that default starts
+  // as, so a link that worked before this page existed asks for what it always
+  // did.
   const format = vpConfig.formatOf(String(req.query.format || ''));
-  const record = buildVpRequest(req, { byReference: byReference, format: format });
+  const record = buildVpRequest(req,
+                                { byReference: byReference, format: format });
   const query = vpRequestQuery(req, record);
   const walletChoice = vpWalletFor(req);
   if (walletChoice.error) {
@@ -619,7 +688,8 @@ app.get('/oid4vp/start', function (req, res) {
   if (startMode !== 'cross-device') {
     // Same device: the browser IS the wallet's user agent, so send it there.
     res.redirect(302, wallet + '?' + query);
-    log.debug("Leaving the presentation start endpoint. Redirected to the wallet.");
+    log.debug("Leaving the presentation start endpoint. Redirected to the " +
+              "wallet.");
     return;
   }
   // Cross device: display the request for the wallet on the other device to
@@ -636,30 +706,41 @@ app.get('/oid4vp/start', function (req, res) {
 // The Verifier's screen in a cross-device presentation.
 function renderVpQrPage(res, opts) {
   log.debug("Entering renderVpQrPage().");
-  qrcode.toDataURL(opts.requestUri, { errorCorrectionLevel: 'M', margin: 2, width: 320 })
+  qrcode.toDataURL(opts.requestUri,
+                   { errorCorrectionLevel: 'M', margin: 2, width: 320 })
     .then(function (dataUrl) {
-      const page = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-        '<title>The Bar Door — scan to present</title><style>' +
-        'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-        'display:flex;align-items:center;justify-content:center;min-height:100vh;color:#222}' +
-        '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;padding:30px 34px;width:560px;' +
-        'box-shadow:0 6px 24px rgba(0,0,0,.08);text-align:center}h1{font-size:1.25em;margin:0 0 6px}' +
-        'p{line-height:1.5;color:#333}img.qr{margin:14px auto;display:block;border:1px solid #eee;border-radius:8px}' +
-        '.uri{word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.72em;' +
-        'color:#555;background:#fafafa;border:1px solid #eee;border-radius:6px;padding:8px;text-align:left}' +
-        '.meta{margin-top:20px;padding-top:14px;border-top:1px solid #eee;font-size:.78em;color:#777;text-align:left}' +
+      const page = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
+        'charset="utf-8"><title>The Bar Door — scan to present</title><style>' +
+        'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,' +
+        'sans-serif;background:#f4f4f7;margin:0;display:flex;' +
+        'align-items:center;justify-content:center;min-height:100vh;' +
+        'color:#222}.card{background:#fff;border:1px solid ' +
+        '#d5d5dd;border-radius:10px;padding:30px ' +
+        '34px;width:560px;box-shadow:0 6px 24px ' +
+        'rgba(0,0,0,.08);text-align:center}h1{font-size:1.25em;margin:0 0 ' +
+        '6px}p{line-height:1.5;color:#333}img.qr{margin:14px ' +
+        'auto;display:block;border:1px solid #eee;border-radius:8px}' +
+        '.uri{word-break:break-all;font-family:ui-monospace,SFMono-Regular,' +
+        'Menlo,monospace;font-size:.72em;color:#555;background:#fafafa;' +
+        'border:1px solid #eee;border-radius:6px;padding:8px;text-align:left}' +
+        '.meta{margin-top:20px;padding-top:14px;border-top:1px solid #eee;' +
+        'font-size:.78em;color:#777;text-align:left}' +
         'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}' +
-        '</style></head><body><div class="card">' +
-        '<h1>Scan this with your wallet</h1>' +
-        '<p>Your wallet will show you exactly which claims we are asking for before anything is sent.</p>' +
-        '<img class="qr" id="request_qr" alt="OID4VP Authorization Request QR code" src="' + dataUrl + '">' +
-        '<div class="uri" id="request_uri">' + xmlEscape(opts.requestUri) + '</div>' +
-        '<div class="meta">OID4VP cross-device flow. The wallet is on your other device, so it cannot be ' +
-        'redirected — it reads the request from this code and POSTs the presentation straight back to us ' +
-        '(<code>response_mode=direct_post</code>). The <code>nonce</code> in the request is what stops a ' +
-        'presentation from being replayed. If your wallet is on this device, ' +
-        '<a id="open_in_wallet" href="' + xmlEscape(opts.walletUrl) + '">open it here</a>.' +
-        '</div></div></body></html>\n';
+        '</style></head><body><div class="card"><h1>Scan this with your ' +
+        'wallet</h1><p>Your wallet will show you exactly which claims we are ' +
+        'asking for before anything is sent.</p><img class="qr" ' +
+        'id="request_qr" alt="OID4VP Authorization Request QR code" ' +
+        'src="' + dataUrl + '"><div ' +
+        'class="uri" ' +
+        'id="request_uri">' + xmlEscape(opts.requestUri) + '</div><div ' +
+        'class="meta">OID4VP cross-device flow. The wallet is on your other ' +
+        'device, so it cannot be redirected — it reads the request from this ' +
+        'code and POSTs the presentation straight back to us ' +
+        '(<code>response_mode=direct_post</code>). The <code>nonce</code> in ' +
+        'the request is what stops a presentation from being replayed. If ' +
+        'your wallet is on this device, <a id="open_in_wallet" ' +
+        'href="' + xmlEscape(opts.walletUrl) + '">open ' +
+        'it here</a>.</div></div></body></html>\n';
       res.status(200).type('text/html').send(page);
       log.debug("Leaving renderVpQrPage().");
     })
@@ -667,12 +748,15 @@ function renderVpQrPage(res, opts) {
       log.error(errorCodes.tag('STS-VC-0034') +
                 "could not render the presentation QR code: " + e.message);
       errorCodes.mark(res, 'STS-VC-0034');
-      res.status(500).type('text/plain').send('Could not render the Authorization Request QR code: ' + e.message);
+      res.status(500).type('text/plain').send('Could not render the ' +
+                                              'Authorization Request QR ' +
+                                              'code: ' + e.message);
     });
+  log.debug("Leaving renderVpQrPage().");
 }
 
-// The Request Object, fetched by reference (request_uri). Signed, and served with
-// the media type RFC 9101 defines for it.
+// The Request Object, fetched by reference (request_uri). Signed, and served
+// with the media type RFC 9101 defines for it.
 app.get('/oid4vp/request/:id', function (req, res) {
   log.debug("Entering the request object endpoint. id=" + req.params.id);
   const state = vpRequests.get(String(req.params.id));
@@ -682,8 +766,11 @@ app.get('/oid4vp/request/:id', function (req, res) {
     errorCodes.mark(res, 'STS-VC-0035');
     return oauthError(res, 404, 'invalid_request', 'No such Request Object.');
   }
-  res.status(200).type('application/oauth-authz-req+jwt').send(record.requestObject);
-  log.debug("Leaving the request object endpoint. Served a signed Request Object.");
+  res.status(200)
+     .type('application/oauth-authz-req+jwt')
+     .send(record.requestObject);
+  log.debug("Leaving the request object endpoint. Served a signed Request " +
+            "Object.");
 });
 
 // ---------------------------------------------------------------------------
@@ -695,18 +782,29 @@ app.get('/oid4vp/request/:id', function (req, res) {
 // developer, and a debugger's job is to say WHICH rule was broken.
 // ---------------------------------------------------------------------------
 function vpCheck(checks, name, ok, detail) {
+  log.debug("Entering vpCheck().");
   checks.push({ name: name, ok: !!ok, detail: detail });
-  log.debug("vpCheck(): " + name + " -> " + (ok ? "OK" : "FAILED") + " (" + detail + ")");
+  log.debug("vpCheck(): " + name + " -> " + (ok ? "OK" : "FAILED") + " (" +
+            detail + ")");
+  log.debug("Leaving vpCheck().");
   return !!ok;
 }
 
-// base64url(hash) of the US-ASCII of everything before the KB-JWT, which is what
-// sd_hash has to be (RFC 9901 section 4.3.1).
+// base64url(hash) of the US-ASCII of everything before the KB-JWT, which is
+// what sd_hash has to be (RFC 9901 section 4.3.1).
 function sdHashOf(presentedWithoutKb, sdAlg) {
+  log.debug("Entering sdHashOf().");
   const alg = String(sdAlg || 'sha-256').toLowerCase();
-  const nodeAlg = { 'sha-256': 'sha256', 'sha-384': 'sha384', 'sha-512': 'sha512' }[alg];
-  if (!nodeAlg) return null;
-  return b64u(crypto.createHash(nodeAlg).update(presentedWithoutKb, 'ascii').digest());
+  const nodeAlg = { 'sha-256': 'sha256', 'sha-384': 'sha384',
+                    'sha-512': 'sha512' }[alg];
+  if (!nodeAlg) {
+    log.debug("Leaving sdHashOf().");
+    return null;
+  }
+  log.debug("Leaving sdHashOf().");
+  return b64u(crypto.createHash(nodeAlg)
+                    .update(presentedWithoutKb, 'ascii')
+                    .digest());
 }
 
 // A W3C Verifiable Presentation secured as a JWT, carrying a jwt_vc_json
@@ -728,10 +826,10 @@ function sdHashOf(presentedWithoutKb, sdAlg) {
 //   what was disclosed                 everything in credentialSubject, because
 //                                      this format cannot withhold anything
 //
-// There is deliberately no sd_hash equivalent: an SD-JWT's KB-JWT commits to the
-// exact bytes presented because a presentation can be a SUBSET. A VP JWT signs
-// over the whole credential it embeds, so the commitment is the signature.
-// A bbs-2023 derived proof (OID4VP format ldp_vc).
+// There is deliberately no sd_hash equivalent: an SD-JWT's KB-JWT commits to
+// the exact bytes presented because a presentation can be a SUBSET. A VP JWT
+// signs over the whole credential it embeds, so the commitment is the
+// signature. A bbs-2023 derived proof (OID4VP format ldp_vc).
 //
 // The same questions as the other two formats, asked of a very different
 // artefact. There is no issuer signature to check on what arrives — a derived
@@ -748,50 +846,66 @@ function sdHashOf(presentedWithoutKb, sdAlg) {
 async function verifyLdpVc(presentation, record) {
   log.debug("Entering verifyLdpVc().");
   const checks = [];
-  const result = { ok: false, checks, claims: {}, disclosed: [], vct: '', sub: '', extraDisclosed: [] };
+  const result = { ok: false, checks, claims: {}, disclosed: [], vct: '',
+                   sub: '', extraDisclosed: [] };
 
   let payload;
   try {
-    payload = typeof presentation === 'string' ? JSON.parse(presentation) : presentation;
+    payload = typeof presentation === 'string' ? JSON.parse(presentation) :
+              presentation;
   } catch (e) {
-    vpCheck(checks, 'Format', false, 'an ldp_vc presentation here is a JSON object carrying the ' +
-      'derived proof and the statements it discloses; this is not JSON: ' + e.message);
+    vpCheck(checks, 'Format', false, 'an ldp_vc presentation here is a JSON ' +
+      'object carrying the derived proof and the statements it discloses; ' +
+      'this is not JSON: ' + e.message);
+    log.debug("Leaving verifyLdpVc().");
     return result;
   }
   const proofBytes = payload.proof ? bbs2023.b64uToBytes(payload.proof) : null;
   const statements = [].concat(payload.disclosedStatements || []);
   const indexes = [].concat(payload.disclosedIndexes || []);
-  if (!proofBytes || !statements.length || statements.length !== indexes.length) {
+  if (!proofBytes || !statements.length ||
+      statements.length !== indexes.length) {
     vpCheck(checks, 'Format', false,
-      'expected proof, disclosedStatements and disclosedIndexes of equal length; got ' +
-      statements.length + ' statement(s) and ' + indexes.length + ' index(es).');
+      'expected proof, disclosedStatements and disclosedIndexes of equal ' +
+      'length; got ' +
+      statements.length + ' statement(s) and ' + indexes.length +
+      ' index(es).');
+    log.debug("Leaving verifyLdpVc().");
     return result;
   }
   vpCheck(checks, 'Format', true,
-    'a bbs-2023 derived proof disclosing ' + statements.length + ' canonical statement(s).');
+    'a bbs-2023 derived proof disclosing ' + statements.length + ' canonical ' +
+        'statement(s).');
 
   const keys = await bbsKeyPair();
   let header;
   try {
     header = await bbs2023.headerFor(payload.proofOptions || {});
   } catch (e) {
-    vpCheck(checks, 'Proof options', false, 'could not be canonicalized: ' + e.message);
+    vpCheck(checks, 'Proof options', false,
+            'could not be canonicalized: ' + e.message);
+    log.debug("Leaving verifyLdpVc().");
     return result;
   }
-  vpCheck(checks, 'Proof options', true, 'canonicalized to the header the base proof was bound to.');
+  vpCheck(checks, 'Proof options', true, 'canonicalized to the header the ' +
+                                         'base proof was bound to.');
 
   const ok = await bbs2023.verifyDerived(keys.publicKey, proofBytes, header,
     Buffer.from(String(record.nonce), 'utf8'), statements, indexes);
   vpCheck(checks, 'Derived proof', ok, ok
-    ? "verifies against this issuer's BBS key over exactly the statements disclosed, and against this " +
-      "request's nonce — so it was derived for THIS request and cannot be replayed."
-    : 'does not verify. Either it was not derived from a credential this issuer signed, the statements ' +
-      'do not match what was proved, or it was derived against a different nonce.');
+    ? "verifies against this issuer's BBS key over exactly the statements " +
+      "disclosed, and against this request's nonce — so it was derived for " +
+      "THIS request and cannot be replayed."
+    : 'does not verify. Either it was not derived from a credential this ' +
+      'issuer signed, the statements do not match what was proved, or it was ' +
+      'derived against a different nonce.');
 
   statements.forEach(function (line, i) {
     result.claims['statement ' + (indexes[i] + 1)] = String(line).trim();
   });
-  result.disclosed = indexes.map(function (i) { return 'statement ' + (i + 1); });
+  result.disclosed = indexes.map(function (i) {
+    return 'statement ' + (i + 1);
+  });
   result.ok = checks.every(function (c) { return c.ok; });
   log.debug("Leaving verifyLdpVc(). " + (result.ok ? 'accepted' : 'REFUSED'));
   return result;
@@ -799,9 +913,11 @@ async function verifyLdpVc(presentation, record) {
 
 function verifyVpJwt(presentation, record) {
   log.debug("Entering verifyVpJwt().");
-  logArtifact('OID4VP Verifiable Presentation (jwt_vc_json)', 'as received', presentation);
+  logArtifact('OID4VP Verifiable Presentation (jwt_vc_json)', 'as received',
+              presentation);
   const checks = [];
-  const result = { ok: false, checks: checks, claims: {}, disclosed: [], vct: '', sub: '',
+  const result = { ok: false, checks: checks, claims: {}, disclosed: [],
+                   vct: '', sub: '',
                    extraDisclosed: [] };
 
   // The tilde test comes FIRST, and it has to. An SD-JWT Combined Serialization
@@ -813,15 +929,17 @@ function verifyVpJwt(presentation, record) {
   const raw = String(presentation || '');
   if (raw.indexOf('~') >= 0) {
     vpCheck(checks, 'Format', false,
-      'this is an SD-JWT Combined Serialization (it contains "~"), but this request asked for ' +
-      'jwt_vc_json, whose presentation is a Verifiable Presentation JWT.');
+      'this is an SD-JWT Combined Serialization (it contains "~"), but this ' +
+      'request asked for jwt_vc_json, whose presentation is a Verifiable ' +
+      'Presentation JWT.');
     log.debug("Leaving verifyVpJwt(). An SD-JWT answered a jwt_vc_json query.");
     return result;
   }
   const vpParts = raw.split('.');
   if (vpParts.length !== 3) {
     vpCheck(checks, 'Format', false,
-      'a jwt_vc_json presentation is a Verifiable Presentation JWT (three parts); this has ' +
+      'a jwt_vc_json presentation is a Verifiable Presentation JWT (three ' +
+      'parts); this has ' +
       vpParts.length + ' part(s).');
     log.debug("Leaving verifyVpJwt(). Not a JWS.");
     return result;
@@ -831,20 +949,24 @@ function verifyVpJwt(presentation, record) {
     vpHeader = jsonFromB64u(vpParts[0]);
     vpPayload = jsonFromB64u(vpParts[1]);
   } catch (e) {
-    vpCheck(checks, 'Format', false, 'the presentation JWT cannot be decoded: ' + e.message);
+    vpCheck(checks, 'Format', false,
+            'the presentation JWT cannot be decoded: ' + e.message);
+    log.debug("Leaving verifyVpJwt().");
     return result;
   }
   const vp = vpPayload.vp || {};
   const embedded = [].concat(vp.verifiableCredential || []);
   if (!embedded.length || typeof embedded[0] !== 'string') {
     vpCheck(checks, 'Format', false,
-      'the vp claim carries no verifiableCredential; a jwt_vc_json presentation embeds the credential JWT there.');
+      'the vp claim carries no verifiableCredential; a jwt_vc_json ' +
+      'presentation embeds the credential JWT there.');
     log.debug("Leaving verifyVpJwt(). No credential inside.");
     return result;
   }
   vpCheck(checks, 'Format', true,
-    'Verifiable Presentation JWT carrying ' + embedded.length + ' credential(s); no Disclosures, because ' +
-    'jwt_vc_json has no selective disclosure.');
+    'Verifiable Presentation JWT carrying ' + embedded.length + ' ' +
+    'credential(s); no Disclosures, because jwt_vc_json has no selective ' +
+    'disclosure.');
 
   // --- the credential inside -----------------------------------------------
   const vcJwt = embedded[0];
@@ -853,7 +975,9 @@ function verifyVpJwt(presentation, record) {
     vcHeader = jsonFromB64u(vcJwt.split('.')[0]);
     vcPayload = jsonFromB64u(vcJwt.split('.')[1]);
   } catch (e) {
-    vpCheck(checks, 'Credential', false, 'the embedded credential cannot be decoded: ' + e.message);
+    vpCheck(checks, 'Credential', false, 'the embedded credential cannot be ' +
+                                         'decoded: ' + e.message);
+    log.debug("Leaving verifyVpJwt().");
     return result;
   }
   const vc = vcPayload.vc || {};
@@ -874,24 +998,32 @@ function verifyVpJwt(presentation, record) {
     vpCheck(checks, 'Issuer signature', false, 'does not verify: ' + e.message);
   }
   if (issuerSignatureOk) {
-    vpCheck(checks, 'Issuer signature', true, "verifies against the issuer's key (alg " + vcHeader.alg + ').');
+    vpCheck(checks, 'Issuer signature', true, "verifies against the issuer's " +
+                                              "key " +
+                                              "(alg " + vcHeader.alg + ').');
   }
   const now = nowSec();
   vpCheck(checks, 'Validity window',
-    (!vcPayload.exp || vcPayload.exp > now) && (!vcPayload.nbf || vcPayload.nbf <= now),
-    'nbf ' + (vcPayload.nbf || '—') + ', exp ' + (vcPayload.exp || '—') + ', now ' + now + '.');
+    (!vcPayload.exp || vcPayload.exp > now) && (!vcPayload.nbf ||
+                                                vcPayload.nbf <= now),
+    'nbf ' + (vcPayload.nbf || '—') + ', exp ' + (vcPayload.exp || '—') + ', ' +
+        'now ' + now + '.');
 
   const types = [].concat(vc.type || []);
   const wantedTypes = VCI_JWT_TYPES;
-  const typesOk = wantedTypes.every(function (t) { return types.indexOf(t) >= 0; });
+  const typesOk = wantedTypes.every(function (t) {
+    return types.indexOf(t) >= 0;
+  });
   vpCheck(checks, 'Credential type', typesOk,
-    'type is [' + types.join(', ') + ']; this Verifier asked for [' + wantedTypes.join(', ') + '].');
+    'type is [' + types.join(', ') + ']; this Verifier asked for [' +
+    wantedTypes.join(', ') + '].');
 
   // --- holder binding: the VP JWT is signed by the key the credential names --
   const cnfJwk = (vcPayload.cnf || {}).jwk;
   if (!cnfJwk) {
     vpCheck(checks, 'Holder binding', false,
-      'the credential carries no cnf.jwk, so nothing says which key may present it.');
+      'the credential carries no cnf.jwk, so nothing says which key may ' +
+      'present it.');
   } else {
     let holderOk = false;
     try {
@@ -907,38 +1039,47 @@ function verifyVpJwt(presentation, record) {
         { algorithms: stsCrypto.JWS_ASYMMETRIC_ALGS });
       holderOk = true;
     } catch (e) {
-      vpCheck(checks, 'Holder binding', false, 'the presentation signature could not be checked: ' + e.message);
+      vpCheck(checks, 'Holder binding', false, 'the presentation signature ' +
+                                               'could not be ' +
+                                               'checked: ' + e.message);
     }
     if (holderOk) {
       vpCheck(checks, 'Holder binding', true,
-        'the presentation JWT is signed by the key the credential is bound to (cnf.jwk, alg ' +
+        'the presentation JWT is signed by the key the credential is bound ' +
+        'to (cnf.jwk, alg ' +
         vpHeader.alg + ').');
     } else {
       vpCheck(checks, 'Holder binding', false,
-        'the presentation JWT is NOT signed by the key the credential is bound to (cnf.jwk).');
+        'the presentation JWT is NOT signed by the key the credential is ' +
+        'bound to (cnf.jwk).');
     }
   }
 
   // --- freshness and audience ----------------------------------------------
   vpCheck(checks, 'Nonce', vpPayload.nonce === record.nonce,
-    'nonce is "' + (vpPayload.nonce || '—') + '"; this request used "' + record.nonce + '".');
+    'nonce is "' + (vpPayload.nonce || '—') + '"; this request used "' +
+    record.nonce + '".');
   vpCheck(checks, 'Audience', String(vpPayload.aud) === String(record.clientId),
-    'aud is "' + vpPayload.aud + '"; this Verifier is "' + record.clientId + '".');
+    'aud is "' + vpPayload.aud + '"; this Verifier is "' + record.clientId +
+    '".');
 
   // --- what arrived ---------------------------------------------------------
   // Everything in credentialSubject came, because this format cannot send less.
   // `id` is the subject identifier rather than a claim, so it is not counted.
-  const present = Object.keys(subject).filter(function (k) { return k !== 'id'; });
+  const present = Object.keys(subject)
+                        .filter(function (k) { return k !== 'id'; });
   present.forEach(function (name) { result.claims[name] = subject[name]; });
   result.disclosed = present;
   // What THIS request asked for, not what the console is configured to ask for
   // now: see buildVpRequest(), where the list is frozen onto the transaction.
   const requested = [].concat(record.requested || []);
-  const missing = requested.filter(function (name) { return present.indexOf(name) < 0; });
+  const missing = requested.filter(function (name) {
+    return present.indexOf(name) < 0;
+  });
   // Over-disclosure is measured against what was ASKED FOR, so a request that
   // named no claims has none of it: an absent DCQL claims member asks for the
-  // whole credential, and reporting every claim in it as "more than we asked for"
-  // would contradict the request in the same sentence.
+  // whole credential, and reporting every claim in it as "more than we asked
+  // for" would contradict the request in the same sentence.
   result.extraDisclosed = requested.length
     ? present.filter(function (name) { return requested.indexOf(name) < 0; })
     : [];
@@ -947,15 +1088,20 @@ function verifyVpJwt(presentation, record) {
       ? 'missing: ' + missing.join(', ') + '.'
       : (requested.length
           ? 'all ' + requested.length + ' requested claim(s) arrived'
-          : 'this request named no claims at all, so the whole credential was asked for') +
+          : 'this request named no claims at all, so the whole credential ' +
+            'was asked for') +
         (result.extraDisclosed.length
-          ? ', along with ' + result.extraDisclosed.length + ' this Verifier did not ask for (' +
-            result.extraDisclosed.join(', ') + ') — jwt_vc_json cannot withhold them.'
+          ? ', along with ' + result.extraDisclosed.length + ' this Verifier ' +
+              'did not ask for (' +
+            result.extraDisclosed.join(', ') + ') — jwt_vc_json cannot ' +
+                                               'withhold them.'
           : '.'));
 
   result.ok = checks.every(function (c) { return c.ok; });
-  log.debug("Leaving verifyVpJwt(). " + (result.ok ? "accepted" : "REFUSED") + ", " +
-            checks.filter(function (c) { return !c.ok; }).length + " failed check(s).");
+  log.debug("Leaving verifyVpJwt(). " + (result.ok ? "accepted" : "REFUSED") +
+            ", " +
+            checks.filter(function (c) { return !c.ok; }).length + " failed " +
+                "check(s).");
   return result;
 }
 
@@ -963,19 +1109,23 @@ function verifyPresentation(presentation, record) {
   log.debug("Entering verifyPresentation().");
   logArtifact('OID4VP Verifiable Presentation', 'as received', presentation);
   const checks = [];
-  const result = { ok: false, checks: checks, claims: {}, disclosed: [], vct: '', sub: '' };
+  const result = { ok: false, checks: checks, claims: {}, disclosed: [],
+                   vct: '', sub: '' };
   const parts = String(presentation || '').split('~');
   if (parts.length < 2) {
     vpCheck(checks, 'Format', false,
-      'a presentation is <Issuer-signed JWT>~<Disclosure>*~<KB-JWT>; this has ' + parts.length + ' part(s).');
+      'a presentation is <Issuer-signed JWT>~<Disclosure>*~<KB-JWT>; this has ' + parts.length + ' ' +
+          'part(s).');
     log.debug("Leaving verifyPresentation(). Not a Combined Serialization.");
     return result;
   }
   const issuerJwt = parts[0];
   const kbJwt = parts[parts.length - 1];
-  const disclosures = parts.slice(1, parts.length - 1).filter(function (d) { return d !== ''; });
+  const disclosures = parts.slice(1, parts.length - 1)
+                           .filter(function (d) { return d !== ''; });
   vpCheck(checks, 'Format', true,
-    'SD-JWT+KB with ' + disclosures.length + ' Disclosure(s) and a Key Binding JWT.');
+    'SD-JWT+KB with ' + disclosures.length + ' Disclosure(s) and a Key ' +
+                                             'Binding JWT.');
 
   // --- the issuer-signed JWT ------------------------------------------------
   let header = {};
@@ -984,18 +1134,21 @@ function verifyPresentation(presentation, record) {
     header = jsonFromB64u(issuerJwt.split('.')[0]);
     payload = jsonFromB64u(issuerJwt.split('.')[1]);
   } catch (e) {
-    vpCheck(checks, 'Issuer-signed JWT', false, 'cannot be decoded: ' + e.message);
+    vpCheck(checks, 'Issuer-signed JWT', false,
+            'cannot be decoded: ' + e.message);
     log.debug("Leaving verifyPresentation(). Undecodable credential.");
     return result;
   }
   result.vct = payload.vct || '';
   result.sub = payload.sub || '';
-  vpCheck(checks, 'Media type (typ)', ['dc+sd-jwt', 'vc+sd-jwt'].indexOf(String(header.typ)) >= 0,
+  vpCheck(checks, 'Media type (typ)',
+    ['dc+sd-jwt', 'vc+sd-jwt'].indexOf(String(header.typ)) >= 0,
     'typ is "' + header.typ + '".');
   let issuerSignatureOk = false;
   try {
     // The fourth. Same change, same reason as the note above.
-    result.issuerCertificatePem = verifyIssuerSignature(issuerJwt).certificatePem;
+    result.issuerCertificatePem = verifyIssuerSignature(
+        issuerJwt).certificatePem;
     issuerSignatureOk = true;
   } catch (e) {
     // Not signed by us — or expired, which jsonwebtoken reports here too. Both
@@ -1003,35 +1156,47 @@ function verifyPresentation(presentation, record) {
     vpCheck(checks, 'Issuer signature', false, 'does not verify: ' + e.message);
   }
   if (issuerSignatureOk) {
-    vpCheck(checks, 'Issuer signature', true, 'verifies against the issuer\'s key (alg ' +
+    vpCheck(checks, 'Issuer signature', true, 'verifies against the ' +
+                                              'issuer\'s key (alg ' +
       header.alg + ').');
   }
   const now = nowSec();
   vpCheck(checks, 'Validity window',
     (!payload.exp || payload.exp > now) && (!payload.nbf || payload.nbf <= now),
-    'nbf ' + (payload.nbf || '—') + ', exp ' + (payload.exp || '—') + ', now ' + now + '.');
-  vpCheck(checks, 'Credential type (vct)', payload.vct === vpConfig.expectedVct(),
-    'vct is "' + payload.vct + '"; this Verifier asked for "' + vpConfig.expectedVct() +
+    'nbf ' + (payload.nbf || '—') + ', exp ' + (payload.exp || '—') + ', now ' +
+    now + '.');
+  vpCheck(checks, 'Credential type (vct)',
+    payload.vct === vpConfig.expectedVct(),
+    'vct is "' + payload.vct + '"; this Verifier asked for "' +
+    vpConfig.expectedVct() +
     '" (oid4vp.expectedVct).');
 
   // --- the Disclosures presented -------------------------------------------
   // Every one must hash to a digest the issuer signed. This is the check that
   // catches a Disclosure invented by whoever is presenting.
   const sdAlg = payload._sd_alg || 'sha-256';
-  const nodeAlg = { 'sha-256': 'sha256', 'sha-384': 'sha384', 'sha-512': 'sha512' }[String(sdAlg).toLowerCase()];
+  const nodeAlg = { 'sha-256': 'sha256', 'sha-384': 'sha384',
+                    'sha-512': 'sha512' }[String(sdAlg).toLowerCase()];
   const signedDigests = [];
   (function collect(node) {
     log.debug("Entering collect().");
-    if (!node || typeof node !== 'object') return;
+    if (!node || typeof node !== 'object') {
+      log.debug("Leaving collect().");
+      return;
+    }
     if (Array.isArray(node)) {
       node.forEach(function (item) {
-        if (item && typeof item === 'object' && typeof item['...'] === 'string') signedDigests.push(item['...']);
+        if (item && typeof item === 'object' &&
+            typeof item['...'] === 'string') signedDigests.push(item['...']);
         else collect(item);
       });
+      log.debug("Leaving collect().");
       return;
     }
     Object.keys(node).forEach(function (k) {
-      if (k === '_sd' && Array.isArray(node[k])) node[k].forEach(function (d) { signedDigests.push(d); });
+      if (k === '_sd' &&
+          Array.isArray(node[k])) node[k].forEach(
+              function (d) { signedDigests.push(d); });
       else if (typeof node[k] === 'object') collect(node[k]);
     });
     log.debug("Leaving collect().");
@@ -1048,11 +1213,15 @@ function verifyPresentation(presentation, record) {
                 'a presented Disclosure is not base64url JSON: ' + e.message);
       return;
     }
-    const digest = nodeAlg ? b64u(crypto.createHash(nodeAlg).update(encoded, 'ascii').digest()) : '';
+    const digest = nodeAlg ?
+                   b64u(crypto.createHash(nodeAlg)
+                              .update(encoded, 'ascii')
+                              .digest()) : '';
     if (signedDigests.indexOf(digest) === -1) {
       unmatched++;
       log.error(errorCodes.tag('STS-VC-0040') +
-                'a presented Disclosure hashes to a digest the issuer never signed: ' + digest);
+                'a presented Disclosure hashes to a digest the issuer never ' +
+                'signed: ' + digest);
       return;
     }
     if (Array.isArray(arr) && arr.length === 3) {
@@ -1062,7 +1231,8 @@ function verifyPresentation(presentation, record) {
   });
   vpCheck(checks, 'Disclosure digests', unmatched === 0,
     unmatched === 0
-      ? 'all ' + disclosures.length + ' presented Disclosure(s) hash to a digest in _sd.'
+      ? 'all ' + disclosures.length + ' presented Disclosure(s) hash to a ' +
+                                      'digest in _sd.'
       : unmatched + ' presented Disclosure(s) were not signed by the issuer.');
 
   // The always-visible claims are part of what was presented too.
@@ -1080,16 +1250,19 @@ function verifyPresentation(presentation, record) {
     kbPayload = jsonFromB64u(kbJwt.split('.')[1]);
     kbReadable = kbJwt.split('.').length === 3;
   } catch (e) {
+    log.debug("Caught in verifyPresentation(): " + ((e && e.message) || e));
     kbReadable = false;
   }
   if (!kbReadable) {
     vpCheck(checks, 'Key Binding JWT', false,
-      'the last element is not a readable three-part JWS, so the presentation has no holder proof at all.');
+      'the last element is not a readable three-part JWS, so the ' +
+      'presentation has no holder proof at all.');
     result.ok = checks.every(function (c) { return c.ok; });
     log.debug("Leaving verifyPresentation(). No usable KB-JWT.");
     return result;
   }
-  logArtifact('OID4VP Key Binding JWT', 'as received', { header: kbHeader, payload: kbPayload });
+  logArtifact('OID4VP Key Binding JWT', 'as received',
+              { header: kbHeader, payload: kbPayload });
   vpCheck(checks, 'KB-JWT media type', String(kbHeader.typ) === 'kb+jwt',
     'typ is "' + kbHeader.typ + '"; RFC 9901 section 4.3 requires kb+jwt.');
   vpCheck(checks, 'KB-JWT algorithm', !!kbHeader.alg && kbHeader.alg !== 'none',
@@ -1097,25 +1270,32 @@ function verifyPresentation(presentation, record) {
   vpCheck(checks, 'KB-JWT nonce', kbPayload.nonce === record.nonce,
     kbPayload.nonce === record.nonce
       ? 'matches the nonce in this Authorization Request.'
-      : 'is "' + kbPayload.nonce + '", but this request\'s nonce is "' + record.nonce +
+      : 'is "' + kbPayload.nonce + '", but this request\'s nonce is "' +
+        record.nonce +
         '" — a presentation made for another request, or replayed.');
   vpCheck(checks, 'KB-JWT audience', kbPayload.aud === record.clientId,
     kbPayload.aud === record.clientId
       ? 'is this Verifier\'s Client Identifier.'
-      : 'is "' + kbPayload.aud + '", not "' + record.clientId + '" — this presentation was made for someone else.');
+      : 'is "' + kbPayload.aud + '", not "' + record.clientId + '" — this ' +
+          'presentation was made for someone else.');
   vpCheck(checks, 'KB-JWT freshness',
     !!kbPayload.iat && Math.abs(now - Number(kbPayload.iat)) <= vpKbMaxAgeS(),
-    'iat is ' + kbPayload.iat + ' (' + (kbPayload.iat ? (now - Number(kbPayload.iat)) + 's ago' : 'absent') +
+    'iat is ' + kbPayload.iat + ' (' +
+    (kbPayload.iat ? (now - Number(kbPayload.iat)) + 's ' +
+        'ago' : 'absent') +
     '); at most ' + vpKbMaxAgeS() + 's is accepted.');
 
-  // sd_hash ties the KB-JWT to exactly these bytes: the issuer-signed JWT and the
-  // Disclosures presented, each followed by a tilde.
+  // sd_hash ties the KB-JWT to exactly these bytes: the issuer-signed JWT and
+  // the Disclosures presented, each followed by a tilde.
   const withoutKb = parts.slice(0, parts.length - 1).join('~') + '~';
   const expectedSdHash = sdHashOf(withoutKb, sdAlg);
-  vpCheck(checks, 'KB-JWT sd_hash', !!expectedSdHash && kbPayload.sd_hash === expectedSdHash,
+  vpCheck(checks, 'KB-JWT sd_hash',
+    !!expectedSdHash && kbPayload.sd_hash === expectedSdHash,
     kbPayload.sd_hash === expectedSdHash
-      ? 'is the hash of exactly the bytes presented, so no Disclosure was added or removed after it was signed.'
-      : 'is "' + kbPayload.sd_hash + '" but these bytes hash to "' + expectedSdHash +
+      ? 'is the hash of exactly the bytes presented, so no Disclosure was ' +
+        'added or removed after it was signed.'
+      : 'is "' + kbPayload.sd_hash + '" but these bytes hash to "' +
+        expectedSdHash +
         '" — the presentation was altered after the holder signed it.');
 
   // The signature must verify against the key the CREDENTIAL names, not one the
@@ -1123,7 +1303,8 @@ function verifyPresentation(presentation, record) {
   const cnfJwk = (payload.cnf && payload.cnf.jwk) || null;
   if (!cnfJwk) {
     vpCheck(checks, 'KB-JWT signature', false,
-      'the credential carries no cnf.jwk, so there is no key this presentation could be bound to.');
+      'the credential carries no cnf.jwk, so there is no key this ' +
+      'presentation could be bound to.');
   } else {
     try {
       const holderKey = crypto.createPublicKey({ key: cnfJwk, format: 'jwk' });
@@ -1143,7 +1324,8 @@ function verifyPresentation(presentation, record) {
       // synchronous.
       stsCrypto.verifyJws(kbJwt, holderKey, { algorithms: ISSUER_ALGS });
       vpCheck(checks, 'KB-JWT signature', true,
-        'verifies against the cnf key in the credential (' + cnfJwk.kty + ' ' + (cnfJwk.crv || '') + ').');
+        'verifies against the cnf key in the credential (' + cnfJwk.kty + ' ' +
+        (cnfJwk.crv || '') + ').');
     } catch (e) {
       vpCheck(checks, 'KB-JWT signature', false,
         'does NOT verify against the cnf key in the credential: ' + e.message);
@@ -1154,26 +1336,35 @@ function verifyPresentation(presentation, record) {
   // What THIS request asked for; see buildVpRequest() for why it is the
   // transaction's list and not the one the console holds at this moment.
   const requested = [].concat(record.requested || []);
-  const missing = requested.filter(function (name) { return !(name in result.claims); });
+  const missing =
+      requested.filter(function (name) { return !(name in result.claims); });
   vpCheck(checks, 'Requested claims', missing.length === 0,
     missing.length === 0
       ? (requested.length
-          ? 'every claim the DCQL query asked for is present (' + requested.join(', ') + ').'
-          : 'this request named no claims at all, so there was nothing to be missing — an ' +
-            'absent DCQL claims member asks for the whole credential.')
+          ? 'every claim the DCQL query asked for is present (' +
+            requested.join(', ') + ').'
+          : 'this request named no claims at all, so there was nothing to be ' +
+            'missing — an absent DCQL claims member asks for the whole ' +
+            'credential.')
       : 'missing: ' + missing.join(', ') + '.');
   // Not a failure — the holder may disclose more than was asked — but worth
   // saying, because over-disclosure is the thing SD-JWT VC exists to prevent.
   // Nothing is "extra" when nothing was asked for; see the same note in
   // verifyVpJwt() for why that is not the same as counting everything.
   const extra = requested.length
-    ? result.disclosed.filter(function (name) { return requested.indexOf(name) === -1; })
+    ? result.disclosed.filter(function (name) {
+      return requested.indexOf(name) === -1;
+    })
     : [];
   result.extraDisclosed = extra;
 
   result.ok = checks.every(function (c) { return c.ok; });
-  log.debug("Leaving verifyPresentation(). ok=" + result.ok + ", " + checks.length + " check(s), " +
-            result.disclosed.length + " disclosed claim(s), " + extra.length + " more than asked for.");
+  log.debug("Leaving verifyPresentation(). ok=" + result.ok + ", " +
+      checks.length + " " +
+      "check(s), " +
+            result.disclosed.length + " disclosed claim(s), " + extra.length +
+      " " +
+                "more than asked for.");
   return result;
 }
 
@@ -1188,12 +1379,14 @@ app.post('/oid4vp/response', async function (req, res) {
     log.debug("Leaving the OID4VP response endpoint. Unknown state.");
     errorCodes.mark(res, 'STS-VC-0036');
     return oauthError(res, 400, 'invalid_request',
-      'Unknown or expired state: this Verifier has no such Authorization Request outstanding.');
+      'Unknown or expired state: this Verifier has no such Authorization ' +
+      'Request outstanding.');
   }
   if (body.error) {
     // The wallet refused, which is a legitimate answer (section 8.4).
     record.verdict = { ok: false, refused: true, error: String(body.error),
-                       errorDescription: String(body.error_description || ''), checks: [], at: new Date().toISOString() };
+                       errorDescription: String(body.error_description || ''),
+                       checks: [], at: new Date().toISOString() };
     // THROUGH THE STORE, so the verdict is not a fact only this process holds:
     // `vpTransactions` is `realms.map({persist})` and its journal sees `set()`
     // rather than a field stamped on the object it handed out. The status
@@ -1202,9 +1395,11 @@ app.post('/oid4vp/response', async function (req, res) {
     vpTransactions.set(state, record);
     errorCodes.mark(res, 'STS-VC-0037');
     res.status(200).type('application/json').send(JSON.stringify({
-      redirect_uri: baseUrlOf(req) + '/oid4vp/done?state=' + encodeURIComponent(state)
+      redirect_uri: baseUrlOf(req) + '/oid4vp/done?state=' +
+                    encodeURIComponent(state)
     }));
-    log.debug("Leaving the OID4VP response endpoint. The wallet refused: " + body.error);
+    log.debug("Leaving the OID4VP response endpoint. The wallet refused: " +
+              body.error);
     return;
   }
 
@@ -1213,28 +1408,33 @@ app.post('/oid4vp/response', async function (req, res) {
   let presentations = [];
   let tokenShapeOk = true;
   try {
-    const parsed = typeof body.vp_token === 'string' ? JSON.parse(body.vp_token) : body.vp_token;
+    const parsed = typeof body.vp_token === 'string' ?
+                   JSON.parse(body.vp_token) : body.vp_token;
     const forQuery = parsed && parsed[VP_DCQL_ID];
     if (Array.isArray(forQuery)) presentations = forQuery;
     else if (typeof forQuery === 'string') presentations = [forQuery];
     else tokenShapeOk = false;
   } catch (e) {
     log.error(errorCodes.tag('STS-VC-0038') +
-              'the vp_token is not the JSON object OID4VP defines: ' + e.message);
+              'the vp_token is not the JSON object OID4VP defines: ' +
+              e.message);
     tokenShapeOk = false;
   }
   if (!tokenShapeOk || !presentations.length) {
     record.verdict = {
       ok: false, at: new Date().toISOString(),
       checks: [{ name: 'vp_token', ok: false,
-                 detail: 'vp_token must be a JSON object keyed by the DCQL credential query id ("' +
-                         VP_DCQL_ID + '"), each value an array of presentations.' }]
+                 detail: 'vp_token must be a JSON object keyed by the DCQL ' +
+                         'credential query id ("' +
+                         VP_DCQL_ID + '"), each value an array of ' +
+                                      'presentations.' }]
     };
     vpTransactions.set(state, record);  // through the store, as above
     errorCodes.mark(res, 'STS-VC-0038');
     res.status(400).type('application/json').send(JSON.stringify({
       error: 'invalid_request',
-      error_description: 'vp_token is not the JSON object OID4VP section 8.1 defines.'
+      error_description: 'vp_token is not the JSON object OID4VP section 8.1 ' +
+                         'defines.'
     }));
     log.debug("Leaving the OID4VP response endpoint. Malformed vp_token.");
     return;
@@ -1262,11 +1462,12 @@ app.post('/oid4vp/response', async function (req, res) {
     presentation: presentations[0]
   };
   vpTransactions.set(state, record);  // through the store, as above
-  logArtifact('OID4VP verification result', verified.ok ? 'accepted' : 'REFUSED', record.verdict);
+  logArtifact('OID4VP verification result',
+              verified.ok ? 'accepted' : 'REFUSED', record.verdict);
 
   if (!verified.ok) {
-    // Section 8.4: an invalid presentation is invalid_request. The failing checks
-    // go in the description, because a wallet developer cannot fix "no".
+    // Section 8.4: an invalid presentation is invalid_request. The failing
+    // checks go in the description, because a wallet developer cannot fix "no".
     const failed = verified.checks.filter(function (c) { return !c.ok; });
     // A refusal whose only failed check is the issuer certificate's revocation
     // is named for that, so an operator is sent to the certificate rather than
@@ -1276,14 +1477,18 @@ app.post('/oid4vp/response', async function (req, res) {
     res.status(400).type('application/json').send(JSON.stringify({
       error: 'invalid_request',
       error_description: 'The presentation was refused: ' +
-        failed.map(function (c) { return c.name + ' — ' + c.detail; }).join(' | ')
+        failed.map(function (c) { return c.name + ' — ' + c.detail; })
+              .join(' ' +
+            '| ')
     }));
-    log.debug("Leaving the OID4VP response endpoint. Refused " + failed.length + " check(s).");
+    log.debug("Leaving the OID4VP response endpoint. Refused " + failed.length +
+        " " +
+        "check(s).");
     return;
   }
   // ---------------------------------------------------------------------------
-  // The holder, recorded — and a directory entry for them, which is the whole of
-  // what this call is for.
+  // The holder, recorded — and a directory entry for them, which is the whole
+  // of what this call is for.
   //
   // BELOW the refusal above, deliberately: this is the funnel that means "a
   // credential was accepted", so a presentation that failed a check gets no
@@ -1291,45 +1496,50 @@ app.post('/oid4vp/response', async function (req, res) {
   // /admin/users a list of identities that got somewhere rather than of ones
   // that were tried.
   //
-  // AND IT IS STILL NOT A SIGN-ON, which is the claim this endpoint's own header
-  // makes and this call must not quietly undo. No session starts, no token is
-  // issued, and nothing else in this service reads what was presented. What is
-  // recorded is narrower and true: an identity presented a credential here and it
-  // verified. tls_server.js draws the same line for a verified client certificate
-  // — recorded, never a login — and the two are the same distinction.
+  // AND IT IS STILL NOT A SIGN-ON, which is the claim this endpoint's own
+  // header makes and this call must not quietly undo. No session starts, no
+  // token is issued, and nothing else in this service reads what was presented.
+  // What is recorded is narrower and true: an identity presented a credential
+  // here and it verified. tls_server.js draws the same line for a verified
+  // client certificate — recorded, never a login — and the two are the same
+  // distinction.
   //
   // The identity is the credential's SUBJECT, which is usually a DID (an ldp_vc
-  // names its subject `did:jwk:…`) and is whatever the credential says otherwise.
-  // A presentation with no readable subject records nothing rather than a blank:
-  // recordAuthentication() drops an empty identity, so the guard here is only to
-  // save the call.
+  // names its subject `did:jwk:…`) and is whatever the credential says
+  // otherwise. A presentation with no readable subject records nothing rather
+  // than a blank: recordAuthentication() drops an empty identity, so the guard
+  // here is only to save the call.
   if (verified.sub) {
     stats.recordAuthentication({
       presented: verified.sub,
       protocol: 'OpenID4VP',
-      method: 'verifiable presentation (' + (record.format || 'dc+sd-jwt') + ')',
+      method: 'verifiable presentation (' + (record.format || 'dc+sd-jwt') +
+              ')',
       client_id: record.clientId || '',
       // Which kind of application that client_id names. Without it the funnel
       // files every client_id it is handed as an OAuth client, and the mock
       // Verifier is not one — it is the OID4VP verifier this service configures
       // at oid4vp.clientId.
       applicationKind: 'oid4vp-verifier',
-      note: 'A presentation that verified against every check this Verifier makes. ' +
-            'It is not a sign-on: no session was created, no token was issued, and ' +
-            'nothing else in this service reads what was presented.'
+      note: 'A presentation that verified against every check this Verifier ' +
+            'makes. It is not a sign-on: no session was created, no token ' +
+            'was issued, and nothing else in this service reads what was ' +
+            'presented.'
     });
   }
   res.status(200).type('application/json').send(JSON.stringify({
-    redirect_uri: baseUrlOf(req) + '/oid4vp/done?state=' + encodeURIComponent(state)
+    redirect_uri: baseUrlOf(req) + '/oid4vp/done?state=' +
+                  encodeURIComponent(state)
   }));
   log.debug("Leaving the OID4VP response endpoint. Accepted.");
 });
 
-// Not in the spec: the verdict, so the wallet's own page (and the test suite) can
-// show what this Verifier decided and why. A real Verifier tells the End-User in
-// its own UI; this makes the same information machine-readable.
+// Not in the spec: the verdict, so the wallet's own page (and the test suite)
+// can show what this Verifier decided and why. A real Verifier tells the
+// End-User in its own UI; this makes the same information machine-readable.
 app.get('/oid4vp/result/:state', function (req, res) {
-  log.debug("Entering the presentation result endpoint. state=" + req.params.state);
+  log.debug("Entering the presentation result endpoint. state=" +
+            req.params.state);
   const record = vpTransactions.get(String(req.params.state));
   if (!record) {
     log.debug("Leaving the presentation result endpoint. Unknown state.");
@@ -1346,7 +1556,8 @@ app.get('/oid4vp/result/:state', function (req, res) {
     received: !!record.verdict,
     verdict: record.verdict
   }));
-  log.debug("Leaving the presentation result endpoint. received=" + !!record.verdict);
+  log.debug("Leaving the presentation result endpoint. received=" +
+            !!record.verdict);
 });
 
 // Where the wallet sends the End-User once the Verifier has answered.
@@ -1356,25 +1567,30 @@ app.get('/oid4vp/done', function (req, res) {
   const verdict = record && record.verdict;
   const ok = !!(verdict && verdict.ok);
   const page = '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<title>The Bar Door — ' + (ok ? 'come on in' : 'not today') + '</title><style>' +
-    'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;background:#f4f4f7;margin:0;' +
-    'display:flex;align-items:center;justify-content:center;min-height:100vh;color:#222}' +
-    '.card{background:#fff;border:1px solid #d5d5dd;border-radius:10px;padding:30px 34px;width:560px;' +
-    'box-shadow:0 6px 24px rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 0 6px}' +
-    'p{line-height:1.5;color:#333}ul{line-height:1.5}.ok{color:#2e7d32;font-weight:700}' +
-    '.bad{color:#b00020;font-weight:700}' +
-    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}</style></head><body><div class="card">' +
-    '<h1>The Bar Door</h1>' +
+    '<title>The Bar Door — ' + (ok ? 'come on in' : 'not today') +
+    '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
+    'Arial,sans-serif;background:#f4f4f7;margin:0;display:flex;' +
+    'align-items:center;justify-content:center;min-height:100vh;color:#222}' +
+    '.card{background:#fff;border:1px solid ' +
+    '#d5d5dd;border-radius:10px;padding:30px 34px;width:560px;box-shadow:0 ' +
+    '6px 24px rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 0 6px}' +
+    'p{line-height:1.5;color:#333}ul{line-height:1.5}.ok{color:#2e7d32;' +
+    'font-weight:700}.bad{color:#b00020;font-weight:700}' +
+    'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}</style>' +
+    '</head><body><div class="card"><h1>The Bar Door</h1>' +
     (verdict
       ? '<p class="' + (ok ? 'ok' : 'bad') + '" id="verdict">' +
         (ok ? 'Presentation accepted.' : 'Presentation refused.') + '</p>' +
-        '<ul id="claims">' + Object.keys(verdict.claims || {}).map(function (k) {
+        '<ul id="claims">' +
+        Object.keys(verdict.claims || {}).map(function (k) {
           return '<li><code>' + xmlEscape(k) + '</code>: <code>' +
                  xmlEscape(typeof verdict.claims[k] === 'object'
-                   ? JSON.stringify(verdict.claims[k]) : String(verdict.claims[k])) + '</code></li>';
+                   ? JSON.stringify(verdict.claims[k]) :
+                           String(verdict.claims[k])) + '</code></li>';
         }).join('') + '</ul>' +
         '<p style="font-size:.85em;color:#666">We asked for <code>' +
-        xmlEscape((verdict.requested || []).join(', ')) + '</code> and that is all we know about you.</p>'
+        xmlEscape((verdict.requested || []).join(', ')) + '</code> and that ' +
+            'is all we know about you.</p>'
       : '<p id="verdict">Nothing has been presented for this request yet.</p>') +
     '</div></body></html>\n';
   res.status(200).type('text/html').send(page);

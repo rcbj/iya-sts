@@ -109,12 +109,12 @@ require('../portal/portal');
 // `consent_error` it hands back.
 require('../oauth-oidc/consent_screen');
 require('../oauth-oidc/oauth2');
-// WS-Federation's passive requestor profile. It must come AFTER authn.js and the
-// order is a dependency and not a preference: it signs users in to the session
-// that service owns (startSession/sessionOf), so that single sign-on works across
-// the two protocols. The dependency is one-way — authn.js knows nothing about
-// this module — which is what keeps it out of the cycles the split exists to
-// avoid.
+// WS-Federation's passive requestor profile. It must come AFTER authn.js and
+// the order is a dependency and not a preference: it signs users in to the
+// session that service owns (startSession/sessionOf), so that single sign-on
+// works across the two protocols. The dependency is one-way — authn.js knows
+// nothing about this module — which is what keeps it out of the cycles the
+// split exists to avoid.
 require('../ws-federation/wsfed');
 // SAML 2.0 Web Browser SSO — the profile this service spent years documenting
 // the absence of. It must come AFTER authn.js for the reason wsfed.js must, and
@@ -127,8 +127,8 @@ require('../ws-federation/wsfed');
 require('../saml/saml2_sso');
 // SAML 1.1's two browser profiles, and the SAML responder behind one of them.
 // TWO constraints, and the second is the interesting one. It must come AFTER
-// authn.js for the same reason saml2_sso.js must — no sign-in screen of its own,
-// and beginAuthentication() is how it reaches one. And it must come AFTER
+// authn.js for the same reason saml2_sso.js must — no sign-in screen of its
+// own, and beginAuthentication() is how it reaches one. And it must come AFTER
 // saml/saml2_sso.js, because it takes that module's slugOf(): the slug is a
 // HANDLE FOR AN APPLICATION shared by both profiles and by the console, and two
 // spellings of it would make /saml2/metadata/app-1a2b3c and
@@ -222,13 +222,13 @@ require('../kerberos/spnego_authn');
 // `/admin/sts-metadata` groups it with the protocols it belongs to.
 // ---------------------------------------------------------------------------
 require('../pki/pki_service');
-// The admin console. It must come AFTER oauth2.js and, like wsfed.js, the order is a
-// dependency rather than a preference: its metrics page reports the browser sign-on
-// sessions oauth2.js owns, read through the `sessions` map that module exports. The
-// dependency is one way — oauth2.js knows nothing about the console — so it is not a
-// cycle. What holds the STATE it renders is admin_stats.js, which registers no route
-// and is required by app.js, so the counting is already running by the time this
-// line is reached.
+// The admin console. It must come AFTER oauth2.js and, like wsfed.js, the order
+// is a dependency rather than a preference: its metrics page reports the
+// browser sign-on sessions oauth2.js owns, read through the `sessions` map that
+// module exports. The dependency is one way — oauth2.js knows nothing about the
+// console — so it is not a cycle. What holds the STATE it renders is
+// admin_stats.js, which registers no route and is required by app.js, so the
+// counting is already running by the time this line is reached.
 require('../admin-ui/admin');
 // ---------------------------------------------------------------------------
 // 18a. THE PKI PAGE. `/admin/pki` — the certificate authority this service
@@ -312,12 +312,12 @@ require('../admin-ui/database_admin');
 // ---------------------------------------------------------------------------
 require('../admin-ui/secrets_admin');
 // The management API: everything that console shows and everything it can
-// change, at /admin-api, over JSON. It must come AFTER admin.js and the order is
-// a dependency rather than a preference — it requires that module for the four
-// action functions and the per-page JSON views, and calls nothing else, which is
-// what makes it incapable of holding a second opinion about what a revocation
-// means. Its OpenAPI document is built from its own route table (admin_api.js ->
-// admin_api_spec.js), so an operation cannot be undocumented.
+// change, at /admin-api, over JSON. It must come AFTER admin.js and the order
+// is a dependency rather than a preference — it requires that module for the
+// four action functions and the per-page JSON views, and calls nothing else,
+// which is what makes it incapable of holding a second opinion about what a
+// revocation means. Its OpenAPI document is built from its own route table
+// (admin_api.js -> admin_api_spec.js), so an operation cannot be undocumented.
 require('../mgmt-api/admin_api');
 // 19a. THE API EXPLORER, which is a page of the CONSOLE and not of that API.
 //
@@ -349,7 +349,8 @@ require('../admin-ui/api_explorer');
 // keeps "the order in this file is the route order" true.
 const tlsServer = require('../tls/tls_server');
 // ---------------------------------------------------------------------------
-// 20-slot. THE CLIENT-CERTIFICATE TRUSTSTORE, HANDED TO THE CONSOLE (2026-09-12).
+// 20-slot. THE CLIENT-CERTIFICATE TRUSTSTORE, HANDED TO THE CONSOLE
+// (2026-09-12).
 //
 // `admin.setTruststore()` is an inverted hook (rule 3e) and this is the one
 // slot in the service filled HERE rather than by the module that owns what it
@@ -402,13 +403,13 @@ require('../admin-ui/admin').setTruststore(tlsServer.truststore);
 require('../admin-ui/crypto_metadata');
 // The embedded LDAPv3 directory (RFC 4511), built on the node-ldapjs submodule.
 // Like the two Kerberos modules it registers its HTTP views at require time
-// (/ldap, /admin/ldap/directory) and starts its TCP listener from listen() below, for
-// the same reason: binding port 389 is privileged and can fail, and a require
-// that throws takes the whole service down where a route cannot.
+// (/ldap, /admin/ldap/directory) and starts its TCP listener from listen()
+// below, for the same reason: binding port 389 is privileged and can fail, and
+// a require that throws takes the whole service down where a route cannot.
 //
 // It must come AFTER admin.js, and that is a dependency rather than a
-// preference: it installs itself as admin_stats.js's user observer, which is how
-// an entry appears under ou=users for anybody who authenticates through ANY
+// preference: it installs itself as admin_stats.js's user observer, which is
+// how an entry appears under ou=users for anybody who authenticates through ANY
 // protocol here. Requiring it earlier would work too — nothing authenticates
 // during require — but keeping it beside the console is what makes the pairing
 // visible to the next reader.

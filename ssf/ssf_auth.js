@@ -12,16 +12,16 @@
 // receiver discovers how to authenticate rather than guessing, and this
 // module's list and that member are one table.
 //
-// **THREE SCHEMES, NOT SIX, AND THAT IS A DECISION.** SCIM offers all six of RFC
-// 7644's because RFC 7644 names all six and a provisioning client meets them
-// in the wild. SSF names none: `authorization_schemes` is an open list of
+// **THREE SCHEMES, NOT SIX, AND THAT IS A DECISION.** SCIM offers all six of
+// RFC 7644's because RFC 7644 names all six and a provisioning client meets
+// them in the wild. SSF names none: `authorization_schemes` is an open list of
 // `spec_urn` values and the only one the specification's own examples use is
 // OAuth 2.0. So this offers the one the specification points at and HTTP Basic
 // beside it, which exists for the reason the SCIM one exists — a client under
 // test that has not implemented a token flow yet can still reach every
-// endpoint, and its 401 path stays reachable when the credential is wrong.
-// The third, GNAP (2026-09-12), is here for a different reason and
-// attemptGnap() argues it: a GNAP client application owns a stream as ITSELF.
+// endpoint, and its 401 path stays reachable when the credential is wrong. The
+// third, GNAP (2026-09-12), is here for a different reason and attemptGnap()
+// argues it: a GNAP client application owns a stream as ITSELF.
 //
 // **IN DEVELOPMENT IT IS A TURNSTILE AND NOT A LOCK**, exactly as
 // `scim/CLAUDE.md` says of its own: anybody can get a token with either SSF
@@ -119,6 +119,8 @@ const SCHEMES = [
 // Whether Basic is offered at all. A setting since 2026-09-12, mirroring
 // `scim.authBasic`; on by default, which is what this service always did.
 function basicOffered() {
+  log.debug("Entering basicOffered().");
+  log.debug("Leaving basicOffered().");
   return config.value('ssf.authBasic') !== false;
 }
 
@@ -126,21 +128,29 @@ function basicOffered() {
 // the GNAP modules are required lazily, because GNAP is 23d in the require
 // order and this library is loaded at 23b.
 function gnapOffered() {
+  log.debug("Entering gnapOffered().");
+  log.debug("Leaving gnapOffered().");
   return config.value('gnap.enabled') !== false;
 }
 
 function offered(row) {
+  log.debug("Entering offered().");
   if (row.id === 'basic') {
+    log.debug("Leaving offered().");
     return basicOffered();
   }
   if (row.id === 'gnap') {
+    log.debug("Leaving offered().");
     return gnapOffered();
   }
+  log.debug("Leaving offered().");
   return true;
 }
 
 // The schemes actually offered right now, in `SCHEMES` order.
 function offeredSchemes() {
+  log.debug("Entering offeredSchemes().");
+  log.debug("Leaving offeredSchemes().");
   return SCHEMES.filter(offered);
 }
 
@@ -310,8 +320,10 @@ function attemptOAuth(req, need) {
 // RFC 9767's audience exists to prevent.
 // ---------------------------------------------------------------------------
 function gnapCovers(access, need) {
+  log.debug("Entering gnapCovers().");
   const accessLib = require('../gnap/gnap_access');
   const wanted = need === 'write' ? scopeWrite() : scopeRead();
+  log.debug("Leaving gnapCovers().");
   return accessLib.accessCovers(access, [wanted]) ||
          accessLib.accessCovers(access, [{ type: 'ssf', actions: [need] }]);
 }
@@ -346,7 +358,8 @@ function attemptGnap(req, need) {
     log.debug('Leaving attemptGnap(). Refused: ' + presented.why);
     return refusal(errorCodes.codeOf(presented) || 'STS-SSF-0078', 401,
       'This GNAP access token could not be accepted: ' + presented.why,
-      { 'WWW-Authenticate': challenges(req) }, presented.gnapError || 'invalid_token');
+      { 'WWW-Authenticate': challenges(req) },
+      presented.gnapError || 'invalid_token');
   }
   const record = presented.record;
   if ((record.rsIdentifiers || []).length) {
@@ -375,7 +388,8 @@ function attemptGnap(req, need) {
   return { ok: true, status: 200, scheme: 'gnap',
     principal: String(record.instanceId || ''),
     scopes: granted.join(' '), err: '', description: '', headers: {},
-    note: 'GNAP access token (' + record.format + ', proofed by ' + presented.method + ')' };
+    note: 'GNAP access token (' + record.format + ', proofed by ' +
+          presented.method + ')' };
 }
 
 // ---------------------------------------------------------------------------
@@ -416,6 +430,7 @@ function attemptBasic(req) {
   try {
     decoded = Buffer.from(encoded, 'base64').toString('utf8');
   } catch (e) {
+    log.debug("Caught in attemptBasic(): " + ((e && e.message) || e));
     // Not base64. There is nothing to recover — the credential is malformed
     // rather than wrong, and saying which is the useful half.
     decoded = '';
@@ -435,7 +450,8 @@ function attemptBasic(req) {
   if (!checked.ok) {
     log.debug('Leaving attemptBasic(). Refused: ' + checked.reason);
     return refusal(checked.reason === 'reserved-refusal'
-      ? 'STS-SSF-0008' : 'STS-SSF-0009', 401, checked.reason === 'reserved-refusal'
+      ? 'STS-SSF-0008' : 'STS-SSF-0009', 401,
+      checked.reason === 'reserved-refusal'
       ? 'The password "' + REFUSED_PASSWORD + '" is reserved and always ' +
         'refused, so that a wrong-credential path exists at all. In ' +
         'development mode every other password for every username is ' +

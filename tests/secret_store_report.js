@@ -49,6 +49,12 @@ const path = require('path');
 const secrets = require('../common/secrets');
 const secretsAdmin = require('../admin-ui/secrets_admin');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'secret_store_report',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // **THE ENVIRONMENT LAYER AND NOT `config.setOverride()`**, which is the same
 // trap `tests/database_password.js` documents beside it: every setting this
 // file moves is RESTART-ONLY — the key is read once, before the listener binds
@@ -60,12 +66,14 @@ const VARS = ['STS_KEYS_KEK_PROVIDER', 'STS_KEYS_KEK_FILE', 'STS_KEYS_KEK_REF',
               'STS_DATABASE_PASSWORD_REF', 'STS_DATABASE_PASSWORD_FIELD'];
 
 function withEnvironment(values, fn) {
+  log.debug("Entering withEnvironment().");
   const before = {};
   VARS.forEach(function (name) { before[name] = process.env[name]; });
   VARS.forEach(function (name) { delete process.env[name]; });
   Object.keys(values).forEach(function (name) {
     process.env[name] = values[name];
   });
+  log.debug("Leaving withEnvironment().");
   return Promise.resolve()
     .then(fn)
     .finally(function () {
@@ -108,7 +116,9 @@ const REAL_SHAPES = [
 ];
 
 async function run(t) {
-  t.log.info('=== A. the guard deletes what a provider would otherwise leak ===');
+  log.debug("Entering run().");
+  t.log.info('=== A. the guard deletes what a provider would otherwise leak ' +
+             '===');
 
   t.check(secrets.NEVER_REPORTED.length >= 10,
           'the deny list is published and is not empty',
@@ -172,7 +182,8 @@ async function run(t) {
       t.check(serialised.indexOf('THE-PASSWORD') < 0,
               'and neither is the database password');
 
-      t.log.info('=== C. the ledger says whether this process actually read ===');
+      t.log.info('=== C. the ledger says whether this process actually read ' +
+                 '===');
 
       const kek = report.secrets.filter(function (one) {
         return one.secret === 'kek';
@@ -216,6 +227,7 @@ async function run(t) {
       try {
         await secrets.readKek();
       } catch (e) {
+        log.debug("Caught in a callback in run(): " + ((e && e.message) || e));
         // EXPECTED. A missing key file is a throw in product mode and is the
         // thing this section is about; what matters is what was written down
         // on the way past.
@@ -286,6 +298,7 @@ async function run(t) {
   t.check(Array.isArray(report2.failed),
           'and `failed` is a list rather than a count, so a client can say ' +
           'WHICH probe did not answer');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

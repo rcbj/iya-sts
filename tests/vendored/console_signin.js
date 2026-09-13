@@ -42,8 +42,8 @@
 // **IT KEEPS EVERY COOKIE, BY NAME.** There are two by the end — the sign-on
 // session (`sts_session`, the identity provider's) and the console's own
 // (`sts_admin`, established from the ID Token) — and the console reads the
-// second. A jar that kept only the last `Set-Cookie` seen would work by luck and
-// break the day the order changed.
+// second. A jar that kept only the last `Set-Cookie` seen would work by luck
+// and break the day the order changed.
 //
 // **A GATE THAT IS OFF IS A LEGITIMATE STATE** and is reported rather than
 // treated as a pass: no redirect means no session is needed, and the reads a
@@ -53,11 +53,20 @@
 
 const assert = require("assert");
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'console_signin',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // The jar, and the two things a caller does with it.
 function jar() {
+  log.debug("Entering jar().");
   const held = {};
+  log.debug("Leaving jar().");
   return {
     keep: function (response) {
+      log.debug("Entering keep().");
       const set = response.headers.getSetCookie
         ? response.headers.getSetCookie() : [];
       set.forEach(function (one) {
@@ -73,14 +82,25 @@ function jar() {
           held[name] = value;
         }
       });
+      log.debug("Leaving keep().");
     },
     header: function () {
+      log.debug("Entering header().");
+      log.debug("Leaving header().");
       return Object.keys(held).map(function (k) {
         return k + "=" + held[k];
       }).join("; ");
     },
-    names: function () { return Object.keys(held); },
-    get: function (name) { return held[name] || ""; }
+    names: function () {
+      log.debug("Entering names().");
+      log.debug("Leaving names().");
+      return Object.keys(held);
+    },
+    get: function (name) {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return held[name] || "";
+    }
   };
 }
 
@@ -104,13 +124,17 @@ function jar() {
 // attaches (`tests/tools/attach-admin-token.js`); nothing here mints one.
 // ---------------------------------------------------------------------------
 function consolePasswordFor(user) {
+  log.debug("Entering consolePasswordFor().");
+  log.debug("Leaving consolePasswordFor().");
   return "Console-signin-" + String(user) + "-Passw0rd!";
 }
 
 async function ensureConsoleAccount(base, user, say) {
+  log.debug("Entering ensureConsoleAccount().");
   const password = consolePasswordFor(user);
   const domain = "console-signin.test";
   async function apiPost(path, payload) {
+    log.debug("Entering apiPost().");
     const r = await fetch(base + "/admin-api" + path, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -120,9 +144,11 @@ async function ensureConsoleAccount(base, user, say) {
     try {
       body = JSON.parse(raw);
     } catch (e) {
+      log.debug("Caught in apiPost(): " + ((e && e.message) || e));
       // Not JSON — an HTML error page. Kept as the raw text for the message.
       body = { raw: raw };
     }
+    log.debug("Leaving apiPost().");
     return { status: r.status, body: body };
   }
   const created = await apiPost("/users/create", {
@@ -135,6 +161,7 @@ async function ensureConsoleAccount(base, user, say) {
   if (created.status === 200 && created.body && created.body.ok) {
     say("[console] created " + user + " with a password and its attributes " +
         "before signing in.");
+    log.debug("Leaving ensureConsoleAccount().");
     return password;
   }
   if (created.body && created.body.existing) {
@@ -150,11 +177,13 @@ async function ensureConsoleAccount(base, user, say) {
           JSON.stringify(set.body).slice(0, 200) + "; signing in with the " +
           "password this helper always gives it.");
     }
+    log.debug("Leaving ensureConsoleAccount().");
     return password;
   }
   assert.fail("creating the console account " + user + " through POST " +
     "/admin-api/users/create answered " + created.status + " " +
     JSON.stringify(created.body).slice(0, 300));
+  log.debug("Leaving ensureConsoleAccount().");
 }
 
 // `base` is the service's base URL; `user` is the name to type. `log` is
@@ -169,6 +198,7 @@ async function signInToTheConsole(base, user, log) {
     return /^https?:\/\//i.test(String(where || ""))
       ? String(where) : base + String(where || "");
   }
+
   async function hop(where, options) {
     const opts = Object.assign({ redirect: "manual" }, options || {});
     opts.headers = Object.assign({ cookie: cookies.header() },
@@ -188,8 +218,9 @@ async function signInToTheConsole(base, user, log) {
 
   const toAuthorize = gated.headers.get("location") || "";
   assert.ok(/\/oauth2\/authorize\?/.test(toAuthorize),
-    "a console GET with no session should start an AUTHORIZATION REQUEST, and " +
-    "it went to \"" + toAuthorize + "\". The console signs in as the seeded " +
+    "a console GET with no session should start an AUTHORIZATION REQUEST, " +
+    "and it went to " +
+    "\"" + toAuthorize + "\". The console signs in as the seeded " +
     "client sts-admin-console; if that entry has been deleted the gate " +
     "answers 503 with the reason rather than redirecting.");
   assert.ok(/client_id=sts-admin-console/.test(toAuthorize),
@@ -200,9 +231,10 @@ async function signInToTheConsole(base, user, log) {
   const where = toScreen.headers.get("location") || "";
   const authn = (where.match(/[?&]authn=([^&]+)/) || [])[1];
   assert.ok(authn,
-    "the authorization endpoint should send a browser with no sign-on session " +
-    "to the sign-in screen carrying the id of the request waiting there, and " +
-    "it went to \"" + where + "\". Without that id the screen has nothing to " +
+    "the authorization endpoint should send a browser with no sign-on " +
+    "session to the sign-in screen carrying the id of the request waiting " +
+    "there, and it went to " +
+    "\"" + where + "\". Without that id the screen has nothing to " +
     "sign in FOR and refuses the POST.");
 
   const password = await ensureConsoleAccount(base, user, say);
@@ -222,8 +254,8 @@ async function signInToTheConsole(base, user, log) {
   });
   assert.ok(cookies.get("sts_session"),
     "signing in at /authn/login should set the sign-on session cookie; the " +
-    "reply was " + signedIn.status + ". This service checks no password, so a " +
-    "refusal here is about the request rather than the credential.");
+    "reply was " + signedIn.status + ". This service checks no password, so " +
+    "a refusal here is about the request rather than the credential.");
 
   // Back through the authorization endpoint — which now has a session — and
   // then the callback, which redeems the code and establishes the console's

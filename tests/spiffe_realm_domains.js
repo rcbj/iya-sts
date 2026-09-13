@@ -47,6 +47,12 @@ const ca = require('../spiffe/spiffe_ca');
 const spiffeId = require('../spiffe/spiffe_id');
 const server = require('../spiffe/spiffe_server');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'spiffe_realm_domains',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // Two realms, LEFT STANDING for `tests/spiffe_pki.js`'s reason: removing one
 // takes its PKI branch with it and the next file in the run is entitled to
 // find the default realm as it was. The ids are distinctive so that a stack
@@ -61,13 +67,16 @@ const REALM_B = 'spiffe-domains-b';
 const SOCKET_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-spiffe-realms-'));
 
 function makeRealm(t, id, overrides) {
+  log.debug("Entering makeRealm().");
   const made = realms.create({ id: id, name: id,
                                overrides: overrides || {} });
   if (!made.ok) {
     t.bad('could not create the realm "' + id + '"',
           (made.errors || []).join(' '));
+    log.debug("Leaving makeRealm().");
     return null;
   }
+  log.debug("Leaving makeRealm().");
   return made.realm;
 }
 
@@ -77,7 +86,9 @@ function makeRealm(t, id, overrides) {
 // runs; what it buys is that this file does not need a fixed port nobody else
 // may have.
 function freePort() {
+  log.debug("Entering freePort().");
   const net = require('net');
+  log.debug("Leaving freePort().");
   return new Promise(function (resolve, reject) {
     const srv = net.createServer();
     srv.on('error', reject);
@@ -98,12 +109,14 @@ function freePort() {
 // `.proto` files — a second load here would be a second answer to what the
 // wire format is, which is the trap that module's own header records.
 function fetchBundlesOver(socketPath) {
+  log.debug("Entering fetchBundlesOver().");
   const rpc = require('../spiffe/spiffe_grpc');
   const client = new (rpc.grpc.makeGenericClientConstructor(
     rpc.SERVICES.workload, 'SpiffeWorkloadAPI'))(
       'unix://' + socketPath, rpc.grpc.credentials.createInsecure());
   const metadata = new rpc.grpc.Metadata();
   metadata.set(rpc.SECURITY_HEADER, 'true');
+  log.debug("Leaving fetchBundlesOver().");
   return new Promise(function (resolve, reject) {
     const stream = client.FetchX509Bundles({}, metadata);
     let answered = false;
@@ -125,6 +138,7 @@ function fetchBundlesOver(socketPath) {
 }
 
 async function run(t) {
+  log.debug("Entering run().");
   // -------------------------------------------------------------------------
   // 1. A REALM IS BORN WITH A TRUST DOMAIN OF ITS OWN, UNDER THE COMMON ROOT.
   // -------------------------------------------------------------------------
@@ -132,6 +146,7 @@ async function run(t) {
   const root = ca.processTrustDomain();
   const realmA = makeRealm(t, REALM_A);
   if (!realmA) {
+    log.debug("Leaving run().");
     return;
   }
   t.equal(realmA.overrides['spiffe.trustDomain'], REALM_A + '.' + root,
@@ -164,6 +179,7 @@ async function run(t) {
   const realmB = makeRealm(t, REALM_B,
                            { 'spiffe.trustDomain': 'named.example.test' });
   if (!realmB) {
+    log.debug("Leaving run().");
     return;
   }
   t.equal(ca.trustDomain(REALM_B), 'named.example.test',
@@ -316,12 +332,12 @@ async function run(t) {
   // 4b. AND A CALL ON THAT SOCKET IS ANSWERED IN THAT REALM.
   //
   // **THIS IS THE ASSERTION THE WHOLE FEATURE IS FOR, and it is the one that
-  // cannot be made anywhere else.** Binding a socket per realm is worth
-  // nothing if the handler behind it answers in the default realm, and a
-  // reader cannot tell the two apart from the outside: the call succeeds
-  // either way and hands back a bundle. What names the realm is the KEY of
-  // the map `FetchX509Bundles` returns — a trust domain ID — so a wrong answer
-  // here is `spiffe://example.org` where `spiffe://spiffe-domains-a.example.org`
+  // cannot be made anywhere else.** Binding a socket per realm is worth nothing
+  // if the handler behind it answers in the default realm, and a reader cannot
+  // tell the two apart from the outside: the call succeeds either way and hands
+  // back a bundle. What names the realm is the KEY of the map
+  // `FetchX509Bundles` returns — a trust domain ID — so a wrong answer here is
+  // `spiffe://example.org` where `spiffe://spiffe-domains-a.example.org`
   // belongs.
   //
   // A REAL gRPC CLIENT over the realm's own Unix socket, rather than calling
@@ -462,6 +478,7 @@ async function run(t) {
   config.clearOverride('spiffe.serverPort');
   config.clearOverride('spiffe.workloadSocketEnabled');
   config.clearOverride('spiffe.serverSocketEnabled');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

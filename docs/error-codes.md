@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **1979** of them, in **27** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **1987** of them, in **27** subsystems.
 
 ## Where a code appears
 
@@ -55,7 +55,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 43
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 54
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 129
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 135
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 141
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 241
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 54
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 16
@@ -67,7 +67,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 74
 * [TLS listeners (`STS-TLS`)](#sts-tls) — 30
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 48
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 80
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 81
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 264
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 70
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 28
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 58
 * [User portal (`STS-PORTAL`)](#sts-portal) — 38
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 52
+* [Registries (`STS-REG`)](#sts-reg) — 53
 
 ## STS-HTTP
 
@@ -592,6 +592,12 @@ Raised from: authn/, common/credentials.js, common/totp.js, common/backup_codes.
 | `STS-AUTHN-0133` | The ID Token issued to a hosted surface did not verify against any published key (signature, issuer, audience or lifetime). | the console's or portal's sign-in refusal page |
 | `STS-AUTHN-0134` | The ID Token issued to a hosted surface carries a nonce that is not the one the sign-in sent. | the console's or portal's sign-in refusal page |
 | `STS-AUTHN-0135` | The ID Token issued to a hosted surface names nobody: no preferred_username and no sub. | the console's or portal's sign-in refusal page |
+| `STS-AUTHN-0136` | A console or portal session's ID Token and access token ran out and its sign-in was issued no refresh token to renew them with; the session was ended. | none — the next page runs the authorization code flow again |
+| `STS-AUTHN-0137` | The token endpoint refused the refresh token grant a console or portal session made to renew its tokens (a revoked, replayed or expired refresh token); the session was ended. | none — the next page runs the authorization code flow again |
+| `STS-AUTHN-0138` | The ID Token a console or portal renewal was issued names a different issuer, subject or authentication time from the sign-in (OpenID Connect Core section 12.2); the session was ended. | none — the next page runs the authorization code flow again |
+| `STS-AUTHN-0139` | A console or portal session could not renew its tokens because the trust realm its sign-in ran in no longer exists; the session was ended. | none — the next page runs the authorization code flow again |
+| `STS-AUTHN-0140` | Renewing a console or portal session's tokens threw; the request went on and the renewal is tried again on the next one. | none |
+| `STS-AUTHN-0141` | A console or portal session's tokens ran out after the window it could renew them in (the refresh token's lifetime from the sign-in) had closed; the session was ended. | none — the next page runs the authorization code flow again |
 
 ## STS-OAUTH
 
@@ -1577,6 +1583,7 @@ Raised from: ssf/.
 | `STS-SSF-0078` | A GNAP access token presented to an SSF endpoint was refused and the GNAP resource-server check named no code of its own. | HTTP 401 invalid_token |
 | `STS-SSF-0079` | A GNAP access token presented to an SSF endpoint was issued for a named resource server, which this transmitter is not. | HTTP 401 invalid_token |
 | `STS-SSF-0080` | A GNAP access token presented to an SSF endpoint does not carry the ssf:read or ssf:write access the operation needs. | HTTP 403 access_denied |
+| `STS-SSF-0081` | A Security Event Token was not transmitted because the application that owns the stream is not allowed that event type (ssfAllowedEvents on its entry). | — |
 
 ## STS-GNAP
 
@@ -2298,6 +2305,7 @@ Raised from: common/applications.js, common/consent.js, common/app_permissions.j
 | `STS-REG-0050` | A confirm-address or discard-address named an address that is not marked as observed on that attribute of the entry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0051` | A confirm-address or discard-address named an attribute that is not a return-address attribute. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0052` | A confirm-address or discard-address carried no address. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0053` | An ssfAllowedEvents value was neither caep, risc nor an event type URI this transmitter knows. | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## Adding a code
 

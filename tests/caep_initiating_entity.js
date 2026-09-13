@@ -51,22 +51,32 @@ const authn = require('../authn/authn');
 const caep = require('../ssf/caep');
 const logout = require('../logout/logout');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'caep_initiating_entity',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // What the observer was told, without a transmitter behind it. The notice is
 // what `caep.observe()` reads, so capturing it is capturing the whole input to
 // the decision — and it keeps this file off streams, signing and delivery,
 // none of which is what is being asserted.
 function capture() {
+  log.debug("Entering capture().");
   const seen = [];
   authn.setSessionObserver(function (notice) {
     seen.push(notice);
     return null;
   });
+  log.debug("Leaving capture().");
   return seen;
 }
 
 // A sign-in, without a response object: startSession() only ever calls
 // `res.set()` and reads `res.req`.
 function signIn(username, via) {
+  log.debug("Entering signIn().");
+  log.debug("Leaving signIn().");
   return authn.startSession({ set: function () {}, req: null },
                             username, ['pwd'], '1', via || 'OAuth 2.0 / OIDC');
 }
@@ -76,14 +86,18 @@ function signIn(username, via) {
 // test: a copy of the rule in this file would pass while the service was
 // wrong.
 function entityOf(notice) {
+  log.debug("Entering entityOf().");
   const due = caep.observe(notice);
   if (!due) {
+    log.debug("Leaving entityOf().");
     return '(nothing was due)';
   }
+  log.debug("Leaving entityOf().");
   return String(due.payload.initiating_entity || '(absent)');
 }
 
 function run(t) {
+  log.debug("Entering run().");
   caep.clear();
 
   // -----------------------------------------------------------------------
@@ -176,6 +190,7 @@ function run(t) {
           'and byAdmin alone is still "admin"');
 
   authn.setSessionObserver(function () { return null; });
+  log.debug("Leaving run().");
 }
 
 module.exports = {

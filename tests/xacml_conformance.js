@@ -55,6 +55,12 @@ const xml = require('../xacml/xacml_xml');
 const pdp = require('../xacml/xacml_pdp');
 const MANIFEST = require('../xacml/conformance/MANIFEST');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'xacml_conformance',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const SUITE = MANIFEST.HERE;
 
 // ---------------------------------------------------------------------------
@@ -65,11 +71,17 @@ const SUITE = MANIFEST.HERE;
 // skip the interesting cases with nothing failing.
 // ---------------------------------------------------------------------------
 function readCase(directory) {
+  log.debug("Entering readCase().");
   const files = fs.readdirSync(directory);
   const has = function (name) {
+    log.debug("Entering has().");
+    log.debug("Leaving has().");
     return files.indexOf(name) >= 0;
   };
+
   const read = function (name) {
+    log.debug("Entering read().");
+    log.debug("Leaving read().");
     return fs.readFileSync(path.join(directory, name), 'utf8');
   };
   // THE ROOT POLICY IS NOT ALWAYS AT THE TOP OF THE CASE. The three IIE cases
@@ -106,6 +118,7 @@ function readCase(directory) {
     repositoryDir: has('Policies')
       ? path.join(directory, 'Policies') : null
   };
+  log.debug("Leaving readCase().");
   return shape;
 }
 
@@ -114,6 +127,7 @@ function readCase(directory) {
 // file name. Keying on the file name would work for this suite and break on
 // the first repository whose files are named anything else.
 function readRepository(directory) {
+  log.debug("Entering readRepository().");
   const repository = {};
   fs.readdirSync(directory).forEach(function (file) {
     if (!/\.xml$/.test(file)) {
@@ -130,6 +144,7 @@ function readRepository(directory) {
       repository['__error__' + file] = error.message;
     }
   });
+  log.debug("Leaving readRepository().");
   return repository;
 }
 
@@ -141,23 +156,31 @@ function readRepository(directory) {
 // the only thing anybody reads.
 // ---------------------------------------------------------------------------
 function runCase(testCase) {
+  log.debug("Entering runCase().");
   if (testCase.expectsPolicyRejected) {
     try {
       xml.parsePolicy(testCase.policy);
+      log.debug("Leaving runCase().");
       return { ok: false, why: 'the policy is invalid and was accepted' };
     } catch (error) {
+      log.debug("Caught in runCase(): " + ((error && error.message) || error));
+      log.debug("Leaving runCase().");
       return { ok: true, why: 'the invalid policy was refused' };
     }
   }
   if (testCase.expectsRequestRejected) {
     try {
       xml.parseRequest(testCase.request);
+      log.debug("Leaving runCase().");
       return { ok: false, why: 'the request is invalid and was accepted' };
     } catch (error) {
+      log.debug("Caught in runCase(): " + ((error && error.message) || error));
+      log.debug("Leaving runCase().");
       return { ok: true, why: 'the invalid request was refused' };
     }
   }
   if (!testCase.policy || !testCase.request || !testCase.response) {
+    log.debug("Leaving runCase().");
     return { ok: false, why: 'the case is missing one of its three files' };
   }
   let policy;
@@ -168,6 +191,7 @@ function runCase(testCase) {
     request = xml.parseRequest(testCase.request);
     expected = xml.parseResponse(testCase.response);
   } catch (error) {
+    log.debug("Leaving runCase().");
     return { ok: false, why: 'could not be loaded: ' + error.message };
   }
   const repository = testCase.repositoryDir
@@ -176,13 +200,16 @@ function runCase(testCase) {
   try {
     actual = pdp.evaluate(policy, request, { repository: repository });
   } catch (error) {
+    log.debug("Leaving runCase().");
     return { ok: false, why: 'the PDP threw: ' + error.message };
   }
   const wanted = expected.results.length ? expected.results[0] : null;
   if (!wanted) {
+    log.debug("Leaving runCase().");
     return { ok: false, why: 'the expected Response holds no Result' };
   }
   if (actual.decision !== wanted.decision) {
+    log.debug("Leaving runCase().");
     return { ok: false,
              why: 'expected ' + wanted.decision + ', got ' + actual.decision +
                   (actual.status && actual.status.message
@@ -191,8 +218,10 @@ function runCase(testCase) {
   }
   const obligationVerdict = compareObligations(wanted, actual);
   if (!obligationVerdict.ok) {
+    log.debug("Leaving runCase().");
     return obligationVerdict;
   }
+  log.debug("Leaving runCase().");
   return { ok: true, why: actual.decision };
 }
 
@@ -201,6 +230,7 @@ function runCase(testCase) {
 // lists as not schema-valid, and failing on those would be failing on the
 // fixture rather than on the engine.
 function compareObligations(wanted, actual) {
+  log.debug("Entering compareObligations().");
   const expectedIds = (wanted.obligations || []).map(function (item) {
     return item.id;
   }).sort();
@@ -209,10 +239,12 @@ function compareObligations(wanted, actual) {
   }).sort();
   if (expectedIds.length !== actualIds.length ||
       expectedIds.join('|') !== actualIds.join('|')) {
+    log.debug("Leaving compareObligations().");
     return { ok: false,
              why: 'obligations differ: expected [' + expectedIds.join(', ') +
                   '], got [' + actualIds.join(', ') + ']' };
   }
+  log.debug("Leaving compareObligations().");
   return { ok: true };
 }
 
@@ -235,28 +267,34 @@ const GROUPS = [
 ];
 
 function groupOf(name) {
+  log.debug("Entering groupOf().");
   // Longest prefix first, so that `IIIA001` is not filed under `IIA`.
   const sorted = GROUPS.slice().sort(function (a, b) {
     return b.prefix.length - a.prefix.length;
   });
   for (let i = 0; i < sorted.length; i += 1) {
     if (name.indexOf(sorted[i].prefix) === 0) {
+      log.debug("Leaving groupOf().");
       return sorted[i];
     }
   }
+  log.debug("Leaving groupOf().");
   return { prefix: 'other', what: 'ungrouped' };
 }
 
 function checkManifest(t) {
+  log.debug("Entering checkManifest().");
   const report = MANIFEST.check();
   t.check(report.ok,
           'the vendored conformance suite is intact and unedited',
           report.ok ? MANIFEST.TREES[0].cases + ' mandatory cases'
                     : report.problems.join('; '));
+  log.debug("Leaving checkManifest().");
   return report.ok;
 }
 
 function runMandatory(t) {
+  log.debug("Entering runMandatory().");
   const root = path.join(SUITE, 'mandatory');
   const names = fs.readdirSync(root).filter(function (entry) {
     return fs.statSync(path.join(root, entry)).isDirectory();
@@ -343,15 +381,19 @@ function runMandatory(t) {
                              : MANIFEST.EXPECTED_FAILURES.length +
                                ' recorded, all still failing for their ' +
                                'recorded reason');
+  log.debug("Leaving runMandatory().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   if (!checkManifest(t)) {
+    log.debug("Leaving run().");
     // Without an intact suite the counts below would be meaningless, and a
     // percentage of an unknown denominator is worse than no percentage.
     return;
   }
   runMandatory(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

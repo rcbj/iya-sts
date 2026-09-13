@@ -8,14 +8,14 @@
 //
 // NOTE ON THE DEPENDENCY, because it is unlike every other one here. `ldapjs`
 // resolves to `./node-ldapjs`, a git submodule pinned to rcbj/node-ldapjs — see
-// the `file:node-ldapjs` entry in package.json. Two consequences follow and both
-// have already been paid for once:
+// the `file:node-ldapjs` entry in package.json. Two consequences follow and
+// both have already been paid for once:
 //
 //   * `git clone` of this repository does not bring it. `git submodule update
 //     --init --recursive` does, and the parent project's launchers pass
 //     --recursive for exactly this reason. An uninitialised submodule is an
-//     EMPTY DIRECTORY, so the failure is `Cannot find module 'ldapjs'` from this
-//     file — which names a package rather than a submodule.
+//     EMPTY DIRECTORY, so the failure is `Cannot find module 'ldapjs'` from
+//     this file — which names a package rather than a submodule.
 //   * `npm install` on a `file:` dependency installs that package's
 //     devDependencies too (tap, eslint and their trees — 200 packages and a
 //     dozen advisories that have nothing to do with this service). Install with
@@ -41,14 +41,14 @@
 // nobody": it is this service's standing convention, the same string the
 // password grant, WS-Trust and the WS-Federation sign-in screen already reject,
 // and it exists so that a negative test has something to fail on. A directory
-// that could not produce a 49 would make "the bind failed" untestable, and 49 is
-// the result code an LDAP client's error handling is built around.
+// that could not produce a 49 would make "the bind failed" untestable, and 49
+// is the result code an LDAP client's error handling is built around.
 //
 // It is SCHEMALESS on purpose. No objectClass is enforced, no attribute is
 // checked against a syntax, and `must`/`may` are not consulted — so a debugger
-// can add an entry with whatever attributes it wants and see them come back.
-// A real directory would refuse most of that, and where the difference matters
-// (a missing objectClass, an unknown attribute type) it is a difference a reader
+// can add an entry with whatever attributes it wants and see them come back. A
+// real directory would refuse most of that, and where the difference matters (a
+// missing objectClass, an unknown attribute type) it is a difference a reader
 // should be told about rather than one this mock should hide by inventing a
 // schema of its own. GET /admin/ldap/service says so on the page.
 //
@@ -60,24 +60,24 @@
 //     write its first entry into a real directory and not understand the error.
 //   * a delete of an entry that HAS CHILDREN is LDAP_NOT_ALLOWED_ON_NONLEAF
 //     (66), for the same reason.
-//   * a modify naming an attribute that is not there is
-//     LDAP_NO_SUCH_ATTRIBUTE (16) for `delete` and `replace`-with-values-absent,
-//     and succeeds for `add`.
+//   * a modify naming an attribute that is not there is LDAP_NO_SUCH_ATTRIBUTE
+//     (16) for `delete` and `replace`-with-values-absent, and succeeds for
+//     `add`.
 //   * ONE ENTRY PER PERSON: an add under `ou=users` whose username is already
 //     here is LDAP_ENTRY_ALREADY_EXISTS (68), naming the entry that holds it.
 //     This one is not a protocol rule — LDAP has no notion of a username, and a
-//     real directory gets this from a uniqueness constraint in its schema, which
-//     is exactly the subsystem this mock does not have. It is enforced because
-//     every OTHER door onto this container now folds onto one entry per person
-//     (see existingUserEntry()), and a directory that let an `ldapadd` undo that
-//     in one operation would be keeping the rule nowhere.
+//     real directory gets this from a uniqueness constraint in its schema,
+//     which is exactly the subsystem this mock does not have. It is enforced
+//     because every OTHER door onto this container now folds onto one entry per
+//     person (see existingUserEntry()), and a directory that let an `ldapadd`
+//     undo that in one operation would be keeping the rule nowhere.
 //
 // And one that is NOT enforced, stated here rather than discovered: deleting a
-// user does not remove it from the groups that list it as a `member`. Referential
-// integrity is a feature of some directories and not of the protocol; OpenLDAP
-// needs an overlay for it and Active Directory does it in the DSA. Leaving the
-// dangling member is the honest default and is what a `member`-based group search
-// will then show.
+// user does not remove it from the groups that list it as a `member`.
+// Referential integrity is a feature of some directories and not of the
+// protocol; OpenLDAP needs an overlay for it and Active Directory does it in
+// the DSA. Leaving the dangling member is the honest default and is what a
+// `member`-based group search will then show.
 //
 // ---------------------------------------------------------------------------
 // AN LDAP OBJECT FOR EVERY USER WHO AUTHENTICATES.
@@ -86,14 +86,16 @@
 // `uid=<name>,ou=users,<base>` entry the first time a person authenticates
 // ANYWHERE in this service — the OAuth2 login screen, WS-Trust, WS-Federation,
 // a Kerberos AS-REQ, a WebAuthn assertion. That is one hook and not twelve,
-// because `admin_stats.recordAuthentication()` is already the single funnel every
-// one of those call sites goes through at the moment the credential is ACCEPTED.
+// because `admin_stats.recordAuthentication()` is already the single funnel
+// every one of those call sites goes through at the moment the credential is
+// ACCEPTED.
 //
-// The hook is INVERTED for the reason helpers.js's setJwtRecorder is: this module
-// requires admin_stats.js (it needs the identity normalisation), so admin_stats.js
-// cannot require this one back without a cycle, and a cycle in node hands back a
-// half-initialised module whose exports are undefined. So admin_stats.js offers a
-// slot and this file installs itself in it at require time.
+// The hook is INVERTED for the reason helpers.js's setJwtRecorder is: this
+// module requires admin_stats.js (it needs the identity normalisation), so
+// admin_stats.js cannot require this one back without a cycle, and a cycle in
+// node hands back a half-initialised module whose exports are undefined. So
+// admin_stats.js offers a slot and this file installs itself in it at require
+// time.
 //
 // Two identities are skipped, and both are deliberate:
 //
@@ -103,27 +105,27 @@
 //     any other authentication; it just does not seed an entry.
 //   * an OAuth CLIENT (client_credentials, client authentication at the token
 //     endpoint). A client is not a person, and `ou=users` is for people. The
-//     admin console makes the same distinction with its `isClient` flag, which is
-//     what this reads.
+//     admin console makes the same distinction with its `isClient` flag, which
+//     is what this reads.
 //
 // And ONE identity is not a name at all: a verified TLS CLIENT CERTIFICATE. Its
 // subject is already a DN, so it does not become `uid=<name>` — see
 // certificatePlan() for where it goes instead and what that costs. It arrives
-// through the same observer as everything else, with the certificate's own facts
-// riding along beside the identity.
+// through the same observer as everything else, with the certificate's own
+// facts riding along beside the identity.
 //
 // ONE ENTRY PER PERSON, HOWEVER MANY WAYS THEY GET IN. `rcbj` signing in at the
-// login screen, `urn:sts:user:rcbj` in a token, `rcbj@STS.MOCK` in a
-// Kerberos AS-REQ and `rcbj` on a WS-Security UsernameToken have always been one
-// entry — identityOf() in admin_stats.js normalises all four to one key before
-// this hook ever sees them. What did NOT fold was the identity that is a DN
-// rather than a name, and now does: a certificate saying `CN=rcbj` lands on the
-// entry rcbj already has, and a password sign-in after a handshake lands on the
-// one the certificate made. existingUserEntry() is the whole of it, and the same
+// login screen, `urn:sts:user:rcbj` in a token, `rcbj@STS.MOCK` in a Kerberos
+// AS-REQ and `rcbj` on a WS-Security UsernameToken have always been one entry —
+// identityOf() in admin_stats.js normalises all four to one key before this
+// hook ever sees them. What did NOT fold was the identity that is a DN rather
+// than a name, and now does: a certificate saying `CN=rcbj` lands on the entry
+// rcbj already has, and a password sign-in after a handshake lands on the one
+// the certificate made. existingUserEntry() is the whole of it, and the same
 // function answers at the other two doors — an `ldapadd` under `ou=users` and
-// createUser(), which the console and the management API share. A DID is the one
-// identity that names nobody by itself and so cannot generally fold; where this
-// service KNOWS whose it is, it does. See didPlan().
+// createUser(), which the console and the management API share. A DID is the
+// one identity that names nobody by itself and so cannot generally fold; where
+// this service KNOWS whose it is, it does. See didPlan().
 // ---------------------------------------------------------------------------
 
 // For one thing only: the short, stable uid a DID-named entry is placed at.
@@ -215,10 +217,10 @@ const xacmlPip = require('../xacml/xacml_pip');
 // requires helpers.js and config.js only, so it can be reached from the deepest
 // module here without dragging a graph behind it.
 //
-// This is the module with the MOST recording sites in the service — one per LDAP
-// operation, seven of them — and unlike the HTTP call log there is no single
-// funnel to put them behind: ldapjs dispatches straight into the handler for
-// each operation, and what an audit row has to say differs per operation (a
+// This is the module with the MOST recording sites in the service — one per
+// LDAP operation, seven of them — and unlike the HTTP call log there is no
+// single funnel to put them behind: ldapjs dispatches straight into the handler
+// for each operation, and what an audit row has to say differs per operation (a
 // modify names its changed attributes, a search names how many entries came
 // back). What IS written once is the rule that decides whether an add is a
 // user, a group or something else, and that lives in audit.directoryActionFor()
@@ -227,10 +229,11 @@ const audit = require('../common/audit');
 // Every refusal an LDAP handler answers, and every failure this module has on
 // its own, carries an STS-LDAP-* code — see common/error_codes.js. A leaf.
 const errorCodes = require('../common/error_codes');
-// The admin console, for ONE reason: to hand it the reader below so that a user's
-// page can show that user's directory entry. It is required here rather than the
-// other way round because server.js requires ./admin BEFORE this module (rule 6),
-// so admin.js must not require this one back — see the note above objectFor().
+// The admin console, for ONE reason: to hand it the reader below so that a
+// user's page can show that user's directory entry. It is required here rather
+// than the other way round because server.js requires ./admin BEFORE this
+// module (rule 6), so admin.js must not require this one back — see the note
+// above objectFor().
 const admin = require('../admin-ui/admin');
 // THE PAGING HELPERS MOVED ON 2026-09-12. `pagedRows()` and `pagingJson()`
 // went to the read layer with the views that use them — they are pure
@@ -262,12 +265,13 @@ const adminViews = require('../admin-core/admin_views');
 const tlsServer = require('../tls/tls_server');
 // WHICH attributes a person's entry should carry so that the credentials this
 // service issues have something to say, and what to invent for them. Another
-// plain require and not a third inversion, for the same reasons as tls_server.js
-// above: vc_claims.js is a LIBRARY — it registers no route, so requiring it adds
-// nothing to the express router and cannot reorder /admin/sts-metadata — and it
-// requires only helpers.js, so there is no cycle to make. The traffic in the
-// other direction, this module's two functions that IT calls, does go through a
-// slot: see the setDirectory() install further down.
+// plain require and not a third inversion, for the same reasons as
+// tls_server.js above: vc_claims.js is a LIBRARY — it registers no route, so
+// requiring it adds nothing to the express router and cannot reorder
+// /admin/sts-metadata — and it requires only helpers.js, so there is no cycle
+// to make. The traffic in the other direction, this module's two functions that
+// IT calls, does go through a slot: see the setDirectory() install further
+// down.
 const vcClaims = require('../oid4vc/vc_claims');
 
 // The groups claim: which directory groups reach an access token, an ID Token
@@ -284,10 +288,11 @@ const groupClaims = require('../common/group_claims');
 // repository's, and this file fills its directory slot below — a require in
 // the other direction would drag every /ldap route to the front of the router.
 const roles = require('../common/roles');
-// The admin console's two roles, which are two groups in THIS directory. Required
-// outright rather than through a slot in the other direction because it registers
-// no route (rule 3), so nothing about the require order changes by naming it here;
-// the slot below is what carries this module's functions the other way.
+// The admin console's two roles, which are two groups in THIS directory.
+// Required outright rather than through a slot in the other direction because
+// it registers no route (rule 3), so nothing about the require order changes by
+// naming it here; the slot below is what carries this module's functions the
+// other way.
 const adminRbac = require('../admin-ui/admin_rbac');
 // WHAT A PERSON AGREED AN APPLICATION MAY ASK FOR ON THEIR BEHALF. Required
 // outright for `groupClaims`'s reason and with the same traffic in the other
@@ -332,12 +337,13 @@ const krb5PersonKeys = require('../kerberos/krb5_person_keys');
 const LDAP_PORT = config.value('ldap.port');
 
 // The LDAPS port. 636 is the IANA-assigned one for LDAP over TLS and, like 389,
-// it is privileged — so the container binds it and a host run usually cannot.
-// A failure to bind is RECORDED and published on GET /admin/ldap/service exactly as the plain
-// listener's is, and it is not fatal to the plain listener: the two sockets are
-// started independently and either can be up while the other is not, which is
-// the commonest outcome of a host run and is why they have separate state
-// below rather than one `listening` flag that would have to lie about one.
+// it is privileged — so the container binds it and a host run usually cannot. A
+// failure to bind is RECORDED and published on GET /admin/ldap/service exactly
+// as the plain listener's is, and it is not fatal to the plain listener: the
+// two sockets are started independently and either can be up while the other is
+// not, which is the commonest outcome of a host run and is why they have
+// separate state below rather than one `listening` flag that would have to lie
+// about one.
 //
 // Two ports rather than StartTLS, and that is not a preference: StartTLS is an
 // EXTENDED OPERATION (RFC 4511 section 4.14) that upgrades a connection already
@@ -372,15 +378,16 @@ const LDAPS_PORT = config.value('ldap.tlsPort');
 // read that realm, which is the same sentence as before and now the only way.
 //
 // **WHY A SUBTREE RATHER THAN A PARTITIONED STORE.** The realm is ambient in an
-// AsyncLocalStorage that `app.js`'s first middleware enters, and that middleware
-// runs on an HTTP request. **LDAP has no HTTP request.** An `ldapsearch` arrives
-// on 389 carrying a bind DN and a base DN and nothing else — no path, no header,
-// nowhere to put a realm segment — so if the partition were a Map per realm,
-// selected by an ambient value, an LDAP client could never reach any realm but
-// the default one. Putting the realm IN THE DN is what makes
-// `ldapsearch -b "dc=acme,dc=example,dc=com"` mean what it says, and it is the
-// only shape that does. One Map keyed by DN also leaves `groupIndexNow()`, the
-// root DSE and every containment check exactly as they were.
+// AsyncLocalStorage that `app.js`'s first middleware enters, and that
+// middleware runs on an HTTP request. **LDAP has no HTTP request.** An
+// `ldapsearch` arrives on 389 carrying a bind DN and a base DN and nothing else
+// — no path, no header, nowhere to put a realm segment — so if the partition
+// were a Map per realm, selected by an ambient value, an LDAP client could
+// never reach any realm but the default one. Putting the realm IN THE DN is
+// what makes `ldapsearch -b "dc=acme,dc=example,dc=com"` mean what it says, and
+// it is the only shape that does. One Map keyed by DN also leaves
+// `groupIndexNow()`, the root DSE and every containment check exactly as they
+// were.
 //
 // The alternative considered and rejected was a LISTENER per realm. It isolates
 // just as well and it costs the thing this feature is for: a port is bound when
@@ -413,9 +420,12 @@ const REALM_RDN_TYPE = (function () {
 // default-realm pinning the admin console needs, and by every page that lists
 // what a realm owns.
 function realmBaseDn(id) {
+  log.debug("Entering realmBaseDn().");
   if (!id || id === realms.DEFAULT_ID) {
+    log.debug("Leaving realmBaseDn().");
     return ROOT_DN;
   }
+  log.debug("Leaving realmBaseDn().");
   return REALM_RDN_TYPE + '=' + id + ',' + ROOT_DN;
 }
 
@@ -444,6 +454,8 @@ function realmBaseDn(id) {
 // protocol with no way to ask a directory to compute something.
 // ===========================================================================
 function crlContainerDn(scopeId) {
+  log.debug("Entering crlContainerDn().");
+  log.debug("Leaving crlContainerDn().");
   return 'ou=crl,' + realmBaseDn(scopeIdToRealm(scopeId));
 }
 
@@ -452,10 +464,13 @@ function crlContainerDn(scopeId) {
 // realm's subtree: it is the one every process has, and a client fetching the
 // Root's CRL has no realm to be in.
 function scopeIdToRealm(scopeId) {
+  log.debug("Entering scopeIdToRealm().");
   const id = String(scopeId || '');
   if (id === '*service' || id === '*process') {
+    log.debug("Leaving scopeIdToRealm().");
     return realms.DEFAULT_ID;
   }
+  log.debug("Leaving scopeIdToRealm().");
   return id || realms.DEFAULT_ID;
 }
 
@@ -492,11 +507,12 @@ function publishCrl(scopeId, caId, der) {
       // `ldapsearch` for `certificateRevocationList` and NOT the one the
       // certificate names, which is a fetch that succeeds and returns nothing.
       'certificateRevocationList;binary': [der.toString('base64')],
-      description: ['The CRL signed by the "' + String(caId) + '" certificate ' +
-                    'authority of the "' + String(scopeId || 'default') +
+      description: ['The CRL signed by the "' + String(caId) + '" ' +
+                    'certificate authority of the ' +
+                    '"' + String(scopeId || 'default') +
                     '" scope. Republished on every revocation and at every ' +
-                    'start; the register in the keystore row is the truth and ' +
-                    'this is a cache of what it currently signs.']
+                    'start; the register in the keystore row is the truth ' +
+                    'and this is a cache of what it currently signs.']
     }, { origin: 'pki' });
     log.debug('Leaving publishCrl(). ' + dn + ', ' + der.length + ' bytes.');
     return true;
@@ -520,6 +536,8 @@ function publishCrl(scopeId, caId, der) {
 // same reason: one place that knows about realms, and a hundred call sites that
 // do not.
 function baseDn() {
+  log.debug("Entering baseDn().");
+  log.debug("Leaving baseDn().");
   return realmBaseDn(realms.currentId());
 }
 
@@ -527,16 +545,22 @@ function baseDn() {
 // configured: two values that could disagree with the base would produce
 // entries in a tree nobody is searching.
 function usersDn() {
+  log.debug("Entering usersDn().");
+  log.debug("Leaving usersDn().");
   return 'ou=users,' + baseDn();
 }
 
 function groupsDn() {
+  log.debug("Entering groupsDn().");
+  log.debug("Leaving groupsDn().");
   return 'ou=groups,' + baseDn();
 }
 
 // The third container, and the one whose entries are a REGISTRY rather than a
 // description of one. See the applications section further down.
 function applicationsDn() {
+  log.debug("Entering applicationsDn().");
+  log.debug("Leaving applicationsDn().");
   return 'ou=applications,' + baseDn();
 }
 
@@ -549,6 +573,8 @@ function applicationsDn() {
 // that consume what it issues would make the one question ou=applications
 // exists to answer unanswerable.
 function federationsDn() {
+  log.debug("Entering federationsDn().");
+  log.debug("Leaving federationsDn().");
   return 'ou=federations,' + baseDn();
 }
 
@@ -557,18 +583,22 @@ function federationsDn() {
 // rather than a table of its own, and owns the schema for what an entry here
 // carries.
 function policiesDn() {
+  log.debug("Entering policiesDn().");
+  log.debug("Leaving policiesDn().");
   return 'ou=policies,' + baseDn();
 }
 
-// ou=roles IS the role register. A container of its own rather than a corner
-// of ou=groups, and the difference is not filing: a GROUP is a set of PEOPLE,
-// and a role is a name that a person, a group OR AN APPLICATION may hold. The
-// third one is what makes them different kinds of thing — `client_credentials`
-// has no person in it, and an application holding a role is the only way there
-// is anything to decide about that grant. Folding roles into ou=groups would
-// mean every reader of ou=groups had to filter out the entries that are not
-// sets of people. `common/roles.js` holds the schema; /admin/roles publishes it.
+// ou=roles IS the role register. A container of its own rather than a corner of
+// ou=groups, and the difference is not filing: a GROUP is a set of PEOPLE, and
+// a role is a name that a person, a group OR AN APPLICATION may hold. The third
+// one is what makes them different kinds of thing — `client_credentials` has no
+// person in it, and an application holding a role is the only way there is
+// anything to decide about that grant. Folding roles into ou=groups would mean
+// every reader of ou=groups had to filter out the entries that are not sets of
+// people. `common/roles.js` holds the schema; /admin/roles publishes it.
 function rolesDn() {
+  log.debug("Entering rolesDn().");
+  log.debug("Leaving rolesDn().");
   return 'ou=roles,' + baseDn();
 }
 
@@ -581,6 +611,8 @@ function rolesDn() {
 // answer by making every reader filter. `xacml/xacml_pep_registry.js` owns the
 // schema.
 function pepsDn() {
+  log.debug("Entering pepsDn().");
+  log.debug("Leaving pepsDn().");
   return 'ou=peps,' + baseDn();
 }
 
@@ -598,14 +630,19 @@ function pepsDn() {
 // restart and reaches every other front process with no mechanism written for
 // it. The keystore's row family was the alternative and it is product-only and
 // never adopted across processes; an appconfig override was the other, and a
-// bundle of PEM blocks is not a setting. `tls/tls_server.js` owns what an anchor
-// IS; this container is only where one is written down. Anchors read from
-// `tls.trustAnchorsFile` are NOT written here: they come back from the file.
+// bundle of PEM blocks is not a setting. `tls/tls_server.js` owns what an
+// anchor IS; this container is only where one is written down. Anchors read
+// from `tls.trustAnchorsFile` are NOT written here: they come back from the
+// file.
 function trustAnchorsDn() {
+  log.debug("Entering trustAnchorsDn().");
+  log.debug("Leaving trustAnchorsDn().");
   return 'ou=trustAnchors,' + baseDn();
 }
 
 function trustAnchorDn(fingerprint) {
+  log.debug("Entering trustAnchorDn().");
+  log.debug("Leaving trustAnchorDn().");
   return 'cn=' + escapeDnValue(String(fingerprint)) + ',' + trustAnchorsDn();
 }
 
@@ -617,6 +654,8 @@ function trustAnchorDn(fingerprint) {
 // container. The name is `ou=policies` in OpenLDAP's own ppolicy examples and
 // could not be here. `common/password_policy.js` owns the schema.
 function passwordPoliciesDn() {
+  log.debug("Entering passwordPoliciesDn().");
+  log.debug("Leaving passwordPoliciesDn().");
   return 'ou=passwordPolicies,' + baseDn();
 }
 
@@ -629,14 +668,20 @@ function passwordPoliciesDn() {
 // structural here, because a registration entry and an attested agent share no
 // attributes at all.
 function spiffeDn() {
+  log.debug("Entering spiffeDn().");
+  log.debug("Leaving spiffeDn().");
   return 'ou=spiffe,' + baseDn();
 }
 
 function spiffeEntriesDn() {
+  log.debug("Entering spiffeEntriesDn().");
+  log.debug("Leaving spiffeEntriesDn().");
   return 'ou=entries,' + spiffeDn();
 }
 
 function spiffeAgentsDn() {
+  log.debug("Entering spiffeAgentsDn().");
+  log.debug("Leaving spiffeAgentsDn().");
   return 'ou=agents,' + spiffeDn();
 }
 
@@ -652,6 +697,8 @@ function spiffeAgentsDn() {
 // the right shape for a policy that a mode tightens: the AND cannot be
 // loosened by editing configuration.
 function autocreateUsers() {
+  log.debug("Entering autocreateUsers().");
+  log.debug("Leaving autocreateUsers().");
   return mode.autoCreates() && config.value('ldap.autocreateUsers');
 }
 
@@ -659,14 +706,15 @@ function autocreateUsers() {
 // convention rather than an authentication policy.
 //
 // **REFUSED IN BOTH MODES, DELIBERATELY, AND NOT A HARD-CODED BACKDOOR TO
-// REMOVE.** `common/credentials.js` refuses the same literal (`RESERVED_REFUSAL`)
-// before it looks at any store, at every door that takes a password. In
-// development it is what makes result code 49 reachable at all, since nothing
-// else is checked. In product mode it changes nothing an attacker can use: it
-// can only turn a bind that would have been verified into a REFUSAL, never a
-// refusal into a success — so the one effect is that nobody can hold "invalid"
-// as a real password, which is a password nobody should hold. Keeping it in both
-// modes means a negative test means the same thing against either.
+// REMOVE.** `common/credentials.js` refuses the same literal
+// (`RESERVED_REFUSAL`) before it looks at any store, at every door that takes a
+// password. In development it is what makes result code 49 reachable at all,
+// since nothing else is checked. In product mode it changes nothing an attacker
+// can use: it can only turn a bind that would have been verified into a
+// REFUSAL, never a refusal into a success — so the one effect is that nobody
+// can hold "invalid" as a real password, which is a password nobody should
+// hold. Keeping it in both modes means a negative test means the same thing
+// against either.
 const REFUSED_PASSWORD = 'invalid';
 
 // The characters RFC 4514 reserves in a DN value. See nameUsableInDn() for why
@@ -678,6 +726,8 @@ const DN_RESERVED = /[,=+<>#;"\\]/;
 // memory leak with a protocol in front of it. When it is reached, new entries
 // are refused with LDAP_ADMIN_LIMIT_EXCEEDED rather than silently dropped.
 function maxEntries() {
+  log.debug("Entering maxEntries().");
+  log.debug("Leaving maxEntries().");
   return config.value('ldap.maxEntries');
 }
 
@@ -691,6 +741,8 @@ function maxEntries() {
 // dropped the oldest entry to make room would be the worst possible one. Read
 // per call, like every other runtime setting.
 function maxApplications() {
+  log.debug("Entering maxApplications().");
+  log.debug("Leaving maxApplications().");
   return config.value('applications.max');
 }
 
@@ -700,39 +752,50 @@ function maxApplications() {
 // lost, and an evicted federation relationship is a partner that silently
 // stopped being trusted.
 function maxFederations() {
+  log.debug("Entering maxFederations().");
+  log.debug("Leaving maxFederations().");
   return config.value('federation.max');
 }
 
 function maxPolicies() {
+  log.debug("Entering maxPolicies().");
+  log.debug("Leaving maxPolicies().");
   return config.value('xacml.maxPolicies');
 }
 
 function maxRoles() {
+  log.debug("Entering maxRoles().");
+  log.debug("Leaving maxRoles().");
   return config.value('roles.maxRoles');
 }
 
 function maxPeps() {
+  log.debug("Entering maxPeps().");
+  log.debug("Leaving maxPeps().");
   return config.value('xacml.maxPeps');
 }
 
 function maxSearchResults() {
+  log.debug("Entering maxSearchResults().");
+  log.debug("Leaving maxSearchResults().");
   return config.value('ldap.sizeLimit');
 }
 
 // Whether the socket is up, and on which port. Declared HERE, beside the other
 // module state, rather than beside listen() where it is written: the HTTP views
-// read it, they are registered above listen(), and a `let` further down the file
-// is in the temporal dead zone until module evaluation reaches it. Nothing calls
-// those views during evaluation, so it works either way — but a reader should
-// not have to establish that. `boundPort` starts at the configured value so the
-// page is not wrong before listen() has run; it is replaced with the port that
-// was actually bound, which differs when LDAP_PORT is 0.
+// read it, they are registered above listen(), and a `let` further down the
+// file is in the temporal dead zone until module evaluation reaches it. Nothing
+// calls those views during evaluation, so it works either way — but a reader
+// should not have to establish that. `boundPort` starts at the configured value
+// so the page is not wrong before listen() has run; it is replaced with the
+// port that was actually bound, which differs when LDAP_PORT is 0.
 let listening = false;
 let listenError = '';
 let boundPort = LDAP_PORT;
-// The LDAPS listener's own three. Separate rather than a flag on the ones above,
-// for the reason LDAPS_PORT gives: "389 is up and 636 is not" is a state a host
-// run reaches almost every time, and a single pair could only report one of them.
+// The LDAPS listener's own three. Separate rather than a flag on the ones
+// above, for the reason LDAPS_PORT gives: "389 is up and 636 is not" is a state
+// a host run reaches almost every time, and a single pair could only report one
+// of them.
 let tlsListening = false;
 let tlsListenError = '';
 let boundTlsPort = LDAPS_PORT;
@@ -772,8 +835,8 @@ let boundTlsPort = LDAPS_PORT;
 // discriminator beside the DN and one more thing every client has to be told.
 // An ldapjs `Server` per realm behind one socket does not work at all: the
 // discriminator lives inside the protocol, per operation, and a Server owns its
-// net.Server. Attribute names are stored in lower case because that is
-// what arrives — @ldapjs/attribute lower-cases a type on the way in, so an entry
+// net.Server. Attribute names are stored in lower case because that is what
+// arrives — @ldapjs/attribute lower-cases a type on the way in, so an entry
 // added as `objectClass` comes back as `objectclass` — and because LDAP
 // attribute descriptions are case-insensitive anyway. What is lost by that is
 // only how the name LOOKED, which is why CANONICAL_NAMES exists: a debugger
@@ -787,10 +850,12 @@ const entries = realms.map();
 // `ldap.maxEntries` ceiling. See the block above — the cap is on what this
 // process holds in memory, so it has to see all of it.
 function totalEntries() {
+  log.debug("Entering totalEntries().");
   let n = 0;
   realms.list().forEach(function (realm) {
     n += entries.realmMap(realm.id).size;
   });
+  log.debug("Leaving totalEntries().");
   return n;
 }
 
@@ -804,9 +869,11 @@ function totalEntries() {
 // segment no realm claims, answers the default realm. A DN outside the naming
 // context never reaches here — the handlers refuse it first.
 function realmFor(dn) {
+  log.debug("Entering realmFor().");
   let best = realms.DEFAULT_REALM;
   let bestLength = ROOT_DN.length;
   if (!realms.active()) {
+    log.debug("Leaving realmFor().");
     return best;
   }
   realms.list().forEach(function (realm) {
@@ -818,6 +885,7 @@ function realmFor(dn) {
       bestLength = candidate.length;
     }
   });
+  log.debug("Leaving realmFor().");
   return best;
 }
 
@@ -825,6 +893,8 @@ function realmFor(dn) {
 // with the DN it was given. One function so that "which store does this
 // operation touch" has one answer and one place to read it.
 function inRealmOf(dn, fn) {
+  log.debug("Entering inRealmOf().");
+  log.debug("Leaving inRealmOf().");
   return realms.run(realmFor(dn), fn);
 }
 
@@ -895,6 +965,8 @@ let directoryVersion = 0;
 // console). Nothing ldapjs encodes and no JSON serialisation reads a Symbol, so
 // what a client receives is unchanged.
 function coded(code, err) {
+  log.debug("Entering coded().");
+  log.debug("Leaving coded().");
   return errorCodes.mark(err, code);
 }
 
@@ -911,11 +983,13 @@ function refuseNulValues(type, values) {
         'reads as shorter than the other half is worse than no value at all.'));
     }
   }
-  log.debug('Leaving refuseNulValues(). ' + values.length + ' value(s) are clean.');
+  log.debug('Leaving refuseNulValues(). ' + values.length + ' value(s) are ' +
+      'clean.');
   return null;
 }
 
 function touchDirectory(dn) {
+  log.debug("Entering touchDirectory().");
   directoryVersion++;
   // WHERE IT LANDED, when the caller said so. See subtreeClocks() below: a
   // caller that names the DN it wrote lets a listing of some OTHER container
@@ -959,6 +1033,7 @@ function touchDirectory(dn) {
   // once, in the module that owns the key form — rather than trusted to
   // thirty callers.
   persistence.directoryChanged(dn ? normalizeDn(dn) : undefined);
+  log.debug("Leaving touchDirectory().");
 }
 
 // ---------------------------------------------------------------------------
@@ -982,7 +1057,9 @@ function touchDirectory(dn) {
 // lookup, and only the split makes both true by construction.
 // ---------------------------------------------------------------------------
 function eachEntryInRealm(fn) {
+  log.debug("Entering eachEntryInRealm().");
   entries.forEach(fn);
+  log.debug("Leaving eachEntryInRealm().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1007,11 +1084,11 @@ function eachEntryInRealm(fn) {
 //
 // **IT IS MAINTAINED INCREMENTALLY, WHICH `groupIndexNow()` DELIBERATELY IS
 // NOT, and the difference is the shape of the load rather than a change of
-// mind.** A group index is read once per token and written rarely, so rebuilding
-// it on the first read after any write costs nothing. A username index is read
-// and written by the SAME operation — a create asks it, is told no, and then
-// adds to it — so a rebuild-on-write cache would rebuild once per create and
-// leave the quadratic exactly where it was.
+// mind.** A group index is read once per token and written rarely, so
+// rebuilding it on the first read after any write costs nothing. A username
+// index is read and written by the SAME operation — a create asks it, is told
+// no, and then adds to it — so a rebuild-on-write cache would rebuild once per
+// create and leave the quadratic exactly where it was.
 //
 // **AND A STALE ANSWER IS STILL IMPOSSIBLE, BY THE MECHANISM THAT WAS ALREADY
 // THERE.** The cache carries the `directoryVersion` it is current for, and
@@ -1046,6 +1123,7 @@ const usernameIndexes = realms.keyed(function () {
 // `uid: alice` was found under either, and an index holding one of them would
 // have quietly narrowed the rule it is enforcing.
 function usernameKeysOf(entry) {
+  log.debug("Entering usernameKeysOf().");
   const names = (entry.attributes.uid || []).concat([usernameOfEntry(entry)]);
   const out = [];
   names.forEach(function (value) {
@@ -1054,6 +1132,7 @@ function usernameKeysOf(entry) {
       out.push(key);
     }
   });
+  log.debug("Leaving usernameKeysOf().");
   return out;
 }
 
@@ -1084,15 +1163,18 @@ function buildUsernameIndex() {
 
 // The index, rebuilt if anything has been written since it was made.
 function usernameIndexNow() {
+  log.debug("Entering usernameIndexNow().");
   const cache = usernameIndexes();
   const container = normalizeDn(usersDn());
   if (cache.index && cache.version === directoryVersion &&
       cache.usersDn === container) {
+    log.debug("Leaving usernameIndexNow().");
     return cache.index;
   }
   cache.index = buildUsernameIndex();
   cache.version = directoryVersion;
   cache.usersDn = container;
+  log.debug("Leaving usernameIndexNow().");
   return cache.index;
 }
 
@@ -1153,7 +1235,8 @@ function noteUsernameIndexPut(stored, hadNames, wasCurrent) {
   // Current again — including for an entry that put no name in it, which is
   // still a write this index is unaffected by.
   cache.version = directoryVersion;
-  log.debug('Leaving noteUsernameIndexPut(). ' + cache.index.size + ' name(s).');
+  log.debug('Leaving noteUsernameIndexPut(). ' + cache.index.size +
+            ' name(s).');
 }
 
 // An entry that was ALREADY in the store and has GAINED a name — which is the
@@ -1170,53 +1253,55 @@ function noteUsernameIndexPut(stored, hadNames, wasCurrent) {
 // ---------------------------------------------------------------------------
 // WHERE THE LAST WRITE LANDED, AND WHY THAT IS WORTH KEEPING.
 //
-// Three functions here answer "every entry under this container" — allPolicies(),
-// allRoles() and applicationEntry()'s fallback — and each did it by walking the
-// WHOLE REALM and testing every entry with isUnder(). The containers are tiny: a
-// handful of policies, a handful of roles, a few dozen applications. The realm is
-// not.
+// Three functions here answer "every entry under this container" —
+// allPolicies(), allRoles() and applicationEntry()'s fallback — and each did it
+// by walking the WHOLE REALM and testing every entry with isUnder(). The
+// containers are tiny: a handful of policies, a handful of roles, a few dozen
+// applications. The realm is not.
 //
 // **THEY ARE ON THE PER-REQUEST PATH**, because the XACML access gate asks for
 // the policies and the roles on every gated request, so every call to `/scim`,
 // `/admin`, `/admin-api`, `/portal` and `/xacml` walked the directory three
-// times. A CPU profile of five thousand SCIM creates put `normalizeDn` at 24% of
-// all non-idle time, called from those three walks and from the isUnder() beside
-// each of them — on a service whose store held a few dozen policies and roles
-// between them.
+// times. A CPU profile of five thousand SCIM creates put `normalizeDn` at 24%
+// of all non-idle time, called from those three walks and from the isUnder()
+// beside each of them — on a service whose store held a few dozen policies and
+// roles between them.
 //
 // ---------------------------------------------------------------------------
 // WHY THIS IS NOT KEYED ON `directoryVersion` LIKE THE USERNAME INDEX ABOVE.
 //
-// It cannot be, and the reason is the whole design. `directoryVersion` is bumped
-// by EVERY writer, so a policy listing keyed on it would be invalidated by every
-// person created — which is exactly the load these walks are expensive under. It
-// would have been a cache that is correct and worth nothing, which is the failure
-// this file has already had twice (see applyVcAttributes()'s note, and
-// populateVcAttributesAt()'s).
+// It cannot be, and the reason is the whole design. `directoryVersion` is
+// bumped by EVERY writer, so a policy listing keyed on it would be invalidated
+// by every person created — which is exactly the load these walks are expensive
+// under. It would have been a cache that is correct and worth nothing, which is
+// the failure this file has already had twice (see applyVcAttributes()'s note,
+// and populateVcAttributesAt()'s).
 //
 // So the clock is PER CONTAINER: a write records the version against every
 // ancestor of the DN it landed on, and a listing of `ou=policies` is current
 // until something is written under `ou=policies`. Creating five thousand people
-// bumps `ou=users` and the realm root five thousand times and does not touch the
-// policy container once.
+// bumps `ou=users` and the realm root five thousand times and does not touch
+// the policy container once.
 //
 // **INVALIDATION IS SAFE BY DEFAULT AND THAT IS LOAD-BEARING.** There are about
 // thirty callers of touchDirectory() in this file and they are held to the rule
-// by prose rather than by the compiler. A caller that says WHERE it wrote gets a
-// precise invalidation; **a caller that says nothing invalidates every container
-// at once**, which is what `everywhere` is. So the failure mode of forgetting to
-// annotate a writer — or of adding a new one — is a slower cache and never a
-// wrong answer, and only the two writers on the hot path are annotated at all.
+// by prose rather than by the compiler. A caller that says WHERE it wrote gets
+// a precise invalidation; **a caller that says nothing invalidates every
+// container at once**, which is what `everywhere` is. So the failure mode of
+// forgetting to annotate a writer — or of adding a new one — is a slower cache
+// and never a wrong answer, and only the two writers on the hot path are
+// annotated at all.
 //
-// Only ANCESTORS are recorded, never the DN written to itself: `subtreeVersion()`
-// is asked about containers, and recording every leaf would put one key in here
-// per entry in the directory for nothing.
+// Only ANCESTORS are recorded, never the DN written to itself:
+// `subtreeVersion()` is asked about containers, and recording every leaf would
+// put one key in here per entry in the directory for nothing.
 // ---------------------------------------------------------------------------
 const subtreeClocks = realms.keyed(function () {
   return { everywhere: 0, containers: new Map(), listings: new Map() };
 });
 
 function noteWriteUnder(dn) {
+  log.debug("Entering noteWriteUnder().");
   const clock = subtreeClocks();
   let key = normalizeDn(dn);
   let comma = key.indexOf(',');
@@ -1225,25 +1310,31 @@ function noteWriteUnder(dn) {
     clock.containers.set(key, directoryVersion);
     comma = key.indexOf(',');
   }
+  log.debug("Leaving noteWriteUnder().");
 }
 
 // A write whose location was not declared. Every container listing is stale
 // after this, which is the conservative answer and the one a writer gets for
 // free.
 function noteWriteAnywhere() {
+  log.debug("Entering noteWriteAnywhere().");
   subtreeClocks().everywhere = directoryVersion;
+  log.debug("Leaving noteWriteAnywhere().");
 }
 
 function subtreeVersion(containerDn) {
+  log.debug("Entering subtreeVersion().");
   const clock = subtreeClocks();
   const named = clock.containers.get(normalizeDn(containerDn)) || 0;
+  log.debug("Leaving subtreeVersion().");
   return named > clock.everywhere ? named : clock.everywhere;
 }
 
 // Every entry strictly under `containerDn`, kept until something is written
 // there. The rows are the LIVE stored objects, exactly as eachEntryInRealm()
 // hands them out — so an attribute changed in place is visible through a cached
-// listing, and only MEMBERSHIP of the container is what this has to invalidate on.
+// listing, and only MEMBERSHIP of the container is what this has to invalidate
+// on.
 function entriesUnder(containerDn) {
   log.debug('Entering entriesUnder(). container=' + containerDn);
   const key = normalizeDn(containerDn);
@@ -1289,7 +1380,9 @@ function noteUsernameIndexRefresh(stored, wasCurrent) {
 // Read BEFORE a write, because afterwards `directoryVersion` has moved on and
 // the cache can no longer answer the question about itself.
 function usernameIndexIsCurrent() {
+  log.debug("Entering usernameIndexIsCurrent().");
   const cache = usernameIndexes();
+  log.debug("Leaving usernameIndexIsCurrent().");
   return !!cache.index && cache.version === directoryVersion &&
     cache.usersDn === normalizeDn(usersDn());
 }
@@ -1310,7 +1403,9 @@ const groupIndexes = realms.keyed(function () {
 const NO_GROUPS = new Map();
 
 function groupIndexIsCurrent() {
+  log.debug("Entering groupIndexIsCurrent().");
   const cache = groupIndexes();
+  log.debug("Leaving groupIndexIsCurrent().");
   return !!cache.index && cache.version === directoryVersion &&
     cache.size === entries.size;
 }
@@ -1365,8 +1460,10 @@ function noteGroupIndexPut(stored, wasCurrent) {
 // discovery is the one job the root DSE has. With no realms defined this is a
 // single-valued attribute holding exactly what it always held.
 function namingContexts() {
+  log.debug("Entering namingContexts().");
   const out = [ROOT_DN];
   if (!realms.active()) {
+    log.debug("Leaving namingContexts().");
     return out;
   }
   realms.list().forEach(function (realm) {
@@ -1375,6 +1472,7 @@ function namingContexts() {
       out.push(base);
     }
   });
+  log.debug("Leaving namingContexts().");
   return out;
 }
 
@@ -1386,6 +1484,8 @@ function namingContexts() {
 // this process occupies, and a per-realm ceiling would let n realms hold n
 // times the number somebody set.
 function realmEntryCount() {
+  log.debug("Entering realmEntryCount().");
+  log.debug("Leaving realmEntryCount().");
   return entries.size;
 }
 
@@ -1409,21 +1509,22 @@ function realmEntryCount() {
 // the two costs nothing.
 //
 // WHY THE STANDARD SET IS LONG, when this service writes perhaps thirty of
-// them. The directory is SCHEMALESS on purpose: a client can `add` any attribute
-// it likes to any entry, and two of the families here write entries nobody
-// typed — a TLS client certificate's subject becomes attributes RDN by RDN, so
-// whichever types are in that subject arrive whether or not this service has
-// ever heard of them. A table holding only what this service happens to write
-// would be right about its own entries and wrong about everybody else's, which
-// is worse than having none: the reader who most needs the conventional spelling
-// is the one looking at an attribute this service did not write. `seeAlso` is
-// what made the point — a perfectly ordinary RFC 4519 type, rendering as
-// `seealso` on the one page whose job is to show an entry faithfully.
+// them. The directory is SCHEMALESS on purpose: a client can `add` any
+// attribute it likes to any entry, and two of the families here write entries
+// nobody typed — a TLS client certificate's subject becomes attributes RDN by
+// RDN, so whichever types are in that subject arrive whether or not this
+// service has ever heard of them. A table holding only what this service
+// happens to write would be right about its own entries and wrong about
+// everybody else's, which is worse than having none: the reader who most needs
+// the conventional spelling is the one looking at an attribute this service did
+// not write. `seeAlso` is what made the point — a perfectly ordinary RFC 4519
+// type, rendering as `seealso` on the one page whose job is to show an entry
+// faithfully.
 //
 // WHAT IS NOT HERE. No spelling is invented for a name nobody published. Where
 // two specifications disagree about the capitalisation of one name the older
-// registered one wins and the disagreement is noted, because picking silently is
-// how a table like this becomes a third opinion.
+// registered one wins and the disagreement is noted, because picking silently
+// is how a table like this becomes a third opinion.
 // ---------------------------------------------------------------------------
 const STANDARD_NAMES = [
   // RFC 4519 — the standard directory attribute types, in full. `name` is in
@@ -1493,33 +1594,34 @@ const STANDARD_NAMES = [
   'vendorName', 'vendorVersion',
 
   // RFC 5020 and RFC 4530 — the two operational attributes that name an entry
-  // rather than describe it. `entryDN` is load-bearing beyond the display: it is
-  // what matchable() calls the DN when a filter matches on it, and what
+  // rather than describe it. `entryDN` is load-bearing beyond the display: it
+  // is what matchable() calls the DN when a filter matches on it, and what
   // entryObject() publishes the DN as, so those two and this table have to
   // agree or an ldapsearch filter and a console page name one fact two things.
   'entryDN', 'entryUUID',
 
   // PKCS#9, and it arrives on this directory inside a certificate subject —
-  // certificatePlan() turns every RDN of a verified client certificate's subject
-  // into an attribute, so which types turn up is decided by whoever issued the
-  // certificate and not by anything here.
+  // certificatePlan() turns every RDN of a verified client certificate's
+  // subject into an attribute, so which types turn up is decided by whoever
+  // issued the certificate and not by anything here.
   'emailAddress',
 
   // NOT REGISTERED ANYWHERE, and here anyway. `memberOf` is the reverse of
   // group membership as Active Directory and most directories in the wild
-  // implement it, and it has never been standardised — draft-ietf-ldapext-memberof
-  // expired. It cannot go in this service's own list either, because this
-  // service did not invent it: a client writes it, and /admin/groups reports the
-  // disagreement when an entry's own memberOf names a group that does not list
-  // it back. NOTHING HERE MAINTAINS IT — that page says so, and the spelling
-  // being conventional must not be read as the attribute being managed.
+  // implement it, and it has never been standardised —
+  // draft-ietf-ldapext-memberof expired. It cannot go in this service's own
+  // list either, because this service did not invent it: a client writes it,
+  // and /admin/groups reports the disagreement when an entry's own memberOf
+  // names a group that does not list it back. NOTHING HERE MAINTAINS IT — that
+  // page says so, and the spelling being conventional must not be read as the
+  // attribute being managed.
   'memberOf'
 ];
 
 // ---------------------------------------------------------------------------
 // This service's own names. Not standard, and listed here for the display only.
-// Each group says why nothing standard was used instead, because "we invented an
-// attribute type" is a claim that needs one.
+// Each group says why nothing standard was used instead, because "we invented
+// an attribute type" is a claim that needs one.
 // ---------------------------------------------------------------------------
 const OWN_NAMES = [
   // On the entries a TLS client certificate seeds. There is no standard
@@ -1543,9 +1645,9 @@ const OWN_NAMES = [
   // than decorative: the entry is NAMED by a hash of the DID (didPlan() says
   // why), so `didSubject` is the only place the identifier itself survives and
   // the only thing locateEntry() can find the entry by. There is no standard
-  // attribute type for "the DID this entry is", which is unsurprising — DID Core
-  // postdates the LDAP schema documents by two decades and nobody registered
-  // one.
+  // attribute type for "the DID this entry is", which is unsurprising — DID
+  // Core postdates the LDAP schema documents by two decades and nobody
+  // registered one.
   'didSubject', 'didMethod',
 
   // On the entries a SPIFFE identity seeds, and load-bearing for exactly the
@@ -1582,8 +1684,9 @@ const OWN_NAMES = [
   // OIDC vocabulary and a Kerberos AS-REQ has nothing to put in it. There is no
   // standard attribute type for "this account authenticated with more than one
   // factor": the nearest things in the wild are Active Directory's msDS-*
-  // attributes, which are Microsoft's own names for something else entirely, and
-  // pretending to be one of those would be worse than obviously not being one.
+  // attributes, which are Microsoft's own names for something else entirely,
+  // and pretending to be one of those would be worse than obviously not being
+  // one.
   'authnMethod', 'mfaAuthenticated', 'mfaLastAuthTime',
 
   // The HOBA client public keys registered at /.well-known/hoba/register, one
@@ -1609,11 +1712,11 @@ const OWN_NAMES = [
   // `federationAttribute` is the useful one and the one with no analogue
   // anywhere else here: it lists which of this entry's OTHER attributes came
   // off a foreign assertion rather than out of the invented-persona sweep. Both
-  // kinds are ordinary directory attributes and look identical, and applyVcAttributes()
-  // fills in `mail`, `givenName` and the rest for everybody — so without this
-  // there is no way to tell a real email address a partner sent from one this
-  // service made up, which is exactly the question a federated directory entry
-  // raises. Nothing reads it; it is there to be read.
+  // kinds are ordinary directory attributes and look identical, and
+  // applyVcAttributes() fills in `mail`, `givenName` and the rest for everybody
+  // — so without this there is no way to tell a real email address a partner
+  // sent from one this service made up, which is exactly the question a
+  // federated directory entry raises. Nothing reads it; it is there to be read.
   'federationRelationship', 'federationIssuer', 'federationSubject',
   'federationLastSeen', 'federationAttribute',
 
@@ -1718,13 +1821,13 @@ const OWN_NAMES = [
 // there are three of those.
 const CANONICAL_NAMES = {};
 
-// A name is learnt once. A SECOND spelling of the same name is a real defect and
-// is reported rather than silently resolved: the two lists here, the credential
-// claim catalogue and the applications schema are four independently maintained
-// sets of spellings, and "whichever was merged first wins" is how one of them
-// comes to be quietly wrong about `schacDateOfBirth` while all four look right
-// read alone. Reported and not thrown, because a table of how to CAPITALISE a
-// name must never be able to stop this service starting.
+// A name is learnt once. A SECOND spelling of the same name is a real defect
+// and is reported rather than silently resolved: the two lists here, the
+// credential claim catalogue and the applications schema are four independently
+// maintained sets of spellings, and "whichever was merged first wins" is how
+// one of them comes to be quietly wrong about `schacDateOfBirth` while all four
+// look right read alone. Reported and not thrown, because a table of how to
+// CAPITALISE a name must never be able to stop this service starting.
 function learnName(spelling, source) {
   log.debug('Entering learnName().');
   const canonical = String(spelling);
@@ -1736,18 +1839,25 @@ function learnName(spelling, source) {
     return;
   }
   if (known !== canonical) {
-    log.warn('ldap: two spellings of the attribute type "' + lower + '" — "' + known +
-             '" is already known and ' + source + ' says "' + canonical + '". Keeping "' +
-             known + '". They match identically either way (RFC 4512 section 2.5 makes ' +
-             'attribute descriptions case-insensitive) so nothing is found or missed ' +
-             'differently; it is only the spelling shown on a page, and one of the two ' +
-             'lists is wrong.');
+    log.warn('ldap: two spellings of the attribute type "' + lower + '" — "' +
+             known +
+             '" is already known and ' + source + ' says "' + canonical +
+             '". ' +
+                 'Keeping "' +
+             known + '". They match identically either way (RFC 4512 section ' +
+             '2.5 makes attribute descriptions case-insensitive) so nothing ' +
+             'is found or missed differently; it is only the spelling shown ' +
+             'on a page, and one of the two lists is wrong.');
   }
   log.debug('Leaving learnName().');
 }
 
-STANDARD_NAMES.forEach(function (spelling) { learnName(spelling, 'the standard list'); });
-OWN_NAMES.forEach(function (spelling) { learnName(spelling, "this service's own list"); });
+STANDARD_NAMES.forEach(function (spelling) {
+  learnName(spelling, 'the ' + 'standard list');
+});
+OWN_NAMES.forEach(function (spelling) {
+  learnName(spelling, "this service's " + "own list");
+});
 
 // AND THE inetOrgPerson CLASS DEFINITION (2026-09-11), for the reason every
 // other merge below is done: `common/inetorgperson.js` is a fourth
@@ -1776,13 +1886,14 @@ Object.keys(vcClaims.CANONICAL_NAMES).forEach(function (lower) {
   learnName(vcClaims.CANONICAL_NAMES[lower], 'the credential claim catalogue');
 });
 
-// And the applications registry's, for the same reason and from the same kind of
-// source: `applications.js` owns that schema and spells every attribute the way
-// `/ldap/applications` publishes it — `oauthClientId`, `appRegistrationJson`,
-// `samlEntityId`. Without this merge every applications page and every reply from
-// the management API showed `oauthclientid` beside a published schema that says
-// `oauthClientId`, which reads as a bug in the page rather than as what it is:
-// the store lower-casing a name because @ldapjs/attribute does.
+// And the applications registry's, for the same reason and from the same kind
+// of source: `applications.js` owns that schema and spells every attribute the
+// way `/ldap/applications` publishes it — `oauthClientId`,
+// `appRegistrationJson`, `samlEntityId`. Without this merge every applications
+// page and every reply from the management API showed `oauthclientid` beside a
+// published schema that says `oauthClientId`, which reads as a bug in the page
+// rather than as what it is: the store lower-casing a name because
+// @ldapjs/attribute does.
 //
 // FIRST SPELLING WINS, and that matters here more than above. That schema
 // carries `cn` and `description`, which the standard list at the top of this
@@ -1836,8 +1947,8 @@ roles.SCHEMA.attributes.forEach(function (row) {
 // two the policy maintains on a PERSON (`pwdHistory`, `pwdChangedTime`). Merged
 // from the schema rather than added to OWN_NAMES above, because the module that
 // gives those two their meaning is the one that spells them — and because an
-// unlearnt `pwdInHistory` read back as `pwdinhistory` is exactly the lookup that
-// silently misses and answers "the built-in default".
+// unlearnt `pwdInHistory` read back as `pwdinhistory` is exactly the lookup
+// that silently misses and answers "the built-in default".
 passwordPolicy.SCHEMA.attributes.concat(passwordPolicy.SCHEMA.personAttributes)
   .forEach(function (row) {
     learnName(row.name, 'the password policy schema');
@@ -1850,13 +1961,13 @@ xacmlPepRegistry.SCHEMA.attributes.forEach(function (row) {
 });
 
 // And the SCIM mapping's two inventions, `scimActive` and `scimExternalId`, for
-// the same reason and from the same kind of source. They are a FIFTH list, which
-// is one more than the comment above learnName() named — and the check is what
-// makes a fifth affordable: the two names are this service's own, nothing else
-// spells them, and if that ever stops being true the warning says which table to
-// look in. scim_map.js is a library that registers nothing and requires only
-// helpers.js and vc_claims.js, so requiring it here moves no route and closes no
-// cycle.
+// the same reason and from the same kind of source. They are a FIFTH list,
+// which is one more than the comment above learnName() named — and the check is
+// what makes a fifth affordable: the two names are this service's own, nothing
+// else spells them, and if that ever stops being true the warning says which
+// table to look in. scim_map.js is a library that registers nothing and
+// requires only helpers.js and vc_claims.js, so requiring it here moves no
+// route and closes no cycle.
 scimMap.OWN_NAMES.forEach(function (spelling) {
   learnName(spelling, 'the SCIM mapping');
 });
@@ -1869,7 +1980,9 @@ scimMap.OWN_NAMES.forEach(function (spelling) {
 // value is compared byte-wise. That is enough for a directory whose DNs this
 // service and its own debugger write.
 function normalizeDn(value) {
+  log.debug("Entering normalizeDn().");
   const text = String(value == null ? '' : value).trim();
+  log.debug("Leaving normalizeDn().");
   return text.split(',').map(function (part) {
     return part.trim().toLowerCase();
   }).join(',');
@@ -1877,49 +1990,77 @@ function normalizeDn(value) {
 
 // The parent of a DN, or '' for a naming context with nothing above it.
 function parentDn(value) {
+  log.debug("Entering parentDn().");
   const parts = String(value == null ? '' : value).split(',');
-  if (parts.length <= 1) return '';
+  if (parts.length <= 1) {
+    log.debug("Leaving parentDn().");
+    return '';
+  }
+  log.debug("Leaving parentDn().");
   return parts.slice(1).join(',').trim();
 }
 
-// Is `dn` at or below `base`? Used by every scope decision and by the check that
-// refuses to operate outside this server's naming context.
+// Is `dn` at or below `base`? Used by every scope decision and by the check
+// that refuses to operate outside this server's naming context.
 function isUnder(dn, base) {
+  log.debug("Entering isUnder().");
   const a = normalizeDn(dn);
   const b = normalizeDn(base);
-  if (!b) return true;
-  if (a === b) return true;
+  if (!b) {
+    log.debug("Leaving isUnder().");
+    return true;
+  }
+  if (a === b) {
+    log.debug("Leaving isUnder().");
+    return true;
+  }
+  log.debug("Leaving isUnder().");
   return a.endsWith(',' + b);
 }
 
 // How many commas separate a DN from a base — 0 for the base itself, 1 for its
 // immediate children. This is what tells `one` from `sub`.
 function depthUnder(dn, base) {
+  log.debug("Entering depthUnder().");
   const a = normalizeDn(dn);
   const b = normalizeDn(base);
-  if (a === b) return 0;
+  if (a === b) {
+    log.debug("Leaving depthUnder().");
+    return 0;
+  }
   const rest = a.slice(0, a.length - b.length - 1);
+  log.debug("Leaving depthUnder().");
   return rest.split(',').length;
 }
 
 function canonicalName(lower) {
+  log.debug("Entering canonicalName().");
+  log.debug("Leaving canonicalName().");
   return CANONICAL_NAMES[lower] || lower;
 }
 
 // The scope, as one of 'base' | 'one' | 'sub'.
 //
 // Read from the NUMBER on the wire (RFC 4511 section 4.5.1.2: baseObject 0,
-// singleLevel 1, wholeSubtree 2) and not from ldapjs's `scopeName`, which spells
-// the middle two 'single' and 'subtree'. That difference cost a search: a
-// handler comparing scopeName against 'one' and 'sub' matched neither, fell
+// singleLevel 1, wholeSubtree 2) and not from ldapjs's `scopeName`, which
+// spells the middle two 'single' and 'subtree'. That difference cost a search:
+// a handler comparing scopeName against 'one' and 'sub' matched neither, fell
 // through to its default, and answered every one-level search as a subtree — so
 // the results were a superset, every assertion about them still passed, and the
 // only visible symptom was one extra entry. A wrong scope is invisible in
 // exactly the direction that makes it hardest to notice.
 function scopeOf(req) {
+  log.debug("Entering scopeOf().");
   const value = typeof req.scope === 'number' ? req.scope : 2;
-  if (value === 0) return 'base';
-  if (value === 1) return 'one';
+  if (value === 0) {
+    log.debug("Leaving scopeOf().");
+    return 'base';
+  }
+  if (value === 1) {
+    log.debug("Leaving scopeOf().");
+    return 'one';
+  }
+  log.debug("Leaving scopeOf().");
   return 'sub';
 }
 
@@ -1927,8 +2068,16 @@ function scopeOf(req) {
 // caller handed us. LDAP has no scalars, and a store that sometimes held one is
 // a store every reader has to test the type of.
 function valuesOf(value) {
-  if (value === undefined || value === null) return [];
-  if (Array.isArray(value)) return value.map(function (v) { return String(v); });
+  log.debug("Entering valuesOf().");
+  if (value === undefined || value === null) {
+    log.debug("Leaving valuesOf().");
+    return [];
+  }
+  if (Array.isArray(value)) {
+    log.debug("Leaving valuesOf().");
+    return value.map(function (v) { return String(v); });
+  }
+  log.debug("Leaving valuesOf().");
   return [String(value)];
 }
 
@@ -1938,10 +2087,14 @@ function valuesOf(value) {
 // showing an ISO string where a directory shows a generalized time is showing
 // the wrong thing.
 function generalizedTime(when) {
+  log.debug("Entering generalizedTime().");
   const d = when instanceof Date ? when : new Date();
   const pad = function (n, width) {
+    log.debug("Entering pad().");
+    log.debug("Leaving pad().");
     return String(n).padStart(width || 2, '0');
   };
+  log.debug("Leaving generalizedTime().");
   return pad(d.getUTCFullYear(), 4) + pad(d.getUTCMonth() + 1) +
     pad(d.getUTCDate()) + pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
     pad(d.getUTCSeconds()) + 'Z';
@@ -1952,6 +2105,8 @@ function generalizedTime(when) {
 // ---------------------------------------------------------------------------
 
 function getEntry(dn) {
+  log.debug("Entering getEntry().");
+  log.debug("Leaving getEntry().");
   return entries.get(normalizeDn(dn)) || null;
 }
 
@@ -1975,7 +2130,8 @@ function putEntry(dn, attributes, options) {
   log.debug('Entering putEntry(). dn=' + dn);
   const opts = options || {};
   const now = generalizedTime();
-  const stored = { dn: String(dn), attributes: {}, createdAt: now, modifiedAt: now };
+  const stored = { dn: String(dn), attributes: {}, createdAt: now,
+                   modifiedAt: now };
   Object.keys(attributes || {}).forEach(function (name) {
     stored.attributes[String(name).toLowerCase()] = valuesOf(attributes[name]);
   });
@@ -2008,11 +2164,13 @@ function putEntry(dn, attributes, options) {
 // operational attribute (RFC 5020) so the name is at least borrowed rather than
 // invented.
 function matchable(stored) {
+  log.debug("Entering matchable().");
   const out = {};
   Object.keys(stored.attributes).forEach(function (name) {
     out[name] = stored.attributes[name].slice(0);
   });
   out.entrydn = [stored.dn];
+  log.debug("Leaving matchable().");
   return out;
 }
 
@@ -2086,9 +2244,9 @@ function toSearchEntry(stored, requested, messageId) {
     }
     if (askedFor || (all && !isOperational)) {
       // WITHHELD ON THE WIRE TOO (2026-09-12): a search is the one door onto a
-      // Kerberos key that needs no page, and in development every bind succeeds.
-      // The KDC reads the store and never a search result, so nothing that
-      // needs the key is behind this.
+      // Kerberos key that needs no page, and in development every bind
+      // succeeds. The KDC reads the store and never a search result, so nothing
+      // that needs the key is behind this.
       attributes[canonicalName(name)] =
         krb5PersonKeys.withheldValues(name, stored.attributes[name].slice(0));
     }
@@ -2120,9 +2278,9 @@ function toSearchEntry(stored, requested, messageId) {
 // The seeded directory.
 //
 // It is seeded rather than empty because an LDAP debugger opened against an
-// empty directory shows nothing and teaches nothing: the first search returns no
-// entries and the reader cannot tell that from a filter they got wrong. What is
-// here is the smallest tree that makes every operation the debugger offers
+// empty directory shows nothing and teaches nothing: the first search returns
+// no entries and the reader cannot tell that from a filter they got wrong. What
+// is here is the smallest tree that makes every operation the debugger offers
 // demonstrable — two containers, three people, two groups, and one account that
 // looks like the one a client would bind as.
 // ---------------------------------------------------------------------------
@@ -2148,8 +2306,8 @@ function seed() {
     description: mode.autoCreates()
       ? 'People. An entry appears here for anyone who authenticates ' +
         'to this service through any protocol.'
-      : 'People, as provisioned — through the console, /admin-api, SCIM or an ' +
-        'LDAP add. Authenticating creates nobody.'
+      : 'People, as provisioned — through the console, /admin-api, SCIM or ' +
+        'an LDAP add. Authenticating creates nobody.'
   }, { origin: 'seed' });
   putEntry(groupsDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -2174,13 +2332,13 @@ function seed() {
     description: 'Federation relationships: the foreign identity providers ' +
       'this service consumes assertions from, and the foreign service ' +
       'providers it asserts to. THIS CONTAINER IS THE REGISTER — an ' +
-      'ldapmodify of fedSigningCertificate here changes which signer the next ' +
-      'assertion is verified against, and an ldapmodify of fedEnabled turns a ' +
-      'partner on. It is the one store in this directory whose contents are a ' +
-      'SECURITY DECISION rather than a record: everything else here is ' +
-      'permissive by design, and a federation endpoint cannot be. ' +
-      'federation/federation.js holds the schema; GET /admin/ldap/federations ' +
-      'publishes it.'
+      'ldapmodify of fedSigningCertificate here changes which signer the ' +
+      'next assertion is verified against, and an ldapmodify of fedEnabled ' +
+      'turns a partner on. It is the one store in this directory whose ' +
+      'contents are a SECURITY DECISION rather than a record: everything ' +
+      'else here is permissive by design, and a federation endpoint cannot ' +
+      'be. federation/federation.js holds the schema; GET ' +
+      '/admin/ldap/federations publishes it.'
   }, { origin: 'seed' });
   putEntry(policiesDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -2243,13 +2401,13 @@ function seed() {
       objectClass: ['top', 'organizationalUnit'],
       ou: 'trustAnchors',
       description: 'The client-certificate TRUSTSTORE\'s runtime anchors — ' +
-        'one stsTrustAnchor entry per CA certificate added at /admin/tls/trust ' +
-        'or POST /admin-api/tls/trust/add, restored into every TLS listener at ' +
-        'start and whenever another process changes this container. An entry ' +
-        'here decides whose client certificate this service will VERIFY, so ' +
-        'writing one is an administrative act. Anchors from ' +
-        'tls.trustAnchorsFile are not stored here. tls/tls_server.js owns ' +
-        'what an anchor is.'
+        'one stsTrustAnchor entry per CA certificate added at ' +
+        '/admin/tls/trust or POST /admin-api/tls/trust/add, restored into ' +
+        'every TLS listener at start and whenever another process changes ' +
+        'this container. An entry here decides whose client certificate this ' +
+        'service will VERIFY, so writing one is an administrative act. ' +
+        'Anchors from tls.trustAnchorsFile are not stored here. ' +
+        'tls/tls_server.js owns what an anchor is.'
     }, { origin: 'seed' });
   }
   putEntry(spiffeDn(), {
@@ -2258,7 +2416,8 @@ function seed() {
     description: 'The SPIFFE trust domain this service is the issuing ' +
       'authority for. Two containers beneath: entries (registration entries, ' +
       'which decide what gets issued) and agents (what has attested). ' +
-      'spiffe_registry.js holds the schema; GET /admin/ldap/spiffe publishes it.'
+      'spiffe_registry.js holds the schema; GET /admin/ldap/spiffe publishes ' +
+      'it.'
   }, { origin: 'seed' });
   putEntry(spiffeEntriesDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -2302,15 +2461,16 @@ function seed() {
       objectClass: ['top', 'person', 'organizationalRole'],
       cn: 'admin',
       sn: 'Administrator',
-      description: 'A bind account. So is every other DN in the universe: this ' +
-        'server accepts any bind except the password "invalid".'
+      description: 'A bind account. So is every other DN in the universe: ' +
+        'this server accepts any bind except the password "invalid".'
     }, { origin: 'seed' });
     // `employeeType` IS HERE BECAUSE THE SEEDED XACML POLICY READS IT. The two
-    // seeds have to agree or neither demonstrates anything: a policy that grants
-    // on `employeeType=staff` against a directory whose people have no
-    // employeeType answers Deny for everybody, which looks exactly like a broken
-    // PDP. Carol is the admin because she is the Directory Administrator, which
-    // is the one of the three titles that already meant it.
+    // seeds have to agree or neither demonstrates anything: a policy that
+    // grants on `employeeType=staff` against a directory whose people have no
+    // employeeType answers Deny for everybody, which looks exactly like a
+    // broken PDP. Carol is the admin because she is the Directory
+    // Administrator, which is the one of the three titles that already meant
+    // it.
     [
       { uid: 'alice', cn: 'Alice Anderson', sn: 'Anderson', given: 'Alice',
         title: 'Principal Engineer', employeeType: 'staff' },
@@ -2341,7 +2501,8 @@ function seed() {
     putEntry('cn=directory-admins,' + groupsDn(), {
       objectClass: ['top', 'groupOfNames'],
       cn: 'directory-admins',
-      description: 'A second group, so a search for groups returns more than one.',
+      description: 'A second group, so a search for groups returns more than ' +
+                   'one.',
       member: ['uid=carol,' + usersDn()]
     }, { origin: 'seed' });
   }
@@ -2386,7 +2547,8 @@ function seed() {
   // service enforces its own access with. The empty group stays, so admitting
   // a real enforcement point is one member added — the same act a deployment
   // with a different common name always had to perform.
-  const remotePepGroup = String(config.value('roles.remotePepGroup') || '').trim();
+  const remotePepGroup = String(config.value('roles.remotePepGroup') ||
+                                '').trim();
   const remotePepMembers = [];
   if (demo) {
     remotePepMembers.push('cn=remote-pep-1,' + usersDn());
@@ -2400,19 +2562,19 @@ function seed() {
                    'name is "remote-pep-1" resolves to this entry, and its ' +
                    'membership of cn=remote-peps below is what lets it reach ' +
                    '/xacml/pep/register, /xacml/pep/policies and ' +
-                   '/xacml/pep/heartbeat. Seeded, and authenticated by nothing ' +
-                   'until a certificate arrives.'
+                   '/xacml/pep/heartbeat. Seeded, and authenticated by ' +
+                   'nothing until a certificate arrives.'
     }, { origin: 'seed' });
   }
   if (remotePepGroup && nameUsableInDn(remotePepGroup)) {
     putEntry(groupDnFor(remotePepGroup), Object.assign({
       objectClass: ['top', 'groupOfNames'],
       cn: remotePepGroup,
-      description: 'Members hold the built-in REMOTE_PEPS role, which is what ' +
-                   'the three /xacml/pep endpoints require. The group is named ' +
-                   'by roles.remotePepGroup; emptying it closes those endpoints ' +
-                   'to everybody, and adding a member is how a second ' +
-                   'enforcement point is admitted.'
+      description: 'Members hold the built-in REMOTE_PEPS role, which is ' +
+                   'what the three /xacml/pep endpoints require. The group ' +
+                   'is named by roles.remotePepGroup; emptying it closes ' +
+                   'those endpoints to everybody, and adding a member is how ' +
+                   'a second enforcement point is admitted.'
     }, remotePepMembers.length ? { member: remotePepMembers } : {}),
     { origin: 'seed' });
   } else if (remotePepGroup) {
@@ -2449,7 +2611,8 @@ function seed() {
   // Named by `roles.xacmlUserGroup` and seeded without its identity in product
   // mode, for the two reasons the pair above gives.
   // -------------------------------------------------------------------------
-  const xacmlUserGroup = String(config.value('roles.xacmlUserGroup') || '').trim();
+  const xacmlUserGroup = String(config.value('roles.xacmlUserGroup') ||
+                                '').trim();
   const xacmlUserMembers = [];
   if (demo) {
     xacmlUserMembers.push('cn=xacml-user-1,' + usersDn());
@@ -2458,13 +2621,13 @@ function seed() {
       cn: 'xacml-user-1',
       sn: 'xacml-user-1',
       displayName: 'XACML surface caller #1',
-      description: 'THE IDENTITY OF A CALLER OF THE XACML ENDPOINTS, which is ' +
-                   'usually another service rather than a person. A client ' +
-                   'certificate whose subject common name is "xacml-user-1" ' +
-                   'resolves to this entry, and its membership of ' +
-                   'cn=xacml-users below is what lets it reach GET /xacml, ' +
-                   'POST /xacml/pdp, GET /xacml/policies and ' +
-                   'GET /xacml/protected. It is NOT a member of cn=remote-peps ' +
+      description: 'THE IDENTITY OF A CALLER OF THE XACML ENDPOINTS, which ' +
+                   'is usually another service rather than a person. A ' +
+                   'client certificate whose subject common name is ' +
+                   '"xacml-user-1" resolves to this entry, and its ' +
+                   'membership of cn=xacml-users below is what lets it reach ' +
+                   'GET /xacml, POST /xacml/pdp, GET /xacml/policies and GET ' +
+                   '/xacml/protected. It is NOT a member of cn=remote-peps ' +
                    'and must not be made one: those three endpoints publish ' +
                    'the documents this service enforces its own access with. ' +
                    'Seeded, and authenticated by nothing until a certificate ' +
@@ -2477,14 +2640,15 @@ function seed() {
       cn: xacmlUserGroup,
       description: 'Members hold the built-in XACML_USER role, which is what ' +
                    'the four XACML endpoints proper require — GET /xacml, ' +
-                   'POST /xacml/pdp, GET /xacml/policies and ' +
-                   'GET /xacml/protected. The group is named by ' +
+                   'POST /xacml/pdp, GET /xacml/policies and GET ' +
+                   '/xacml/protected. The group is named by ' +
                    'roles.xacmlUserGroup; emptying it closes those four ' +
-                   'endpoints to everybody, and adding a member — a person, or ' +
-                   'the DN a client certificate resolves to — is how a caller ' +
-                   'is admitted. It is deliberately NOT cn=remote-peps: that ' +
-                   'group reaches /xacml/pep/*, which publishes the documents ' +
-                   'this service enforces its own access with.'
+                   'endpoints to everybody, and adding a member — a person, ' +
+                   'or the DN a client certificate resolves to — is how a ' +
+                   'caller is admitted. It is deliberately NOT ' +
+                   'cn=remote-peps: that group reaches /xacml/pep/*, which ' +
+                   'publishes the documents this service enforces its own ' +
+                   'access with.'
     }, xacmlUserMembers.length ? { member: xacmlUserMembers } : {}),
     { origin: 'seed' });
   } else if (xacmlUserGroup) {
@@ -2758,16 +2922,19 @@ persistence.setDirectory({
     if (gone && isTrustAnchorKey(realmId, key)) {
       reloadTrustAnchorsQuietly();
     }
-    log.debug('Leaving removeEntry(). ' + (gone ? 'Removed.' : 'It was not here.'));
+    log.debug('Leaving removeEntry(). ' + (gone ? 'Removed.' : 'It was not ' +
+        'here.'));
   },
 
   // Every entry in one realm, keyed the way the store keys it, for the diff
   // that decides what to write.
   realmEntries: function (realmId) {
+    log.debug("Entering realmEntries().");
     const out = [];
     entries.realmMap(realmId).forEach(function (entry, key) {
       out.push({ key: key, entry: entry });
     });
+    log.debug("Leaving realmEntries().");
     return out;
   },
 
@@ -2788,6 +2955,8 @@ persistence.setDirectory({
   // of walking to find them. Same rows written, same diff, no snapshot.
   // ---------------------------------------------------------------------
   entryAt: function (realmId, key) {
+    log.debug("Entering entryAt().");
+    log.debug("Leaving entryAt().");
     return entries.realmMap(realmId).get(key) || null;
   },
 
@@ -2901,6 +3070,8 @@ persistence.setDirectory({
 // parse attribute-value syntax; that is enough for the DNs this service and the
 // certificates it is shown are written with.
 function splitRdns(dn) {
+  log.debug("Entering splitRdns().");
+  log.debug("Leaving splitRdns().");
   return String(dn == null ? '' : dn).split(/(?<!\\),/)
     .map(function (part) { return part.trim(); })
     .filter(function (part) { return part.length > 0; });
@@ -2913,6 +3084,8 @@ function splitRdns(dn) {
 // reason to write one. The type is split at the FIRST '=' because an attribute
 // type cannot contain one.
 function rdnPairs(rdn) {
+  log.debug("Entering rdnPairs().");
+  log.debug("Leaving rdnPairs().");
   return String(rdn == null ? '' : rdn).split('+').map(function (part) {
     const at = part.indexOf('=');
     if (at < 1) {
@@ -2930,20 +3103,24 @@ function rdnPairs(rdn) {
 // that looks almost right and names the wrong object.
 //
 // tls_server.js has a sibling of the escape half. They are not shared on
-// purpose: that one renders node's certificate object into a DN and belongs with
-// the code that reads certificates, and this one is used wherever this directory
-// builds a DN of its own. Sharing would mean one of the two modules requiring
-// the other for a string function.
+// purpose: that one renders node's certificate object into a DN and belongs
+// with the code that reads certificates, and this one is used wherever this
+// directory builds a DN of its own. Sharing would mean one of the two modules
+// requiring the other for a string function.
 function escapeDnValue(value) {
+  log.debug("Entering escapeDnValue().");
   const text = String(value == null ? '' : value);
   let out = text.replace(/([\\,+"<>;=])/g, '\\$1');
   if (out.indexOf('#') === 0) {
     out = '\\' + out;
   }
+  log.debug("Leaving escapeDnValue().");
   return out.replace(/^ /, '\\ ').replace(/ $/, '\\ ');
 }
 
 function unescapeDnValue(value) {
+  log.debug("Entering unescapeDnValue().");
+  log.debug("Leaving unescapeDnValue().");
   return String(value == null ? '' : value).replace(/\\(.)/g, '$1');
 }
 
@@ -2976,13 +3153,13 @@ function addValues(stored, name, values) {
 // single knob turning both would couple two decisions that only look alike.
 const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
 
-// And is it a DECENTRALIZED IDENTIFIER? A third shape of identity, arriving from
-// the Decentralized Identity endpoints — an ldp_vc's `did:jwk:…` subject, whatever
-// DID the OID4VP Verifier was shown, the one /did/generate mints. Like DN_SHAPED
-// this is deliberately not shared with admin_stats.js's identical-looking test:
-// that one decides whether to split an identity at an '@', this one decides where
-// an entry goes, and one knob turning both would couple two decisions that only
-// look alike.
+// And is it a DECENTRALIZED IDENTIFIER? A third shape of identity, arriving
+// from the Decentralized Identity endpoints — an ldp_vc's `did:jwk:…` subject,
+// whatever DID the OID4VP Verifier was shown, the one /did/generate mints. Like
+// DN_SHAPED this is deliberately not shared with admin_stats.js's
+// identical-looking test: that one decides whether to split an identity at an
+// '@', this one decides where an entry goes, and one knob turning both would
+// couple two decisions that only look alike.
 const DID_SHAPED = /^did:[a-z0-9]+:/i;
 
 // A SPIFFE ID, which is the FOURTH shape of identity this directory files. The
@@ -2997,10 +3174,13 @@ const SPIFFE_SHAPED = /^spiffe:\/\//i;
 // certificate's own commonName was not passed — the DN always carries it if the
 // subject has one, so there is no second source to disagree with.
 function commonNameOf(dn) {
+  log.debug("Entering commonNameOf().");
   const pairs = splitRdns(dn).map(rdnPairs).reduce(function (a, b) {
     return a.concat(b);
   }, []);
-  const cn = pairs.filter(function (pair) { return pair.attribute === 'cn'; })[0];
+  const cn =
+      pairs.filter(function (pair) { return pair.attribute === 'cn'; })[0];
+  log.debug("Leaving commonNameOf().");
   return cn ? unescapeDnValue(cn.value) : '';
 }
 
@@ -3036,20 +3216,22 @@ function commonNameOf(dn) {
 //     called (`cn=rcbj`) and what an entry added by an LDAP client is called
 //     whatever attribute type it used.
 //
-// Case-insensitively, because the store already keys DNs lower-cased — `uid=RCBJ`
-// and `uid=rcbj` were one entry before this function existed, and a lookup that
-// was stricter than the store would report "no such person" about an entry the
-// very next putEntry() would collide with.
+// Case-insensitively, because the store already keys DNs lower-cased —
+// `uid=RCBJ` and `uid=rcbj` were one entry before this function existed, and a
+// lookup that was stricter than the store would report "no such person" about
+// an entry the very next putEntry() would collide with.
 //
-// SCOPED TO ENTRIES DIRECTLY UNDER ou=users, and that is the same placement rule
-// /admin/groups reports by and the one the add handler enforces. This directory
-// is schemaless: a client can put a `person` objectClass on a group, so believing
-// the class would fold a person onto a group. Placement is the rule that cannot
-// be lied to.
+// SCOPED TO ENTRIES DIRECTLY UNDER ou=users, and that is the same placement
+// rule /admin/groups reports by and the one the add handler enforces. This
+// directory is schemaless: a client can put a `person` objectClass on a group,
+// so believing the class would fold a person onto a group. Placement is the
+// rule that cannot be lied to.
 // ---------------------------------------------------------------------------
 function usernameOfEntry(stored) {
+  log.debug("Entering usernameOfEntry().");
   const rdn = splitRdns(stored.dn)[0] || '';
   const pairs = rdnPairs(rdn);
+  log.debug("Leaving usernameOfEntry().");
   return pairs.length ? unescapeDnValue(pairs[0].value) : '';
 }
 
@@ -3059,11 +3241,11 @@ function usernameOfEntry(stored) {
 // It is found by what the entry RECORDED and never by rebuilding the digest,
 // which is the rule locateEntry() already stated for itself and which now
 // matters twice over: since a linked DID goes onto its owner's entry
-// (didPlan()), the digest is not where it lives at all. A wallet that was issued
-// a credential as `erin` and later presents it to the Verifier arrives with the
-// DID alone and no link — and without this lookup that presentation would create
-// the very second entry the link exists to avoid, for a person whose entry
-// already names that identifier.
+// (didPlan()), the digest is not where it lives at all. A wallet that was
+// issued a credential as `erin` and later presents it to the Verifier arrives
+// with the DID alone and no link — and without this lookup that presentation
+// would create the very second entry the link exists to avoid, for a person
+// whose entry already names that identifier.
 function entryByDidSubject(did) {
   log.debug('Entering entryByDidSubject().');
   const wanted = String(did == null ? '' : did).trim();
@@ -3118,8 +3300,8 @@ function existingUserEntry(name) {
     return null;
   }
   // The common case first and without a scan: this is called on every
-  // authentication, and the overwhelming majority of them are a returning person
-  // whose entry is exactly where namePlan() put it.
+  // authentication, and the overwhelming majority of them are a returning
+  // person whose entry is exactly where namePlan() put it.
   const direct = getEntry('uid=' + name + ',' + usersDn());
   if (direct) {
     log.debug('Leaving existingUserEntry().');
@@ -3150,16 +3332,16 @@ function existingUserEntry(name) {
 // Two rules, in this order:
 //
 //   * if the subject already lies under this directory's base DN AND its parent
-//     exists, the entry is created AT it, unchanged. It names an object here, so
-//     putting it anywhere else would be inventing a second one.
+//     exists, the entry is created AT it, unchanged. It names an object here,
+//     so putting it anywhere else would be inventing a second one.
 //   * otherwise the subject's CN — or its leaf RDN where it has no CN — names
 //     an entry under ou=users: `CN=alice,O=Example Corp,C=US` becomes
 //     `cn=alice,ou=users,<base>`, and every other RDN of the subject goes on
-//     that entry as an attribute rather than being dropped.
-//     Grafting the whole subject under ou=users instead would need
-//     `o=example corp,c=us,ou=users,<base>` to exist as entries, and a tree with
-//     holes in it is worse than a shortened DN — this directory enforces "an add
-//     needs its parent" and would be breaking its own rule to seed one.
+//     that entry as an attribute rather than being dropped. Grafting the whole
+//     subject under ou=users instead would need `o=example
+//     corp,c=us,ou=users,<base>` to exist as entries, and a tree with holes in
+//     it is worse than a shortened DN — this directory enforces "an add needs
+//     its parent" and would be breaking its own rule to seed one.
 //
 // Nothing is lost either way: the full subject is written into the entry as
 // `x509subject`. What the second rule COSTS is a collapse — two certificates
@@ -3211,10 +3393,10 @@ function certificatePlan(info) {
   // CN where the certificate has one, and the leaf RDN otherwise — not simply
   // the leaf, and the reason is the commonest shape a CA produces: openssl puts
   // emailAddress LAST in the subject, so the leaf RDN of
-  // `C=US,O=Example,CN=alice,emailAddress=alice@example.com` is the address, and
-  // `emailAddress=alice@example.com,ou=users` is not how a directory names a
-  // person. Where there is no CN the leaf is the best name there is and is used
-  // as it stands. Either way the value is ESCAPED in the DN and stored
+  // `C=US,O=Example,CN=alice,emailAddress=alice@example.com` is the address,
+  // and `emailAddress=alice@example.com,ou=users` is not how a directory names
+  // a person. Where there is no CN the leaf is the best name there is and is
+  // used as it stands. Either way the value is ESCAPED in the DN and stored
   // UNESCAPED as the attribute, which is the distinction escapeDnValue() exists
   // for.
   const naming = common
@@ -3318,10 +3500,11 @@ function certificatePlan(info) {
 // The change is deliberate and it is not cosmetic: those three are attributes a
 // credential asserts, so a directory that derived all of them from the login
 // name made every issued credential say the login name back. `given_name:
-// "dave"` is not a given name, and a wallet developer testing what their UI does
-// with a person's name learned nothing from it. What the entry keeps from the
-// login name is the two things that ARE the identity — the DN and the `uid` —
-// which is also how a real directory looks: somebody's uid rarely is their name.
+// "dave"` is not a given name, and a wallet developer testing what their UI
+// does with a person's name learned nothing from it. What the entry keeps from
+// the login name is the two things that ARE the identity — the DN and the `uid`
+// — which is also how a real directory looks: somebody's uid rarely is their
+// name.
 //
 // `(mock)` stays on the displayName. Every value here is invented, and the one
 // place a person reads before the others should say so.
@@ -3340,7 +3523,8 @@ function namePlan(name) {
   // person that nothing on it recorded. It also makes the next lookup the cheap
   // one — existingUserEntry() finds a uid without a scan.
   const already = existingUserEntry(name);
-  log.debug('Leaving namePlan().' + (already ? ' Folding onto ' + already.dn + '.' : ''));
+  log.debug('Leaving namePlan().' +
+            (already ? ' Folding onto ' + already.dn + '.' : ''));
   // THE FIVE PERSONA ATTRIBUTES ARE INVENTED, AND PRODUCT MODE INVENTS NONE OF
   // THEM (2026-09-12). A `displayName` ending "(mock)", a surname out of a
   // persona table and an address at a domain nobody owns are exactly the
@@ -3360,6 +3544,7 @@ function namePlan(name) {
     attributes.displayName = persona.display + ' (mock)';
     attributes.mail = persona.email;
   }
+  log.debug("Leaving namePlan().");
   return {
     dn: already ? already.dn : 'uid=' + name + ',' + usersDn(),
     attributes: attributes,
@@ -3372,8 +3557,8 @@ function namePlan(name) {
 // decision in this module with no obviously right answer — and it is the
 // OPPOSITE problem from a certificate's.
 //
-// A certificate subject is already a DN and needs a PLACE. A DID is neither a DN
-// nor a name: it is one long opaque string, and the two obvious things to do
+// A certificate subject is already a DN and needs a PLACE. A DID is neither a
+// DN nor a name: it is one long opaque string, and the two obvious things to do
 // with it are both wrong in a way worth writing down.
 //
 //   * `uid=<the did>,ou=users` verbatim. Correct, and unusable: a did:jwk
@@ -3381,10 +3566,10 @@ function namePlan(name) {
 //     characters and every page, every log line and every ldapsearch output
 //     naming this person is mostly key material.
 //   * A container of its own, `ou=dids`. Tidy, and it would put these people
-//     outside the two sweeps that matter: populateVcAttributes() walks ou=users,
-//     and /admin/groups reports membership from there. A DID subject that no
-//     credential claim reaches is a DID subject this service cannot issue a
-//     credential about, which is the one thing it exists to do.
+//     outside the two sweeps that matter: populateVcAttributes() walks
+//     ou=users, and /admin/groups reports membership from there. A DID subject
+//     that no credential claim reaches is a DID subject this service cannot
+//     issue a credential about, which is the one thing it exists to do.
 //
 // So the entry goes under ou=users with everybody else and is NAMED by a short,
 // stable digest of the DID — `uid=did-<12 hex>` — with the identifier itself
@@ -3394,12 +3579,14 @@ function namePlan(name) {
 //
 // What that costs is one thing and it is worth saying plainly: THE UID IS NOT
 // THE IDENTITY. Everywhere else here `uid` is what the person typed and what
-// /admin/users files them under; on these entries it is a name this service made
-// up. `didSubject` is the identity — locateEntry() finds the entry by it, and
-// personaKeyOf() invents the person FROM it, so the startup sweep and the
+// /admin/users files them under; on these entries it is a name this service
+// made up. `didSubject` is the identity — locateEntry() finds the entry by it,
+// and personaKeyOf() invents the person FROM it, so the startup sweep and the
 // authentication path seed one invented person rather than two.
 // ---------------------------------------------------------------------------
 function didUid(did) {
+  log.debug("Entering didUid().");
+  log.debug("Leaving didUid().");
   return 'did-' + crypto.createHash('sha256').update(String(did), 'utf8')
     .digest('hex').slice(0, 12);
 }
@@ -3407,17 +3594,17 @@ function didUid(did) {
 function didPlan(info) {
   log.debug('Entering didPlan().');
   const did = String(info.key || '').trim();
-  // The method name — `jwk`, `web`, `key`. Kept because it is the one fact about
-  // a DID that is readable without resolving it, so "which methods has this
-  // service seen" becomes an ordinary filter on /ldap/directory rather than a
-  // question nobody can ask.
+  // The method name — `jwk`, `web`, `key`. Kept because it is the one fact
+  // about a DID that is readable without resolving it, so "which methods has
+  // this service seen" becomes an ordinary filter on /ldap/directory rather
+  // than a question nobody can ask.
   const method = (did.split(':')[1] || '').toLowerCase();
   const persona = vcClaims.personaFor(did);
   const uid = didUid(did);
-  // The description says how this entry came to exist, and for a DID the default
-  // — "authenticated through X" — would be the wrong sentence in both halves:
-  // nobody typed a password, and at /did/generate nobody presented anything at
-  // all. So this plan carries its own.
+  // The description says how this entry came to exist, and for a DID the
+  // default — "authenticated through X" — would be the wrong sentence in both
+  // halves: nobody typed a password, and at /did/generate nobody presented
+  // anything at all. So this plan carries its own.
   const note = 'named by a decentralized identifier presented through ' +
     String(info.protocol || 'an unstated protocol') +
     (info.method ? ' (' + info.method + ')' : '');
@@ -3463,24 +3650,27 @@ function didPlan(info) {
     // one the sign-in path invented for `rcbj` and the one a digest invents —
     // which disagree on every attribute the credential asserts.
     plan.personaKey = linked;
-    log.debug('Leaving didPlan(). Linked to ' + linked + ' at ' + plan.dn + '.');
+    log.debug('Leaving didPlan(). Linked to ' + linked + ' at ' + plan.dn +
+              '.');
     return plan;
   }
   // NOT LINKED, so this identifier names its own entry — unless one already
   // records it. That happens on the ordinary path through the Decentralized
-  // Identity endpoints: the DID was linked to a person when their credential was
-  // ISSUED, and the wallet then presents it to the Verifier with nothing saying
-  // whose it is. Rebuilding the digest there would file one identifier in two
-  // places.
+  // Identity endpoints: the DID was linked to a person when their credential
+  // was ISSUED, and the wallet then presents it to the Verifier with nothing
+  // saying whose it is. Rebuilding the digest there would file one identifier
+  // in two places.
   const recorded = entryByDidSubject(did);
   const dn = recorded ? recorded.dn
                       : 'uid=' + escapeDnValue(uid) + ',' + usersDn();
-  log.debug('Leaving didPlan(). ' + (recorded ? 'Already recorded at ' + dn + '.'
-                                              : 'uid=' + uid + ' for ' + did.slice(0, 48)));
+  log.debug('Leaving didPlan(). ' +
+            (recorded ? 'Already recorded at ' + dn + '.'
+                                              : 'uid=' + uid + ' for ' +
+                                                did.slice(0, 48)));
   // Nothing to merge onto an entry that already exists. Unlike a certificate,
   // which is reissued with a new serial and a new validity for the same person,
-  // a DID presented a second time is byte-for-byte the DID that named this entry
-  // in the first place.
+  // a DID presented a second time is byte-for-byte the DID that named this
+  // entry in the first place.
   return {
     dn: dn,
     // The persona on an entry that already exists is not rewritten — plan
@@ -3549,6 +3739,8 @@ function didPlan(info) {
 // one. A SPIFFE identity is a subject.
 // ---------------------------------------------------------------------------
 function spiffeUid(id) {
+  log.debug("Entering spiffeUid().");
+  log.debug("Leaving spiffeUid().");
   return 'spiffe-' + crypto.createHash('sha256').update(String(id), 'utf8')
     .digest('hex').slice(0, 12);
 }
@@ -3588,8 +3780,10 @@ function spiffePlan(info) {
   const recorded = entryBySpiffeSubject(id);
   const dn = recorded ? recorded.dn
                       : 'uid=' + escapeDnValue(uid) + ',' + usersDn();
-  log.debug('Leaving spiffePlan(). ' + (recorded ? 'Already recorded at ' + dn + '.'
-                                                 : 'uid=' + uid + ' for ' + id));
+  log.debug('Leaving spiffePlan(). ' +
+            (recorded ? 'Already recorded at ' + dn + '.'
+                                                 : 'uid=' + uid + ' for ' +
+                                                   id));
   return {
     dn: dn,
     // See didPlan(): the persona on an entry that already exists is that
@@ -3724,16 +3918,20 @@ function applyFederatedAttributes(stored, info) {
   // because one person can federate through two partners and the second must
   // not erase the first — the same reason `description` accumulates one line
   // per protocol.
-  if (addValues(stored, 'federationRelationship', [String(federated.id || '')])) changed = true;
+  if (addValues(stored, 'federationRelationship',
+                [String(federated.id || '')])) changed = true;
   if (federated.peer &&
-      addValues(stored, 'federationIssuer', [String(federated.peer)])) changed = true;
+      addValues(stored, 'federationIssuer',
+                [String(federated.peer)])) changed = true;
   if (federated.subject &&
-      addValues(stored, 'federationSubject', [String(federated.subject)])) changed = true;
+      addValues(stored, 'federationSubject',
+                [String(federated.subject)])) changed = true;
 
   const attributes = federated.attributes || {};
   const written = [];
   Object.keys(attributes).forEach(function (name) {
-    const values = (Array.isArray(attributes[name]) ? attributes[name] : [attributes[name]])
+    const values = (Array.isArray(attributes[name]) ? attributes[name] :
+                    [attributes[name]])
       .map(function (one) { return String(one); })
       .filter(function (one) { return one !== ''; });
     if (!values.length) return;
@@ -3747,8 +3945,8 @@ function applyFederatedAttributes(stored, info) {
     if (lower === 'uid' || lower === 'objectclass' ||
         lower === 'createtimestamp' || lower === 'modifytimestamp' ||
         lower === 'entrydn') {
-      log.debug('applyFederatedAttributes(): not writing "' + name + '" — it names the ' +
-                'entry rather than describing the person.');
+      log.debug('applyFederatedAttributes(): not writing "' + name + '" — it ' +
+                'names the entry rather than describing the person.');
       return;
     }
     const canonical = canonicalName(lower);
@@ -3773,25 +3971,31 @@ function applyFederatedAttributes(stored, info) {
     changed = true;
   }
   if (!changed) {
-    log.debug('Leaving applyFederatedAttributes(). It already said all of this.');
+    log.debug('Leaving applyFederatedAttributes(). It already said all of ' +
+              'this.');
     return false;
   }
   stored.attributes.modifytimestamp = [now];
   log.info('ldap: ' + stored.dn + ' records a federated sign-in through ' +
-           federated.id + (federated.peer ? ' (' + federated.peer + ')' : '') + '. ' +
-           (written.length ? written.length + ' attribute(s) came from the partner and ' +
-                             'OVERWROTE whatever was there: ' + written.join(', ') + '.'
-                           : 'The partner sent no attributes this directory maps.') +
+           federated.id + (federated.peer ? ' (' + federated.peer + ')' : '') +
+           '. ' +
+           (written.length ? written.length + ' attribute(s) came from the ' +
+                             'partner and OVERWROTE whatever was ' +
+                             'there: ' + written.join(', ') + '.'
+                           : 'The partner sent no attributes this directory ' +
+                             'maps.') +
            (federated.unmapped && federated.unmapped.length
-             ? ' ' + federated.unmapped.length + ' more were sent under names nothing ' +
-               'maps and were NOT written: ' + federated.unmapped.join(', ') + '.'
+             ? ' ' + federated.unmapped.length + ' more were sent under ' +
+               'names nothing maps and were NOT ' +
+               'written: ' + federated.unmapped.join(', ') + '.'
              : ''));
   log.debug('Leaving applyFederatedAttributes(). The entry was updated.');
   return true;
 }
 
 function applyAuthenticationFactors(stored, info) {
-  log.debug('Entering applyAuthenticationFactors(). dn=' + (stored && stored.dn));
+  log.debug('Entering applyAuthenticationFactors(). dn=' +
+            (stored && stored.dn));
   if (!stored) {
     log.debug('Leaving applyAuthenticationFactors(). There is no entry.');
     return false;
@@ -3831,7 +4035,8 @@ function applyAuthenticationFactors(stored, info) {
   }
   stored.attributes.modifytimestamp = [generalizedTime()];
   log.info('ldap: ' + stored.dn + ' records authentication with ' +
-           (amr.length ? amr.join(', ') : acr) + '; mfaAuthenticated is ' + flag + '.');
+           (amr.length ? amr.join(', ') : acr) + '; mfaAuthenticated is ' +
+           flag + '.');
   log.debug('Leaving applyAuthenticationFactors(). The entry was updated.');
   return true;
 }
@@ -3930,8 +4135,8 @@ function applySpiffeCertificate(stored, certificate) {
   // whatever the registry last said about it, it is being issued credentials.
   if ((stored.attributes.spiffecredentialstatus || [])[0] === 'revoked') {
     applySpiffeCredentialStatus(stored, 'active',
-      'an X509-SVID was issued for this identity after it was marked revoked, ' +
-      'so it is being issued credentials again');
+      'an X509-SVID was issued for this identity after it was marked ' +
+      'revoked, so it is being issued credentials again');
   }
   stored.attributes.modifytimestamp = [now];
   touchDirectory();
@@ -4008,7 +4213,8 @@ function applySpiffeCredentialStatus(stored, status, reason) {
     stored.attributes.spiffecredentialstatus = [wanted];
     changed = true;
   }
-  if (text && (stored.attributes.spiffecredentialstatusreason || [])[0] !== text) {
+  if (text &&
+      (stored.attributes.spiffecredentialstatusreason || [])[0] !== text) {
     stored.attributes.spiffecredentialstatusreason = [text];
     changed = true;
   }
@@ -4136,9 +4342,9 @@ function recordSpiffeIssuance(detail) {
   const info = detail || {};
   const id = String(info.key || '').trim();
   if (!id || !SPIFFE_SHAPED.test(id)) {
-    log.warn('ldap: an issuance was reported for "' + id + '", which is not a ' +
-             'SPIFFE identity. Nothing was written — see the header for why ' +
-             'this is refused rather than filed under certificatePlan().');
+    log.warn('ldap: an issuance was reported for "' + id + '", which is not ' +
+             'a SPIFFE identity. Nothing was written — see the header for ' +
+             'why this is refused rather than filed under certificatePlan().');
     log.debug('Leaving recordSpiffeIssuance(). Not a SPIFFE identity.');
     return null;
   }
@@ -4213,7 +4419,8 @@ function autoCreateUser(detail) {
     return null;
   }
   if (info.isClient) {
-    log.debug('Leaving autoCreateUser(). That identity is a client, not a person.');
+    log.debug('Leaving autoCreateUser(). That identity is a client, not a ' +
+              'person.');
     return null;
   }
   // AND THE PER-RELATIONSHIP SWITCH, which is the one place a federated sign-in
@@ -4226,7 +4433,8 @@ function autoCreateUser(detail) {
   // a state worth being able to watch.
   if (info.federation && info.federation.autocreate === false) {
     log.debug('Leaving autoCreateUser(). fedAutocreateUsers is off on ' +
-              info.federation.id + ', so this federated sign-in leaves no entry.');
+              info.federation.id + ', so this federated sign-in leaves no ' +
+                                   'entry.');
     return null;
   }
   // FOUR shapes of identity and one placement function each, chosen here and
@@ -4290,25 +4498,27 @@ function autoCreateUser(detail) {
       String(info.protocol || 'WebAuthn') + ') — a credential being GIVEN ' +
       'rather than presented, which is a different act from signing in even ' +
       'when the same ceremony does both'
-    : 'authenticated through ' + String(info.protocol || 'an unstated protocol'));
+    : 'authenticated through ' +
+      String(info.protocol || 'an unstated protocol'));
   if (existing) {
     // Already here. Record the protocol if it is one this entry has not seen —
     // which is what makes the entry say something a second sign-in did not
     // already say, without growing without bound — and, for a certificate, any
-    // fact this one carries that the last one did not: a renewal is a new serial
-    // and a new validity for the same person.
+    // fact this one carries that the last one did not: a renewal is a new
+    // serial and a new validity for the same person.
     let changed = addValues(existing, 'description', [note]);
     Object.keys(plan.merge).forEach(function (attribute) {
-      if (plan.merge[attribute] && addValues(existing, attribute, [String(plan.merge[attribute])])) {
+      if (plan.merge[attribute] &&
+          addValues(existing, attribute, [String(plan.merge[attribute])])) {
         changed = true;
       }
     });
     // And whatever the credential claim set now wants that this entry does not
-    // carry. It runs on a RETURNING person and not only on a new one, because the
-    // selection can change between two sign-ins: somebody who ticks `title` on
-    // /admin/vc gets the whole directory populated then (that page runs the same
-    // sweep), and this is what covers the person who authenticates for the first
-    // time after that but whose entry was created before it.
+    // carry. It runs on a RETURNING person and not only on a new one, because
+    // the selection can change between two sign-ins: somebody who ticks `title`
+    // on /admin/vc gets the whole directory populated then (that page runs the
+    // same sweep), and this is what covers the person who authenticates for the
+    // first time after that but whose entry was created before it.
     if (applyVcAttributes(existing, personaName)) {
       changed = true;
     }
@@ -4355,10 +4565,10 @@ function autoCreateUser(detail) {
   // because it fills only what is ABSENT, and the plan's own attributes — uid,
   // cn, sn, the certificate's RDNs — are the ones that must win.
   applyVcAttributes(created, personaName);
-  // Before the audit row below, so that the attributes it lists are the ones the
-  // entry actually has. On a PASSWORDLESS WebAuthn sign-in this is what says the
-  // single factor was a key rather than a password, on an entry that exists
-  // because that sign-in was an authentication in its own right.
+  // Before the audit row below, so that the attributes it lists are the ones
+  // the entry actually has. On a PASSWORDLESS WebAuthn sign-in this is what
+  // says the single factor was a key rather than a password, on an entry that
+  // exists because that sign-in was an authentication in its own right.
   applyAuthenticationFactors(created, info);
   // Last, for applyVcAttributes()'s sake: see the note on the returning-person
   // branch above. What a foreign identity provider asserted about somebody
@@ -4415,6 +4625,8 @@ function autoCreateUser(detail) {
 // declared down here does not exist yet when it does.)
 
 function nameUsableInDn(name) {
+  log.debug("Entering nameUsableInDn().");
+  log.debug("Leaving nameUsableInDn().");
   return !DN_RESERVED.test(String(name == null ? '' : name));
 }
 
@@ -4475,17 +4687,19 @@ function personAttributesFrom(given) {
     out[row.ldap] = values;
   });
   if (unknown.length) {
-    log.debug('Leaving personAttributesFrom(). ' + unknown.length + ' unknown.');
+    log.debug('Leaving personAttributesFrom(). ' + unknown.length +
+              ' unknown.');
     return coded('STS-LDAP-0047', { ok: false,
              errors: ['A person here does not have ' +
                       (unknown.length === 1 ? 'an attribute' : 'attributes') +
                       ' called ' + unknown.join(', ') + '. The attributes a ' +
-                      'create may write are the catalogue on /admin/vc, which ' +
-                      '/admin/users/new draws as its form and GET ' +
+                      'create may write are the catalogue on /admin/vc, ' +
+                      'which /admin/users/new draws as its form and GET ' +
                       '/admin-api/users/new publishes. A PASSWORD IS NOT ONE ' +
                       'OF THEM: it is set through the `credential` option on ' +
-                      'this same call, or by POST /admin-api/users/set-password, ' +
-                      'so that it is hashed rather than written down.'],
+                      'this same call, or by POST ' +
+                      '/admin-api/users/set-password, so that it is hashed ' +
+                      'rather than written down.'],
              unknown: unknown });
   }
   log.debug('Leaving personAttributesFrom(). ' + Object.keys(out).length +
@@ -4504,9 +4718,9 @@ function personAttributesFrom(given) {
 // be filled by authenticating or by an `ldapadd`.
 //
 // THE SAME FUNCTION SERVES BOTH SURFACES, which is the rule `applications.js`
-// already keeps: /admin/users's form and POST /admin-api/users/create call this,
-// so a form post and an API call are one act arriving by two routes and cannot
-// drift into two readings of what creating a user means.
+// already keeps: /admin/users's form and POST /admin-api/users/create call
+// this, so a form post and an API call are one act arriving by two routes and
+// cannot drift into two readings of what creating a user means.
 //
 // Five things about it, and the last two arrived on 2026-09-06 with
 // /admin/users/new — the screen on which an operator types a person's details
@@ -4562,50 +4776,56 @@ function createUser(name, options) {
   const wanted = String(name == null ? '' : name).trim();
   if (!wanted) {
     log.debug('Leaving createUser(). No name.');
-    return coded('STS-LDAP-0042', { ok: false, errors: ['Which user? Send `username` with the name ' +
-                                 'they will authenticate under — the same ' +
-                                 'string that would appear in a token\'s `sub` ' +
-                                 'and on /admin/users.'] });
+    return coded('STS-LDAP-0042', { ok: false, errors: ['Which user? Send ' +
+                                 '`username` with the name they will ' +
+                                 'authenticate under — the same string that ' +
+                                 'would appear in a token\'s `sub` and on ' +
+                                 '/admin/users.'] });
   }
   if (DN_SHAPED.test(wanted)) {
     log.debug('Leaving createUser(). That is a DN.');
-    return coded('STS-LDAP-0043', { ok: false, errors: ['"' + wanted + '" is a DN and not a username. ' +
-                                 'An entry named by a distinguished name gets ' +
-                                 'here by presenting a client certificate, ' +
-                                 'where the DN is the identity; there is ' +
-                                 'nothing to create one from by hand.'] });
+    return coded('STS-LDAP-0043', { ok: false, errors: ['"' + wanted + '" is ' +
+                                 'a DN and not a username. An entry named by ' +
+                                 'a distinguished name gets here by ' +
+                                 'presenting a client certificate, where the ' +
+                                 'DN is the identity; there is nothing to ' +
+                                 'create one from by hand.'] });
   }
   if (DID_SHAPED.test(wanted)) {
     log.debug('Leaving createUser(). That is a DID.');
-    return coded('STS-LDAP-0044', { ok: false, errors: ['"' + wanted.slice(0, 48) + '" is a ' +
-                                 'decentralized identifier and not a username. ' +
-                                 'A DID reaches this directory by being ' +
-                                 'presented, and where this service knows whose ' +
-                                 'it is the identifier goes onto that person\'s ' +
-                                 'entry as didSubject.'] });
+    return coded('STS-LDAP-0044',
+                 { ok: false, errors: ['"' + wanted.slice(0, 48) + '" ' +
+                                 'is a decentralized identifier and not a ' +
+                                 'username. A DID reaches this directory by ' +
+                                 'being presented, and where this service ' +
+                                 'knows whose it is the identifier goes onto ' +
+                                 'that person\'s entry as didSubject.'] });
   }
   if (SPIFFE_SHAPED.test(wanted)) {
     log.debug('Leaving createUser(). That is a SPIFFE ID.');
-    return coded('STS-LDAP-0045', { ok: false, errors: ['"' + wanted.slice(0, 64) + '" is a SPIFFE ' +
-                                 'identity and not a username. A workload ' +
-                                 'identity reaches this directory by being ' +
-                                 'PRESENTED — an X509-SVID over mutual TLS at ' +
-                                 'the SPIRE Server API, an agent attesting, a ' +
-                                 'JWT-SVID validated at the Workload API — ' +
-                                 'and its entry is named by a digest with the ' +
-                                 'identity on it as spiffeSubject. What you ' +
-                                 'probably want instead is a REGISTRATION ' +
-                                 'ENTRY, which is a different thing in a ' +
-                                 'different container: /admin/spiffe/entries, ' +
-                                 'POST /admin-api/spiffe/entries/create, or ' +
+    return coded('STS-LDAP-0045',
+                 { ok: false, errors: ['"' + wanted.slice(0, 64) + '" ' +
+                                 'is a SPIFFE identity and not a username. A ' +
+                                 'workload identity reaches this directory ' +
+                                 'by being PRESENTED — an X509-SVID over ' +
+                                 'mutual TLS at the SPIRE Server API, an ' +
+                                 'agent attesting, a JWT-SVID validated at ' +
+                                 'the Workload API — and its entry is named ' +
+                                 'by a digest with the identity on it as ' +
+                                 'spiffeSubject. What you probably want ' +
+                                 'instead is a REGISTRATION ENTRY, which is ' +
+                                 'a different thing in a different ' +
+                                 'container: /admin/spiffe/entries, POST ' +
+                                 '/admin-api/spiffe/entries/create, or ' +
                                  'BatchCreateEntry.'] });
   }
   if (!nameUsableInDn(wanted)) {
     log.debug('Leaving createUser(). The name carries DN syntax.');
-    return coded('STS-LDAP-0046', { ok: false, errors: ['"' + wanted + '" cannot be a username here: ' +
-                                 'it carries a character RFC 4514 reserves in a ' +
-                                 'DN (one of , = + < > # ; " \\), so the entry ' +
-                                 'would be named something other than what was ' +
+    return coded('STS-LDAP-0046', { ok: false, errors: ['"' + wanted + '" ' +
+                                 'cannot be a username here: it carries a ' +
+                                 'character RFC 4514 reserves in a DN (one ' +
+                                 'of , = + < > # ; " \\), so the entry would ' +
+                                 'be named something other than what was ' +
                                  'typed. An ldapadd can still create such an ' +
                                  'entry, with the escaping written out.'] });
   }
@@ -4613,11 +4833,12 @@ function createUser(name, options) {
   if (clash) {
     log.debug('Leaving createUser(). That username is taken.');
     return coded('STS-LDAP-0005', { ok: false,
-             errors: ['There is already a user called "' + wanted + '" here, at ' +
+             errors: ['There is already a user called "' + wanted + '" here, ' +
+                 'at ' +
                       clash.dn + '. One entry per person is the rule this ' +
                       'directory keeps at every door — whatever protocol ' +
-                      'authenticated them, and whichever attribute their entry ' +
-                      'happens to be named by.'],
+                      'authenticated them, and whichever attribute their ' +
+                      'entry happens to be named by.'],
              existing: { dn: clash.dn, origin: clash.origin || '' } });
   }
   if (totalEntries() >= maxEntries()) {
@@ -4643,8 +4864,9 @@ function createUser(name, options) {
   // THE FIVE INVENTED ATTRIBUTES namePlan() ADDS, dropped when nothing is to be
   // invented. `objectClass` and `uid` are kept in both branches and are not on
   // that list: the object classes are what makes this entry a person to an LDAP
-  // client, and the uid IS the username — an entry at `uid=alice,ou=users` whose
-  // uid attribute was missing would be found by nothing that looks a person up.
+  // client, and the uid IS the username — an entry at `uid=alice,ou=users`
+  // whose uid attribute was missing would be found by nothing that looks a
+  // person up.
   const INVENTED_BY_PLAN = ['cn', 'sn', 'givenName', 'displayName', 'mail'];
   const base = {};
   Object.keys(plan.attributes).forEach(function (attribute) {
@@ -4739,26 +4961,26 @@ function createUser(name, options) {
 //
 // /admin/vc chooses which attributes an issued credential carries. Those
 // attributes have to have VALUES, and this service authenticates nobody — there
-// is no source of a real birthdate, and there had better not be. So vc_claims.js
-// invents a consistent person per username and this function writes what is
-// missing onto their entry.
+// is no source of a real birthdate, and there had better not be. So
+// vc_claims.js invents a consistent person per username and this function
+// writes what is missing onto their entry.
 //
 // Three rules, and each of them is the answer to a way this could go wrong:
 //
-//   * ABSENT ONLY. An attribute the entry already carries is never touched. That
-//     covers the seeded people (alice keeps `Alice Anderson`, and only gains the
-//     attributes she had none of), a certificate's RDNs, and — the one that
-//     matters most — anything an operator set through LDAP. A sweep that
-//     overwrote `mail` after somebody had just ldapmodify'd it would be a
+//   * ABSENT ONLY. An attribute the entry already carries is never touched.
+//     That covers the seeded people (alice keeps `Alice Anderson`, and only
+//     gains the attributes she had none of), a certificate's RDNs, and — the
+//     one that matters most — anything an operator set through LDAP. A sweep
+//     that overwrote `mail` after somebody had just ldapmodify'd it would be a
 //     directory that argues with its own clients.
-//   * ONE VALUE. These are single-valued facts; addValues() would happily append
-//     a second `mail` on the next sweep if the first were ever edited, and an
-//     entry that accumulated a birthdate per sign-in would be the visible symptom
-//     of a bug nobody could locate.
-//   * A NAME, NOT A DN, seeds the person. A TLS client certificate's identity is
-//     a DN, and `uid` holding one would contradict the entry it sits on — so the
-//     row that carries the username is skipped for those. Everything else is
-//     invented from the DN string quite happily; it is only a seed.
+//   * ONE VALUE. These are single-valued facts; addValues() would happily
+//     append a second `mail` on the next sweep if the first were ever edited,
+//     and an entry that accumulated a birthdate per sign-in would be the
+//     visible symptom of a bug nobody could locate.
+//   * A NAME, NOT A DN, seeds the person. A TLS client certificate's identity
+//     is a DN, and `uid` holding one would contradict the entry it sits on — so
+//     the row that carries the username is skipped for those. Everything else
+//     is invented from the DN string quite happily; it is only a seed.
 // ---------------------------------------------------------------------------
 function applyVcAttributes(stored, key) {
   log.debug('Entering applyVcAttributes(). dn=' + (stored && stored.dn));
@@ -4773,11 +4995,12 @@ function applyVcAttributes(stored, key) {
   // those five callers. A credential then carries what the entry holds or
   // omits the claim — see `oid4vc/vc_claims.js`.
   if (!mode.inventsClaimValues()) {
-    log.debug('Leaving applyVcAttributes(). This service invents no claim value ' +
-              'in this mode.');
+    log.debug('Leaving applyVcAttributes(). This service invents no claim ' +
+              'value in this mode.');
     return false;
   }
-  const name = String(key == null ? '' : key).trim() || commonNameOf(stored.dn) ||
+  const name = String(key == null ? '' : key).trim() ||
+               commonNameOf(stored.dn) ||
                (stored.attributes.uid || [])[0] || stored.dn;
   const isDn = DN_SHAPED.test(name);
   const generated = vcClaims.generatedFor(name);
@@ -4792,7 +5015,8 @@ function applyVcAttributes(stored, key) {
     }
     if (isDn && attribute === 'uid') {
       // See the third rule: this entry is named by a certificate subject, and a
-      // uid holding that subject would name the person something the DN does not.
+      // uid holding that subject would name the person something the DN does
+      // not.
       return;
     }
     stored.attributes[attribute] = [generated[attribute]];
@@ -4828,7 +5052,8 @@ function applyVcAttributes(stored, key) {
   noteGroupIndexPut(stored, groupIndexWasCurrent);
   log.info('ldap: ' + stored.dn + ' gained ' + added.join(', ') +
            ' so that an issued credential has something to assert.');
-  log.debug('Leaving applyVcAttributes(). ' + added.length + ' attribute(s) added.');
+  log.debug('Leaving applyVcAttributes(). ' + added.length + ' attribute(s) ' +
+      'added.');
   return true;
 }
 
@@ -4843,10 +5068,10 @@ function applyVcAttributes(stored, key) {
 function personaKeyOf(stored) {
   log.debug('Entering personaKeyOf().');
   // The DID first, where there is one, and this line is load-bearing: on a
-  // DID-named entry the uid is a DIGEST of the identity rather than the identity
-  // (see didPlan()), so seeding from it would invent a SECOND person for
-  // somebody the authentication path had already invented one for — and the two
-  // would disagree on every attribute the sweep filled in.
+  // DID-named entry the uid is a DIGEST of the identity rather than the
+  // identity (see didPlan()), so seeding from it would invent a SECOND person
+  // for somebody the authentication path had already invented one for — and the
+  // two would disagree on every attribute the sweep filled in.
   //
   // ONLY WHERE IT NAMED THE ENTRY, which is the qualification the fold added.
   // A DID now also lands on the entry of the person it was issued to (see
@@ -4898,8 +5123,8 @@ function personaKeyOf(stored) {
 // Deliberately not "everything with a person objectClass anywhere": this
 // directory is schemaless, a client can add anything anywhere, and inventing a
 // birthdate for `cn=developers,ou=groups` because somebody gave it an
-// objectClass of person would be a sweep doing damage in a place nobody asked it
-// to look. The container itself is excepted because it is an
+// objectClass of person would be a sweep doing damage in a place nobody asked
+// it to look. The container itself is excepted because it is an
 // organizationalUnit — an `ou=users` carrying a nationality is not a person, it
 // is a bug that reads as one.
 // ---------------------------------------------------------------------------
@@ -4911,18 +5136,20 @@ function populateVcAttributes() {
   // Said in the result, so the page behind Populate reports it rather than
   // "0 entries changed" about a sweep that did not run.
   if (!mode.inventsClaimValues()) {
-    log.info('ldap: the credential attribute sweep did not run — this service ' +
-             'invents no claim value in product mode, so an entry carries what ' +
-             'was provisioned onto it and nothing generated.');
+    log.info('ldap: the credential attribute sweep did not run — this ' +
+             'service invents no claim value in product mode, so an entry ' +
+             'carries what was provisioned onto it and nothing generated.');
     log.debug('Leaving populateVcAttributes(). Not in this mode.');
     return { examined: 0, changed: 0, values: 0, attributes: wanted,
-             skipped: 'product mode invents no claim value (mode.inventsClaimValues())' };
+             skipped: 'product mode invents no claim value ' +
+                      '(mode.inventsClaimValues())' };
   }
   let examined = 0;
   let changed = 0;
   const before = new Map();
   eachEntryInRealm(function (stored) {
-    if (!isUnder(stored.dn, usersDn()) || normalizeDn(stored.dn) === normalizeDn(usersDn())) {
+    if (!isUnder(stored.dn, usersDn()) ||
+        normalizeDn(stored.dn) === normalizeDn(usersDn())) {
       return;
     }
     examined++;
@@ -4940,11 +5167,17 @@ function populateVcAttributes() {
       values += Object.keys(stored.attributes).length - before.get(stored.dn);
     }
   });
-  log.info('ldap: swept ' + examined + ' entry/entries under ' + usersDn() + ' for the ' +
-           wanted.length + ' attribute(s) the credential claim set asks for; ' + changed +
+  log.info('ldap: swept ' + examined + ' entry/entries under ' + usersDn() +
+      ' ' +
+      'for the ' +
+           wanted.length + ' attribute(s) the credential claim set asks for; ' +
+      changed +
            ' entry/entries gained ' + values + ' value(s).');
-  log.debug('Leaving populateVcAttributes(). ' + changed + ' of ' + examined + ' changed.');
-  return { examined: examined, changed: changed, values: values, attributes: wanted };
+  log.debug('Leaving populateVcAttributes(). ' + changed + ' of ' + examined +
+      ' ' +
+      'changed.');
+  return { examined: examined, changed: changed, values: values,
+           attributes: wanted };
 }
 
 // ---------------------------------------------------------------------------
@@ -4980,7 +5213,8 @@ function populateVcAttributesAt(dn) {
   log.debug('Entering populateVcAttributesAt(). dn=' + dn);
   const stored = getEntry(dn);
   if (!stored) {
-    log.debug('Leaving populateVcAttributesAt(). There is no entry at ' + dn + '.');
+    log.debug('Leaving populateVcAttributesAt(). There is no entry at ' + dn +
+              '.');
     return { examined: 0, changed: 0, values: 0 };
   }
   if (!isUnder(stored.dn, usersDn()) ||
@@ -5004,9 +5238,9 @@ function populateVcAttributesAt(dn) {
 //
 // It is given the same identity key the console files a person under, so
 // locateEntry() answers for both shapes of identity: a name is
-// `uid=<name>,ou=users` and a certificate's DN is found by the subject the entry
-// recorded. Nothing is invented here — a missing entry is null, and the caller's
-// own fallback is what fills the claim.
+// `uid=<name>,ou=users` and a certificate's DN is found by the subject the
+// entry recorded. Nothing is invented here — a missing entry is null, and the
+// caller's own fallback is what fills the claim.
 function vcAttributesFor(key) {
   log.debug('Entering vcAttributesFor(). key=' + key);
   const name = String(key == null ? '' : key).trim();
@@ -5020,7 +5254,8 @@ function vcAttributesFor(key) {
     return null;
   }
   log.debug('Leaving vcAttributesFor(). ' +
-            Object.keys(located.stored.attributes).length + ' attribute(s) at ' +
+            Object.keys(located.stored.attributes).length +
+            ' attribute(s) at ' +
             located.stored.dn + '.');
   return located.stored.attributes;
 }
@@ -5028,43 +5263,43 @@ function vcAttributesFor(key) {
 // ---------------------------------------------------------------------------
 // ONE USER'S ENTRY, FOR THE ADMIN CONSOLE.
 //
-// /admin/users?user=<name> is the page that answers "what does this service hold
-// about this person", and the directory entry autoCreateUser() seeded above is
-// part of that answer — so the console shows it there rather than making a reader
-// find the same object again on /ldap/directory.
+// /admin/users?user=<name> is the page that answers "what does this service
+// hold about this person", and the directory entry autoCreateUser() seeded
+// above is part of that answer — so the console shows it there rather than
+// making a reader find the same object again on /ldap/directory.
 //
 // The direction of the dependency is inverted here for the same reason the
-// observer above is, and it is worth stating because it is the OPPOSITE way round
-// from what the call graph looks like. admin.js renders this; it would naturally
-// require this module and read `entries`. It must not: server.js requires ./admin
-// before ./ldap_server (rule 6 — this module needs admin_stats' identity
-// normalisation), and a require from admin.js would drag this module's routes in
-// ahead of the console's, which reorders the express router that
-// /admin/sts-metadata reads. So admin.js offers a slot and this module fills
-// it, exactly as admin_stats.js does for the observer.
+// observer above is, and it is worth stating because it is the OPPOSITE way
+// round from what the call graph looks like. admin.js renders this; it would
+// naturally require this module and read `entries`. It must not: server.js
+// requires ./admin before ./ldap_server (rule 6 — this module needs
+// admin_stats' identity normalisation), and a require from admin.js would drag
+// this module's routes in ahead of the console's, which reorders the express
+// router that /admin/sts-metadata reads. So admin.js offers a slot and this
+// module fills it, exactly as admin_stats.js does for the observer.
 //
-// It is given the IDENTITY KEY the console files a person under — the local name,
-// with `urn:sts:user:` and any realm already stripped — which is the same
+// It is given the IDENTITY KEY the console files a person under — the local
+// name, with `urn:sts:user:` and any realm already stripped — which is the same
 // string autoCreateUser() built the DN from, so the two cannot drift.
 //
-// What comes back is deliberately more than the entry: the DN is reported whether
-// or not anything is there, because "no entry at uid=bob,ou=users" and "the
-// directory is not running" and "auto-creation is off" are three different answers
-// and a null would be all three at once. The console phrases which one it is; this
-// function states the facts it needs to do that.
+// What comes back is deliberately more than the entry: the DN is reported
+// whether or not anything is there, because "no entry at uid=bob,ou=users" and
+// "the directory is not running" and "auto-creation is off" are three different
+// answers and a null would be all three at once. The console phrases which one
+// it is; this function states the facts it needs to do that.
 // ---------------------------------------------------------------------------
 //
 // Finding it is three rules, because there are three shapes of identity here. A
-// NAME is `uid=<name>,ou=users` and always was. A DN — which is what a TLS client
-// certificate's identity is — is looked up by the subject the entry RECORDED,
-// in `x509subject`, because that is exact and stays right if certificatePlan()'s
-// naming rule ever changes; and where the subject lies inside this directory's
-// own tree, the entry it names directly is the answer. A DECENTRALIZED
-// IDENTIFIER is looked up the same way and for the same reason, by `didSubject`,
-// which on those entries is the identity where the uid is only a digest of it.
-// Failing all of that, the DN the matching plan WOULD have built is reported, so
-// the page can say where the entry would have gone rather than naming a place
-// nothing was ever going to be.
+// NAME is `uid=<name>,ou=users` and always was. A DN — which is what a TLS
+// client certificate's identity is — is looked up by the subject the entry
+// RECORDED, in `x509subject`, because that is exact and stays right if
+// certificatePlan()'s naming rule ever changes; and where the subject lies
+// inside this directory's own tree, the entry it names directly is the answer.
+// A DECENTRALIZED IDENTIFIER is looked up the same way and for the same reason,
+// by `didSubject`, which on those entries is the identity where the uid is only
+// a digest of it. Failing all of that, the DN the matching plan WOULD have
+// built is reported, so the page can say where the entry would have gone rather
+// than naming a place nothing was ever going to be.
 function locateEntry(key) {
   log.debug('Entering locateEntry(). key=' + key);
   if (DN_SHAPED.test(key)) {
@@ -5075,7 +5310,8 @@ function locateEntry(key) {
     // cannot see another realm's entry and the check is the store's job.
     const direct = getEntry(key);
     if (direct) {
-      log.debug('Leaving locateEntry(). The DN names an entry in this realm directly.');
+      log.debug('Leaving locateEntry(). The DN names an entry in this realm ' +
+                'directly.');
       return { dn: direct.dn, stored: direct };
     }
     let found = null;
@@ -5095,13 +5331,13 @@ function locateEntry(key) {
     log.debug('Leaving locateEntry(). Nothing yet; it would go at ' + plan.dn);
     return { dn: plan.dn, stored: null };
   }
-  // A DECENTRALIZED IDENTIFIER, which is the third shape and the one that CANNOT
-  // be looked up by rebuilding its name and reading the store. It could — the
-  // digest is deterministic — but doing it that way would make didPlan()'s naming
-  // rule impossible to change without orphaning every entry already written under
-  // the old one. So the entry is found by what it RECORDED, exactly as a
-  // certificate's is, and didPlan() is consulted only to say where an entry
-  // WOULD go when there is none.
+  // A DECENTRALIZED IDENTIFIER, which is the third shape and the one that
+  // CANNOT be looked up by rebuilding its name and reading the store. It could
+  // — the digest is deterministic — but doing it that way would make
+  // didPlan()'s naming rule impossible to change without orphaning every entry
+  // already written under the old one. So the entry is found by what it
+  // RECORDED, exactly as a certificate's is, and didPlan() is consulted only to
+  // say where an entry WOULD go when there is none.
   if (DID_SHAPED.test(key)) {
     const found = entryByDidSubject(key);
     if (found) {
@@ -5128,8 +5364,8 @@ function locateEntry(key) {
   // A NAME, and it is asked of the store rather than answered by rebuilding the
   // DN. `uid=<name>,ou=users` is where namePlan() puts one and is still the
   // answer for almost everybody — but a person whose entry was created by a
-  // client certificate is at `cn=<name>,ou=users`, and rebuilding the name would
-  // report "nothing here" about an entry this directory holds and every
+  // client certificate is at `cn=<name>,ou=users`, and rebuilding the name
+  // would report "nothing here" about an entry this directory holds and every
   // authentication now folds onto.
   const already = existingUserEntry(key);
   if (already) {
@@ -5137,7 +5373,8 @@ function locateEntry(key) {
     return { dn: already.dn, stored: already };
   }
   const dn = 'uid=' + key + ',' + usersDn();
-  log.debug('Leaving locateEntry(). A name, so ' + dn + ' (nothing there yet).');
+  log.debug('Leaving locateEntry(). A name, so ' + dn +
+            ' (nothing there yet).');
   return { dn: dn, stored: null };
 }
 
@@ -5148,18 +5385,19 @@ function objectFor(name) {
   const dn = located.dn;
   const stored = located.stored;
 
-  // Every OTHER entry in the tree whose uid names this same person. A client can
-  // add `cn=alice,ou=people` through the protocol, and a page that reported only
-  // the auto-created DN would say "no entry" while the directory held one. Only
-  // the DNs are listed — the dump below is of the entry the console is about.
+  // Every OTHER entry in the tree whose uid names this same person. A client
+  // can add `cn=alice,ou=people` through the protocol, and a page that reported
+  // only the auto-created DN would say "no entry" while the directory held one.
+  // Only the DNs are listed — the dump below is of the entry the console is
+  // about.
   //
-  // Skipped for a DN identity: `uid` holds names, so matching a whole DN against
-  // it can only ever find nothing, and the entry for that identity was found by
-  // its subject above rather than by a name at all. Skipped for a DID for the
-  // same reason and one more — the uid on a DID-named entry is a DIGEST of the
-  // identity, so comparing the identity against it would find nothing even on
-  // the entry that is this person's. A SPIFFE identity is skipped for exactly
-  // that second reason.
+  // Skipped for a DN identity: `uid` holds names, so matching a whole DN
+  // against it can only ever find nothing, and the entry for that identity was
+  // found by its subject above rather than by a name at all. Skipped for a DID
+  // for the same reason and one more — the uid on a DID-named entry is a DIGEST
+  // of the identity, so comparing the identity against it would find nothing
+  // even on the entry that is this person's. A SPIFFE identity is skipped for
+  // exactly that second reason.
   const alsoNamed = [];
   if (key && !DN_SHAPED.test(key) && !DID_SHAPED.test(key) &&
       !SPIFFE_SHAPED.test(key)) {
@@ -5202,12 +5440,13 @@ function objectFor(name) {
     // Canonically spelled, and OPERATIONAL ATTRIBUTES INCLUDED. A search would
     // return createTimestamp and modifyTimestamp only when they were asked for
     // by name (RFC 4511 section 4.5.1.8, and toSearchEntry() honours it) — but
-    // this is not a search, it is this service showing its own store, and a dump
-    // that silently dropped two of the entry's attributes would be the one thing
-    // a dump must not do.
+    // this is not a search, it is this service showing its own store, and a
+    // dump that silently dropped two of the entry's attributes would be the one
+    // thing a dump must not do.
     const attributes = {};
     Object.keys(stored.attributes).sort().forEach(function (attribute) {
-      attributes[canonicalName(attribute)] = stored.attributes[attribute].slice(0);
+      attributes[canonicalName(attribute)] = stored.attributes[attribute].slice(
+          0);
     });
     out.entry = {
       dn: stored.dn,
@@ -5218,7 +5457,8 @@ function objectFor(name) {
       attributes: attributes
     };
   }
-  log.debug('Leaving objectFor(). ' + (stored ? 'The entry is there.' : 'There ' +
+  log.debug('Leaving objectFor(). ' +
+            (stored ? 'The entry is there.' : 'There ' +
             'is no entry at ' + dn + '.') + ' ' + alsoNamed.length +
             ' other entry/entries name it.');
   return out;
@@ -5291,8 +5531,9 @@ function groupRuleFor(stored) {
 }
 
 // The key the ADMIN CONSOLE files a person under, worked out from the DN of the
-// entry that names them — the inverse of the `uid=<name>,ou=users` locateEntry()
-// builds, and the reason a member row can link to /admin/users?user=... at all.
+// entry that names them — the inverse of the `uid=<name>,ou=users`
+// locateEntry() builds, and the reason a member row can link to
+// /admin/users?user=... at all.
 //
 // Two sources, in this order, and the order is what keeps the link honest: the
 // entry's own `uid` where it has one, because that is what autoCreateUser()
@@ -5303,13 +5544,16 @@ function groupRuleFor(stored) {
 // seeds — yields '' and gets no link rather than a link to a user page that
 // would say "nothing has authenticated as that".
 function consoleKeyFor(dn, stored) {
+  log.debug("Entering consoleKeyFor().");
   if (stored && (stored.attributes.uid || []).length) {
+    log.debug("Leaving consoleKeyFor().");
     return String(stored.attributes.uid[0]);
   }
   const leaf = splitRdns(dn)[0] || '';
   const pairs = rdnPairs(leaf).filter(function (pair) {
     return pair.attribute === 'uid';
   });
+  log.debug("Leaving consoleKeyFor().");
   return pairs.length ? unescapeDnValue(pairs[0].value) : '';
 }
 
@@ -5347,9 +5591,9 @@ function resolveMember(value, attribute) {
     present: !!stored,
     // A group that lists another group is NESTED membership, which this service
     // does not expand — nothing here walks it, and no protocol endpoint reads
-    // these groups at all. Saying which members are groups is what lets a reader
-    // see the nesting they wrote; claiming to have flattened it would be a lie
-    // about a feature that is not here.
+    // these groups at all. Saying which members are groups is what lets a
+    // reader see the nesting they wrote; claiming to have flattened it would be
+    // a lie about a feature that is not here.
     kind: !stored ? 'dangling' : (rule ? 'group' : 'entry'),
     userKey: stored ? consoleKeyFor(dn, stored) : '',
     // Enough of the entry to draw a row without a second lookup. Empty for a
@@ -5363,12 +5607,14 @@ function resolveMember(value, attribute) {
 // Every membership value on one entry, in the order MEMBER_ATTRIBUTES lists the
 // attributes and, within an attribute, the order the values are stored in.
 function membersOf(stored) {
+  log.debug("Entering membersOf().");
   const out = [];
   MEMBER_ATTRIBUTES.forEach(function (attribute) {
     (stored.attributes[attribute.name] || []).forEach(function (value) {
       out.push(resolveMember(value, attribute));
     });
   });
+  log.debug("Leaving membersOf().");
   return out;
 }
 
@@ -5377,13 +5623,14 @@ function membersOf(stored) {
 // list back.
 //
 // This is not a nicety. `memberOf` is maintained by the SERVER in every
-// directory that has it (it is not even a standard attribute — it is Microsoft's
-// and OpenLDAP's, through an overlay), and this one maintains nothing: a client
-// that writes `memberOf: cn=developers,...` onto a user creates exactly this
-// disagreement, and it is one of the two or three things a person would come to
-// a mock directory to try. Listing them separately, under their own heading,
-// says which side of the disagreement each name came from — merging them into
-// the member list would manufacture a consistency this directory never claimed.
+// directory that has it (it is not even a standard attribute — it is
+// Microsoft's and OpenLDAP's, through an overlay), and this one maintains
+// nothing: a client that writes `memberOf: cn=developers,...` onto a user
+// creates exactly this disagreement, and it is one of the two or three things a
+// person would come to a mock directory to try. Listing them separately, under
+// their own heading, says which side of the disagreement each name came from —
+// merging them into the member list would manufacture a consistency this
+// directory never claimed.
 function claimedMembersOf(groupDn) {
   log.debug('Entering claimedMembersOf().');
   const listed = {};
@@ -5416,9 +5663,11 @@ function claimedMembersOf(groupDn) {
 }
 
 // The directory-level facts every one of the console's LDAP sections needs. The
-// same six objectFor() reports, out of one function so that the two pages cannot
-// come to disagree about whether a socket is up.
+// same six objectFor() reports, out of one function so that the two pages
+// cannot come to disagree about whether a socket is up.
 function directoryState() {
+  log.debug("Entering directoryState().");
+  log.debug("Leaving directoryState().");
   return {
     baseDn: baseDn(),
     usersDn: usersDn(),
@@ -5438,8 +5687,8 @@ function directoryState() {
 // would be two places for "what counts as a group" to drift apart.
 //
 // With no DN it is the list. With one it is the list AND that group in full —
-// the list costs one pass over a store capped at maxEntries() and it is what lets
-// the detail page carry its own way back to the siblings.
+// the list costs one pass over a store capped at maxEntries() and it is what
+// lets the detail page carry its own way back to the siblings.
 function groupsFor(dn) {
   log.debug('Entering groupsFor(). dn=' + (dn || '(the whole list)'));
   const wanted = String(dn == null ? '' : dn).trim();
@@ -5467,8 +5716,9 @@ function groupsFor(dn) {
       modifiedAt: entry.modifiedAt,
       memberCount: members.length,
       // Split out because the two numbers are the interesting pair: a group
-      // whose seven members resolve to five entries is the referential-integrity
-      // story, and a single count tells it as "seven members" with nothing wrong.
+      // whose seven members resolve to five entries is the
+      // referential-integrity story, and a single count tells it as "seven
+      // members" with nothing wrong.
       presentCount: members.filter(function (m) { return m.present; }).length,
       danglingCount: members.filter(function (m) { return !m.present; }).length,
       claimedCount: claimedMembersOf(entry.dn).length,
@@ -5493,7 +5743,8 @@ function groupsFor(dn) {
   // whether it IS a group; the store decides whose it is.
   const stored = getEntry(wanted);
   if (!stored) {
-    log.debug('Leaving groupsFor(). There is no entry at ' + wanted + ' in this realm.');
+    log.debug('Leaving groupsFor(). There is no entry at ' + wanted + ' in ' +
+        'this realm.');
     return out;
   }
   const rule = groupRuleFor(stored);
@@ -5505,7 +5756,8 @@ function groupsFor(dn) {
     // happen.
     out.notAGroup = true;
     out.entryDn = stored.dn;
-    log.debug('Leaving groupsFor(). ' + stored.dn + ' is an entry but not a group.');
+    log.debug('Leaving groupsFor(). ' + stored.dn + ' is an entry but not a ' +
+                                                    'group.');
     return out;
   }
 
@@ -5515,7 +5767,8 @@ function groupsFor(dn) {
   // must not do.
   const attributes = {};
   Object.keys(stored.attributes).sort().forEach(function (attribute) {
-    attributes[canonicalName(attribute)] = stored.attributes[attribute].slice(0);
+    attributes[canonicalName(attribute)] = stored.attributes[attribute].slice(
+        0);
   });
   const members = membersOf(stored);
   out.found = true;
@@ -5538,7 +5791,8 @@ function groupsFor(dn) {
     claimed: claimedMembersOf(stored.dn)
   };
   log.debug('Leaving groupsFor(). ' + stored.dn + ' has ' + members.length +
-            ' member value(s), ' + out.group.danglingCount + ' of them dangling.');
+            ' member value(s), ' + out.group.danglingCount + ' of them ' +
+                'dangling.');
   return out;
 }
 
@@ -5593,9 +5847,9 @@ function groupsFor(dn) {
 // walking every entry in the tree and, for each one that turned out to be a
 // group, normalising every value of its three membership attributes. That is
 // O(entries x members) per issuance against a store this service will let grow
-// to `ldap.maxEntries`, which is 2,000 by default — and it showed: normalizeDn()
-// was the third-heaviest application function in a CPU profile of the token
-// endpoint under load, above anything in oauth2.js.
+// to `ldap.maxEntries`, which is 2,000 by default — and it showed:
+// normalizeDn() was the third-heaviest application function in a CPU profile of
+// the token endpoint under load, above anything in oauth2.js.
 //
 // The walk is now done ONCE per change and kept, which turns the per-token cost
 // into two Map lookups and a sort of the handful of groups the person is
@@ -5678,7 +5932,8 @@ function buildGroupIndex() {
         // Resolving it to the DN it MEANS here, at build time, is what lets the
         // lookup be a single Map.get — and it is exactly the resolution the old
         // walk did per value per token.
-        const dn = attribute.holds === 'uid' ? 'uid=' + raw + ',' + usersDn() : raw;
+        const dn = attribute.holds === 'uid' ? 'uid=' + raw + ',' + usersDn() :
+                   raw;
         const memberKey = normalizeDn(dn);
         let groups = byMember.get(memberKey);
         if (!groups) {
@@ -5711,14 +5966,17 @@ function buildGroupIndex() {
 // The index, rebuilt if anything has been written since it was made. See the
 // block above for why the size is checked as well as the version.
 function groupIndexNow() {
+  log.debug("Entering groupIndexNow().");
   const cache = groupIndexes();
   if (cache.index && cache.version === directoryVersion &&
       cache.size === entries.size) {
+    log.debug("Leaving groupIndexNow().");
     return cache.index;
   }
   cache.index = buildGroupIndex();
   cache.version = directoryVersion;
   cache.size = entries.size;
+  log.debug("Leaving groupIndexNow().");
   return cache.index;
 }
 
@@ -5807,27 +6065,27 @@ stats.setUserObserver(observeIdentity);
 // The second inverted hook, and the one that reads rather than writes. See
 // objectFor() above for why the console does not simply require this module.
 // Guarded so that a copy of admin.js WITHOUT the slot — an older one, or the
-// parent project's — costs a warning rather than `admin.setDirectoryReader is not
-// a function` thrown at require time, which would take the whole service down over
-// one section of one page. A directory whose entries nobody renders is still a
-// working directory.
+// parent project's — costs a warning rather than `admin.setDirectoryReader is
+// not a function` thrown at require time, which would take the whole service
+// down over one section of one page. A directory whose entries nobody renders
+// is still a working directory.
 if (typeof admin.setDirectoryReader === 'function') {
   admin.setDirectoryReader(objectFor);
 } else {
-  log.warn('ldap: the admin console offers no setDirectoryReader(), so a user ' +
-           'page will not show that user\'s directory entry. The directory ' +
-           'itself is unaffected.');
+  log.warn('ldap: the admin console offers no setDirectoryReader(), so a ' +
+           'user page will not show that user\'s directory entry. The ' +
+           'directory itself is unaffected.');
 }
 
-// The third, and guarded for the same reason: an older admin.js without the slot
-// costs a warning rather than a TypeError at require time, which would take the
-// whole service down over one page.
+// The third, and guarded for the same reason: an older admin.js without the
+// slot costs a warning rather than a TypeError at require time, which would
+// take the whole service down over one page.
 if (typeof admin.setGroupReader === 'function') {
   admin.setGroupReader(groupsFor);
 } else {
-  log.warn('ldap: the admin console offers no setGroupReader(), so /admin/groups ' +
-           'will report that no directory is loaded. The directory itself is ' +
-           'unaffected.');
+  log.warn('ldap: the admin console offers no setGroupReader(), so ' +
+           '/admin/groups will report that no directory is loaded. The ' +
+           'directory itself is unaffected.');
 }
 
 // The console's THIRD slot, and the only one of the three that WRITES. It is
@@ -5837,10 +6095,10 @@ if (typeof admin.setGroupReader === 'function') {
 // person in it.
 //
 // It carries createUser() and not putEntry(): the console must not be a second
-// definition of what creating a user means, any more than /admin/applications is
-// a third door onto the registry. The refusal that matters — a username that is
-// already here — is inside that function, so the form, the management API and an
-// `ldapadd` all get the same answer about the same name.
+// definition of what creating a user means, any more than /admin/applications
+// is a third door onto the registry. The refusal that matters — a username that
+// is already here — is inside that function, so the form, the management API
+// and an `ldapadd` all get the same answer about the same name.
 //
 // Guarded like the other two, and for the same reason.
 if (typeof admin.setDirectoryWriter === 'function') {
@@ -5871,8 +6129,8 @@ if (typeof admin.setGroupWriter === 'function') {
 } else {
   log.warn('ldap: the admin console offers no setGroupWriter(), so ' +
            '/admin/groups cannot create a group or add a member to one. The ' +
-           'directory itself is unaffected, and an ldapadd, an ldapmodify and ' +
-           'a SCIM create all still reach it.');
+           'directory itself is unaffected, and an ldapadd, an ldapmodify ' +
+           'and a SCIM create all still reach it.');
 }
 
 // The fourth, and the only one that goes to a module this file also requires
@@ -5885,11 +6143,12 @@ if (typeof admin.setGroupWriter === 'function') {
 // two above: an older vc_claims.js without the slot costs a warning, not a
 // service that will not start.
 if (typeof vcClaims.setDirectory === 'function') {
-  vcClaims.setDirectory({ attributesFor: vcAttributesFor, populate: populateVcAttributes });
+  vcClaims.setDirectory({ attributesFor: vcAttributesFor,
+                          populate: populateVcAttributes });
 } else {
-  log.warn('ldap: vc_claims.js offers no setDirectory(), so issued credentials ' +
-           'will carry invented values rather than what this directory holds. The ' +
-           'directory itself is unaffected.');
+  log.warn('ldap: vc_claims.js offers no setDirectory(), so issued ' +
+           'credentials will carry invented values rather than what this ' +
+           'directory holds. The directory itself is unaffected.');
 }
 
 // The FIFTH, and it is the same shape as the fourth: a module this file also
@@ -5934,13 +6193,17 @@ if (typeof groupClaims.setDirectory === 'function') {
 if (typeof pkiRevocation.setDirectory === 'function') {
   pkiRevocation.setDirectory({
     publishCrl: publishCrl,
-    baseDnFor: function (scopeId) { return realmBaseDn(scopeIdToRealm(scopeId)); }
+    baseDnFor: function (scopeId) {
+      log.debug("Entering baseDnFor().");
+      log.debug("Leaving baseDnFor().");
+      return realmBaseDn(scopeIdToRealm(scopeId));
+    }
   });
 } else {
   log.warn('ldap: common/pki_revocation.js offers no setDirectory(), so no ' +
-           'CRL is published into this directory and the ldap:// and ldaps:// ' +
-           'distribution points in certificates this service issues will ' +
-           'fetch nothing. They are still served over HTTP.');
+           'CRL is published into this directory and the ldap:// and ' +
+           'ldaps:// distribution points in certificates this service issues ' +
+           'will fetch nothing. They are still served over HTTP.');
 }
 
 // ---------------------------------------------------------------------------
@@ -5973,6 +6236,8 @@ if (typeof roles.setDirectory === 'function') {
     writeRole: writeRole,
     deleteRole: deleteRole,
     groupsOfUser: function (name) {
+      log.debug("Entering groupsOfUser().");
+      log.debug("Leaving groupsOfUser().");
       return (groupsOfUser(name).groups || []).map(function (one) {
         return one.cn;
       });
@@ -6134,9 +6399,9 @@ if (typeof tlsServer.setTrustAnchorStore === 'function') {
     remove: inDefaultRealm(deleteTrustAnchor)
   });
 } else {
-  log.warn('ldap: tls_server.js offers no setTrustAnchorStore(), so an anchor ' +
-           'added at runtime is lost at the next start. tls.trustAnchorsFile ' +
-           'is unaffected.');
+  log.warn('ldap: tls_server.js offers no setTrustAnchorStore(), so an ' +
+           'anchor added at runtime is lost at the next start. ' +
+           'tls.trustAnchorsFile is unaffected.');
 }
 
 // The replication appliers' call into the truststore. Quiet because it runs
@@ -6144,7 +6409,9 @@ if (typeof tlsServer.setTrustAnchorStore === 'function') {
 // context: the entry is stored either way, and `applyAnchors()` logs its own
 // failure.
 function reloadTrustAnchorsQuietly() {
+  log.debug("Entering reloadTrustAnchorsQuietly().");
   if (typeof tlsServer.reloadStoredAnchors !== 'function') {
+    log.debug("Leaving reloadTrustAnchorsQuietly().");
     return;
   }
   try {
@@ -6158,6 +6425,7 @@ function reloadTrustAnchorsQuietly() {
               'ldap: the truststore could not be reloaded after a replicated ' +
               'change to ou=trustAnchors: ' + e.message);
   }
+  log.debug("Leaving reloadTrustAnchorsQuietly().");
 }
 
 // ---------------------------------------------------------------------------
@@ -6195,11 +6463,13 @@ function consentValuesOf(key) {
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
-    log.debug('Leaving consentValuesOf(). There is no entry at ' + located.dn + '.');
+    log.debug('Leaving consentValuesOf(). There is no entry at ' + located.dn +
+              '.');
     return { dn: located.dn, found: false, values: [] };
   }
   const values = (stored.attributes.oauthconsent || []).slice(0);
-  log.debug('Leaving consentValuesOf(). ' + values.length + ' value(s) on ' + stored.dn + '.');
+  log.debug('Leaving consentValuesOf(). ' + values.length + ' value(s) on ' +
+            stored.dn + '.');
   return { dn: stored.dn, found: true, values: values };
 }
 
@@ -6212,9 +6482,10 @@ function addConsentValues(key, values) {
   const stored = located.stored;
   if (!stored) {
     log.warn(errorCodes.tag('STS-LDAP-0040') +
-             'ldap: "' + key + '" has no entry in this realm, so the consent they ' +
-             'gave was not recorded. They will be asked again. This is what ' +
-             'ldap.autoCreateUsers being off looks like from the consent screen.');
+             'ldap: "' + key + '" has no entry in this realm, so the consent ' +
+             'they gave was not recorded. They will be asked again. This is ' +
+             'what ldap.autoCreateUsers being off looks like from the ' +
+             'consent screen.');
     log.debug('Leaving addConsentValues(). Nothing to write to.');
     return { ok: false, dn: located.dn, reason: 'noEntry' };
   }
@@ -6223,7 +6494,9 @@ function addConsentValues(key, values) {
     stored.attributes.modifytimestamp = [generalizedTime()];
     touchDirectory();
   }
-  log.debug('Leaving addConsentValues(). ' + (changed ? 'Written.' : 'Already there.'));
+  log.debug('Leaving addConsentValues(). ' +
+            (changed ? 'Written.' : 'Already ' +
+      'there.'));
   return { ok: true, dn: stored.dn, changed: changed };
 }
 
@@ -6261,7 +6534,9 @@ function removeConsentValues(key, values) {
   }
   stored.attributes.modifytimestamp = [generalizedTime()];
   touchDirectory();
-  log.debug('Leaving removeConsentValues(). ' + (have.length - left.length) + ' removed.');
+  log.debug('Leaving removeConsentValues(). ' + (have.length - left.length) +
+      ' ' +
+      'removed.');
   return { ok: true, dn: stored.dn, removed: have.length - left.length };
 }
 
@@ -6277,7 +6552,8 @@ function listConsentValues() {
     if (!values.length) {
       return;
     }
-    rows.push({ dn: entry.dn, username: usernameOfEntry(entry), values: values.slice(0) });
+    rows.push({ dn: entry.dn, username: usernameOfEntry(entry),
+                values: values.slice(0) });
   });
   log.debug('Leaving listConsentValues(). ' + rows.length + ' entry/entries.');
   return rows;
@@ -6381,12 +6657,15 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
   log.debug('Entering passwordWriteRefusal(). dn=' + dn);
   const before = previous || {};
   const keyOf = function (lower) {
+    log.debug("Entering keyOf().");
+    log.debug("Leaving keyOf().");
     return Object.keys(attributes).filter(function (key) {
       return key.toLowerCase() === lower;
     })[0];
   };
   if (mode.verifiesCredentials() &&
-      (touched.indexOf('pwdhistory') >= 0 || touched.indexOf('pwdchangedtime') >= 0)) {
+      (touched.indexOf('pwdhistory') >= 0 ||
+       touched.indexOf('pwdchangedtime') >= 0)) {
     log.debug('Leaving passwordWriteRefusal(). An operational attribute.');
     return coded('STS-LDAP-0009', new ldap.ConstraintViolationError(
       'pwdHistory and pwdChangedTime are maintained by this service\'s ' +
@@ -6407,7 +6686,8 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
   if (values.length > 1) {
     log.debug('Leaving passwordWriteRefusal(). Two values.');
     return coded('STS-LDAP-0010', new ldap.ConstraintViolationError(
-      'an entry holds one userPassword; replace it rather than adding a second'));
+      'an entry holds one userPassword; replace it rather than adding a ' +
+      'second'));
   }
   const value = values[0];
   const had = (before.userpassword || [])[0];
@@ -6426,7 +6706,8 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
     log.debug('Leaving passwordWriteRefusal(). A hash, kept as given.');
     return null;
   }
-  const prepared = credentials.preparePassword(usernameOfEntry({ dn: dn }), value, {
+  const prepared = credentials.preparePassword(usernameOfEntry({ dn: dn }),
+                                               value, {
     current: had === undefined ? '' : String(had),
     history: (before.pwdhistory || []).map(String)
   });
@@ -6464,11 +6745,11 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
 // connection that had proved who it was could add, modify, rename or delete any
 // entry in any realm — `ou=trustAnchors` (which is the client-certificate
 // truststore), `ou=federations` (whose signing certificates decide whose
-// assertions this service believes), `ou=policies`, `ou=roles` and every person.
-// And one write was an escalation rather than a vandalism: `admin_rbac.js`
-// reads a person's OWN `memberOf` when it decides whether they hold a console
-// role, so `memberOf: cn=admin-write,…` on your own entry made you an
-// administrator of the whole service.
+// assertions this service believes), `ou=policies`, `ou=roles` and every
+// person. And one write was an escalation rather than a vandalism:
+// `admin_rbac.js` reads a person's OWN `memberOf` when it decides whether they
+// hold a console role, so `memberOf: cn=admin-write,…` on your own entry made
+// you an administrator of the whole service.
 //
 // **THE RULE IS THREE LINES.**
 //
@@ -6483,8 +6764,9 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
 // this service holds", and a second roster for the socket would be a second
 // answer that drifts from the first the day somebody is granted one and not the
 // other. **THE DEFAULT REALM ONLY**, for the reason the roster itself is pinned
-// there: a person in `acme` sharing a name with a default-realm administrator is
-// a different person, and anybody who can provision a realm can provision one.
+// there: a person in `acme` sharing a name with a default-realm administrator
+// is a different person, and anybody who can provision a realm can provision
+// one.
 //
 // **THE CONSOLE'S EMPTY-ROSTER RULE DOES NOT COUNT HERE.** While no role group
 // has a member `rolesOf()` may answer that everybody holds both
@@ -6497,10 +6779,10 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
 // client can write any attribute name at all — and the names that matter look
 // ordinary: `memberOf` grants the console roles, `employeeType` is what the
 // seeded XACML policy decides on, `mail` and `cn` are asserted in every token
-// as facts this service vouches for, and every `sts*` attribute is a credential.
-// A list of what is refused would be complete on the day it was written.
-// `userPassword` is on the default list and still meets the password policy in
-// `passwordWriteRefusal()`, exactly as at every other door.
+// as facts this service vouches for, and every `sts*` attribute is a
+// credential. A list of what is refused would be complete on the day it was
+// written. `userPassword` is on the default list and still meets the password
+// policy in `passwordWriteRefusal()`, exactly as at every other door.
 //
 // **PRODUCT MODE ONLY** (`mode.authorizesDirectoryWrites()`). Development binds
 // any DN with any password, so the bound DN proves nothing and a check keyed on
@@ -6514,7 +6796,9 @@ function passwordWriteRefusal(dn, attributes, previous, touched, written) {
 // ignored for the other three operations.
 // ---------------------------------------------------------------------------
 function selfWritableAttributes() {
+  log.debug("Entering selfWritableAttributes().");
   const listed = config.value('ldap.selfWritableAttributes');
+  log.debug("Leaving selfWritableAttributes().");
   return (Array.isArray(listed) ? listed : String(listed || '').split(','))
     .map(function (name) { return String(name).trim().toLowerCase(); })
     .filter(function (name) { return name.length > 0; });
@@ -6551,7 +6835,8 @@ function boundDnIsDirectoryAdministrator(boundDn) {
 function directoryWriteRefusal(req, operation, dn, changedTypes) {
   log.debug('Entering directoryWriteRefusal(). ' + operation + ' ' + dn);
   if (!mode.authorizesDirectoryWrites()) {
-    log.debug('Leaving directoryWriteRefusal(). This mode does not authorize writes.');
+    log.debug('Leaving directoryWriteRefusal(). This mode does not authorize ' +
+              'writes.');
     return null;
   }
   const boundDn = boundDnOf(req);
@@ -6561,7 +6846,8 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
     return ldapRefusal(req, 'STS-LDAP-0052', 'an anonymous connection asked ' +
       'for a ' + operation + ' of ' + dn,
       new ldap.InsufficientAccessRightsError(
-        'an anonymous connection may not write this directory; bind first'), dn);
+        'an anonymous connection may not write this directory; bind first'),
+      dn);
   }
   if (boundDnIsDirectoryAdministrator(boundDn)) {
     log.debug('Leaving directoryWriteRefusal(). An administrator.');
@@ -6586,15 +6872,19 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
     return allowed.indexOf(type) < 0 && all.indexOf(type) === index;
   });
   if (refused.length) {
-    log.info('ldap: refusing ' + boundDn + ' a change to ' + refused.join(', ') +
-             ' on their own entry; ldap.selfWritableAttributes does not name it.');
-    log.debug('Leaving directoryWriteRefusal(). An attribute is not self-writable.');
+    log.info('ldap: refusing ' + boundDn + ' a change to ' +
+             refused.join(', ') +
+             ' on their own entry; ldap.selfWritableAttributes does not name ' +
+             'it.');
+    log.debug('Leaving directoryWriteRefusal(). An attribute is not ' +
+              'self-writable.');
     return ldapRefusal(req, 'STS-LDAP-0054', boundDn + ' asked to change ' +
       refused.join(', ') + ' on their own entry, which is not self-writable',
       new ldap.InsufficientAccessRightsError(
         'you may not change ' + refused.join(', ') + ' on your own entry'), dn);
   }
-  log.debug('Leaving directoryWriteRefusal(). A permitted change to their own entry.');
+  log.debug('Leaving directoryWriteRefusal(). A permitted change to their ' +
+            'own entry.');
   return null;
 }
 
@@ -6640,11 +6930,12 @@ function directoryWriteRefusal(req, operation, dn, changedTypes) {
 // whose one stolen administrator password is every application's.
 //
 // **OPERATIONAL ATTRIBUTES ARE THE DIRECTORY'S TO WRITE**
-// (`mode.protectsOperationalAttributes()`): createTimestamp, modifyTimestamp and
-// entryDN are refused on an add or a modify with constraintViolation (19), which
-// is what RFC 4512 section 3.3.1's NO-USER-MODIFICATION attributes answer —
-// administrator included, because a timestamp anybody can set is not evidence.
-// pwdHistory and pwdChangedTime are refused by `passwordWriteRefusal()` already.
+// (`mode.protectsOperationalAttributes()`): createTimestamp, modifyTimestamp
+// and entryDN are refused on an add or a modify with constraintViolation (19),
+// which is what RFC 4512 section 3.3.1's NO-USER-MODIFICATION attributes answer
+// — administrator included, because a timestamp anybody can set is not
+// evidence. pwdHistory and pwdChangedTime are refused by
+// `passwordWriteRefusal()` already.
 // ---------------------------------------------------------------------------
 const SECRET_ATTRIBUTES = [
   'userpassword', 'pwdhistory',
@@ -6658,15 +6949,20 @@ const SECRET_ATTRIBUTES = [
   'gnapsymmetrickey', 'gnapmacaroonkey'
 ];
 
-const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp', 'entrydn'];
+const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp',
+                                    'entrydn'];
 
 function isSecretAttribute(name) {
+  log.debug("Entering isSecretAttribute().");
+  log.debug("Leaving isSecretAttribute().");
   return SECRET_ATTRIBUTES.indexOf(String(name || '').toLowerCase()) !== -1;
 }
 
 // Whether THIS reader of the socket is refused sight of an attribute. One
 // question, asked by all three doors, so they cannot disagree.
 function withheldFromReaders(name) {
+  log.debug("Entering withheldFromReaders().");
+  log.debug("Leaving withheldFromReaders().");
   return mode.withholdsDirectorySecrets() && isSecretAttribute(name);
 }
 
@@ -6674,8 +6970,10 @@ function withheldFromReaders(name) {
 // rather than a flag on that one, because `matchable()` has callers that are
 // not a reader on the wire.
 function matchableForReader(stored) {
+  log.debug("Entering matchableForReader().");
   const out = matchable(stored);
   if (!mode.withholdsDirectorySecrets()) {
+    log.debug("Leaving matchableForReader().");
     return out;
   }
   Object.keys(out).forEach(function (name) {
@@ -6683,6 +6981,7 @@ function matchableForReader(stored) {
       delete out[name];
     }
   });
+  log.debug("Leaving matchableForReader().");
   return out;
 }
 
@@ -6706,11 +7005,14 @@ function directoryReadRefusal(req, operation, dn) {
 
 // A compare that names a credential attribute.
 function secretCompareRefusal(req, dn, type) {
+  log.debug("Entering secretCompareRefusal().");
   if (!withheldFromReaders(type)) {
+    log.debug("Leaving secretCompareRefusal().");
     return null;
   }
   log.info('ldap: refusing a compare of ' + type + ' on ' + dn +
            '; credential attributes cannot be compared over this socket.');
+  log.debug("Leaving secretCompareRefusal().");
   return ldapRefusal(req, 'STS-LDAP-0075', 'a compare on ' + dn + ' named ' +
     type + ', a credential attribute no reader of this socket may test',
     new ldap.InsufficientAccessRightsError(
@@ -6739,7 +7041,8 @@ function operationalWriteRefusal(req, operation, dn, types) {
   return ldapRefusal(req, 'STS-LDAP-0076', 'a ' + operation + ' of ' + dn +
     ' named ' + named.join(', ') + ', which this directory maintains itself',
     new ldap.ConstraintViolationError(
-      named.join(', ') + ' is maintained by this directory and cannot be written'),
+      named.join(', ') + ' is maintained by this directory and cannot be ' +
+                         'written'),
     dn);
 }
 
@@ -6748,9 +7051,12 @@ function operationalWriteRefusal(req, operation, dn, types) {
 // carries it). An empty address would put every dispatched bind in one bucket,
 // and one attacker would lock out everybody.
 function limiterRequestOf(req) {
+  log.debug("Entering limiterRequestOf().");
   const connection = (req && req.connection) || {};
+  log.debug("Leaving limiterRequestOf().");
   return { headers: {},
-           socket: { remoteAddress: String(connection.remoteAddress || 'unknown') } };
+           socket: { remoteAddress: String(connection.remoteAddress ||
+                                           'unknown') } };
 }
 
 // `options.history`, when given, is the WHOLE history to leave on the entry —
@@ -7020,19 +7326,32 @@ function writeBackupCodes(key, value) {
 // takeover — which is why it is stored the way a password is and never in the
 // clear.
 function readActivation(key) {
+  log.debug("Entering readActivation().");
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
-  if (!stored) return null;
+  if (!stored) {
+    log.debug("Leaving readActivation().");
+    return null;
+  }
   const hash = (stored.attributes.stsactivationtoken || [])[0];
-  if (!hash) return null;
+  if (!hash) {
+    log.debug("Leaving readActivation().");
+    return null;
+  }
+  log.debug("Leaving readActivation().");
   return { hash: String(hash),
-           expires: Number((stored.attributes.stsactivationexpires || [])[0] || 0) };
+           expires: Number((stored.attributes.stsactivationexpires ||
+                            [])[0] || 0) };
 }
 
 function writeActivation(key, hash, expires) {
+  log.debug("Entering writeActivation().");
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
-  if (!stored) return false;
+  if (!stored) {
+    log.debug("Leaving writeActivation().");
+    return false;
+  }
   if (!hash) {
     delete stored.attributes.stsactivationtoken;
     delete stored.attributes.stsactivationexpires;
@@ -7041,6 +7360,7 @@ function writeActivation(key, hash, expires) {
     stored.attributes.stsactivationexpires = [String(expires)];
   }
   touchDirectory();
+  log.debug("Leaving writeActivation().");
   return true;
 }
 
@@ -7075,15 +7395,18 @@ if (typeof credentials.setDirectory === 'function') {
     readBackupCodes: readBackupCodes,
     writeBackupCodes: writeBackupCodes,
     // WHO IS IN THIS REALM, for `secondFactorHolders()` — the operator's view
-    // on `/admin/users`. It hands over NAMES and not entries, deliberately: what
-    // the credential store needs is a list to ask itself about, and handing it
-    // whole entries would let a caller start reading attributes off them, which
-    // is how a second implementation of *what an enrolment is* gets written.
+    // on `/admin/users`. It hands over NAMES and not entries, deliberately:
+    // what the credential store needs is a list to ask itself about, and
+    // handing it whole entries would let a caller start reading attributes off
+    // them, which is how a second implementation of *what an enrolment is* gets
+    // written.
     //
     // It is the AMBIENT realm's, unlike the nine functions `admin_rbac.js`
     // takes: those decide who may administer the service and are pinned to the
     // default realm on purpose, and this one is a page LOOKING AT a realm.
     persons: function () {
+      log.debug("Entering persons().");
+      log.debug("Leaving persons().");
       return allPersons().map(function (entry) {
         return usernameOfEntry(entry);
       }).filter(function (name) { return !!name; });
@@ -7102,7 +7425,11 @@ if (typeof credentials.setDirectory === 'function') {
     // would be given the generated password does not exist, and product mode
     // refuses to create it. The service then starts with every door shut and
     // no way through any of them.
-    createPerson: function (name) { return createUser(name, {}); }
+    createPerson: function (name) {
+      log.debug("Entering createPerson().");
+      log.debug("Leaving createPerson().");
+      return createUser(name, {});
+    }
   });
 
 // ---------------------------------------------------------------------------
@@ -7162,8 +7489,8 @@ if (typeof portal.setDirectory === 'function') {
 } else {
   log.warn('ldap: the user portal offers no setDirectory(), so its Overview ' +
            'will draw the four facts a session carries rather than the ' +
-           'person\'s directory entry. That is the older portal and is not an ' +
-           'error; the page says which it is showing.');
+           'person\'s directory entry. That is the older portal and is not ' +
+           'an error; the page says which it is showing.');
 }
 
 // ---------------------------------------------------------------------------
@@ -7222,7 +7549,8 @@ if (typeof personAssertions.setDirectory === 'function') {
           out[name] = values.slice();
         }
       });
-      log.debug('Leaving read(). ' + Object.keys(out).length + ' attribute(s).');
+      log.debug('Leaving read(). ' + Object.keys(out).length +
+                ' attribute(s).');
       return out;
     },
     write: function (username, name, value) {
@@ -7249,11 +7577,14 @@ if (typeof personAssertions.setDirectory === 'function') {
         stored.attributes[attribute] = [String(value)];
       }
       touchDirectory();
-      log.debug('Leaving write(). ' + (value ? 'Written to ' : 'Removed from ') +
+      log.debug('Leaving write(). ' +
+                (value ? 'Written to ' : 'Removed from ') +
                 stored.dn + '.');
       return true;
     },
     persons: function () {
+      log.debug("Entering persons().");
+      log.debug("Leaving persons().");
       return allPersons().map(function (entry) {
         return usernameOfEntry(entry);
       }).filter(function (name) { return !!name; });
@@ -7288,21 +7619,21 @@ if (typeof consent.setDirectory === 'function') {
 } else {
   log.warn('ldap: common/consent.js offers no setDirectory(), so nothing a ' +
            'person agrees to at /oauth2/consent can be written down or read ' +
-           'back. With oauth2.consentRequired on, the screen is drawn on every ' +
-           'authorization request. The directory itself is unaffected.');
+           'back. With oauth2.consentRequired on, the screen is drawn on ' +
+           'every authorization request. The directory itself is unaffected.');
 }
 
 // ---------------------------------------------------------------------------
 // THE KERBEROS KEY REGISTER'S SLOT (2026-09-12), and it is the one directory
-// slot in this file that is pinned to the DEFAULT realm for a reason that is not
-// about administrators.
+// slot in this file that is pinned to the DEFAULT realm for a reason that is
+// not about administrators.
 //
-// `kerberos/krb5_person_keys.js` owns what a stored Kerberos key IS — the sealed
-// record, the stamp, the kvno, the keytab — and this module owns where it lives:
-// `stsKrb5Keys` / `stsKrb5KeyInfo` on a person's entry under `ou=users`, and
-// `krb5ServiceKeys` / `krb5ServiceKeyInfo` on an application entry under
-// `ou=applications`. That is the division `person_assertions.js` has with this
-// file one slot up.
+// `kerberos/krb5_person_keys.js` owns what a stored Kerberos key IS — the
+// sealed record, the stamp, the kvno, the keytab — and this module owns where
+// it lives: `stsKrb5Keys` / `stsKrb5KeyInfo` on a person's entry under
+// `ou=users`, and `krb5ServiceKeys` / `krb5ServiceKeyInfo` on an application
+// entry under `ou=applications`. That is the division `person_assertions.js`
+// has with this file one slot up.
 //
 // **RULE 3e ANSWERS YES BOTH WAYS ROUND.** That module is required by the two
 // `admin-core/` halves at 18, so a require from there to this module would
@@ -7312,30 +7643,34 @@ if (typeof consent.setDirectory === 'function') {
 // further still.
 //
 // **EVERY FUNCTION RUNS IN THE DEFAULT REALM**, through `inDefaultRealm()`. The
-// KDC's sockets and `krb5.realm` are process-wide — a raw Kerberos socket has no
-// path to carry a trust-realm segment — so the KDC answers in no trust realm,
-// and its people are the default realm's people. A person reached from a request
-// in `acme` is not a principal of this KDC; the register refuses to derive for
-// one before it ever gets here.
+// KDC's sockets and `krb5.realm` are process-wide — a raw Kerberos socket has
+// no path to carry a trust-realm segment — so the KDC answers in no trust
+// realm, and its people are the default realm's people. A person reached from a
+// request in `acme` is not a principal of this KDC; the register refuses to
+// derive for one before it ever gets here.
 //
-// **THE WRITES GO STRAIGHT ONTO THE STORED ENTRY, AND FOR AN APPLICATION THAT IS
-// DELIBERATE.** `applications.updateApplication()` quotes the value it wrote in
-// its audit summary, its log line and its reply, and the value here is key
+// **THE WRITES GO STRAIGHT ONTO THE STORED ENTRY, AND FOR AN APPLICATION THAT
+// IS DELIBERATE.** `applications.updateApplication()` quotes the value it wrote
+// in its audit summary, its log line and its reply, and the value here is key
 // material. The two attributes are rows in `applications.js`'s SCHEMA, which is
 // what makes a later `writeApplication()` — which REPLACES an entry from its
 // record — carry them rather than erase them.
 // ---------------------------------------------------------------------------
 function firstValue(stored, lowerName) {
+  log.debug("Entering firstValue().");
   const values = stored.attributes[lowerName] || [];
+  log.debug("Leaving firstValue().");
   return values.length ? String(values[0]) : '';
 }
 
 function assignOrDelete(stored, lowerName, value) {
+  log.debug("Entering assignOrDelete().");
   if (value === null || value === undefined || value === '') {
     delete stored.attributes[lowerName];
   } else {
     stored.attributes[lowerName] = [String(value)];
   }
+  log.debug("Leaving assignOrDelete().");
 }
 
 if (typeof krb5PersonKeys.setDirectory === 'function') {
@@ -7360,8 +7695,8 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
       if (!located.stored || !isPersonEntry(located.stored)) {
         // NOT created here, for `writeStoredPassword()`'s reason.
         log.warn(errorCodes.tag('STS-LDAP-0040') + 'ldap: "' + username +
-                 '" has no entry in the default realm, so no Kerberos key was ' +
-                 'written.');
+                 '" has no entry in the default realm, so no Kerberos key ' +
+                 'was written.');
         log.debug('Leaving writePerson(). No entry.');
         return false;
       }
@@ -7415,8 +7750,10 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
       log.debug('Entering serviceKeyInfos().');
       const out = [];
       entriesUnder(applicationsDn()).forEach(function (stored) {
-        if (stored.attributes.krb5servicekeyinfo || stored.attributes.krb5servicekeys) {
-          out.push({ identifier: firstValue(stored, 'appidentifier') || stored.dn,
+        if (stored.attributes.krb5servicekeyinfo ||
+            stored.attributes.krb5servicekeys) {
+          out.push({ identifier: firstValue(stored, 'appidentifier') ||
+                                 stored.dn,
                      info: firstValue(stored, 'krb5servicekeyinfo'),
                      hasKeys: !!firstValue(stored, 'krb5servicekeys') });
         }
@@ -7426,9 +7763,9 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
     })
   });
 } else {
-  log.warn('ldap: kerberos/krb5_person_keys.js offers no setDirectory(), so no ' +
-           'person can hold Kerberos keys and no service principal key can be ' +
-           'stored. That is the older register and is not an error.');
+  log.warn('ldap: kerberos/krb5_person_keys.js offers no setDirectory(), so ' +
+           'no person can hold Kerberos keys and no service principal key ' +
+           'can be stored. That is the older register and is not an error.');
 }
 
 // The SIXTH, and it is the first one that hands over a WRITER as well as
@@ -7497,6 +7834,8 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 // a realm is the console's job; being let in is not the realm's decision.
 // ---------------------------------------------------------------------------
 function inDefaultRealm(fn) {
+  log.debug("Entering inDefaultRealm().");
+  log.debug("Leaving inDefaultRealm().");
   return function () {
     const args = arguments;
     return realms.run(realms.DEFAULT_REALM, function () {
@@ -7539,10 +7878,10 @@ if (typeof adminRbac.setDirectory === 'function') {
 }
 
 // And once, now. The seeded people were written before any of this existed and
-// the claim set already has ten attributes selected, so without this sweep alice
-// would have no birthdate in the directory while her credential asserted one —
-// the two disagreeing from the very first request, which is the exact confusion
-// this whole arrangement exists to avoid.
+// the claim set already has ten attributes selected, so without this sweep
+// alice would have no birthdate in the directory while her credential asserted
+// one — the two disagreeing from the very first request, which is the exact
+// confusion this whole arrangement exists to avoid.
 populateVcAttributes();
 
 // ---------------------------------------------------------------------------
@@ -7551,12 +7890,13 @@ populateVcAttributes();
 // Every handler is registered against '' — the ROOT DSE and everything else —
 // and each decides for itself whether the DN it was given is inside ROOT_DN. A
 // client that binds before it knows the base DN reads the root DSE first, and a
-// server that had no handler for it answers LDAP_UNAVAILABLE, which reads as the
-// server being down.
+// server that had no handler for it answers LDAP_UNAVAILABLE, which reads as
+// the server being down.
 //
 // Registering at '' rather than at the base is also what lets one socket serve
-// every trust realm: a realm's subtree is `dc=<id>,` + ROOT_DN, and the handlers
-// reach it because they were never scoped to a base in the first place.
+// every trust realm: a realm's subtree is `dc=<id>,` + ROOT_DN, and the
+// handlers reach it because they were never scoped to a base in the first
+// place.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // TWO SERVERS, ONE SET OF HANDLERS.
@@ -7580,9 +7920,9 @@ populateVcAttributes();
 // The secure one is built only if there IS certificate material. There always
 // is — tls_server.js generates it at require time and would have thrown before
 // this line if it could not — so this branch is for the case where that stops
-// being true: an absence recorded and published on GET /admin/ldap/service is worth more than
-// a TypeError out of a constructor, which is the same trade every listen path
-// here makes.
+// being true: an absence recorded and published on GET /admin/ldap/service is
+// worth more than a TypeError out of a constructor, which is the same trade
+// every listen path here makes.
 // ---------------------------------------------------------------------------
 const plainServer = ldap.createServer({ log: log });
 
@@ -7590,6 +7930,8 @@ const plainServer = ldap.createServer({ log: log });
 // `tls_server.js` without the function gets node's defaults, which is what
 // LDAPS always had.
 function tlsProtocolOptions() {
+  log.debug("Entering tlsProtocolOptions().");
+  log.debug("Leaving tlsProtocolOptions().");
   return typeof tlsServer.protocolOptions === 'function'
     ? tlsServer.protocolOptions() : {};
 }
@@ -7598,7 +7940,10 @@ function tlsProtocolOptions() {
 // honours. They bound the literal '0.0.0.0' until 2026-09-12, so a service
 // confined to 127.0.0.1 still offered its directory on every interface.
 function ldapListenHost() {
-  return String(config.value('global.host') || '0.0.0.0').replace(/^\[|\]$/g, '');
+  log.debug("Entering ldapListenHost().");
+  log.debug("Leaving ldapListenHost().");
+  return String(config.value('global.host') || '0.0.0.0').replace(/^\[|\]$/g,
+                                                                  '');
 }
 
 const serverCertificate = tlsServer.serverCertificate();
@@ -7609,14 +7954,14 @@ if (serverCertificate && serverCertificate.certPem &&
   // `certificate` and `key` are the option names ldapjs checks for, and it
   // hands the whole options object to tls.createServer(). No client certificate
   // is asked for here: this listener proves the SERVER's identity and nothing
-  // else, which GET /admin/ldap/service says out loud rather than leaving somebody to work
-  // out why the client certificate they offered was never requested. The
-  // permissive and strict client-certificate listeners are the HTTPS ones next
-  // door, where the whole content is the answer to that question.
-  // `tls.minVersion` and `tls.ciphers` go in too (2026-09-12): ldapjs hands
-  // this whole object to `tls.createServer()`, so LDAPS takes the same protocol
-  // floor and cipher list as 8443, 9443 and the main port rather than node's
-  // defaults behind their back.
+  // else, which GET /admin/ldap/service says out loud rather than leaving
+  // somebody to work out why the client certificate they offered was never
+  // requested. The permissive and strict client-certificate listeners are the
+  // HTTPS ones next door, where the whole content is the answer to that
+  // question. `tls.minVersion` and `tls.ciphers` go in too (2026-09-12): ldapjs
+  // hands this whole object to `tls.createServer()`, so LDAPS takes the same
+  // protocol floor and cipher list as 8443, 9443 and the main port rather than
+  // node's defaults behind their back.
   secureServer = ldap.createServer(Object.assign({
     log: log,
     certificate: serverCertificate.certPem,
@@ -7669,6 +8014,8 @@ const OPERATIONS = ['bind', 'unbind', 'add', 'del', 'modify', 'modifyDN',
 const REALMLESS_OPERATIONS = ['unbind'];
 
 function inRealmOfRequest(handler) {
+  log.debug("Entering inRealmOfRequest().");
+  log.debug("Leaving inRealmOfRequest().");
   return function (req, res, next) {
     const dn = req && req.dn ? req.dn.toString() : '';
     return inRealmOf(dn, function () {
@@ -7897,13 +8244,15 @@ function boundConnections() {
   }
   const out = [];
   liveConnections.forEach(function (socket) {
-    const dn = (socket.ldap && socket.ldap.bindDN) ? String(socket.ldap.bindDN) : '';
+    const dn = (socket.ldap && socket.ldap.bindDN) ?
+                String(socket.ldap.bindDN) : '';
     // ldapjs seeds an unbound connection with cn=anonymous rather than leaving
     // it empty — the same trap boundDnOf() documents — and an anonymous
     // connection is the absence of a bind, so it is reported as one.
     const bound = dn.toLowerCase() === 'cn=anonymous' ? '' : dn;
     out.push({
-      id: (socket.ldap && socket.ldap.id) || ((socket.remoteAddress || '?') + ':' +
+      id: (socket.ldap &&
+           socket.ldap.id) || ((socket.remoteAddress || '?') + ':' +
                                               (socket.remotePort || '?')),
       dn: bound,
       // The console's key for whoever is bound. `getEntry()` is passed so that
@@ -7973,8 +8322,9 @@ function dropConnectionsFor(key) {
     // cannot reach the process holding the socket has to SAY so.
     // -----------------------------------------------------------------------
     if (!remoteDropper) {
-      throw new Error('this process holds no directory listener and no way to ' +
-        'ask the one that does, so ' + mine.length + ' connection(s) bound as ' +
+      throw new Error('this process holds no directory listener and no way ' +
+        'to ask the one that does, ' +
+        'so ' + mine.length + ' connection(s) bound as ' +
         wanted + ' cannot be closed from here');
     }
     try {
@@ -7991,21 +8341,25 @@ function dropConnectionsFor(key) {
   const dropped = [];
   boundConnections().forEach(function (row) {
     if (!row.key || row.key !== wanted) return;
-    dropped.push({ id: row.id, dn: row.dn, secure: row.secure, port: row.port });
+    dropped.push({ id: row.id, dn: row.dn, secure: row.secure,
+                   port: row.port });
     try {
       row.socket.destroy();
     } catch (e) {
       // A socket that was already gone throws here, and that is the outcome
       // being asked for rather than a failure: it is counted as dropped because
       // it is not connected any more, which is what the caller asked about.
-      log.debug('ldap: a connection bound as ' + row.dn + ' was already gone: ' + e.message);
+      log.debug('ldap: a connection bound as ' + row.dn +
+                ' was already gone: ' + e.message);
     }
     liveConnections.delete(row.socket);
   });
   if (dropped.length) {
-    log.info('ldap: dropped ' + dropped.length + ' connection(s) bound as ' + wanted +
-             ' — RFC 4511 section 4.2 makes the bind the authorization state of the ' +
-             'CONNECTION, so closing it is the only sign-out this protocol has.');
+    log.info('ldap: dropped ' + dropped.length + ' connection(s) bound as ' +
+             wanted +
+             ' — RFC 4511 section 4.2 makes the bind the authorization state ' +
+             'of the CONNECTION, so closing it is the only sign-out this ' +
+             'protocol has.');
   }
   log.debug("Leaving dropConnectionsFor(). " + dropped.length + " dropped.");
   return dropped;
@@ -8043,10 +8397,10 @@ if (secureServer) {
 //
 // **Which socket it came in on.** The plain listener on 389 and LDAPS on 636
 // share one set of handlers — that is the whole point of the fan-out this file
-// registers against — so a handler cannot tell them apart, and a page that could
-// not either would be unable to answer the question somebody turning on LDAPS
-// actually has, which is whether anything is using it. `req.connection` is the
-// raw socket and a TLS one carries `encrypted`.
+// registers against — so a handler cannot tell them apart, and a page that
+// could not either would be unable to answer the question somebody turning on
+// LDAPS actually has, which is whether anything is using it. `req.connection`
+// is the raw socket and a TLS one carries `encrypted`.
 //
 // **Who is bound.** ldapjs holds the bound DN on the connection, which is what
 // makes an operation attributable at all: the bind names somebody and the six
@@ -8062,13 +8416,21 @@ if (secureServer) {
 // about docker and not about whoever made the call.
 // ---------------------------------------------------------------------------
 function ldapChannelOf(req) {
+  log.debug("Entering ldapChannelOf().");
+  log.debug("Leaving ldapChannelOf().");
   return (req.connection && req.connection.encrypted) ? 'ldaps' : 'ldap';
 }
 
 function boundDnOf(req) {
-  const bound = req.connection && req.connection.ldap && req.connection.ldap.bindDN;
-  if (!bound) return '';
+  log.debug("Entering boundDnOf().");
+  const bound = req.connection && req.connection.ldap &&
+                req.connection.ldap.bindDN;
+  if (!bound) {
+    log.debug("Leaving boundDnOf().");
+    return '';
+  }
   const text = String(bound);
+  log.debug("Leaving boundDnOf().");
   // ldapjs seeds an unbound connection with `cn=anonymous` rather than leaving
   // it empty, and reporting that as an identity would put a person called
   // "anonymous" on the users page. It is the absence of a bind, so it is
@@ -8083,10 +8445,10 @@ function boundDnOf(req) {
 // and this is the only record of when that happened. /admin/groups shows the
 // resulting state and can never say when it arrived.
 //
-// All three membership attributes are counted, resolved the way MEMBER_ATTRIBUTES
-// says: `memberUid` holds a bare name where `member` and `uniqueMember` hold a
-// DN, and counting the three alike is exactly how every posixGroup member gets
-// missed.
+// All three membership attributes are counted, resolved the way
+// MEMBER_ATTRIBUTES says: `memberUid` holds a bare name where `member` and
+// `uniqueMember` hold a DN, and counting the three alike is exactly how every
+// posixGroup member gets missed.
 function membershipsNaming(dn) {
   log.debug('Entering membershipsNaming().');
   const key = normalizeDn(dn);
@@ -8108,6 +8470,7 @@ function membershipsNaming(dn) {
 }
 
 function auditLdap(req, fields) {
+  log.debug("Entering auditLdap().");
   const boundDn = boundDnOf(req);
   audit.recordDirectory(Object.assign({
     channel: ldapChannelOf(req),
@@ -8115,6 +8478,7 @@ function auditLdap(req, fields) {
     actor: boundDn ? consoleKeyFor(boundDn, getEntry(boundDn)) : '',
     actorForm: boundDn
   }, fields));
+  log.debug("Leaving auditLdap().");
 }
 
 // ---------------------------------------------------------------------------
@@ -8127,6 +8491,7 @@ function auditLdap(req, fields) {
 // 'error' only where this service, rather than the request, is what failed.
 // ---------------------------------------------------------------------------
 function ldapRefusal(req, code, summary, err, target, outcome) {
+  log.debug("Entering ldapRefusal().");
   const boundDn = req ? boundDnOf(req) : '';
   const channel = req ? ldapChannelOf(req) : 'ldap';
   audit.failure(code || errorCodes.codeOf(err), {
@@ -8139,6 +8504,7 @@ function ldapRefusal(req, code, summary, err, target, outcome) {
     outcome: outcome || 'refused',
     detail: { result: err && err.name, resultCode: err && err.code }
   });
+  log.debug("Leaving ldapRefusal().");
   return err;
 }
 
@@ -8210,9 +8576,13 @@ const LOCAL_HANDLERS = {};
 // bootstrap — `common/app.js` loads the pool, and app.js is above every route
 // — and by the time an LDAP operation arrives it is a cache hit.
 function requestPool() {
+  log.debug("Entering requestPool().");
   try {
+    log.debug("Leaving requestPool().");
     return require('../common/request_pool');
   } catch (e) {
+    log.debug("Caught in requestPool(): " + ((e && e.message) || e));
+    log.debug("Leaving requestPool().");
     // A process that has no pool module at all is a process that cannot
     // dispatch, which is the ordinary state of every in-process loader of this
     // tree. Answering null puts the caller on the local path.
@@ -8228,10 +8598,13 @@ function requestPool() {
 // LOCALITY measure — the read barrier is what makes the write visible — and a
 // connection this process cannot name falls back to fanning out.
 function connectionAffinity(req) {
+  log.debug("Entering connectionAffinity().");
   const socket = req && req.connection;
   if (!socket) {
+    log.debug("Leaving connectionAffinity().");
     return '';
   }
+  log.debug("Leaving connectionAffinity().");
   return (socket.ldap && socket.ldap.id) ||
          ((socket.remoteAddress || '?') + ':' + (socket.remotePort || '?'));
 }
@@ -8240,6 +8613,8 @@ function connectionAffinity(req) {
 // structured clones. Both are read by the handlers as plain `{type, values}`
 // and `{operation, modification}`, so plain is what travels.
 function plainAttributes(attributes) {
+  log.debug("Entering plainAttributes().");
+  log.debug("Leaving plainAttributes().");
   return (attributes || []).map(function (attribute) {
     return { type: String(attribute.type),
              values: (attribute.values || []).map(function (v) {
@@ -8249,11 +8624,14 @@ function plainAttributes(attributes) {
 }
 
 function plainChanges(changes) {
+  log.debug("Entering plainChanges().");
+  log.debug("Leaving plainChanges().");
   return (changes || []).map(function (change) {
     const modification = change.modification || {};
     return { operation: String(change.operation || ''),
              modification: { type: String(modification.type || ''),
-                             values: (modification.values || []).map(function (v) {
+                             values: (modification.values || []).map(
+                                 function (v) {
                                return String(v);
                              }) } };
   });
@@ -8278,10 +8656,12 @@ function operationRequest(operation, req) {
     // THE CLIENT'S ADDRESS (2026-09-12), for the failed-bind rate limit. A
     // worker has no socket to read it off, and a stub without it would count
     // every dispatched bind against one address.
-    remoteAddress: String((req.connection && req.connection.remoteAddress) || '')
+    remoteAddress: String((req.connection &&
+                           req.connection.remoteAddress) || '')
   };
   if (operation === 'bind') {
-    shape.credentials = req.credentials === undefined ? '' : String(req.credentials);
+    shape.credentials = req.credentials === undefined ? '' :
+                        String(req.credentials);
   } else if (operation === 'add') {
     shape.attributes = plainAttributes(req.attributes);
   } else if (operation === 'modify') {
@@ -8410,7 +8790,9 @@ function ldapErrorNamed(name, message) {
 // response this worker is not writing.
 // ---------------------------------------------------------------------------
 function collectingResponse() {
+  log.debug("Entering collectingResponse().");
   const out = { entries: [], ended: false, endArg: undefined };
+  log.debug("Leaving collectingResponse().");
   return {
     // Any number will do and none of it travels; it is here because
     // `toSearchEntry()` reads it and would otherwise default to 1 and trip
@@ -8418,14 +8800,19 @@ function collectingResponse() {
     messageId: 1,
     collected: out,
     send: function (entry) {
+      log.debug("Entering send().");
       out.entries.push({
-        objectName: String(entry.objectName === undefined ? entry.dn : entry.objectName),
+        objectName: String(entry.objectName === undefined ? entry.dn :
+                           entry.objectName),
         attributes: plainAttributes(entry.attributes)
       });
+      log.debug("Leaving send().");
     },
     end: function (arg) {
+      log.debug("Entering end().");
       out.ended = true;
       out.endArg = arg;
+      log.debug("Leaving end().");
     }
   };
 }
@@ -8498,10 +8885,11 @@ function performOperation(operation, shape) {
                'sending a result message or failing',
       outcome: 'error'
     });
+    log.debug("Leaving performOperation().");
     return { ok: false, errorName: 'OperationsError',
              error: 'the "' + operation + '" handler finished without ' +
-               'sending a result message. See ldap/CLAUDE.md — a handler that ' +
-               'neither ends nor fails hangs the client for ever.' };
+               'sending a result message. See ldap/CLAUDE.md — a handler ' +
+               'that neither ends nor fails hangs the client for ever.' };
   }
   log.debug('Leaving performOperation(). ' + res.collected.entries.length +
             ' entry/entries.');
@@ -8584,6 +8972,8 @@ function applyOperationResult(operation, req, res, next, result) {
 // operation, and the client may try again.
 // ---------------------------------------------------------------------------
 function throughTheRequestPool(operation, local) {
+  log.debug("Entering throughTheRequestPool().");
+  log.debug("Leaving throughTheRequestPool().");
   return function (req, res, next) {
     const pool = requestPool();
     if (!pool || typeof pool.runOperation !== 'function') {
@@ -8659,6 +9049,8 @@ function registerWorkerOperations() {
   try {
     worker = require('../common/request_worker');
   } catch (e) {
+    log.debug("Caught in registerWorkerOperations(): " +
+              ((e && e.message) || e));
     log.debug('Leaving registerWorkerOperations(). No worker module.');
     return;
   }
@@ -8688,7 +9080,8 @@ server.bind('', function (req, res, next) {
   // shadowing it here would make the verifier unreachable from the one handler
   // that most needs it — silently, because the shadow is a string and calling
   // `.verify()` on it is a TypeError at the first bind rather than at load.
-  const credentials_value = req.credentials === undefined ? '' : String(req.credentials);
+  const credentials_value = req.credentials === undefined ? '' :
+                            String(req.credentials);
   log.info('ldap: BIND dn="' + dn + '" (' +
            (dn ? 'named' : 'anonymous') + '), ' + credentials_value.length +
            ' character password.');
@@ -8713,22 +9106,24 @@ server.bind('', function (req, res, next) {
         'anonymous binds are not accepted; bind with a DN and a password'),
       '(anonymous)'));
   }
-  // **A PASSWORD ON THE PLAIN LISTENER** is refused with confidentialityRequired
-  // (13) BEFORE it is checked. It has already crossed the network in the clear
-  // by the time this line runs, so the refusal cannot protect this password —
-  // what it does is stop 389 being a port where a correct password WORKS, so no
-  // client is ever configured to send one there.
-  if (mode.requiresConfidentialDirectoryBinds() && ldapChannelOf(req) !== 'ldaps') {
+  // **A PASSWORD ON THE PLAIN LISTENER** is refused with
+  // confidentialityRequired (13) BEFORE it is checked. It has already crossed
+  // the network in the clear by the time this line runs, so the refusal cannot
+  // protect this password — what it does is stop 389 being a port where a
+  // correct password WORKS, so no client is ever configured to send one there.
+  if (mode.requiresConfidentialDirectoryBinds() &&
+      ldapChannelOf(req) !== 'ldaps') {
     log.debug('Leaving the LDAP bind handler. A password over plain LDAP.');
-    return next(ldapRefusal(req, 'STS-LDAP-0071', 'a bind as ' + dn + ' on the ' +
-      'plain LDAP listener was refused before its password was read; binds ' +
-      'require LDAPS', new ldap.ConfidentialityRequiredError(
+    return next(ldapRefusal(req, 'STS-LDAP-0071', 'a bind as ' + dn + ' on ' +
+      'the plain LDAP listener was refused before its password was read; ' +
+      'binds require LDAPS', new ldap.ConfidentialityRequiredError(
         'binds on this listener are refused; use LDAPS (ldap.tlsPort)'), dn));
   }
   // **A NAME WITH NO PASSWORD** is RFC 4513 section 5.1.2's unauthenticated
   // bind, which a client library sends when a password field was left empty —
   // and which, accepted, looks like a successful login as that name. Section
-  // 5.1.2 says a server SHOULD refuse it with unwillingToPerform (53) by default.
+  // 5.1.2 says a server SHOULD refuse it with unwillingToPerform (53) by
+  // default.
   if (mode.requiresDirectoryBind() && credentials_value === '') {
     log.debug('Leaving the LDAP bind handler. An unauthenticated bind.');
     return next(ldapRefusal(req, 'STS-LDAP-0072', 'an unauthenticated bind ' +
@@ -8741,14 +9136,15 @@ server.bind('', function (req, res, next) {
   // password is right, so a correct guess during a lockout teaches nothing.
   const bindLimited = mode.limitsDirectoryBindFailures();
   if (bindLimited) {
-    const lockedOut = websecurity.blocked('ldap-bind', limiterRequestOf(req), dn);
+    const lockedOut = websecurity.blocked('ldap-bind', limiterRequestOf(req),
+                                          dn);
     if (lockedOut) {
       log.info('ldap: refusing a bind as ' + dn + '; too many failed binds (' +
                lockedOut.kind + ' limit ' + lockedOut.limit + ').');
       log.debug('Leaving the LDAP bind handler. Rate limited.');
-      return next(ldapRefusal(req, 'STS-LDAP-0073', 'a bind as ' + dn + ' was ' +
-        'refused without checking its password: too many failed binds for ' +
-        'this ' + (lockedOut.kind === 'address' ? 'address' : 'DN') +
+      return next(ldapRefusal(req, 'STS-LDAP-0073', 'a bind as ' + dn + ' ' +
+        'was refused without checking its password: too many failed binds ' +
+        'for this ' + (lockedOut.kind === 'address' ? 'address' : 'DN') +
         ' (limit ' + lockedOut.limit + ')',
         new ldap.UnwillingToPerformError('too many failed binds; retry in ' +
           lockedOut.retryAfterS + ' seconds'), dn));
@@ -8779,8 +9175,8 @@ server.bind('', function (req, res, next) {
                'LDAP_INVALID_CREDENTIALS (49)',
       detail: { resultCode: 49,
                 reason: 'the password is the literal string "' +
-                        REFUSED_PASSWORD + '", the one this service refuses in ' +
-                        'every protocol' }
+                        REFUSED_PASSWORD + '", the one this service refuses ' +
+                        'in every protocol' }
     });
     if (bindLimited) {
       websecurity.attempt('ldap-bind', limiterRequestOf(req), dn);
@@ -8861,8 +9257,8 @@ server.bind('', function (req, res, next) {
                 : !dn
                   ? 'an anonymous bind: RFC 4511 section 5.1.1 defines it as ' +
                     'unauthenticated, so there was no password to check'
-                  : 'no password was checked; every bind here succeeds except ' +
-                    'the password "' + REFUSED_PASSWORD + '"' }
+                  : 'no password was checked; every bind here succeeds ' +
+                    'except the password "' + REFUSED_PASSWORD + '"' }
   });
   stats.recordAuthentication({
     presented: dn || '(anonymous)',
@@ -8937,7 +9333,9 @@ function connectionSnapshot() {
 // that threw would take down a bind — publishing is bookkeeping and a bind is
 // the protocol.
 function publishConnections() {
+  log.debug("Entering publishConnections().");
   if (!connectionWatcher) {
+    log.debug("Leaving publishConnections().");
     return;
   }
   try {
@@ -8948,6 +9346,7 @@ function publishConnections() {
              '. A request worker may be holding a stale list of connections, ' +
              'so a sign-out there could miss one.');
   }
+  log.debug("Leaving publishConnections().");
 }
 
 // ---------------------------------------------------------------------------
@@ -8969,7 +9368,9 @@ function publishConnections() {
 let publishScheduled = false;
 
 function publishConnectionsSoon() {
+  log.debug("Entering publishConnectionsSoon().");
   if (!connectionWatcher || publishScheduled) {
+    log.debug("Leaving publishConnectionsSoon().");
     return;
   }
   publishScheduled = true;
@@ -8977,6 +9378,7 @@ function publishConnectionsSoon() {
     publishScheduled = false;
     publishConnections();
   });
+  log.debug("Leaving publishConnectionsSoon().");
 }
 
 // --- add -------------------------------------------------------------------
@@ -8997,11 +9399,11 @@ server.add('', function (req, res, next) {
     log.debug('Leaving the LDAP add handler. An operational attribute.');
     return next(addOperationalRefusal);
   }
-  // ROOT_DN, not baseDn(): THIS IS THE SOCKET, and the socket has no realm.
-  // An LDAP client operating on `dc=acme,dc=example,dc=com` arrives with no
+  // ROOT_DN, not baseDn(): THIS IS THE SOCKET, and the socket has no realm. An
+  // LDAP client operating on `dc=acme,dc=example,dc=com` arrives with no
   // ambient realm at all, so asking whether its DN is under the DEFAULT realm's
-  // base would refuse every realm's subtree — which is the one thing putting the
-  // realm in the DN exists to make possible. The naming context this server
+  // base would refuse every realm's subtree — which is the one thing putting
+  // the realm in the DN exists to make possible. The naming context this server
   // holds is the whole tree; which realm a DN belongs to is decided by where it
   // sits in that tree, and nothing here has to know.
   if (!isUnder(dn, ROOT_DN)) {
@@ -9086,7 +9488,8 @@ server.add('', function (req, res, next) {
       ' was refused because the directory holds its maximum of ' +
       maxEntries() + ' entries',
       new ldap.AdminLimitExceededError(
-        'this directory holds its maximum of ' + maxEntries() + ' entries'), dn));
+        'this directory holds its maximum of ' + maxEntries() + ' entries'),
+      dn));
   }
   const attributes = {};
   let nulRefusal = null;
@@ -9219,7 +9622,8 @@ server.del('', function (req, res, next) {
 server.modify('', function (req, res, next) {
   log.debug('Entering the LDAP modify handler.');
   const dn = req.dn.toString();
-  log.info('ldap: MODIFY ' + dn + ' with ' + req.changes.length + ' change(s).');
+  log.info('ldap: MODIFY ' + dn + ' with ' + req.changes.length +
+           ' change(s).');
   const modifyRefusal = directoryWriteRefusal(req, 'modify', dn,
     req.changes.map(function (change) {
       return String(change.modification.type || '').toLowerCase();
@@ -9293,7 +9697,8 @@ server.modify('', function (req, res, next) {
       }
     } else if (operation === 'delete') {
       if (!working[type]) {
-        log.debug('Leaving the LDAP modify handler. ' + type + ' is not there.');
+        log.debug('Leaving the LDAP modify handler. ' + type +
+                  ' is not there.');
         return next(ldapRefusal(req, 'STS-LDAP-0017', 'a modify of ' + dn +
           ' deleted the attribute ' + type + ', which the entry does not hold',
           new ldap.NoSuchAttributeError(type), dn));
@@ -9340,7 +9745,8 @@ server.modify('', function (req, res, next) {
   touchDirectory();
   stored.modifiedAt = working.modifytimestamp[0];
   if (modifiedPassword.password) {
-    credentials.passwordWritten(modifiedPassword.name, modifiedPassword.password);
+    credentials.passwordWritten(modifiedPassword.name,
+                                modifiedPassword.password);
   }
   if (isPersonEntry(stored)) {
     noteAccountChange('updated', stored.dn, beforeModify,
@@ -9382,7 +9788,8 @@ server.modifyDN('', function (req, res, next) {
   log.debug('Entering the LDAP modifyDN handler.');
   const dn = req.dn.toString();
   const newRdn = req.newRdn.toString();
-  const newSuperior = req.newSuperior ? req.newSuperior.toString() : parentDn(dn);
+  const newSuperior = req.newSuperior ? req.newSuperior.toString() :
+                      parentDn(dn);
   const target = newRdn + (newSuperior ? ',' + newSuperior : '');
   log.info('ldap: MODIFYDN ' + dn + ' -> ' + target);
   const renameRefusal = directoryWriteRefusal(req, 'rename', dn);
@@ -9470,9 +9877,10 @@ server.modifyDN('', function (req, res, next) {
     summary: 'renamed ' + dn + ' to ' + target,
     detail: { from: dn, to: target, newRdn: newRdn,
               newSuperior: newSuperior,
-              movedContainer: normalizeDn(parentDn(dn)) !== normalizeDn(newSuperior),
-              note: 'any group listing the OLD DN as a member still does; this ' +
-                    'directory does not do referential integrity' }
+              movedContainer: normalizeDn(parentDn(dn)) !== normalizeDn(
+                  newSuperior),
+              note: 'any group listing the OLD DN as a member still does; ' +
+                    'this directory does not do referential integrity' }
   });
   res.end();
   log.debug('Leaving the LDAP modifyDN handler. The entry was renamed.');
@@ -9573,7 +9981,8 @@ server.search('', function (req, res, next) {
           // it is a malformed one.
           description: [(mode.verifiesCredentials()
                           ? 'Binds are verified, and a read requires one. '
-                          : 'Every bind succeeds except the password "invalid". ') +
+                          : 'Every bind succeeds except the password ' +
+                            '"invalid". ') +
                         'This directory has no schema and answers no ' +
                         'controls, extended operations or SASL mechanisms.']
         }
@@ -9672,13 +10081,13 @@ server.search('', function (req, res, next) {
       // this store holds them lower-cased because that is how they arrive —
       // @ldapjs/attribute lower-cases a type on the way in. @ldapjs/filter
       // defaults the flag to TRUE, which is what made `(objectClass=*)` match
-      // nothing here while `(cn=developers)` matched: a presence filter compares
-      // the attribute name it was given, `objectClass`, against a key spelled
-      // `objectclass`. The symptom is the worst kind — a search that succeeds
-      // and returns zero entries, which reads as an empty directory rather than
-      // as a filter that could not see it.
-      // `matchableForReader()`: a credential is invisible to a filter, or the
-      // filter is an oracle for it. See *THE DIRECTORY'S READ AND BIND SECURITY*.
+      // nothing here while `(cn=developers)` matched: a presence filter
+      // compares the attribute name it was given, `objectClass`, against a key
+      // spelled `objectclass`. The symptom is the worst kind — a search that
+      // succeeds and returns zero entries, which reads as an empty directory
+      // rather than as a filter that could not see it. `matchableForReader()`:
+      // a credential is invisible to a filter, or the filter is an oracle for
+      // it. See *THE DIRECTORY'S READ AND BIND SECURITY*.
       matches = req.filter.matches(matchableForReader(stored), false);
     } catch (e) {
       // A filter this store cannot evaluate is not a match, and it is worth a
@@ -9730,11 +10139,12 @@ server.search('', function (req, res, next) {
       //
       // **NOTHING COULD HAVE SEEN IT.** `ldap.sizeLimit` is 500 and the seeded
       // directory holds about twenty-six entries, so no search in either suite
-      // had ever reached this branch; and until `sts_directory_bulk_load_ldap.js`
-      // (2026-09-06) nothing in this repository drove the raw socket at all —
-      // every other reader of this directory comes in over HTTP, through this
-      // module's FUNCTIONS rather than its PROTOCOL. Five thousand entries and
-      // one subtree search found it in the first minute.
+      // had ever reached this branch; and until
+      // `sts_directory_bulk_load_ldap.js` (2026-09-06) nothing in this
+      // repository drove the raw socket at all — every other reader of this
+      // directory comes in over HTTP, through this module's FUNCTIONS rather
+      // than its PROTOCOL. Five thousand entries and one subtree search found
+      // it in the first minute.
       //
       // `SizeLimitExceededError` IS result code 4, and ldapjs turns an error
       // passed to `next()` into the SearchResultDone carrying it. The entries
@@ -9748,7 +10158,8 @@ server.search('', function (req, res, next) {
     }
     res.send(toSearchEntry(stored, req.attributes, res.messageId));
     sent++;
-    if (isUnder(stored.dn, usersDn()) && normalizeDn(stored.dn) !== normalizeDn(usersDn())) {
+    if (isUnder(stored.dn, usersDn()) &&
+        normalizeDn(stored.dn) !== normalizeDn(usersDn())) {
       usersSent++;
     }
   }
@@ -9759,12 +10170,14 @@ server.search('', function (req, res, next) {
   // logged rather than returned, because LDAP has no field for "try over
   // there" — the root DSE is where a client is supposed to read it.
   const otherContexts = namingContexts().filter(function (context) {
-    return normalizeDn(context) !== normalizeDn(realmBaseDn(realms.currentId()));
+    return normalizeDn(context) !== normalizeDn(realmBaseDn(
+        realms.currentId()));
   });
   log.info('ldap: the search considered ' + considered + ' entry/entries in ' +
            'scope and returned ' + sent + '.' +
            (otherContexts.length
-             ? ' This is the "' + realms.currentId() + '" realm\'s directory; ' +
+             ? ' This is the "' + realms.currentId() +
+               '" realm\'s directory; ' +
                otherContexts.length + ' other naming context(s) exist (' +
                otherContexts.join(', ') + ') and hold their own entries.'
              : ''));
@@ -9785,7 +10198,8 @@ server.search('', function (req, res, next) {
               attributes: (req.attributes || []).join(', ') || '(all)' }
   });
   res.end();
-  log.debug('Leaving the LDAP search handler. ' + sent + ' entry/entries sent.');
+  log.debug('Leaving the LDAP search handler. ' + sent +
+            ' entry/entries sent.');
   return next();
 });
 
@@ -9923,7 +10337,8 @@ function description(req) {
       certificate: {
         subject: serverCertificate ? serverCertificate.subject : '',
         names: serverCertificate ? serverCertificate.names : [],
-        fingerprint256: serverCertificate ? serverCertificate.fingerprint256 : '',
+        fingerprint256: serverCertificate ? serverCertificate.fingerprint256 :
+                        '',
         notAfter: serverCertificate ? serverCertificate.notAfter : '',
         source: 'the same certificate and key the HTTPS listeners on ' +
           tlsPorts.tls + ' and ' + tlsPorts.mtls + ' serve. It is ' +
@@ -9936,36 +10351,37 @@ function description(req) {
     autoCreateRule: 'an entry uid=<name>,' + usersDn() + ' appears the first ' +
       'time <name> authenticates to this service through ANY protocol. An ' +
       'LDAP bind does not seed one (it presents a DN, not a user name) and ' +
-      'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE is the ' +
-      'one identity that is already a DN: its entry keeps the subject\'s own ' +
-      'leaf RDN — cn=alice,' + usersDn() + ' for CN=alice,O=Example — or the ' +
+      'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE is ' +
+      'the one identity that is already a DN: its entry keeps the subject\'s ' +
+      'own leaf RDN — ' +
+      'cn=alice,' + usersDn() + ' for CN=alice,O=Example — or the ' +
       'whole subject where that already lies under ' + baseDn() + ', and the ' +
       'full subject, issuer, serial and validity are on the entry as x509* ' +
       'attributes, which are this service\'s own names and not schema. A ' +
-      'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor a ' +
-      'DN: an issued credential\'s did:jwk subject, whatever DID presents to ' +
-      'the OID4VP Verifier, the one /did/generate mints. Its entry goes at ' +
-      'uid=did-<12 hex of the SHA-256 of the DID>,' + usersDn() + ' — a ' +
+      'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor ' +
+      'a DN: an issued credential\'s did:jwk subject, whatever DID presents ' +
+      'to the OID4VP Verifier, the one /did/generate mints. Its entry goes ' +
+      'at uid=did-<12 hex of the SHA-256 of the DID>,' + usersDn() + ' — a ' +
       'did:jwk written out in full is a DN of several hundred characters, ' +
-      'most of it key material — with the identifier itself kept whole on the ' +
-      'entry as didSubject, and its method as didMethod. Search for the ' +
-      'person by didSubject, not by uid: on those entries the uid is a digest ' +
-      'and the didSubject is the identity.',
-    authenticationFacts: 'where the protocol that accepted the credential says ' +
-      'HOW it was presented — which today is the sign-in screen and nothing ' +
-      'else, since amr is an OIDC vocabulary — the entry also carries ' +
-      'authnMethod (every RFC 8176 method this person has used here, ' +
+      'most of it key material — with the identifier itself kept whole on ' +
+      'the entry as didSubject, and its method as didMethod. Search for the ' +
+      'person by didSubject, not by uid: on those entries the uid is a ' +
+      'digest and the didSubject is the identity.',
+    authenticationFacts: 'where the protocol that accepted the credential ' +
+      'says HOW it was presented — which today is the sign-in screen and ' +
+      'nothing else, since amr is an OIDC vocabulary — the entry also ' +
+      'carries authnMethod (every RFC 8176 method this person has used here, ' +
       'accumulated), mfaAuthenticated (TRUE or FALSE for the MOST RECENT ' +
       'authentication, overwritten each time) and mfaLastAuthTime (when ' +
       'multi-factor last happened, never cleared). These are this service\'s ' +
       'own names and not schema. A WebAuthn ceremony after a password writes ' +
       'TRUE; the same ceremony used passwordless writes authnMethod hwk with ' +
-      'no pwd beside it and mfaAuthenticated FALSE, because one factor is one ' +
-      'factor however phishing-resistant it is. Nothing here READS them: no ' +
-      'token carries them and no endpoint decides anything on them, exactly as ' +
-      'a group here grants nothing — bar the two groups that decide who may ' +
-      'use the admin console, which is the one exception anywhere in this ' +
-      'directory and is confined to that console.',
+      'no pwd beside it and mfaAuthenticated FALSE, because one factor is ' +
+      'one factor however phishing-resistant it is. Nothing here READS them: ' +
+      'no token carries them and no endpoint decides anything on them, ' +
+      'exactly as a group here grants nothing — bar the two groups that ' +
+      'decide who may use the admin console, which is the one exception ' +
+      'anywhere in this directory and is confined to that console.',
     enforcedRules: [
       'an add whose parent does not exist is LDAP_NO_SUCH_OBJECT (32)',
       'a delete of an entry with children is LDAP_NOT_ALLOWED_ON_NONLEAF (66)',
@@ -9973,10 +10389,10 @@ function description(req) {
         'LDAP_NO_SUCH_ATTRIBUTE (16)',
       'deleting the last value of an attribute deletes the attribute',
       'an add under ou=users whose username is already here is ' +
-        'LDAP_ENTRY_ALREADY_EXISTS (68), naming the entry that holds it. ' +
-        'ONE ENTRY PER PERSON: the username is the entry\'s naming RDN value ' +
-        'and any uid it carries, so uid=rcbj and cn=rcbj are the same person ' +
-        'and only one of them can be here. It is the same refusal the console ' +
+        'LDAP_ENTRY_ALREADY_EXISTS (68), naming the entry that holds it. ONE ' +
+        'ENTRY PER PERSON: the username is the entry\'s naming RDN value and ' +
+        'any uid it carries, so uid=rcbj and cn=rcbj are the same person and ' +
+        'only one of them can be here. It is the same refusal the console ' +
         'and POST /admin-api/users/create give, and the same rule every ' +
         'protocol here folds onto when it authenticates somebody'
     ],
@@ -10038,8 +10454,8 @@ function description(req) {
 //     `?format=json` still answers with the same payload; the schemas each one
 //     publishes are still read out of the module that owns them.
 //   * **THE PAGING AND THE SHORTENING ARE THE CONSOLE'S, not this file's.**
-//     `adminViews.pagedRows()`, `admin.pageNavPair()`, `admin.perPageOptions()` and
-//     `admin.clipped()` are the same functions `/admin/tokens` and
+//     `adminViews.pagedRows()`, `admin.pageNavPair()`, `admin.perPageOptions()`
+//     and `admin.clipped()` are the same functions `/admin/tokens` and
 //     `/admin/applications` use. A control on one of these pages that behaved
 //     differently from the identical-looking control on the page next door
 //     would be the worst possible outcome of moving them here.
@@ -10056,6 +10472,8 @@ function description(req) {
 // than inlined five times because the FILTER differs per page and the paging
 // does not.
 function directoryPaging(req, rows, noun, name) {
+  log.debug("Entering directoryPaging().");
+  log.debug("Leaving directoryPaging().");
   return adminViews.pagedRows(req.query, rows,
                          { noun: noun, name: name || null });
 }
@@ -10064,6 +10482,8 @@ function directoryPaging(req, rows, noun, name) {
 // so the URL of an unfiltered first page is still the bare path — the rule
 // `queryWith()` follows for every other value.
 function perOf(req, paging) {
+  log.debug("Entering perOf().");
+  log.debug("Leaving perOf().");
   return req.query.per ? String(paging.perPage) : '';
 }
 
@@ -10101,7 +10521,8 @@ function ldapServiceView(req) {
     ['Protocol version', 'LDAPv3'],
     ['Transport', 'plain TCP on ' + info.port + ', and LDAPS — TLS from the ' +
       'first byte — on ' + (info.tls.port || LDAPS_PORT) + '. There is no ' +
-      'StartTLS: it is an extended operation and this library implements none.'],
+      'StartTLS: it is an extended operation and this library implements ' +
+      'none.'],
     ['Entries right now', String(info.limits.currentEntries)],
     // The one row on this page that answers "and will any of this still be
     // here tomorrow". See description()'s `persistence` member.
@@ -10119,12 +10540,12 @@ function ldapServiceView(req) {
              info.persistence.database.database : 'a connection string')) +
         '. ' + info.persistence.entriesTracked + ' entry/entries written; ' +
         (info.persistence.lastError
-          ? 'THE LAST WRITE FAILED (' + info.persistence.lastError + ') — the ' +
-            'directory is unaffected and is still answering from memory, and ' +
-            'the next change will try again'
+          ? 'THE LAST WRITE FAILED (' + info.persistence.lastError + ') — ' +
+            'the directory is unaffected and is still answering from memory, ' +
+            'and the next change will try again'
           : 'last write ' + (info.persistence.lastWriteAt || 'not yet')) +
-        '. Sessions, tokens, codes, artifacts and tickets are NEVER persisted ' +
-        'in any mode.'],
+        '. Sessions, tokens, codes, artifacts and tickets are NEVER ' +
+        'persisted in any mode.'],
     ['Listener', info.listening
       ? 'up on TCP ' + info.port
       : 'DOWN — ' + (info.listenError || 'it never bound') +
@@ -10171,14 +10592,14 @@ function ldapServiceView(req) {
     admin.note(xmlEscape(info.authenticationFacts)) +
     '<h2>LDAPS, and what it does not change</h2>' +
     admin.note('Port ' + (info.tls.port || LDAPS_PORT) + ' is the same ' +
-    'directory over TLS &mdash; the same entries, the same handlers, the same ' +
-    'every-bind-succeeds. What TLS adds is that the password is not on the ' +
-    'wire in the clear; it does not make it <em>checked</em>. The certificate ' +
-    'is <strong>the one the HTTPS listeners serve</strong>: ' +
+    'directory over TLS &mdash; the same entries, the same handlers, the ' +
+    'same every-bind-succeeds. What TLS adds is that the password is not on ' +
+    'the wire in the clear; it does not make it <em>checked</em>. The ' +
+    'certificate is <strong>the one the HTTPS listeners serve</strong>: ' +
     '<code>' + xmlEscape(info.tls.certificate.subject) + '</code>, SHA-256 ' +
     '<code>' + xmlEscape(info.tls.certificate.fingerprint256) + '</code>, ' +
-    xmlEscape(tlsServer.certificateProvenance()) + '. Fetch it from ' +
-    '<a href="/tls/server-certificate">/tls/server-certificate</a> and put it ' +
+    xmlEscape(tlsServer.certificateProvenance()) + '. Fetch it from <a ' +
+    'href="/tls/server-certificate">/tls/server-certificate</a> and put it ' +
     'in your truststore &mdash; <code>LDAPTLS_REQCERT=never</code> is the ' +
     'habit this endpoint exists to avoid, and it would also hide the one ' +
     'thing worth checking here.') +
@@ -10213,10 +10634,10 @@ function ldapServiceView(req) {
     'uses</a>.') +
     '<p class="sub"><a href="/admin/ldap/service?format=json">This page as ' +
     'JSON</a> &middot; <a href="/admin/ldap/applications">the application ' +
-    'registry</a> &middot; <a href="/admin/ldap/directory">every entry in the ' +
-    'directory</a> &middot; <a href="/admin/ldap">the settings behind these ' +
-    'sockets</a> &middot; <a href="/admin/sts-metadata">everything this ' +
-    'service speaks</a></p>';
+    'registry</a> &middot; <a href="/admin/ldap/directory">every entry in ' +
+    'the directory</a> &middot; <a href="/admin/ldap">the settings behind ' +
+    'these sockets</a> &middot; <a href="/admin/sts-metadata">everything ' +
+    'this service speaks</a></p>';
   log.debug('Leaving ldapServiceView().');
   return { title: 'The directory service', inner: inner, json: info };
 }
@@ -10314,10 +10735,12 @@ function ldapDirectoryView(req) {
     }
   });
   origins.sort();
-  const originOptions = ['<option value=""' + (wantedOrigin ? '' : ' selected') +
+  const originOptions = ['<option value=""' +
+                         (wantedOrigin ? '' : ' selected') +
                          '>any origin</option>']
     .concat(origins.map(function (origin) {
-      const n = listed.filter(function (e) { return e.origin === origin; }).length;
+      const n =
+          listed.filter(function (e) { return e.origin === origin; }).length;
       return '<option value="' + xmlEscape(origin) + '"' +
              (origin === wantedOrigin ? ' selected' : '') + '>' +
              xmlEscape(origin) + ' (' + n + ')</option>';
@@ -10383,7 +10806,8 @@ function ldapDirectoryView(req) {
     'is</a> &middot; <a href="/admin/users">the people in it</a> &middot; ' +
     '<a href="/admin/groups">the groups in it</a></p>';
 
-  log.debug('Leaving ldapDirectoryView(). ' + paged.shown.length + ' row(s) of ' +
+  log.debug('Leaving ldapDirectoryView(). ' + paged.shown.length +
+            ' row(s) of ' +
             filtered.length + ' matched.');
   return {
     title: 'Every entry in the directory',
@@ -10439,11 +10863,11 @@ app.get('/admin/ldap/directory', function (req, res) {
 // fills it below.
 //
 // **There is no cache on the other side of this.** Every read the registry does
-// is a read of these entries, which is what makes an `ldapmodify` take effect on
-// the next request rather than after a restart. That is the whole point of the
-// directory being the source of truth, and a cache added for speed would quietly
-// undo it — on a mock, where the whole store is a Map in this process, there is
-// nothing to be gained by one anyway.
+// is a read of these entries, which is what makes an `ldapmodify` take effect
+// on the next request rather than after a restart. That is the whole point of
+// the directory being the source of truth, and a cache added for speed would
+// quietly undo it — on a mock, where the whole store is a Map in this process,
+// there is nothing to be gained by one anyway.
 //
 // **An application entry is not a person and must not be swept as one.**
 // `populateVcAttributes()` walks `ou=users` and would otherwise give an OAuth
@@ -10454,7 +10878,10 @@ app.get('/admin/ldap/directory', function (req, res) {
 // bug because a DID names a person.
 // ---------------------------------------------------------------------------
 function applicationDn(identifier) {
-  return 'cn=' + escapeDnValue(applications.labelFor(identifier)) + ',' + applicationsDn();
+  log.debug("Entering applicationDn().");
+  log.debug("Leaving applicationDn().");
+  return 'cn=' + escapeDnValue(applications.labelFor(identifier)) + ',' +
+         applicationsDn();
 }
 
 // Find an application by its IDENTIFIER rather than by its DN, because the DN
@@ -10485,7 +10912,9 @@ function applicationEntry(identifier) {
       found = stored;
     }
   });
-  log.debug('Leaving applicationEntry(). ' + (found ? 'Found by appIdentifier.' : 'Not here.'));
+  log.debug('Leaving applicationEntry(). ' +
+            (found ? 'Found by appIdentifier.' : 'Not ' +
+      'here.'));
   return found;
 }
 
@@ -10501,37 +10930,38 @@ function applicationEntry(identifier) {
 // Three things it carries that the raw attribute map did not, and each is a
 // thing the applications pages were missing because of it:
 //
-//   * THE DN. It is not an attribute — it is the key the entry is stored under —
-//     so a caller handed `stored.attributes` had no way to learn where the entry
-//     lives, and every applications page could show the `cn` and nothing else.
-//     It is published as `entryDN` (RFC 5020) because matchable() already uses
-//     that name for the same fact, so an ldapsearch filter and this dump agree
-//     about what the DN is called.
+//   * THE DN. It is not an attribute — it is the key the entry is stored under
+//     — so a caller handed `stored.attributes` had no way to learn where the
+//     entry lives, and every applications page could show the `cn` and nothing
+//     else. It is published as `entryDN` (RFC 5020) because matchable() already
+//     uses that name for the same fact, so an ldapsearch filter and this dump
+//     agree about what the DN is called.
 //   * THE OPERATIONAL ATTRIBUTES, createTimestamp and modifyTimestamp. A SEARCH
 //     withholds those unless they are asked for by name (RFC 4511 section
 //     4.5.1.8) and toSearchEntry() honours it — but this is not a search, it is
 //     this service showing its own store, and `operational` names which ones a
 //     search would have withheld so a page can say so rather than pretend the
 //     distinction does not exist.
-//   * THE CANONICAL SPELLING. The store lower-cases every attribute name because
-//     that is how @ldapjs/attribute delivers it; a page showing `oauthclientid`
-//     where the published schema says `oauthClientId` reads as a bug in the
-//     page. canonicalName() now knows the applications schema's names too —
-//     see the merge beside CANONICAL_NAMES.
+//   * THE CANONICAL SPELLING. The store lower-cases every attribute name
+//     because that is how @ldapjs/attribute delivers it; a page showing
+//     `oauthclientid` where the published schema says `oauthClientId` reads as
+//     a bug in the page. canonicalName() now knows the applications schema's
+//     names too — see the merge beside CANONICAL_NAMES.
 //
 // IT IS NOT ONLY AN APPLICATION'S SHAPE ANY MORE. `scim.js` reads people and
 // groups through the same function, because "the entry, whole, canonically
 // spelled, with the DN synthesised on it" is one question and the container it
 // is asked about does not change the answer. That is why it is called
-// entryObject() rather than applicationObject(): a second copy differing only in
-// the container it was written for is the two-lists mistake this file already
-// warns about three times.
+// entryObject() rather than applicationObject(): a second copy differing only
+// in the container it was written for is the two-lists mistake this file
+// already warns about three times.
 // ---------------------------------------------------------------------------
 function entryObject(stored) {
   log.debug('Entering entryObject().');
   const attributes = {};
   Object.keys(stored.attributes).sort().forEach(function (attribute) {
-    attributes[canonicalName(attribute)] = stored.attributes[attribute].slice(0);
+    attributes[canonicalName(attribute)] = stored.attributes[attribute].slice(
+        0);
   });
   // Synthesised rather than stored, exactly as matchable() does it: the DN is
   // where the entry IS, so holding a copy of it on the entry would be a second
@@ -10549,28 +10979,33 @@ function entryObject(stored) {
 }
 
 function readApplication(identifier) {
+  log.debug("Entering readApplication().");
   const stored = applicationEntry(identifier);
+  log.debug("Leaving readApplication().");
   return stored ? entryObject(stored) : null;
 }
 
 function applicationCount() {
-  let n = 0;
-  eachEntryInRealm(function (stored) {
-    if (isUnder(stored.dn, applicationsDn()) && normalizeDn(stored.dn) !== normalizeDn(applicationsDn())) {
-      n++;
-    }
-  });
+  log.debug("Entering applicationCount().");
+  // The same listing allApplications() reads, for its reason.
+  const n = entriesUnder(applicationsDn()).length;
+  log.debug("Leaving applicationCount().");
   return n;
 }
 
 function allApplications() {
   log.debug('Entering allApplications().');
-  const rows = [];
-  eachEntryInRealm(function (stored) {
-    if (isUnder(stored.dn, applicationsDn()) &&
-        normalizeDn(stored.dn) !== normalizeDn(applicationsDn())) {
-      rows.push(entryObject(stored));
-    }
+  // entriesUnder() RATHER THAN A WALK OF THE REALM (2026-09-12), for
+  // allPolicies()'s reason. `ssf/ssf_streams.js` asks the registry for every
+  // application on each event, per stream, to find a stream owner named by an
+  // `ssfReceiverId` — and a walk normalises every DN in the realm, people
+  // included. A SCIM bulk load in the dispatch mode emits an event per person,
+  // so each create paid for a scan of all the people already there: one worker
+  // spent half its CPU in normalizeDn(), the read barrier timed out thousands
+  // of times behind it, and the job was killed at thirty minutes. The listing
+  // is kept until something is written under ou=applications.
+  const rows = entriesUnder(applicationsDn()).map(function (stored) {
+    return entryObject(stored);
   });
   log.debug('Leaving allApplications(). ' + rows.length + ' application(s).');
   return rows;
@@ -10586,9 +11021,10 @@ function allApplications() {
 // authorization request, which is the opposite of the directory being the
 // source of truth.
 //
-// The operational attributes are the exception and are preserved: createTimestamp
-// belongs to the entry rather than to the record, and an entry that reported
-// being created afresh on every sign-in would make the audit log unreadable.
+// The operational attributes are the exception and are preserved:
+// createTimestamp belongs to the entry rather than to the record, and an entry
+// that reported being created afresh on every sign-in would make the audit log
+// unreadable.
 function writeApplication(identifier, attributes) {
   log.debug('Entering writeApplication(). identifier=' + identifier);
   const existing = applicationEntry(identifier);
@@ -10599,25 +11035,30 @@ function writeApplication(identifier, attributes) {
     // registry that could fail a token request would be the tail wagging the
     // dog.
     log.warn(errorCodes.tag('STS-LDAP-0035') +
-             'ldap: not creating ' + dn + '; ou=applications holds its maximum of ' +
-             maxApplications() + ' entry/entries (applications.max). The application ' +
-             'itself is unaffected — it simply goes unrecorded.');
+             'ldap: not creating ' + dn + '; ou=applications holds its ' +
+                                          'maximum of ' +
+             maxApplications() + ' entry/entries (applications.max). The ' +
+             'application itself is unaffected — it simply goes unrecorded.');
     log.debug('Leaving writeApplication(). The container is full.');
     return false;
   }
   if (totalEntries() >= maxEntries() && !existing) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
-             'ldap: not creating ' + dn + '; the directory holds its maximum of ' +
+             'ldap: not creating ' + dn + '; the directory holds its maximum ' +
+                                          'of ' +
              maxEntries() + ' entries.');
     log.debug('Leaving writeApplication(). The directory is full.');
     return false;
   }
   const created = existing ? existing.createdAt : generalizedTime();
-  const stored = putEntry(dn, attributes, { origin: existing ? existing.origin : 'application' });
+  const stored = putEntry(dn, attributes,
+                          { origin: existing ? existing.origin :
+                                    'application' });
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
-  auditDirectory(existing ? 'entry.update' : 'entry.create', dn, attributes, !existing);
+  auditDirectory(existing ? 'entry.update' : 'entry.create', dn, attributes,
+                 !existing);
   log.debug('Leaving writeApplication(). The entry was ' +
             (existing ? 'updated.' : 'created.'));
   return true;
@@ -10638,21 +11079,23 @@ function deleteApplicationEntry(identifier) {
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
   auditDirectory('entry.delete', stored.dn, stored.attributes, false);
-  log.debug('Leaving deleteApplicationEntry(). ' + entries.size + ' entry/entries left.');
+  log.debug('Leaving deleteApplicationEntry(). ' + entries.size + ' ' +
+      'entry/entries left.');
   return true;
 }
 
 // The directory's own audit row for an application entry, which is a DIFFERENT
-// fact from applications.js's `application.create`: that one says an application
-// was seen, this one says an entry in the tree changed. Both are recorded
-// because /admin/audit's directory filter would otherwise show every entry this
-// service writes except these, and a blind spot in a directory log is worse than
-// a row somebody has to read past.
+// fact from applications.js's `application.create`: that one says an
+// application was seen, this one says an entry in the tree changed. Both are
+// recorded because /admin/audit's directory filter would otherwise show every
+// entry this service writes except these, and a blind spot in a directory log
+// is worse than a row somebody has to read past.
 //
 // NO VALUES ARE NAMED, only attribute names — the same rule every other LDAP
 // row here follows, and it matters more on these entries than on any other:
 // oauthClientSecret and appRegistrationAccessToken are among the attributes.
 function auditDirectory(action, dn, attributes, created) {
+  log.debug("Entering auditDirectory().");
   audit.audit({
     action: action,
     actor: '',
@@ -10660,9 +11103,11 @@ function auditDirectory(action, dn, attributes, created) {
     channel: 'internal',
     target: dn,
     summary: 'The application entry ' + dn + ' was ' +
-             (action === 'entry.delete' ? 'deleted' : (created ? 'created' : 'updated')),
+             (action === 'entry.delete' ? 'deleted' :
+              (created ? 'created' : 'updated')),
     detail: { attributes: Object.keys(attributes || {}).sort().join(', ') }
   });
+  log.debug("Leaving auditDirectory().");
 }
 
 // The slot, filled at require time. Its four functions are all this file
@@ -10675,9 +11120,14 @@ applications.setDirectory({
   countApplications: applicationCount,
   deleteApplication: deleteApplicationEntry,
   // Two facts about the container itself, for the pages that report where these
-  // entries live and how many will fit. They are here rather than in that module
-  // because that module deliberately does not know where the container is.
-  containerDn: function () { return applicationsDn(); },
+  // entries live and how many will fit. They are here rather than in that
+  // module because that module deliberately does not know where the container
+  // is.
+  containerDn: function () {
+    log.debug("Entering containerDn().");
+    log.debug("Leaving containerDn().");
+    return applicationsDn();
+  },
   maxApplications: maxApplications
 });
 
@@ -10703,6 +11153,8 @@ applications.setDirectory({
 // because somebody tidied a DN.
 // ---------------------------------------------------------------------------
 function federationDn(id) {
+  log.debug("Entering federationDn().");
+  log.debug("Leaving federationDn().");
   return 'cn=' + escapeDnValue(String(id)) + ',' + federationsDn();
 }
 
@@ -10723,16 +11175,21 @@ function federationEntry(id) {
       found = stored;
     }
   });
-  log.debug('Leaving federationEntry(). ' + (found ? 'Found by fedId.' : 'Not here.'));
+  log.debug('Leaving federationEntry(). ' +
+            (found ? 'Found by fedId.' : 'Not ' +
+      'here.'));
   return found;
 }
 
 function readFederation(id) {
+  log.debug("Entering readFederation().");
   const stored = federationEntry(id);
+  log.debug("Leaving readFederation().");
   return stored ? entryObject(stored) : null;
 }
 
 function federationCount() {
+  log.debug("Entering federationCount().");
   let n = 0;
   eachEntryInRealm(function (stored) {
     if (isUnder(stored.dn, federationsDn()) &&
@@ -10740,6 +11197,7 @@ function federationCount() {
       n++;
     }
   });
+  log.debug("Leaving federationCount().");
   return n;
 }
 
@@ -10767,24 +11225,29 @@ function writeFederation(id, attributes) {
   const dn = existing ? existing.dn : federationDn(id);
   if (!existing && federationCount() >= maxFederations()) {
     log.warn(errorCodes.tag('STS-LDAP-0036') +
-             'ldap: not creating ' + dn + '; ou=federations holds its maximum of ' +
+             'ldap: not creating ' + dn + '; ou=federations holds its ' +
+                                          'maximum of ' +
              maxFederations() + ' entry/entries (federation.max).');
     log.debug('Leaving writeFederation(). The container is full.');
     return false;
   }
   if (totalEntries() >= maxEntries() && !existing) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
-             'ldap: not creating ' + dn + '; the directory holds its maximum of ' +
+             'ldap: not creating ' + dn + '; the directory holds its maximum ' +
+                                          'of ' +
              maxEntries() + ' entries.');
     log.debug('Leaving writeFederation(). The directory is full.');
     return false;
   }
   const created = existing ? existing.createdAt : generalizedTime();
-  const stored = putEntry(dn, attributes, { origin: existing ? existing.origin : 'federation' });
+  const stored = putEntry(dn, attributes,
+                          { origin: existing ? existing.origin :
+                                    'federation' });
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
-  auditFederationDirectory(existing ? 'entry.update' : 'entry.create', dn, attributes, !existing);
+  auditFederationDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                           attributes, !existing);
   log.debug('Leaving writeFederation(). The entry was ' +
             (existing ? 'updated.' : 'created.'));
   return true;
@@ -10800,7 +11263,8 @@ function deleteFederationEntry(id) {
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
   auditFederationDirectory('entry.delete', stored.dn, stored.attributes, false);
-  log.debug('Leaving deleteFederationEntry(). ' + entries.size + ' entry/entries left.');
+  log.debug('Leaving deleteFederationEntry(). ' + entries.size + ' ' +
+      'entry/entries left.');
   return true;
 }
 
@@ -10816,6 +11280,8 @@ function deleteFederationEntry(id) {
 // document's own identifier and is what a PolicyIdReference resolves against.
 // ---------------------------------------------------------------------------
 function policyDn(name) {
+  log.debug("Entering policyDn().");
+  log.debug("Leaving policyDn().");
   return 'cn=' + escapeDnValue(String(name)) + ',' + policiesDn();
 }
 
@@ -10827,6 +11293,7 @@ function policyEntry(name) {
 }
 
 function policyCount() {
+  log.debug("Entering policyCount().");
   let n = 0;
   eachEntryInRealm(function (stored) {
     if (isUnder(stored.dn, policiesDn()) &&
@@ -10834,6 +11301,7 @@ function policyCount() {
       n++;
     }
   });
+  log.debug("Leaving policyCount().");
   return n;
 }
 
@@ -10918,6 +11386,8 @@ function deletePolicy(name) {
 // one string to disagree with itself.
 // ---------------------------------------------------------------------------
 function roleDn(name) {
+  log.debug("Entering roleDn().");
+  log.debug("Leaving roleDn().");
   return 'cn=' + escapeDnValue(String(name)) + ',' + rolesDn();
 }
 
@@ -10929,6 +11399,7 @@ function roleEntry(name) {
 }
 
 function roleCount() {
+  log.debug("Entering roleCount().");
   let n = 0;
   eachEntryInRealm(function (stored) {
     if (isUnder(stored.dn, rolesDn()) &&
@@ -10936,6 +11407,7 @@ function roleCount() {
       n++;
     }
   });
+  log.debug("Leaving roleCount().");
   return n;
 }
 
@@ -11014,6 +11486,8 @@ function deleteRole(name) {
 // `ldapsearch` of the realm cannot reach.
 // ---------------------------------------------------------------------------
 function passwordPolicyDn(name) {
+  log.debug("Entering passwordPolicyDn().");
+  log.debug("Leaving passwordPolicyDn().");
   return 'cn=' + escapeDnValue(String(name)) + ',' + passwordPoliciesDn();
 }
 
@@ -11052,7 +11526,8 @@ function writePasswordPolicy(name, attributes) {
   }
   const created = existing ? existing.createdAt : generalizedTime();
   const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
-                          { origin: existing ? existing.origin : 'password policy' });
+                          { origin: existing ? existing.origin : 'password ' +
+                              'policy' });
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
@@ -11089,6 +11564,8 @@ function deletePasswordPolicy(name) {
 // contain — and this file is handed a name that is already an entry name.
 // ---------------------------------------------------------------------------
 function pepDn(name) {
+  log.debug("Entering pepDn().");
+  log.debug("Leaving pepDn().");
   return 'cn=' + escapeDnValue(String(name)) + ',' + pepsDn();
 }
 
@@ -11100,6 +11577,7 @@ function pepEntry(name) {
 }
 
 function pepCount() {
+  log.debug("Entering pepCount().");
   let n = 0;
   eachEntryInRealm(function (stored) {
     if (isUnder(stored.dn, pepsDn()) &&
@@ -11107,6 +11585,7 @@ function pepCount() {
       n++;
     }
   });
+  log.debug("Leaving pepCount().");
   return n;
 }
 
@@ -11176,7 +11655,8 @@ function allTrustAnchors() {
   const rows = [];
   const base = normalizeDn(trustAnchorsDn());
   eachEntryInRealm(function (stored) {
-    if (!isUnder(stored.dn, trustAnchorsDn()) || normalizeDn(stored.dn) === base) {
+    if (!isUnder(stored.dn, trustAnchorsDn()) ||
+        normalizeDn(stored.dn) === base) {
       return;
     }
     const pem = (stored.attributes.ststrustanchorcertificate || [])[0] || '';
@@ -11200,8 +11680,8 @@ function writeTrustAnchor(fingerprint, pem, meta) {
   const existing = entries.get(normalizeDn(dn));
   if (!existing && totalEntries() >= maxEntries()) {
     log.warn('ldap: not storing trust anchor ' + fingerprint + '; the ' +
-             'directory holds its maximum of ' + maxEntries() + ' entries, so ' +
-             'this anchor is in force until the next start and no longer.');
+             'directory holds its maximum of ' + maxEntries() + ' entries, ' +
+             'so this anchor is in force until the next start and no longer.');
     log.debug('Leaving writeTrustAnchor(). The directory is full.');
     return false;
   }
@@ -11216,7 +11696,8 @@ function writeTrustAnchor(fingerprint, pem, meta) {
     stored.createdAt = existing.createdAt;
     stored.attributes.createtimestamp = [existing.createdAt];
   }
-  log.debug('Leaving writeTrustAnchor(). ' + (existing ? 'Replaced.' : 'Created.'));
+  log.debug('Leaving writeTrustAnchor(). ' +
+            (existing ? 'Replaced.' : 'Created.'));
   return true;
 }
 
@@ -11227,7 +11708,8 @@ function deleteTrustAnchor(fingerprint) {
   if (gone) {
     touchDirectory(dn);
   }
-  log.debug('Leaving deleteTrustAnchor(). ' + (gone ? 'Removed.' : 'It was not stored.'));
+  log.debug('Leaving deleteTrustAnchor(). ' + (gone ? 'Removed.' : 'It was ' +
+      'not stored.'));
   return gone;
 }
 
@@ -11235,14 +11717,18 @@ function deleteTrustAnchor(fingerprint) {
 // DEFAULT realm — the test the replication appliers ask, so that an anchor
 // another process added or removed reaches this process's listeners.
 function isTrustAnchorKey(realmId, key) {
+  log.debug("Entering isTrustAnchorKey().");
   if (String(realmId || realms.DEFAULT_ID) !== realms.DEFAULT_ID) {
+    log.debug("Leaving isTrustAnchorKey().");
     return false;
   }
   const container = realms.run(realms.DEFAULT_REALM, function () {
     return normalizeDn(trustAnchorsDn());
   });
   const k = String(key || '');
-  return k !== container && k.slice(-(container.length + 1)) === ',' + container;
+  log.debug("Leaving isTrustAnchorKey().");
+  return k !== container &&
+         k.slice(-(container.length + 1)) === ',' + container;
 }
 
 function deletePep(name) {
@@ -11266,6 +11752,7 @@ function deletePep(name) {
 // authorization rules of the service into a second place that has to be
 // protected as carefully as the first.
 function auditPolicyDirectory(action, dn, attributes, created) {
+  log.debug("Entering auditPolicyDirectory().");
   audit.audit({
     action: action,
     actor: '',
@@ -11273,6 +11760,7 @@ function auditPolicyDirectory(action, dn, attributes, created) {
     detail: (created ? 'Created ' : 'Changed ') + dn + ' with ' +
             Object.keys(attributes || {}).sort().join(', ') + '.'
   });
+  log.debug("Leaving auditPolicyDirectory().");
 }
 
 // NO VALUES ARE NAMED, only attribute names — the rule every other LDAP row
@@ -11280,6 +11768,7 @@ function auditPolicyDirectory(action, dn, attributes, created) {
 // directory: `fedClientSecret` is a real credential at a real foreign service,
 // which is a stronger statement than anything oauthClientSecret can make.
 function auditFederationDirectory(action, dn, attributes, created) {
+  log.debug("Entering auditFederationDirectory().");
   audit.audit({
     action: action,
     actor: '',
@@ -11287,9 +11776,11 @@ function auditFederationDirectory(action, dn, attributes, created) {
     channel: 'internal',
     target: dn,
     summary: 'The federation relationship entry ' + dn + ' was ' +
-             (action === 'entry.delete' ? 'deleted' : (created ? 'created' : 'updated')),
+             (action === 'entry.delete' ? 'deleted' :
+              (created ? 'created' : 'updated')),
     detail: { attributes: Object.keys(attributes || {}).sort().join(', ') }
   });
+  log.debug("Leaving auditFederationDirectory().");
 }
 
 federation.setDirectory({
@@ -11298,7 +11789,11 @@ federation.setDirectory({
   allFederations: allFederations,
   countFederations: federationCount,
   deleteFederation: deleteFederationEntry,
-  containerDn: function () { return federationsDn(); },
+  containerDn: function () {
+    log.debug("Entering containerDn().");
+    log.debug("Leaving containerDn().");
+    return federationsDn();
+  },
   maxFederations: maxFederations
 });
 
@@ -11342,10 +11837,14 @@ applications.seedInternalApplications();
 // the same consequence: ON THESE ENTRIES THE cn IS NOT THE IDENTITY.
 // ---------------------------------------------------------------------------
 function spiffeEntryDn(id) {
+  log.debug("Entering spiffeEntryDn().");
+  log.debug("Leaving spiffeEntryDn().");
   return 'cn=' + escapeDnValue(String(id)) + ',' + spiffeEntriesDn();
 }
 
 function spiffeAgentDn(id) {
+  log.debug("Entering spiffeAgentDn().");
+  log.debug("Leaving spiffeAgentDn().");
   return 'cn=' + escapeDnValue(spiffeRegistry.agentCnFor(id)) + ',' +
          spiffeAgentsDn();
 }
@@ -11376,6 +11875,7 @@ function spiffeStored(containerDn, attributeName, identifier) {
 }
 
 function spiffeChildren(containerDn) {
+  log.debug("Entering spiffeChildren().");
   const rows = [];
   eachEntryInRealm(function (stored) {
     if (isUnder(stored.dn, containerDn) &&
@@ -11383,10 +11883,12 @@ function spiffeChildren(containerDn) {
       rows.push(entryObject(stored));
     }
   });
+  log.debug("Leaving spiffeChildren().");
   return rows;
 }
 
 function spiffeChildCount(containerDn) {
+  log.debug("Entering spiffeChildCount().");
   let n = 0;
   eachEntryInRealm(function (stored) {
     if (isUnder(stored.dn, containerDn) &&
@@ -11394,6 +11896,7 @@ function spiffeChildCount(containerDn) {
       n++;
     }
   });
+  log.debug("Leaving spiffeChildCount().");
   return n;
 }
 
@@ -11403,7 +11906,8 @@ function spiffeChildCount(containerDn) {
 // deleted with ldapmodify would come back on the next write. The operational
 // attributes are preserved, because createTimestamp belongs to the entry rather
 // than to the record.
-function spiffeWrite(containerDn, attributeName, identifier, attributes, originLabel) {
+function spiffeWrite(containerDn, attributeName, identifier, attributes,
+                     originLabel) {
   log.debug('Entering spiffeWrite(). identifier=' + identifier);
   const existing = spiffeStored(containerDn, attributeName, identifier);
   const dn = existing ? existing.dn
@@ -11454,6 +11958,7 @@ function spiffeDelete(containerDn, attributeName, identifier) {
 //
 // NO VALUES ARE NAMED, only attribute names, like every other LDAP row here.
 function spiffeAuditDirectory(action, dn, attributes, created) {
+  log.debug("Entering spiffeAuditDirectory().");
   audit.audit({
     action: action,
     actor: '',
@@ -11461,61 +11966,104 @@ function spiffeAuditDirectory(action, dn, attributes, created) {
     channel: 'internal',
     target: dn,
     summary: 'The SPIFFE entry ' + dn + ' was ' +
-             (action === 'entry.delete' ? 'deleted' : (created ? 'created' : 'updated')),
+             (action === 'entry.delete' ? 'deleted' :
+              (created ? 'created' : 'updated')),
     detail: { attributes: Object.keys(attributes || {}).sort().join(', ') }
   });
+  log.debug("Leaving spiffeAuditDirectory().");
 }
 
 spiffeRegistry.setDirectory({
   readEntry: function (id) {
+    log.debug("Entering readEntry().");
     const stored = spiffeStored(spiffeEntriesDn(), 'spiffeEntryId', id);
+    log.debug("Leaving readEntry().");
     return stored ? entryObject(stored) : null;
   },
   writeEntry: function (id, attributes) {
+    log.debug("Entering writeEntry().");
+    log.debug("Leaving writeEntry().");
     return spiffeWrite(spiffeEntriesDn(), 'spiffeEntryId', id, attributes,
                        'spiffe-entry');
   },
   deleteEntry: function (id) {
+    log.debug("Entering deleteEntry().");
+    log.debug("Leaving deleteEntry().");
     return spiffeDelete(spiffeEntriesDn(), 'spiffeEntryId', id);
   },
-  allEntries: function () { return spiffeChildren(spiffeEntriesDn()); },
-  countEntries: function () { return spiffeChildCount(spiffeEntriesDn()); },
+  allEntries: function () {
+    log.debug("Entering allEntries().");
+    log.debug("Leaving allEntries().");
+    return spiffeChildren(spiffeEntriesDn());
+  },
+  countEntries: function () {
+    log.debug("Entering countEntries().");
+    log.debug("Leaving countEntries().");
+    return spiffeChildCount(spiffeEntriesDn());
+  },
   readAgent: function (id) {
+    log.debug("Entering readAgent().");
     const stored = spiffeStored(spiffeAgentsDn(), 'spiffeAgentId', id);
+    log.debug("Leaving readAgent().");
     return stored ? entryObject(stored) : null;
   },
   writeAgent: function (id, attributes) {
+    log.debug("Entering writeAgent().");
+    log.debug("Leaving writeAgent().");
     return spiffeWrite(spiffeAgentsDn(), 'spiffeAgentId', id, attributes,
                        'spiffe-agent');
   },
   deleteAgent: function (id) {
+    log.debug("Entering deleteAgent().");
+    log.debug("Leaving deleteAgent().");
     return spiffeDelete(spiffeAgentsDn(), 'spiffeAgentId', id);
   },
-  allAgents: function () { return spiffeChildren(spiffeAgentsDn()); },
-  countAgents: function () { return spiffeChildCount(spiffeAgentsDn()); },
+  allAgents: function () {
+    log.debug("Entering allAgents().");
+    log.debug("Leaving allAgents().");
+    return spiffeChildren(spiffeAgentsDn());
+  },
+  countAgents: function () {
+    log.debug("Entering countAgents().");
+    log.debug("Leaving countAgents().");
+    return spiffeChildCount(spiffeAgentsDn());
+  },
   // Where the containers are, for the pages that report it. Here rather than in
   // that module because that module deliberately does not know.
-  entriesContainerDn: function () { return spiffeEntriesDn(); },
-  agentsContainerDn: function () { return spiffeAgentsDn(); },
-  containerDn: function () { return spiffeDn(); }
+  entriesContainerDn: function () {
+    log.debug("Entering entriesContainerDn().");
+    log.debug("Leaving entriesContainerDn().");
+    return spiffeEntriesDn();
+  },
+  agentsContainerDn: function () {
+    log.debug("Entering agentsContainerDn().");
+    log.debug("Leaving agentsContainerDn().");
+    return spiffeAgentsDn();
+  },
+  containerDn: function () {
+    log.debug("Entering containerDn().");
+    log.debug("Leaving containerDn().");
+    return spiffeDn();
+  }
 });
 
 // ---------------------------------------------------------------------------
-// THE PEOPLE AND THE GROUPS AS A STORE, WHICH IS WHAT `scim.js` PROVISIONS INTO.
+// THE PEOPLE AND THE GROUPS AS A STORE, WHICH IS WHAT `scim.js` PROVISIONS
+// INTO.
 //
 // The same division the applications container above draws, made again for the
 // two containers that were already here: `scim_map.js` owns the SCHEMA (which
-// LDAP attribute each SCIM member is, in both directions) and this file owns the
-// DIRECTORY (where the containers are, what counts as a person or a group, how
-// an entry is created, what the cap is, and what an audit row says). Neither
-// knows the other's half.
+// LDAP attribute each SCIM member is, in both directions) and this file owns
+// the DIRECTORY (where the containers are, what counts as a person or a group,
+// how an entry is created, what the cap is, and what an audit row says).
+// Neither knows the other's half.
 //
 // **THE DEPENDENCY IS NOT INVERTED HERE, and that is worth a sentence because
 // five other things in this file are.** `scim.js` requires this module directly
 // and `server.js` requires it AFTER this one, so neither of the two things that
-// force a slot applies: there is no cycle (this module knows nothing about SCIM)
-// and no route moves (the /ldap routes are already registered by the time the
-// /scim ones are). Rule 3e says a slot is what you reach for when a require
+// force a slot applies: there is no cycle (this module knows nothing about
+// SCIM) and no route moves (the /ldap routes are already registered by the time
+// the /scim ones are). Rule 3e says a slot is what you reach for when a require
 // would close a cycle or move a route, and to check a new proposal both ways
 // round before adding one. This proposal fails that test both ways round, so it
 // is a plain require.
@@ -11529,8 +12077,8 @@ spiffeRegistry.setDirectory({
 // client and an LDAP client pointed at this service are shown one truth.
 //
 // **A PERSON IS AN ENTRY UNDER ou=users AND A GROUP IS WHATEVER groupRuleFor()
-// SAYS ONE IS.** Both rules are already written down in this file and neither is
-// re-decided here: `populateVcAttributes()` uses the first and `groupsFor()`
+// SAYS ONE IS.** Both rules are already written down in this file and neither
+// is re-decided here: `populateVcAttributes()` uses the first and `groupsFor()`
 // uses the second, and a third opinion in a SCIM module would be the second
 // definition that eventually disagrees. The consequence is one a SCIM client
 // will meet: a group a client `ldapadd`ed under ou=people with a groupOfNames
@@ -11543,15 +12091,19 @@ spiffeRegistry.setDirectory({
 // directory is schemaless, so what an entry IS cannot be read off an
 // objectClass, and placement is the only rule that cannot be argued with.
 function isPersonEntry(stored) {
+  log.debug("Entering isPersonEntry().");
+  log.debug("Leaving isPersonEntry().");
   return isUnder(stored.dn, usersDn()) &&
          normalizeDn(stored.dn) !== normalizeDn(usersDn());
 }
 
 function personCount() {
+  log.debug("Entering personCount().");
   let n = 0;
   eachEntryInRealm(function (stored) {
     if (isPersonEntry(stored)) n++;
   });
+  log.debug("Leaving personCount().");
   return n;
 }
 
@@ -11584,7 +12136,9 @@ function readPerson(dn) {
   log.debug('Entering readPerson(). dn=' + dn);
   const stored = getEntry(dn);
   if (!stored || !isPersonEntry(stored)) {
-    log.debug('Leaving readPerson(). ' + (stored ? 'Not under ' + usersDn() + '.' : 'Nothing there.'));
+    log.debug('Leaving readPerson(). ' +
+              (stored ? 'Not under ' + usersDn() + '.' : 'Nothing ' +
+        'there.'));
     return null;
   }
   log.debug('Leaving readPerson(). Found ' + stored.dn + '.');
@@ -11698,8 +12252,8 @@ function canonicalUsernameOfDn(dn) {
 //
 // It built `uid=<userName>,ou=users` directly, which is right until it is not:
 // namePlan() FOLDS a new name onto an entry that is already this person's under
-// a different naming attribute (a client certificate's `cn=rcbj,ou=users`, say),
-// and a second rule that always built a `uid=` DN would have created
+// a different naming attribute (a client certificate's `cn=rcbj,ou=users`,
+// say), and a second rule that always built a `uid=` DN would have created
 // `uid=rcbj` beside it — two objects for one person, which is the exact thing
 // that fold exists to prevent. createUser() applies namePlan(), refuses a taken
 // name through existingUserEntry() and refuses DN syntax through
@@ -11711,10 +12265,10 @@ function canonicalUsernameOfDn(dn) {
 // writeApplication() does and for the same reason: a merge here would make it
 // impossible for a SCIM client ever to remove a value.
 //
-// Returns a result object rather than a boolean, because a SCIM client is owed a
-// reason. `full` is the one refusal this can produce, and it is a refusal rather
-// than a warning — unlike writeApplication(), where the application's own
-// request had already succeeded and only the record was at stake, here the
+// Returns a result object rather than a boolean, because a SCIM client is owed
+// a reason. `full` is the one refusal this can produce, and it is a refusal
+// rather than a warning — unlike writeApplication(), where the application's
+// own request had already succeeded and only the record was at stake, here the
 // request IS the write.
 function writePerson(dn, attributes) {
   log.debug('Entering writePerson(). dn=' + dn);
@@ -11723,12 +12277,14 @@ function writePerson(dn, attributes) {
   // a REPLACE and the observer's whole question is what moved.
   const before = attributeSnapshot(existing);
   if (existing && !isPersonEntry(existing)) {
-    log.debug('Leaving writePerson(). ' + dn + ' is not under ' + usersDn() + '.');
+    log.debug('Leaving writePerson(). ' + dn + ' is not under ' + usersDn() +
+              '.');
     return coded('STS-LDAP-0048', { ok: false, reason: 'notAPerson', dn: dn });
   }
   if (!existing && totalEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
-             'ldap: not creating ' + dn + '; the directory holds its maximum of ' +
+             'ldap: not creating ' + dn + '; the directory holds its maximum ' +
+                                          'of ' +
              maxEntries() + ' entries (ldap.maxEntries).');
     log.debug('Leaving writePerson(). The directory is full.');
     return coded('STS-LDAP-0007', { ok: false, reason: 'full', dn: dn });
@@ -11743,21 +12299,24 @@ function writePerson(dn, attributes) {
                                     parent: parentDn(dn) });
   }
   const created = existing ? existing.createdAt : generalizedTime();
-  const stored = putEntry(dn, attributes, { origin: existing ? existing.origin : 'scim' });
+  const stored = putEntry(dn, attributes,
+                          { origin: existing ? existing.origin : 'scim' });
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
   noteAccountChange(existing ? 'updated' : 'created', stored.dn, before,
                     attributeSnapshot(stored));
-  log.debug('Leaving writePerson(). The entry was ' + (existing ? 'updated.' : 'created.'));
-  return { ok: true, created: !existing, dn: stored.dn, entry: entryObject(stored) };
+  log.debug('Leaving writePerson(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return { ok: true, created: !existing, dn: stored.dn,
+           entry: entryObject(stored) };
 }
 
 // Delete a person's entry. It leaves that DN behind in every group that lists
-// it, which is deliberate and is the same non-feature `GET /admin/ldap/service` documents:
-// referential integrity is a directory feature and not a protocol rule, and a
-// dangling member is exactly what /admin/groups exists to report. A SCIM client
-// that means to remove somebody from their groups has to say so.
+// it, which is deliberate and is the same non-feature `GET /admin/ldap/service`
+// documents: referential integrity is a directory feature and not a protocol
+// rule, and a dangling member is exactly what /admin/groups exists to report. A
+// SCIM client that means to remove somebody from their groups has to say so.
 function deletePerson(dn) {
   log.debug('Entering deletePerson(). dn=' + dn);
   const stored = getEntry(dn);
@@ -11767,7 +12326,8 @@ function deletePerson(dn) {
   }
   if (hasChildren(stored.dn)) {
     log.debug('Leaving deletePerson(). It has children.');
-    return coded('STS-LDAP-0014', { ok: false, reason: 'notLeaf', dn: stored.dn });
+    return coded('STS-LDAP-0014',
+                 { ok: false, reason: 'notLeaf', dn: stored.dn });
   }
   const goneAttributes = attributeSnapshot(stored);
   const goneName = usernameOfEntry(stored);
@@ -11810,9 +12370,10 @@ function allGroupEntries() {
 // keeping because the shape recurs. `/scim/v2` answers under every realm prefix
 // and a SCIM id here IS a DN, so while one Map held every realm's entries the
 // realm's endpoint could read, rewrite and — verified — DELETE a group in the
-// default realm: `DELETE /realm/acme/scim/v2/Groups/cn=x,ou=groups,dc=example,dc=com`
-// answered 204 and the group was gone. The person half never had the hole,
-// because isPersonEntry() tests placement under the AMBIENT realm's usersDn();
+// default realm: `DELETE
+// /realm/acme/scim/v2/Groups/cn=x,ou=groups,dc=example,dc=com` answered 204 and
+// the group was gone. The person half never had the hole, because
+// isPersonEntry() tests placement under the AMBIENT realm's usersDn();
 // groupRuleFor() answers "this is a group" wherever it sits, on purpose, so
 // nothing about a group's own definition could have caught it. Each door was
 // guarded by hand first and the store split made the guard structural — these
@@ -11828,7 +12389,8 @@ function readGroupEntry(dn) {
   const object = entryObject(stored);
   object.rule = groupRuleFor(stored);
   object.members = membersOf(stored);
-  log.debug('Leaving readGroupEntry(). ' + object.members.length + ' member value(s).');
+  log.debug('Leaving readGroupEntry(). ' + object.members.length + ' member ' +
+      'value(s).');
   return object;
 }
 
@@ -11837,6 +12399,8 @@ function readGroupEntry(dn) {
 // one by both rules rather than by where it happens to sit, and stays one if a
 // client moves it.
 function groupDnFor(displayName) {
+  log.debug("Entering groupDnFor().");
+  log.debug("Leaving groupDnFor().");
   return 'cn=' + escapeDnValue(String(displayName)) + ',' + groupsDn();
 }
 
@@ -11848,36 +12412,43 @@ function groupDnFor(displayName) {
 // PATCHed over SCIM from one the console created. It defaults to `scim`, so the
 // call site that predates the parameter says exactly what it always meant.
 function writeGroupEntry(dn, attributes, origin) {
-  log.debug('Entering writeGroupEntry(). dn=' + dn + ', origin=' + (origin || 'scim'));
+  log.debug('Entering writeGroupEntry(). dn=' + dn + ', origin=' +
+            (origin || 'scim'));
   // A DN in another realm is simply not here, and neither is its parent, so a
   // cross-realm PUT falls through to the parent check below and is answered
   // `noParent` — a write into a container this directory does not have, which
   // is exactly what it is from in here.
   const existing = getEntry(dn);
   if (existing && !groupRuleFor(existing)) {
-    log.debug('Leaving writeGroupEntry(). ' + dn + ' is an entry and not a group.');
+    log.debug('Leaving writeGroupEntry(). ' + dn + ' is an entry and not a ' +
+                                                   'group.');
     return coded('STS-LDAP-0048', { ok: false, reason: 'notAGroup', dn: dn });
   }
   if (!existing && totalEntries() >= maxEntries()) {
     log.warn(errorCodes.tag('STS-LDAP-0007') +
-             'ldap: not creating ' + dn + '; the directory holds its maximum of ' +
+             'ldap: not creating ' + dn + '; the directory holds its maximum ' +
+                                          'of ' +
              maxEntries() + ' entries (ldap.maxEntries).');
     log.debug('Leaving writeGroupEntry(). The directory is full.');
     return coded('STS-LDAP-0007', { ok: false, reason: 'full', dn: dn });
   }
   if (!getEntry(parentDn(dn))) {
-    log.debug('Leaving writeGroupEntry(). There is no ' + parentDn(dn) + ' in this realm.');
+    log.debug('Leaving writeGroupEntry(). There is no ' + parentDn(dn) + ' ' +
+        'in this realm.');
     return coded('STS-LDAP-0006', { ok: false, reason: 'noParent', dn: dn,
                                     parent: parentDn(dn) });
   }
   const created = existing ? existing.createdAt : generalizedTime();
   const stored = putEntry(dn, attributes,
-                          { origin: existing ? existing.origin : (origin || 'scim') });
+                          { origin: existing ? existing.origin :
+                                    (origin || 'scim') });
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
-  log.debug('Leaving writeGroupEntry(). The entry was ' + (existing ? 'updated.' : 'created.'));
-  return { ok: true, created: !existing, dn: stored.dn, entry: readGroupEntry(stored.dn) };
+  log.debug('Leaving writeGroupEntry(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return { ok: true, created: !existing, dn: stored.dn,
+           entry: readGroupEntry(stored.dn) };
 }
 
 function deleteGroupEntry(dn) {
@@ -11889,11 +12460,13 @@ function deleteGroupEntry(dn) {
   }
   if (hasChildren(stored.dn)) {
     log.debug('Leaving deleteGroupEntry(). It has children.');
-    return coded('STS-LDAP-0014', { ok: false, reason: 'notLeaf', dn: stored.dn });
+    return coded('STS-LDAP-0014',
+                 { ok: false, reason: 'notLeaf', dn: stored.dn });
   }
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
-  log.debug('Leaving deleteGroupEntry(). ' + entries.size + ' entry/entries left.');
+  log.debug('Leaving deleteGroupEntry(). ' + entries.size + ' entry/entries ' +
+      'left.');
   return { ok: true, dn: stored.dn };
 }
 
@@ -11918,10 +12491,10 @@ function deleteGroupEntry(dn) {
 // `POST /admin-api/groups/create` and (for the name rule) a SCIM create all get
 // the same answer about the same name.
 //
-// **WHY SCIM STILL HAS ITS OWN INGRESS AND IS NOT ROUTED THROUGH createGroup().**
-// That handler is SCIMMY-shaped: it is handed a resource, throws
-// `SCIMMY.Types.Error` with a `scimType`, and has to serve PUT and PATCH — an
-// UPDATE of a group that exists — as well as a create. Making it call this
+// **WHY SCIM STILL HAS ITS OWN INGRESS AND IS NOT ROUTED THROUGH
+// createGroup().** That handler is SCIMMY-shaped: it is handed a resource,
+// throws `SCIMMY.Types.Error` with a `scimType`, and has to serve PUT and PATCH
+// — an UPDATE of a group that exists — as well as a create. Making it call this
 // would mean this function growing an update mode and a second error
 // vocabulary, which is how one function ends up being two functions in a
 // trenchcoat. What the two share is the part that could disagree: the DN
@@ -11935,7 +12508,8 @@ function deleteGroupEntry(dn) {
 // named, for one reason: SCIM already does. A console stricter than SCIM about
 // the same store would be two doors disagreeing about what this directory
 // holds, which is the exact failure every slot in this file is arranged to
-// avoid — and the page that reports the state is right there to say it happened.
+// avoid — and the page that reports the state is right there to say it
+// happened.
 // ---------------------------------------------------------------------------
 function createGroup(displayName, options) {
   log.debug('Entering createGroup(). displayName=' + displayName);
@@ -11943,10 +12517,11 @@ function createGroup(displayName, options) {
   const wanted = String(displayName == null ? '' : displayName).trim();
   if (!wanted) {
     log.debug('Leaving createGroup(). No name.');
-    return coded('STS-LDAP-0042', { ok: false, errors: ['Which group? Send `group` with the name it ' +
-                                 'will be known by — that string becomes both ' +
-                                 'the `cn` and the RDN, so it is the whole of ' +
-                                 'what names the entry.'] });
+    return coded('STS-LDAP-0042', { ok: false, errors: ['Which group? Send ' +
+                                 '`group` with the name it will be known by ' +
+                                 '— that string becomes both the `cn` and ' +
+                                 'the RDN, so it is the whole of what names ' +
+                                 'the entry.'] });
   }
   if (DN_SHAPED.test(wanted)) {
     // The same refusal createUser() makes about a username, and it is worth
@@ -11955,20 +12530,22 @@ function createGroup(displayName, options) {
     // that DN, and what they would get is `cn=cn\=developers\,ou\=groups...`
     // — a second group whose name is the first one's DN.
     log.debug('Leaving createGroup(). That is a DN.');
-    return coded('STS-LDAP-0043', { ok: false, errors: ['"' + wanted + '" is a DN and not a group ' +
-                                 'name. Send the `cn` alone; this function ' +
-                                 'puts it under ' + groupsDn() + '. A group ' +
+    return coded('STS-LDAP-0043', { ok: false, errors: ['"' + wanted + '" is ' +
+                                 'a DN and not a group name. Send the `cn` ' +
+                                 'alone; this function puts it ' +
+                                 'under ' + groupsDn() + '. A group ' +
                                  'somewhere else in the tree is an `ldapadd` ' +
-                                 'and is still a group here by the objectClass ' +
-                                 'rule /admin/groups reports.'] });
+                                 'and is still a group here by the ' +
+                                 'objectClass rule /admin/groups reports.'] });
   }
   if (!nameUsableInDn(wanted)) {
     log.debug('Leaving createGroup(). The name carries DN syntax.');
-    return coded('STS-LDAP-0046', { ok: false, errors: ['"' + wanted + '" cannot name a group here: ' +
-                                 'it carries a character RFC 4514 section 2.4 ' +
-                                 'reserves in a DN (one of , = + < > # ; " \\), ' +
-                                 'so the entry would be named something other ' +
-                                 'than what was typed. Refused rather than ' +
+    return coded('STS-LDAP-0046', { ok: false, errors: ['"' + wanted + '" ' +
+                                 'cannot name a group here: it carries a ' +
+                                 'character RFC 4514 section 2.4 reserves in ' +
+                                 'a DN (one of , = + < > # ; " \\), so the ' +
+                                 'entry would be named something other than ' +
+                                 'what was typed. Refused rather than ' +
                                  'escaped, exactly as a username is, and for ' +
                                  'the same reason: an `ldapadd` can still ' +
                                  'create it with the escaping written out.'] });
@@ -12017,14 +12594,16 @@ function createGroup(displayName, options) {
   }
   const written = writeGroupEntry(dn, attributes, opts.origin || 'console');
   if (!written.ok) {
-    log.debug('Leaving createGroup(). The directory refused: ' + written.reason);
-    return coded(errorCodes.codeOf(written), { ok: false, reason: written.reason,
+    log.debug('Leaving createGroup(). The directory refused: ' +
+              written.reason);
+    return coded(errorCodes.codeOf(written),
+                 { ok: false, reason: written.reason,
              errors: [written.reason === 'full'
                ? 'This directory holds its maximum of ' + maxEntries() +
                  ' entries (ldap.maxEntries). Nothing was written.'
                : written.reason === 'noParent'
-                 ? 'There is no ' + (written.parent || groupsDn()) + ' in this ' +
-                   'realm, so there is no container to put a group in.'
+                 ? 'There is no ' + (written.parent || groupsDn()) + ' in ' +
+                   'this realm, so there is no container to put a group in.'
                  : 'The entry at ' + dn + ' could not be written (' +
                    written.reason + ').'] });
   }
@@ -12110,11 +12689,11 @@ function memberDnFor(nameOrDn) {
 //     page. Nothing here walks a group tree, and a function that flattened on
 //     the way in would be claiming a feature this service does not have.
 //
-// AND IT IS IDEMPOTENT, which is `admin_rbac.js`'s grant() rule and is worth the
-// sentence: adding somebody who is already in the group is the state the caller
-// wanted, so it answers ok with `changed: false`. A 400 there would make a
-// script that adds on every run fail on its second one — and the bulk-load jobs
-// in tests/vendored are exactly such a script.
+// AND IT IS IDEMPOTENT, which is `admin_rbac.js`'s grant() rule and is worth
+// the sentence: adding somebody who is already in the group is the state the
+// caller wanted, so it answers ok with `changed: false`. A 400 there would make
+// a script that adds on every run fail on its second one — and the bulk-load
+// jobs in tests/vendored are exactly such a script.
 // ---------------------------------------------------------------------------
 function addGroupMember(group, member, options) {
   log.debug('Entering addGroupMember(). group=' + group + ', member=' + member);
@@ -12128,14 +12707,16 @@ function addGroupMember(group, member, options) {
   }
   if (!wantedMember) {
     log.debug('Leaving addGroupMember(). No member.');
-    return coded('STS-LDAP-0049', { ok: false, errors: ['Who? Send `member` with a username, or with ' +
-                                 'the DN of any entry — a group can hold ' +
-                                 'another group, and no username names one.'] });
+    return coded('STS-LDAP-0049', { ok: false, errors: ['Who? Send `member` ' +
+                                 'with a username, or with the DN of any ' +
+                                 'entry — a group can hold another group, ' +
+                                 'and no username names one.'] });
   }
   // A `cn` OR A DN, because the two callers arrive with different things in
   // hand: the console's form is on a page whose rows are DNs, and a script
   // filling fifty groups has the name it just created them under.
-  const dn = DN_SHAPED.test(wantedGroup) ? wantedGroup : groupDnFor(wantedGroup);
+  const dn = DN_SHAPED.test(wantedGroup) ? wantedGroup :
+             groupDnFor(wantedGroup);
   const existing = readGroupEntry(dn);
   if (!existing) {
     const stored = getEntry(dn);
@@ -12143,11 +12724,11 @@ function addGroupMember(group, member, options) {
     return coded('STS-LDAP-0050', { ok: false,
              errors: [stored
                ? 'There is an entry at ' + dn + ' and it is not counted as a ' +
-                 'group — it neither sits under ' + groupsDn() + ' nor carries ' +
-                 'a group objectClass. /admin/groups says which rule catches ' +
-                 'what.'
-               : 'There is no group at ' + dn + '. Create it first, or name an ' +
-                 'existing one — this does not create a group as a side ' +
+                 'group — it neither sits under ' + groupsDn() + ' nor ' +
+                 'carries a group objectClass. /admin/groups says which rule ' +
+                 'catches what.'
+               : 'There is no group at ' + dn + '. Create it first, or name ' +
+                 'an existing one — this does not create a group as a side ' +
                  'effect of adding somebody to it, because a typo in a name ' +
                  'would then be a new group rather than an error.'] });
   }
@@ -12185,9 +12766,9 @@ function addGroupMember(group, member, options) {
   });
   // ONTO `member`, whatever else the entry carries. A group holding
   // `uniqueMember` values gains a `member` one rather than having its own
-  // convention extended, and that is deliberate: this service's own group claim,
-  // the console and RFC 4519 all read `member` first, and guessing which of
-  // three attributes an operator meant would be this function deciding
+  // convention extended, and that is deliberate: this service's own group
+  // claim, the console and RFC 4519 all read `member` first, and guessing which
+  // of three attributes an operator meant would be this function deciding
   // something the caller did not say.
   const key = Object.keys(attributes).filter(function (name) {
     return name.toLowerCase() === 'member';
@@ -12199,15 +12780,17 @@ function addGroupMember(group, member, options) {
   if (!written.ok) {
     log.debug('Leaving addGroupMember(). The directory refused: ' +
               written.reason);
-    return coded(errorCodes.codeOf(written), { ok: false, reason: written.reason,
-             errors: ['The membership could not be written onto ' + existing.dn +
+    return coded(errorCodes.codeOf(written),
+                 { ok: false, reason: written.reason,
+             errors: ['The membership could not be written onto ' +
+                      existing.dn +
                       ' (' + written.reason + ').'] });
   }
   if (!target.present) {
     log.info('ldap: ' + existing.dn + ' now lists ' + target.dn + ' and ' +
              'nothing is stored there. It is written anyway — this directory ' +
-             'does no referential integrity, and a dangling member is a state ' +
-             'worth being able to produce.');
+             'does no referential integrity, and a dangling member is a ' +
+             'state worth being able to produce.');
   }
   audit.recordDirectory({
     action: 'group.add-member',
@@ -12231,13 +12814,14 @@ function addGroupMember(group, member, options) {
            entry: written.entry,
            message: target.dn + ' is now a member of ' + existing.dn + '.' +
                     (target.present ? ''
-                                    : ' NOTHING IS AT THAT DN — they have not ' +
-                                      'authenticated here and nobody has ' +
+                                    : ' NOTHING IS AT THAT DN — they have ' +
+                                      'not authenticated here and nobody has ' +
                                       'created them, so the membership ' +
-                                      'DANGLES until one of those happens. It ' +
-                                      'is written rather than refused because ' +
-                                      'this directory does no referential ' +
-                                      'integrity in either direction.') };
+                                      'DANGLES until one of those happens. ' +
+                                      'It is written rather than refused ' +
+                                      'because this directory does no ' +
+                                      'referential integrity in either ' +
+                                      'direction.') };
 }
 
 // ---------------------------------------------------------------------------
@@ -12278,7 +12862,8 @@ function ldapSpiffeView(req) {
            String(row.dn).toLowerCase().indexOf(wantedAgent) >= 0;
   });
 
-  const pagedEntries = directoryPaging(req, matchedEntries, 'entries', 'entries');
+  const pagedEntries = directoryPaging(req, matchedEntries, 'entries',
+                                       'entries');
   const pagedAgents = directoryPaging(req, matchedAgents, 'agents', 'agents');
   const carried = { entryq: String(req.query.entryq || '').trim(),
                     agentq: String(req.query.agentq || '').trim(),
@@ -12299,13 +12884,13 @@ function ldapSpiffeView(req) {
     agents: agents.length,
     maxEntries: spiffeRegistry.maxEntries(),
     maxAgents: spiffeRegistry.maxAgents(),
-    sourceOfTruth: 'These entries ARE the SPIFFE registry. An ldapmodify under ' +
-      'ou=entries changes what the next SVID looks like — spiffeX509SvidTtl ' +
-      'changes its lifetime, spiffeDnsName changes its subjectAltName, and ' +
-      'spiffeId changes whose identity it is — because nothing caches them. ' +
-      'The two containers hold different KINDS of thing: entries are ' +
-      'CONFIGURATION and agents are a RECORD, which is why nothing about an ' +
-      'agent is editable from the console.',
+    sourceOfTruth: 'These entries ARE the SPIFFE registry. An ldapmodify ' +
+      'under ou=entries changes what the next SVID looks like — ' +
+      'spiffeX509SvidTtl changes its lifetime, spiffeDnsName changes its ' +
+      'subjectAltName, and spiffeId changes whose identity it is — because ' +
+      'nothing caches them. The two containers hold different KINDS of ' +
+      'thing: entries are CONFIGURATION and agents are a RECORD, which is ' +
+      'why nothing about an agent is editable from the console.',
     editable: spiffeRegistry.EDITABLE,
     schema: spiffeRegistry.SCHEMA,
     filter: { entryq: carried.entryq || null, agentq: carried.agentq || null },
@@ -12322,7 +12907,8 @@ function ldapSpiffeView(req) {
 
   const classRows = spiffeRegistry.SCHEMA.objectClasses.map(function (one) {
     return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented here)</strong>') +
+      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented ' +
+                                                  'here)</strong>') +
       '</td><td>' + xmlEscape(one.what) + '</td></tr>';
   }).join('');
   const attrRows = spiffeRegistry.SCHEMA.attributes.map(function (row) {
@@ -12361,10 +12947,11 @@ function ldapSpiffeView(req) {
     '</div>' +
     admin.note(xmlEscape(payload.sourceOfTruth)) +
     '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
-    '<input type="hidden" name="entryq" value="' + xmlEscape(carried.entryq) + '">' +
-    '<input type="hidden" name="agentq" value="' + xmlEscape(carried.agentq) + '">' +
-    '<label for="per">Rows per table</label>' +
-    '<select id="per" name="per">' +
+    '<input type="hidden" name="entryq" value="' + xmlEscape(carried.entryq) +
+    '"><input ' +
+    'type="hidden" name="agentq" ' +
+    'value="' + xmlEscape(carried.agentq) + '"><label ' +
+    'for="per">Rows per table</label><select id="per" name="per">' +
     admin.perPageOptions(pagedEntries.paging.perPage) + '</select>' +
     '<button class="secondary" type="submit">Apply</button>' +
     '</div></form>' +
@@ -12372,8 +12959,9 @@ function ldapSpiffeView(req) {
     'size. Changing it starts each of them at its first page.') +
     '<h2>Registration entries</h2>' +
     '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
-    '<input type="hidden" name="agentq" value="' + xmlEscape(carried.agentq) + '">' +
-    '<input type="hidden" name="per" value="' + xmlEscape(carried.per) + '">' +
+    '<input type="hidden" name="agentq" value="' + xmlEscape(carried.agentq) +
+    '"><input ' +
+    'type="hidden" name="per" value="' + xmlEscape(carried.per) + '">' +
     '<label for="entryq">SPIFFE ID or DN</label>' +
     '<input type="text" id="entryq" name="entryq" size="30" value="' +
     xmlEscape(carried.entryq) + '" placeholder="spiffe://…, or part of a DN">' +
@@ -12387,12 +12975,13 @@ function ldapSpiffeView(req) {
     entriesNav.foot +
     '<h2>Attested agents</h2>' +
     '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
-    '<input type="hidden" name="entryq" value="' + xmlEscape(carried.entryq) + '">' +
-    '<input type="hidden" name="per" value="' + xmlEscape(carried.per) + '">' +
+    '<input type="hidden" name="entryq" value="' + xmlEscape(carried.entryq) +
+    '"><input ' +
+    'type="hidden" name="per" value="' + xmlEscape(carried.per) + '">' +
     '<label for="agentq">Agent or DN</label>' +
     '<input type="text" id="agentq" name="agentq" size="30" value="' +
-    xmlEscape(carried.agentq) + '" placeholder="an agent SPIFFE ID, or part of a DN">' +
-    '<button type="submit">Search</button>' +
+    xmlEscape(carried.agentq) + '" placeholder="an agent SPIFFE ID, or part ' +
+    'of a DN"><button type="submit">Search</button>' +
     (carried.agentq ? ' <a href="/admin/ldap/spiffe">clear</a>' : '') +
     '</div></form>' +
     agentsNav.head +
@@ -12480,7 +13069,8 @@ function ldapApplicationsView(req) {
   const paged = directoryPaging(req, filtered, 'applications');
   const paging = paged.paging;
   const filterParams = { q: wantedText || '', per: perOf(req, paging) };
-  const nav = admin.pageNavPair('/admin/ldap/applications', filterParams, paging);
+  const nav = admin.pageNavPair('/admin/ldap/applications', filterParams,
+                                paging);
 
   const payload = {
     baseDn: baseDn(),
@@ -12492,9 +13082,10 @@ function ldapApplicationsView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the registry. An ldapmodify here changes what the ' +
-      'protocol endpoints do — adding a value to oauthRedirectUri adds a redirect URI ' +
-      'that RFC 9700 mode will then accept by exact match.',
+    sourceOfTruth: 'These entries ARE the registry. An ldapmodify here ' +
+      'changes what the protocol endpoints do — adding a value to ' +
+      'oauthRedirectUri adds a redirect URI that RFC 9700 mode will then ' +
+      'accept by exact match.',
     kinds: applications.KINDS,
     schema: applications.SCHEMA,
     applications: paged.shown
@@ -12510,14 +13101,14 @@ function ldapApplicationsView(req) {
         admin.clippedValues(row.attributes[name]) + '</div>';
     }).join('');
     // The DN on every row. This is the page headed "the registry as the
-    // directory sees it", and the directory sees an entry by its DN — a row that
-    // named only the identifier left the one address an ldapsearch needs to be
-    // reconstructed by the reader from a naming rule published nowhere.
+    // directory sees it", and the directory sees an entry by its DN — a row
+    // that named only the identifier left the one address an ldapsearch needs
+    // to be reconstructed by the reader from a naming rule published nowhere.
     return '<tr><td>' + admin.clipped(row.identifier, 40) +
       (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) +
         (row.identifier === row.dnLabel ? '' :
-          ' &mdash; the identifier is too long for a readable RDN, so the cn is a ' +
-          'digest of it and <code>appIdentifier</code> is the identity') +
+          ' &mdash; the identifier is too long for a readable RDN, so the cn ' +
+          'is a digest of it and <code>appIdentifier</code> is the identity') +
         '</div>' : '') +
       '</td><td>' + xmlEscape(row.name) + '</td><td>' +
       xmlEscape(row.kinds.join(', ') || '(unstated)') + '<div class="sub">' +
@@ -12530,7 +13121,8 @@ function ldapApplicationsView(req) {
   }).join('');
   const classRows = applications.SCHEMA.objectClasses.map(function (one) {
     return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented here)</strong>') +
+      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented ' +
+                                                  'here)</strong>') +
       '</td><td>' + xmlEscape(one.what) + '</td></tr>';
   }).join('');
   const attrRows = applications.SCHEMA.attributes.map(function (row) {
@@ -12549,9 +13141,9 @@ function ldapApplicationsView(req) {
     '</code>: every OAuth client, OpenID Connect relying party, SAML service ' +
     'provider, WS-Federation application, WS-Trust relying party, OpenID4VP ' +
     'verifier and Kerberos service this instance has been asked about. One ' +
-    'entry per unique identifier, so an application that speaks two protocols ' +
-    'under one name is one row with two kinds rather than two rows.</p>' +
-    '<div class="tiles">' +
+    'entry per unique identifier, so an application that speaks two ' +
+    'protocols under one name is one row with two kinds rather than two ' +
+    'rows.</p><div class="tiles">' +
     admin.tile(all.length, 'Application entries') +
     admin.tile(filtered.length, 'Matching the filter') +
     admin.tile(maxApplications(), 'Maximum held') +
@@ -12563,9 +13155,9 @@ function ldapApplicationsView(req) {
     'request. Nothing caches them. To EDIT one, ' +
     '<a href="/admin/applications">Applications</a> is the page with the ' +
     'controls on it; this one is the dump.') +
-    '<form method="get" action="/admin/ldap/applications"><div class="formrow">' +
-    '<label for="q">Anywhere in the entry</label>' +
-    '<input type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
+    '<form method="get" action="/admin/ldap/applications"><div ' +
+    'class="formrow"><label for="q">Anywhere in the entry</label><input ' +
+    'type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
     '" size="30" placeholder="an identifier, a name, a DN or any value">' +
     '<label for="per">Show</label>' +
     '<select id="per" name="per">' +
@@ -12579,8 +13171,9 @@ function ldapApplicationsView(req) {
     (appRows || '<tr><td colspan="6">' +
       (wantedText
         ? 'No application matches. The filter above may be hiding some.'
-        : 'Nothing yet. An entry appears the first time a client_id, wtrealm, ' +
-          'AppliesTo, entityID or service principal name is accepted.') +
+        : 'Nothing yet. An entry appears the first time a client_id, ' +
+          'wtrealm, AppliesTo, entityID or service principal name is ' +
+          'accepted.') +
       '</td></tr>') +
     '</table>' +
     nav.foot +
@@ -12589,10 +13182,10 @@ function ldapApplicationsView(req) {
     kindRows + '</table>' +
     '<h2>The object classes</h2>' +
     admin.note('node-ldapjs has no schema subsystem &mdash; it is protocol ' +
-    'machinery, and it is a submodule this repository does not modify &mdash; ' +
-    'and this directory is schemaless on purpose. So this is a VOCABULARY ' +
-    'rather than a constraint: nothing rejects an entry for disobeying it. ' +
-    'Where a registered class fits, it is used.') +
+    'machinery, and it is a submodule this repository does not modify ' +
+    '&mdash; and this directory is schemaless on purpose. So this is a ' +
+    'VOCABULARY rather than a constraint: nothing rejects an entry for ' +
+    'disobeying it. Where a registered class fits, it is used.') +
     '<table><tr><th>Class</th><th>Where from</th><th>What it brings</th></tr>' +
     classRows + '</table>' +
     '<h2>The attributes</h2>' +
@@ -12653,7 +13246,8 @@ function ldapFederationsView(req) {
   const paged = directoryPaging(req, filtered, 'relationships');
   const paging = paged.paging;
   const filterParams = { q: wantedText || '', per: perOf(req, paging) };
-  const nav = admin.pageNavPair('/admin/ldap/federations', filterParams, paging);
+  const nav = admin.pageNavPair('/admin/ldap/federations', filterParams,
+                                paging);
 
   const payload = {
     baseDn: baseDn(),
@@ -12665,9 +13259,10 @@ function ldapFederationsView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the register. An ldapmodify here is a SECURITY ' +
-      'change: fedSigningCertificate decides whose assertions this service will ' +
-      'believe, and fedEnabled turns a partner on. Nothing caches them.',
+    sourceOfTruth: 'These entries ARE the register. An ldapmodify here is a ' +
+      'SECURITY change: fedSigningCertificate decides whose assertions this ' +
+      'service will believe, and fedEnabled turns a partner on. Nothing ' +
+      'caches them.',
     roles: federation.ROLES,
     protocols: federation.PROTOCOLS,
     schema: federation.SCHEMA,
@@ -12700,9 +13295,11 @@ function ldapFederationsView(req) {
     const readiness = federation.readinessOf(row);
     return '<tr><td>' + admin.clipped(row.fedId, 40) +
       '<div class="sub">' + admin.clipped(row.dn, 40) + '</div></td>' +
-      '<td>' + xmlEscape((federation.roleRow(row.fedRole) || {}).short || row.fedRole) +
+      '<td>' +
+      xmlEscape((federation.roleRow(row.fedRole) || {}).short || row.fedRole) +
       '<div class="sub">' +
-      xmlEscape((federation.protocolRow(row.fedProtocol) || {}).label || row.fedProtocol) +
+      xmlEscape((federation.protocolRow(row.fedProtocol) ||
+                 {}).label || row.fedProtocol) +
       '</div></td>' +
       '<td>' + (federation.isEnabled(row)
         ? (readiness.ready
@@ -12717,7 +13314,8 @@ function ldapFederationsView(req) {
   }).join('');
   const classRows = federation.SCHEMA.objectClasses.map(function (one) {
     return '<tr><td><code>' + xmlEscape(one.name) + '</code></td><td>' +
-      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented here)</strong>') +
+      xmlEscape(one.where) + (one.standard ? '' : ' <strong>(invented ' +
+                                                  'here)</strong>') +
       '</td><td>' + xmlEscape(one.what) + '</td></tr>';
   }).join('');
   const attrRows = federation.SCHEMA.attributes.map(function (row) {
@@ -12729,27 +13327,29 @@ function ldapFederationsView(req) {
 
   const inner = '<p class="sub">' + all.length + ' of a maximum ' +
     maxFederations() + ' under <code>' + xmlEscape(federationsDn()) +
-    '</code>: the foreign identity providers this service consumes assertions ' +
-    'from, and the foreign service providers it asserts to. One relationship ' +
-    'is one DIRECTION, so a partner in both is two entries.</p>' +
-    '<div class="tiles">' +
+    '</code>: the foreign identity providers this service consumes ' +
+    'assertions from, and the foreign service providers it asserts to. One ' +
+    'relationship is one DIRECTION, so a partner in both is two ' +
+    'entries.</p><div class="tiles">' +
     admin.tile(all.length, 'Relationships') +
-    admin.tile(all.filter(function (r) { return federation.isEnabled(r); }).length,
+    admin.tile(all.filter(function (r) {
+      return federation.isEnabled(r);
+    }).length,
                'Enabled') +
     admin.tile(maxFederations(), 'Maximum held') +
     '</div>' +
-    admin.warn('<strong>An ldapmodify here is a security change, which is not ' +
-    'true of any other container in this directory.</strong> ' +
-    '<code>fedSigningCertificate</code> decides whose assertions this service ' +
-    'will believe; <code>fedEnabled</code> turns a partner on. Everywhere ' +
-    'else here an edit changes what this service hands out, and every bind to ' +
-    'this directory succeeds &mdash; so this container is exactly as ' +
-    'protected as the rest of it, which is to say not at all. That is the ' +
-    'honest state of a mock, and it is why federation is the one feature here ' +
-    'that refuses by default.') +
-    '<form method="get" action="/admin/ldap/federations"><div class="formrow">' +
-    '<label for="q">Relationship</label>' +
-    '<input type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
+    admin.warn('<strong>An ldapmodify here is a security change, which is ' +
+    'not true of any other container in this directory.</strong> ' +
+    '<code>fedSigningCertificate</code> decides whose assertions this ' +
+    'service will believe; <code>fedEnabled</code> turns a partner on. ' +
+    'Everywhere else here an edit changes what this service hands out, and ' +
+    'every bind to this directory succeeds &mdash; so this container is ' +
+    'exactly as protected as the rest of it, which is to say not at all. ' +
+    'That is the honest state of a mock, and it is why federation is the one ' +
+    'feature here that refuses by default.') +
+    '<form method="get" action="/admin/ldap/federations"><div ' +
+    'class="formrow"><label for="q">Relationship</label><input type="text" ' +
+    'id="q" name="q" value="' + xmlEscape(wantedText) +
     '" size="30" placeholder="an id, a DN, a protocol or a direction">' +
     '<label for="per">Show</label>' +
     '<select id="per" name="per">' +
@@ -12763,9 +13363,9 @@ function ldapFederationsView(req) {
     (relRows || '<tr><td colspan="5">' +
       (wantedText
         ? 'No relationship matches. The filter above may be hiding some.'
-        : 'Nothing yet, and nothing will appear by itself: unlike every other ' +
-          'container here, this one is CONFIGURED. Add a relationship on ' +
-          '<a href="/admin/federation">/admin/federation</a> or through ' +
+        : 'Nothing yet, and nothing will appear by itself: unlike every ' +
+          'other container here, this one is CONFIGURED. Add a relationship ' +
+          'on <a href="/admin/federation">/admin/federation</a> or through ' +
           '<code>POST /admin-api/federation/create</code>.') +
       '</td></tr>') +
     '</table>' +
@@ -12773,14 +13373,17 @@ function ldapFederationsView(req) {
     '<h2>The two directions</h2>' +
     '<table><tr><th>Role</th><th>What it means</th></tr>' +
     federation.ROLES.map(function (one) {
-      return '<tr><td>' + xmlEscape(one.short) + '</td><td>' + xmlEscape(one.what) +
+      return '<tr><td>' + xmlEscape(one.short) + '</td><td>' +
+        xmlEscape(one.what) +
         '</td></tr>';
     }).join('') + '</table>' +
     '<h2>The five protocols</h2>' +
     '<table><tr><th>Protocol</th><th>What happens</th><th>Needs</th></tr>' +
     federation.PROTOCOLS.map(function (one) {
-      return '<tr><td>' + xmlEscape(one.label) + '</td><td>' + xmlEscape(one.what) +
-        '</td><td><code>' + xmlEscape(one.needs.join(', ')) + '</code></td></tr>';
+      return '<tr><td>' + xmlEscape(one.label) + '</td><td>' +
+        xmlEscape(one.what) +
+        '</td><td><code>' + xmlEscape(one.needs.join(
+            ', ')) + '</code></td></tr>';
     }).join('') + '</table>' +
     '<h2>The object classes</h2>' +
     '<table><tr><th>Class</th><th>Where from</th><th>What it brings</th></tr>' +
@@ -12788,14 +13391,15 @@ function ldapFederationsView(req) {
     '<h2>The attributes</h2>' +
     admin.note('<code>multi</code> accumulates a repeat, <code>single</code> ' +
     'is assigned. The <code>role</code> column says which direction an ' +
-    'attribute is for; one belonging to the other direction is refused by the ' +
-    'console and by the management API, and an <code>ldapmodify</code> can ' +
-    'still write it, where it will be ignored. <code>fedClientSecret</code> ' +
-    'is THIS SERVICE\'S OWN CREDENTIAL AT THE PARTNER &mdash; a real secret ' +
-    'at a real foreign service, which is a stronger statement than anything ' +
-    'else in this directory &mdash; and it is here in the clear for the ' +
-    'reason <code>/krb5/principals</code> prints the Kerberos passwords. It ' +
-    'is never written to the audit log and never shown in the console.') +
+    'attribute is for; one belonging to the other direction is refused by ' +
+    'the console and by the management API, and an <code>ldapmodify</code> ' +
+    'can still write it, where it will be ignored. ' +
+    '<code>fedClientSecret</code> is THIS SERVICE\'S OWN CREDENTIAL AT THE ' +
+    'PARTNER &mdash; a real secret at a real foreign service, which is a ' +
+    'stronger statement than anything else in this directory &mdash; and it ' +
+    'is here in the clear for the reason <code>/krb5/principals</code> ' +
+    'prints the Kerberos passwords. It is never written to the audit log and ' +
+    'never shown in the console.') +
     '<table><tr><th>Attribute</th><th>Values</th><th>Direction</th>' +
     '<th>What it is</th></tr>' + attrRows + '</table>' +
     '<p class="sub"><a href="/admin/ldap/federations?format=json">This page ' +
@@ -12886,10 +13490,11 @@ function ldapRolesView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the membership half of the role register. An ' +
-      'ldapmodify adding a value to roleMemberUser grants that role, and the next ' +
-      'issuance decision is made against it. What REQUIRES a role is appRequiredRole ' +
-      'on an application entry under ou=applications, which is a different container.',
+    sourceOfTruth: 'These entries ARE the membership half of the role ' +
+      'register. An ldapmodify adding a value to roleMemberUser grants that ' +
+      'role, and the next issuance decision is made against it. What ' +
+      'REQUIRES a role is appRequiredRole on an application entry under ' +
+      'ou=applications, which is a different container.',
     builtIn: roles.BUILT_IN_NAMES,
     schema: roles.SCHEMA,
     roles: paged.shown
@@ -12901,14 +13506,18 @@ function ldapRolesView(req) {
         admin.clippedValues(row.attributes[name]) + '</div>';
     }).join('');
     const held = function (name) {
+      log.debug("Entering held().");
       const value = row.attributes[name];
       if (!value) {
+        log.debug("Leaving held().");
         return 0;
       }
+      log.debug("Leaving held().");
       return Array.isArray(value) ? value.length : 1;
     };
     return '<tr><td>' + admin.clipped(row.name, 40) +
-      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) + '</div>' : '') +
+      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) + '</div>' :
+       '') +
       '</td><td class="counts">' + held('roleMemberUser') + ' user(s)<br>' +
       held('roleMemberGroup') + ' group(s)<br>' +
       held('roleMemberApplication') + ' application(s)</td>' +
@@ -12931,23 +13540,22 @@ function ldapRolesView(req) {
     maxRoles() + ' under <code>' + xmlEscape(rolesDn()) +
     '</code>: one entry per role, and everything on it is MEMBERSHIP — who ' +
     'holds it. A person, a group and an application are all first-class ' +
-    'members, which is what lets a client_credentials grant with no person in ' +
-    'it be decided at all.</p>' +
-    '<div class="tiles">' +
+    'members, which is what lets a client_credentials grant with no person ' +
+    'in it be decided at all.</p><div class="tiles">' +
     admin.tile(all.length, 'Role entries') +
     admin.tile(roles.BUILT_IN_NAMES.length, 'Built in, in no container') +
     admin.tile(maxRoles(), 'Maximum held') +
     '</div>' +
-    admin.note('<strong>Half the feature is not in this container.</strong> A ' +
-    'role has two relations and they live apart on purpose: MEMBERSHIP is ' +
+    admin.note('<strong>Half the feature is not in this container.</strong> ' +
+    'A role has two relations and they live apart on purpose: MEMBERSHIP is ' +
     'here, and the REQUIREMENT — which roles an application demands before ' +
     'anything is issued for it — is <code>appRequiredRole</code> on the ' +
     'application\'s own entry under <code>ou=applications</code>. So nothing ' +
     'in this container refuses anybody by itself, and a reader looking here ' +
-    'for the reason somebody was turned away is one container across from it. ' +
-    '<a href="/admin/roles">Roles</a> is the page with both halves and the ' +
-    'controls on it; <a href="/admin/ldap/applications">Application entries</a> ' +
-    'is where the other half is stored.') +
+    'for the reason somebody was turned away is one container across from ' +
+    'it. <a href="/admin/roles">Roles</a> is the page with both halves and ' +
+    'the controls on it; <a href="/admin/ldap/applications">Application ' +
+    'entries</a> is where the other half is stored.') +
     '<form method="get" action="/admin/ldap/roles"><div class="formrow">' +
     '<label for="q">Anywhere in the entry</label>' +
     '<input type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
@@ -13059,10 +13667,13 @@ function ldapPoliciesView(req) {
   const nav = admin.pageNavPair('/admin/ldap/policies', filterParams, paging);
 
   const first = function (row, name) {
+    log.debug("Entering first().");
     const value = (row.attributes || {})[name];
     if (!value) {
+      log.debug("Leaving first().");
       return '';
     }
+    log.debug("Leaving first().");
     return String(Array.isArray(value) ? value[0] : value);
   };
 
@@ -13076,11 +13687,11 @@ function ldapPoliciesView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the policy repository. An ldapmodify of ' +
-      'xacmlPolicyDocument changes what the PDP decides on the very next request and ' +
-      'is NOT statically validated on the way in, unlike every write through ' +
-      '/admin/xacml — so a document that stops typechecking answers Indeterminate ' +
-      'rather than being refused.',
+    sourceOfTruth: 'These entries ARE the policy repository. An ldapmodify ' +
+      'of xacmlPolicyDocument changes what the PDP decides on the very next ' +
+      'request and is NOT statically validated on the way in, unlike every ' +
+      'write through /admin/xacml — so a document that stops typechecking ' +
+      'answers Indeterminate rather than being refused.',
     schema: xacmlStore.SCHEMA,
     policies: paged.shown
   };
@@ -13099,7 +13710,8 @@ function ldapPoliciesView(req) {
     const enabled = first(row, 'xacmlEnabled') !== 'FALSE';
     const isRoot = first(row, 'xacmlIsRoot') === 'TRUE';
     return '<tr><td>' + admin.clipped(row.name, 40) +
-      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) + '</div>' : '') +
+      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) + '</div>' :
+       '') +
       '</td><td>' + xmlEscape(first(row, 'xacmlKind') || '(unstated)') +
       '<div class="sub">' + admin.clipped(first(row, 'xacmlPolicyId'), 40) +
       '</div></td><td>' +
@@ -13129,21 +13741,20 @@ function ldapPoliciesView(req) {
     }).length, 'Enabled') +
     admin.tile(maxPolicies(), 'Maximum held') +
     '</div>' +
-    admin.warn('<strong>A write here skips the typechecker, which is not true ' +
-    'of any other door into this repository.</strong> Every write through ' +
-    '<a href="/admin/xacml">XACML</a> and <code>/admin-api/xacml</code> ' +
-    'parses the document and statically typechecks it, so a policy that does ' +
-    'not typecheck is refused at WRITE time instead of going Indeterminate on ' +
-    'every request. An <code>ldapmodify</code> of ' +
-    '<code>xacmlPolicyDocument</code> reaches the entry directly and skips ' +
-    'that, and nothing caches these entries — so the next request is decided ' +
-    'against whatever was written.') +
+    admin.warn('<strong>A write here skips the typechecker, which is not ' +
+    'true of any other door into this repository.</strong> Every write ' +
+    'through <a href="/admin/xacml">XACML</a> and ' +
+    '<code>/admin-api/xacml</code> parses the document and statically ' +
+    'typechecks it, so a policy that does not typecheck is refused at WRITE ' +
+    'time instead of going Indeterminate on every request. An ' +
+    '<code>ldapmodify</code> of <code>xacmlPolicyDocument</code> reaches the ' +
+    'entry directly and skips that, and nothing caches these entries — so ' +
+    'the next request is decided against whatever was written.') +
     '<form method="get" action="/admin/ldap/policies"><div class="formrow">' +
     '<label for="q">Anywhere in the entry</label>' +
     '<input type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
-    '" size="30" placeholder="a name, a DN, a PolicyId or anything in the document">' +
-    '<label for="per">Show</label>' +
-    '<select id="per" name="per">' +
+    '" size="30" placeholder="a name, a DN, a PolicyId or anything in the ' +
+    'document"><label for="per">Show</label><select id="per" name="per">' +
     admin.perPageOptions(paging.perPage) + '</select>' +
     '<button type="submit">Filter</button>' +
     (wantedText ? ' <a href="/admin/ldap/policies">clear</a>' : '') +
@@ -13237,10 +13848,13 @@ function ldapPepsView(req) {
   const nav = admin.pageNavPair('/admin/ldap/peps', filterParams, paging);
 
   const first = function (row, name) {
+    log.debug("Entering first().");
     const value = (row.attributes || {})[name];
     if (!value) {
+      log.debug("Leaving first().");
       return '';
     }
+    log.debug("Leaving first().");
     return String(Array.isArray(value) ? value[0] : value);
   };
 
@@ -13254,10 +13868,11 @@ function ldapPepsView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'Almost every attribute here is a RECORD this service wrote as a ' +
-      'PEP registered, pulled or reported. The two that are not are xacmlPepEnabled, ' +
-      'which an administrator sets and a reconnecting PEP does not clear, and ' +
-      'xacmlPepNotifyUrl, which is one of the three addresses this service dials.',
+    sourceOfTruth: 'Almost every attribute here is a RECORD this service ' +
+      'wrote as a PEP registered, pulled or reported. The two that are not ' +
+      'are xacmlPepEnabled, which an administrator sets and a reconnecting ' +
+      'PEP does not clear, and xacmlPepNotifyUrl, which is one of the three ' +
+      'addresses this service dials.',
     schema: xacmlPepRegistry.SCHEMA,
     peps: paged.shown
   };
@@ -13270,16 +13885,19 @@ function ldapPepsView(req) {
     // 'FALSE', for the reason the policies page above states.
     const enabled = first(row, 'xacmlPepEnabled') !== 'FALSE';
     return '<tr><td>' + admin.clipped(row.name, 40) +
-      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) + '</div>' : '') +
+      (row.dn ? '<div class="sub">' + admin.clipped(row.dn, 40) + '</div>' :
+       '') +
       '</td><td>' + admin.clipped(first(row, 'xacmlPepCertificateSubject') ||
         '(no client certificate)', 40) +
-      '<div class="sub">' + admin.clipped(first(row, 'xacmlPepThumbprint'), 24) +
+      '<div class="sub">' +
+      admin.clipped(first(row, 'xacmlPepThumbprint'), 24) +
       '</div></td><td>' +
       (enabled ? '<span class="state-valid">enabled</span>'
                : '<span class="state-none">disabled by an administrator</span>') +
       '<div class="sub">' + xmlEscape(first(row, 'xacmlPepLastSeen') ||
         'never seen') + '</div></td>' +
-      '<td class="counts">' + xmlEscape(first(row, 'xacmlPepDecisions') || '0') +
+      '<td class="counts">' +
+      xmlEscape(first(row, 'xacmlPepDecisions') || '0') +
       ' decision(s)<br>' + xmlEscape(first(row, 'xacmlPepAllowed') || '0') +
       ' allowed<br>' + xmlEscape(first(row, 'xacmlPepRefused') || '0') +
       ' refused</td>' +
@@ -13306,14 +13924,14 @@ function ldapPepsView(req) {
     }).length, 'Enabled') +
     admin.tile(maxPeps(), 'Maximum held') +
     '</div>' +
-    admin.note('<strong>An empty container is not a feature that is off.</strong> ' +
-    'A remote PEP pulls <code>GET /xacml/pep/policies</code> and converges ' +
-    'whether or not it ever registers; registering is what buys it the change ' +
-    'nudge and a row here. And an identity in this container was taken from ' +
-    'the CLIENT CERTIFICATE the PEP presented, never from the body it sent — ' +
-    'so a PEP cannot name itself anything it cannot prove. ' +
-    '<a href="/admin/xacml/peps">XACML PEPs</a> is the page with the controls ' +
-    'on it.') +
+    admin.note('<strong>An empty container is not a feature that is ' +
+    'off.</strong> A remote PEP pulls <code>GET /xacml/pep/policies</code> ' +
+    'and converges whether or not it ever registers; registering is what ' +
+    'buys it the change nudge and a row here. And an identity in this ' +
+    'container was taken from the CLIENT CERTIFICATE the PEP presented, ' +
+    'never from the body it sent — so a PEP cannot name itself anything it ' +
+    'cannot prove. <a href="/admin/xacml/peps">XACML PEPs</a> is the page ' +
+    'with the controls on it.') +
     '<form method="get" action="/admin/ldap/peps"><div class="formrow">' +
     '<label for="q">Anywhere in the entry</label>' +
     '<input type="text" id="q" name="q" value="' + xmlEscape(wantedText) +
@@ -13344,12 +13962,11 @@ function ldapPepsView(req) {
     classRows + '</table>' +
     '<h2>The attributes</h2>' +
     '<table><tr><th>Attribute</th><th>What it is</th></tr>' + attrRows +
-    '</table>' +
-    '<p class="sub"><a href="/admin/ldap/peps?format=json">This page as ' +
-    'JSON</a> &middot; <a href="/admin/xacml/peps">the same registry with the ' +
-    'controls on it</a> &middot; <a href="/admin/ldap/policies">what they ' +
-    'pull</a> &middot; <a href="/admin/ldap/directory">every entry in the ' +
-    'directory</a></p>';
+    '</table><p class="sub"><a href="/admin/ldap/peps?format=json">This page ' +
+    'as JSON</a> &middot; <a href="/admin/xacml/peps">the same registry with ' +
+    'the controls on it</a> &middot; <a href="/admin/ldap/policies">what ' +
+    'they pull</a> &middot; <a href="/admin/ldap/directory">every entry in ' +
+    'the directory</a></p>';
 
   log.debug('Leaving ldapPepsView(). ' + paged.shown.length +
             ' row(s) of ' + filtered.length + ' matched.');
@@ -13372,17 +13989,18 @@ app.get('/admin/ldap/peps', function (req, res) {
 // this file to reach these eight views without dragging every route registered
 // here ahead of its own.
 //
-// THREE OF THE EIGHT ARRIVED ON 2026-09-05 and they are the reason to read
-// this block rather than assume it. `ou=roles`, `ou=policies` and `ou=peps`
-// each had a published SCHEMA in its owning module and no page publishing it —
-// three copies of a comment claiming a page that did not exist, from three
-// different weeks. They are drawn HERE, beside the other five, because this
-// module already requires all three of those modules to fill their own
+// THREE OF THE EIGHT ARRIVED ON 2026-09-05 and they are the reason to read this
+// block rather than assume it. `ou=roles`, `ou=policies` and `ou=peps` each had
+// a published SCHEMA in its owning module and no page publishing it — three
+// copies of a comment claiming a page that did not exist, from three different
+// weeks. They are drawn HERE, beside the other five, because this module
+// already requires all three of those modules to fill their own
 // `setDirectory()` slots: the schemas are already in scope, so the pages cost
-// no new require, close no cycle and move no route. The slot is the way across; see the block above
-// `setDirectoryPages()` in `admin.js` for the argument, and the guard below is
-// the one every other install in this file uses — an older copy of `admin.js`
-// (the parent project's) costs a warning rather than a crash at require time.
+// no new require, close no cycle and move no route. The slot is the way across;
+// see the block above `setDirectoryPages()` in `admin.js` for the argument, and
+// the guard below is the one every other install in this file uses — an older
+// copy of `admin.js` (the parent project's) costs a warning rather than a crash
+// at require time.
 // ---------------------------------------------------------------------------
 if (typeof admin.setDirectoryPages === 'function') {
   admin.setDirectoryPages({
@@ -13397,15 +14015,16 @@ if (typeof admin.setDirectoryPages === 'function') {
   });
 } else {
   log.warn('ldap: this copy of admin-ui/admin.js offers no ' +
-           'setDirectoryPages() slot, so /admin-api will not mirror the eight ' +
-           'directory pages. The pages themselves are unaffected.');
+           'setDirectoryPages() slot, so /admin-api will not mirror the ' +
+           'eight directory pages. The pages themselves are unaffected.');
 }
 
 function listen() {
   log.debug('Entering listen().');
   const whenPlain = new Promise(function (resolve, reject) {
     // -------------------------------------------------------------------
-    // THE PLAIN LISTENER CAN BE LEFT UNBOUND (2026-09-12), `ldap.plainListener`.
+    // THE PLAIN LISTENER CAN BE LEFT UNBOUND (2026-09-12),
+    // `ldap.plainListener`.
     //
     // It always started. A simple bind on 389 carries its password in the
     // clear, which did not matter while no bind was checked; in product mode
@@ -13424,9 +14043,10 @@ function listen() {
       listening = false;
       listenError = 'not started: ldap.plainListener is off, so this ' +
         'directory answers over LDAPS only';
-      log.info('ldap: the plain listener on ' + LDAP_PORT + ' was NOT started ' +
-               '(ldap.plainListener is off); LDAPS on ' + LDAPS_PORT + ' is the ' +
-               'only way in.');
+      log.info('ldap: the plain listener on ' + LDAP_PORT + ' was NOT ' +
+               'started (ldap.plainListener is off); LDAPS ' +
+               'on ' + LDAPS_PORT + ' is ' +
+               'the only way in.');
       resolve({ port: null, baseDn: ROOT_DN, plainListener: false });
       return;
     }
@@ -13437,23 +14057,25 @@ function listen() {
       // sends a password here has still sent it in the clear — which is what
       // this line is left to say.
       log.warn('ldap: product mode refuses every bind on the plain listener on ' +
-               LDAP_PORT + ' (confidentialityRequired) and every read that has ' +
-               'not bound, so it answers nothing but the root DSE — and a client ' +
-               'that sends a password to it has still sent that password IN THE ' +
-               'CLEAR. Set ldap.plainListener (LDAP_PLAIN_LISTENER) to false to ' +
-               'answer over LDAPS on ' + LDAPS_PORT + ' only.');
+               LDAP_PORT + ' (confidentialityRequired) and every read that ' +
+               'has not bound, so it answers nothing but the root DSE — and ' +
+               'a client that sends a password to it has still sent that ' +
+               'password IN THE CLEAR. Set ldap.plainListener ' +
+               '(LDAP_PLAIN_LISTENER) to false to answer over LDAPS ' +
+               'on ' + LDAPS_PORT + ' only.');
     }
     plainServer.listen(LDAP_PORT, ldapListenHost(), function () {
       const address = plainServer.address();
       boundPort = address ? address.port : LDAP_PORT;
       listening = true;
       listenError = '';
-      // ROOT_DN: what this SOCKET serves. A realm's subtree is under it and
-      // is reported per realm on GET /admin/ldap/service, which does have a realm.
+      // ROOT_DN: what this SOCKET serves. A realm's subtree is under it and is
+      // reported per realm on GET /admin/ldap/service, which does have a realm.
       log.info('ldap: listening on TCP ' + boundPort + ' with base DN ' +
                ROOT_DN + '; ' + totalEntries() +
                ' entry/entries across ' + realms.count() + ' trust realm(s), ' +
-               'each with a directory of its own; GET /admin/ldap/service describes it.');
+               'each with a directory of its own; GET /admin/ldap/service ' +
+               'describes it.');
       resolve({ port: boundPort, baseDn: ROOT_DN });
     });
     plainServer.once('error', function (err) {
@@ -13476,8 +14098,8 @@ function listen() {
   // point: LDAPS is the second way in to a directory that already answers on
   // 389, so a failure to bind 636 must not turn into a rejected whenReady and
   // an "ldap: the directory could not start" in server.js for a directory that
-  // started. It is recorded, logged, and published on GET /admin/ldap/service — the same
-  // treatment a failure on 389 gets, minus the rejection.
+  // started. It is recorded, logged, and published on GET /admin/ldap/service —
+  // the same treatment a failure on 389 gets, minus the rejection.
   const whenSecure = new Promise(function (resolve) {
     if (!secureServer) {
       // No certificate material. Already logged and recorded where that was
@@ -13548,8 +14170,8 @@ function listen() {
       tlsListenError = err.message + (err.code ? ' (' + err.code + ')' : '');
       log.error(errorCodes.tag('STS-LDAP-0028') +
                 'ldap: could not bind TCP ' + LDAPS_PORT + ' for LDAPS: ' +
-                tlsListenError + '. The plain listener and everything else in ' +
-                'this service are unaffected; set LDAPS_PORT to a free, ' +
+                tlsListenError + '. The plain listener and everything else ' +
+                'in this service are unaffected; set LDAPS_PORT to a free, ' +
                 'unprivileged port for a host run.');
       resolve({ ldapsPort: null, ldapsListening: false,
                 ldapsError: tlsListenError });
@@ -13636,6 +14258,8 @@ module.exports = {
   // handle on it would be a second door onto the seven handlers.
   // ---------------------------------------------------------------------
   dispatchableOperations: function () {
+    log.debug("Entering dispatchableOperations().");
+    log.debug("Leaving dispatchableOperations().");
     return DISPATCHABLE_OPERATIONS.slice(0);
   },
   // Exported so that `tests/ldap_operations.js` can drive the registration in
@@ -13644,6 +14268,8 @@ module.exports = {
   // calling it a second time safe rather than a throw.
   registerWorkerOperations: registerWorkerOperations,
   localHandler: function (operation) {
+    log.debug("Entering localHandler().");
+    log.debug("Leaving localHandler().");
     return LOCAL_HANDLERS[operation];
   },
   operationRequest: operationRequest,

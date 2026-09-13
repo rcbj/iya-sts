@@ -141,12 +141,13 @@ const STYLE = [
 // wording holds in BOTH states on purpose: what a reader needs from a warning
 // is what this surface can DO, and that does not change with the gate.
 const BANNER =
-  '<div class="warn"><strong>This is every control the admin console has.</strong> ' +
-  'It takes an OAuth 2.0 access token unless <code>adminApi.authRequired</code> ' +
-  'is off, and that credential is a turnstile like every other one here — this ' +
-  'service mints it for the asking. Whoever can call this API can revoke every ' +
-  'token it has issued and change what the next one contains. Fine on a laptop ' +
-  'or a compose network; not fine on a public address.</div>';
+  '<div class="warn"><strong>This is every control the admin console ' +
+  'has.</strong> It takes an OAuth 2.0 access token unless ' +
+  '<code>adminApi.authRequired</code> is off, and that credential is a ' +
+  'turnstile like every other one here — this service mints it for the ' +
+  'asking. Whoever can call this API can revoke every token it has issued ' +
+  'and change what the next one contains. Fine on a laptop or a compose ' +
+  'network; not fine on a public address.</div>';
 
 // ---------------------------------------------------------------------------
 // `realmPrefix` IS THE ONE THING THIS PAGE NEEDS THAT NO OTHER PAGE HERE DOES.
@@ -158,11 +159,11 @@ const BANNER =
 // `path` members of the OpenAPI document, and a script is not markup.
 //
 // So the prefix is handed over as a value on the root element and the explorer
-// prepends it. Without this, pressing "Try it" inside /realm/acme/admin-api/docs
-// would call the DEFAULT realm's API — the page would look right, the call
-// would succeed, and it would have changed the wrong service. That is exactly
-// the failure the rewrite exists to prevent everywhere else, so it is worth the
-// extra parameter rather than a note saying not to.
+// prepends it. Without this, pressing "Try it" inside
+// /realm/acme/admin-api/docs would call the DEFAULT realm's API — the page
+// would look right, the call would succeed, and it would have changed the wrong
+// service. That is exactly the failure the rewrite exists to prevent everywhere
+// else, so it is worth the extra parameter rather than a note saying not to.
 // ---------------------------------------------------------------------------
 function page(baseUrl, base, version, realmPrefix) {
   log.debug("Entering page(). base=" + base + ", realm prefix=" +

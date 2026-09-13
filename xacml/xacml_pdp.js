@@ -79,6 +79,8 @@ function makeContext(request, options) {
     includedAttributes: [],
     applicablePolicies: [],
     countNodes: function () {
+      log.debug("Entering countNodes().");
+      log.debug("Leaving countNodes().");
       // Replaced by `xacml_content.js` when XPath support is wired up. Until
       // then this refuses rather than returning 0 — a node count of zero is a
       // perfectly ordinary answer, so a stub returning it would make every
@@ -163,25 +165,31 @@ function resolveDesignator(designator, context) {
 // The three the PDP supplies itself. Returns null for anything else, which is
 // what keeps this from being a general-purpose fallback that invents values.
 function environmentAttribute(designator, context) {
+  log.debug("Entering environmentAttribute().");
   if (designator.category !== model.CATEGORY.ENVIRONMENT) {
+    log.debug("Leaving environmentAttribute().");
     return null;
   }
   const now = context.now;
   const iso = now.toISOString();
   if (designator.attributeId === model.ATTRIBUTE.CURRENT_DATETIME &&
       designator.dataType === model.TYPE.DATETIME) {
+    log.debug("Leaving environmentAttribute().");
     return datatypes.parseValue(model.TYPE.DATETIME, iso.replace(/\.\d+Z$/,
                                                                 'Z'));
   }
   if (designator.attributeId === model.ATTRIBUTE.CURRENT_DATE &&
       designator.dataType === model.TYPE.DATE) {
+    log.debug("Leaving environmentAttribute().");
     return datatypes.parseValue(model.TYPE.DATE, iso.slice(0, 10) + 'Z');
   }
   if (designator.attributeId === model.ATTRIBUTE.CURRENT_TIME &&
       designator.dataType === model.TYPE.TIME) {
+    log.debug("Leaving environmentAttribute().");
     return datatypes.parseValue(model.TYPE.TIME,
                                 iso.slice(11, 19) + 'Z');
   }
+  log.debug("Leaving environmentAttribute().");
   return null;
 }
 
@@ -235,6 +243,8 @@ function evaluateExpression(expression, context, variables) {
       // functions and `map` get their arguments UNEVALUATED, because
       // short-circuiting and function-valued arguments both depend on it.
       const evaluate = function (child, innerContext) {
+        log.debug("Entering evaluate().");
+        log.debug("Leaving evaluate().");
         return evaluateExpression(child, innerContext, variables);
       };
       const lazyResult = definition.apply(expression.args, context, evaluate);
@@ -301,6 +311,8 @@ function resolveVariable(id, context, variables) {
 }
 
 function makeVariables(definitions) {
+  log.debug("Entering makeVariables().");
+  log.debug("Leaving makeVariables().");
   return { definitions: definitions || {}, values: {}, inProgress: {} };
 }
 
@@ -387,20 +399,24 @@ function evaluateTarget(target, context, variables) {
 }
 
 function evaluateAnyOf(anyOf, context, variables) {
+  log.debug("Entering evaluateAnyOf().");
   let indeterminate = false;
   for (let i = 0; i < anyOf.allOf.length; i += 1) {
     const allOfResult = evaluateAllOf(anyOf.allOf[i], context, variables);
     if (allOfResult === MATCH.MATCH) {
+      log.debug("Leaving evaluateAnyOf().");
       return MATCH.MATCH;
     }
     if (allOfResult === MATCH.INDETERMINATE) {
       indeterminate = true;
     }
   }
+  log.debug("Leaving evaluateAnyOf().");
   return indeterminate ? MATCH.INDETERMINATE : MATCH.NO_MATCH;
 }
 
 function evaluateAllOf(allOf, context, variables) {
+  log.debug("Entering evaluateAllOf().");
   let indeterminate = false;
   for (let i = 0; i < allOf.matches.length; i += 1) {
     let result;
@@ -416,9 +432,11 @@ function evaluateAllOf(allOf, context, variables) {
       continue;
     }
     if (result === MATCH.NO_MATCH) {
+      log.debug("Leaving evaluateAllOf().");
       return MATCH.NO_MATCH;
     }
   }
+  log.debug("Leaving evaluateAllOf().");
   return indeterminate ? MATCH.INDETERMINATE : MATCH.MATCH;
 }
 
@@ -504,6 +522,7 @@ function firedRule(rule, context, variables) {
 }
 
 function lastTargetError(target) {
+  log.debug("Entering lastTargetError().");
   let found = null;
   target.anyOf.forEach(function (anyOf) {
     anyOf.allOf.forEach(function (allOf) {
@@ -512,10 +531,13 @@ function lastTargetError(target) {
       }
     });
   });
+  log.debug("Leaving lastTargetError().");
   return found;
 }
 
 function withStatus(decision, error) {
+  log.debug("Entering withStatus().");
+  log.debug("Leaving withStatus().");
   return { decision: decision,
            status: error ? { code: error.xacmlStatus,
                              message: error.message,
@@ -575,9 +597,11 @@ const COMBINERS = {};
 // "the first Deny" means something only if the order is fixed.
 // ---------------------------------------------------------------------------
 function combiner(uris, implementation) {
+  log.debug("Entering combiner().");
   uris.forEach(function (uri) {
     COMBINERS[uri] = implementation;
   });
+  log.debug("Leaving combiner().");
 }
 
 // --- deny-overrides, XACML 3.0 (C.2) ----------------------------------------
@@ -901,6 +925,8 @@ combiner([model.POLICY_ALG.ONLY_ONE_APPLICABLE], function () {
 });
 
 function lookupCombiner(uri) {
+  log.debug("Entering lookupCombiner().");
+  log.debug("Leaving lookupCombiner().");
   return COMBINERS[uri] || null;
 }
 
@@ -1055,12 +1081,16 @@ function evaluateOnlyOneApplicable(children, context, repository,
 }
 
 function evaluateNode(node, context, repository) {
+  log.debug("Entering evaluateNode().");
   if (node.kind === 'Policy') {
+    log.debug("Leaving evaluateNode().");
     return evaluatePolicy(node, context);
   }
   if (node.kind === 'PolicySet') {
+    log.debug("Leaving evaluateNode().");
     return evaluatePolicySet(node, context, repository);
   }
+  log.debug("Leaving evaluateNode().");
   return { decision: DECISION.INDETERMINATE_DP,
            status: { code: model.STATUS.SYNTAX_ERROR,
                      message: 'Cannot evaluate a node of kind "' +
@@ -1077,14 +1107,18 @@ function evaluateNode(node, context, repository) {
 // would evaluate a SUBSET of the policy somebody wrote and report no problem.
 // ---------------------------------------------------------------------------
 function resolveChild(child, repository) {
+  log.debug("Entering resolveChild().");
   if (child.kind !== 'PolicyIdReference' &&
       child.kind !== 'PolicySetIdReference') {
+    log.debug("Leaving resolveChild().");
     return child;
   }
   const found = repository ? repository[child.ref] : null;
   if (!found) {
+    log.debug("Leaving resolveChild().");
     return { kind: 'UnresolvedReference', ref: child.ref, target: null };
   }
+  log.debug("Leaving resolveChild().");
   return found;
 }
 
@@ -1133,6 +1167,7 @@ function attachObligations(combined, node, childResults, context, variables) {
 }
 
 function collect(expressions, decision, context, variables) {
+  log.debug("Entering collect().");
   const resolved = [];
   (expressions || []).forEach(function (expression) {
     if (expression.on !== decision) {
@@ -1153,17 +1188,21 @@ function collect(expressions, decision, context, variables) {
     });
     resolved.push({ id: expression.id, assignments: assignments });
   });
+  log.debug("Leaving collect().");
   return resolved;
 }
 
 // The status of the first child that had one, so that an Indeterminate at the
 // top says WHY rather than merely that something went wrong somewhere below.
 function firstStatus(results) {
+  log.debug("Entering firstStatus().");
   for (let i = 0; i < results.length; i += 1) {
     if (results[i].status) {
+      log.debug("Leaving firstStatus().");
       return results[i].status;
     }
   }
+  log.debug("Leaving firstStatus().");
   return null;
 }
 

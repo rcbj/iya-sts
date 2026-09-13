@@ -446,10 +446,10 @@ function checkTestDependencies() {
   });
   if (missing.length) {
     log.error('the vendored protocol jobs need ' + missing.join(' and ') +
-              ', which is not installed. They will FAIL to load. Fix it with:' +
-              '\n\n    npm install --prefix tests\n\n' +
-              '(those packages are in tests/package.json and not the root one ' +
-              'because .npmrc carries omit=dev — see tests/package.json.)');
+              ', which is not installed. They will FAIL to load. Fix it ' +
+              'with:\n\n    npm install --prefix tests\n\n(those packages ' +
+              'are in tests/package.json and not the root one because .npmrc ' +
+              'carries omit=dev — see tests/package.json.)');
   }
   log.debug('Leaving checkTestDependencies(). ' + missing.length + ' missing.');
   return missing;
@@ -570,6 +570,7 @@ async function refreshTrust(url, current) {
 // ---------------------------------------------------------------------------
 function runJob(job, opts) {
   log.debug('Entering runJob(). job=' + job.name);
+  log.debug("Leaving runJob().");
   return new Promise(function (resolve) {
     const started = Date.now();
     const stream = fs.createWriteStream(job.logFile, { flags: 'a' });
@@ -583,6 +584,7 @@ function runJob(job, opts) {
     let buffered = '';
     const assertions = [];
     function onData(chunk) {
+      log.debug("Entering onData().");
       const text = chunk.toString();
       stream.write(text);
       if (!opts.quiet) {
@@ -599,6 +601,7 @@ function runJob(job, opts) {
           assertions.push(a);
         }
       });
+      log.debug("Leaving onData().");
     }
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
@@ -632,6 +635,8 @@ function runJob(job, opts) {
           child.kill('SIGKILL');
         } catch (e) {
           // It finished between the timer firing and this line. Nothing to do.
+          log.debug("Caught in a callback in runJob(): " +
+                    ((e && e.message) || e));
         }
       }, jobTimeoutMs);
     }
@@ -699,35 +704,46 @@ function runJob(job, opts) {
 // fully reported by it.
 // ---------------------------------------------------------------------------
 function assertionOf(line) {
+  log.debug("Entering assertionOf().");
   const trimmed = line.trim();
   if (!trimmed || trimmed[0] !== '{') {
+    log.debug("Leaving assertionOf().");
     return null;
   }
   let rec;
   try {
     rec = JSON.parse(trimmed);
   } catch (e) {
+    log.debug("Caught in assertionOf(): " + ((e && e.message) || e));
+    log.debug("Leaving assertionOf().");
     // Not a bunyan record. The service modules under test print plenty that
     // is not, and a parse failure here is the ordinary case rather than a
     // problem.
     return null;
   }
   if (!rec || typeof rec.msg !== 'string') {
+    log.debug("Leaving assertionOf().");
     return null;
   }
   const m = /^\s*([✓✗])\s+([\s\S]*)$/.exec(rec.msg);
   if (!m) {
+    log.debug("Leaving assertionOf().");
     return null;
   }
+  log.debug("Leaving assertionOf().");
   return { ok: m[1] === '✓', what: m[2], test: rec.name || '' };
 }
 
 function escapeHtml(s) {
+  log.debug("Entering escapeHtml().");
+  log.debug("Leaving escapeHtml().");
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function escapeXml(s) {
+  log.debug("Entering escapeXml().");
+  log.debug("Leaving escapeXml().");
   return escapeHtml(s).replace(/'/g, '&apos;')
     // Control characters are not legal in XML 1.0 at all, and a stack trace
     // carrying one makes the whole document unparseable for a CI dashboard —
@@ -736,6 +752,8 @@ function escapeXml(s) {
 }
 
 function slug(s) {
+  log.debug("Entering slug().");
+  log.debug("Leaving slug().");
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '').slice(0, 60);
 }
@@ -749,6 +767,8 @@ function describeTree(dir) {
   log.debug('Entering describeTree(). dir=' + dir);
   const out = { commit: '', subject: '', dirty: null };
   function git(args) {
+    log.debug("Entering git().");
+    log.debug("Leaving git().");
     return execFileSync('git', args, { cwd: dir, encoding: 'utf8',
                                        stdio: ['ignore', 'pipe', 'ignore'] })
       .trim();
@@ -780,22 +800,26 @@ const STYLE = [
   '@media (prefers-color-scheme:dark){:root{--fg:#e6e6e6;--bg:#171717;',
   '--muted:#a0a0a0;--line:#333;--card:#1f1f1f;--pass:#4ac26b;--fail:#ff7b72;',
   '--skip:#d4a72c;}}',
-  'body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,',
+  'body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ' +
+  '-apple-system,',
   'BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}',
   '.wrap{max-width:1100px;margin:0 auto;padding:24px 20px 64px;}',
   'h1{font-size:20px;margin:0 0 4px;} h2{font-size:16px;margin:32px 0 8px;}',
   '.sub{color:var(--muted);margin:0 0 20px;}',
   '.cards{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0 8px;}',
-  '.card{background:var(--card);border:1px solid var(--line);border-radius:8px;',
+  '.card{background:var(--card);border:1px solid ' +
+  'var(--line);border-radius:8px;',
   'padding:10px 14px;min-width:110px;}',
-  '.card .n{font-size:22px;font-weight:600;} .card .l{color:var(--muted);font-size:12px;}',
+  '.card .n{font-size:22px;font-weight:600;} .card ' +
+  '.l{color:var(--muted);font-size:12px;}',
   'table{border-collapse:collapse;width:100%;background:var(--card);',
   'border:1px solid var(--line);border-radius:8px;overflow:hidden;}',
   'th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);',
   'vertical-align:top;} th{font-size:12px;color:var(--muted);font-weight:600;}',
   'tr:last-child td{border-bottom:none;} td.num{text-align:right;',
   'font-variant-numeric:tabular-nums;white-space:nowrap;}',
-  '.pass{color:var(--pass);} .fail{color:var(--fail);} .skip{color:var(--skip);}',
+  '.pass{color:var(--pass);} .fail{color:var(--fail);} ' +
+  '.skip{color:var(--skip);}',
   'code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;',
   'font-size:12px;}',
   'pre{background:var(--card);border:1px solid var(--line);border-radius:6px;',
@@ -809,6 +833,7 @@ const STYLE = [
 ].join('');
 
 function jobRow(j) {
+  log.debug("Entering jobRow().");
   const status = j.status === 'passed'
     ? '<span class="pass">passed</span>'
     : (j.status === 'skipped' ? '<span class="skip">skipped</span>'
@@ -818,6 +843,7 @@ function jobRow(j) {
   const counts = j.assertions.length
     ? ok + ' ✓' + (bad ? ' / <span class="fail">' + bad + ' ✗</span>' : '')
     : '<span class="detail">—</span>';
+  log.debug("Leaving jobRow().");
   return '<tr><td><code>' + escapeHtml(j.name) + '</code>' +
     (j.describe ? '<div class="detail">' + escapeHtml(j.describe) + '</div>'
                 : '') +
@@ -830,7 +856,9 @@ function jobRow(j) {
 }
 
 function assertionList(j) {
+  log.debug("Entering assertionList().");
   if (!j.assertions.length) {
+    log.debug("Leaving assertionList().");
     return '';
   }
   const items = j.assertions.map(function (a) {
@@ -838,6 +866,7 @@ function assertionList(j) {
                           : '<span class="fail">✗</span> ') +
       escapeHtml(a.what) + '</li>';
   }).join('');
+  log.debug("Leaving assertionList().");
   return '<details><summary>' + j.assertions.length + ' assertion(s) — ' +
     escapeHtml(j.name) + '</summary><ul class="assertions">' + items +
     '</ul></details>';
@@ -846,7 +875,8 @@ function assertionList(j) {
 function writeHtml(runDir, results, meta) {
   log.debug('Entering writeHtml().');
   const failed = results.filter(function (j) { return j.status === 'failed'; });
-  const skipped = results.filter(function (j) { return j.status === 'skipped'; });
+  const skipped =
+      results.filter(function (j) { return j.status === 'skipped'; });
   const passed = results.filter(function (j) { return j.status === 'passed'; });
   const asserted = results.reduce(function (n, j) {
     return n + j.assertions.length;
@@ -974,13 +1004,14 @@ function writeHtml(runDir, results, meta) {
 // ---------------------------------------------------------------------------
 function writeXml(runDir, results, meta) {
   log.debug('Entering writeXml().');
-  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites name="mock-sts"' +
-    ' time="' + (meta.wallMs / 1000).toFixed(3) + '">\n';
+  let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<testsuites ' +
+    'name="mock-sts" time="' + (meta.wallMs / 1000).toFixed(3) + '">\n';
   results.forEach(function (j) {
     const cases = [];
     if (j.assertions.length) {
       j.assertions.forEach(function (a) {
-        cases.push('    <testcase classname="' + escapeXml(j.suite + '.' + j.name) +
+        cases.push('    <testcase classname="' +
+          escapeXml(j.suite + '.' + j.name) +
           '" name="' + escapeXml(a.what) + '">' +
           (a.ok ? '' : '<failure message="' + escapeXml(a.what) + '"/>') +
           '</testcase>\n');
@@ -992,11 +1023,13 @@ function writeXml(runDir, results, meta) {
         : (j.status === 'failed'
             ? '<failure message="' + escapeXml(j.failures.join('; ')) + '"/>'
             : '');
-      cases.push('    <testcase classname="' + escapeXml(j.suite + '.' + j.name) +
+      cases.push('    <testcase classname="' +
+        escapeXml(j.suite + '.' + j.name) +
         '" name="' + escapeXml(j.name + ' (the job)') + '" time="' +
         (j.ms / 1000).toFixed(3) + '">' + body + '</testcase>\n');
     }
-    const failures = j.assertions.filter(function (a) { return !a.ok; }).length +
+    const failures = j.assertions.filter(function (
+        a) { return !a.ok; }).length +
       (j.status === 'failed' ? 1 : 0);
     xml += '  <testsuite name="' + escapeXml(j.suite + '.' + j.name) +
       '" tests="' + cases.length + '" failures="' + failures +
@@ -1023,6 +1056,7 @@ function pointLatestAt(reportDir, runDir) {
     }
   } catch (e) {
     // Nothing there. That is the ordinary first run.
+    log.debug("Caught in pointLatestAt(): " + ((e && e.message) || e));
   }
   try {
     fs.symlinkSync(path.basename(runDir), link, 'dir');
@@ -1077,15 +1111,19 @@ const USAGE = (function () {
 // distinguishes "answered with something" from "nothing there" and 0 is how
 // the second says so.
 function probe(url) {
+  log.debug("Entering probe().");
+  log.debug("Leaving probe().");
   return new Promise(function (resolve) {
     let target;
     try {
       target = new URL(url);
     } catch (e) {
+      log.debug("Caught in a callback in probe(): " + ((e && e.message) || e));
       resolve(0);
       return;
     }
-    const mod = target.protocol === 'https:' ? require('https') : require('http');
+    const mod = target.protocol === 'https:' ? require('https') :
+                require('http');
     const req = mod.get({
       host: target.hostname,
       port: target.port || (target.protocol === 'https:' ? 443 : 80),
@@ -1159,9 +1197,10 @@ async function waitForExternalService(url, log, timeoutMs) {
   if (swapped !== url && (await probe(swapped + '/')) > 0) {
     hint = ' SOMETHING IS ANSWERING AT ' + swapped + ' INSTEAD: in this ' +
            'service the scheme is a property of the LISTENER (global.https, ' +
-           'which every appconfig file here now sets and STS_HTTPS overrides), ' +
-           'so this is a URL that names the wrong one.';
+           'which every appconfig file here now sets and STS_HTTPS ' +
+           'overrides), so this is a URL that names the wrong one.';
   }
+  log.debug("Leaving waitForExternalService().");
   throw new Error('nothing answered at ' + url + '.' + hint +
                   ' It was handed to this runner with --service-url, so ' +
                   'nothing here started it and nothing here can restart it.');
@@ -1224,6 +1263,7 @@ async function waitForExternalService(url, log, timeoutMs) {
 // compose stacks reach this with no `instance`, and their defaults stand.
 // ---------------------------------------------------------------------------
 function chosenPorts(instance) {
+  log.debug("Entering chosenPorts().");
   const out = {};
   const ports = (instance && instance.ports) || {};
   Object.keys(ports).forEach(function (name) {
@@ -1232,6 +1272,7 @@ function chosenPorts(instance) {
     }
     out[name] = String(ports[name]);
   });
+  log.debug("Leaving chosenPorts().");
   return out;
 }
 
@@ -1290,7 +1331,8 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help || opts.unknown.length) {
     if (opts.unknown.length) {
-      process.stdout.write('Unknown option(s): ' + opts.unknown.join(' ') + '\n');
+      process.stdout.write('Unknown option(s): ' + opts.unknown.join(' ') +
+                           '\n');
     }
     process.stdout.write(USAGE + '\n');
     process.exit(opts.unknown.length ? 2 : 0);
@@ -1423,8 +1465,9 @@ async function main() {
         // STS_LOG_LEVEL alone does NOT quieten a run: the six vendored modules
         // under common/vendored/ each build their own bunyan logger at load
         // from the CONFIG_FILE's logLevel, so a `debug` file goes on writing
-        // every canonicalization however low this level is. ./local-run-tests.sh
-        // picks the file from the level and exports it under this name.
+        // every canonicalization however low this level is.
+        // ./local-run-tests.sh picks the file from the level and exports it
+        // under this name.
         configFile: process.env.STS_TEST_CONFIG_FILE || '',
         coverageDir: wantCoverage ? rawProtocol : '',
         portBase: process.env.STS_TEST_PORT_BASE || ''
@@ -1480,7 +1523,8 @@ async function main() {
   // the service is who can mint against it.
   if (instance && !instance.external && !process.env.STS_ADMIN_API_TOKEN) {
     await mintTheManagementApiToken(instance.url);
-  } else if (instance && instance.external && !process.env.STS_ADMIN_API_TOKEN) {
+  } else if (instance && instance.external &&
+             !process.env.STS_ADMIN_API_TOKEN) {
     log.warn('a service was handed in with --service-url and no ' +
              'STS_ADMIN_API_TOKEN came with it. /admin-api requires an ' +
              'access token, so every job that drives it will answer 401. ' +
@@ -1542,12 +1586,12 @@ async function main() {
                   'container of its own — and no docker daemon answered (' +
                   dockerHere.why + '). BOTH ./local-run-tests.sh and ' +
                   './docker-run-tests.sh bring one up as part of their stack ' +
-                  'and neither takes this branch; a bare run-report.js against ' +
-                  'a service somebody else started is what does. The remote ' +
-                  'XACML PEP therefore has NO end-to-end coverage in this ' +
-                  'run: what stands is tests/xacml_pep.js, which loads that ' +
-                  'container\'s modules in a child process and makes no HTTP ' +
-                  'request, and sts_xacml_endpoints.js, where the TEST ' +
+                  'and neither takes this branch; a bare run-report.js ' +
+                  'against a service somebody else started is what does. The ' +
+                  'remote XACML PEP therefore has NO end-to-end coverage in ' +
+                  'this run: what stands is tests/xacml_pep.js, which loads ' +
+                  'that container\'s modules in a child process and makes no ' +
+                  'HTTP request, and sts_xacml_endpoints.js, where the TEST ' +
                   'impersonates a PEP and nothing evaluates what it pulled.';
       log.warn('[' + n + '/' + jobs.length + '] SKIPPING ' + job.name + ' — ' +
                why);
@@ -1848,7 +1892,8 @@ async function main() {
 
   // ---- say what happened ------------------------------------------------
   const failed = results.filter(function (j) { return j.status === 'failed'; });
-  const skipped = results.filter(function (j) { return j.status === 'skipped'; });
+  const skipped =
+      results.filter(function (j) { return j.status === 'skipped'; });
   const asserted = results.reduce(function (s, j) {
     return s + j.assertions.length;
   }, 0);
@@ -1866,6 +1911,7 @@ async function main() {
   log.info('report: ' + path.join(runDir, 'report.html'));
   log.debug('Leaving main().');
   process.exit(failed.length ? 1 : 0);
+  log.debug("Leaving main().");
 }
 
 if (require.main === module) {

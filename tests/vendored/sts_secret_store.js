@@ -46,17 +46,23 @@ const assert = require("assert");
 const { Command, Option } = require("commander");
 
 var appconfig;
+let appconfigProblem = null;
 try {
   appconfig = require(process.env.CONFIG_FILE);
 } catch (e) {
   // The launchers always set CONFIG_FILE; a hand-run without one must still
   // load, for the reason tests/wait_for.js gives.
+  appconfigProblem = e;
   appconfig = {};
 }
 
 var bunyan = require("bunyan");
 var log = bunyan.createLogger({ name: "sts_secret_store",
                                 level: appconfig.LOG_LEVEL || "info" });
+if (appconfigProblem) {
+  log.debug('CONFIG_FILE could not be read, so the configuration is empty: ' +
+            appconfigProblem.message);
+}
 log.info("Log initialized. logLevel=" + log.level());
 
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
@@ -66,21 +72,26 @@ var api = base + "/admin-api";
 
 var checks = 0;
 function check(what, fn) {
+  log.debug("Entering check().");
   fn();
   checks += 1;
   log.info("  [ok] " + what);
+  log.debug("Leaving check().");
 }
 
 async function get(path) {
+  log.debug("Entering get().");
   const r = await fetch(api + path);
   const raw = await r.text();
   let body;
   try {
     body = JSON.parse(raw);
   } catch (e) {
+    log.debug("Caught in get(): " + ((e && e.message) || e));
     // An HTML error page from a door that answers JSON is worth quoting whole.
     body = raw;
   }
+  log.debug("Leaving get().");
   return { status: r.status, body: body, raw: raw };
 }
 
@@ -124,6 +135,16 @@ async function test() {
   // is a fact about the deployment, not about the assertions.
   // ---------------------------------------------------------------------
   const keystoreOn = key.provider === "vault" && key.present === true;
+  // **AND THE DATABASE HALF IS GATED THE SAME WAY, FOR THE SAME REASON — THE
+  // SENTENCE ABOVE SAYING *EVERY MODE* WAS WRONG ABOUT ONE OF THEM.** The
+  // `memory` mode dials no database at all, so `/admin-api/persistence`
+  // reports `database: null` and there is no password for anybody to have
+  // read. `usingVault` is still true there, because the KEK provider is
+  // configured as `vault` whether or not the keystore reads it — so section 2
+  // asserted `passwordProvider === "vault"` about an absent report and failed
+  // the memory mode on every run. It runs where a database is being dialled,
+  // which is the postgres and dispatch modes.
+  const databaseOn = !!(database && database.host);
 
   if (!usingVault) {
     // THE SKIP, AND IT NAMES WHAT IT SAW. See the header.
@@ -135,6 +156,7 @@ async function test() {
              "service with no compose stack; the dispatch mode and " +
              "`docker compose up` are where this job has something to say.");
     log.info("Test completed successfully.");
+    log.debug("Leaving test().");
     return;
   }
 
@@ -184,6 +206,15 @@ async function test() {
   // 2. THE DATABASE PASSWORD.
   // -------------------------------------------------------------------------
   log.info("=== 2. the database password ===");
+  if (!databaseOn) {
+    log.warn("This service dials no database in this mode (persistence mode " +
+             JSON.stringify((persistence.body.status || {}).mode ||
+                            persistence.body.mode) + ", and the report " +
+             "carries no database), so there is no database password for a " +
+             "secret store to have supplied. Section 2 runs in the postgres " +
+             "and dispatch modes.");
+  }
+  if (databaseOn) {
   check("the database password came from the store as well", function () {
           assert.strictEqual(database.passwordProvider, "vault",
             "passwordProvider=" + JSON.stringify(database.passwordProvider));
@@ -206,22 +237,31 @@ async function test() {
             "sslmode=" + JSON.stringify(database.sslmode));
         });
   check("**and the connection string this reply DOES carry has no password " +
-        "in it**, which is the property the whole feature buys. That value is " +
-        "`persistence.databaseUrl` as configured — the settings half of this " +
-        "operation returns it, and a deployment that kept its password there " +
-        "would be handing it to every reader of /admin-api and /admin/config. " +
-        "With the store supplying it, there is nothing in the string to hand " +
-        "over", function () {
+        "in it**, which is the property the whole feature buys. That value " +
+        "is `persistence.databaseUrl` as configured — the settings half of " +
+        "this operation returns it, and a deployment that kept its password " +
+        "there would be handing it to every reader of /admin-api and " +
+        "/admin/config. With the store supplying it, there is nothing in the " +
+        "string to hand over", function () {
           // THE VALUE AND NOT THE WHOLE BLOB. Every settings row carries a
           // DESCRIPTION, and this one's names the shape
           // `postgres://user:password@host` as documentation — a regex over
           // the reply matches that and reports a leak that is a sentence.
           const rows = [];
           (function walk(node) {
-            if (!node || typeof node !== "object") return;
-            if (Array.isArray(node)) { node.forEach(walk); return; }
+            log.debug("Entering walk().");
+            if (!node || typeof node !== "object") {
+              log.debug("Leaving walk().");
+              return;
+            }
+            if (Array.isArray(node)) {
+              node.forEach(walk);
+              log.debug("Leaving walk().");
+              return;
+            }
             if (node.key === "persistence.databaseUrl") { rows.push(node); }
             Object.keys(node).forEach(function (k) { walk(node[k]); });
+            log.debug("Leaving walk().");
           })(persistence.body);
           assert.ok(rows.length,
             "the reply carries no persistence.databaseUrl row, so this " +
@@ -237,6 +277,7 @@ async function test() {
             });
           });
         });
+  }
 
   // -------------------------------------------------------------------------
   // 3. THE STORE IS WHERE THE KEYS REALLY ARE.
@@ -258,8 +299,9 @@ async function test() {
   // THE FLOOR IS PER MODE, for the reason the block above `keystoreOn`
   // gives: four of the checks here are about a key this service does not read
   // unless the keystore is on. A single floor would either be vacuous in
-  // dispatch or wrong in the other two.
-  const floor = keystoreOn ? 7 : 4;
+  // dispatch or wrong in the other two. The database half adds its four only
+  // where a database is dialled, which the memory mode does not.
+  const floor = (databaseOn ? 4 : 1) + (keystoreOn ? 3 : 0);
   assert.ok(checks >= floor,
     "only " + checks + " checks ran (" + floor + " expected in this mode); " +
     "a section has stopped being called.");

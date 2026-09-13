@@ -106,6 +106,10 @@ const MODULES = [
 // Where the engine modules are. The image puts them beside this file; a
 // developer's checkout has them one level up. Tried in that order so the
 // container never depends on a repository being present.
+//
+// No Entering/Leaving pair on this function or on installShim(): both run
+// before this container has a logger, because the logger is the shim that
+// installShim() installs.
 function engineDir() {
   const here = path.join(__dirname, 'xacml');
   if (fs.existsSync(path.join(here, 'xacml_pdp.js'))) {

@@ -57,6 +57,12 @@ const crypto = require('../common/crypto');
 const config = require('../common/config');
 const realms = require('../common/realms');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'worker_pool',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // One message for everything below, so a difference is never the input.
 const MESSAGE = Buffer.from('the worker pool signs exactly what this ' +
                             'process would have signed', 'utf8');
@@ -109,7 +115,9 @@ const DRIVEN_IN_A = pqJose.PQ_ALGS.filter(function (alg) {
 // puts it back, for the reason the parent suite's saml11_sso.js gives: a `set`
 // left behind is the next test's mystery.
 function withWorkers(count, run) {
+  log.debug("Entering withWorkers().");
   config.setOverride('workers.count', String(count));
+  log.debug("Leaving withWorkers().");
   return Promise.resolve()
     .then(run)
     .then(function (value) {
@@ -129,6 +137,7 @@ module.exports = {
 
   run: async function (t) {
 
+    log.debug("Entering run().");
     // -----------------------------------------------------------------------
     t.log.info('A. a worker computes what this process would have computed');
     // -----------------------------------------------------------------------
@@ -201,6 +210,8 @@ module.exports = {
     // existed and it is here as the CONTROL: without it, "the timer fired" is
     // not evidence of anything.
     const measure = async function (workers) {
+      log.debug("Entering measure().");
+      log.debug("Leaving measure().");
       return withWorkers(workers, async function () {
         const pair = pqJose.generate(SLOW_ALG);
         let ticks = 0;
@@ -449,6 +460,7 @@ module.exports = {
     // keeps about its own previous behaviour.
     t.equal(typeof config.value('workers.jobTimeoutS'), 'number',
             'the bound is a number of seconds and is settable');
+    log.debug("Leaving run().");
 
   }
 };

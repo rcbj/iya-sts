@@ -36,15 +36,15 @@
 // AND IT MAKES ONE SENTENCE IN THIS REPOSITORY NO LONGER UNIVERSALLY TRUE.
 //
 // "A group here grants nothing" is written in README.md, in three CLAUDE.md
-// files, in `sts_metadata.js`, on `/admin/groups` itself and in `group_claims.js`.
-// It is STILL true of every other group and it is still true of these two
-// everywhere except this console: no token's scopes change, no assertion gains
-// an attribute, no protocol endpoint reads them, and a member of `admin-write`
-// has exactly the same access to `/oauth2/token` as anybody else. What changed
-// is that ONE surface — `/admin` — now reads two named groups. Every place that
-// sentence appears has been qualified rather than deleted, because deleting it
-// would leave a reader believing that adding somebody to `cn=developers`
-// changed what their token could do.
+// files, in `sts_metadata.js`, on `/admin/groups` itself and in
+// `group_claims.js`. It is STILL true of every other group and it is still true
+// of these two everywhere except this console: no token's scopes change, no
+// assertion gains an attribute, no protocol endpoint reads them, and a member
+// of `admin-write` has exactly the same access to `/oauth2/token` as anybody
+// else. What changed is that ONE surface — `/admin` — now reads two named
+// groups. Every place that sentence appears has been qualified rather than
+// deleted, because deleting it would leave a reader believing that adding
+// somebody to `cn=developers` changed what their token could do.
 //
 // ---------------------------------------------------------------------------
 // THE EMPTY ROSTER, which is the only interesting decision in the file.
@@ -103,6 +103,8 @@ const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
 
 function refused(code, result) {
+  log.debug("Entering refused().");
+  log.debug("Leaving refused().");
   return errorCodes.mark(result, code);
 }
 
@@ -116,9 +118,9 @@ function refused(code, result) {
 const ROLES = [
   { id: 'read', label: 'Admin Read', setting: 'admin.readGroup',
     implies: [],
-    what: 'Look at every page of this console, and at every ?format=json view ' +
-          'of one. It changes nothing: a reader can see which tokens are ' +
-          'revoked and cannot revoke one.' },
+    what: 'Look at every page of this console, and at every ?format=json ' +
+          'view of one. It changes nothing: a reader can see which tokens ' +
+          'are revoked and cannot revoke one.' },
   { id: 'write', label: 'Admin Write', setting: 'admin.writeGroup',
     implies: ['read'],
     what: 'Post every form on this console — revoke a token, add a custom ' +
@@ -130,8 +132,11 @@ const ROLES = [
 const ROLE_IDS = ROLES.map(function (role) { return role.id; });
 
 function roleFor(id) {
+  log.debug("Entering roleFor().");
   const wanted = String(id == null ? '' : id).trim().toLowerCase();
-  return ROLES.filter(function (role) { return role.id === wanted; })[0] || null;
+  log.debug("Leaving roleFor().");
+  return ROLES.filter(function (role) { return role.id === wanted; })[0] ||
+         null;
 }
 
 // The cn of the group behind a role, read WHERE IT IS USED rather than captured
@@ -139,6 +144,8 @@ function roleFor(id) {
 // renames the write group on /admin/config expects the next request to use the
 // new name.
 function groupCnFor(role) {
+  log.debug("Entering groupCnFor().");
+  log.debug("Leaving groupCnFor().");
   return String(config.value(role.setting) || '').trim();
 }
 
@@ -168,10 +175,11 @@ function setDirectory(fns) {
     // instead of a grant button that answers 200 and writes nothing.
     log.error(errorCodes.tag('STS-ADMIN-0587') +
               'admin_rbac: the directory slot was offered an object missing ' +
-              missing.join(', ') + '. It is NOT installed — the console roles ' +
-              'will read as "no directory is loaded", which is the same ' +
-              'answer a build without ldap_server.js gives.');
-    log.debug("Leaving setDirectory(). Refused: " + missing.length + " member(s) missing.");
+              missing.join(', ') + '. It is NOT installed — the console ' +
+              'roles will read as "no directory is loaded", which is the ' +
+              'same answer a build without ldap_server.js gives.');
+    log.debug("Leaving setDirectory(). Refused: " + missing.length + " " +
+        "member(s) missing.");
     return false;
   }
   directory = given;
@@ -180,10 +188,13 @@ function setDirectory(fns) {
            groupCnFor(ROLES[0]) + ' and ' + groupCnFor(ROLES[1]) + ' under ' +
            given.groupsDn + '. An ldapmodify, a SCIM PATCH, /admin/rbac and ' +
            'POST /admin-api/rbac are four doors onto the same membership.');
+  log.debug("Leaving setDirectory().");
   return true;
 }
 
 function available() {
+  log.debug("Entering available().");
+  log.debug("Leaving available().");
   return !!directory;
 }
 
@@ -192,6 +203,8 @@ function available() {
 // ---------------------------------------------------------------------------
 
 function dnForRole(role) {
+  log.debug("Entering dnForRole().");
+  log.debug("Leaving dnForRole().");
   return directory.groupDnFor(groupCnFor(role));
 }
 
@@ -254,7 +267,8 @@ function rosterFor(roleId) {
     };
   });
   out.memberCount = out.members.length;
-  out.presentCount = out.members.filter(function (m) { return m.present; }).length;
+  out.presentCount = out.members.filter(function (
+      m) { return m.present; }).length;
   out.danglingCount = out.memberCount - out.presentCount;
   addClaimedMembers(out);
   log.debug("Leaving rosterFor(). " + out.memberCount + " member value(s), " +
@@ -271,8 +285,8 @@ function rosterFor(roleId) {
 // state `/admin/groups` reports rather than repairs.
 //
 // `groupsOfUser()` HONOURS BOTH DIRECTIONS, which means somebody added that way
-// REALLY HOLDS THE ROLE. So a roster built from the group entry alone would have
-// shown a console that person could use and a list they were not on — a
+// REALLY HOLDS THE ROLE. So a roster built from the group entry alone would
+// have shown a console that person could use and a list they were not on — a
 // permissions page that under-reports who has access, which is the single worst
 // thing this page could do. They are merged in and marked, not hidden and not
 // silently promoted: the row says which side of the disagreement it came from.
@@ -280,11 +294,11 @@ function rosterFor(roleId) {
 // **The edge worth knowing, because it cost a test to find:** a `memberOf`
 // naming a group that DOES NOT EXIST grants nothing. `groupsOfUser()` resolves
 // each claimed DN against the group index, and an unresolvable one is skipped —
-// so writing `memberOf: cn=admin-read,...` onto an entry before anybody has ever
-// been granted Admin Read does nothing at all, and starts working the moment the
-// first ordinary grant creates that group. That is the directory's rule rather
-// than this module's, and it is the same rule `/admin/groups` applies when it
-// decides what counts as a group.
+// so writing `memberOf: cn=admin-read,...` onto an entry before anybody has
+// ever been granted Admin Read does nothing at all, and starts working the
+// moment the first ordinary grant creates that group. That is the directory's
+// rule rather than this module's, and it is the same rule `/admin/groups`
+// applies when it decides what counts as a group.
 // ---------------------------------------------------------------------------
 function addClaimedMembers(out) {
   log.debug("Entering addClaimedMembers().");
@@ -317,7 +331,8 @@ function addClaimedMembers(out) {
     });
   });
   out.memberCount = out.members.length;
-  out.presentCount = out.members.filter(function (m) { return m.present; }).length;
+  out.presentCount = out.members.filter(function (
+      m) { return m.present; }).length;
   out.danglingCount = out.memberCount - out.presentCount;
   log.debug("Leaving addClaimedMembers().");
 }
@@ -366,7 +381,10 @@ function roster() {
 // there yet, and it is still a grant — treating it as empty would mean granting
 // a role to a future colleague quietly leaving the door open.
 function rosterEmpty() {
-  return roster().reduce(function (n, row) { return n + row.memberCount; }, 0) === 0;
+  log.debug("Entering rosterEmpty().");
+  log.debug("Leaving rosterEmpty().");
+  return roster().reduce(function (n, row) { return n + row.memberCount; },
+                         0) === 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -392,7 +410,8 @@ function rolesOf(username) {
                 groups: [], open: false, openable: false,
                 available: !!directory, empty: false };
   if (!directory || !name) {
-    log.debug("Leaving rolesOf(). " + (directory ? "No name." : "No directory."));
+    log.debug("Leaving rolesOf(). " +
+              (directory ? "No name." : "No directory."));
     return out;
   }
 
@@ -435,7 +454,8 @@ function rolesOf(username) {
   out.read = !!held.read;
   out.write = !!held.write;
   log.debug("Leaving rolesOf(). " + name + " holds " +
-            (out.roles.join(', ') || 'no role') + (out.open ? " (empty roster)." : "."));
+            (out.roles.join(', ') || 'no role') +
+            (out.open ? " (empty roster)." : "."));
   return out;
 }
 
@@ -453,14 +473,15 @@ function rolesOf(username) {
 // holds MINUS the operational ones.
 //
 // `entryDN` is the one that matters and it is the reason this is a function.
-// `readGroupEntry()` SYNTHESISES it — the DN is where the entry is, so holding a
-// copy would be a second definition of the same fact — and writing the read
+// `readGroupEntry()` SYNTHESISES it — the DN is where the entry is, so holding
+// a copy would be a second definition of the same fact — and writing the read
 // object straight back would turn that synthesised value into a stored
 // attribute, which is the one thing every door onto this directory is told
 // never to do.
 const NOT_WRITTEN_BACK = ['entrydn', 'createtimestamp', 'modifytimestamp'];
 
 function writableAttributes(entry) {
+  log.debug("Entering writableAttributes().");
   const out = {};
   Object.keys(entry.attributes).forEach(function (name) {
     if (NOT_WRITTEN_BACK.indexOf(name.toLowerCase()) >= 0) {
@@ -468,6 +489,7 @@ function writableAttributes(entry) {
     }
     out[name] = entry.attributes[name].slice(0);
   });
+  log.debug("Leaving writableAttributes().");
   return out;
 }
 
@@ -483,11 +505,13 @@ function memberValueFor(username) {
   log.debug("Entering memberValueFor(). username=" + username);
   const existing = directory.existingUserEntry(username);
   if (existing) {
-    log.debug("Leaving memberValueFor(). Their entry is at " + existing.dn + ".");
+    log.debug("Leaving memberValueFor(). Their entry is at " + existing.dn +
+              ".");
     return { dn: existing.dn, present: true };
   }
   const dn = 'uid=' + username + ',' + directory.usersDn;
-  log.debug("Leaving memberValueFor(). Nothing there yet; " + dn + " is where they would go.");
+  log.debug("Leaving memberValueFor(). Nothing there yet; " + dn + " is " +
+      "where they would go.");
   return { dn: dn, present: false };
 }
 
@@ -531,8 +555,9 @@ function nameProblem(username) {
   }
   if (!directory.nameUsableInDn(username)) {
     log.debug("Leaving nameProblem().");
-    return '"' + username + '" carries a character RFC 4514 reserves in a DN, ' +
-           'so it cannot name an entry under ' + directory.usersDn + '. That ' +
+    return '"' + username + '" carries a character RFC 4514 reserves in a ' +
+           'DN, so it cannot name an entry ' +
+           'under ' + directory.usersDn + '. That ' +
            'is the same refusal creating a person gets, and for the same ' +
            'reason: names of that shape get into this directory by being ' +
            'PRESENTED — a certificate subject, a did: — rather than by being ' +
@@ -555,7 +580,9 @@ function grant(username, roleId, context) {
   }
   if (!role) {
     log.debug("Leaving grant(). No such role.");
-    return refused('STS-ADMIN-0582', { ok: false, errors: ['Unknown role "' + roleId + '". There are two: ' +
+    return refused('STS-ADMIN-0582',
+                   { ok: false, errors: ['Unknown role "' + roleId + '". ' +
+        'There are two: ' +
                                  ROLE_IDS.join(' and ') + '.'] });
   }
   const problem = nameProblem(name);
@@ -603,7 +630,9 @@ function grant(username, roleId, context) {
   const written = directory.writeGroupEntry(dn, attributes, 'console');
   if (!written.ok) {
     log.debug("Leaving grant(). The directory refused: " + written.reason);
-    return refused('STS-ADMIN-0585', { ok: false, errors: [refusalText(written, dn)], reason: written.reason });
+    return refused('STS-ADMIN-0585',
+                   { ok: false, errors: [refusalText(written, dn)],
+                     reason: written.reason });
   }
 
   audit.record({
@@ -623,15 +652,18 @@ function grant(username, roleId, context) {
            entry: written.entry,
            message: name + ' now holds ' + role.label + ', as ' + target.dn +
                     ' in ' + dn + '.' +
-                    (written.created ? ' The group did not exist and was created.' : '') +
+                    (written.created ? ' The group did not exist and was ' +
+                                       'created.' : '') +
                     (target.present ? ''
-                                    : ' NOTHING IS AT THAT DN YET — they have not ' +
-                                      'authenticated here and nobody has created ' +
-                                      'them, so the membership dangles until one of ' +
-                                      'those happens. The role still counts.') +
-                    (wasEmpty ? ' This was the FIRST grant, so the roster is now ' +
-                                'enforced: whoever is not in one of these two groups ' +
-                                'can no longer use this console.' : '') };
+                                    : ' NOTHING IS AT THAT DN YET — they ' +
+                                      'have not authenticated here and ' +
+                                      'nobody has created them, so the ' +
+                                      'membership dangles until one of those ' +
+                                      'happens. The role still counts.') +
+                    (wasEmpty ? ' This was the FIRST grant, so the roster is ' +
+                                'now enforced: whoever is not in one of ' +
+                                'these two groups can no longer use this ' +
+                                'console.' : '') };
 }
 
 function revoke(username, roleId, context) {
@@ -647,12 +679,15 @@ function revoke(username, roleId, context) {
   }
   if (!role) {
     log.debug("Leaving revoke(). No such role.");
-    return refused('STS-ADMIN-0582', { ok: false, errors: ['Unknown role "' + roleId + '". There are two: ' +
+    return refused('STS-ADMIN-0582',
+                   { ok: false, errors: ['Unknown role "' + roleId + '". ' +
+        'There are two: ' +
                                  ROLE_IDS.join(' and ') + '.'] });
   }
   if (!name) {
     log.debug("Leaving revoke(). No name.");
-    return refused('STS-ADMIN-0584', { ok: false, errors: ['No name was given.'] });
+    return refused('STS-ADMIN-0584',
+                   { ok: false, errors: ['No name was given.'] });
   }
 
   const dn = dnForRole(role);
@@ -674,23 +709,30 @@ function revoke(username, roleId, context) {
     // on the PERSON'S entry and this module writes only to groups — writing to
     // a person from here would make the console a second definition of what an
     // entry may hold, which is the thing every slot in this feature avoids.
-    const claimed = (directory.claimedMembersOf(dn) || []).filter(function (row) {
+    const claimed = (directory.claimedMembersOf(dn) || []).filter(
+        function (row) {
       return directory.normalizeDn(row.dn) === directory.normalizeDn(target.dn);
     });
     if (claimed.length) {
       log.debug("Leaving revoke(). Claimed through memberOf; refused.");
-      return refused('STS-ADMIN-0586', { ok: false, reason: 'claimed', role: role.id, username: name, dn: dn,
-               errors: [name + ' holds ' + role.label + ' through a memberOf value on ' +
-                        'THEIR OWN entry (' + target.dn + ') rather than through a member ' +
-                        'value on ' + dn + ', so there is nothing in the group to remove. ' +
-                        'Nothing here maintains memberOf — a client wrote it — and this ' +
-                        'console writes only to groups, deliberately. Delete that value with ' +
-                        'an ldapmodify or a SCIM PATCH of the person and the role goes with ' +
-                        'it.'] });
+      return refused('STS-ADMIN-0586',
+                     { ok: false, reason: 'claimed', role: role.id,
+               username: name, dn: dn,
+               errors: [name + ' holds ' + role.label + ' through a memberOf ' +
+                        'value on THEIR OWN entry ' +
+                        '(' + target.dn + ') rather than ' +
+                        'through a member value ' +
+                        'on ' + dn + ', so there is nothing in the ' +
+                        'group to remove. Nothing here maintains memberOf — ' +
+                        'a client wrote it — and this console writes only to ' +
+                        'groups, deliberately. Delete that value with an ' +
+                        'ldapmodify or a SCIM PATCH of the person and the ' +
+                        'role goes with it.'] });
     }
     log.debug("Leaving revoke(). Not a member.");
     return { ok: true, changed: false, role: role.id, username: name, dn: dn,
-             message: name + ' does not hold ' + role.label + '. Nothing was changed.' };
+             message: name + ' does not hold ' + role.label + '. Nothing was ' +
+                 'changed.' };
   }
 
   // Removed from EVERY membership attribute that named them rather than from
@@ -698,7 +740,8 @@ function revoke(username, roleId, context) {
   // clients, two conventions, one directory — would otherwise still hold the
   // role after a revoke that reported success, which is the worst shape a
   // permissions bug takes.
-  const removed = hits.map(function (index) { return existing.members[index]; });
+  const removed =
+      hits.map(function (index) { return existing.members[index]; });
   const attributes = writableAttributes(existing);
   removed.forEach(function (member) {
     const key = Object.keys(attributes).filter(function (name2) {
@@ -718,7 +761,9 @@ function revoke(username, roleId, context) {
   const written = directory.writeGroupEntry(dn, attributes, 'console');
   if (!written.ok) {
     log.debug("Leaving revoke(). The directory refused: " + written.reason);
-    return refused('STS-ADMIN-0585', { ok: false, errors: [refusalText(written, dn)], reason: written.reason });
+    return refused('STS-ADMIN-0585',
+                   { ok: false, errors: [refusalText(written, dn)],
+                     reason: written.reason });
   }
 
   const nowEmpty = rosterEmpty();
@@ -737,24 +782,25 @@ function revoke(username, roleId, context) {
   return { ok: true, changed: true, role: role.id, username: name, dn: dn,
            removed: removed.length,
            message: name + ' no longer holds ' + role.label + ' — ' +
-                    removed.length + ' membership value(s) removed from ' + dn + '.' +
+                    removed.length + ' membership value(s) removed from ' + dn +
+                    '.' +
                     (nowEmpty
-                      ? ' THAT WAS THE LAST GRANT ON THIS SERVICE. The roster is ' +
-                        'empty again, so ' +
+                      ? ' THAT WAS THE LAST GRANT ON THIS SERVICE. The ' +
+                        'roster is empty again, so ' +
                         (config.value('admin.openWhenEmpty')
-                          ? 'this console is open to anybody who signs in until ' +
-                            'somebody is granted a role.'
+                          ? 'this console is open to anybody who signs in ' +
+                            'until somebody is granted a role.'
                           : 'nobody can use this console at all — ' +
-                            'admin.openWhenEmpty is off. POST /admin-api/rbac/grant ' +
-                            'is the way back in.')
+                            'admin.openWhenEmpty is off. POST ' +
+                            '/admin-api/rbac/grant is the way back in.')
                       : '') };
 }
 
 const NO_DIRECTORY =
   'No LDAP directory is loaded in this process, so there is nowhere to hold ' +
-  'the roles. That is a build of this service without ldap_server.js and not a ' +
-  'failure — but it means nobody can be granted anything, so the console gate ' +
-  'leaves this console reachable only while admin.openWhenEmpty is on.';
+  'the roles. That is a build of this service without ldap_server.js and not ' +
+  'a failure — but it means nobody can be granted anything, so the console ' +
+  'gate leaves this console reachable only while admin.openWhenEmpty is on.';
 
 function refusalText(written, dn) {
   log.debug("Entering refusalText().");
@@ -772,8 +818,8 @@ function refusalText(written, dn) {
   }
   if (written.reason === 'full') {
     log.debug("Leaving refusalText().");
-    return 'The directory holds its maximum number of entries (ldap.maxEntries), ' +
-           'so the role group could not be created.';
+    return 'The directory holds its maximum number of entries ' +
+           '(ldap.maxEntries), so the role group could not be created.';
   }
   log.debug("Leaving refusalText().");
   return 'The directory refused to write ' + dn + ' (' + written.reason + ').';
@@ -798,8 +844,10 @@ function candidates(seen) {
   log.debug("Entering candidates().");
   const out = new Map();
   const add = function (name, source) {
+    log.debug("Entering add().");
     const value = String(name == null ? '' : name).trim();
     if (!value) {
+      log.debug("Leaving add().");
       return;
     }
     const key = value.toLowerCase();
@@ -807,6 +855,7 @@ function candidates(seen) {
       out.set(key, { username: value, inDirectory: false, seen: false });
     }
     out.get(key)[source] = true;
+    log.debug("Leaving add().");
   };
 
   if (directory) {
@@ -849,7 +898,8 @@ function describe() {
     groupsDn: directory ? directory.groupsDn : '',
     usersDn: directory ? directory.usersDn : '',
     roles: rows,
-    grantCount: rows.reduce(function (n, row) { return n + row.memberCount; }, 0)
+    grantCount: rows.reduce(function (n, row) { return n + row.memberCount; },
+                            0)
   };
   out.empty = out.grantCount === 0;
   // Said as one flag rather than left to the caller to compute from three,

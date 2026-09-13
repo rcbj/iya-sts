@@ -5,13 +5,14 @@
 // and an assertion (W3C Web Authentication, sections 7.1 and 7.2).
 //
 // **Written independently of the debugger's own implementation, on purpose.**
-// The wallet-side decoder lives in the debugger's client/src/{cbor,cose,webauthn}.js
-// and this file shares no code with it — not the CBOR reader, not the COSE
-// mapping, not the signature check. That is the same arrangement bbs2023.js is
-// in, and for the same reason: two independent readings of one specification
-// that agree is a real result, whereas one implementation agreeing with itself
-// is none. tests/webauthn_cross_impl.js in the debugger repository runs both
-// over the same real ceremonies and requires the same verdict on each.
+// The wallet-side decoder lives in the debugger's
+// client/src/{cbor,cose,webauthn}.js and this file shares no code with it — not
+// the CBOR reader, not the COSE mapping, not the signature check. That is the
+// same arrangement bbs2023.js is in, and for the same reason: two independent
+// readings of one specification that agree is a real result, whereas one
+// implementation agreeing with itself is none. tests/webauthn_cross_impl.js in
+// the debugger repository runs both over the same real ceremonies and requires
+// the same verdict on each.
 //
 // The independence is not cosmetic. This side verifies ECDSA through node's
 // `crypto.verify`, which takes the signature in its native **DER** form; the
@@ -32,10 +33,10 @@
 
 const crypto = require('crypto');
 const stsCrypto = require('../common/crypto');
-// The service's shared logger when this module is loaded inside the service, and
-// a silent fallback when it is loaded ON ITS OWN — which the debugger's
-// cross-implementation test does, copying this one file next to its own scripts.
-// `./helpers` is not there, and it could not usefully be: it reads
+// The service's shared logger when this module is loaded inside the service,
+// and a silent fallback when it is loaded ON ITS OWN — which the debugger's
+// cross-implementation test does, copying this one file next to its own
+// scripts. `./helpers` is not there, and it could not usefully be: it reads
 // process.env.CONFIG_FILE relative to its own directory and pulls in the
 // service's dependencies. A verifier written to be checked by somebody else's
 // test has no business dragging the whole service in behind it.
@@ -43,6 +44,8 @@ let log;
 try {
   log = require('../common/helpers').log;
 } catch (e) {
+  log.debug("Caught in the load of authn/webauthn.js: " +
+            ((e && e.message) || e));
   const noop = function () {};
   log = { debug: noop, info: noop, warn: noop, error: noop };
 }
@@ -50,10 +53,10 @@ try {
 // --- CBOR, enough of it, decode only -----------------------------------------
 //
 // A recursive-descent reader over a Buffer, returning [value, nextOffset].
-// Definite lengths only: CTAP2's canonical CBOR forbids the indefinite forms, so
-// meeting one means the input is not what it claims and saying so is better than
-// coping. Maps come back as a Map because COSE keys are integers, several of
-// them negative.
+// Definite lengths only: CTAP2's canonical CBOR forbids the indefinite forms,
+// so meeting one means the input is not what it claims and saying so is better
+// than coping. Maps come back as a Map because COSE keys are integers, several
+// of them negative.
 
 const MAX_DEPTH = 24;
 
@@ -86,8 +89,8 @@ function cborRead(buf, offset, depth) {
       throw new Error('CBOR argument exceeds the exactly-representable range');
     }
   } else {
-    throw new Error('CBOR additional information ' + info + ' is reserved or indefinite; ' +
-                    'CTAP2 canonical CBOR uses neither');
+    throw new Error('CBOR additional information ' + info + ' is reserved or ' +
+                    'indefinite; CTAP2 canonical CBOR uses neither');
   }
 
   switch (major) {
@@ -99,14 +102,16 @@ function cborRead(buf, offset, depth) {
       return [-1 - value, cursor];
     case 2: {
       if (cursor + value > buf.length) {
-        throw new Error('a CBOR byte string claims ' + value + ' bytes, past the end of the input');
+        throw new Error('a CBOR byte string claims ' + value + ' bytes, past ' +
+            'the end of the input');
       }
       log.debug('Leaving cborRead().');
       return [buf.subarray(cursor, cursor + value), cursor + value];
     }
     case 3: {
       if (cursor + value > buf.length) {
-        throw new Error('a CBOR text string claims ' + value + ' bytes, past the end of the input');
+        throw new Error('a CBOR text string claims ' + value + ' bytes, past ' +
+            'the end of the input');
       }
       log.debug('Leaving cborRead().');
       return [buf.toString('utf8', cursor, cursor + value), cursor + value];
@@ -154,6 +159,8 @@ function cborRead(buf, offset, depth) {
 }
 
 function cborDecodeFirst(buf, offset) {
+  log.debug("Entering cborDecodeFirst().");
+  log.debug("Leaving cborDecodeFirst().");
   return cborRead(buf, offset || 0, 0);
 }
 
@@ -182,7 +189,8 @@ function coseKeyToJwk(coseKey) {
     if (!crv) {
       throw new Error('unsupported COSE curve ' + coseKey.get(-1));
     }
-    jwk = { kty: 'EC', crv: crv, x: b64u(coseKey.get(-2)), y: b64u(coseKey.get(-3)) };
+    jwk = { kty: 'EC', crv: crv, x: b64u(coseKey.get(-2)),
+            y: b64u(coseKey.get(-3)) };
   } else if (kty === 3) {
     jwk = { kty: 'RSA', n: b64u(coseKey.get(-1)), e: b64u(coseKey.get(-2)) };
   } else if (kty === 1) {
@@ -194,7 +202,8 @@ function coseKeyToJwk(coseKey) {
   } else {
     throw new Error('unsupported COSE key type ' + kty);
   }
-  log.debug('Leaving coseKeyToJwk(). kty=' + jwk.kty + ' alg=' + COSE_ALGS[String(alg)]);
+  log.debug('Leaving coseKeyToJwk(). kty=' + jwk.kty + ' alg=' +
+            COSE_ALGS[String(alg)]);
   return { jwk: jwk, alg: COSE_ALGS[String(alg)] || null, coseAlg: alg };
 }
 
@@ -203,7 +212,8 @@ function coseKeyToJwk(coseKey) {
 function parseAuthenticatorData(buf) {
   log.debug('Entering parseAuthenticatorData(). bytes=' + buf.length);
   if (buf.length < 37) {
-    throw new Error('authenticator data is ' + buf.length + ' bytes; the fixed part alone is 37');
+    throw new Error('authenticator data is ' + buf.length + ' bytes; the ' +
+        'fixed part alone is 37');
   }
   const flags = buf[32];
   const out = {
@@ -218,14 +228,17 @@ function parseAuthenticatorData(buf) {
   let cursor = 37;
   if (out.flags.at) {
     if (buf.length < cursor + 18) {
-      throw new Error('the AT flag is set but the attested credential data does not fit');
+      throw new Error('the AT flag is set but the attested credential data ' +
+                      'does not fit');
     }
     out.aaguid = buf.subarray(cursor, cursor + 16); cursor += 16;
     const idLength = buf.readUInt16BE(cursor); cursor += 2;
     if (buf.length < cursor + idLength) {
-      throw new Error('the credential ID claims ' + idLength + ' bytes, past the end');
+      throw new Error('the credential ID claims ' + idLength + ' bytes, past ' +
+          'the end');
     }
-    out.credentialId = buf.subarray(cursor, cursor + idLength); cursor += idLength;
+    out.credentialId = buf.subarray(cursor,
+                                    cursor + idLength); cursor += idLength;
     const [key, next] = cborDecodeFirst(buf, cursor);
     out.credentialPublicKey = key;
     cursor = next;
@@ -235,13 +248,15 @@ function parseAuthenticatorData(buf) {
     out.extensions = ext;
     cursor = next;
   }
-  log.debug('Leaving parseAuthenticatorData(). at=' + out.flags.at + ' signCount=' + out.signCount);
+  log.debug('Leaving parseAuthenticatorData(). at=' + out.flags.at + ' ' +
+      'signCount=' + out.signCount);
   return out;
 }
 
 // --- the two ceremonies ----------------------------------------------------------
 
 function parseClientData(buf, expectedType) {
+  log.debug("Entering parseClientData().");
   const text = buf.toString('utf8');
   let json;
   try {
@@ -249,10 +264,13 @@ function parseClientData(buf, expectedType) {
   } catch (e) {
     throw new Error('clientDataJSON is not JSON: ' + e.message);
   }
+  log.debug("Leaving parseClientData().");
   return { json: json, text: text, typeMatches: json.type === expectedType };
 }
 
 function sha256(buf) {
+  log.debug("Entering sha256().");
+  log.debug("Leaving sha256().");
   return crypto.createHash('sha256').update(buf).digest();
 }
 
@@ -265,14 +283,21 @@ function collect() {
   return {
     checks: checks,
     add: function (name, ok, detail) {
+      log.debug("Entering add().");
       checks.push({ name: name, ok: !!ok, detail: detail || '' });
+      log.debug("Leaving add().");
       return !!ok;
     },
     ok: function () {
+      log.debug("Entering ok().");
+      log.debug("Leaving ok().");
       return checks.every(function (c) { return c.ok; });
     },
     failed: function () {
-      return checks.filter(function (c) { return !c.ok; }).map(function (c) { return c.name; });
+      log.debug("Entering failed().");
+      log.debug("Leaving failed().");
+      return checks.filter(function (c) { return !c.ok; })
+                   .map(function (c) { return c.name; });
     },
   };
 }
@@ -292,19 +317,22 @@ function verifyRegistration(input) {
   const authData = parseAuthenticatorData(authDataBuf);
   const cd = parseClientData(clientDataJSON, 'webauthn.create');
 
-  c.add('clientData.type is webauthn.create', cd.typeMatches, 'type=' + cd.json.type);
+  c.add('clientData.type is webauthn.create', cd.typeMatches,
+        'type=' + cd.json.type);
   c.add('challenge matches', cd.json.challenge === input.expectedChallenge,
         'got ' + cd.json.challenge);
   c.add('origin matches', cd.json.origin === input.expectedOrigin,
         'got ' + cd.json.origin + ', expected ' + input.expectedOrigin);
   c.add('rpIdHash is SHA-256 of the RP ID',
-        authData.rpIdHash.equals(sha256(Buffer.from(input.expectedRpId, 'utf8'))),
+        authData.rpIdHash.equals(sha256(Buffer.from(input.expectedRpId,
+                                                    'utf8'))),
         'rpId=' + input.expectedRpId);
   c.add('user presence', authData.flags.up, 'UP=' + authData.flags.up);
   if (input.requireUserVerification) {
     c.add('user verification', authData.flags.uv, 'UV=' + authData.flags.uv);
   }
-  c.add('attested credential data present', authData.flags.at, 'AT=' + authData.flags.at);
+  c.add('attested credential data present', authData.flags.at,
+        'AT=' + authData.flags.at);
 
   let key = null;
   if (authData.flags.at) {
@@ -343,13 +371,15 @@ function verifyAssertion(input) {
   const authData = parseAuthenticatorData(authDataBuf);
   const cd = parseClientData(clientDataJSON, 'webauthn.get');
 
-  c.add('clientData.type is webauthn.get', cd.typeMatches, 'type=' + cd.json.type);
+  c.add('clientData.type is webauthn.get', cd.typeMatches,
+        'type=' + cd.json.type);
   c.add('challenge matches', cd.json.challenge === input.expectedChallenge,
         'got ' + cd.json.challenge);
   c.add('origin matches', cd.json.origin === input.expectedOrigin,
         'got ' + cd.json.origin + ', expected ' + input.expectedOrigin);
   c.add('rpIdHash is SHA-256 of the RP ID',
-        authData.rpIdHash.equals(sha256(Buffer.from(input.expectedRpId, 'utf8'))),
+        authData.rpIdHash.equals(sha256(Buffer.from(input.expectedRpId,
+                                                    'utf8'))),
         'rpId=' + input.expectedRpId);
   c.add('user presence', authData.flags.up, 'UP=' + authData.flags.up);
   if (input.requireUserVerification) {
@@ -365,28 +395,36 @@ function verifyAssertion(input) {
           'now ' + authData.signCount + ', was ' + input.previousSignCount);
   }
 
-  // The signed message: raw authenticator data, then the HASH of the client data.
+  // The signed message: raw authenticator data, then the HASH of the client
+  // data.
   const signedData = Buffer.concat([authDataBuf, sha256(clientDataJSON)]);
   let signatureValid = false;
   try {
-    const keyObject = crypto.createPublicKey({ key: input.publicKeyJwk, format: 'jwk' });
+    const keyObject = crypto.createPublicKey({ key: input.publicKeyJwk,
+                                               format: 'jwk' });
     if (input.publicKeyJwk.kty === 'OKP') {
       signatureValid = crypto.verify(null, signedData, keyObject, signature);
     } else {
       // node takes an ECDSA signature in its native DER form, which is how it
       // arrives from the authenticator — no conversion, unlike Web Crypto.
-      signatureValid = crypto.verify('sha256', signedData, keyObject, signature);
+      signatureValid = crypto.verify('sha256', signedData, keyObject,
+                                     signature);
     }
   } catch (e) {
     // A key node cannot import, or a signature it cannot parse. Both are
     // verification failures rather than crashes, and the reason belongs in the
     // check's detail where the operator will see it.
     signatureValid = false;
-    c.add('signature verifies', false, 'the key or signature could not be read: ' + e.message);
+    c.add('signature verifies', false, 'the key or signature could not be ' +
+                                       'read: ' + e.message);
   }
-  if (!c.checks.some(function (x) { return x.name === 'signature verifies'; })) {
+  if (!c.checks.some(function (x) {
+    return x.name === 'signature verifies';
+  })) {
     c.add('signature verifies', signatureValid,
-          (input.publicKeyJwk.alg || input.publicKeyJwk.kty) + ' over ' + signedData.length + ' bytes');
+          (input.publicKeyJwk.alg ||
+           input.publicKeyJwk.kty) + ' over ' + signedData.length + ' ' +
+              'bytes');
   }
 
   const result = {

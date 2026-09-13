@@ -50,16 +50,24 @@ const xacml = require('../xacml/xacml');
 // in this file makes a request.
 const directory = require('../ldap/ldap_server');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'xacml_service',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // ---------------------------------------------------------------------------
 // THE STORE.
 // ---------------------------------------------------------------------------
 function checkRepository(t) {
+  log.debug("Entering checkRepository().");
   const rows = store.all();
   t.check(rows.length >= 1, 'the repository holds the seeded policy',
           rows.length + ' policy(ies)');
   const seeded = store.read(store.SEED_NAME);
   if (!t.check(!!seeded, 'the seeded policy is readable by name',
                store.SEED_NAME)) {
+    log.debug("Leaving checkRepository().");
     return;
   }
   // DEFECT 1. Each of these read back `undefined` before `attributeReader()`
@@ -84,9 +92,11 @@ function checkRepository(t) {
   t.check(!!repository[seeded.id],
           'the reference repository is keyed by PolicyId rather than by ' +
           'entry name', Object.keys(repository).join(', '));
+  log.debug("Leaving checkRepository().");
 }
 
 function checkWriteRefusesRubbish(t) {
+  log.debug("Entering checkWriteRefusesRubbish().");
   // A document that is not XML at all.
   const bad = store.write('not-a-policy', 'this is not XML', {});
   t.check(!bad.ok, 'a document that is not XML is refused', bad.why);
@@ -116,12 +126,14 @@ function checkWriteRefusesRubbish(t) {
                                  { isRoot: true });
   t.check(!secondRoot.ok, 'a second root policy is refused',
           secondRoot.why);
+  log.debug("Leaving checkWriteRefusesRubbish().");
 }
 
 // ---------------------------------------------------------------------------
 // THE PIP.
 // ---------------------------------------------------------------------------
 function checkPip(t) {
+  log.debug("Entering checkPip().");
   t.check(pip.available(),
           'the PIP has the directory (its setDirectory slot was filled)');
 
@@ -135,10 +147,12 @@ function checkPip(t) {
           'the explicit URN prefix names one too');
   t.equal(pip.directoryAttributeFor(model.ATTRIBUTE.SUBJECT_ID), null,
           'a standard XACML attribute URI is NOT looked up in the directory');
+  log.debug("Leaving checkPip().");
 }
 
 // Build a request the way a PEP would, without going through HTTP.
 function requestFor(subject, action, extras) {
+  log.debug("Entering requestFor().");
   const subjectAttributes = [];
   if (subject) {
     subjectAttributes.push({ attributeId: model.ATTRIBUTE.SUBJECT_ID,
@@ -152,6 +166,7 @@ function requestFor(subject, action, extras) {
                              values: [{ type: model.TYPE.STRING,
                                         lexical: extra.value }] });
   });
+  log.debug("Leaving requestFor().");
   return {
     returnPolicyIdList: false,
     combinedDecision: false,
@@ -168,6 +183,7 @@ function requestFor(subject, action, extras) {
 }
 
 function checkDecisionsThroughThePip(t) {
+  log.debug("Entering checkDecisionsThroughThePip().");
   // DEFECT 2. Nothing in the request says what alice's role is; the seeded
   // policy grants on `employeeType`, and the only place that lives is her
   // directory entry. If the PIP is not consulted — or reads the attribute
@@ -193,12 +209,14 @@ function checkDecisionsThroughThePip(t) {
             .decision,
           model.DECISION.PERMIT,
           'an attribute asserted in the request overrides the directory');
+  log.debug("Leaving checkDecisionsThroughThePip().");
 }
 
 // ---------------------------------------------------------------------------
 // THE JSON PROFILE.
 // ---------------------------------------------------------------------------
 function checkJsonProfile(t) {
+  log.debug("Entering checkJsonProfile().");
   const body = JSON.stringify({
     Request: {
       AccessSubject: { Attribute: [
@@ -256,15 +274,19 @@ function checkJsonProfile(t) {
   try {
     json.parseRequest('{"NotARequest": {}}');
   } catch (error) {
+    log.debug("Caught in checkJsonProfile(): " +
+              ((error && error.message) || error));
     refused = true;
   }
   t.check(refused,
           'a body with no Request member is refused rather than treated as ' +
           'an empty request — an empty request DECIDES something, and a ' +
           'malformed one must not');
+  log.debug("Leaving checkJsonProfile().");
 }
 
 function checkResponseShape(t) {
+  log.debug("Entering checkResponseShape().");
   const answer = xacml.decide(requestFor('alice', 'GET'));
   const written = json.writeResponse(answer);
   t.check(Array.isArray(written.Response) && written.Response.length === 1,
@@ -274,12 +296,14 @@ function checkResponseShape(t) {
   t.check(!!written.Response[0].Status.StatusCode.Value,
           'and it carries a status code',
           written.Response[0].Status.StatusCode.Value);
+  log.debug("Leaving checkResponseShape().");
 }
 
 // ---------------------------------------------------------------------------
 // THE EMBEDDED PEP.
 // ---------------------------------------------------------------------------
 function checkEnforcement(t) {
+  log.debug("Entering checkEnforcement().");
   // The two biases agree on Permit and on Deny...
   const permit = { decision: model.DECISION.PERMIT, obligations: [] };
   const deny = { decision: model.DECISION.DENY, obligations: [] };
@@ -299,9 +323,11 @@ function checkEnforcement(t) {
           'REFUSAL', verdict.why);
   t.equal(verdict.undischargeable.length, 1,
           'and the obligation it could not discharge is named');
+  log.debug("Leaving checkEnforcement().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkRepository(t);
   checkWriteRefusesRubbish(t);
   checkPip(t);
@@ -309,6 +335,7 @@ function run(t) {
   checkJsonProfile(t);
   checkResponseShape(t);
   checkEnforcement(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

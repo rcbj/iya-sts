@@ -36,13 +36,13 @@
 // ---------------------------------------------------------------------------
 // THIS IS THE SECOND OUTBOUND-REQUEST SURFACE IN THIS SERVICE, and federation
 // was the first and, until now, the only one — `federation/CLAUDE.md` argues at
-// length that dialling a URL is a capability this service does not hand out. The
-// same three refusals apply here and for the same reasons:
+// length that dialling a URL is a capability this service does not hand out.
+// The same three refusals apply here and for the same reasons:
 //
-//   * THE URL COMES OFF THE APPLICATION ENTRY and from nowhere else. `refresh()`
-//     takes an application identifier, not a URL. A caller cannot ask this
-//     service to dial an address of their choosing, which is the difference
-//     between a metadata fetcher and an open proxy.
+//   * THE URL COMES OFF THE APPLICATION ENTRY and from nowhere else.
+//     `refresh()` takes an application identifier, not a URL. A caller cannot
+//     ask this service to dial an address of their choosing, which is the
+//     difference between a metadata fetcher and an open proxy.
 //   * THE SCHEME IS CHECKED. https always; http only with
 //     `federation.outboundAllowInsecure` on. That setting is REUSED rather than
 //     copied: a deployment has decided once whether this service may make a
@@ -59,8 +59,8 @@
 // (2026-09-12)**, and four things were wrong with the copy, each quietly:
 //
 //   * `federation.outbound` — the switch a deployment with no egress sets so
-//     that THIS SERVICE DIALS NOTHING — was never read here, so a refresh dialled
-//     out of an air-gapped deployment that believed it could not;
+//     that THIS SERVICE DIALS NOTHING — was never read here, so a refresh
+//     dialled out of an air-gapped deployment that believed it could not;
 //   * `federation.outboundAllowInsecure` was applied to the SCHEME and not to
 //     the CERTIFICATE, the opposite half from the other requester: an https
 //     metadata host with a certificate nothing trusts was refused even with the
@@ -111,6 +111,8 @@ const USER_AGENT = require('../common/version').userAgent('saml-sp-metadata');
 // The cap is `saml2.spMetadataMaxBytes` since 2026-09-12; it was the constant
 // MAX_METADATA_BYTES, 512 KiB, which is still the setting's default.
 function maxMetadataBytes() {
+  log.debug("Entering maxMetadataBytes().");
+  log.debug("Leaving maxMetadataBytes().");
   return Number(config.value('saml2.spMetadataMaxBytes'));
 }
 
@@ -141,7 +143,8 @@ function parse(xml) {
     doc = new DOMParser().parseFromString(text, 'text/xml');
   } catch (e) {
     log.debug("Leaving parse(). It will not parse.");
-    return { ok: false, why: 'the metadata is not well-formed XML: ' + e.message };
+    return { ok: false,
+             why: 'the metadata is not well-formed XML: ' + e.message };
   }
   if (!doc || !doc.documentElement) {
     log.debug("Leaving parse(). No root element.");
@@ -155,10 +158,11 @@ function parse(xml) {
   // first. Named rather than half-handled.
   if (root.localName === 'EntitiesDescriptor') {
     log.debug("Leaving parse(). An EntitiesDescriptor.");
-    return { ok: false, why: 'this is an <md:EntitiesDescriptor> holding several entities. ' +
-             'Give the <md:EntityDescriptor> for this one service provider — a document ' +
-             'listing many does not say which of them this application is, and picking the ' +
-             'first would encrypt to whoever happens to be listed first' };
+    return { ok: false, why: 'this is an <md:EntitiesDescriptor> holding ' +
+             'several entities. Give the <md:EntityDescriptor> for this one ' +
+             'service provider — a document listing many does not say which ' +
+             'of them this application is, and picking the first would ' +
+             'encrypt to whoever happens to be listed first' };
   }
 
   const out = {
@@ -196,22 +200,26 @@ function parse(xml) {
   // claim about what should happen, and quietly preferring it would change
   // where responses go on the strength of a document somebody pasted.
   const collect = function (element, into) {
+    log.debug("Entering collect().");
     const els = doc.getElementsByTagNameNS('*', element);
     for (let n = 0; n < els.length; n++) {
       const location = els[n].getAttribute('Location') || '';
       if (location && into.indexOf(location) < 0) into.push(location);
     }
+    log.debug("Leaving collect().");
   };
   collect('AssertionConsumerService', out.acs);
   collect('SingleLogoutService', out.slo);
 
   if (!out.certificate) {
     out.ok = false;
-    out.why = 'the metadata carries no <md:KeyDescriptor> with an X509Certificate that ' +
-              'can be used for encryption. A descriptor marked use="signing" is ' +
-              'deliberately not taken — it is the key that would look right and be wrong';
+    out.why = 'the metadata carries no <md:KeyDescriptor> with an ' +
+              'X509Certificate that can be used for encryption. A descriptor ' +
+              'marked use="signing" is deliberately not taken — it is the ' +
+              'key that would look right and be wrong';
   }
-  log.debug("Leaving parse(). certificate=" + (out.certificate ? out.certificateUse : 'none'));
+  log.debug("Leaving parse(). certificate=" +
+            (out.certificate ? out.certificateUse : 'none'));
   return out;
 }
 
@@ -220,11 +228,22 @@ function parse(xml) {
 // `samlEncryptionCertificate` is not told their certificate is invalid because
 // of its punctuation.
 function toPem(value) {
+  log.debug("Entering toPem().");
   const text = String(value || '').trim();
-  if (!text) return '';
-  if (text.indexOf('-----BEGIN') === 0) return text;
+  if (!text) {
+    log.debug("Leaving toPem().");
+    return '';
+  }
+  if (text.indexOf('-----BEGIN') === 0) {
+    log.debug("Leaving toPem().");
+    return text;
+  }
   const body = text.replace(/\s+/g, '').replace(/-----[^-]+-----/g, '');
-  if (!body) return '';
+  if (!body) {
+    log.debug("Leaving toPem().");
+    return '';
+  }
+  log.debug("Leaving toPem().");
   return '-----BEGIN CERTIFICATE-----\n' +
          (body.match(/.{1,64}/g) || []).join('\n') +
          '\n-----END CERTIFICATE-----\n';
@@ -234,16 +253,23 @@ function toPem(value) {
 // paste-o is refused at the door rather than at the next sign-in — where the
 // only symptom would be an assertion quietly going out in clear.
 function certificateProblem(value) {
+  log.debug("Entering certificateProblem().");
   const pem = toPem(value);
-  if (!pem) return 'it is empty';
+  if (!pem) {
+    log.debug("Leaving certificateProblem().");
+    return 'it is empty';
+  }
   try {
     const cert = forge.pki.certificateFromPem(pem);
     if (!cert.publicKey || !cert.publicKey.n) {
-      return 'its public key is not an RSA key, and XML Encryption key transport here ' +
-             'wraps to RSA';
+      log.debug("Leaving certificateProblem().");
+      return 'its public key is not an RSA key, and XML Encryption key ' +
+             'transport here wraps to RSA';
     }
+    log.debug("Leaving certificateProblem().");
     return '';
   } catch (e) {
+    log.debug("Leaving certificateProblem().");
     return 'it is not a certificate this service can read (' + e.message + ')';
   }
 }
@@ -251,6 +277,8 @@ function certificateProblem(value) {
 // The timeout, read as the setting and nothing else. See the header for the
 // `|| 5000` this replaced.
 function timeoutMs() {
+  log.debug("Entering timeoutMs().");
+  log.debug("Leaving timeoutMs().");
   return Number(config.value('federation.outboundTimeoutMs'));
 }
 
@@ -258,8 +286,13 @@ function timeoutMs() {
 // own words; everything else is federation_http.js's rule, so the two outbound
 // requesters cannot disagree about what "in the clear" means.
 function urlProblem(raw) {
+  log.debug("Entering urlProblem().");
   const text = String(raw || '').trim();
-  if (!text) return 'there is no samlSpMetadataUrl on this application';
+  if (!text) {
+    log.debug("Leaving urlProblem().");
+    return 'there is no samlSpMetadataUrl on this application';
+  }
+  log.debug("Leaving urlProblem().");
   return fedHttp.urlProblem(text);
 }
 
@@ -270,15 +303,17 @@ function urlProblem(raw) {
 // ---------------------------------------------------------------------------
 function fetchMetadata(url) {
   log.debug("Entering fetchMetadata(). url=" + url);
+  log.debug("Leaving fetchMetadata().");
   return new Promise(function (resolve) {
-    // THE KILL SWITCH FIRST (2026-09-12) — see the header. A deployment that set
-    // `federation.outbound` off has said this process dials nothing.
+    // THE KILL SWITCH FIRST (2026-09-12) — see the header. A deployment that
+    // set `federation.outbound` off has said this process dials nothing.
     if (!fedHttp.outboundAllowed()) {
       log.debug("Leaving fetchMetadata(). federation.outbound is off.");
       resolve({ ok: false, errorCode: 'STS-SAML-0045',
-                why: 'federation.outbound is off, so this service makes no outbound request ' +
-                     'at all — a metadata document cannot be fetched. Paste the service ' +
-                     'provider\'s certificate into samlEncryptionCertificate instead' });
+                why: 'federation.outbound is off, so this service makes no ' +
+                     'outbound request at all — a metadata document cannot ' +
+                     'be fetched. Paste the service provider\'s certificate ' +
+                     'into samlEncryptionCertificate instead' });
       return;
     }
     const problem = urlProblem(url);
@@ -291,19 +326,26 @@ function fetchMetadata(url) {
     const agent = parsed.protocol === 'https:' ? https : http;
     let settled = false;
     const done = function (answer) {
-      if (settled) return;
+      log.debug("Entering done().");
+      if (settled) {
+        log.debug("Leaving done().");
+        return;
+      }
       settled = true;
       resolve(answer);
+      log.debug("Leaving done().");
     };
     const cap = maxMetadataBytes();
     const insecure = fedHttp.allowInsecure();
     if (parsed.protocol !== 'https:') {
-      // Every insecure request, not only the setting — federation_http.js's rule.
-      log.warn('saml2: fetching SP metadata from ' + parsed.origin + ' over plain http ' +
-               'because federation.outboundAllowInsecure is ON.');
+      // Every insecure request, not only the setting — federation_http.js's
+      // rule.
+      log.warn('saml2: fetching SP metadata from ' + parsed.origin + ' over ' +
+               'plain http because federation.outboundAllowInsecure is ON.');
     }
     const request = agent.get(String(url).trim(), {
-      headers: { accept: 'application/samlmetadata+xml, application/xml, text/xml',
+      headers: { accept: 'application/samlmetadata+xml, application/xml, ' +
+                         'text/xml',
                  'user-agent': USER_AGENT },
       // THE CERTIFICATE CHECK, and `federation.outboundAllowInsecure` is what
       // turns it off — the half the copy of this policy never applied.
@@ -316,9 +358,10 @@ function fetchMetadata(url) {
         res.resume();
         done({ ok: false, status: res.statusCode, errorCode: 'STS-SAML-0047',
                why: 'it answered ' + res.statusCode + ' with a redirect to "' +
-                    (res.headers.location || '(no Location)') + '". Redirects are not ' +
-                    'followed here — a redirect is how a vetted URL becomes an unvetted ' +
-                    'one. Put the final URL on the entry' });
+                    (res.headers.location || '(no Location)') + '". ' +
+                    'Redirects are not followed here — a redirect is how a ' +
+                    'vetted URL becomes an unvetted one. Put the final URL ' +
+                    'on the entry' });
         return;
       }
       if (res.statusCode !== 200) {
@@ -337,8 +380,10 @@ function fetchMetadata(url) {
           // metadata document is kilobytes. Destroying the socket is what stops
           // an endless response from being read into memory.
           request.destroy();
-          done({ ok: false, errorCode: 'STS-SAML-0049', why: 'the document is larger than ' + cap +
-                 ' bytes (saml2.spMetadataMaxBytes), which no service provider metadata is' });
+          done({ ok: false, errorCode: 'STS-SAML-0049', why: 'the document ' +
+              'is larger than ' + cap +
+                 ' bytes (saml2.spMetadataMaxBytes), which no service ' +
+                 'provider metadata is' });
           return;
         }
         body += chunk;
@@ -349,14 +394,16 @@ function fetchMetadata(url) {
     });
     request.setTimeout(timeoutMs(), function () {
       request.destroy();
-      done({ ok: false, errorCode: 'STS-SAML-0050', why: 'it did not answer within ' + timeoutMs() +
+      done({ ok: false, errorCode: 'STS-SAML-0050', why: 'it did not answer ' +
+          'within ' + timeoutMs() +
              'ms (federation.outboundTimeoutMs)' });
     });
     request.on('error', function (e) {
       // The message is the node error's, because "self-signed certificate",
       // "connection refused" and "getaddrinfo ENOTFOUND" send somebody to three
       // different places and a single word for all three sends them nowhere.
-      done({ ok: false, errorCode: 'STS-SAML-0051', why: 'the request failed: ' + e.message });
+      done({ ok: false, errorCode: 'STS-SAML-0051',
+             why: 'the request failed: ' + e.message });
     });
   });
 }
@@ -364,14 +411,17 @@ function fetchMetadata(url) {
 // The audit row for a refresh that did not happen. The reason sentences name a
 // URL, a status or a parser's message — never a certificate or a document body.
 function refreshRefused(code, identifier, why) {
+  log.debug("Entering refreshRefused().");
   audit.failure(code, {
     protocol: 'SAML 2.0', channel: 'internal',
     target: String(identifier || ''),
-    summary: 'the service provider metadata for ' + String(identifier || '(unnamed)') +
+    summary: 'the service provider metadata for ' +
+             String(identifier || '(unnamed)') +
              ' was not refreshed: ' + why,
     // error-code: none — the helper's own row; every caller passes its code
     outcome: 'refused'
   });
+  log.debug("Leaving refreshRefused().");
 }
 
 // ---------------------------------------------------------------------------
@@ -388,73 +438,90 @@ function refresh(identifier) {
   const record = applications.get(identifier);
   if (!record) {
     log.debug("Leaving refresh(). No such application.");
-    refreshRefused('STS-SAML-0044', identifier, 'there is no such application to refresh');
-    return Promise.resolve({ ok: false, errors: ['There is no application "' + identifier +
-      '" in this registry. Create it first — a metadata URL is an attribute on an entry, ' +
-      'and this action never takes a URL from the caller.'] });
+    refreshRefused('STS-SAML-0044', identifier, 'there is no such ' +
+                                                'application to refresh');
+    log.debug("Leaving refresh().");
+    return Promise.resolve({ ok: false,
+                             errors: ['There is no application "' + identifier +
+      '" in this registry. Create it first — a metadata URL is an attribute ' +
+      'on an entry, and this action never takes a URL from the caller.'] });
   }
   const url = ((record.fields && record.fields.samlSpMetadataUrl) || '');
   const wanted = Array.isArray(url) ? url[0] : url;
+  log.debug("Leaving refresh().");
   return fetchMetadata(wanted).then(function (answer) {
     if (!answer.ok) {
-      log.warn('saml2: could not refresh metadata for ' + identifier + ' — ' + answer.why +
+      log.warn('saml2: could not refresh metadata for ' + identifier + ' — ' +
+               answer.why +
                '. Nothing on the entry was changed.');
       log.debug("Leaving refresh(). The fetch failed.");
       refreshRefused(answer.errorCode || 'STS-SAML-0051', identifier,
                      'the metadata could not be fetched: ' + answer.why);
-      return { ok: false, errors: ['The metadata at "' + wanted + '" could not be read: ' +
-        answer.why + '. Nothing on the entry was changed, so whatever certificate it ' +
-        'already had is still in force.'] };
+      return { ok: false, errors: ['The metadata at "' + wanted + '" could ' +
+          'not be read: ' +
+        answer.why + '. Nothing on the entry was changed, so whatever ' +
+        'certificate it already had is still in force.'] };
     }
     const parsed = parse(answer.xml);
     if (!parsed.ok) {
       log.debug("Leaving refresh(). The document is unusable.");
       refreshRefused('STS-SAML-0052', identifier,
-                     'the fetched metadata document is unusable: ' + parsed.why);
-      return { ok: false, errors: ['The document at "' + wanted + '" was fetched but ' +
+                     'the fetched metadata document is unusable: ' +
+                     parsed.why);
+      return { ok: false, errors: ['The document at "' + wanted + '" was ' +
+          'fetched but ' +
         parsed.why + '. Nothing on the entry was changed.'] };
     }
     const bad = certificateProblem(parsed.certificate);
     if (bad) {
       log.debug("Leaving refresh(). The certificate is unusable.");
       refreshRefused('STS-SAML-0053', identifier,
-                     'the metadata carries a certificate this service cannot use: ' + bad);
-      return { ok: false, errors: ['The metadata at "' + wanted + '" carries a certificate ' +
-        'this service cannot use: ' + bad + '. Nothing on the entry was changed.'] };
+                     'the metadata carries a certificate this service cannot ' +
+                     'use: ' + bad);
+      return { ok: false, errors: ['The metadata at "' + wanted + '" carries ' +
+        'a certificate this service cannot ' +
+        'use: ' + bad + '. Nothing on the entry was ' +
+                                            'changed.'] };
     }
     const stored = [
       applications.updateApplication(identifier,
         { mode: 'set', attribute: 'samlSpMetadata', value: answer.xml }),
       applications.updateApplication(identifier,
-        { mode: 'set', attribute: 'samlEncryptionCertificate', value: parsed.certificate })
+        { mode: 'set', attribute: 'samlEncryptionCertificate',
+          value: parsed.certificate })
     ];
     const failed = stored.filter(function (one) { return !one.ok; });
     if (failed.length) {
       log.debug("Leaving refresh(). The entry would not take it.");
       refreshRefused('STS-SAML-0054', identifier,
-                     'the application entry would not take the fetched metadata');
+                     'the application entry would not take the fetched ' +
+                     'metadata');
       return { ok: false, errors: failed.reduce(function (all, one) {
         return all.concat(one.errors || []);
       }, []) };
     }
-    log.info('saml2: refreshed the metadata for ' + identifier + ' from ' + wanted +
+    log.info('saml2: refreshed the metadata for ' + identifier + ' from ' +
+             wanted +
              '. Its encryption certificate is the ' + parsed.certificateUse +
-             ' KeyDescriptor; entityID "' + parsed.entityId + '", ' + parsed.acs.length +
+             ' KeyDescriptor; entityID "' + parsed.entityId + '", ' +
+             parsed.acs.length +
              ' assertion consumer service(s) and ' + parsed.slo.length +
-             ' single logout service(s) are described and are REPORTED ONLY — ' +
-             'this service still sends a response where the request asked.');
+             ' single logout service(s) are described and are REPORTED ONLY ' +
+             '— this service still sends a response where the request asked.');
     log.debug("Leaving refresh(). Stored.");
     return { ok: true, application: identifier, url: wanted,
              entityId: parsed.entityId,
              certificateUse: parsed.certificateUse,
              assertionConsumerServices: parsed.acs,
              singleLogoutServices: parsed.slo,
-             message: 'The metadata was fetched and its ' + parsed.certificateUse +
-                      ' certificate is now on the entry, so an assertion for this service ' +
-                      'provider can be encrypted to it. The endpoints in the document are ' +
-                      'reported and NOT applied — a response still goes where the request ' +
-                      'asks, which is what actually happened rather than what a document ' +
-                      'claims should.' };
+             message: 'The metadata was fetched and its ' +
+                      parsed.certificateUse +
+                      ' certificate is now on the entry, so an assertion for ' +
+                      'this service provider can be encrypted to it. The ' +
+                      'endpoints in the document are reported and NOT ' +
+                      'applied — a response still goes where the request ' +
+                      'asks, which is what actually happened rather than ' +
+                      'what a document claims should.' };
   });
 }
 

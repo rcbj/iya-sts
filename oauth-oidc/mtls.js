@@ -9,8 +9,8 @@
 // Section 2.2 of the BCP names two mechanisms and this service had one of them.
 // `dpop.js` binds a token to a KEY the client proves possession of per request;
 // this binds it to the CLIENT CERTIFICATE the TLS connection was made with. The
-// shapes are deliberately parallel and the reason to have both is that they fail
-// differently: DPoP needs no PKI and works for a client that cannot hold a
+// shapes are deliberately parallel and the reason to have both is that they
+// fail differently: DPoP needs no PKI and works for a client that cannot hold a
 // certificate, and mTLS needs no per-request signature and survives a client
 // that cannot do JOSE.
 //
@@ -21,11 +21,12 @@
 //                                      again and compared
 //
 // This is RFC 8705 section 3 (the confirmation method) and section 3.1 (the
-// check). What is NOT here is section 2 — mutual-TLS CLIENT AUTHENTICATION, where
-// the certificate replaces the client_secret. That is a different feature with a
-// different registry of `tls_client_auth_subject_dn` metadata behind it, and
-// leaving it out is stated rather than implied: this service authenticates a
-// client with a secret (see `oauth2_bcp.js`'s section 2.5 note) or not at all.
+// check). What is NOT here is section 2 — mutual-TLS CLIENT AUTHENTICATION,
+// where the certificate replaces the client_secret. That is a different feature
+// with a different registry of `tls_client_auth_subject_dn` metadata behind it,
+// and leaving it out is stated rather than implied: this service authenticates
+// a client with a secret (see `oauth2_bcp.js`'s section 2.5 note) or not at
+// all.
 //
 // ---------------------------------------------------------------------------
 // IT ONLY WORKS WHERE THERE IS A CLIENT CERTIFICATE TO SEE, AND THAT IS A
@@ -35,10 +36,10 @@
 // certificate. On this service that means `global.https` — which RFC 9700 mode
 // turns on — because the main listener is where `/oauth2/token` lives, and
 // `server.js` sets `requestCert: true, rejectUnauthorized: false` on it: asked
-// for, never required, exactly the posture port 8443 has. A client that presents
-// none gets an ordinary Bearer or DPoP-bound token and nothing about its
-// behaviour changes, which is what keeps this invisible to every caller that
-// does not use it.
+// for, never required, exactly the posture port 8443 has. A client that
+// presents none gets an ordinary Bearer or DPoP-bound token and nothing about
+// its behaviour changes, which is what keeps this invisible to every caller
+// that does not use it.
 //
 // `rejectUnauthorized: false` is worth being precise about, because it looks
 // like a hole and is not: a certificate that did not build a chain to a trusted
@@ -121,10 +122,11 @@ function peerCertificate(req) {
 // certificate to an identity does: a DN read off an unverified certificate is a
 // name the caller chose for itself.
 //
-// `authorizationError` is node's own reason string (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`,
-// `CERT_HAS_EXPIRED`, …) and it is carried out whole rather than mapped,
-// because it is the one string that tells somebody debugging a mutual-TLS
-// deployment WHICH of a dozen things went wrong.
+// `authorizationError` is node's own reason string
+// (`UNABLE_TO_GET_ISSUER_CERT_LOCALLY`, `CERT_HAS_EXPIRED`, …) and it is
+// carried out whole rather than mapped, because it is the one string that tells
+// somebody debugging a mutual-TLS deployment WHICH of a dozen things went
+// wrong.
 // ---------------------------------------------------------------------------
 function peerVerified(req) {
   log.debug("Entering peerVerified().");
@@ -158,8 +160,8 @@ function peerVerified(req) {
       verified: false, presented: true, revocation: revocation,
       error: revocation.status === 'revoked' ? 'CERT_REVOKED'
                                              : 'REVOCATION_STATUS_UNKNOWN',
-      why: 'The chain built to an anchor in this service\'s client truststore ' +
-           'and was REFUSED ON REVOCATION (pki.revocationCheck is ' +
+      why: 'The chain built to an anchor in this service\'s client ' +
+           'truststore and was REFUSED ON REVOCATION (pki.revocationCheck is ' +
            revocation.policy + '): ' + revocation.why
     };
   }
@@ -170,8 +172,8 @@ function peerVerified(req) {
                   'this service\'s client truststore' +
                   (revocation && revocation.checked
                     ? ', and its revocation was consulted: ' + revocation.why
-                    : '. NO REVOCATION WAS CHECKED (pki.revocationCheck is off) ' +
-                      '— a revoked certificate verifies here.') };
+                    : '. NO REVOCATION WAS CHECKED (pki.revocationCheck is ' +
+                      'off) — a revoked certificate verifies here.') };
   }
   const error = socket.authorizationError
     ? String(socket.authorizationError) : '';
@@ -194,15 +196,20 @@ function peerVerified(req) {
 // as an authority id — three spellings of one computation, which is why the
 // shared function takes a format and the three that each computed it are one.
 function thumbprintOf(cert) {
+  log.debug("Entering thumbprintOf().");
   if (!cert || !cert.raw) {
+    log.debug("Leaving thumbprintOf().");
     return '';
   }
+  log.debug("Leaving thumbprintOf().");
   return stsCrypto.certificateThumbprint(cert);
 }
 
 // The thumbprint of whatever certificate this request arrived with, or ''. The
 // one function anything outside this file should need.
 function presentedThumbprint(req) {
+  log.debug("Entering presentedThumbprint().");
+  log.debug("Leaving presentedThumbprint().");
   return thumbprintOf(peerCertificate(req));
 }
 
@@ -216,25 +223,32 @@ function confirmationFor(req, existing) {
   log.debug("Entering confirmationFor().");
   const thumbprint = presentedThumbprint(req);
   if (!thumbprint) {
-    log.debug("Leaving confirmationFor(). No client certificate on this connection.");
+    log.debug("Leaving confirmationFor(). No client certificate on this " +
+              "connection.");
     return existing;
   }
   const cnf = Object.assign({}, existing || {});
   cnf[CONFIRMATION_MEMBER] = thumbprint;
-  log.info('RFC 8705: this token is bound to the client certificate the connection was made ' +
+  log.info('RFC 8705: this token is bound to the client certificate the ' +
+           'connection was made ' +
            'with. ' + CONFIRMATION_MEMBER + '=' + thumbprint +
-           (existing && existing.jkt ? ', and to the DPoP key ' + existing.jkt + ' as well' : ''));
+           (existing && existing.jkt ?
+            ', and to the DPoP key ' + existing.jkt + ' ' +
+               'as well' : ''));
   log.debug("Leaving confirmationFor(). Bound.");
   return cnf;
 }
 
 // What a token says about its own certificate binding, or ''.
 function boundThumbprintOf(claims) {
+  log.debug("Entering boundThumbprintOf().");
   const cnf = claims && claims.cnf;
   if (!cnf || typeof cnf !== 'object') {
+    log.debug("Leaving boundThumbprintOf().");
     return '';
   }
   const value = cnf[CONFIRMATION_MEMBER];
+  log.debug("Leaving boundThumbprintOf().");
   return value ? String(value) : '';
 }
 
@@ -243,10 +257,10 @@ function boundThumbprintOf(claims) {
 // is only usable on a connection made with that certificate.
 //
 // Returns null when there is nothing to say and a refusal object otherwise. The
-// two failures are told apart because they send a client to different places: no
-// certificate at all is usually a client that did not configure one or a proxy
-// that terminated TLS, and a DIFFERENT certificate is the case the binding
-// exists to catch.
+// two failures are told apart because they send a client to different places:
+// no certificate at all is usually a client that did not configure one or a
+// proxy that terminated TLS, and a DIFFERENT certificate is the case the
+// binding exists to catch.
 //
 // A token this service did not issue is NOT checked, and that is the same
 // judgement `presentedAccessToken()` makes about `cnf.jkt`: for a foreign token
@@ -266,23 +280,29 @@ function checkBinding(claims, req, verified, noun) {
     return null;
   }
   if (!verified) {
-    log.warn('RFC 8705: this access token carries a ' + CONFIRMATION_MEMBER + ' confirmation ' +
-             'and was NOT issued by this service, so the binding is a claim anybody could have ' +
-             'written and is not enforced. The same is true of cnf.jkt on a foreign token.');
-    log.debug("Leaving checkBinding(). A foreign token's binding is not enforced.");
+    log.warn('RFC 8705: this access token carries a ' + CONFIRMATION_MEMBER +
+             ' ' +
+             'confirmation and was NOT issued by this service, so the ' +
+             'binding is a claim anybody could have written and is not ' +
+             'enforced. The same is true of cnf.jkt on a foreign token.');
+    log.debug("Leaving checkBinding(). A foreign token's binding is not " +
+              "enforced.");
     return null;
   }
   const presented = presentedThumbprint(req);
   if (!presented) {
-    log.debug("Leaving checkBinding(). Bound, and no certificate on this connection.");
+    log.debug("Leaving checkBinding(). Bound, and no certificate on this " +
+              "connection.");
     return {
       errorCode: 'STS-OAUTH-0091',
       error: 'invalid_token',
-      description: 'RFC 8705 section 3.1: this ' + what + ' is bound to a client certificate ' +
-                   '(cnf["' + CONFIRMATION_MEMBER + '"]), so it may only be used on a TLS ' +
-                   'connection made with that certificate. This request arrived with no client ' +
-                   'certificate at all — either none was configured, or something terminated ' +
-                   'TLS in front of this service.'
+      description: 'RFC 8705 section 3.1: this ' + what + ' is bound to a ' +
+                   'client certificate ' +
+                   '(cnf["' + CONFIRMATION_MEMBER + '"]), so it may only be ' +
+                   'used on a TLS connection made with that certificate. ' +
+                   'This request arrived with no client certificate at all — ' +
+                   'either none was configured, or something terminated TLS ' +
+                   'in front of this service.'
     };
   }
   if (presented !== bound) {
@@ -290,22 +310,28 @@ function checkBinding(claims, req, verified, noun) {
     return {
       errorCode: 'STS-OAUTH-0092',
       error: 'invalid_token',
-      description: 'RFC 8705 section 3.1: this ' + what + ' is bound to the client certificate ' +
-                   'whose SHA-256 thumbprint is ' + bound + ', and this connection was made ' +
-                   'with the one whose thumbprint is ' + presented + '. A certificate-bound ' +
-                   'token is usable only by the holder of that certificate\'s private key, ' +
-                   'which is the whole of what sender-constraining buys.'
+      description: 'RFC 8705 section 3.1: this ' + what + ' is bound to the ' +
+                   'client certificate whose SHA-256 thumbprint ' +
+                   'is ' + bound + ', and this ' +
+                   'connection was made with the one whose thumbprint ' +
+                   'is ' + presented + '. A ' +
+                   'certificate-bound token is usable only by the holder of ' +
+                   'that certificate\'s private key, which is the whole of ' +
+                   'what sender-constraining buys.'
     };
   }
-  log.debug("Leaving checkBinding(). The certificate matches. thumbprint=" + presented);
+  log.debug("Leaving checkBinding(). The certificate matches. thumbprint=" +
+            presented);
   return null;
 }
 
-// Whether this deployment can bind a token at all, for the pages that report it.
-// It is a property of the listener rather than of a request: `global.https` is
-// what makes `server.js` ask for a client certificate, and without TLS there is
-// no certificate to ask for.
+// Whether this deployment can bind a token at all, for the pages that report
+// it. It is a property of the listener rather than of a request: `global.https`
+// is what makes `server.js` ask for a client certificate, and without TLS there
+// is no certificate to ask for.
 function available() {
+  log.debug("Entering available().");
+  log.debug("Leaving available().");
   return !!config.value('global.https');
 }
 

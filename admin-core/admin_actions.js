@@ -138,6 +138,8 @@ const errorCodes = require('../common/error_codes');
 
 // A refusal THIS LAYER decided. Returns the result, so it wraps the literal.
 function refused(code, result) {
+  log.debug("Entering refused().");
+  log.debug("Leaving refused().");
   return errorCodes.mark(result, code);
 }
 
@@ -145,9 +147,12 @@ function refused(code, result) {
 // ways one does: the non-enumerable mark, or an `errorCode` member on a result
 // that is internal to this layer and never sent (the truststore's is).
 function innerCode(result) {
+  log.debug("Entering innerCode().");
   if (!result || typeof result !== 'object') {
+    log.debug("Leaving innerCode().");
     return '';
   }
+  log.debug("Leaving innerCode().");
   return errorCodes.codeOf(result) || String(result.errorCode || '');
 }
 
@@ -155,9 +160,11 @@ function innerCode(result) {
 // wins, because the owner knows the specific condition; this layer's names only
 // the door it came through, and is used only when the owner gave none.
 function refusedBy(code, result) {
+  log.debug("Entering refusedBy().");
   if (result && result.ok === false) {
     errorCodes.mark(result, innerCode(result) || code);
   }
+  log.debug("Leaving refusedBy().");
   return result;
 }
 
@@ -194,21 +201,60 @@ let xacmlPages = null;
 // `setTruststore()` carries the argument.
 let truststore = null;
 
-function setLogoutReader(value) { logoutReader = value; }
-function setDirectoryWriter(value) { directoryWriter = value; }
-function setGroupWriter(value) { groupWriter = value; }
-function setSignalsReporter(value) { signalsReporter = value; }
-function setCaepReporter(value) { caepReporter = value; }
-function setRiscReporter(value) { riscReporter = value; }
-function setXacmlPages(value) { xacmlPages = value; }
-function setTruststore(value) { truststore = value; }
+function setLogoutReader(value) {
+  log.debug("Entering setLogoutReader().");
+  logoutReader = value;
+  log.debug("Leaving setLogoutReader().");
+}
+
+function setDirectoryWriter(value) {
+  log.debug("Entering setDirectoryWriter().");
+  directoryWriter = value;
+  log.debug("Leaving setDirectoryWriter().");
+}
+
+function setGroupWriter(value) {
+  log.debug("Entering setGroupWriter().");
+  groupWriter = value;
+  log.debug("Leaving setGroupWriter().");
+}
+
+function setSignalsReporter(value) {
+  log.debug("Entering setSignalsReporter().");
+  signalsReporter = value;
+  log.debug("Leaving setSignalsReporter().");
+}
+
+function setCaepReporter(value) {
+  log.debug("Entering setCaepReporter().");
+  caepReporter = value;
+  log.debug("Leaving setCaepReporter().");
+}
+
+function setRiscReporter(value) {
+  log.debug("Entering setRiscReporter().");
+  riscReporter = value;
+  log.debug("Leaving setRiscReporter().");
+}
+
+function setXacmlPages(value) {
+  log.debug("Entering setXacmlPages().");
+  xacmlPages = value;
+  log.debug("Leaving setXacmlPages().");
+}
+
+function setTruststore(value) {
+  log.debug("Entering setTruststore().");
+  truststore = value;
+  log.debug("Leaving setTruststore().");
+}
 
 // Both response shapes for a page, chosen by ?format=json. `no-store` on all of
 // them: they describe live state, and a cached metrics page is a wrong one.
 // `up`, when given, is what upTo() returned for the section this page hangs
-// under. Only a drill-down passes it; a section's own list page does not, and the
-// JSON answer ignores it either way — a way back up is a property of a page a
-// person is reading, and a caller of ?format=json has the URL it asked for.
+// under. Only a drill-down passes it; a section's own list page does not, and
+// the JSON answer ignores it either way — a way back up is a property of a page
+// a person is reading, and a caller of ?format=json has the URL it asked for.
 // ---------------------------------------------------------------------------
 // THE CSRF TOKEN GOES INTO EVERY POST FORM THIS SHELL DRAWS (2026-09-06).
 // OWASP A01/A08.
@@ -251,15 +297,16 @@ const FORM_FURNITURE = {
 };
 
 // The jti a caller named, from whichever of the two forms they used. A jti is
-// accepted directly, and so is a whole token — because the thing somebody has in
-// their hand when they want to invalidate it is the token, not its jti.
+// accepted directly, and so is a whole token — because the thing somebody has
+// in their hand when they want to invalidate it is the token, not its jti.
 //
-// The token's SIGNATURE IS NOT VERIFIED here, and that is safe rather than sloppy:
-// the only thing read out of it is the jti, which is then looked up in this
-// service's own registry. A forged token yields a jti this service never issued, and
-// revoking a jti that was never issued invalidates nothing. RFC 7009's endpoint does
-// verify, because there the token is the credential being presented; here it is
-// merely a way of typing a jti that is 22 characters long.
+// The token's SIGNATURE IS NOT VERIFIED here, and that is safe rather than
+// sloppy: the only thing read out of it is the jti, which is then looked up in
+// this service's own registry. A forged token yields a jti this service never
+// issued, and revoking a jti that was never issued invalidates nothing. RFC
+// 7009's endpoint does verify, because there the token is the credential being
+// presented; here it is merely a way of typing a jti that is 22 characters
+// long.
 function jtiFrom(target) {
   log.debug("Entering jtiFrom().");
   const text = String(target || '').trim();
@@ -268,15 +315,18 @@ function jtiFrom(target) {
     return { jti: '', how: 'nothing was given' };
   }
   const parts = text.split('.');
-  // AN ENCRYPTED REFRESH TOKEN (2026-09-12) is five parts, and its jti is inside
-  // the JWE. Opened with this realm's keys; one that will not open is read as a
-  // jti, which matches nothing and says so, rather than being refused.
+  // AN ENCRYPTED REFRESH TOKEN (2026-09-12) is five parts, and its jti is
+  // inside the JWE. Opened with this realm's keys; one that will not open is
+  // read as a jti, which matches nothing and says so, rather than being
+  // refused.
   if (parts.length === 5) {
     const opened = refreshTokenCrypto.claimsOfIssued(text);
     if (opened && opened.jti) {
-      log.debug("Leaving jtiFrom(). Read the jti out of an encrypted refresh token.");
+      log.debug("Leaving jtiFrom(). Read the jti out of an encrypted refresh " +
+                "token.");
       return { jti: String(opened.jti), claims: opened,
-               how: 'read out of an encrypted refresh token after decrypting it' };
+               how:
+                 'read out of an encrypted refresh token after decrypting it' };
     }
   }
   if (parts.length !== 3) {
@@ -286,14 +336,17 @@ function jtiFrom(target) {
   try {
     const claims = JSON.parse(b64uDecode(parts[1]).toString('utf8'));
     log.debug("Leaving jtiFrom(). Read the jti out of a JWT.");
-    return { jti: String(claims.jti || ''), how: 'read out of the JWT payload without verifying it',
+    return { jti: String(claims.jti || ''), how: 'read out of the JWT ' +
+                                                 'payload without verifying it',
              claims: claims };
   } catch (e) {
-    // Three dot-separated parts that are not a JWT. Fall back to treating the whole
-    // string as a jti rather than refusing: it costs nothing and a jti containing
-    // two dots is not forbidden anywhere.
-    log.debug("Leaving jtiFrom(). It has three parts but is not a JWT: " + e.message);
-    return { jti: text, how: 'read as a jti (it looked like a JWT but did not decode)' };
+    // Three dot-separated parts that are not a JWT. Fall back to treating the
+    // whole string as a jti rather than refusing: it costs nothing and a jti
+    // containing two dots is not forbidden anywhere.
+    log.debug("Leaving jtiFrom(). It has three parts but is not a JWT: " +
+              e.message);
+    return { jti: text, how: 'read as a jti (it looked like a JWT but did ' +
+                             'not decode)' };
   }
 }
 
@@ -305,23 +358,28 @@ function tokenAction(body) {
     const found = jtiFrom(body.target || body.jti || body.token);
     if (!found.jti) {
       log.debug("Leaving tokenAction(). No jti was given.");
-      return refused('STS-ADMIN-0502', { ok: false, errors: ['Give a jti, or paste the whole token and the jti will be read ' +
-                                   'out of it.'] });
+      return refused('STS-ADMIN-0502', { ok: false, errors: ['Give a jti, or ' +
+                                   'paste the whole token and the jti will ' +
+                                   'be read out of it.'] });
     }
     if (action === 'restore') {
       const was = stats.restore(found.jti);
       log.debug("Leaving tokenAction(). Restored.");
       return { ok: true, jti: found.jti,
-               message: was ? 'The token with jti ' + found.jti + ' is no longer revoked (NON-SPEC — ' +
-                              'a real authorization server cannot undo a revocation).'
-                            : 'The token with jti ' + found.jti + ' was not revoked, so nothing changed.' };
+               message: was ? 'The token with jti ' + found.jti + ' is no ' +
+                              'longer revoked (NON-SPEC — a real ' +
+                              'authorization server cannot undo a revocation).'
+                            : 'The token with jti ' + found.jti + ' was not ' +
+                                'revoked, so nothing changed.' };
     }
     const first = stats.revoke(found.jti, 'the admin console');
     log.debug("Leaving tokenAction(). Revoked.");
     return { ok: true, jti: found.jti,
-             message: (first ? 'Revoked ' : 'Already revoked: ') + found.jti + ' (' + found.how +
-                      '). Introspection now reports it inactive, UserInfo refuses it, and it will ' +
-                      'not refresh.' };
+             message: (first ? 'Revoked ' :
+                       'Already revoked: ') + found.jti + ' ' +
+                 '(' + found.how +
+                      '). Introspection now reports it inactive, UserInfo ' +
+                      'refuses it, and it will not refresh.' };
   }
 
   // ONE ASSERTION, TICKET OR SVID — this service's own position on a credential
@@ -346,75 +404,89 @@ function tokenAction(body) {
     const handle = String(body.artifact || body.key || '').trim();
     if (!handle) {
       log.debug("Leaving tokenAction(). No artifact was named.");
-      return refused('STS-ADMIN-0503', { ok: false, errors: ['Name the credential in `artifact`, as the `key` on every ' +
-                                   'row of GET /admin-api/tokens gives it. It is this ' +
-                                   'service\'s own handle rather than the protocol\'s, ' +
-                                   'because a Kerberos ticket carries no identifier anybody ' +
-                                   'can quote.'] });
+      return refused('STS-ADMIN-0503', { ok: false, errors: ['Name the ' +
+                                   'credential in `artifact`, as the `key` ' +
+                                   'on every row of GET /admin-api/tokens ' +
+                                   'gives it. It is this service\'s own ' +
+                                   'handle rather than the protocol\'s, ' +
+                                   'because a Kerberos ticket carries no ' +
+                                   'identifier anybody can quote.'] });
     }
     const record = stats.artifactByKey(handle);
     if (!record) {
       log.debug("Leaving tokenAction(). No such artifact.");
-      return refused('STS-ADMIN-0504', { ok: false, errors: ['Nothing here is called "' + handle + '" any more. Either ' +
-                                   'it was never a credential in this register, or it has ' +
-                                   'been forgotten to the cap since the page naming it was ' +
-                                   'drawn — at which point this service has no position on ' +
-                                   'it left to state.'] });
+      return refused('STS-ADMIN-0504', { ok: false, errors: ['Nothing here ' +
+          'is called "' + handle + '" ' +
+                                   'any more. Either it was never a ' +
+                                   'credential in this register, or it has ' +
+                                   'been forgotten to the cap since the page ' +
+                                   'naming it was drawn — at which point ' +
+                                   'this service has no position on it left ' +
+                                   'to state.'] });
     }
-    const notReached = ' THE HOLDER HAS NOT BEEN TOLD and cannot be by this action: nothing ' +
-      'consults this service when a ' + record.kind + ' is presented, so it goes on working ' +
-      'until it expires. What this buys is that a global logout can report it, that CAEP can ' +
-      'transmit it to a receiver that subscribed, and that SAML Single Logout can carry it ' +
-      'for an assertion issued through a browser profile.';
+    const notReached = ' THE HOLDER HAS NOT BEEN TOLD and cannot be by this ' +
+      'action: nothing consults this service when ' +
+      'a ' + record.kind + ' is presented, so it ' +
+      'goes on working until it expires. What this buys is that a global ' +
+      'logout can report it, that CAEP can transmit it to a receiver that ' +
+      'subscribed, and that SAML Single Logout can carry it for an assertion ' +
+      'issued through a browser profile.';
     if (action === 'restore-artifact') {
       const was = stats.restoreArtifact(record);
       log.debug("Leaving tokenAction(). Restored an artifact.");
       return { ok: true, artifact: handle, kind: record.kind,
                message: was
                  ? 'This service no longer disowns the ' + record.kind + ' ' +
-                   (record.id || '(no identifier)') + '. NON-SPEC, like every restore here.'
-                 : 'The ' + record.kind + ' was not revoked, so nothing changed.' };
+                   (record.id || '(no identifier)') + '. NON-SPEC, like ' +
+                                                      'every restore here.'
+                 : 'The ' + record.kind + ' was not revoked, so nothing ' +
+                                          'changed.' };
     }
     const first = stats.revokeArtifact(record, 'the admin console');
     log.debug("Leaving tokenAction(). Revoked an artifact.");
     return { ok: true, artifact: handle, kind: record.kind,
              revocationReach: 'record-only',
-             message: (first ? 'Marked revoked: ' : 'Already revoked: ') + record.kind + ' ' +
+             message: (first ? 'Marked revoked: ' :
+                       'Already revoked: ') + record.kind + ' ' +
                       (record.id || '(no identifier)') + '.' + notReached };
   }
 
   // ONE SET, IN ONE ACT — the button the tokens table draws on a grouped row.
   //
   // It is NOT a new kind of revocation and does not write anywhere new: each
-  // revocable member goes through stats.revoke() exactly as its own button would
-  // send it, into the same set of revoked jtis RFC 7009's /oauth2/revoke writes
-  // to. What it saves is three clicks and, more to the point, the mistake of
-  // revoking two of the three and believing the grant is dead — a refresh token
-  // left behind mints a new access token, which is the whole reason a set is
-  // worth being a row.
+  // revocable member goes through stats.revoke() exactly as its own button
+  // would send it, into the same set of revoked jtis RFC 7009's /oauth2/revoke
+  // writes to. What it saves is three clicks and, more to the point, the
+  // mistake of revoking two of the three and believing the grant is dead — a
+  // refresh token left behind mints a new access token, which is the whole
+  // reason a set is worth being a row.
   //
   // THE MEMBERS ARE RE-READ HERE and never taken from the form, which is the
   // same rule terminate() follows and for the same reason: a page can be posted
   // an hour after it was drawn, and acting on the list it drew would revoke a
-  // jti that has since been forgotten to the cap while missing one issued since.
-  // The form carries the set KEY and nothing else.
+  // jti that has since been forgotten to the cap while missing one issued
+  // since. The form carries the set KEY and nothing else.
   if (action === 'revoke-set' || action === 'restore-set') {
     const setKey = String(body.set || body.setKey || '').trim();
     if (!setKey) {
       log.debug("Leaving tokenAction(). No set was given.");
-      return refused('STS-ADMIN-0505', { ok: false, errors: ['Give a set, as the `setKey` on every row of ' +
-                                   'GET /admin-api/tokens names it.'] });
+      return refused('STS-ADMIN-0505', { ok: false, errors: ['Give a set, as ' +
+                                   'the `setKey` on every row of GET ' +
+                                   '/admin-api/tokens names it.'] });
     }
     const set = stats.issuedSetByKey(setKey);
     if (!set) {
       log.debug("Leaving tokenAction(). No such set.");
-      return refused('STS-ADMIN-0506', { ok: false, errors: ['Nothing here is called "' + setKey + '" any more. ' +
-                                   'Either it was never a set, or it has been forgotten ' +
-                                   'to the cap since the page this button is on was ' +
-                                   'drawn — the registry holds at most ' +
+      return refused('STS-ADMIN-0506', { ok: false, errors: ['Nothing here ' +
+          'is called "' + setKey + '" ' +
+                                   'any more. Either it was never a set, or ' +
+                                   'it has been forgotten to the cap since ' +
+                                   'the page this button is on was drawn — ' +
+                                   'the registry holds at most ' +
                                    stats.MAX_TOKENS + ' tokens.'] });
     }
-    const revocable = set.members.filter(function (member) { return member.revocable; });
+    const revocable = set.members.filter(function (
+        member) { return member.revocable; });
     if (!revocable.length) {
       // A REFUSAL RATHER THAN A SUCCESS THAT DID NOTHING. It is a narrower case
       // than it was before 2026-09-05, when it covered every assertion, ticket
@@ -427,9 +499,9 @@ function tokenAction(body) {
       return refused('STS-ADMIN-0507', { ok: false, setKey: setKey, errors: [
         'Nothing in this set can be revoked. It holds ' + set.kinds.join(', ') +
         ', and none of those carries an identifier to act on — a signed ' +
-        'UserInfo response has no jti, and the WS-Trust JWT is signed directly ' +
-        'rather than through signJwt(). There is nothing to name in a ' +
-        'revocation.'] });
+        'UserInfo response has no jti, and the WS-Trust JWT is signed ' +
+        'directly rather than through signJwt(). There is nothing to name in ' +
+        'a revocation.'] });
     }
     // EACH MEMBER THROUGH ITS OWN MECHANISM, decided by `revocationReach` and
     // never by the family: a JWT goes into the revoked-jti set that
@@ -447,12 +519,15 @@ function tokenAction(body) {
         const record = stats.artifactByKey(member.key);
         moved = action === 'restore-set'
           ? stats.restoreArtifact(record)
-          : stats.revokeArtifact(record, 'the admin console (the whole set ' + setKey + ')');
+          : stats.revokeArtifact(record,
+                                 'the admin console (the whole set ' + setKey +
+                                 ')');
       } else {
         reached += 1;
         moved = action === 'restore-set'
           ? stats.restore(member.jti)
-          : stats.revoke(member.jti, 'the admin console (the whole set ' + setKey + ')');
+          : stats.revoke(member.jti,
+                         'the admin console (the whole set ' + setKey + ')');
       }
       if (moved) changed += 1;
     });
@@ -471,17 +546,21 @@ function tokenAction(body) {
              kinds: revocable.map(function (member) { return member.kind; }),
              message: (changed
                ? (action === 'restore-set' ? 'Restored ' : 'Revoked ') + changed
-               : 'Nothing changed: all ' + revocable.length + ' were already ' + verb) +
-               ' of the ' + revocable.length + ' revocable credential(s) in this set (' +
-               revocable.map(function (member) { return member.kind; }).join(', ') + ')' +
+               : 'Nothing changed: all ' + revocable.length + ' were already ' +
+                 verb) +
+               ' of the ' + revocable.length + ' revocable credential(s) in ' +
+                                               'this set (' +
+               revocable.map(function (member) { return member.kind; })
+                        .join(', ') + ')' +
                (set.size > revocable.length
                  ? '. The other ' + (set.size - revocable.length) +
                    ' carry no identifier to act on and were left alone.'
                  : '.') +
                (recordOnly
-                 ? ' ' + recordOnly + ' of them was marked IN THIS SERVICE\'S RECORD ONLY ' +
-                   '— nothing consults this service when an assertion, a ticket or an SVID ' +
-                   'is presented, so those go on working out there until they expire.'
+                 ? ' ' + recordOnly + ' of them was marked IN THIS ' +
+                   'SERVICE\'S RECORD ONLY — nothing consults this service ' +
+                   'when an assertion, a ticket or an SVID is presented, so ' +
+                   'those go on working out there until they expire.'
                  : '') };
   }
 
@@ -489,20 +568,24 @@ function tokenAction(body) {
     const kind = String(body.kind || '');
     if (stats.REVOCABLE_KINDS.indexOf(kind) < 0) {
       log.debug("Leaving tokenAction(). Not a revocable kind.");
-      return refused('STS-ADMIN-0508', { ok: false, errors: ['"' + kind + '" is not a kind that can be revoked. The three are: ' +
+      return refused('STS-ADMIN-0508', { ok: false, errors: ['"' + kind + '" ' +
+          'is not a kind that can be revoked. The three are: ' +
                                    stats.REVOCABLE_KINDS.join(', ') + '.'] });
     }
-    const count = stats.revokeWhere(function (record) { return record.kind === kind; },
+    const count =
+        stats.revokeWhere(function (record) { return record.kind === kind; },
                                     'the admin console (every ' + kind + ')');
     log.debug("Leaving tokenAction(). Revoked " + count + " by kind.");
-    return { ok: true, revoked: count, message: 'Revoked ' + count + ' ' + kind + '(s).' };
+    return { ok: true, revoked: count,
+             message: 'Revoked ' + count + ' ' + kind + '(s).' };
   }
 
   if (action === 'revoke-subject') {
     const subject = String(body.subject || '').trim();
     if (!subject) {
       log.debug("Leaving tokenAction(). No subject was given.");
-      return refused('STS-ADMIN-0509', { ok: false, errors: ['Give a subject or a username.'] });
+      return refused('STS-ADMIN-0509', { ok: false, errors: ['Give a subject ' +
+          'or a username.'] });
     }
     const count = stats.revokeWhere(function (record) {
       return record.sub === subject || record.username === subject;
@@ -512,40 +595,48 @@ function tokenAction(body) {
              message: 'Revoked ' + count + ' token(s) for ' + subject + '.' };
   }
 
-  // The users page's button. It is not the same thing as revoke-subject above, and
-  // the difference is the reason it exists: that one matches a `sub` or a `username`
-  // EXACTLY, which is what somebody typing into the box on the tokens page means,
-  // while a user on the users page is an identity that has been seen under several
-  // spellings — `alice`, `urn:sts:user:alice`, `alice@STS.MOCK`. Revoking "for
-  // alice" from that page has to mean all of them, or the page would offer a button
-  // that visibly missed half of its own table.
+  // The users page's button. It is not the same thing as revoke-subject above,
+  // and the difference is the reason it exists: that one matches a `sub` or a
+  // `username` EXACTLY, which is what somebody typing into the box on the
+  // tokens page means, while a user on the users page is an identity that has
+  // been seen under several spellings — `alice`, `urn:sts:user:alice`,
+  // `alice@STS.MOCK`. Revoking "for alice" from that page has to mean all of
+  // them, or the page would offer a button that visibly missed half of its own
+  // table.
   if (action === 'revoke-user') {
     const key = String(body.user || '').trim();
     if (!key) {
       log.debug("Leaving tokenAction(). No user was given.");
-      return refused('STS-ADMIN-0509', { ok: false, errors: ['Give a user, as the users page names them.'] });
+      return refused('STS-ADMIN-0509', { ok: false, errors: ['Give a user, ' +
+          'as the users page names them.'] });
     }
     const count = stats.revokeWhere(function (record) {
       return stats.identityKeyOf(record.username || record.sub) === key;
     }, 'the admin console (everything for the user ' + key + ')');
     log.debug("Leaving tokenAction(). Revoked " + count + " for a user.");
     return { ok: true, revoked: count, user: key,
-             message: 'Revoked ' + count + ' token(s) for ' + key + ' — every spelling of that ' +
-                      'identity, not just the one the row showed.' };
+             message: 'Revoked ' + count + ' token(s) for ' + key + ' — ' +
+                      'every spelling of that identity, not just the one the ' +
+                      'row showed.' };
   }
 
   if (action === 'revoke-all') {
-    const count = stats.revokeWhere(function () { return true; }, 'the admin console (everything)');
+    const count = stats.revokeWhere(function () { return true; }, 'the admin ' +
+        'console (everything)');
     log.debug("Leaving tokenAction(). Revoked everything: " + count + ".");
     return { ok: true, revoked: count,
-             message: 'Revoked ' + count + ' token(s) — every access token, ID Token and refresh ' +
-                      'token this service has issued and still remembers.' };
+             message: 'Revoked ' + count + ' token(s) — every access token, ' +
+                      'ID Token and refresh token this service has issued ' +
+                      'and still remembers.' };
   }
 
   log.debug("Leaving tokenAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The ten are: revoke, restore, ' +
-                               'revoke-artifact, restore-artifact, revoke-set, restore-set, ' +
-                               'revoke-kind, revoke-subject, revoke-user, revoke-all.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+                               'The ten are: revoke, restore, ' +
+                               'revoke-artifact, restore-artifact, ' +
+                               'revoke-set, restore-set, revoke-kind, ' +
+                               'revoke-subject, revoke-user, revoke-all.'] });
 }
 
 // THE ONE ACTION, AND IT IS `logout.terminate()` WITH A SELECTION OF ONE.
@@ -572,7 +663,8 @@ function sessionsAction(body, opts) {
   const action = String(asked.action || '');
   if (action !== 'revoke') {
     log.debug("Leaving sessionsAction(). Unknown action.");
-    return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action +
+    return refused('STS-ADMIN-0500',
+                   { ok: false, errors: ['Unknown action "' + action +
       '". There is one: revoke.'] });
   }
   const key = String(asked.key || '').trim();
@@ -597,15 +689,18 @@ function sessionsAction(body, opts) {
   const done = (result.terminated || []).length;
   const unknown = (result.unknown || []).length;
   const said = []
-    .concat((result.terminated || []).map(function (one) { return one.message; }))
+    .concat((result.terminated || []).map(function (
+        one) { return one.message; }))
     .concat((result.skipped || []).map(function (one) { return one.message; }))
     .join(' ');
   if (done) {
     log.debug("Leaving sessionsAction(). Ended.");
-    return { ok: true, message: said || 'the session was ended', result: result };
+    return { ok: true, message: said || 'the session was ended',
+             result: result };
   }
   log.debug("Leaving sessionsAction(). Nothing was ended.");
-  return refused(innerCode(result) || 'STS-ADMIN-0511', { ok: false, result: result, errors: [
+  return refused(innerCode(result) || 'STS-ADMIN-0511',
+                 { ok: false, result: result, errors: [
     said || (unknown
       ? 'Nothing here is called "' + selected + '" any more. It had already ' +
         'ended, or the list this button came from was drawn before it did.'
@@ -621,14 +716,19 @@ function logoutAction(body) {
   const user = String(body.user || body.username || '').trim();
   if (!logoutReader) {
     log.debug("Leaving logoutAction(). No logout reader is installed.");
-    return refused('STS-ADMIN-0501', { ok: false, errors: ['The logout module is not loaded in this process, so there is ' +
-                                 'nothing to end. See /admin/logout, which says why.'] });
+    return refused('STS-ADMIN-0501', { ok: false, errors: ['The logout ' +
+                                 'module is not loaded in this process, so ' +
+                                 'there is nothing to end. See ' +
+                                 '/admin/logout, which says why.'] });
   }
   if (!user) {
     log.debug("Leaving logoutAction(). No user was named.");
-    return refused('STS-ADMIN-0512', { ok: false, errors: ['Name the identity to act on in `user`. This page always acts ' +
-                                 'on somebody by name — it is the operator\'s door, and ' +
-                                 '/logout is the one that defaults to whoever is signed in.'] });
+    return refused('STS-ADMIN-0512', { ok: false, errors: ['Name the ' +
+                                 'identity to act on in `user`. This page ' +
+                                 'always acts on somebody by name — it is ' +
+                                 'the operator\'s door, and /logout is the ' +
+                                 'one that defaults to whoever is signed ' +
+                                 'in.'] });
   }
   const key = stats.identityKeyOf(user);
 
@@ -636,16 +736,19 @@ function logoutAction(body) {
     const result = logoutReader.terminate(key, [], {
       actor: user, channel: 'console', by: 'the admin console at /admin/logout'
     });
-    log.debug("Leaving logoutAction(). A global logout ended " + result.terminated.length + ".");
+    log.debug("Leaving logoutAction(). A global logout ended " +
+              result.terminated.length + ".");
     return { ok: true, result: result, message: result.message +
-             ' The relying parties that had to be NOTIFIED cannot be reached from here: a ' +
-             'front-channel notification is an iframe in the signed-out person\'s browser, ' +
-             'and this console is not that browser. /logout is where those load.' };
+             ' The relying parties that had to be NOTIFIED cannot be reached ' +
+             'from here: a front-channel notification is an iframe in the ' +
+             'signed-out person\'s browser, and this console is not that ' +
+             'browser. /logout is where those load.' };
   }
 
   if (action === 'end') {
     const raw = body.select === undefined ? [] : body.select;
-    const selection = (Array.isArray(raw) ? raw : [raw]).filter(Boolean).map(String);
+    const selection = (Array.isArray(raw) ? raw : [raw]).filter(Boolean)
+      .map(String);
     if (!selection.length) {
       // Deliberately NOT treated as a global logout here, which is the one
       // place this console departs from /logout's default. A form posting an
@@ -654,57 +757,70 @@ function logoutAction(body) {
       // everything. Same absence, opposite intent, and the difference is which
       // door it arrived at.
       log.debug("Leaving logoutAction(). Nothing was selected.");
-      return refused('STS-ADMIN-0513', { ok: false, errors: ['Nothing was selected. Use the global logout button to end ' +
-                                   'everything — this action ends only what it is given, so ' +
-                                   'that an empty form cannot sign somebody out of everything ' +
-                                   'by accident.'] });
+      return refused('STS-ADMIN-0513', { ok: false, errors: ['Nothing was ' +
+                                   'selected. Use the global logout button ' +
+                                   'to end everything — this action ends ' +
+                                   'only what it is given, so that an empty ' +
+                                   'form cannot sign somebody out of ' +
+                                   'everything by accident.'] });
     }
     const result = logoutReader.terminate(key, selection, {
       actor: user, channel: 'console', by: 'the admin console at /admin/logout'
     });
-    log.debug("Leaving logoutAction(). Ended " + result.terminated.length + ".");
+    log.debug("Leaving logoutAction(). Ended " + result.terminated.length +
+              ".");
     return { ok: true, result: result, message: result.message };
   }
 
   if (action === 'restore-token') {
-    // NON-SPEC, and it is /admin/tokens' restore reached from here rather than a
-    // second one: stats.restore() is the same function against the same set.
+    // NON-SPEC, and it is /admin/tokens' restore reached from here rather than
+    // a second one: stats.restore() is the same function against the same set.
     // `jtiFrom()` answers an OBJECT — `{ jti, how }` — because it also accepts
     // a whole JWT and has to say where the jti came from. This read the object
     // itself as the jti: `stats.restore()` was handed one and matched nothing,
     // so the action ALWAYS reported "was not revoked, so nothing changed" and
     // put `[object Object]` in the sentence where the jti belongs. It is the
     // same call tokenAction() makes two hundred lines up, where it is spelt
-    // `found.jti`, which is what makes /admin/tokens' restore work and this
-    // one not.
+    // `found.jti`, which is what makes /admin/tokens' restore work and this one
+    // not.
     const found = jtiFrom(String(body.jti || body.target || ''));
     if (!found.jti) {
-      return refused('STS-ADMIN-0502', { ok: false, errors: ['Name the token to restore in `jti`.'] });
+      log.debug("Leaving logoutAction().");
+      return refused('STS-ADMIN-0502', { ok: false, errors: ['Name the token ' +
+          'to restore in `jti`.'] });
     }
     const was = stats.restore(found.jti);
+    log.debug("Leaving logoutAction().");
     return { ok: true, jti: found.jti,
              message: 'NON-SPEC: the token with jti ' + found.jti +
-             (was ? ' is no longer revoked.' : ' was not revoked, so nothing changed.') +
-             ' No authorization server could offer this — RFC 7009 has no such operation and a ' +
-             'resource server may already have cached the refusal.' };
+             (was ? ' is no longer revoked.' : ' was not revoked, so nothing ' +
+                                               'changed.') +
+             ' No authorization server could offer this — RFC 7009 has no ' +
+             'such operation and a resource server may already have cached ' +
+             'the refusal.' };
   }
 
   if (action === 'restore-kerberos') {
     // NON-SPEC in the same sense and for the same reason: it is what makes a
-    // sign-out something a person can experiment with rather than restart out of.
+    // sign-out something a person can experiment with rather than restart out
+    // of.
     const was = krb5Principals.clearSignOut([key], krb5Principals.REALM);
-    return { ok: true, message: 'NON-SPEC: the sign-out instant on ' + key + '@' +
+    log.debug("Leaving logoutAction().");
+    return { ok: true,
+             message: 'NON-SPEC: the sign-out instant on ' + key + '@' +
              krb5Principals.REALM +
-             (was ? ' (' + was.toISOString() + ') is cleared, so tickets issued before it are ' +
-                    'accepted again.'
+             (was ? ' (' + was.toISOString() + ') is cleared, so tickets ' +
+                    'issued before it are accepted again.'
                   : ' was not set, so nothing changed.') +
-             ' A real KDC has no such operation; a fresh AS-REQ is the supported way back and ' +
-             'clears it too.' };
+             ' A real KDC has no such operation; a fresh AS-REQ is the ' +
+             'supported way back and clears it too.' };
   }
 
   log.debug("Leaving logoutAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". There are four: global, end, ' +
-                               'restore-token, restore-kerberos.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+                               'There are four: global, end, restore-token, ' +
+                               'restore-kerberos.'] });
 }
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
@@ -717,7 +833,8 @@ const PERMISSION_ACTIONS = ['set-permission-base', 'define-permission',
                             'revoke-permission'];
 
 function permissionsAction(body) {
-  log.debug("Entering permissionsAction(). action=" + (body.action || '(none)'));
+  log.debug("Entering permissionsAction(). action=" +
+            (body.action || '(none)'));
   const action = String(body.action || '');
   const actor = String(body.actor || '');
   const resource = String(body.resource || body.application || '').trim();
@@ -730,28 +847,35 @@ function permissionsAction(body) {
   // the API instead of onto its caller. `application` is accepted for either as
   // a convenience for a caller editing one entry, and the refusals below name
   // the field that was missing rather than "an application".
-  const needsResource = ['set-permission-base', 'define-permission', 'remove-permission'];
+  const needsResource = ['set-permission-base', 'define-permission',
+                         'remove-permission'];
   const needsClient = ['grant-permission', 'revoke-permission'];
   if (needsResource.indexOf(action) >= 0 && !resource) {
     log.debug("Leaving permissionsAction(). No resource named.");
-    return refused('STS-ADMIN-0514', { ok: false, errors: ['Which application exposes it? Send `resource` with the ' +
-                                 'identifier exactly as the registry holds it — this is the ' +
-                                 'application whose API the permission belongs to, not the ' +
-                                 'one that will ask for it.'] });
+    return refused('STS-ADMIN-0514', { ok: false, errors: ['Which ' +
+                                 'application exposes it? Send `resource` ' +
+                                 'with the identifier exactly as the ' +
+                                 'registry holds it — this is the ' +
+                                 'application whose API the permission ' +
+                                 'belongs to, not the one that will ask for ' +
+                                 'it.'] });
   }
   if (needsClient.indexOf(action) >= 0 && !client) {
     log.debug("Leaving permissionsAction(). No client named.");
-    return refused('STS-ADMIN-0515', { ok: false, errors: ['Which application holds it? Send `client` with the ' +
-                                 'identifier exactly as the registry holds it — this is the ' +
-                                 'application that will name the permission in a `scope`, ' +
-                                 'not the one that exposes it.'] });
+    return refused('STS-ADMIN-0515', { ok: false, errors: ['Which ' +
+                                 'application holds it? Send `client` with ' +
+                                 'the identifier exactly as the registry ' +
+                                 'holds it — this is the application that ' +
+                                 'will name the permission in a `scope`, not ' +
+                                 'the one that exposes it.'] });
   }
 
   if (action === 'set-permission-base') {
-    // The empty value is legal and CLEARS the base — see setBaseUri()'s message,
-    // which says what that does to the permissions still on the entry. It is
-    // the same convention every `set` on /admin/applications follows.
-    const result = appPermissions.setBaseUri(resource, String(body.baseUri === undefined
+    // The empty value is legal and CLEARS the base — see setBaseUri()'s
+    // message, which says what that does to the permissions still on the entry.
+    // It is the same convention every `set` on /admin/applications follows.
+    const result = appPermissions.setBaseUri(resource,
+                                             String(body.baseUri === undefined
       ? (body.value === undefined ? '' : body.value) : body.baseUri), actor);
     log.debug("Leaving permissionsAction(). set-permission-base " +
               (result.ok ? 'ok' : 'refused') + ".");
@@ -759,7 +883,8 @@ function permissionsAction(body) {
   }
 
   if (action === 'define-permission') {
-    const result = appPermissions.definePermission(resource, String(body.name || ''),
+    const result = appPermissions.definePermission(resource,
+      String(body.name || ''),
       String(body.description || ''), actor);
     log.debug("Leaving permissionsAction(). define-permission " +
               (result.ok ? 'ok' : 'refused') + ".");
@@ -771,33 +896,42 @@ function permissionsAction(body) {
     // the entry is `name|description` and a form that posted it back would
     // break the moment somebody edited the description in an LDAP client — so
     // the name is the handle and `removePermission()` looks the raw value up.
-    const result = appPermissions.removePermission(resource, String(body.name || ''), actor);
+    const result = appPermissions.removePermission(resource,
+                                                   String(body.name || ''),
+                                                   actor);
     log.debug("Leaving permissionsAction(). remove-permission " +
               (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0516', result);
   }
 
   if (action === 'grant-permission') {
-    const result = appPermissions.grant(client, String(body.permission || ''), actor);
+    const result = appPermissions.grant(client, String(body.permission || ''),
+                                        actor);
     log.debug("Leaving permissionsAction(). grant-permission " +
               (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0516', result);
   }
 
   if (action === 'revoke-permission') {
-    const result = appPermissions.revoke(client, String(body.permission || ''), actor);
+    const result = appPermissions.revoke(client, String(body.permission || ''),
+                                         actor);
     log.debug("Leaving permissionsAction(). revoke-permission " +
               (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0516', result);
   }
 
   log.debug("Leaving permissionsAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The ' +
-                               numberWord(PERMISSION_ACTIONS.length) + ' are: ' +
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'The ' +
+                               numberWord(PERMISSION_ACTIONS.length) +
+      ' are: ' +
                                PERMISSION_ACTIONS.join(', ') + '.'] });
 }
 
 function noXacml() {
+  log.debug("Entering noXacml().");
+  log.debug("Leaving noXacml().");
   return { xacml: false,
            message: 'The XACML module is not loaded in this process, so ' +
                     'there is no policy repository to report. ' +
@@ -832,7 +966,8 @@ function xacmlAction(body) {
   log.debug('Entering xacmlAction(). action=' + (body || {}).action);
   if (!xacmlPages) {
     log.debug('Leaving xacmlAction(). No XACML module.');
-    return refused('STS-ADMIN-0501', { ok: false, errors: [noXacml().message] });
+    return refused('STS-ADMIN-0501',
+                   { ok: false, errors: [noXacml().message] });
   }
   const result = xacmlPages.action(body);
   if (!result.ok && !result.errors && result.why) {
@@ -872,7 +1007,8 @@ function userFieldsFrom(body) {
   const fields = {};
   // A JSON body's own `attributes` object first, so a caller sending both gets
   // the flat fields merged OVER it rather than one of the two silently winning.
-  const given = (body && typeof body.attributes === 'object' && body.attributes) || {};
+  const given = (body && typeof body.attributes === 'object' &&
+                 body.attributes) || {};
   Object.keys(given).forEach(function (name) { fields[name] = given[name]; });
   Object.keys(body || {}).forEach(function (key) {
     if (key.indexOf(USER_FIELD_PREFIX) !== 0) {
@@ -890,7 +1026,8 @@ function userFieldsFrom(body) {
       fields[name] = value;
     }
   });
-  log.debug("Leaving userFieldsFrom(). " + Object.keys(fields).length + " field(s).");
+  log.debug("Leaving userFieldsFrom(). " + Object.keys(fields).length + " " +
+      "field(s).");
   return fields;
 }
 
@@ -899,9 +1036,14 @@ function userFieldsFrom(body) {
 // here rather than at the three call sites. Anything else is false, including
 // the empty string an unfilled hidden field posts.
 function truthy(value) {
-  if (value === true) return true;
+  log.debug("Entering truthy().");
+  if (value === true) {
+    log.debug("Leaving truthy().");
+    return true;
+  }
   const text = String(value === undefined || value === null ? '' : value)
                  .trim().toLowerCase();
+  log.debug("Leaving truthy().");
   return text === 'true' || text === 'yes' || text === 'on' || text === '1';
 }
 
@@ -909,23 +1051,24 @@ function truthy(value) {
 // THE ONE THING THIS PAGE CAN CHANGE.
 //
 // Everything else on /admin/users is a report: who has authenticated, what they
-// were issued, what the directory holds about them. This creates a person in the
-// directory, and it is here rather than on /admin/groups or /admin/ldap/directory because this is
-// the page a reader is on when they discover that somebody is missing.
+// were issued, what the directory holds about them. This creates a person in
+// the directory, and it is here rather than on /admin/groups or
+// /admin/ldap/directory because this is the page a reader is on when they
+// discover that somebody is missing.
 //
 // IT DECIDES NOTHING. Every rule about what a username may be, and the refusal
 // of one that already exists, is in ldap_server.js's createUser() — reached
 // through the slot above. This function reads the form and phrases the answer,
-// which is the same split /admin/applications keeps with applications.js and the
-// reason POST /admin-api/users/create can call straight into this without a
+// which is the same split /admin/applications keeps with applications.js and
+// the reason POST /admin-api/users/create can call straight into this without a
 // second reading of any of it.
 //
 // WHAT IT DOES NOT DO is make the person appear in the list on this page. That
 // list is identities this service has SEEN authenticate; the entry is in the
 // DIRECTORY. The two are different questions — it is the same distinction
-// /admin/groups draws when it marks a member "never here" — and the message says
-// so outright, because an operator who created a user and could not find them in
-// the table above would reasonably conclude the button was broken.
+// /admin/groups draws when it marks a member "never here" — and the message
+// says so outright, because an operator who created a user and could not find
+// them in the table above would reasonably conclude the button was broken.
 // ---------------------------------------------------------------------------
 // The actions this resource accepts, built from the switch below rather than
 // typed — the same arrangement MFA_ACTIONS had on the page this absorbed, and
@@ -963,8 +1106,9 @@ function usersAction(body, context) {
     const who = String(body.user || body.username || '').trim();
     if (!who) {
       log.debug("Leaving tokenAction(). No user was named.");
-      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the person to issue an activation ' +
-                                   'link for.'] });
+      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the ' +
+                                   'person to issue an activation link ' +
+                                   'for.'] });
     }
     const issued = credentials.issueActivation(who);
     if (!issued.ok) {
@@ -977,6 +1121,7 @@ function usersAction(body, context) {
       summary: 'an activation link was issued for ' + who,
       detail: { expiresAt: issued.expiresAt }
     });
+    log.debug("Leaving usersAction().");
     return { ok: true, username: who, expiresAt: issued.expiresAt,
              // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE PERSON'S BROWSER.
              activationUrl: '/portal/activate?user=' +
@@ -984,11 +1129,11 @@ function usersAction(body, context) {
                             encodeURIComponent(issued.token),
              message: 'An activation link for ' + who + ' is valid until ' +
                       issued.expiresAt + '. IT IS SHOWN ONCE — this service ' +
-                      'stores only a hash and cannot produce it again. Send it ' +
-                      'to them by whatever channel you already use; anybody ' +
-                      'who has it can complete the account setup, so treat it ' +
-                      'as the credential it is. Issuing another invalidates ' +
-                      'this one.' };
+                      'stores only a hash and cannot produce it again. Send ' +
+                      'it to them by whatever channel you already use; ' +
+                      'anybody who has it can complete the account setup, so ' +
+                      'treat it as the credential it is. Issuing another ' +
+                      'invalidates this one.' };
   }
 
 
@@ -1020,8 +1165,9 @@ function usersAction(body, context) {
     const who = String(body.user || body.username || '').trim();
     if (!who) {
       log.debug("Leaving usersAction(). No person named.");
-      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the person whose authenticator app ' +
-                                   'is being cleared.'] });
+      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the ' +
+                                   'person whose authenticator app is being ' +
+                                   'cleared.'] });
     }
     const result = credentials.removeTotp(who);
     auditLog.record({
@@ -1033,12 +1179,14 @@ function usersAction(body, context) {
                 errors: result.ok ? undefined : (result.errors || []) }
     });
     if (result.ok) {
-      log.info('admin: the authenticator app for "' + who + '" was cleared by ' +
-               (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). That ' +
-               'account is down to one factor and they can enrol again from ' +
-               '/portal/mfa.');
+      log.info('admin: the authenticator app for "' + who +
+               '" was cleared by ' +
+               (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). ' +
+               'That account is down to one factor and they can enrol again ' +
+               'from /portal/mfa.');
     }
-    log.debug("Leaving usersAction(). clear-totp " + (result.ok ? "ok." : "refused."));
+    log.debug("Leaving usersAction(). clear-totp " +
+              (result.ok ? "ok." : "refused."));
     return refusedBy('STS-ADMIN-0520', result);
   }
 
@@ -1074,8 +1222,9 @@ function usersAction(body, context) {
     const who = String(body.user || body.username || '').trim();
     if (!who) {
       log.debug("Leaving usersAction(). No person named.");
-      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the person whose recovery codes are ' +
-                                   'being cleared.'] });
+      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the ' +
+                                   'person whose recovery codes are being ' +
+                                   'cleared.'] });
     }
     const result = credentials.removeBackupCodes(who);
     auditLog.record({
@@ -1100,8 +1249,9 @@ function usersAction(body, context) {
     const who = String(body.user || body.username || '').trim();
     if (!who) {
       log.debug("Leaving usersAction(). No person named.");
-      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the person whose security key is ' +
-                                   'being removed.'] });
+      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the ' +
+                                   'person whose security key is being ' +
+                                   'removed.'] });
     }
     // THROUGH `removeKey()` AND NOT A WRITE OF ITS OWN — see the header: that
     // function carries the refusal that matters.
@@ -1115,7 +1265,8 @@ function usersAction(body, context) {
                 credentialId: String(body.credentialId || ''),
                 errors: result.ok ? undefined : (result.errors || []) }
     });
-    log.debug("Leaving usersAction(). clear-key " + (result.ok ? "ok." : "refused."));
+    log.debug("Leaving usersAction(). clear-key " +
+              (result.ok ? "ok." : "refused."));
     return refusedBy('STS-ADMIN-0522', result);
   }
 
@@ -1136,14 +1287,16 @@ function usersAction(body, context) {
     const who = String(body.user || body.username || '').trim();
     if (!who) {
       log.debug("Leaving usersAction(). No user was named.");
-      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the person whose password to set.'] });
+      return refused('STS-ADMIN-0518', { ok: false, errors: ['Name the ' +
+          'person whose password to set.'] });
     }
     const wanted = String(body.password || '');
     const generate = truthy(body.generate);
     if (!wanted && !generate) {
       log.debug("Leaving usersAction(). No password.");
-      return refused('STS-ADMIN-0523', { ok: false, errors: ['Send `password` with the password to set, ' +
-                                   'or `generate` to have one made up and ' +
+      return refused('STS-ADMIN-0523', { ok: false, errors: ['Send ' +
+                                   '`password` with the password to set, or ' +
+                                   '`generate` to have one made up and ' +
                                    'returned once.'] });
     }
     // A CONFIRMATION IS CHECKED WHERE ONE WAS SENT AND NOT REQUIRED. The
@@ -1153,8 +1306,9 @@ function usersAction(body, context) {
     if (!generate && body.passwordConfirm !== undefined &&
         String(body.passwordConfirm) !== wanted) {
       log.debug("Leaving usersAction(). The two passwords differ.");
-      return refused('STS-ADMIN-0524', { ok: false, errors: ['The two passwords do not match. Nothing ' +
-                                   'was changed.'] });
+      return refused('STS-ADMIN-0524', { ok: false, errors: ['The two ' +
+                                   'passwords do not match. Nothing was ' +
+                                   'changed.'] });
     }
     const password = generate ? credentials.generatePassword(who) : wanted;
     const set = credentials.setPassword(who, password, { generated: generate });
@@ -1171,26 +1325,30 @@ function usersAction(body, context) {
       // response and in one log line's absence.
       detail: { generated: generate }
     });
+    log.debug("Leaving usersAction().");
     return { ok: true, username: who, generated: generate,
              // ONLY WHERE IT WAS GENERATED. Echoing a password the caller
              // already holds back to them buys nothing and puts it in a second
              // place — a proxy log, a browser history, a test fixture.
              password: generate ? password : undefined,
              message: generate
-               ? 'A password for ' + who + ' has been generated and set. IT IS ' +
-                 'SHOWN ONCE — this service stores a scrypt hash and cannot ' +
-                 'produce it again, only replace it.'
-               : 'The password for ' + who + ' is set. It is stored as a hash ' +
-                 'and cannot be shown again.' };
+               ? 'A password for ' + who + ' has been generated and set. IT ' +
+                 'IS SHOWN ONCE — this service stores a scrypt hash and ' +
+                 'cannot produce it again, only replace it.'
+               : 'The password for ' + who + ' is set. It is stored as a ' +
+                 'hash and cannot be shown again.' };
   }
 
   if (action === 'create') {
     if (!directoryWriter) {
       log.debug("Leaving usersAction(). No directory is loaded.");
-      return refused('STS-ADMIN-0501', { ok: false, errors: ['No LDAP directory is loaded in this process, so there is ' +
-                                   'nowhere to put a person. The rest of this page is ' +
-                                   'unaffected — it reports what this service has seen, which ' +
-                                   'does not come from the directory.'] });
+      return refused('STS-ADMIN-0501', { ok: false, errors: ['No LDAP ' +
+                                   'directory is loaded in this process, so ' +
+                                   'there is nowhere to put a person. The ' +
+                                   'rest of this page is unaffected — it ' +
+                                   'reports what this service has seen, ' +
+                                   'which does not come from the ' +
+                                   'directory.'] });
     }
     const username = String(body.username || body.user || '').trim();
     // WHAT THE OPERATOR TYPED, AND WHETHER TO MAKE UP THE REST.
@@ -1206,7 +1364,8 @@ function usersAction(body, context) {
     const result = directoryWriter(username, {
       origin: 'console',
       note: String(body.note || '').trim() ||
-            'created by hand on the admin console rather than by authenticating',
+            'created by hand on the admin console rather than by ' +
+            'authenticating',
       channel: 'console',
       attributes: typed,
       invent: invent
@@ -1251,9 +1410,11 @@ function usersAction(body, context) {
         answer.credentialError = 'No password was sent, so none was set.';
       } else if (!generated && body.passwordConfirm !== undefined &&
                  String(body.passwordConfirm) !== String(body.password || '')) {
-        answer.credentialError = 'The two passwords do not match, so none was set.';
+        answer.credentialError = 'The two passwords do not match, so none ' +
+                                 'was set.';
       } else {
-        const password = generated ? credentials.generatePassword(result.username)
+        const password = generated ?
+                         credentials.generatePassword(result.username)
                                    : String(body.password || '');
         const set = credentials.setPassword(result.username, password,
                                             { generated: generated });
@@ -1262,7 +1423,8 @@ function usersAction(body, context) {
         } else {
           auditLog.record({
             category: 'authentication', action: 'password.set',
-            actor: (body.actor || ''), target: result.username, outcome: 'success',
+            actor: (body.actor || ''), target: result.username,
+            outcome: 'success',
             summary: 'a password was set for ' + result.username +
                      ' as they were created',
             detail: { generated: generated }
@@ -1289,7 +1451,8 @@ function usersAction(body, context) {
       } else {
         auditLog.record({
           category: 'authentication', action: 'activation.issued',
-          actor: (body.actor || ''), target: result.username, outcome: 'success',
+          actor: (body.actor || ''), target: result.username,
+          outcome: 'success',
           summary: 'an activation link was issued for ' + result.username +
                    ' as they were created',
           detail: { expiresAt: issued.expiresAt }
@@ -1299,13 +1462,14 @@ function usersAction(body, context) {
                                encodeURIComponent(issued.token);
         answer.expiresAt = issued.expiresAt;
         credentialSaid = ' They have NO credential and an activation link ' +
-          'instead, valid until ' + issued.expiresAt + ' and shown once. They ' +
-          'choose a password, a security key or both at it; nothing about ' +
-          'this account is decided until they do.';
+          'instead, valid until ' + issued.expiresAt + ' and shown once. ' +
+          'They choose a password, a security key or both at it; nothing ' +
+          'about this account is decided until they do.';
       }
     } else if (credential !== 'none') {
       answer.credentialError = 'Unknown credential option "' + credential +
-        '". The four are: none, password, generate, activation. Nothing was set.';
+        '". The four are: none, password, generate, activation. Nothing was ' +
+        'set.';
     }
     if (answer.credentialError) {
       credentialSaid = ' THE PERSON EXISTS AND HAS NO CREDENTIAL: ' +
@@ -1315,22 +1479,27 @@ function usersAction(body, context) {
     log.debug("Leaving usersAction(). Created " + result.dn + ".");
     answer.message = result.dn + ' now exists in the directory' +
       (result.invented
-        ? ', with the invented person behind that name written onto it — so a ' +
-          'credential issued for ' + result.username + ' and an ldapsearch for ' +
-          'that entry say the same thing.'
+        ? ', with the invented person behind that name written onto it — so ' +
+          'a credential issued ' +
+          'for ' + result.username + ' and an ldapsearch ' +
+          'for that entry say the same thing.'
         : ', carrying ' + (answer.typed.length
-            ? 'the ' + answer.typed.length + ' attribute(s) you typed and nothing else'
+            ? 'the ' + answer.typed.length + ' attribute(s) you typed and ' +
+                                             'nothing else'
             : 'no attributes at all beyond its object classes and its uid') +
           '. Nothing was invented for it.') +
       credentialSaid +
       ' They will NOT appear in the table on the Users page until they ' +
       'authenticate somewhere: that list is who this service has seen, and ' +
       'the entry is what the directory HOLDS.';
+    log.debug("Leaving usersAction().");
     return answer;
   }
 
   log.debug("Leaving usersAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The ' +
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'The ' +
                                numberWord(USERS_ACTIONS.length) + ' are: ' +
                                USERS_ACTIONS.join(', ') + '.'] });
 }
@@ -1349,11 +1518,11 @@ function usersAction(body, context) {
 // **IT DECIDES NOTHING.** Every rule about what a group may be called, the
 // refusal of one that is already there, what a membership value points at and
 // the choice to write a dangling one rather than refuse it, are in
-// ldap_server.js's createGroup() and addGroupMember() — reached through the slot
-// above. This function reads the form and phrases the answer, which is the same
-// split usersAction() keeps with createUser() and the reason
-// POST /admin-api/groups/{action} can call straight into it without a second
-// reading of any of it.
+// ldap_server.js's createGroup() and addGroupMember() — reached through the
+// slot above. This function reads the form and phrases the answer, which is the
+// same split usersAction() keeps with createUser() and the reason POST
+// /admin-api/groups/{action} can call straight into it without a second reading
+// of any of it.
 //
 // **WHAT IT DOES NOT DO is make the new group grant anything.** GROUPS_CAVEAT
 // says it on both halves of this page and it is worth repeating at the one
@@ -1372,12 +1541,13 @@ function groupsAction(body) {
     // reader whose table is plainly full of groups needs telling that it is the
     // WRITES that are absent rather than the directory.
     log.debug("Leaving groupsAction(). No directory writer is installed.");
-    return refused('STS-ADMIN-0501', { ok: false, errors: ['No LDAP directory is loaded in this process, ' +
-                                 'so there is nowhere to put a group. The rest ' +
-                                 'of this page is unaffected — if it is showing ' +
-                                 'you groups, they are being read through a ' +
-                                 'different slot and only the writes are ' +
-                                 'missing.'] });
+    return refused('STS-ADMIN-0501', { ok: false, errors: ['No LDAP ' +
+                                 'directory is loaded in this process, so ' +
+                                 'there is nowhere to put a group. The rest ' +
+                                 'of this page is unaffected — if it is ' +
+                                 'showing you groups, they are being read ' +
+                                 'through a different slot and only the ' +
+                                 'writes are missing.'] });
   }
 
   if (action === 'create') {
@@ -1398,7 +1568,8 @@ function groupsAction(body) {
     const result = groupWriter.createGroup(name, {
       origin: 'console',
       note: String(body.note || '').trim() ||
-            'created by hand on the admin console rather than by a directory client',
+            'created by hand on the admin console rather than by a directory ' +
+            'client',
       channel: 'console',
       actor: String(body.actor || ''),
       members: members
@@ -1417,20 +1588,21 @@ function groupsAction(body) {
             'one has no schema, so it is here because you asked for it') + '.' +
         (result.dangling.length
           ? ' ' + result.dangling.length + ' of those member value(s) name ' +
-            'nothing this directory holds and are written anyway: nothing here ' +
-            'does referential integrity, and the Dangling column above is ' +
-            'where they show up.'
+            'nothing this directory holds and are written anyway: nothing ' +
+            'here does referential integrity, and the Dangling column above ' +
+            'is where they show up.'
           : '') +
         ' IT GRANTS NOTHING. No endpoint in this service checks a group, and ' +
         'the only two that decide anything are the console roles on ' +
-        '/admin/rbac. What it does change is what a directory client sees and ' +
-        'what the groups claim in an issued token says.'
+        '/admin/rbac. What it does change is what a directory client sees ' +
+        'and what the groups claim in an issued token says.'
     });
   }
 
   if (action === 'add-member') {
     const group = String(body.group || '').trim();
-    const member = String(body.member || body.user || body.username || '').trim();
+    const member = String(body.member || body.user || body.username ||
+                          '').trim();
     const result = groupWriter.addGroupMember(group, member, {
       origin: 'console',
       channel: 'console',
@@ -1446,33 +1618,35 @@ function groupsAction(body) {
   }
 
   log.debug("Leaving groupsAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The two are: ' +
-                               'create, add-member. Removing a member is ' +
-                               '/admin/rbac for the two console roles, and an ' +
-                               'ldapmodify or a SCIM PATCH for every other ' +
-                               'group; deleting one is an ldapdelete or a SCIM ' +
-                               'DELETE.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+                               'The two are: create, add-member. Removing a ' +
+                               'member is /admin/rbac for the two console ' +
+                               'roles, and an ldapmodify or a SCIM PATCH for ' +
+                               'every other group; deleting one is an ' +
+                               'ldapdelete or a SCIM DELETE.'] });
 }
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the six actions.
 //
-// **The console is not a second door onto this registry**, and that is the whole
-// design of these: every one calls a function in `applications.js` which does
-// the same read-modify-write `seen()` does, through the same two conversions,
-// against the same `ou=applications` entries. The store stays one store; what is
-// added here is a set of controls in front of it. An `ldapmodify` and a form
-// post are the same act arriving by two routes, and both are visible to the
-// other immediately because nothing caches.
+// **The console is not a second door onto this registry**, and that is the
+// whole design of these: every one calls a function in `applications.js` which
+// does the same read-modify-write `seen()` does, through the same two
+// conversions, against the same `ou=applications` entries. The store stays one
+// store; what is added here is a set of controls in front of it. An
+// `ldapmodify` and a form post are the same act arriving by two routes, and
+// both are visible to the other immediately because nothing caches.
 //
-// **What may be changed is DECLARED and not DERIVED**, and that line is drawn in
-// `applications.js`'s EDITABLE table rather than here: redirect URIs, grant
-// types, scopes, the secret, whether the client is confidential — configuration,
-// which is what RFC 9700 mode reads — but never the counters, the sightings, the
-// kinds or the protocols, which are what happened. LDAP can still reach those;
-// the difference between offering an operation and merely not preventing it is
-// the point. This handler renders and decides nothing: it validates that an
-// action exists and hands the rest over, exactly as the console does for groups.
+// **What may be changed is DECLARED and not DERIVED**, and that line is drawn
+// in `applications.js`'s EDITABLE table rather than here: redirect URIs, grant
+// types, scopes, the secret, whether the client is confidential —
+// configuration, which is what RFC 9700 mode reads — but never the counters,
+// the sightings, the kinds or the protocols, which are what happened. LDAP can
+// still reach those; the difference between offering an operation and merely
+// not preventing it is the point. This handler renders and decides nothing: it
+// validates that an action exists and hands the rest over, exactly as the
+// console does for groups.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // THE ATTRIBUTE VALUES A CREATE CARRIES, IN THE TWO SPELLINGS THIS FUNCTION IS
@@ -1523,7 +1697,9 @@ function applicationFieldsFrom(body) {
       fields[name] = values;
     }
   });
-  log.debug("Leaving applicationFieldsFrom(). " + Object.keys(fields).length + " field(s).");
+  log.debug("Leaving applicationFieldsFrom(). " + Object.keys(fields).length +
+      " " +
+      "field(s).");
   return fields;
 }
 
@@ -1537,16 +1713,20 @@ const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'forget'];
 
 function applicationsAction(body, protocols) {
-  log.debug("Entering applicationsAction(). action=" + (body.action || '(none)'));
+  log.debug("Entering applicationsAction(). action=" +
+            (body.action || '(none)'));
   const action = String(body.action || '');
   const identifier = String(body.application || '').trim();
-  const needsOne = ['set', 'add', 'remove', 'confirm-address', 'discard-address',
+  const needsOne = ['set', 'add', 'remove', 'confirm-address',
+                    'discard-address',
                     'revoke-registration', 'forget'];
   if (needsOne.indexOf(action) >= 0 && !identifier) {
     log.debug("Leaving applicationsAction(). No application named.");
-    return refused('STS-ADMIN-0529', { ok: false, errors: ['Which application? Send `application` with the identifier ' +
-                                 'exactly as this registry holds it — the client_id, wtrealm, ' +
-                                 'AppliesTo, entityID or service principal name.'] });
+    return refused('STS-ADMIN-0529', { ok: false, errors: ['Which ' +
+                                 'application? Send `application` with the ' +
+                                 'identifier exactly as this registry holds ' +
+                                 'it — the client_id, wtrealm, AppliesTo, ' +
+                                 'entityID or service principal name.'] });
   }
 
   if (action === 'create') {
@@ -1575,29 +1755,40 @@ function applicationsAction(body, protocols) {
       protocols: asked,
       fields: applicationFieldsFrom(body)
     });
-    log.debug("Leaving applicationsAction(). create " + (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return refusedBy('STS-ADMIN-0530', result);
+    log.debug("Leaving applicationsAction(). create " +
+              (result.ok ? 'ok' : 'refused') + ".");
+    if (!result.ok) {
+      log.debug("Leaving applicationsAction().");
+      return refusedBy('STS-ADMIN-0530', result);
+    }
     const declared = result.application.allowedProtocols || [];
+    log.debug("Leaving applicationsAction().");
     return { ok: true, application: result.application,
-             message: '"' + result.application.identifier + '" is in the registry. It has ' +
-                      'authenticated nothing yet — the counters are zero and the entry says ' +
-                      'it was created by hand, so it cannot be mistaken for one that turned ' +
+             message: '"' + result.application.identifier + '" is in the ' +
+                      'registry. It has authenticated nothing yet — the ' +
+                      'counters are zero and the entry says it was created ' +
+                      'by hand, so it cannot be mistaken for one that turned ' +
                       'up once. ' +
                       (declared.length
-                        ? 'It is DECLARED for ' + declared.join(', ') + ', which is a note on ' +
-                          'the entry and not a permission: nothing in this service reads it, ' +
-                          'and this application can still reach every other protocol here. '
-                        : 'No protocol family was declared for it, which changes nothing about ' +
-                          'what it may reach — the declaration is a record of intent. ') +
+                        ? 'It is DECLARED for ' + declared.join(', ') + ', ' +
+                          'which is a note on the entry and not a ' +
+                          'permission: nothing in this service reads it, and ' +
+                          'this application can still reach every other ' +
+                          'protocol here. '
+                        : 'No protocol family was declared for it, which ' +
+                          'changes nothing about what it may reach — the ' +
+                          'declaration is a record of intent. ') +
                       (Object.keys(applicationFieldsFrom(body)).length
-                        ? 'The attributes given with it are on the entry now: a redirect URI ' +
-                          'among them is what RFC 9700 mode matches the next authorization ' +
-                          'request against, by exact string comparison, and the rest are ' +
-                          'recorded rather than checked.'
-                        : 'It carries no identifier and no redirect URI yet. Give it the ones ' +
-                          'it is allowed and RFC 9700 mode will judge it against them; without ' +
-                          'them a redirect_uri is judged against the oauth2.redirectUris ' +
-                          'setting instead.') };
+                        ? 'The attributes given with it are on the entry ' +
+                          'now: a redirect URI among them is what RFC 9700 ' +
+                          'mode matches the next authorization request ' +
+                          'against, by exact string comparison, and the rest ' +
+                          'are recorded rather than checked.'
+                        : 'It carries no identifier and no redirect URI yet. ' +
+                          'Give it the ones it is allowed and RFC 9700 mode ' +
+                          'will judge it against them; without them a ' +
+                          'redirect_uri is judged against the ' +
+                          'oauth2.redirectUris setting instead.') };
   }
 
   if (action === 'set' || action === 'add' || action === 'remove') {
@@ -1606,7 +1797,8 @@ function applicationsAction(body, protocols) {
       attribute: String(body.attribute || ''),
       value: body.value === undefined ? '' : String(body.value)
     });
-    log.debug("Leaving applicationsAction(). " + action + " " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving applicationsAction(). " + action + " " +
+              (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0531', result);
   }
 
@@ -1632,7 +1824,8 @@ function applicationsAction(body, protocols) {
     const result = action === 'confirm-address'
       ? applications.confirmReturnAddress(identifier, change)
       : applications.discardReturnAddress(identifier, change);
-    log.debug("Leaving applicationsAction(). " + action + " " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving applicationsAction(). " + action + " " +
+              (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0531', result);
   }
 
@@ -1652,7 +1845,8 @@ function applicationsAction(body, protocols) {
   // makes every sign-in as reliable as that server. This writes the certificate
   // onto the entry and issuing reads the entry.
   if (action === 'refresh-metadata') {
-    log.debug("Leaving applicationsAction(). Fetching metadata for " + identifier + ".");
+    log.debug("Leaving applicationsAction(). Fetching metadata for " +
+              identifier + ".");
     return spMetadata.refresh(identifier).then(function (result) {
       return refusedBy('STS-ADMIN-0532', result);
     });
@@ -1665,29 +1859,39 @@ function applicationsAction(body, protocols) {
     // one and not a second reading of what "unregistered" means.
     const before = applications.get(identifier);
     if (!before) {
-      return refused('STS-ADMIN-0533', { ok: false, errors: ['There is no application called "' + identifier + '" here.'] });
+      log.debug("Leaving applicationsAction().");
+      return refused('STS-ADMIN-0533', { ok: false, errors: ['There is no ' +
+          'application called "' + identifier + '" ' +
+          'here.'] });
     }
     if (!before.registered) {
-      return refused('STS-ADMIN-0534', { ok: false, errors: ['"' + identifier + '" has no registration to revoke. It is ' +
-                                   'a client_id this service has seen rather than one that ' +
-                                   'went through POST /oauth2/register, which RFC 9700 mode ' +
+      log.debug("Leaving applicationsAction().");
+      return refused('STS-ADMIN-0534',
+                     { ok: false, errors: ['"' + identifier + '" ' +
+                                   'has no registration to revoke. It is a ' +
+                                   'client_id this service has seen rather ' +
+                                   'than one that went through POST ' +
+                                   '/oauth2/register, which RFC 9700 mode ' +
                                    'already treats as public.'] });
     }
     applications.forgetRegistration(identifier);
     log.debug("Leaving applicationsAction(). The registration was revoked.");
     return { ok: true, application: applications.get(identifier),
-             message: 'The RFC 7591 registration for "' + identifier + '" is gone, along with ' +
-                      'its client_secret and its registration access token. The ENTRY stays, ' +
-                      'with everything it had recorded — losing that this application was ever ' +
-                      'here because its registration was withdrawn would be losing the fact ' +
-                      'rather than the configuration. RFC 9700 mode now treats it as an ' +
-                      'unregistered, public client and judges its redirect_uri against the ' +
-                      'oauth2.redirectUris setting.' };
+             message: 'The RFC 7591 registration for "' + identifier + '" is ' +
+                      'gone, along with its client_secret and its ' +
+                      'registration access token. The ENTRY stays, with ' +
+                      'everything it had recorded — losing that this ' +
+                      'application was ever here because its registration ' +
+                      'was withdrawn would be losing the fact rather than ' +
+                      'the configuration. RFC 9700 mode now treats it as an ' +
+                      'unregistered, public client and judges its ' +
+                      'redirect_uri against the oauth2.redirectUris setting.' };
   }
 
   if (action === 'forget') {
     const result = applications.deleteApplication(identifier);
-    log.debug("Leaving applicationsAction(). forget " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving applicationsAction(). forget " +
+              (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0535', result);
   }
 
@@ -1695,14 +1899,17 @@ function applicationsAction(body, protocols) {
   // THE LIST IS BUILT FROM THE SWITCH ABOVE RATHER THAN TYPED, and the reason
   // is that it was typed and went stale: `refresh-metadata` was added on
   // 2026-08-27 and this sentence still said "The six are" and named six. That
-  // is not a cosmetic drift — this repository's own tests/vendored/admin_api.js READS
-  // this sentence to check that every console action has an /admin-api
+  // is not a cosmetic drift — this repository's own tests/vendored/admin_api.js
+  // READS this sentence to check that every console action has an /admin-api
   // operation, so an action missing from it is an action the parity check
   // cannot see, and the API could lose the operation entirely with nothing
   // failing. A generated list cannot be short by one.
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The ' +
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'The ' +
                                numberWord(APPLICATION_ACTIONS.length) +
-                               ' are: ' + APPLICATION_ACTIONS.join(', ') + '.'] });
+                               ' are: ' + APPLICATION_ACTIONS.join(
+                                   ', ') + '.'] });
 }
 
 function asAction(body) {
@@ -1712,39 +1919,55 @@ function asAction(body) {
 
   if (action === 'create') {
     const result = authorizationServers.create({
-      id: id, label: String(body.label || ''), description: String(body.description || '')
+      id: id, label: String(body.label || ''),
+      description: String(body.description || '')
     });
-    log.debug("Leaving asAction(). create " + (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return refusedBy('STS-ADMIN-0536', result);
+    log.debug("Leaving asAction(). create " + (result.ok ? 'ok' : 'refused') +
+              ".");
+    if (!result.ok) {
+      log.debug("Leaving asAction().");
+      return refusedBy('STS-ADMIN-0536', result);
+    }
+    log.debug("Leaving asAction().");
     return { ok: true, profile: result.profile,
-             message: 'The "' + result.profile.id + '" authorization server is published at ' +
-                      result.profile.urls.oauth + ' and ' + result.profile.urls.oidc + '. It ' +
-                      'has no overrides yet, so both documents say exactly what this service ' +
-                      'says about itself — which is the right place to start from.' };
+             message: 'The "' + result.profile.id + '" authorization server ' +
+                                                    'is published at ' +
+                      result.profile.urls.oauth + ' and ' +
+                                                    result.profile.urls.oidc +
+                                                    '. ' +
+                      'It has no overrides yet, so both documents say ' +
+                      'exactly what this service says about itself — which ' +
+                      'is the right place to start from.' };
   }
   if (action === 'set') {
     const result = authorizationServers.setMember(id, body.member, body.value);
-    log.debug("Leaving asAction(). set " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving asAction(). set " + (result.ok ? 'ok' : 'refused') +
+              ".");
     return refusedBy('STS-ADMIN-0536', result);
   }
   if (action === 'remove') {
     const result = authorizationServers.removeMember(id, body.member);
-    log.debug("Leaving asAction(). remove " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving asAction(). remove " + (result.ok ? 'ok' : 'refused') +
+              ".");
     return refusedBy('STS-ADMIN-0536', result);
   }
   if (action === 'reset') {
     const result = authorizationServers.resetMember(id, body.member);
-    log.debug("Leaving asAction(). reset " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving asAction(). reset " + (result.ok ? 'ok' : 'refused') +
+              ".");
     return refusedBy('STS-ADMIN-0536', result);
   }
   if (action === 'delete') {
     const result = authorizationServers.remove(id);
-    log.debug("Leaving asAction(). delete " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving asAction(). delete " + (result.ok ? 'ok' : 'refused') +
+              ".");
     return refusedBy('STS-ADMIN-0536', result);
   }
   log.debug("Leaving asAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The five are: create, set, ' +
-                               'remove, reset, delete.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+                               'The five are: create, set, remove, reset, ' +
+                               'delete.'] });
 }
 
 // ---------------------------------------------------------------------------
@@ -1786,7 +2009,8 @@ function saml2Action(body) {
   const identifier = String(body.sp || body.serviceProvider || '').trim();
   if (!identifier) {
     log.debug("Leaving saml2Action(). No service provider named.");
-    return refused('STS-ADMIN-0537', { ok: false, errors: ['Name the service provider by its entityID, in `sp`.'] });
+    return refused('STS-ADMIN-0537', { ok: false, errors: ['Name the service ' +
+        'provider by its entityID, in `sp`.'] });
   }
 
   if (action === 'register') {
@@ -1795,13 +2019,20 @@ function saml2Action(body) {
       note: 'registered as a SAML 2.0 service provider from the admin console',
       fields: { samlEntityId: identifier }
     });
-    log.debug("Leaving saml2Action(). register " + (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return refusedBy('STS-ADMIN-0530', result);
+    log.debug("Leaving saml2Action(). register " +
+              (result.ok ? 'ok' : 'refused') + ".");
+    if (!result.ok) {
+      log.debug("Leaving saml2Action().");
+      return refusedBy('STS-ADMIN-0530', result);
+    }
+    log.debug("Leaving saml2Action().");
     return { ok: true, application: result.application,
-             message: 'Registered. Its identity provider metadata is at /saml2/metadata/' +
-                      encodeURIComponent(saml2.slugOf(identifier)) + ', and it would have been ' +
-                      'created by the first AuthnRequest or metadata fetch anyway — registering ' +
-                      'it early is what gives you a document to hand somebody now.' };
+             message: 'Registered. Its identity provider metadata is at ' +
+                      '/saml2/metadata/' +
+                      encodeURIComponent(saml2.slugOf(identifier)) + ', and ' +
+                      'it would have been created by the first AuthnRequest ' +
+                      'or metadata fetch anyway — registering it early is ' +
+                      'what gives you a document to hand somebody now.' };
   }
   if (action === 'set-logout-service' || action === 'remove-logout-service') {
     const result = applications.updateApplication(identifier, {
@@ -1809,26 +2040,30 @@ function saml2Action(body) {
       mode: action === 'set-logout-service' ? 'add' : 'remove',
       value: String(body.value || '')
     });
-    log.debug("Leaving saml2Action(). " + action + " " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving saml2Action(). " + action + " " +
+              (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0531', result);
   }
   if (action === 'set-signing-certificate') {
     const result = applications.updateApplication(identifier, {
       attribute: 'samlSigningCertificate', mode: 'set',
-      // Whitespace and any PEM armour stripped, because what the schema holds is
-      // base64 DER — which is what a ds:X509Certificate carries and what the
-      // metadata publishes. A PEM pasted in here would be stored as something no
-      // reader of that attribute expects, and nothing would say so until the day
-      // something tried to use it.
-      value: String(body.value || '').replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
+      // Whitespace and any PEM armour stripped, because what the schema holds
+      // is base64 DER — which is what a ds:X509Certificate carries and what the
+      // metadata publishes. A PEM pasted in here would be stored as something
+      // no reader of that attribute expects, and nothing would say so until the
+      // day something tried to use it.
+      value: String(body.value || '').replace(/-----[^-]+-----/g, '')
+                                     .replace(/\s+/g, '')
     });
     log.debug("Leaving saml2Action(). set-signing-certificate " +
               (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0531', result);
   }
   log.debug("Leaving saml2Action(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The four are: register, ' +
-                               'set-logout-service, remove-logout-service, ' +
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+                               'The four are: register, set-logout-service, ' +
+                               'remove-logout-service, ' +
                                'set-signing-certificate.'] });
 }
 
@@ -1838,23 +2073,23 @@ function saml2Action(body) {
 // The same question /admin/saml2 exists for — WHICH METADATA DOCUMENT DO I
 // CONFIGURE THIS RELYING PARTY FROM — and a second question that page never has
 // to answer: **WHAT IS THIS RELYING PARTY CALLED?** SAML 1.1 has no request
-// message, so nothing in the protocol makes a relying party identify itself. The
-// profile takes the name from Shibboleth's `providerId` parameter, from the path
-// segment, or it GUESSES from the origin of the TARGET. A guessed audience is
-// the one thing on this page that is not a fact, and it is marked as such,
+// message, so nothing in the protocol makes a relying party identify itself.
+// The profile takes the name from Shibboleth's `providerId` parameter, from the
+// path segment, or it GUESSES from the origin of the TARGET. A guessed audience
+// is the one thing on this page that is not a fact, and it is marked as such,
 // because an assertion whose audience is `https://app.example.com` when the
 // relying party expected `urn:example:app` fails inside a signature check with
 // nothing saying why.
 //
-// **IT IS A SEPARATE PAGE FROM /admin/saml2 AND THAT IS NOT SYMMETRY FOR ITS OWN
-// SAKE**, which was the obvious objection: half of what that page reports has no
-// spelling here. There is no Single Logout in SAML 1.1, so there is no logout
-// return address to declare and no `saml11.defaultSingleLogoutService` to fall
-// back to. There is no request, so there is no request signature to record and
-// no signing certificate to hold. What this page has instead is the artifact
-// profile's own state and an attribute authority the 2.0 profile does not offer.
-// One page with two modes would have been a page whose every row needed a
-// footnote.
+// **IT IS A SEPARATE PAGE FROM /admin/saml2 AND THAT IS NOT SYMMETRY FOR ITS
+// OWN SAKE**, which was the obvious objection: half of what that page reports
+// has no spelling here. There is no Single Logout in SAML 1.1, so there is no
+// logout return address to declare and no `saml11.defaultSingleLogoutService`
+// to fall back to. There is no request, so there is no request signature to
+// record and no signing certificate to hold. What this page has instead is the
+// artifact profile's own state and an attribute authority the 2.0 profile does
+// not offer. One page with two modes would have been a page whose every row
+// needed a footnote.
 //
 // **IT HOLDS NOTHING**, like every page in this console: every row comes out of
 // the applications registry, which is the embedded directory, and its one write
@@ -1864,15 +2099,16 @@ function saml2Action(body) {
 const SAML11_RP_KIND = saml11.RP_KIND;
 
 // ONE action, where /admin/saml2 has four, and the three it does not have are
-// the three SAML 1.1 has no protocol for: a logout service to declare, a request
-// signature to record, and a signing certificate to hold it in.
+// the three SAML 1.1 has no protocol for: a logout service to declare, a
+// request signature to record, and a signing certificate to hold it in.
 function saml11Action(body) {
   log.debug("Entering saml11Action(). action=" + (body.action || '(none)'));
   const action = String(body.action || '');
   const identifier = String(body.rp || body.relyingParty || '').trim();
   if (!identifier) {
     log.debug("Leaving saml11Action(). No relying party named.");
-    return refused('STS-ADMIN-0538', { ok: false, errors: ['Name the relying party by its identifier, in `rp`.'] });
+    return refused('STS-ADMIN-0538', { ok: false, errors: ['Name the relying ' +
+        'party by its identifier, in `rp`.'] });
   }
 
   if (action === 'register') {
@@ -1881,19 +2117,27 @@ function saml11Action(body) {
       note: 'registered as a SAML 1.1 relying party from the admin console',
       fields: { samlEntityId: identifier }
     });
-    log.debug("Leaving saml11Action(). register " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving saml11Action(). register " +
+              (result.ok ? 'ok' : 'refused') + ".");
     if (!result.ok) {
+      log.debug("Leaving saml11Action().");
       return refusedBy('STS-ADMIN-0530', result);
     }
+    log.debug("Leaving saml11Action().");
     return { ok: true, application: result.application,
-             message: 'Registered. Its identity provider metadata is at /saml11/metadata/' +
-                      encodeURIComponent(saml11.slugOf(identifier)) + ', and it would have been ' +
-                      'created by the first flow or metadata fetch anyway — registering it early ' +
-                      'is what gives you a document to hand somebody now, and a name to put in ' +
-                      'providerId so that nothing has to be guessed.' };
+             message: 'Registered. Its identity provider metadata is at ' +
+                      '/saml11/metadata/' +
+                      encodeURIComponent(saml11.slugOf(identifier)) + ', and ' +
+                      'it would have been created by the first flow or ' +
+                      'metadata fetch anyway — registering it early is what ' +
+                      'gives you a document to hand somebody now, and a name ' +
+                      'to put in providerId so that nothing has to be ' +
+                      'guessed.' };
   }
   log.debug("Leaving saml11Action(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". There is one: register.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'There is one: register.'] });
 }
 
 // The two acts, through the one switch that has them — **BEHIND A GUARD OF ITS
@@ -1919,12 +2163,14 @@ function mfaAction(body, context) {
   const action = String(body.action || '');
   if (MFA_ACTIONS.indexOf(action) < 0) {
     log.debug("Leaving mfaAction(). Not an action of this resource.");
-    return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". There are ' +
+    return refused('STS-ADMIN-0500',
+                   { ok: false, errors: ['Unknown action "' + action + '". ' +
+        'There are ' +
                                  MFA_ACTIONS.length + ': ' +
                                  MFA_ACTIONS.join(' and ') + '. The rest of ' +
                                  'what can be done to a person is on ' +
-                                 '/admin-api/users, which is also where these ' +
-                                 'two answer.'] });
+                                 '/admin-api/users, which is also where ' +
+                                 'these two answer.'] });
   }
   log.debug("Leaving mfaAction(). Handing " + action + " to usersAction().");
   return usersAction(body, context);
@@ -1932,9 +2178,9 @@ function mfaAction(body, context) {
 
 // Both writes, and neither decides anything: admin_rbac.js holds the rules and
 // this reads two fields off a body. `actor` is threaded through so the
-// `admin.role.change` audit row can say WHO made the grant — the one question an
-// audit log of permissions changes exists to answer, and the one nothing else on
-// the row could reconstruct.
+// `admin.role.change` audit row can say WHO made the grant — the one question
+// an audit log of permissions changes exists to answer, and the one nothing
+// else on the row could reconstruct.
 function rbacAction(body, context) {
   log.debug("Entering rbacAction(). action=" + (body.action || '(none)'));
   const action = String(body.action || '');
@@ -1945,18 +2191,21 @@ function rbacAction(body, context) {
 
   if (action === 'grant') {
     const result = rbac.grant(username, role, ctx);
-    log.debug("Leaving rbacAction(). grant " + (result.ok ? "ok." : "refused."));
+    log.debug("Leaving rbacAction(). grant " +
+              (result.ok ? "ok." : "refused."));
     return refusedBy('STS-ADMIN-0539', result);
   }
   if (action === 'revoke') {
     const result = rbac.revoke(username, role, ctx);
-    log.debug("Leaving rbacAction(). revoke " + (result.ok ? "ok." : "refused."));
+    log.debug("Leaving rbacAction(). revoke " +
+              (result.ok ? "ok." : "refused."));
     return refusedBy('STS-ADMIN-0539', result);
   }
 
   log.debug("Leaving rbacAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". There are two: grant and ' +
-                               'revoke.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+                               'There are two: grant and revoke.'] });
 }
 
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
@@ -2016,7 +2265,8 @@ function consentAction(body) {
     if (result.ok) {
       auditLog.audit({ action: 'consent.revoke', actor: actor, target: username,
                     protocol: 'OAuth 2.0 / OIDC', channel: 'http',
-                    detail: 'forgot every consent (' + result.removed + ') for ' + username });
+                    detail: 'forgot every consent (' + result.removed +
+                            ') for ' + username });
     }
     log.debug("Leaving consentAction(). forget-user-consent " +
               (result.ok ? 'ok' : 'refused') + ".");
@@ -2024,7 +2274,9 @@ function consentAction(body) {
   }
 
   log.debug("Leaving consentAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The ' +
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'The ' +
                                numberWord(CONSENT_ACTIONS.length) + ' are: ' +
                                CONSENT_ACTIONS.join(', ') + '.'] });
 }
@@ -2056,6 +2308,8 @@ const ROLE_MEMBER_KINDS = [
 ];
 
 function roleMemberKindOf(kind) {
+  log.debug("Entering roleMemberKindOf().");
+  log.debug("Leaving roleMemberKindOf().");
   return ROLE_MEMBER_KINDS.filter(function (one) {
     return one.kind === String(kind);
   })[0] || null;
@@ -2085,7 +2339,8 @@ function rolesAction(body, context) {
     const existing = roles.read(name);
     if (existing) {
       log.debug("Leaving rolesAction(). create-role refused: it is there.");
-      return refused('STS-ADMIN-0541', { ok: false, errors: ['There is already a role called "' + name +
+      return refused('STS-ADMIN-0541', { ok: false, errors: ['There is ' +
+          'already a role called "' + name +
                                    '". Roles are edited in place — add a ' +
                                    'member to it rather than creating it ' +
                                    'again.'] });
@@ -2099,7 +2354,8 @@ function rolesAction(body, context) {
     log.debug("Leaving rolesAction(). create-role " +
               (result.ok ? 'ok.' : 'refused.'));
     return result.ok ? result
-      : refused(innerCode(result) || 'STS-ADMIN-0542', { ok: false, errors: [result.why] });
+      : refused(innerCode(result) || 'STS-ADMIN-0542',
+                { ok: false, errors: [result.why] });
   }
 
   if (action === 'delete-role') {
@@ -2118,7 +2374,8 @@ function rolesAction(body, context) {
     const result = roles.remove(name);
     if (!result.ok) {
       log.debug("Leaving rolesAction(). delete-role refused.");
-      return refused(innerCode(result) || 'STS-ADMIN-0542', { ok: false, errors: [result.why] });
+      return refused(innerCode(result) || 'STS-ADMIN-0542',
+                     { ok: false, errors: [result.why] });
     }
     auditLog.audit({ action: 'roles.delete', actor: actor, target: name,
                   protocol: 'XACML', channel: 'http',
@@ -2142,7 +2399,8 @@ function rolesAction(body, context) {
     const row = roles.read(name);
     if (!row) {
       log.debug("Leaving rolesAction(). describe-role refused.");
-      return refused('STS-ADMIN-0543', { ok: false, errors: ['There is no role called "' + name + '".'] });
+      return refused('STS-ADMIN-0543', { ok: false, errors: ['There is no ' +
+          'role called "' + name + '".'] });
     }
     // THE WHOLE RECORD IS WRITTEN BACK and not just the description, because
     // `roles.write()` REPLACES an entry — a write carrying only the
@@ -2155,22 +2413,25 @@ function rolesAction(body, context) {
     log.debug("Leaving rolesAction(). describe-role " +
               (result.ok ? 'ok.' : 'refused.'));
     return result.ok ? result
-      : refused(innerCode(result) || 'STS-ADMIN-0542', { ok: false, errors: [result.why] });
+      : refused(innerCode(result) || 'STS-ADMIN-0542',
+                { ok: false, errors: [result.why] });
   }
 
   if (action === 'add-member' || action === 'remove-member') {
     const kindRow = roleMemberKindOf(kind);
     if (!kindRow) {
       log.debug("Leaving rolesAction(). Unknown member kind.");
-      return refused('STS-ADMIN-0544', { ok: false, errors: ['"' + kind + '" is not a kind of member. ' +
-                                   'There are three: ' +
+      return refused('STS-ADMIN-0544', { ok: false, errors: ['"' + kind + '" ' +
+                                   'is not a kind of member. There are ' +
+                                   'three: ' +
                                    ROLE_MEMBER_KINDS.map(function (one) {
                                      return one.kind;
                                    }).join(', ') + '.'] });
     }
     if (!member) {
       log.debug("Leaving rolesAction(). No member named.");
-      return refused('STS-ADMIN-0545', { ok: false, errors: ['`member` names the ' + kindRow.label +
+      return refused('STS-ADMIN-0545', { ok: false, errors: ['`member` names ' +
+          'the ' + kindRow.label +
                                    ' being ' + (action === 'add-member'
                                      ? 'added to' : 'removed from') +
                                    ' the role, and it is required. `role` is ' +
@@ -2186,16 +2447,19 @@ function rolesAction(body, context) {
       // the page had just drawn.
       if (roles.isBuiltIn(name)) {
         log.debug("Leaving rolesAction(). Built-in role.");
-        return refused('STS-ADMIN-0546', { ok: false, errors: ['"' + name + '" is a BUILT-IN role. It ' +
-                                     'is COMPUTED from the context of each ' +
-                                     'decision rather than stored, so it has ' +
-                                     'no membership to edit — everybody who ' +
+        return refused('STS-ADMIN-0546',
+                       { ok: false, errors: ['"' + name + '" ' +
+                                     'is a BUILT-IN role. It is COMPUTED ' +
+                                     'from the context of each decision ' +
+                                     'rather than stored, so it has no ' +
+                                     'membership to edit — everybody who ' +
                                      'matches it holds it, always. Create a ' +
                                      'role of your own to give somebody ' +
                                      'something they do not already have.'] });
       }
       log.debug("Leaving rolesAction(). No such role.");
-      return refused('STS-ADMIN-0543', { ok: false, errors: ['There is no role called "' + name +
+      return refused('STS-ADMIN-0543', { ok: false, errors: ['There is no ' +
+          'role called "' + name +
                                    '". Create it first.'] });
     }
     const held = {
@@ -2213,14 +2477,18 @@ function rolesAction(body, context) {
     if (action === 'add-member') {
       if (at >= 0) {
         log.debug("Leaving rolesAction(). Already a member.");
-        return refused('STS-ADMIN-0547', { ok: false, errors: ['"' + member + '" already holds "' +
+        return refused('STS-ADMIN-0547',
+                       { ok: false, errors: ['"' + member + '" ' +
+            'already holds "' +
                                      name + '" as ' + kindRow.label + '.'] });
       }
       list.push(member);
     } else {
       if (at < 0) {
         log.debug("Leaving rolesAction(). Not a member.");
-        return refused('STS-ADMIN-0548', { ok: false, errors: ['"' + member + '" does not hold "' +
+        return refused('STS-ADMIN-0548',
+                       { ok: false, errors: ['"' + member + '" ' +
+            'does not hold "' +
                                      name + '" as ' + kindRow.label + '.'] });
       }
       list.splice(at, 1);
@@ -2231,7 +2499,8 @@ function rolesAction(body, context) {
     });
     if (!result.ok) {
       log.debug("Leaving rolesAction(). The write was refused.");
-      return refused(innerCode(result) || 'STS-ADMIN-0542', { ok: false, errors: [result.why] });
+      return refused(innerCode(result) || 'STS-ADMIN-0542',
+                     { ok: false, errors: [result.why] });
     }
     auditLog.audit({
       action: action === 'add-member' ? 'roles.grant' : 'roles.revoke',
@@ -2247,7 +2516,9 @@ function rolesAction(body, context) {
   }
 
   log.debug("Leaving rolesAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The ' +
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'The ' +
                                numberWord(ROLE_ACTIONS.length) + ' are: ' +
                                ROLE_ACTIONS.join(', ') + '.'] });
 }
@@ -2266,20 +2537,25 @@ function rolesAction(body, context) {
 // loosened a rule nobody mentioned is the one mistake here that nobody sees.
 // `form: 'console'` is what tells the module an absent checkbox means "no".
 // ---------------------------------------------------------------------------
-const PASSWORD_POLICY_ACTIONS = ['save-password-policy', 'reset-password-policy'];
+const PASSWORD_POLICY_ACTIONS = ['save-password-policy',
+                                 'reset-password-policy'];
 
 function passwordPoliciesAction(body, context) {
-  log.debug("Entering passwordPoliciesAction(). action=" + (body.action || '(none)'));
+  log.debug("Entering passwordPoliciesAction(). action=" +
+            (body.action || '(none)'));
   const action = String(body.action || '');
   const ctx = context || {};
   const actor = String(ctx.actor || body.actor || '');
-  const profileName = String(body.profile || passwordPolicy.DEFAULT_PROFILE).trim();
+  const profileName = String(body.profile ||
+                             passwordPolicy.DEFAULT_PROFILE).trim();
   const before = passwordPolicy.read(passwordPolicy.DEFAULT_PROFILE);
   const valuesOf = function (profile) {
+    log.debug("Entering valuesOf().");
     const out = {};
     passwordPolicy.FIELDS.forEach(function (field) {
       out[field.key] = profile[field.key];
     });
+    log.debug("Leaving valuesOf().");
     return out;
   };
 
@@ -2291,12 +2567,14 @@ function passwordPoliciesAction(body, context) {
     const result = passwordPolicy.save(profileName, given);
     if (!result.ok) {
       log.debug("Leaving passwordPoliciesAction(). save refused.");
-      return refused(innerCode(result) || 'STS-ADMIN-0549', { ok: false, errors: result.errors });
+      return refused(innerCode(result) || 'STS-ADMIN-0549',
+                     { ok: false, errors: result.errors });
     }
     auditLog.audit({
       action: 'admin.password-policy.change', actor: actor,
       target: result.profile.dn, channel: 'http',
-      summary: 'saved the password policy profile "' + result.profile.name + '"',
+      summary: 'saved the password policy profile "' + result.profile.name +
+               '"',
       detail: { via: ctx.via || '', before: valuesOf(before),
                 after: valuesOf(result.profile) }
     });
@@ -2305,8 +2583,8 @@ function passwordPoliciesAction(body, context) {
              rules: passwordPolicy.describe(result.profile),
              enforced: result.profile.enforced,
              message: 'The password policy profile "' + result.profile.name +
-                      '" is saved at ' + result.profile.dn + '. It applies to ' +
-                      'the NEXT password set in this realm and to nothing ' +
+                      '" is saved at ' + result.profile.dn + '. It applies ' +
+                      'to the NEXT password set in this realm and to nothing ' +
                       'already stored' +
                       (result.profile.enforced ? '.'
                         : ' — and it is not enforced here until this realm ' +
@@ -2317,7 +2595,8 @@ function passwordPoliciesAction(body, context) {
     const result = passwordPolicy.reset(profileName);
     if (!result.ok) {
       log.debug("Leaving passwordPoliciesAction(). reset refused.");
-      return refused(innerCode(result) || 'STS-ADMIN-0550', { ok: false, errors: result.errors });
+      return refused(innerCode(result) || 'STS-ADMIN-0550',
+                     { ok: false, errors: result.errors });
     }
     if (result.removed) {
       auditLog.audit({
@@ -2333,14 +2612,18 @@ function passwordPoliciesAction(body, context) {
     return { ok: true, removed: result.removed, profile: result.profile,
              rules: passwordPolicy.describe(result.profile),
              message: result.removed
-               ? 'The stored profile is gone and the built-in defaults are in ' +
-                 'force: ' + passwordPolicy.describe(result.profile).join(', ') + '.'
-               : 'Nothing was stored, so the built-in defaults were already in ' +
-                 'force.' };
+               ? 'The stored profile is gone and the built-in defaults are ' +
+                 'in ' +
+                 'force: ' +
+                 passwordPolicy.describe(result.profile).join(', ') + '.'
+               : 'Nothing was stored, so the built-in defaults were already ' +
+                 'in force.' };
   }
 
   log.debug("Leaving passwordPoliciesAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The two are: ' +
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'The two are: ' +
                                PASSWORD_POLICY_ACTIONS.join(', ') + '.'] });
 }
 
@@ -2376,30 +2659,38 @@ function claimsAction(body, names, allowed) {
   const sets = allowed && allowed.length ? allowed : stats.CLAIM_SET_IDS;
   if (sets.indexOf(setId) < 0) {
     log.debug("Leaving claimsAction(). No such set here.");
-    return refused('STS-ADMIN-0551', { ok: false, errors: ['There is no claim set called "' + setId + '" here. The ones ' +
-                                 'this door carries are: ' + sets.join(', ') + '.'] });
+    return refused('STS-ADMIN-0551', { ok: false, errors: ['There is no ' +
+        'claim set called "' + setId + '" ' +
+                                 'here. The ones this door carries ' +
+                                 'are: ' + sets.join(', ') + '.'] });
   }
   const label = stats.CLAIM_SETS[setId].label;
 
   if (action === 'add') {
-    const entry = { name: String(body.name || '').trim(), value: String(body.value == null ? '' : body.value) };
+    const entry = { name: String(body.name || '').trim(),
+                    value: String(body.value == null ? '' : body.value) };
     if (body.nameFormat) entry.nameFormat = String(body.nameFormat).trim();
     if (body.namespace) entry.namespace = String(body.namespace).trim();
-    const result = stats.setClaimSet(setId, stats.claimSet(setId).concat([entry]));
+    const result = stats.setClaimSet(setId,
+                                     stats.claimSet(setId).concat([entry]));
     log.debug("Leaving claimsAction(). add -> ok=" + result.ok);
     return result.ok
       ? { ok: true, set: setId, claims: result.claims,
-          message: 'Added "' + entry.name + '" to the ' + label + ' claim set. Every one of those ' +
-                   'issued from now on carries it; nothing already issued changes.' }
+          message: 'Added "' + entry.name + '" to the ' + label + ' claim ' +
+                   'set. Every one of those issued from now on carries it; ' +
+                   'nothing already issued changes.' }
       : refusedBy('STS-ADMIN-0552', result);
   }
 
   if (action === 'remove') {
     const name = String(body.name || '').trim();
-    const remaining = stats.claimSet(setId).filter(function (c) { return c.name !== name; });
+    const remaining = stats.claimSet(setId)
+                           .filter(function (c) { return c.name !== name; });
     if (remaining.length === stats.claimSet(setId).length) {
       log.debug("Leaving claimsAction(). Nothing named that.");
-      return refused('STS-ADMIN-0553', { ok: false, errors: ['The ' + label + ' claim set has no claim called "' + name + '".'] });
+      return refused('STS-ADMIN-0553',
+                     { ok: false, errors: ['The ' + label + ' ' +
+          'claim set has no claim called "' + name + '".'] });
     }
     const result = stats.setClaimSet(setId, remaining);
     log.debug("Leaving claimsAction(). remove -> ok=" + result.ok);
@@ -2423,19 +2714,24 @@ function claimsAction(body, names, allowed) {
         entries = JSON.parse(entries || '[]');
       } catch (e) {
         log.debug("Leaving claimsAction(). The JSON did not parse.");
-        return refused('STS-ADMIN-0554', { ok: false, errors: ['That is not valid JSON: ' + e.message] });
+        return refused('STS-ADMIN-0554', { ok: false, errors: ['That is not ' +
+            'valid JSON: ' + e.message] });
       }
     }
     if (!Array.isArray(entries)) {
       log.debug("Leaving claimsAction(). Not an array.");
-      return refused('STS-ADMIN-0555', { ok: false, errors: ['Give a JSON ARRAY of {"name": ..., "value": ...} objects. An ' +
-                                   'empty array clears the set.'] });
+      return refused('STS-ADMIN-0555', { ok: false, errors: ['Give a JSON ' +
+                                   'ARRAY of {"name": ..., "value": ...} ' +
+                                   'objects. An empty array clears the ' +
+                                   'set.'] });
     }
     const result = stats.setClaimSet(setId, entries);
     log.debug("Leaving claimsAction(). replace -> ok=" + result.ok);
     return result.ok
       ? { ok: true, set: setId, claims: result.claims,
-          message: 'The ' + label + ' claim set now has ' + result.claims.length + ' custom claim(s).' }
+          message: 'The ' + label + ' claim set now has ' +
+              result.claims.length + ' ' +
+              'custom claim(s).' }
       : refusedBy('STS-ADMIN-0552', result);
   }
 
@@ -2447,24 +2743,24 @@ function claimsAction(body, names, allowed) {
   // thing to authorise and a different row in the audit log: `attributes`
   // carries a list somebody chose, and the other two carry nothing and mean the
   // extremes. A single action taking a list would make "select all" a caller's
-  // job to construct — the whole catalogue in a POST body to say "all of them" —
-  // which is a list that has to be updated every time the catalogue is.
+  // job to construct — the whole catalogue in a POST body to say "all of them"
+  // — which is a list that has to be updated every time the catalogue is.
   //
-  // What the split does NOT do is make an empty `attributes` unambiguous, and it
-  // is worth being plain about that rather than implying otherwise. An empty
+  // What the split does NOT do is make an empty `attributes` unambiguous, and
+  // it is worth being plain about that rather than implying otherwise. An empty
   // list and an absent one both mean "the selection is nothing", so a caller
   // that misspells the field clears the set. Three things make that recoverable
   // rather than silent, and they are the reason it is not refused instead: the
   // reply names every attribute it `removed`, the audit log keeps a row saying
-  // the same, and unticking every box and pressing Update is a legitimate way to
-  // clear a set that a refusal would have to break. `attributes-clear` exists so
-  // that a caller which MEANS it can say so, and so that the console's button
-  // does not depend on submitting an empty form.
+  // the same, and unticking every box and pressing Update is a legitimate way
+  // to clear a set that a refusal would have to break. `attributes-clear`
+  // exists so that a caller which MEANS it can say so, and so that the
+  // console's button does not depend on submitting an empty form.
   //
-  // The console's buttons are form posts for the same reason every other control
-  // here is: app.js sets `script-src 'none'` for the whole service, so a
-  // browser-side "tick every box" is not available and would not be taken if it
-  // were — a server-side select-all leaves an audit row, and a scripted one
+  // The console's buttons are form posts for the same reason every other
+  // control here is: app.js sets `script-src 'none'` for the whole service, so
+  // a browser-side "tick every box" is not available and would not be taken if
+  // it were — a server-side select-all leaves an audit row, and a scripted one
   // would leave the boxes ticked and the set unchanged until somebody pressed
   // Update.
   // ------------------------------------------------------------------------
@@ -2474,10 +2770,13 @@ function claimsAction(body, names, allowed) {
     return result.ok
       ? { ok: true, set: setId, attributes: result.attributes,
           added: result.added, removed: result.removed,
-          message: 'The ' + label + ' set now carries ' + result.attributes.length +
-                   ' directory attribute(s): ' + (result.attributes.join(', ') || '(none)') +
-                   '. Every one of those issued from now on carries them, with the value on ' +
-                   'that person\'s entry; nothing already issued changes.' }
+          message: 'The ' + label + ' set now carries ' +
+                   result.attributes.length +
+                   ' directory attribute(s): ' + (result.attributes.join(
+                       ', ') || '(none)') +
+                   '. Every one of those issued from now on carries them, ' +
+                   'with the value on that person\'s entry; nothing already ' +
+                   'issued changes.' }
       : refusedBy('STS-ADMIN-0552', result);
   }
 
@@ -2487,9 +2786,11 @@ function claimsAction(body, names, allowed) {
     return result.ok
       ? { ok: true, set: setId, attributes: result.attributes,
           added: result.added, removed: result.removed,
-          message: 'The ' + label + ' set now carries every attribute in the catalogue — ' +
-                   result.attributes.length + ' of them. That is a legitimate thing to test ' +
-                   'and it makes a large token; it is not a mistake this page will correct.' }
+          message: 'The ' + label + ' set now carries every attribute in the ' +
+                                    'catalogue — ' +
+                   result.attributes.length + ' of them. That is a ' +
+                   'legitimate thing to test and it makes a large token; it ' +
+                   'is not a mistake this page will correct.' }
       : refusedBy('STS-ADMIN-0552', result);
   }
 
@@ -2497,32 +2798,45 @@ function claimsAction(body, names, allowed) {
     const result = claimAttributes.clearSelection(setId);
     log.debug("Leaving claimsAction(). attributes-clear -> ok=" + result.ok);
     return result.ok
-      ? { ok: true, set: setId, attributes: [], added: [], removed: result.removed,
-          message: 'The ' + label + ' set carries no directory attribute again. Removed: ' +
-                   (result.removed.join(', ') || 'nothing — it was already empty') + '. The ' +
-                   'typed claims on this set, if any, are untouched.' }
+      ? { ok: true, set: setId, attributes: [], added: [],
+          removed: result.removed,
+          message: 'The ' + label + ' set carries no directory attribute ' +
+                                    'again. Removed: ' +
+                   (result.removed.join(', ') || 'nothing — it was already ' +
+                                                 'empty') + '. ' +
+                   'The typed claims on this set, if any, are untouched.' }
       : refusedBy('STS-ADMIN-0552', result);
   }
 
   log.debug("Leaving claimsAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The seven are: add, remove, ' +
-                               'clear, replace, attributes, attributes-all, attributes-clear.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+                               'The seven are: add, remove, clear, replace, ' +
+                               'attributes, attributes-all, ' +
+                               'attributes-clear.'] });
 }
 
 // The sweep's outcome as a sentence, appended to whatever message the action
-// itself produced. It is stated on EVERY selection change, including the ones that
-// changed nothing in the directory, because "0 entries gained anything" and "there
-// is no directory here" are different facts and the page must not read the same
-// for both.
+// itself produced. It is stated on EVERY selection change, including the ones
+// that changed nothing in the directory, because "0 entries gained anything"
+// and "there is no directory here" are different facts and the page must not
+// read the same for both.
 function sweepText(sweep) {
+  log.debug("Entering sweepText().");
   if (!sweep.loaded) {
-    return ' The embedded directory is not loaded, so no entry was populated; ' +
-           'credentials still carry these claims, generated per user.';
+    log.debug("Leaving sweepText().");
+    return ' The embedded directory is not loaded, so no entry was ' +
+           'populated; credentials still carry these claims, generated per ' +
+           'user.';
   }
   if (!sweep.ok) {
-    return ' The directory could not be populated: ' + (sweep.errors || []).join(' ');
+    log.debug("Leaving sweepText().");
+    return ' The directory could not be populated: ' +
+           (sweep.errors || []).join(' ');
   }
-  return ' Swept ' + sweep.examined + ' directory entry/entries; ' + sweep.changed +
+  log.debug("Leaving sweepText().");
+  return ' Swept ' + sweep.examined + ' directory entry/entries; ' +
+         sweep.changed +
          ' of them gained ' + sweep.values + ' value(s).';
 }
 
@@ -2540,12 +2854,17 @@ function vcAction(body, names) {
       return refusedBy('STS-ADMIN-0556', result);
     }
     const sweep = vcClaims.populateDirectory();
-    log.debug("Leaving vcAction(). Selected " + result.selected.length + " attribute(s).");
-    return { ok: true, selected: result.selected, added: result.added, removed: result.removed,
+    log.debug("Leaving vcAction(). Selected " + result.selected.length + " " +
+        "attribute(s).");
+    return { ok: true, selected: result.selected, added: result.added,
+             removed: result.removed,
              sweep: sweep,
-             message: 'A credential issued from now on carries ' + result.selected.length +
-                      ' claim(s). Added: ' + (result.added.join(', ') || 'nothing') +
-                      '. Removed: ' + (result.removed.join(', ') || 'nothing') + '.' +
+             message: 'A credential issued from now on carries ' +
+                      result.selected.length +
+                      ' claim(s). Added: ' + (result.added.join(', ') ||
+                                              'nothing') +
+                      '. Removed: ' + (result.removed.join(', ') ||
+                                       'nothing') + '.' +
                       sweepText(sweep) };
   }
 
@@ -2553,27 +2872,37 @@ function vcAction(body, names) {
     const name = String(body.attribute || body.name || '').trim();
     if (!name) {
       log.debug("Leaving vcAction(). No attribute was named.");
-      return refused('STS-ADMIN-0557', { ok: false, errors: ['Name the attribute to ' + action + '.'] });
+      return refused('STS-ADMIN-0557', { ok: false, errors: ['Name the ' +
+          'attribute to ' + action + '.'] });
     }
     const lower = name.toLowerCase();
-    const already = current.some(function (n) { return n.toLowerCase() === lower; });
+    const already =
+        current.some(function (n) { return n.toLowerCase() === lower; });
     if (action === 'add' && already) {
       log.debug("Leaving vcAction(). Already selected.");
-      return refused('STS-ADMIN-0558', { ok: false, errors: ['"' + name + '" is already in the claim set.'] });
+      return refused('STS-ADMIN-0558', { ok: false, errors: ['"' + name + '" ' +
+          'is already in the claim set.'] });
     }
     if (action === 'remove' && !already) {
       log.debug("Leaving vcAction(). Not selected.");
-      return refused('STS-ADMIN-0559', { ok: false, errors: ['"' + name + '" is not in the claim set.'] });
+      return refused('STS-ADMIN-0559', { ok: false, errors: ['"' + name + '" ' +
+          'is not in the claim set.'] });
     }
     const wanted = action === 'add' ? current.concat([name])
-                                    : current.filter(function (n) { return n.toLowerCase() !== lower; });
+                                    : current.filter(
+                                        function (
+                                            n) {
+                                          return n.toLowerCase() !== lower;
+                                        });
     const result = vcClaims.setSelection(wanted);
     if (!result.ok) {
       log.debug("Leaving vcAction(). The attribute was refused.");
       return refusedBy('STS-ADMIN-0556', result);
     }
     const sweep = vcClaims.populateDirectory();
-    log.debug("Leaving vcAction(). " + action + " -> " + result.selected.length + " selected.");
+    log.debug("Leaving vcAction(). " + action + " -> " +
+        result.selected.length + " " +
+        "selected.");
     return { ok: true, selected: result.selected, sweep: sweep,
              message: (action === 'add' ? 'Added ' : 'Removed ') + name +
                       '. A credential issued from now on carries ' + result.selected.length +
@@ -2586,8 +2915,8 @@ function vcAction(body, names) {
     log.debug("Leaving vcAction(). Restored the defaults.");
     return { ok: true, selected: result.selected, sweep: sweep,
              message: 'The claim set is the default ' + result.selected.length +
-                      ' attribute(s) again — the six claims this issuer carried before this ' +
-                      'page existed.' + sweepText(sweep) };
+                      ' attribute(s) again — the six claims this issuer ' +
+                      'carried before this page existed.' + sweepText(sweep) };
   }
 
   if (action === 'populate') {
@@ -2595,24 +2924,27 @@ function vcAction(body, names) {
     log.debug("Leaving vcAction(). Populated only.");
     return refusedBy('STS-ADMIN-0560', {
       ok: sweep.ok, errors: sweep.errors, selected: current, sweep: sweep,
-      message: 'Populated the directory for the current claim set.' + sweepText(sweep) });
+      message: 'Populated the directory for the current claim set.' +
+               sweepText(sweep) });
   }
 
   log.debug("Leaving vcAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The five are: select, add, ' +
-                               'remove, defaults, populate.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+                               'The five are: select, add, remove, defaults, ' +
+                               'populate.'] });
 }
 
 // ---------------------------------------------------------------------------
 // GET /admin/vc-verifier-config, POST /admin/vc-verifier-config
 //
-// WHAT THE BAR DOOR ASKS FOR — the other end of the page above. /admin/vc decides
-// what an issued credential CARRIES; this decides what the Verifier at
+// WHAT THE BAR DOOR ASKS FOR — the other end of the page above. /admin/vc
+// decides what an issued credential CARRIES; this decides what the Verifier at
 // /oid4vp/verifier ASKS FOR, and the two are deliberately separate settings
 // because the interesting states are the ones where they disagree. A Verifier
 // asking for a claim the issuer is not minting is the negative that exercises a
-// wallet's "I cannot satisfy this request" path, and there is no way to reach it
-// if one page sets both.
+// wallet's "I cannot satisfy this request" path, and there is no way to reach
+// it if one page sets both.
 //
 // The catalogue is vc_claims.js's, grouped into CLAIMS rather than listed as
 // attribute types, and vc_verifier_config.js says at length why: a credential
@@ -2631,22 +2963,26 @@ function vpConfigAction(body, names) {
   if (action === 'select' || action === 'replace') {
     // An empty list is a legitimate save and not an empty form: DCQL with no
     // `claims` member asks for the WHOLE credential, so unticking everything is
-    // how somebody tests that. It is stated in the message rather than left to be
-    // discovered from a presentation that disclosed everything.
+    // how somebody tests that. It is stated in the message rather than left to
+    // be discovered from a presentation that disclosed everything.
     const result = vpConfig.setRequested(names);
     if (!result.ok) {
       log.debug("Leaving vpConfigAction(). The selection was refused.");
       return refusedBy('STS-ADMIN-0561', result);
     }
-    log.debug("Leaving vpConfigAction(). " + result.requested.length + " claim(s) requested.");
-    return { ok: true, requested: result.requested, added: result.added, removed: result.removed,
+    log.debug("Leaving vpConfigAction(). " + result.requested.length + " " +
+        "claim(s) requested.");
+    return { ok: true, requested: result.requested, added: result.added,
+             removed: result.removed,
              message: result.requested.length
-               ? 'The next Authorization Request asks for ' + result.requested.length +
+               ? 'The next Authorization Request asks for ' +
+                 result.requested.length +
                  ' claim(s): ' + result.requested.join(', ') + '. Added: ' +
                  (result.added.join(', ') || 'nothing') + '. Removed: ' +
                  (result.removed.join(', ') || 'nothing') + '.'
-               : 'The next Authorization Request names no claims at all, which in DCQL asks for ' +
-                 'the WHOLE credential — the query carries no claims member. Removed: ' +
+               : 'The next Authorization Request names no claims at all, ' +
+                 'which in DCQL asks for the WHOLE credential — the query ' +
+                 'carries no claims member. Removed: ' +
                  (result.removed.join(', ') || 'nothing') + '.' };
   }
 
@@ -2661,10 +2997,11 @@ function vpConfigAction(body, names) {
     log.debug("Leaving vpConfigAction(). Added " + name + ".");
     return { ok: true, requested: result.requested,
              message: 'Now asking for ' + name + '.' + (known ? '' :
-               ' It is not in the catalogue, so no credential this service issues carries it — ' +
-               'which is what makes it a test of what your wallet does with a request it cannot ' +
-               'satisfy. This Verifier will refuse the presentation on the "Requested claims" ' +
-               'check and name it.') };
+               ' It is not in the catalogue, so no credential this service ' +
+               'issues carries it — which is what makes it a test of what ' +
+               'your wallet does with a request it cannot satisfy. This ' +
+               'Verifier will refuse the presentation on the "Requested ' +
+               'claims" check and name it.') };
   }
 
   if (action === 'remove') {
@@ -2684,8 +3021,9 @@ function vpConfigAction(body, names) {
     log.debug("Leaving vpConfigAction(). Restored the startup request.");
     return { ok: true, requested: result.requested,
              message: 'Back to what this process started with: ' +
-                      (result.requested.join(', ') || '(no claims)') + '. That is OID4VP_CLAIMS ' +
-                      'where it was set and given_name, family_name where it was not.' };
+                      (result.requested.join(', ') || '(no claims)') + '. ' +
+                      'That is OID4VP_CLAIMS where it was set and ' +
+                      'given_name, family_name where it was not.' };
   }
 
   if (action === 'format') {
@@ -2694,21 +3032,25 @@ function vpConfigAction(body, names) {
       log.debug("Leaving vpConfigAction(). No such format.");
       return refusedBy('STS-ADMIN-0561', result);
     }
-    log.debug("Leaving vpConfigAction(). Default format is " + result.format + ".");
+    log.debug("Leaving vpConfigAction(). Default format is " + result.format +
+              ".");
     return { ok: true, format: result.format,
-             message: 'A request that does not name a format now asks for a ' + result.format +
-                      ' credential. The three format links on the bar door name one explicitly ' +
-                      'and are unaffected.' };
+             message: 'A request that does not name a format now asks for a ' +
+                      result.format +
+                      ' credential. The three format links on the bar door ' +
+                      'name one explicitly and are unaffected.' };
   }
 
   log.debug("Leaving vpConfigAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The five are: select, add, ' +
-                               'remove, defaults, format.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+                               'The five are: select, add, remove, defaults, ' +
+                               'format.'] });
 }
 
 // The four writes. One function, the way every other page here has one, so that
-// the console form and POST /admin-api/realms cannot come to disagree about what
-// "remove" means.
+// the console form and POST /admin-api/realms cannot come to disagree about
+// what "remove" means.
 function realmsAction(body) {
   log.debug("Entering realmsAction(). action=" + (body && body.action));
   const action = String((body && body.action) || '').trim();
@@ -2740,12 +3082,14 @@ function realmsAction(body) {
     return { ok: true, realm: result.realm.id,
              message: 'The realm "' + result.realm.id + '" is defined. Every ' +
                       'HTTP endpoint this service has now answers under ' +
-                      realms.prefixOf(result.realm) + '/ as well, with its own ' +
-                      'signing key and nothing issued yet.' };
+                      realms.prefixOf(result.realm) + '/ as well, with its ' +
+                      'own signing key and nothing issued yet.' };
   }
 
   if (action === 'update') {
-    const result = realms.update(id, { name: body.name, description: body.description });
+    const result = realms.update(id,
+                                 { name: body.name,
+                                   description: body.description });
     if (!result.ok) {
       log.debug("Leaving realmsAction(). update refused.");
       return refusedBy('STS-ADMIN-0562', result);
@@ -2763,9 +3107,9 @@ function realmsAction(body) {
     }
     log.debug("Leaving realmsAction(). set ok.");
     return { ok: true, realm: id, key: key,
-             message: key + ' is set on the "' + id + '" realm. It applies to ' +
-                      'the next request that arrives under that realm\'s prefix, ' +
-                      'and to nothing else.' };
+             message: key + ' is set on the "' + id + '" realm. It applies ' +
+                      'to the next request that arrives under that realm\'s ' +
+                      'prefix, and to nothing else.' };
   }
 
   if (action === 'unset') {
@@ -2798,7 +3142,8 @@ function realmsAction(body) {
     // ------------------------------------------------------------------
     if (id && id === realms.currentId()) {
       log.debug("Leaving realmsAction(). A realm may not remove itself.");
-      return refused('STS-ADMIN-0563', { ok: false, errors: ['This request arrived inside the "' + id +
+      return refused('STS-ADMIN-0563', { ok: false, errors: ['This request ' +
+          'arrived inside the "' + id +
         '" realm, so removing it would leave the caller on a path that no ' +
         'longer exists — the console would be redirected into a prefix that ' +
         'had stopped existing one instruction earlier. Do it from another ' +
@@ -2812,14 +3157,16 @@ function realmsAction(body) {
     }
     log.debug("Leaving realmsAction(). remove ok.");
     return { ok: true, realm: id,
-             message: 'The realm "' + id + '" is gone, with its sessions, its ' +
-                      'tokens, its statistics, its audit log and its signing ' +
-                      'key. Nothing was removed from the shared directory.' };
+             message: 'The realm "' + id + '" is gone, with its sessions, ' +
+                      'its tokens, its statistics, its audit log and its ' +
+                      'signing key. Nothing was removed from the shared ' +
+                      'directory.' };
   }
 
   log.debug("Leaving realmsAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The five are: ' +
-    'create, update, set, unset, remove.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+    'The five are: create, update, set, unset, remove.'] });
 }
 
 // The action switch. `set` and `reset` name one setting; `set-many` is what a
@@ -2839,10 +3186,11 @@ function configAction(body) {
       return refusedBy('STS-ADMIN-0564', result);
     }
     log.debug("Leaving configAction(). set ok.");
-    return { ok: true, key: key, setting: config.describe(configSettingFor(key)),
-             message: key + ' is now "' + config.text(key) + '". It applies to ' +
-                      'the next token, assertion, ticket or search, and is gone ' +
-                      'on restart.' };
+    return { ok: true, key: key,
+             setting: config.describe(configSettingFor(key)),
+             message: key + ' is now "' + config.text(key) + '". It applies ' +
+                      'to the next token, assertion, ticket or search, and ' +
+                      'is gone on restart.' };
   }
 
   if (action === 'set-many') {
@@ -2855,8 +3203,9 @@ function configAction(body) {
     });
     if (!wanted.length) {
       log.debug("Leaving configAction(). set-many named nothing.");
-      return refused('STS-ADMIN-0565', { ok: false, errors: ['No settings were posted. Every name must be ' +
-        'one of the keys GET /admin/config?format=json lists.'] });
+      return refused('STS-ADMIN-0565', { ok: false, errors: ['No settings ' +
+        'were posted. Every name must be one of the keys GET ' +
+        '/admin/config?format=json lists.'] });
     }
     // Checked first, every one of them, and only then written. A section that
     // applied its first three fields and refused the fourth would leave the
@@ -2867,7 +3216,9 @@ function configAction(body) {
       if (problem) errors.push(problem);
     });
     if (errors.length) {
-      log.debug("Leaving configAction(). set-many refused: " + errors.length + " problem(s).");
+      log.debug("Leaving configAction(). set-many refused: " + errors.length +
+          " " +
+          "problem(s).");
       return refused('STS-ADMIN-0564', { ok: false, errors: errors });
     }
     const changed = [];
@@ -2876,7 +3227,8 @@ function configAction(body) {
       config.setOverride(key, body[key]);
       if (config.text(key) !== before) changed.push(key);
     });
-    log.debug("Leaving configAction(). set-many ok, " + changed.length + " changed.");
+    log.debug("Leaving configAction(). set-many ok, " + changed.length + " " +
+        "changed.");
     return { ok: true, applied: wanted, changed: changed,
              settings: wanted.map(function (key) {
                return config.describe(configSettingFor(key));
@@ -2884,7 +3236,8 @@ function configAction(body) {
              message: changed.length
                ? changed.length + ' setting(s) changed: ' + changed.join(', ') +
                  '. Gone on restart.'
-               : 'Nothing changed — every value posted was the one already in force.' };
+               : 'Nothing changed — every value posted was the one already ' +
+                 'in force.' };
   }
 
   if (action === 'reset') {
@@ -2895,8 +3248,10 @@ function configAction(body) {
       return refusedBy('STS-ADMIN-0564', result);
     }
     log.debug("Leaving configAction(). reset ok.");
-    return { ok: true, key: key, setting: config.describe(configSettingFor(key)),
-             message: key + ' is back to its ' + config.sourceOf(key) + ' value, "' +
+    return { ok: true, key: key,
+             setting: config.describe(configSettingFor(key)),
+             message: key + ' is back to its ' + config.sourceOf(key) + ' ' +
+                 'value, "' +
                       config.text(key) + '".' };
   }
 
@@ -2911,8 +3266,9 @@ function configAction(body) {
   }
 
   log.debug("Leaving configAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The four are: ' +
-    'set, set-many, reset, reset-all.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+    'The four are: set, set-many, reset, reset-all.'] });
 }
 
 // Whether this service has a setting of that name. Asked before `describe()`,
@@ -2920,10 +3276,16 @@ function configAction(body) {
 // that has a key it believes in, and wrong for a form body whose field names
 // arrived from outside.
 function configKnows(key) {
-  return config.SETTINGS.some(function (setting) { return setting.key === key; });
+  log.debug("Entering configKnows().");
+  log.debug("Leaving configKnows().");
+  return config.SETTINGS.some(function (setting) {
+    return setting.key === key;
+  });
 }
 
 function configSettingFor(key) {
+  log.debug("Entering configSettingFor().");
+  log.debug("Leaving configSettingFor().");
   return config.SETTINGS.filter(function (setting) {
     return setting.key === key;
   })[0];
@@ -2934,8 +3296,10 @@ function configSettingFor(key) {
 // this page and its two API operations is derived from it, so a fifth setting
 // is one entry here.
 const TOKEN_LIFETIME_KEYS = ['oauth2.accessTokenTtlS', 'oauth2.idTokenTtlS',
-                             'oauth2.refreshTokenTtlS', 'oauth2.refreshIdleSeconds',
-                             'oauth2.revokeRefreshOnLogout', 'oauth2.clockSkewS'];
+                             'oauth2.refreshTokenTtlS',
+                             'oauth2.refreshIdleSeconds',
+                             'oauth2.revokeRefreshOnLogout',
+                             'oauth2.clockSkewS'];
 
 // The action switch. Two actions, and both write through config.js.
 //
@@ -2967,15 +3331,20 @@ function tokenLifetimesAction(body) {
       return TOKEN_LIFETIME_KEYS.indexOf(name) < 0;
     });
     if (unknown.length) {
-      log.debug("Leaving tokenLifetimesAction(). Unknown field(s): " + unknown.join(', '));
-      return refused('STS-ADMIN-0566', { ok: false, errors: ['This action sets only ' + TOKEN_LIFETIME_KEYS.join(', ') +
-        '. It was also given: ' + unknown.join(', ') + '. Every other setting is on ' +
-        '/admin/config and POST /admin-api/config/set.'] });
+      log.debug("Leaving tokenLifetimesAction(). Unknown field(s): " +
+                unknown.join(', '));
+      return refused('STS-ADMIN-0566', { ok: false, errors: ['This action ' +
+          'sets only ' + TOKEN_LIFETIME_KEYS.join(', ') +
+        '. It was also given: ' + unknown.join(', ') + '. Every other ' +
+        'setting is on /admin/config and POST /admin-api/config/set.'] });
     }
-    const wanted = posted.filter(function (name) { return TOKEN_LIFETIME_KEYS.indexOf(name) >= 0; });
+    const wanted = posted.filter(function (name) {
+      return TOKEN_LIFETIME_KEYS.indexOf(name) >= 0;
+    });
     if (!wanted.length) {
       log.debug("Leaving tokenLifetimesAction(). Nothing was posted.");
-      return refused('STS-ADMIN-0565', { ok: false, errors: ['No lifetime was posted. Name at least one of ' +
+      return refused('STS-ADMIN-0565', { ok: false, errors: ['No lifetime ' +
+          'was posted. Name at least one of ' +
         TOKEN_LIFETIME_KEYS.join(', ') + '.'] });
     }
     const errors = [];
@@ -2984,7 +3353,9 @@ function tokenLifetimesAction(body) {
       if (problem) errors.push(problem);
     });
     if (errors.length) {
-      log.debug("Leaving tokenLifetimesAction(). Refused: " + errors.length + " problem(s).");
+      log.debug("Leaving tokenLifetimesAction(). Refused: " + errors.length +
+          " " +
+          "problem(s).");
       return refused('STS-ADMIN-0564', { ok: false, errors: errors });
     }
     const changed = [];
@@ -2993,18 +3364,22 @@ function tokenLifetimesAction(body) {
       config.setOverride(key, body[key]);
       if (config.text(key) !== before) changed.push(key);
     });
-    log.debug("Leaving tokenLifetimesAction(). " + changed.length + " changed.");
+    log.debug("Leaving tokenLifetimesAction(). " + changed.length +
+              " changed.");
     return { ok: true, applied: wanted, changed: changed,
              settings: wanted.map(function (key) {
                return config.describe(configSettingFor(key));
              }),
              message: (changed.length
-               ? changed.length + ' setting(s) changed: ' + changed.map(function (key) {
+               ? changed.length + ' setting(s) changed: ' +
+                 changed.map(function (key) {
                    return key + ' = ' + config.text(key) + 's';
                  }).join(', ') + '.'
-               : 'Nothing changed — every value posted was the one already in force.') +
-               ' It applies to the NEXT token signed; nothing already issued is affected, ' +
-               'because a lifetime is stamped into a token as its exp claim. Gone on restart.' };
+               : 'Nothing changed — every value posted was the one already ' +
+                 'in force.') +
+               ' It applies to the NEXT token signed; nothing already issued ' +
+               'is affected, because a lifetime is stamped into a token as ' +
+               'its exp claim. Gone on restart.' };
   }
 
   if (action === 'defaults') {
@@ -3017,21 +3392,25 @@ function tokenLifetimesAction(body) {
     TOKEN_LIFETIME_KEYS.forEach(function (key) {
       if (config.clearOverride(key).ok) cleared.push(key);
     });
-    log.debug("Leaving tokenLifetimesAction(). Cleared " + cleared.length + ".");
+    log.debug("Leaving tokenLifetimesAction(). Cleared " + cleared.length +
+              ".");
     return { ok: true, cleared: cleared,
              settings: TOKEN_LIFETIME_KEYS.map(function (key) {
                return config.describe(configSettingFor(key));
              }),
              message: cleared.length
-               ? cleared.length + ' override(s) cleared: ' + cleared.join(', ') + '. Each is ' +
-                 'back to its environment or appconfig value.'
-               : 'None of the four was overridden here, so nothing changed — they are ' +
-                 'already coming from the environment or from one of the two appconfig ' +
-                 'files.' };
+               ? cleared.length + ' override(s) cleared: ' +
+                 cleared.join(', ') + '. ' +
+                 'Each is back to its environment or appconfig value.'
+               : 'None of the four was overridden here, so nothing changed — ' +
+                 'they are already coming from the environment or from one ' +
+                 'of the two appconfig files.' };
   }
 
   log.debug("Leaving tokenLifetimesAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The two are: set, defaults.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'The two are: set, defaults.'] });
 }
 
 // THE ELEVEN SETTINGS THIS PAGE OWNS: five per profile, plus the skew both
@@ -3094,6 +3473,8 @@ const SAML_ASSERTION_KEYS = SAML_ASSERTION_SETTINGS.map(function (row) {
 });
 
 function samlAssertionRowFor(key) {
+  log.debug("Entering samlAssertionRowFor().");
+  log.debug("Leaving samlAssertionRowFor().");
   return SAML_ASSERTION_SETTINGS.filter(function (row) {
     return row.key === key;
   })[0] || null;
@@ -3121,15 +3502,20 @@ function samlAssertionsAction(body) {
       return SAML_ASSERTION_KEYS.indexOf(name) < 0;
     });
     if (unknown.length) {
-      log.debug("Leaving samlAssertionsAction(). Unknown field(s): " + unknown.join(', '));
-      return refused('STS-ADMIN-0566', { ok: false, errors: ['This action sets only ' + SAML_ASSERTION_KEYS.join(', ') +
-        '. It was also given: ' + unknown.join(', ') + '. Every other setting is on ' +
-        '/admin/config and POST /admin-api/config/set.'] });
+      log.debug("Leaving samlAssertionsAction(). Unknown field(s): " +
+                unknown.join(', '));
+      return refused('STS-ADMIN-0566', { ok: false, errors: ['This action ' +
+          'sets only ' + SAML_ASSERTION_KEYS.join(', ') +
+        '. It was also given: ' + unknown.join(', ') + '. Every other ' +
+        'setting is on /admin/config and POST /admin-api/config/set.'] });
     }
-    const wanted = posted.filter(function (name) { return SAML_ASSERTION_KEYS.indexOf(name) >= 0; });
+    const wanted = posted.filter(function (name) {
+      return SAML_ASSERTION_KEYS.indexOf(name) >= 0;
+    });
     if (!wanted.length) {
       log.debug("Leaving samlAssertionsAction(). Nothing was posted.");
-      return refused('STS-ADMIN-0565', { ok: false, errors: ['No setting was posted. Name at least one of ' +
+      return refused('STS-ADMIN-0565', { ok: false, errors: ['No setting was ' +
+          'posted. Name at least one of ' +
         SAML_ASSERTION_KEYS.join(', ') + '.'] });
     }
     const errors = [];
@@ -3138,7 +3524,9 @@ function samlAssertionsAction(body) {
       if (problem) errors.push(problem);
     });
     if (errors.length) {
-      log.debug("Leaving samlAssertionsAction(). Refused: " + errors.length + " problem(s).");
+      log.debug("Leaving samlAssertionsAction(). Refused: " + errors.length +
+          " " +
+          "problem(s).");
       return refused('STS-ADMIN-0564', { ok: false, errors: errors });
     }
     const changed = [];
@@ -3147,20 +3535,24 @@ function samlAssertionsAction(body) {
       config.setOverride(key, body[key]);
       if (config.text(key) !== before) changed.push(key);
     });
-    log.debug("Leaving samlAssertionsAction(). " + changed.length + " changed.");
+    log.debug("Leaving samlAssertionsAction(). " + changed.length +
+              " changed.");
     return { ok: true, applied: wanted, changed: changed,
              settings: wanted.map(function (key) {
                return config.describe(configSettingFor(key));
              }),
              message: (changed.length
-               ? changed.length + ' setting(s) changed: ' + changed.map(function (key) {
+               ? changed.length + ' setting(s) changed: ' +
+                 changed.map(function (key) {
                    const row = samlAssertionRowFor(key);
-                   return key + ' = ' + config.text(key) + (row ? row.unit : '');
+                   return key + ' = ' + config.text(key) +
+                          (row ? row.unit : '');
                  }).join(', ') + '.'
-               : 'Nothing changed — every value posted was the one already in force.') +
-               ' It applies to the NEXT assertion signed; nothing already issued is affected, ' +
-               'because a validity window is stamped into an assertion when it is signed. ' +
-               'Gone on restart.' };
+               : 'Nothing changed — every value posted was the one already ' +
+                 'in force.') +
+               ' It applies to the NEXT assertion signed; nothing already ' +
+               'issued is affected, because a validity window is stamped ' +
+               'into an assertion when it is signed. Gone on restart.' };
   }
 
   if (action === 'defaults') {
@@ -3171,21 +3563,25 @@ function samlAssertionsAction(body) {
     SAML_ASSERTION_KEYS.forEach(function (key) {
       if (config.clearOverride(key).ok) cleared.push(key);
     });
-    log.debug("Leaving samlAssertionsAction(). Cleared " + cleared.length + ".");
+    log.debug("Leaving samlAssertionsAction(). Cleared " + cleared.length +
+              ".");
     return { ok: true, cleared: cleared,
              settings: SAML_ASSERTION_KEYS.map(function (key) {
                return config.describe(configSettingFor(key));
              }),
              message: cleared.length
-               ? cleared.length + ' override(s) cleared: ' + cleared.join(', ') + '. Each is ' +
-                 'back to its environment or appconfig value.'
-               : 'None of the sixteen was overridden here, so nothing changed — they are ' +
-                 'already coming from the environment or from one of the two appconfig ' +
-                 'files.' };
+               ? cleared.length + ' override(s) cleared: ' +
+                 cleared.join(', ') + '. ' +
+                 'Each is back to its environment or appconfig value.'
+               : 'None of the sixteen was overridden here, so nothing ' +
+                 'changed — they are already coming from the environment or ' +
+                 'from one of the two appconfig files.' };
   }
 
   log.debug("Leaving samlAssertionsAction(). Unknown action.");
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". The two are: set, defaults.'] });
+  return refused('STS-ADMIN-0500',
+                 { ok: false, errors: ['Unknown action "' + action + '". ' +
+      'The two are: set, defaults.'] });
 }
 
 // The one control. It empties this console's inbox and DOES NOT touch the
@@ -3213,7 +3609,8 @@ function signalsAction(body) {
     // `pki_admin.js`'s reason: a second action added tomorrow cannot leave the
     // sentence short by one.
     log.debug("Leaving signalsAction(). Unknown action.");
-    return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". ' +
+    return refused('STS-ADMIN-0500',
+                   { ok: false, errors: ['Unknown action "' + action + '". ' +
       (SIGNALS_CONSOLE_ACTIONS.length === 1
         ? 'There is one: '
         : 'There are ' + SIGNALS_CONSOLE_ACTIONS.length + ': ') +
@@ -3241,7 +3638,8 @@ function ssfAction(body) {
   }
   const name = String(asked.action || '');
   log.debug("Leaving ssfAction(). " + name);
-  return Promise.resolve(signalsReporter.action(name, asked, null)).then(function (result) {
+  return Promise.resolve(signalsReporter.action(name, asked, null))
+                .then(function (result) {
     return refusedBy('STS-ADMIN-0567', result);
   });
 }
@@ -3257,7 +3655,8 @@ function caepAction(body) {
   }
   const name = String(asked.action || '');
   log.debug("Leaving caepAction(). " + name);
-  return Promise.resolve(caepReporter.action(name, asked, null)).then(function (result) {
+  return Promise.resolve(caepReporter.action(name, asked, null))
+                .then(function (result) {
     return refusedBy('STS-ADMIN-0567', result);
   });
 }
@@ -3273,7 +3672,8 @@ function riscAction(body) {
   }
   const name = String(asked.action || '');
   log.debug("Leaving riscAction(). " + name);
-  return Promise.resolve(riscReporter.action(name, asked, null)).then(function (result) {
+  return Promise.resolve(riscReporter.action(name, asked, null))
+                .then(function (result) {
     return refusedBy('STS-ADMIN-0567', result);
   });
 }
@@ -3294,10 +3694,10 @@ function riscAction(body) {
 // a single unguarded clear costing a remote PEP its identity for the rest of a
 // run. Removing is one row at a time, by the fingerprint on the row.
 //
-// **AN ADD IS PERSISTED WHERE A STORE IS INSTALLED, AND BOTH RESULTS SAY WHICH**
-// (2026-09-12; this read *neither action persists anything* until then).
-// `tls/tls_server.js` writes a runtime anchor to ou=trustAnchors as it adds
-// it, so it survives a restart wherever the directory does; `persisted` is
+// **AN ADD IS PERSISTED WHERE A STORE IS INSTALLED, AND BOTH RESULTS SAY
+// WHICH** (2026-09-12; this read *neither action persists anything* until
+// then). `tls/tls_server.js` writes a runtime anchor to ou=trustAnchors as it
+// adds it, so it survives a restart wherever the directory does; `persisted` is
 // read off the truststore's own answer rather than asserted here. An anchor
 // from `tls.trustAnchorsFile` still comes back at the next start however it was
 // removed.
@@ -3316,15 +3716,18 @@ function truststoreAction(body, context) {
     // and `tests/vendored/admin_api.js` both READ — see signalsAction() above
     // for what a different phrasing silently turns off.
     log.debug("Leaving truststoreAction(). Unknown action.");
-    return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + action + '". There are ' +
+    return refused('STS-ADMIN-0500',
+                   { ok: false, errors: ['Unknown action "' + action + '". ' +
+        'There are ' +
       numberWord(TRUSTSTORE_ACTIONS.length) + ': ' +
       TRUSTSTORE_ACTIONS.join(', ') + '.'] });
   }
   if (!truststore) {
     log.debug("Leaving truststoreAction(). Not installed.");
-    return refused('STS-ADMIN-0501', { ok: false, errors: ['The client-certificate truststore is not ' +
-      'installed in this process — tls/tls_server.js was not handed to the ' +
-      'console — so there is nothing to change.'] });
+    return refused('STS-ADMIN-0501', { ok: false, errors: ['The ' +
+      'client-certificate truststore is not installed in this process — ' +
+      'tls/tls_server.js was not handed to the console — so there is nothing ' +
+      'to change.'] });
   }
 
   if (action === 'add') {
@@ -3339,12 +3742,15 @@ function truststoreAction(body, context) {
     const result = truststore.add(raw, { actor: actor });
     if (result.error && !result.added) {
       log.debug("Leaving truststoreAction(). add refused.");
-      return refused(innerCode(result) || 'STS-ADMIN-0568', { ok: false, errors: [result.error],
+      return refused(innerCode(result) || 'STS-ADMIN-0568',
+                     { ok: false, errors: [result.error],
                anchors: result.total, duplicates: result.duplicates || 0 });
     }
     const after = truststore.list();
     const known = {};
-    before.anchors.forEach(function (one) { known[one.fingerprint256] = true; });
+    before.anchors.forEach(function (one) {
+      known[one.fingerprint256] = true;
+    });
     const added = after.anchors.filter(function (one) {
       return !known[one.fingerprint256];
     });
@@ -3363,14 +3769,18 @@ function truststoreAction(body, context) {
     // PERSISTED ONLY IF EVERY ANCHOR THIS CALL ADDED WAS WRITTEN DOWN: a store
     // that took some and refused the rest (a full directory) must not be
     // reported as having kept them all.
-    const addedPrints = added.map(function (one) { return one.fingerprint256; });
-    const persisted = after.stored === true && after.anchors.filter(function (one) {
+    const addedPrints =
+        added.map(function (one) { return one.fingerprint256; });
+    const persisted = after.stored === true &&
+                      after.anchors.filter(function (one) {
       return addedPrints.indexOf(one.fingerprint256) >= 0;
     }).every(function (one) { return one.persisted === true; });
+    log.debug("Leaving truststoreAction().");
     return { ok: true, added: added.length,
              duplicates: result.duplicates || 0, anchors: after.anchors.length,
              addedAnchors: added.map(function (one) {
-               return { subject: one.subject, fingerprint256: one.fingerprint256,
+               return { subject: one.subject,
+                        fingerprint256: one.fingerprint256,
                         source: one.source };
              }),
              persisted: persisted,
@@ -3379,17 +3789,18 @@ function truststoreAction(body, context) {
              // carried rather than dropped.
              warning: result.error || '',
              message: added.length + ' anchor(s) added' +
-               (result.duplicates ? ', ' + result.duplicates + ' already held' : '') +
+               (result.duplicates ? ', ' + result.duplicates + ' already held' :
+                '') +
                '. The next handshake on 8443, 9443, LDAPS 636 and the main ' +
-               'port is judged against ' + after.anchors.length + ' anchor(s); ' +
-               'connections already open keep the truststore they were made ' +
-               'under. ' + (persisted
-                 ? 'Written to ou=trustAnchors in the directory, so it survives ' +
-                   'a restart wherever the directory is persisted and reaches ' +
-                   'every other process against the same store.'
+               'port is judged against ' + after.anchors.length + ' ' +
+               'anchor(s); connections already open keep the truststore they ' +
+               'were made under. ' + (persisted
+                 ? 'Written to ou=trustAnchors in the directory, so it ' +
+                   'survives a restart wherever the directory is persisted ' +
+                   'and reaches every other process against the same store.'
                  : 'NOT PERSISTED — a runtime anchor is gone at the next ' +
-                   'start; tls.trustAnchorsFile is the door for one that must ' +
-                   'survive a restart.') +
+                   'start; tls.trustAnchorsFile is the door for one that ' +
+                   'must survive a restart.') +
                (result.error ? ' ' + result.error : '') };
   }
 
@@ -3398,7 +3809,8 @@ function truststoreAction(body, context) {
   if (result.error) {
     log.debug("Leaving truststoreAction(). remove refused.");
     return refused(innerCode(result) || 'STS-ADMIN-0569',
-                   { ok: false, errors: [result.error], anchors: result.total });
+                   { ok: false, errors: [result.error],
+                     anchors: result.total });
   }
   const gone = result.anchor || {};
   auditLog.audit({ action: 'admin.truststore.change', actor: actor,
@@ -3418,8 +3830,8 @@ function truststoreAction(body, context) {
              'longer verifies a client certificate that chains only to it; ' +
              'connections already open keep the truststore they were made ' +
              'under. ' + (gone.source === 'file'
-               ? 'IT CAME FROM tls.trustAnchorsFile AND COMES BACK AT THE NEXT ' +
-                 'START — take it out of that file to remove it for good.'
+               ? 'IT CAME FROM tls.trustAnchorsFile AND COMES BACK AT THE ' +
+                 'NEXT START — take it out of that file to remove it for good.'
                : 'It was added at runtime, so nothing brings it back.') };
 }
 
@@ -3437,6 +3849,8 @@ function truststoreAction(body, context) {
 // also calls.
 // ---------------------------------------------------------------------------
 function spiffeCommaList(value) {
+  log.debug("Entering spiffeCommaList().");
+  log.debug("Leaving spiffeCommaList().");
   return String(value == null ? '' : value).split(',')
     .map(function (part) { return part.trim(); })
     .filter(Boolean);
@@ -3447,12 +3861,17 @@ const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
 const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
 
 function spiffeUnknownAction(action, known) {
-  return refused('STS-ADMIN-0500', { ok: false, errors: ['Unknown action "' + String(action) + '". ' +
+  log.debug("Entering spiffeUnknownAction().");
+  log.debug("Leaving spiffeUnknownAction().");
+  return refused('STS-ADMIN-0500',
+                 { ok: false,
+                   errors: ['Unknown action "' + String(action) + '". ' +
     'The actions here are: ' + known.join(', ') + '.'] });
 }
 
 function spiffeEntriesAction(body) {
-  log.debug("Entering spiffeEntriesAction(). action=" + (body.action || '(none)'));
+  log.debug("Entering spiffeEntriesAction(). action=" +
+            (body.action || '(none)'));
   const action = String(body.action || '');
   const trustDomain = spiffeCa.trustDomain();
 
@@ -3471,29 +3890,36 @@ function spiffeEntriesAction(body) {
     }, 'console', trustDomain, '');
     log.debug("Leaving spiffeEntriesAction(). create " +
               (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return refusedBy('STS-ADMIN-0570', result);
+    if (!result.ok) {
+      log.debug("Leaving spiffeEntriesAction().");
+      return refusedBy('STS-ADMIN-0570', result);
+    }
+    log.debug("Leaving spiffeEntriesAction().");
     return { ok: true, id: result.id, entry: result.entry,
              message: 'The entry is in the registry as ' + result.id +
                       '. The next FetchX509SVID will include an SVID ' +
-                      'for ' + result.entry.spiffeId + ' — this service hands ' +
-                      'every caller every identity, so the selectors do not ' +
-                      'narrow that.' };
+                      'for ' + result.entry.spiffeId + ' — this service ' +
+                      'hands every caller every identity, so the selectors ' +
+                      'do not narrow that.' };
   }
 
   if (action === 'update') {
     const id = String(body.entry || '').trim();
     if (!id) {
       log.debug("Leaving spiffeEntriesAction(). No entry named.");
-      return refused('STS-ADMIN-0571', { ok: false, errors: ['Which entry? Send `entry` with its id.'] });
+      return refused('STS-ADMIN-0571', { ok: false, errors: ['Which entry? ' +
+          'Send `entry` with its id.'] });
     }
     const field = String(body.field || '').trim();
     if (spiffeRegistry.EDITABLE.indexOf(fieldToAttribute(field)) < 0) {
       log.debug("Leaving spiffeEntriesAction(). Not editable.");
-      return refused('STS-ADMIN-0572', { ok: false, errors: ['"' + field + '" is not a field this page ' +
-        'may change. The editable ones are what the entry may DO: ' +
-        'spiffeId, parentId, selectors, dnsNames, federatesWith, ' +
-        'x509SvidTtl, jwtSvidTtl, hint, expiresAt, admin, downstream, ' +
-        'storeSvid. The rest is what HAPPENED, and only ldapmodify reaches it.'] });
+      return refused('STS-ADMIN-0572',
+                     { ok: false, errors: ['"' + field + '" ' +
+        'is not a field this page may change. The editable ones are what the ' +
+        'entry may DO: spiffeId, parentId, selectors, dnsNames, ' +
+        'federatesWith, x509SvidTtl, jwtSvidTtl, hint, expiresAt, admin, ' +
+        'downstream, storeSvid. The rest is what HAPPENED, and only ' +
+        'ldapmodify reaches it.'] });
     }
     const raw = body.value === undefined ? '' : String(body.value);
     const changes = {};
@@ -3514,28 +3940,37 @@ function spiffeEntriesAction(body) {
     const result = spiffeRegistry.updateEntry(id, changes, trustDomain, '');
     log.debug("Leaving spiffeEntriesAction(). update " +
               (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return refusedBy('STS-ADMIN-0570', result);
+    if (!result.ok) {
+      log.debug("Leaving spiffeEntriesAction().");
+      return refusedBy('STS-ADMIN-0570', result);
+    }
+    log.debug("Leaving spiffeEntriesAction().");
     return { ok: true, id: id, entry: result.entry,
              message: field + ' is set. The entry is now at revision ' +
-                      result.entry.revisionNumber + ', and the change applies ' +
-                      'to the NEXT SVID issued from it — nothing caches this ' +
-                      'and nothing already issued changes.' };
+                      result.entry.revisionNumber + ', and the change ' +
+                      'applies to the NEXT SVID issued from it — nothing ' +
+                      'caches this and nothing already issued changes.' };
   }
 
   if (action === 'delete') {
     const id = String(body.entry || '').trim();
     if (!id) {
       log.debug("Leaving spiffeEntriesAction(). No entry named.");
-      return refused('STS-ADMIN-0571', { ok: false, errors: ['Which entry? Send `entry` with its id.'] });
+      return refused('STS-ADMIN-0571', { ok: false, errors: ['Which entry? ' +
+          'Send `entry` with its id.'] });
     }
     const result = spiffeRegistry.deleteEntry(id, '');
     log.debug("Leaving spiffeEntriesAction(). delete " +
               (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return refusedBy('STS-ADMIN-0570', result);
+    if (!result.ok) {
+      log.debug("Leaving spiffeEntriesAction().");
+      return refusedBy('STS-ADMIN-0570', result);
+    }
+    log.debug("Leaving spiffeEntriesAction().");
     return { ok: true, id: id,
-             message: 'The entry is gone. Anything holding an SVID minted from ' +
-                      'it keeps that SVID until it expires — SPIFFE has no ' +
-                      'revocation.' };
+             message: 'The entry is gone. Anything holding an SVID minted ' +
+                      'from it keeps that SVID until it expires — SPIFFE has ' +
+                      'no revocation.' };
   }
 
   log.debug("Leaving spiffeEntriesAction(). Unknown action.");
@@ -3555,23 +3990,31 @@ const SPIFFE_FIELD_ATTRIBUTES = {
 };
 
 function fieldToAttribute(field) {
+  log.debug("Entering fieldToAttribute().");
+  log.debug("Leaving fieldToAttribute().");
   return SPIFFE_FIELD_ATTRIBUTES[String(field)] || '';
 }
 
 function spiffeAgentsAction(body) {
-  log.debug("Entering spiffeAgentsAction(). action=" + (body.action || '(none)'));
+  log.debug("Entering spiffeAgentsAction(). action=" +
+            (body.action || '(none)'));
   const action = String(body.action || '');
   const id = String(body.agent || '').trim();
   if (SPIFFE_AGENT_ACTIONS.indexOf(action) >= 0 && !id) {
     log.debug("Leaving spiffeAgentsAction(). No agent named.");
-    return refused('STS-ADMIN-0573', { ok: false, errors: ['Which agent? Send `agent` with its SPIFFE ' +
-                                 'ID, which is under /spire/agent/.'] });
+    return refused('STS-ADMIN-0573', { ok: false, errors: ['Which agent? ' +
+                                 'Send `agent` with its SPIFFE ID, which is ' +
+                                 'under /spire/agent/.'] });
   }
   if (action === 'ban' || action === 'unban') {
     const result = spiffeRegistry.setAgentBanned(id, action === 'ban', '');
     log.debug("Leaving spiffeAgentsAction(). " + action + " " +
               (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return refusedBy('STS-ADMIN-0574', result);
+    if (!result.ok) {
+      log.debug("Leaving spiffeAgentsAction().");
+      return refusedBy('STS-ADMIN-0574', result);
+    }
+    log.debug("Leaving spiffeAgentsAction().");
     return { ok: true, id: id, agent: result.agent,
              message: action === 'ban'
                ? 'That agent is banned: AttestAgent now refuses it with ' +
@@ -3583,12 +4026,16 @@ function spiffeAgentsAction(body) {
     const result = spiffeRegistry.deleteAgent(id, '');
     log.debug("Leaving spiffeAgentsAction(). delete " +
               (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return refusedBy('STS-ADMIN-0574', result);
+    if (!result.ok) {
+      log.debug("Leaving spiffeAgentsAction().");
+      return refusedBy('STS-ADMIN-0574', result);
+    }
+    log.debug("Leaving spiffeAgentsAction().");
     return { ok: true, id: id,
              message: 'That agent is forgotten. It reappears the moment it ' +
                       'attests again, because attestation is not checked — ' +
-                      'deleting is forgetting, not revoking. Ban it instead if ' +
-                      'that is what you meant.' };
+                      'deleting is forgetting, not revoking. Ban it instead ' +
+                      'if that is what you meant.' };
   }
   log.debug("Leaving spiffeAgentsAction(). Unknown action.");
   return spiffeUnknownAction(action, SPIFFE_AGENT_ACTIONS);
@@ -3620,20 +4067,27 @@ function federationAction(body) {
       fedPeer: String(body.peer || ''),
       fedApplication: String(body.application || '')
     });
-    log.debug("Leaving federationAction(). create " + (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return refusedBy('STS-ADMIN-0575', result);
+    log.debug("Leaving federationAction(). create " +
+              (result.ok ? 'ok' : 'refused') + ".");
+    if (!result.ok) {
+      log.debug("Leaving federationAction().");
+      return refusedBy('STS-ADMIN-0575', result);
+    }
+    log.debug("Leaving federationAction().");
     return Object.assign({}, result, {
       message: 'Registered, and DISABLED. Set what it needs — ' +
         (result.readiness.missing.length
           ? result.readiness.missing.join(', ')
           : 'nothing is missing') +
-        ' — and then enable it. A relationship does nothing at all until both are done.'
+        ' — and then enable it. A relationship does nothing at all until ' +
+        'both are done.'
     });
   }
 
   if (!id) {
     log.debug("Leaving federationAction(). No relationship named.");
-    return refused('STS-ADMIN-0576', { ok: false, errors: ['Name the relationship by its id, in `id`.'] });
+    return refused('STS-ADMIN-0576', { ok: false, errors: ['Name the ' +
+        'relationship by its id, in `id`.'] });
   }
 
   if (action === 'set' || action === 'add-value' || action === 'remove-value') {
@@ -3658,14 +4112,16 @@ function federationAction(body) {
 
   if (action === 'delete') {
     const result = federation.remove(id);
-    log.debug("Leaving federationAction(). delete " + (result.ok ? 'ok' : 'refused') + ".");
+    log.debug("Leaving federationAction(). delete " +
+              (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0575', result);
   }
 
   log.debug("Leaving federationAction(). Unknown action.");
   return refused('STS-ADMIN-0500', { ok: false,
-           errors: ['Unknown action "' + action + '". The seven are: create, set, ' +
-                    'add-value, remove-value, enable, disable, delete.'] });
+           errors: ['Unknown action "' + action + '". The seven are: create, ' +
+                    'set, add-value, remove-value, enable, disable, ' +
+                    'delete.'] });
 }
 
 // The three the SPIFFE page offers. It travels with spiffeAction() because
@@ -3690,14 +4146,17 @@ async function spiffeAction(body) {
       }
     } catch (e) {
       log.debug("Leaving spiffeAction(). Rotation failed.");
-      return refused('STS-ADMIN-0577', { ok: false, errors: ['The authority could not be rotated: ' +
+      return refused('STS-ADMIN-0577', { ok: false, errors: ['The authority ' +
+          'could not be rotated: ' +
                                    e.message] });
     }
     if (!done.length) {
       log.debug("Leaving spiffeAction(). Nothing named.");
-      return refused('STS-ADMIN-0578', { ok: false, errors: ['Rotate what? `which` is x509, jwt or both.'] });
+      return refused('STS-ADMIN-0578', { ok: false, errors: ['Rotate what? ' +
+          '`which` is x509, jwt or both.'] });
     }
-    auditLog.audit({ action: 'spiffe.bundle.change', actor: '', protocol: 'SPIFFE',
+    auditLog.audit({ action: 'spiffe.bundle.change', actor: '',
+                  protocol: 'SPIFFE',
                   channel: 'internal', target: spiffeCa.trustDomainId(),
                   summary: 'An authority was rotated from the console',
                   detail: { which: which, sequence: spiffeCa.sequence() } });
@@ -3712,8 +4171,9 @@ async function spiffeAction(body) {
     const name = String(body.trustDomain || '').trim().toLowerCase();
     if (!name) {
       log.debug("Leaving spiffeAction(). No trust domain.");
-      return refused('STS-ADMIN-0579', { ok: false, errors: ['Which trust domain? Send `trustDomain` ' +
-                                   'with its name — other.example, not ' +
+      return refused('STS-ADMIN-0579', { ok: false, errors: ['Which trust ' +
+                                   'domain? Send `trustDomain` with its name ' +
+                                   '— other.example, not ' +
                                    'spiffe://other.example.'] });
     }
     const result = spiffeCa.setFederatedBundle(name, body.document, {
@@ -3723,18 +4183,21 @@ async function spiffeAction(body) {
     });
     if (!result.ok) {
       log.debug("Leaving spiffeAction(). Refused.");
-      return refused(innerCode(result) || 'STS-ADMIN-0580', { ok: false, errors: [result.reason] });
+      return refused(innerCode(result) || 'STS-ADMIN-0580',
+                     { ok: false, errors: [result.reason] });
     }
-    auditLog.audit({ action: 'spiffe.bundle.change', actor: '', protocol: 'SPIFFE',
+    auditLog.audit({ action: 'spiffe.bundle.change', actor: '',
+                  protocol: 'SPIFFE',
                   channel: 'internal', target: name,
                   summary: 'A federated bundle for ' + name + ' was set from ' +
                            'the console',
                   detail: { created: result.created } });
     log.debug("Leaving spiffeAction(). Federated bundle set.");
     return { ok: true, message: 'The bundle for ' + name + ' was ' +
-      (result.created ? 'added' : 'replaced') + '. Any registration entry that ' +
-      'federates with it will now hand it to its workloads. The endpoint URL ' +
-      'is recorded and will not be fetched — see the note on this page.' };
+      (result.created ? 'added' : 'replaced') + '. Any registration entry ' +
+      'that federates with it will now hand it to its workloads. The ' +
+      'endpoint URL is recorded and will not be fetched — see the note on ' +
+      'this page.' };
   }
 
   if (action === 'federation-remove') {
@@ -3742,18 +4205,20 @@ async function spiffeAction(body) {
     const removed = spiffeCa.deleteFederatedBundle(name);
     if (!removed) {
       log.debug("Leaving spiffeAction(). Not held.");
-      return refused('STS-ADMIN-0581', { ok: false, errors: ['This service holds no bundle for the ' +
-                                   'trust domain ' + name + '.'] });
+      return refused('STS-ADMIN-0581', { ok: false, errors: ['This service ' +
+                                   'holds no bundle for the trust ' +
+                                   'domain ' + name + '.'] });
     }
-    auditLog.audit({ action: 'spiffe.bundle.change', actor: '', protocol: 'SPIFFE',
+    auditLog.audit({ action: 'spiffe.bundle.change', actor: '',
+                  protocol: 'SPIFFE',
                   channel: 'internal', target: name,
                   summary: 'A federated bundle for ' + name + ' was removed ' +
                            'from the console', detail: {} });
     log.debug("Leaving spiffeAction(). Removed.");
     return { ok: true, message: 'The bundle for ' + name + ' is gone. Any ' +
       'entry that federates with it keeps the name and simply contributes no ' +
-      'bundle, which is the same state as a relationship configured before its ' +
-      'bundle arrives.' };
+      'bundle, which is the same state as a relationship configured before ' +
+      'its bundle arrives.' };
   }
 
   log.debug("Leaving spiffeAction(). Unknown action.");
@@ -3822,7 +4287,8 @@ function kerberosPrincipalsAction(body, context) {
   if (result && result.ok) {
     result.trustRealm = realms.DEFAULT_ID;
   }
-  log.debug("Leaving kerberosPrincipalsAction(). ok=" + !!(result && result.ok));
+  log.debug("Leaving kerberosPrincipalsAction(). ok=" +
+            !!(result && result.ok));
   return refusedBy('STS-ADMIN-0602', result);
 }
 
@@ -3834,8 +4300,17 @@ function kerberosPrincipalsAction(body, context) {
 // A COPY each time, because the caller gets the list and the table is this
 // file's.
 // ---------------------------------------------------------------------------
-function tokenLifetimeKeys() { return TOKEN_LIFETIME_KEYS.slice(); }
-function samlAssertionKeys() { return SAML_ASSERTION_KEYS.slice(); }
+function tokenLifetimeKeys() {
+  log.debug("Entering tokenLifetimeKeys().");
+  log.debug("Leaving tokenLifetimeKeys().");
+  return TOKEN_LIFETIME_KEYS.slice();
+}
+
+function samlAssertionKeys() {
+  log.debug("Entering samlAssertionKeys().");
+  log.debug("Leaving samlAssertionKeys().");
+  return SAML_ASSERTION_KEYS.slice();
+}
 
 module.exports = {
   tokenLifetimeKeys: tokenLifetimeKeys,

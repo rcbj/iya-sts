@@ -156,6 +156,8 @@ const OPTIONAL_ONCE = ['sub', 'nbf', 'aud', 'flags', 'label'];
 const VALUE_RE = /^[A-Za-z0-9_-]+$/;
 
 function refusal(code, why) {
+  log.debug("Entering refusal().");
+  log.debug("Leaving refusal().");
   return access.refusal(code, why);
 }
 
@@ -172,6 +174,7 @@ function encodeBinaryV2(mac) {
   log.debug("Entering encodeBinaryV2().");
   const parts = [Buffer.from([2])];
   function uvarint(n) {
+    log.debug("Entering uvarint().");
     const out = [];
     let x = n;
     while (x >= 0x80) {
@@ -179,14 +182,19 @@ function encodeBinaryV2(mac) {
       x = Math.floor(x / 128);
     }
     out.push(x);
+    log.debug("Leaving uvarint().");
     return Buffer.from(out);
   }
+
   function field(type, data) {
+    log.debug("Entering field().");
     parts.push(Buffer.from([type]));
     if (type !== FIELD_EOS) {
-      const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data);
+      const bytes = typeof data === 'string' ? Buffer.from(data, 'utf8') :
+                    Buffer.from(data);
       parts.push(uvarint(bytes.length), bytes);
     }
+    log.debug("Leaving field().");
   }
   if (mac.location) {
     field(FIELD_LOCATION, mac.location);
@@ -211,16 +219,21 @@ function encodeBinaryV2(mac) {
 }
 
 function b64uJson(value) {
+  log.debug("Entering b64uJson().");
+  log.debug("Leaving b64uJson().");
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
 }
 
 // Strict base64url: the alphabet, no padding, and a round trip to the same
 // text — Buffer's decoder is lenient and would accept a value with junk in it.
 function b64uBytes(text) {
+  log.debug("Entering b64uBytes().");
   if (typeof text !== 'string' || !VALUE_RE.test(text)) {
+    log.debug("Leaving b64uBytes().");
     return null;
   }
   const bytes = Buffer.from(text, 'base64url');
+  log.debug("Leaving b64uBytes().");
   return bytes.toString('base64url') === text ? bytes : null;
 }
 
@@ -258,6 +271,7 @@ function parseCaveat(text) {
       try {
         parsed = bytes ? JSON.parse(bytes.toString('utf8')) : null;
       } catch (e) {
+        log.debug("Caught in parseCaveat(): " + ((e && e.message) || e));
         // Not JSON; null is the refusal, and the caller names the caveat.
         parsed = null;
       }
@@ -289,7 +303,8 @@ function caveatsFor(model) {
     out.push('gnap:sub=' + model.sub);
   }
   out.push('gnap:client=' + model.instanceId);
-  out.push(model.cnf ? 'gnap:cnf=' + access.cnfToString(model.cnf) : 'gnap:bearer');
+  out.push(model.cnf ? 'gnap:cnf=' + access.cnfToString(model.cnf) :
+           'gnap:bearer');
   if (model.flags.length) {
     out.push('gnap:flags=' + model.flags.join(','));
   }
@@ -310,21 +325,26 @@ function caveatsFor(model) {
   // This catches every value the model allows and the grammar cannot carry,
   // rather than listing them twice.
   const read = readCaveats(out, model.jti);
-  if (!read.ok || access.canonicalJson(read.model) !== access.canonicalJson(model)) {
+  if (!read.ok ||
+      access.canonicalJson(read.model) !== access.canonicalJson(model)) {
     log.debug("Leaving caveatsFor(). Not expressible.");
-    return refusal('STS-GNAP-0310', 'the token model cannot be written as macaroon caveats that ' +
-                   'read back as the same model (an audience with whitespace in it, a label ' +
-                   'with a control character, for example).');
+    return refusal('STS-GNAP-0310', 'the token model cannot be written as ' +
+                   'macaroon caveats that read back as the same model (an ' +
+                   'audience with whitespace in it, a label with a control ' +
+                   'character, for example).');
   }
   log.debug("Leaving caveatsFor(). " + out.length + " caveat(s).");
   return { ok: true, caveats: out };
 }
 
 function rootKeyOf(keys) {
+  log.debug("Entering rootKeyOf().");
   const key = keys && keys.rootKey;
   if (!(key instanceof Uint8Array) || key.length < MIN_ROOT_KEY_BYTES) {
+    log.debug("Leaving rootKeyOf().");
     return null;
   }
+  log.debug("Leaving rootKeyOf().");
   return key;
 }
 
@@ -341,7 +361,9 @@ async function mint(model, keys) {
   const rootKey = rootKeyOf(keys);
   if (!rootKey) {
     log.debug("Leaving mint(). Root key unusable.");
-    return refusal('STS-GNAP-0310', 'a macaroon root key must be at least ' + MIN_ROOT_KEY_BYTES +
+    return refusal('STS-GNAP-0310',
+                   'a macaroon root key must be at least ' +
+                   MIN_ROOT_KEY_BYTES +
                    ' bytes.');
   }
   const written = caveatsFor(valid.model);
@@ -353,16 +375,19 @@ async function mint(model, keys) {
   try {
     const mac = macaroon.newMacaroon({
       identifier: IDENTIFIER_PREFIX + valid.model.jti,
-      location: typeof keys.location === 'string' ? keys.location : valid.model.iss,
+      location: typeof keys.location === 'string' ? keys.location :
+                valid.model.iss,
       rootKey: rootKey,
       version: 2
     });
     written.caveats.forEach(function (c) { mac.addFirstPartyCaveat(c); });
     value = encodeBinaryV2(mac).toString('base64url');
   } catch (e) {
-    log.warn(errorCodes.tag('STS-GNAP-0310') + 'macaroon minting failed in the library: ' + e.message);
+    log.warn(errorCodes.tag('STS-GNAP-0310') + 'macaroon minting failed in ' +
+                                               'the library: ' + e.message);
     log.debug("Leaving mint(). Library failure.");
-    return refusal('STS-GNAP-0310', 'the macaroon library refused to mint: ' + e.message);
+    return refusal('STS-GNAP-0310',
+                   'the macaroon library refused to mint: ' + e.message);
   }
   log.debug("Leaving mint(). jti=" + valid.model.jti);
   return { value: value, format: FORMAT, jti: valid.model.jti };
@@ -374,7 +399,8 @@ function importValue(value) {
   const bytes = b64uBytes(value);
   if (!bytes) {
     log.debug("Leaving importValue(). Not base64url.");
-    return refusal('STS-GNAP-0311', 'the token value is not unpadded base64url.');
+    return refusal('STS-GNAP-0311',
+                   'the token value is not unpadded base64url.');
   }
   let mac;
   try {
@@ -382,22 +408,28 @@ function importValue(value) {
   } catch (e) {
     // The library's own sentence is the useful part of the refusal.
     log.debug("Leaving importValue(). Import failed: " + e.message);
-    return refusal('STS-GNAP-0311', 'the token value is not a libmacaroons v2 binary macaroon: ' +
+    return refusal('STS-GNAP-0311', 'the token value is not a libmacaroons ' +
+                                    'v2 binary macaroon: ' +
                    e.message);
   }
   if (mac.caveats.some(function (c) { return c.vid !== undefined; })) {
     log.debug("Leaving importValue(). Third-party caveat.");
-    return refusal('STS-GNAP-0313', 'the macaroon carries a third-party caveat, which needs a ' +
-                   'discharge macaroon this token format does not carry.');
+    return refusal('STS-GNAP-0313', 'the macaroon carries a third-party ' +
+                   'caveat, which needs a discharge macaroon this token ' +
+                   'format does not carry.');
   }
   log.debug("Leaving importValue(). Imported.");
   return { ok: true, mac: mac };
 }
 
 function decodeUtf8(bytes) {
+  log.debug("Entering decodeUtf8().");
   try {
+    log.debug("Leaving decodeUtf8().");
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   } catch (e) {
+    log.debug("Caught in decodeUtf8(): " + ((e && e.message) || e));
+    log.debug("Leaving decodeUtf8().");
     // Not UTF-8, so not a caveat in this grammar; null is the refusal.
     return null;
   }
@@ -418,21 +450,25 @@ function readCaveats(conditions, jti) {
     const parsed = text === null ? null : parseCaveat(text);
     if (!parsed) {
       log.debug("Leaving readCaveats(). Caveat " + i + " outside the grammar.");
-      return refusal('STS-GNAP-0315', 'macaroon caveat ' + i + ' is not in this service\'s ' +
-                     'caveat grammar, and an unknown caveat is never skipped.');
+      return refusal('STS-GNAP-0315', 'macaroon caveat ' + i + ' is not in ' +
+                     'this service\'s caveat grammar, and an unknown caveat ' +
+                     'is never skipped.');
     }
     const inAuthority = boundary < 0;
     if (!inAuthority && ATTENUATING.indexOf(parsed.kind) < 0) {
-      log.debug("Leaving readCaveats(). Singular caveat in attenuation section.");
-      return refusal('STS-GNAP-0316', 'macaroon caveat ' + i + ' (gnap:' + parsed.kind + ') ' +
-                     'follows the authority section, where only exp, nbf, aud and access may ' +
-                     'be added.');
+      log.debug("Leaving readCaveats(). Singular caveat in attenuation " +
+                "section.");
+      return refusal('STS-GNAP-0316',
+                     'macaroon caveat ' + i + ' (gnap:' + parsed.kind + ') ' +
+                     'follows the authority section, where only exp, nbf, ' +
+                     'aud and access may be added.');
     }
     if (inAuthority) {
       const kind = parsed.kind === 'bearer' ? 'cnf' : parsed.kind;
       if (authority[kind] !== undefined) {
         log.debug("Leaving readCaveats(). Repeated authority caveat.");
-        return refusal('STS-GNAP-0316', 'the macaroon\'s authority section repeats gnap:' + kind + '.');
+        return refusal('STS-GNAP-0316', 'the macaroon\'s authority section ' +
+                                        'repeats gnap:' + kind + '.');
       }
       authority[kind] = parsed.kind === 'bearer' ? null : parsed.value;
       if (parsed.kind === 'access') {
@@ -454,7 +490,8 @@ function readCaveats(conditions, jti) {
   });
   if (missing.length) {
     log.debug("Leaving readCaveats(). Missing " + missing.join(','));
-    return refusal('STS-GNAP-0316', 'the macaroon\'s authority section lacks gnap:' +
+    return refusal('STS-GNAP-0316', 'the macaroon\'s authority section lacks ' +
+                                    'gnap:' +
                    missing.join(', gnap:') + '.');
   }
   const model = {
@@ -474,8 +511,8 @@ function readCaveats(conditions, jti) {
   const valid = access.validateModel(model);
   if (!valid.ok) {
     log.debug("Leaving readCaveats(). Authority section is not a valid model.");
-    return refusal('STS-GNAP-0316', 'the macaroon\'s authority section is not a valid token ' +
-                   'model: ' + valid.why);
+    return refusal('STS-GNAP-0316', 'the macaroon\'s authority section is ' +
+                   'not a valid token model: ' + valid.why);
   }
   log.debug("Leaving readCaveats(). Model read.");
   return {
@@ -499,7 +536,9 @@ async function verify(value, keys, context) {
   const rootKey = rootKeyOf(keys);
   if (!rootKey) {
     log.debug("Leaving verify(). Root key unusable.");
-    return refusal('STS-GNAP-0310', 'a macaroon root key must be at least ' + MIN_ROOT_KEY_BYTES +
+    return refusal('STS-GNAP-0310',
+                   'a macaroon root key must be at least ' +
+                   MIN_ROOT_KEY_BYTES +
                    ' bytes.');
   }
   const imported = importValue(value);
@@ -512,8 +551,10 @@ async function verify(value, keys, context) {
   if (identifier === null || identifier.indexOf(IDENTIFIER_PREFIX) !== 0 ||
       identifier.length === IDENTIFIER_PREFIX.length) {
     log.debug("Leaving verify(). Identifier is not gnap:v1.");
-    return refusal('STS-GNAP-0312', 'the macaroon identifier is not "' + IDENTIFIER_PREFIX +
-                   '<jti>", so this is not a GNAP macaroon this service minted.');
+    return refusal('STS-GNAP-0312',
+                   'the macaroon identifier is not "' + IDENTIFIER_PREFIX +
+                   '<jti>", so this is not a GNAP macaroon this service ' +
+                   'minted.');
   }
   try {
     // Accept every caveat while the chain is walked: the grammar runs after
@@ -521,12 +562,16 @@ async function verify(value, keys, context) {
     mac.verify(rootKey, function () { return null; }, []);
   } catch (e) {
     log.debug("Leaving verify(). HMAC chain failed: " + e.message);
-    return refusal('STS-GNAP-0314', 'the macaroon\'s HMAC chain does not verify under this ' +
-                   'authorization server\'s root key — it was altered, a caveat was removed, ' +
-                   'or another key minted it.');
+    return refusal('STS-GNAP-0314', 'the macaroon\'s HMAC chain does not ' +
+                   'verify under this authorization server\'s root key — it ' +
+                   'was altered, a caveat was removed, or another key minted ' +
+                   'it.');
   }
-  const conditions = mac.caveats.map(function (c) { return decodeUtf8(c.identifier); });
-  const read = readCaveats(conditions, identifier.slice(IDENTIFIER_PREFIX.length));
+  const conditions = mac.caveats.map(function (c) {
+    return decodeUtf8(c.identifier);
+  });
+  const read = readCaveats(conditions,
+                           identifier.slice(IDENTIFIER_PREFIX.length));
   if (!read.ok) {
     log.debug("Leaving verify(). Caveats refused.");
     return read;
@@ -553,7 +598,8 @@ async function attenuate(value, caveats) {
   log.debug("Entering attenuate().");
   if (!Array.isArray(caveats) || caveats.length === 0) {
     log.debug("Leaving attenuate(). No caveats.");
-    return refusal('STS-GNAP-0317', 'an attenuation is a non-empty array of caveats.');
+    return refusal('STS-GNAP-0317', 'an attenuation is a non-empty array of ' +
+                                    'caveats.');
   }
   const texts = [];
   for (let i = 0; i < caveats.length; i++) {
@@ -575,8 +621,8 @@ async function attenuate(value, caveats) {
     const parsed = text === null ? null : parseCaveat(text);
     if (!parsed || ATTENUATING.indexOf(parsed.kind) < 0) {
       log.debug("Leaving attenuate(). Caveat " + i + " is not an attenuation.");
-      return refusal('STS-GNAP-0317', 'attenuation ' + i + ' is not an exp, nbf, aud or access ' +
-                     'caveat in this service\'s grammar.');
+      return refusal('STS-GNAP-0317', 'attenuation ' + i + ' is not an exp, ' +
+                     'nbf, aud or access caveat in this service\'s grammar.');
     }
     texts.push(text);
   }
@@ -591,10 +637,12 @@ async function attenuate(value, caveats) {
     texts.forEach(function (t) { mac.addFirstPartyCaveat(t); });
     out = encodeBinaryV2(mac).toString('base64url');
   } catch (e) {
-    log.warn(errorCodes.tag('STS-GNAP-0317') + 'macaroon attenuation failed in the library: ' +
+    log.warn(errorCodes.tag('STS-GNAP-0317') + 'macaroon attenuation failed ' +
+                                               'in the library: ' +
              e.message);
     log.debug("Leaving attenuate(). Library failure.");
-    return refusal('STS-GNAP-0317', 'the macaroon library refused the attenuation: ' + e.message);
+    return refusal('STS-GNAP-0317', 'the macaroon library refused the ' +
+                                    'attenuation: ' + e.message);
   }
   log.debug("Leaving attenuate(). Added " + texts.length + " caveat(s).");
   return { ok: true, value: out, format: FORMAT };
@@ -607,12 +655,15 @@ function describe() {
     libraries: [access.libraryInfo('macaroon')],
     algorithms: [
       ['Caveat chain MAC', ['HMAC-SHA256']],
-      ['Root key derivation', ['HMAC-SHA256 keyed with "macaroons-key-generator"']],
-      ['Root key', ['symmetric, ' + MIN_ROOT_KEY_BYTES + '+ bytes, held by the AS']],
+      ['Root key derivation', ['HMAC-SHA256 keyed with ' +
+                               '"macaroons-key-generator"']],
+      ['Root key', ['symmetric, ' + MIN_ROOT_KEY_BYTES + '+ bytes, held by ' +
+          'the AS']],
       ['Serialisation', ['libmacaroons v2 binary, unpadded base64url']],
       ['Third-party caveats', ['refused']]
     ],
-    carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags', 'cnf',
+    carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
+              'cnf',
               'iat', 'nbf', 'exp', 'label'],
     cannot: []
   };

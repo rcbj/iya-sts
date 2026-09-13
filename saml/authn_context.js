@@ -119,10 +119,14 @@ SAML11_TO_SAML2[AM_X509] = AC_PREFIX + 'X509';
 SAML11_TO_SAML2[AC_MULTIFACTOR] = AC_MULTIFACTOR;
 
 function has(list, value) {
+  log.debug("Entering has().");
+  log.debug("Leaving has().");
   return list.indexOf(value) >= 0;
 }
 
 function result(kind, saml2, saml11, multiFactor, hardwareKey) {
+  log.debug("Entering result().");
+  log.debug("Leaving result().");
   return { kind: kind, saml2: saml2, saml11: saml11,
            multiFactor: !!multiFactor, hardwareKey: !!hardwareKey };
 }
@@ -157,7 +161,8 @@ function ownSignIn(amr, acr, via) {
   if ((hardwareKey && password) || (code && password) ||
       String(acr).toLowerCase() === 'mfa') {
     log.debug("Leaving ownSignIn(). Multi-factor.");
-    return result('multi-factor', AC_MULTIFACTOR, AC_MULTIFACTOR, true, hardwareKey);
+    return result('multi-factor', AC_MULTIFACTOR, AC_MULTIFACTOR, true,
+                  hardwareKey);
   }
   if (kerberos) {
     log.debug("Leaving ownSignIn(). A Kerberos ticket.");
@@ -165,7 +170,8 @@ function ownSignIn(amr, acr, via) {
   }
   if (hardwareKey) {
     log.debug("Leaving ownSignIn(). A security key, and one factor.");
-    return result('hardware-key', AC_UNSPECIFIED, AM_HARDWARE_TOKEN, false, true);
+    return result('hardware-key', AC_UNSPECIFIED, AM_HARDWARE_TOKEN, false,
+                  true);
   }
   if (has(amr, 'swk')) {
     log.debug("Leaving ownSignIn(). A TLS client certificate.");
@@ -197,7 +203,8 @@ function ownSignIn(amr, acr, via) {
 // ---------------------------------------------------------------------------
 function federatedSignIn(amr, acr) {
   log.debug("Entering federatedSignIn(). acr=" + (acr || '(none)'));
-  const partnerAmr = amr.filter(function (value) { return value !== 'federated'; });
+  const partnerAmr =
+      amr.filter(function (value) { return value !== 'federated'; });
   const said = String(acr || '').trim();
   if (said === AC_MULTIFACTOR) {
     log.debug("Leaving federatedSignIn(). The partner said multi-factor.");
@@ -216,7 +223,8 @@ function federatedSignIn(amr, acr) {
   if (partnerAmr.length || String(said).toLowerCase() === 'mfa') {
     const read = ownSignIn(partnerAmr, said, '');
     log.debug("Leaving federatedSignIn(). The partner's amr, read as ours.");
-    return result('federated', read.saml2, read.saml11, read.multiFactor, read.hardwareKey);
+    return result('federated', read.saml2, read.saml11, read.multiFactor,
+                  read.hardwareKey);
   }
   log.debug("Leaving federatedSignIn(). The partner said nothing.");
   return result('federated', AC_UNSPECIFIED, AM_UNSPECIFIED, false, false);

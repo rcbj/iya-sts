@@ -714,6 +714,17 @@ Three decisions, each asked of the user before it was built:
   (alg, enc) — `info` names the pair, because HKDF at 16 bytes is the prefix of
   HKDF at 32 under the same info.
 
+**A REFRESHED ID TOKEN KEEPS THE ORIGINAL `auth_time`, `amr` AND `acr`
+(2026-09-12).** OpenID Connect Core section 12.2 says an ID Token from a refresh
+response describes the original authentication. The refresh grant minted it with
+`auth_time` = now and no `amr` or `acr`, because nothing carried them — so a
+relying party renewing a session was told somebody had just authenticated, by no
+method. `refreshToken()` now puts the three inside the (encrypted) refresh token
+and the grant hands them back to `issue()`. It was found by this service's own
+console, which checks exactly that when it renews (`common/oidc_rp.js`'s
+`checkRenewedClaims()`), and `tests/vendored/sts_hosted_surface_renewal.js`
+goes red without it.
+
 **EVERY READER OPENS FIRST, AND THERE ARE SIX**: the refresh grant,
 introspection, revocation, token exchange's `subject_token`, `jtiOf()` and the
 code-replay jti reader — plus `admin-core/admin_actions.js`'s `jtiFrom()`, so a

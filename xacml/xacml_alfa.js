@@ -145,9 +145,11 @@ const ALGORITHM_NAMES = {
 };
 
 function algorithmNameOf(uri) {
+  log.debug("Entering algorithmNameOf().");
   const names = Object.keys(ALGORITHM_NAMES);
   for (let i = 0; i < names.length; i += 1) {
     if (ALGORITHM_NAMES[names[i]].indexOf(uri) >= 0) {
+      log.debug("Leaving algorithmNameOf().");
       return names[i];
     }
   }
@@ -158,14 +160,18 @@ function algorithmNameOf(uri) {
   const camel = suffix.replace(/-([a-z])/g, function (whole, letter) {
     return letter.toUpperCase();
   });
+  log.debug("Leaving algorithmNameOf().");
   return ALGORITHM_NAMES[camel] ? camel : null;
 }
 
 function algorithmUriOf(name, forPolicySet) {
+  log.debug("Entering algorithmUriOf().");
   const pair = ALGORITHM_NAMES[name];
   if (!pair) {
+    log.debug("Leaving algorithmUriOf().");
     return null;
   }
+  log.debug("Leaving algorithmUriOf().");
   return forPolicySet ? pair[1] : pair[0];
 }
 
@@ -181,12 +187,15 @@ const OPERATORS = [
 ];
 
 function operatorFor(functionId) {
+  log.debug("Entering operatorFor().");
   const short = String(functionId).replace(/^.*:function:/, '');
   for (let i = 0; i < OPERATORS.length; i += 1) {
     if (short.slice(-OPERATORS[i].suffix.length) === OPERATORS[i].suffix) {
+      log.debug("Leaving operatorFor().");
       return OPERATORS[i].symbol;
     }
   }
+  log.debug("Leaving operatorFor().");
   return null;
 }
 
@@ -194,24 +203,30 @@ function operatorFor(functionId) {
 // the real library, so an operator on a type that has no such function is
 // refused rather than producing a URI nothing implements.
 function functionForOperator(symbol, typeUri) {
+  log.debug("Entering functionForOperator().");
   const entry = OPERATORS.filter(function (one) {
     return one.symbol === symbol;
   })[0];
   if (!entry) {
+    log.debug("Leaving functionForOperator().");
     return null;
   }
   const row = datatypes.typeOf(typeUri);
   if (!row) {
+    log.debug("Leaving functionForOperator().");
     return null;
   }
   const duration = typeUri === TYPE.DAYTIME_DURATION ||
                    typeUri === TYPE.YEARMONTH_DURATION;
   const uri = (duration && entry.suffix === '-equal' ? F3 : F1) +
               row.name + entry.suffix;
+  log.debug("Leaving functionForOperator().");
   return functions.lookup(uri) ? uri : null;
 }
 
 function shortFunctionName(uri) {
+  log.debug("Entering shortFunctionName().");
+  log.debug("Leaving shortFunctionName().");
   return String(uri).replace(/^.*:function:/, '')
     .replace(/-([a-z0-9])/g, function (whole, ch) {
       return ch.toUpperCase();
@@ -244,9 +259,11 @@ function collectAttributes(policy) {
   const order = [];
 
   function note(designator) {
+    log.debug("Entering note().");
     const key = designator.category + '|' + designator.attributeId + '|' +
                 designator.dataType;
     if (byKey[key]) {
+      log.debug("Leaving note().");
       return;
     }
     const base = shortNameForAttribute(designator.attributeId);
@@ -272,6 +289,7 @@ function collectAttributes(policy) {
     order.push({ name: name, category: designator.category,
                  attributeId: designator.attributeId,
                  dataType: designator.dataType });
+    log.debug("Leaving note().");
   }
 
   walkDesignators(policy, note);
@@ -280,32 +298,43 @@ function collectAttributes(policy) {
 }
 
 function shortNameForAttribute(attributeId) {
+  log.debug("Entering shortNameForAttribute().");
   const tail = String(attributeId).split(':').pop().split('/').pop();
   const camel = tail.replace(/[-_.]([a-zA-Z0-9])/g, function (whole, ch) {
     return ch.toUpperCase();
   }).replace(/[^A-Za-z0-9]/g, '');
   if (!camel) {
+    log.debug("Leaving shortNameForAttribute().");
     return 'attr';
   }
+  log.debug("Leaving shortNameForAttribute().");
   return /^[0-9]/.test(camel) ? 'a' + camel
                               : camel.charAt(0).toLowerCase() + camel.slice(1);
 }
 
 function walkDesignators(node, visit) {
+  log.debug("Entering walkDesignators().");
   function expression(one) {
+    log.debug("Entering expression().");
     if (!one) {
+      log.debug("Leaving expression().");
       return;
     }
     if (one.kind === 'designator') {
       visit(one);
+      log.debug("Leaving expression().");
       return;
     }
     if (one.kind === 'apply') {
       (one.args || []).forEach(expression);
     }
+    log.debug("Leaving expression().");
   }
+
   function target(one) {
+    log.debug("Entering target().");
     if (!one || !one.anyOf) {
+      log.debug("Leaving target().");
       return;
     }
     one.anyOf.forEach(function (anyOf) {
@@ -315,15 +344,21 @@ function walkDesignators(node, visit) {
         });
       });
     });
+    log.debug("Leaving target().");
   }
+
   function holders(list) {
+    log.debug("Entering holders().");
     (list || []).forEach(function (holder) {
       (holder.assignments || []).forEach(function (assignment) {
         expression(assignment.expression);
       });
     });
+    log.debug("Leaving holders().");
   }
+
   function policy(one) {
+    log.debug("Entering policy().");
     target(one.target);
     holders(one.obligations);
     holders(one.advice);
@@ -333,6 +368,7 @@ function walkDesignators(node, visit) {
           policy(child);
         }
       });
+      log.debug("Leaving policy().");
       return;
     }
     Object.keys(one.variables || {}).forEach(function (id) {
@@ -344,20 +380,25 @@ function walkDesignators(node, visit) {
       holders(rule.obligations);
       holders(rule.advice);
     });
+    log.debug("Leaving policy().");
   }
   policy(node);
+  log.debug("Leaving walkDesignators().");
 }
 
 // A literal. Native syntax for the four types ALFA has one for; a cast for the
 // other thirteen. See point 1 in the header.
 function literalOf(expression) {
+  log.debug("Entering literalOf().");
   const type = model.canonicalType(expression.type);
   const lexical = String(expression.lexical === undefined
                            ? '' : expression.lexical);
   if (type === TYPE.STRING) {
+    log.debug("Leaving literalOf().");
     return quote(lexical);
   }
   if (type === TYPE.BOOLEAN) {
+    log.debug("Leaving literalOf().");
     return lexical === 'true' || lexical === '1' ? 'true' : 'false';
   }
   if (type === TYPE.INTEGER || type === TYPE.DOUBLE) {
@@ -365,37 +406,48 @@ function literalOf(expression) {
     // `NaN` is a legal lexical form that is not a numeric literal in any
     // language, so it takes the cast form and round-trips.
     if (/^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/.test(lexical)) {
+      log.debug("Leaving literalOf().");
       return lexical;
     }
   }
   const row = datatypes.typeOf(type);
+  log.debug("Leaving literalOf().");
   return (row ? row.name : 'string') + '(' + quote(lexical) + ')';
 }
 
 function quote(text) {
+  log.debug("Entering quote().");
+  log.debug("Leaving quote().");
   return '"' + String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
 }
 
 function emitExpression(expression, attributes) {
+  log.debug("Entering emitExpression().");
   if (!expression) {
+    log.debug("Leaving emitExpression().");
     return '';
   }
   if (expression.kind === 'value') {
+    log.debug("Leaving emitExpression().");
     return literalOf(expression);
   }
   if (expression.kind === 'designator') {
     const key = expression.category + '|' + expression.attributeId + '|' +
                 expression.dataType;
+    log.debug("Leaving emitExpression().");
     return attributes.byKey[key] || shortNameForAttribute(
       expression.attributeId);
   }
   if (expression.kind === 'variableRef') {
+    log.debug("Leaving emitExpression().");
     return '$' + expression.variableId;
   }
   if (expression.kind === 'function') {
+    log.debug("Leaving emitExpression().");
     return shortFunctionName(expression.functionId);
   }
   if (expression.kind === 'selector') {
+    log.debug("Leaving emitExpression().");
     // Nothing here evaluates an AttributeSelector, and ALFA has no agreed
     // syntax for one. Emitted as a call that names it, so the document is
     // readable and the parser refuses it rather than pretending.
@@ -409,25 +461,33 @@ function emitExpression(expression, attributes) {
     const short = shortFunctionName(expression.functionId);
     if (short === 'and' || short === 'or') {
       const symbol = short === 'and' ? ' && ' : ' || ';
+      log.debug("Leaving emitExpression().");
       return args.length ? '(' + args.join(symbol) + ')' : (
         short === 'and' ? 'true' : 'false');
     }
     if (short === 'not' && args.length === 1) {
+      log.debug("Leaving emitExpression().");
       return '!' + args[0];
     }
     const operator = operatorFor(expression.functionId);
     if (operator && args.length === 2) {
+      log.debug("Leaving emitExpression().");
       return '(' + args[0] + ' ' + operator + ' ' + args[1] + ')';
     }
+    log.debug("Leaving emitExpression().");
     return short + '(' + args.join(', ') + ')';
   }
+  log.debug("Leaving emitExpression().");
   return '/* unrenderable */';
 }
 
 function emitTarget(target, attributes, indent) {
+  log.debug("Entering emitTarget().");
   if (!target || !target.anyOf || !target.anyOf.length) {
+    log.debug("Leaving emitTarget().");
     return '';
   }
+  log.debug("Leaving emitTarget().");
   return target.anyOf.map(function (anyOf) {
     const alternatives = anyOf.allOf.map(function (allOf) {
       return allOf.matches.map(function (match) {
@@ -453,29 +513,38 @@ function emitTarget(target, attributes, indent) {
 // `a > b` written with the sides exchanged is `b < a`. Only the four ordering
 // operators are affected; `==` is symmetric.
 function mirrorOperator(symbol) {
+  log.debug("Entering mirrorOperator().");
   if (symbol === '>') {
+    log.debug("Leaving mirrorOperator().");
     return '<';
   }
   if (symbol === '<') {
+    log.debug("Leaving mirrorOperator().");
     return '>';
   }
   if (symbol === '>=') {
+    log.debug("Leaving mirrorOperator().");
     return '<=';
   }
   if (symbol === '<=') {
+    log.debug("Leaving mirrorOperator().");
     return '>=';
   }
+  log.debug("Leaving mirrorOperator().");
   return symbol;
 }
 
 function emitHolders(list, attributes, indent, keyword) {
+  log.debug("Entering emitHolders().");
   if (!list || !list.length) {
+    log.debug("Leaving emitHolders().");
     return '';
   }
   const byEffect = { Permit: [], Deny: [] };
   list.forEach(function (holder) {
     (byEffect[holder.on] || byEffect.Permit).push(holder);
   });
+  log.debug("Leaving emitHolders().");
   return Object.keys(byEffect).filter(function (effect) {
     return byEffect[effect].length;
   }).map(function (effect) {
@@ -493,6 +562,7 @@ function emitHolders(list, attributes, indent, keyword) {
 }
 
 function emitRule(rule, attributes, indent) {
+  log.debug("Entering emitRule().");
   const lines = [];
   lines.push(indent + 'rule ' + identifier(rule.id) + ' {');
   const inner = indent + '    ';
@@ -524,6 +594,7 @@ function emitRule(rule, attributes, indent) {
     lines.push(advice);
   }
   lines.push(indent + '}');
+  log.debug("Leaving emitRule().");
   return lines.join('\n');
 }
 
@@ -532,17 +603,21 @@ function emitRule(rule, attributes, indent) {
 // property beside it — which is what makes a round trip lossless. Emitting
 // only the slug would silently rename every policy that went through ALFA.
 function identifier(uri) {
+  log.debug("Entering identifier().");
   const tail = String(uri).split(':').pop().split('/').pop();
   const camel = tail.replace(/[-_.]([a-zA-Z0-9])/g, function (whole, ch) {
     return ch.toUpperCase();
   }).replace(/[^A-Za-z0-9]/g, '');
   if (!camel) {
+    log.debug("Leaving identifier().");
     return 'p';
   }
+  log.debug("Leaving identifier().");
   return /^[0-9]/.test(camel) ? 'p' + camel : camel;
 }
 
 function emitPolicyBody(policy, attributes, indent) {
+  log.debug("Entering emitPolicyBody().");
   const lines = [];
   const keyword = policy.kind === 'PolicySet' ? 'policyset' : 'policy';
   lines.push(indent + keyword + ' ' + identifier(policy.id) + ' {');
@@ -593,6 +668,7 @@ function emitPolicyBody(policy, attributes, indent) {
     lines.push(advice);
   }
   lines.push(indent + '}');
+  log.debug("Leaving emitPolicyBody().");
   return lines.join('\n');
 }
 
@@ -729,22 +805,29 @@ function parse(text) {
   const attributes = {};
 
   function peek(offset) {
+    log.debug("Entering peek().");
+    log.debug("Leaving peek().");
     return tokens[at + (offset || 0)];
   }
 
   function next() {
+    log.debug("Entering next().");
     const token = tokens[at];
     at += 1;
+    log.debug("Leaving next().");
     return token;
   }
 
   function is(value, offset) {
+    log.debug("Entering is().");
     const token = peek(offset);
+    log.debug("Leaving is().");
     return token && token.value === value &&
            (token.kind === 'word' || token.kind === 'punct');
   }
 
   function expect(value) {
+    log.debug("Entering expect().");
     const token = next();
     if (!token || token.value !== value) {
       throw model.syntaxError(
@@ -752,26 +835,31 @@ function parse(text) {
         (token ? token.line : '?') + ' but found "' +
         (token ? token.value : 'the end of the document') + '".');
     }
+    log.debug("Leaving expect().");
     return token;
   }
 
   function expectWord() {
+    log.debug("Entering expectWord().");
     const token = next();
     if (!token || token.kind !== 'word') {
       throw model.syntaxError(
         'Expected a name at line ' + (token ? token.line : '?') +
         ' but found "' + (token ? token.value : 'the end') + '".');
     }
+    log.debug("Leaving expectWord().");
     return token.value;
   }
 
   function expectString() {
+    log.debug("Entering expectString().");
     const token = next();
     if (!token || token.kind !== 'string') {
       throw model.syntaxError(
         'Expected a quoted string at line ' + (token ? token.line : '?') +
         ' but found "' + (token ? token.value : 'the end') + '".');
     }
+    log.debug("Leaving expectString().");
     return token.value;
   }
 
@@ -825,6 +913,7 @@ function parse(text) {
   }
 
   function designatorFor(name, token) {
+    log.debug("Entering designatorFor().");
     const declared = attributes[name];
     if (!declared) {
       // THE MOST USEFUL REFUSAL IN THIS FILE. See point 3 in the header: a
@@ -844,6 +933,7 @@ function parse(text) {
             '.'
           : ' Nothing is declared in this document.'));
     }
+    log.debug("Leaving designatorFor().");
     return { kind: 'designator', category: declared.category,
              attributeId: declared.attributeId,
              dataType: declared.dataType, issuer: null,
@@ -857,26 +947,33 @@ function parse(text) {
   // a name that is neither reaches the refusal, which is point 3's and is the
   // most useful one in this file.
   function nameReference(name, token) {
+    log.debug("Entering nameReference().");
     if (attributes[name]) {
+      log.debug("Leaving nameReference().");
       return designatorFor(name, token);
     }
     const uri = FUNCTION_BY_SHORT_NAME[name];
     if (uri) {
       log.debug('nameReference(): "' + name + '" is the function ' + uri +
                 '.');
+      log.debug("Leaving nameReference().");
       return { kind: 'function', functionId: uri };
     }
+    log.debug("Leaving nameReference().");
     return designatorFor(name, token);
   }
 
   // --- expressions ---------------------------------------------------------
   function primary() {
+    log.debug("Entering primary().");
     const token = next();
     if (token.kind === 'string') {
+      log.debug("Leaving primary().");
       return { kind: 'value', type: TYPE.STRING, lexical: token.value };
     }
     if (token.kind === 'number') {
       const isDouble = /[.eE]/.test(token.value);
+      log.debug("Leaving primary().");
       return { kind: 'value',
                type: isDouble ? TYPE.DOUBLE : TYPE.INTEGER,
                lexical: token.value };
@@ -884,16 +981,20 @@ function parse(text) {
     if (token.kind === 'punct' && token.value === '(') {
       const inner = expression();
       expect(')');
+      log.debug("Leaving primary().");
       return inner;
     }
     if (token.kind === 'punct' && token.value === '!') {
+      log.debug("Leaving primary().");
       return { kind: 'apply', functionId: F1 + 'not', args: [primary()] };
     }
     if (token.kind === 'punct' && token.value === '$') {
+      log.debug("Leaving primary().");
       return { kind: 'variableRef', variableId: expectWord() };
     }
     if (token.kind === 'word') {
       if (token.value === 'true' || token.value === 'false') {
+        log.debug("Leaving primary().");
         return { kind: 'value', type: TYPE.BOOLEAN, lexical: token.value };
       }
       if (is('(')) {
@@ -908,6 +1009,7 @@ function parse(text) {
         if (typeUri && peek().kind === 'string' && is(')', 1)) {
           const value = expectString();
           expect(')');
+          log.debug("Leaving primary().");
           return { kind: 'value', type: typeUri, lexical: value };
         }
         const args = [];
@@ -925,23 +1027,29 @@ function parse(text) {
             'There is no function called "' + token.value + '" at line ' +
             token.line + '.');
         }
+        log.debug("Leaving primary().");
         return { kind: 'apply', functionId: uri, args: args };
       }
+      log.debug("Leaving primary().");
       return nameReference(token.value, token);
     }
+    log.debug("Leaving primary().");
     throw model.syntaxError('Unexpected "' + token.value + '" at line ' +
                             token.line + '.');
   }
 
   function comparison() {
+    log.debug("Entering comparison().");
     const left = primary();
     const token = peek();
     const symbols = ['==', '!=', '>=', '<=', '>', '<'];
     if (token.kind === 'punct' && symbols.indexOf(token.value) >= 0) {
       next();
       const right = primary();
+      log.debug("Leaving comparison().");
       return comparisonOf(left, token.value, right, token.line);
     }
+    log.debug("Leaving comparison().");
     return left;
   }
 
@@ -955,20 +1063,26 @@ function parse(text) {
   // an ALFA edit that silently re-bracketed every condition it touched would
   // make the XML diff of a policy somebody changed one word in unreadable.
   function chain(operand, functionId, symbol, word) {
+    log.debug("Entering chain().");
     const args = [operand()];
     while (is(symbol) || is(word)) {
       next();
       args.push(operand());
     }
+    log.debug("Leaving chain().");
     return args.length === 1 ? args[0]
       : { kind: 'apply', functionId: functionId, args: args };
   }
 
   function conjunction() {
+    log.debug("Entering conjunction().");
+    log.debug("Leaving conjunction().");
     return chain(comparison, F1 + 'and', '&&', 'and');
   }
 
   function expression() {
+    log.debug("Entering expression().");
+    log.debug("Leaving expression().");
     return chain(conjunction, F1 + 'or', '||', 'or');
   }
 
@@ -978,6 +1092,7 @@ function parse(text) {
   // typed from the designator, because that is the type the policy will
   // actually meet at evaluation.
   function comparisonOf(left, symbol, right, line) {
+    log.debug("Entering comparisonOf().");
     const typeUri = typeOfExpression(right) || typeOfExpression(left) ||
                     TYPE.STRING;
     if (symbol === '!=') {
@@ -986,6 +1101,7 @@ function parse(text) {
         throw model.syntaxError('There is no equality function for ' +
                                 typeUri + ' (line ' + line + ').');
       }
+      log.debug("Leaving comparisonOf().");
       return { kind: 'apply', functionId: F1 + 'not',
                args: [{ kind: 'apply', functionId: equal,
                         args: [left, right] }] };
@@ -1004,26 +1120,34 @@ function parse(text) {
     // to be mirrored with them or `age > 18` becomes `18 > age`.
     if (left.kind === 'designator' && right.kind === 'value') {
       const mirrored = functionForOperator(mirrorOperator(symbol), typeUri);
+      log.debug("Leaving comparisonOf().");
       return { kind: 'apply', functionId: mirrored || uri,
                args: [right, left] };
     }
+    log.debug("Leaving comparisonOf().");
     return { kind: 'apply', functionId: uri, args: [left, right] };
   }
 
   function typeOfExpression(one) {
+    log.debug("Entering typeOfExpression().");
     if (!one) {
+      log.debug("Leaving typeOfExpression().");
       return null;
     }
     if (one.kind === 'value') {
+      log.debug("Leaving typeOfExpression().");
       return model.canonicalType(one.type);
     }
     if (one.kind === 'designator') {
+      log.debug("Leaving typeOfExpression().");
       return model.canonicalType(one.dataType);
     }
     if (one.kind === 'apply') {
       const definition = functions.lookup(one.functionId);
+      log.debug("Leaving typeOfExpression().");
       return definition && definition.returns ? definition.returns.type : null;
     }
+    log.debug("Leaving typeOfExpression().");
     return null;
   }
 
@@ -1036,6 +1160,7 @@ function parse(text) {
   // `A and B` inside one alternative and `A` in one clause with `B` in the
   // next, which mean the same thing here and different things everywhere else.
   function targetClause() {
+    log.debug("Entering targetClause().");
     expect('target');
     expect('clause');
     const alternatives = [];
@@ -1055,10 +1180,12 @@ function parse(text) {
       break;
     }
     alternatives.push({ matches: matches });
+    log.debug("Leaving targetClause().");
     return { allOf: alternatives };
   }
 
   function matchTerm() {
+    log.debug("Entering matchTerm().");
     const token = peek();
     // A CALL FORM, for the match functions that have no operator —
     // `regexpMatch("a.*", role)` and the two name-match functions. XACML's own
@@ -1079,6 +1206,7 @@ function parse(text) {
           'A target clause call takes a literal and then an attribute ' +
           '(line ' + token.line + ').');
       }
+      log.debug("Leaving matchTerm().");
       return { matchId: call.functionId, value: value, reference: reference };
     }
     const left = primary();
@@ -1102,12 +1230,14 @@ function parse(text) {
         'A target clause compares one attribute with one literal value ' +
         '(line ' + operatorToken.line + ').');
     }
+    log.debug("Leaving matchTerm().");
     return { matchId: applied.functionId, value: applied.args[0],
              reference: applied.args[1] };
   }
 
   // --- obligations ---------------------------------------------------------
   function holderBlock(effect, into) {
+    log.debug("Entering holderBlock().");
     expect('{');
     while (!is('}')) {
       const keyword = expectWord();
@@ -1132,10 +1262,12 @@ function parse(text) {
         id: id, on: effect, assignments: assignments });
     }
     expect('}');
+    log.debug("Leaving holderBlock().");
   }
 
   // --- rules, policies, policy sets ---------------------------------------
   function ruleBlock() {
+    log.debug("Entering ruleBlock().");
     expect('rule');
     const slug = expectWord();
     expect('{');
@@ -1191,10 +1323,12 @@ function parse(text) {
     if (anyOf.length) {
       rule.target = { anyOf: anyOf };
     }
+    log.debug("Leaving ruleBlock().");
     return rule;
   }
 
   function policyBlock() {
+    log.debug("Entering policyBlock().");
     const keyword = next().value;
     const isSet = keyword === 'policyset';
     const slug = expectWord();
@@ -1285,6 +1419,7 @@ function parse(text) {
     } else {
       delete policy.children;
     }
+    log.debug("Leaving policyBlock().");
     return policy;
   }
 

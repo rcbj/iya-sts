@@ -39,6 +39,12 @@ const templates = require('../xacml/xacml_templates');
 const validate = require('../xacml/xacml_validate');
 const pap = require('../xacml/xacml_admin');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'xacml_pap',
+  level: process.env.LOG_LEVEL || 'info' });
+
 // Fills the store's directory slot and seeds the repository.
 require('../ldap/ldap_server');
 
@@ -48,6 +54,7 @@ const F1 = 'urn:oasis:names:tc:xacml:1.0:function:';
 // THE XML WRITER.
 // ---------------------------------------------------------------------------
 function checkWriter(t) {
+  log.debug("Entering checkWriter().");
   const first = xml.parsePolicy(store.SEED_DOCUMENT);
   const written = xml.writePolicy(first);
   let second = null;
@@ -55,6 +62,7 @@ function checkWriter(t) {
     second = xml.parsePolicy(written);
   } catch (error) {
     t.check(false, 'a written policy parses back', error.message);
+    log.debug("Leaving checkWriter().");
     return;
   }
   t.check(true, 'a written policy parses back');
@@ -72,12 +80,14 @@ function checkWriter(t) {
           'the policy <Description> survives', second.description.slice(0, 40));
   t.check(second.rules[0].description.length > 0,
           'and so does a rule\'s');
+  log.debug("Leaving checkWriter().");
 }
 
 // ---------------------------------------------------------------------------
 // THE TEMPLATES.
 // ---------------------------------------------------------------------------
 function checkTemplates(t) {
+  log.debug("Entering checkTemplates().");
   t.equal(templates.catalogue().length, templates.TEMPLATES.length,
           'the catalogue is DERIVED from the table, so adding a template is ' +
           'a row and nothing else');
@@ -138,6 +148,7 @@ function checkTemplates(t) {
   t.check(!nonesuch.ok && /rbac/.test(nonesuch.why),
           'an unknown template is refused and the refusal NAMES the ones ' +
           'that exist', nonesuch.why);
+  log.debug("Leaving checkTemplates().");
 }
 
 // ---------------------------------------------------------------------------
@@ -164,6 +175,7 @@ function checkTemplates(t) {
 //      pressed Create ten seconds earlier.
 // ---------------------------------------------------------------------------
 function checkBlankTemplate(t) {
+  log.debug("Entering checkBlankTemplate().");
   const pdp = require('../xacml/xacml_pdp');
 
   const asPolicy = templates.build('blank', {}, { name: 'blank-probe' });
@@ -247,12 +259,14 @@ function checkBlankTemplate(t) {
           policyAdds.indexOf('add-policy') < 0,
           'and a blank Policy the Policy menu — a rule, and NOT a policy',
           policyAdds.join(', '));
+  log.debug("Leaving checkBlankTemplate().");
 }
 
 // ---------------------------------------------------------------------------
 // THE EDITOR'S MENUS.
 // ---------------------------------------------------------------------------
 function checkMatchMenu(t) {
+  log.debug("Entering checkMatchMenu().");
   const menu = editor.matchFunctions();
   const labels = menu.map(function (one) {
     return one.label;
@@ -280,9 +294,11 @@ function checkMatchMenu(t) {
   });
   t.equal(wrong.length, 0,
           'every offered match function names the datatype both sides must be');
+  log.debug("Leaving checkMatchMenu().");
 }
 
 function checkContextualOptions(t) {
+  log.debug("Entering checkContextualOptions().");
   const built = templates.build('rbac', {}, { name: 'menus' });
   const policy = built.policy;
 
@@ -319,9 +335,12 @@ function checkContextualOptions(t) {
   const nowhere = editor.optionsAt(policy, 'rules.99.target');
   t.equal(nowhere.additions.length, 0,
           'a path that does not resolve offers nothing rather than throwing');
+  log.debug("Leaving checkContextualOptions().");
 }
 
 function actionOf(one) {
+  log.debug("Entering actionOf().");
+  log.debug("Leaving actionOf().");
   return one.action;
 }
 
@@ -330,6 +349,7 @@ function actionOf(one) {
 // accepted by the console, and missing from `/admin-api` — which is rule 7
 // broken in the direction nobody looks.
 function checkMenuAndApiAgree(t) {
+  log.debug("Entering checkMenuAndApiAgree().");
   const offered = {};
   Object.keys(editor.ADDITIONS).forEach(function (kind) {
     editor.ADDITIONS[kind].forEach(function (one) {
@@ -345,12 +365,14 @@ function checkMenuAndApiAgree(t) {
   t.equal(missing.length, 0,
           'every action the editor can offer is declared to /admin-api',
           missing.join(', ') || 'none missing');
+  log.debug("Leaving checkMenuAndApiAgree().");
 }
 
 // ---------------------------------------------------------------------------
 // APPLYING EDITS.
 // ---------------------------------------------------------------------------
 function checkEdits(t) {
+  log.debug("Entering checkEdits().");
   const policy = templates.build('rbac', {}, { name: 'edits' }).policy;
   const before = policy.rules.length;
 
@@ -391,6 +413,7 @@ function checkEdits(t) {
     reloaded = xml.parsePolicy(document);
   } catch (error) {
     t.check(false, 'the edited policy still TYPE-CHECKS', error.message);
+    log.debug("Leaving checkEdits().");
     return;
   }
   t.check(true, 'the edited policy still type-checks',
@@ -426,12 +449,14 @@ function checkEdits(t) {
   t.check(!stale.ok && /not there any more/.test(stale.why),
           'a path that no longer resolves is refused rather than guessing',
           stale.why);
+  log.debug("Leaving checkEdits().");
 }
 
 // A Match's datatype must follow its function, or the two sides can be set
 // independently into something that does not type-check — and the person
 // finds out a screen later.
 function checkMatchTypeFollowsFunction(t) {
+  log.debug("Entering checkMatchTypeFollowsFunction().");
   const policy = templates.build('rbac', {}, { name: 'types' }).policy;
   const path = 'rules.0.target.anyOf.0.allOf.0.matches.0';
   const result = editor.applyEdit(policy, path, 'edit-match', {
@@ -448,15 +473,19 @@ function checkMatchTypeFollowsFunction(t) {
   try {
     xml.parsePolicy(xml.writePolicy(policy));
   } catch (error) {
+    log.debug("Caught in checkMatchTypeFollowsFunction(): " +
+              ((error && error.message) || error));
     ok = false;
   }
   t.check(ok, 'so the policy still type-checks after the change');
+  log.debug("Leaving checkMatchTypeFollowsFunction().");
 }
 
 // ---------------------------------------------------------------------------
 // THE PAP'S ACTIONS, AGAINST THE REAL STORE.
 // ---------------------------------------------------------------------------
 function checkPapActions(t) {
+  log.debug("Entering checkPapActions().");
   const created = pap.combinedAction({
     action: 'create-from-template', template: 'abac', name: 'pap-test',
     p_subjectAttribute: 'employeeType', p_subjectValue: 'staff'
@@ -490,6 +519,7 @@ function checkPapActions(t) {
   t.check(!unknown.ok && /Unknown action/.test(unknown.why),
           'an unknown action is refused, and the refusal lists every action ' +
           'there is');
+  log.debug("Leaving checkPapActions().");
 }
 
 
@@ -504,12 +534,15 @@ function checkPapActions(t) {
 // not contain it. Every layer behaved correctly on its own.
 // ---------------------------------------------------------------------------
 function newPolicySet() {
+  log.debug("Entering newPolicySet().");
+  log.debug("Leaving newPolicySet().");
   return { kind: 'PolicySet', id: 'urn:test:set', description: '',
            version: '1.0', combiningAlgId: model.POLICY_ALG.DENY_OVERRIDES,
            target: null, children: [], obligations: [], advice: [] };
 }
 
 function checkPolicySets(t) {
+  log.debug("Entering checkPolicySets().");
   const set = newPolicySet();
 
   t.equal(editor.optionsAt(set, '').kind, 'policySet',
@@ -542,7 +575,8 @@ function checkPolicySets(t) {
   // carrying the rule-combining spelling names an algorithm no combiner can
   // find. Nothing else in this repository would refuse it.
   const wrong = editor.applyEdit(set, '', 'edit-policy',
-                                 { combiningAlgId: model.RULE_ALG.DENY_OVERRIDES });
+                                 { combiningAlgId:
+                                     model.RULE_ALG.DENY_OVERRIDES });
   t.check(!wrong.ok && /policy-combining/.test(wrong.why),
           'a RULE-combining algorithm is refused on a policy set', wrong.why);
   const right = editor.applyEdit(
@@ -558,6 +592,7 @@ function checkPolicySets(t) {
     back = xml.parsePolicy(document);
   } catch (error) {
     t.check(false, 'the edited policy set still type-checks', error.message);
+    log.debug("Leaving checkPolicySets().");
     return;
   }
   t.check(true, 'the edited policy set type-checks');
@@ -575,6 +610,7 @@ function checkPolicySets(t) {
   t.check(rows.filter(function (kind) { return kind === 'policySet'; })
             .length === 2,
           'and recurses into the nested set rather than stopping at the root');
+  log.debug("Leaving checkPolicySets().");
 }
 
 // ---------------------------------------------------------------------------
@@ -587,6 +623,7 @@ function checkPolicySets(t) {
 // broken by its own menu.
 // ---------------------------------------------------------------------------
 function checkVariables(t) {
+  log.debug("Entering checkVariables().");
   const policy = templates.build('rbac', {}, { name: 'vars' }).policy;
   editor.applyEdit(policy, 'rules.0', 'add-condition', {});
 
@@ -639,6 +676,7 @@ function checkVariables(t) {
     back = xml.parsePolicy(xml.writePolicy(policy));
   } catch (error) {
     t.check(false, 'the renamed policy still type-checks', error.message);
+    log.debug("Leaving checkVariables().");
     return;
   }
   t.check(true, 'the renamed policy type-checks — which is the whole point: ' +
@@ -647,12 +685,14 @@ function checkVariables(t) {
           'the definition is under the new name');
   t.equal(Object.keys(back.variables).length, 1,
           'and not under both');
+  log.debug("Leaving checkVariables().");
 }
 
 // ---------------------------------------------------------------------------
 // THE THREE EXPRESSION KINDS THE MODEL HAD AND THE EDITOR COULD NOT BUILD.
 // ---------------------------------------------------------------------------
 function checkSelectorsAndFunctions(t) {
+  log.debug("Entering checkSelectorsAndFunctions().");
   const policy = templates.build('rbac', {}, { name: 'expr' }).policy;
   editor.applyEdit(policy, 'rules.0', 'add-condition', {});
 
@@ -673,8 +713,10 @@ function checkSelectorsAndFunctions(t) {
 
   const changed = editor.applyEdit(
     policy, 'rules.0.condition.args.0', 'edit-function',
-    { functionId: 'urn:oasis:names:tc:xacml:1.0:function:string-greater-than' });
-  t.check(changed.ok, 'the function reference can be changed', changed.why || '');
+    { functionId:
+        'urn:oasis:names:tc:xacml:1.0:function:string-greater-than' });
+  t.check(changed.ok, 'the function reference can be changed',
+          changed.why || '');
 
   // `map` applies its function to ONE value; the other six take a predicate of
   // two. A default of the wrong shape is legal XACML that fails at evaluation,
@@ -730,17 +772,21 @@ function checkSelectorsAndFunctions(t) {
           'section 5.14 asks for one, no decision here changes either way, ' +
           'and a schema validator elsewhere would refuse it');
   editor.applyEdit(back, '', 'edit-policy',
-                   { xpathVersion: 'http://www.w3.org/TR/1999/REC-xpath-19991116' });
+                   { xpathVersion:
+                       'http://www.w3.org/TR/1999/REC-xpath-19991116' });
   t.equal(editor.xpathVersionGaps(back).length, 0,
           'and setting it closes the report');
   t.check(/<PolicyDefaults>/.test(xml.writePolicy(back)),
           'which is written as <PolicyDefaults><XPathVersion>');
+  log.debug("Leaving checkSelectorsAndFunctions().");
 }
 
 // ---------------------------------------------------------------------------
-// THE OPTIONAL ATTRIBUTES, AND THE ASSIGNMENTS THAT COULD BE ADDED AND NOT SEEN.
+// THE OPTIONAL ATTRIBUTES, AND THE ASSIGNMENTS THAT COULD BE ADDED AND NOT
+// SEEN.
 // ---------------------------------------------------------------------------
 function checkOptionalSyntax(t) {
+  log.debug("Entering checkOptionalSyntax().");
   const policy = templates.build('rbac', {}, { name: 'optional' }).policy;
 
   editor.applyEdit(policy, 'rules.0', 'add-rule-obligation', {});
@@ -819,10 +865,12 @@ function checkOptionalSyntax(t) {
     back = xml.parsePolicy(document);
   } catch (error) {
     t.check(false, 'and the result still type-checks', error.message);
+    log.debug("Leaving checkOptionalSyntax().");
     return;
   }
   t.check(true, 'and the result still type-checks');
   t.equal(back.maxDelegationDepth, '4', 'and reads back');
+  log.debug("Leaving checkOptionalSyntax().");
 }
 
 // ---------------------------------------------------------------------------
@@ -834,34 +882,30 @@ function checkOptionalSyntax(t) {
 // section C says no standard combining algorithm reads a parameter.
 // ---------------------------------------------------------------------------
 const WITH_COMBINER_PARAMETERS =
-  '<?xml version="1.0" encoding="UTF-8"?>\n' +
-  '<Policy xmlns="urn:oasis:names:tc:xacml:3.0:core:schema:wd-17" ' +
+  '<?xml version="1.0" encoding="UTF-8"?>\n<Policy ' +
+  'xmlns="urn:oasis:names:tc:xacml:3.0:core:schema:wd-17" ' +
   'PolicyId="urn:test:combiner" Version="1.0" ' +
-  'RuleCombiningAlgId="urn:oasis:names:tc:xacml:1.0:rule-combining-algorithm:' +
-  'first-applicable">\n' +
-  '  <Target/>\n' +
-  '  <CombinerParameters>\n' +
-  '    <CombinerParameter ParameterName="order">\n' +
-  '      <AttributeValue DataType="http://www.w3.org/2001/XMLSchema#integer">' +
-  '1</AttributeValue>\n' +
-  '    </CombinerParameter>\n' +
-  '  </CombinerParameters>\n' +
-  '  <RuleCombinerParameters RuleIdRef="urn:test:combiner:rule:1">\n' +
-  '    <CombinerParameter ParameterName="weight">\n' +
-  '      <AttributeValue DataType="http://www.w3.org/2001/XMLSchema#integer">' +
-  '7</AttributeValue>\n' +
-  '    </CombinerParameter>\n' +
-  '  </RuleCombinerParameters>\n' +
-  '  <Rule RuleId="urn:test:combiner:rule:1" Effect="Permit"><Target/></Rule>\n' +
-  '</Policy>\n';
+  'RuleCombiningAlgId="urn:oasis:names:tc:xacml:1.0:rule-combining-algorithm:first-applicable">' +
+  '\n  <Target/>\n  <CombinerParameters>\n    <CombinerParameter ' +
+  'ParameterName="order">\n      <AttributeValue ' +
+  'DataType="http://www.w3.org/2001/XMLSchema#integer">1</AttributeValue>' +
+  '\n    </CombinerParameter>\n  </CombinerParameters>\n  ' +
+  '<RuleCombinerParameters RuleIdRef="urn:test:combiner:rule:1">\n    ' +
+  '<CombinerParameter ParameterName="weight">\n      <AttributeValue ' +
+  'DataType="http://www.w3.org/2001/XMLSchema#integer">7</AttributeValue>' +
+  '\n    </CombinerParameter>\n  </RuleCombinerParameters>\n  <Rule ' +
+  'RuleId="urn:test:combiner:rule:1" ' +
+  'Effect="Permit"><Target/></Rule>\n</Policy>\n';
 
 function checkCombinerParameters(t) {
+  log.debug("Entering checkCombinerParameters().");
   let policy = null;
   try {
     policy = xml.parsePolicy(WITH_COMBINER_PARAMETERS);
   } catch (error) {
     t.check(false, 'a policy carrying combiner parameters loads',
             error.message);
+    log.debug("Leaving checkCombinerParameters().");
     return;
   }
   t.equal(policy.combinerParameters.length, 1,
@@ -901,9 +945,11 @@ function checkCombinerParameters(t) {
 
   t.equal(xml.writePolicy(xml.parsePolicy(document)), document,
           'the round trip through them is a fixed point');
+  log.debug("Leaving checkCombinerParameters().");
 }
 
 function run(t) {
+  log.debug("Entering run().");
   checkWriter(t);
   checkTemplates(t);
   checkBlankTemplate(t);
@@ -918,6 +964,7 @@ function run(t) {
   checkOptionalSyntax(t);
   checkCombinerParameters(t);
   checkPapActions(t);
+  log.debug("Leaving run().");
 }
 
 module.exports = {

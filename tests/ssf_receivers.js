@@ -63,6 +63,12 @@ const streams = require('../ssf/ssf_streams');
 const events = require('../ssf/ssf_events');
 const receivers = require('../ssf/ssf_receivers');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'ssf_receivers',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ALICE = { username: 'alice', sub: 'urn:sts:user:alice',
                 mail: 'alice@example.com' };
 const BOB = { username: 'bob', sub: 'urn:sts:user:bob', mail: '' };
@@ -72,6 +78,8 @@ const BOB = { username: 'bob', sub: 'urn:sts:user:bob', mail: '' };
 // because what is under test is the READING of a subject, and a real SET would
 // add a signature and a clock to a question about neither.
 function delivered(subject, payload, uri) {
+  log.debug("Entering delivered().");
+  log.debug("Leaving delivered().");
   return { surface: receivers.PORTAL, jti: 'j' + Math.random().toString(16)
     .slice(2, 10), at: new Date().toISOString(),
     claims: { sub_id: subject,
@@ -83,6 +91,7 @@ function delivered(subject, payload, uri) {
 }
 
 function run(t) {
+  log.debug("Entering run().");
   config.setOverride('ssf.enabled', 'true');
   config.setOverride('ssf.internalReceivers', 'true');
 
@@ -156,8 +165,8 @@ function run(t) {
   t.equal(madeAgain, 0,
           'SEEDING AGAIN CREATES NOTHING. An existing stream is left exactly ' +
           'as it is — somebody who paused one of these, narrowed it or ' +
-          'deleted it meant it, which is applications.js\'s seeding rule word ' +
-          'for word');
+          'deleted it meant it, which is applications.js\'s seeding rule ' +
+          'word for word');
 
   // -----------------------------------------------------------------------
   // THE TOKEN IS THE SAME IN EVERY PROCESS OF THIS SERVICE (2026-09-11).
@@ -551,12 +560,14 @@ function run(t) {
           'acts, and only the first one is on that page');
   t.equal(receivers.listFor(receivers.PORTAL, {}).length, 1,
           'and the portal\'s inbox is untouched by the console\'s Clear');
+  log.debug("Leaving run().");
 }
 
 // One real signed SET, delivered the way `accept()` takes one. It is signed
 // rather than faked here because the entry's `verified` is part of what the
 // cap test is holding — a row that failed to verify is still a row.
 function deliverSigned(t, surface, bearer, person, quiet) {
+  log.debug("Entering deliverSigned().");
   const claims = events.buildSet({
     issuer: 'https://sts.example.com',
     audience: receivers.surfaceOf(surface).audience,
@@ -575,6 +586,7 @@ function deliverSigned(t, surface, bearer, person, quiet) {
             'a properly credentialled, properly addressed SET is accepted ' +
             'with RFC 8935 section 2.3\'s 202 and an empty body');
   }
+  log.debug("Leaving deliverSigned().");
   return taken;
 }
 

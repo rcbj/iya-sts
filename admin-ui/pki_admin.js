@@ -94,8 +94,14 @@ const errorCodes = require('../common/error_codes');
 // spelling of a timestamp on one entry would be worse than a fourth copy of
 // this function.
 function generalizedTime(when) {
+  log.debug("Entering generalizedTime().");
   const d = when ? new Date(when) : new Date();
-  const pad = function (n) { return String(n).padStart(2, '0'); };
+  const pad = function (n) {
+    log.debug("Entering pad().");
+    log.debug("Leaving pad().");
+    return String(n).padStart(2, '0');
+  };
+  log.debug("Leaving generalizedTime().");
   return d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate()) +
          pad(d.getUTCHours()) + pad(d.getUTCMinutes()) +
          pad(d.getUTCSeconds()) + 'Z';
@@ -132,6 +138,8 @@ const PURPOSE_WRITES = {
                  'oauthAssertionCertificateChain', 'oauthAssertionPrivateKey',
                  'oauthAssertionKid', 'oauthAssertionExpiresAt'],
     valuesOf: function (record) {
+      log.debug("Entering valuesOf().");
+      log.debug("Leaving valuesOf().");
       return [
         ['oauthAssertionJwks', JSON.stringify(record.jwks)],
         ['oauthAssertionCertificate', record.certificatePem],
@@ -155,6 +163,8 @@ const PURPOSE_WRITES = {
                  'oauthSamlAssertionThumbprint',
                  'oauthSamlAssertionExpiresAt'],
     valuesOf: function (record) {
+      log.debug("Entering valuesOf().");
+      log.debug("Leaving valuesOf().");
       return [
         ['oauthSamlAssertionCertificate', record.certificatePem],
         ['oauthSamlAssertionCertificateChain', record.chainPem.join('')],
@@ -184,7 +194,9 @@ const PURPOSE_WRITES = {
 // table makes the same argument one layer down.
 // ---------------------------------------------------------------------------
 function targetOf(body) {
+  log.debug("Entering targetOf().");
   const asked = String((body && body.target) || '').trim() || 'application';
+  log.debug("Leaving targetOf().");
   return pki.subjectKindFor(asked) ? asked : '';
 }
 
@@ -193,7 +205,9 @@ function targetOf(body) {
 // 2026-09-11 sends and is the reason that is the default rather than a
 // required field.
 function purposeOf(body) {
+  log.debug("Entering purposeOf().");
   const asked = String((body && body.purpose) || '').trim() || 'jwt';
+  log.debug("Leaving purposeOf().");
   return PURPOSE_WRITES[asked] ? asked : '';
 }
 
@@ -242,11 +256,15 @@ const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
                      'thirteen', 'fourteen', 'fifteen'];
 
 function countWord(n) {
+  log.debug("Entering countWord().");
+  log.debug("Leaving countWord().");
   return COUNT_WORDS[n] || String(n);
 }
 
 function realmLabel() {
+  log.debug("Entering realmLabel().");
   const current = realms.current();
+  log.debug("Leaving realmLabel().");
   return (current && current.id) ? current.id : 'default';
 }
 
@@ -273,13 +291,17 @@ function realmLabel() {
 // and the management API read it back with `errorCodes.codeOf()` to mark the
 // response they send.
 function refuse(sentence, code) {
+  log.debug("Entering refuse().");
   const refused = { ok: false, errors: [sentence], why: sentence };
+  log.debug("Leaving refuse().");
   return code ? errorCodes.mark(refused, code) : refused;
 }
 
 // A module's refusal passed on in this file's shape, keeping the module's own
 // code where it set one and naming the fallback where it did not.
 function refusedBy(result, fallback) {
+  log.debug("Entering refusedBy().");
+  log.debug("Leaving refusedBy().");
   return refuse(((result && result.errors) || []).join(' '),
                 errorCodes.codeOf(result) || fallback);
 }
@@ -287,9 +309,11 @@ function refusedBy(result, fallback) {
 // Mark the response a PKI route is about to send with the code its result
 // carries. A result that succeeded carries none and marks nothing.
 function markRefusal(res, result, fallback) {
+  log.debug("Entering markRefusal().");
   if (result && result.ok === false) {
     errorCodes.mark(res, errorCodes.codeOf(result) || fallback);
   }
+  log.debug("Leaving markRefusal().");
 }
 
 // WHICH STORED OBJECT AN ACTION IS ABOUT. `/admin-api` names it as `objectId`;
@@ -303,14 +327,18 @@ function markRefusal(res, result, fallback) {
 // how you change it. `*service` and `*process` are named explicitly because
 // they are not realms at all.
 function scopeFrom(body) {
+  log.debug("Entering scopeFrom().");
   const asked = String((body && body.scope) || '').trim();
   if (asked === pki.SERVICE_SCOPE || asked === pki.PROCESS_SCOPE) {
+    log.debug("Leaving scopeFrom().");
     return asked;
   }
   if (asked && asked !== 'default') {
+    log.debug("Leaving scopeFrom().");
     return asked;
   }
   const current = realms.current();
+  log.debug("Leaving scopeFrom().");
   return (current && current.id) ? current.id : '';
 }
 
@@ -325,13 +353,15 @@ async function rebuildEveryScope() {
   let done = 0;
   for (let i = 0; i < scopes.length; i++) {
     const built = await pki.buildScope(scopes[i],
-                                       { organisation: config.value('pki.organisation') });
+                                       { organisation: config.value(
+                                           'pki.organisation') });
     if (built.ok) {
       done += 1;
       await recertifyScope(scopes[i]);
     } else {
-      log.error(errorCodes.tag('STS-PKI-0104') + 'pki_admin: the "' + scopes[i] + '" branch could not be ' +
-                'rebuilt under the new Root: ' +
+      log.error(errorCodes.tag('STS-PKI-0104') + 'pki_admin: the "' +
+                scopes[i] + '" ' +
+                'branch could not be rebuilt under the new Root: ' +
                 (built.errors || []).join(' '));
     }
   }
@@ -361,6 +391,8 @@ async function recertifyScope(scopeId) {
 }
 
 function objectIdOf(body) {
+  log.debug("Entering objectIdOf().");
+  log.debug("Leaving objectIdOf().");
   return String((body && (body.objectId || body.pki_selected)) || '');
 }
 
@@ -546,6 +578,8 @@ function pkiJson(req, draft) {
 // page would have silently narrowed the rebuild.
 // ---------------------------------------------------------------------------
 function everyRealmId() {
+  log.debug("Entering everyRealmId().");
+  log.debug("Leaving everyRealmId().");
   return realms.list().map(function (one) { return one.id; });
 }
 
@@ -556,7 +590,9 @@ function everyRealmId() {
 // foreign-scope refusal all have to mean the same realm by it, and four
 // readings of `realms.current()` are four chances not to.
 function currentRealmScope() {
+  log.debug("Entering currentRealmScope().");
   const current = realms.current();
+  log.debug("Leaving currentRealmScope().");
   return (current && current.id) ? current.id : '';
 }
 
@@ -588,21 +624,28 @@ function currentRealmScope() {
 // reader in this realm get* is asked exactly once, where the page is.
 // ===========================================================================
 function realmIdsForTree() {
+  log.debug("Entering realmIdsForTree().");
+  log.debug("Leaving realmIdsForTree().");
   return [currentRealmScope()];
 }
 
 // Is this scope one this realm's page draws? The Root and the process branch
 // are, whatever realm you are in; a realm's branch is only its own.
 function scopeVisible(scopeId) {
+  log.debug("Entering scopeVisible().");
   const id = String(scopeId);
+  log.debug("Leaving scopeVisible().");
   return id === pki.SERVICE_SCOPE || id === pki.PROCESS_SCOPE ||
          id === currentRealmScope();
 }
 
 function valuesOf(value) {
+  log.debug("Entering valuesOf().");
   if (value === undefined || value === null) {
+    log.debug("Leaving valuesOf().");
     return [];
   }
+  log.debug("Leaving valuesOf().");
   return (Array.isArray(value) ? value : [value]).map(String).filter(Boolean);
 }
 
@@ -653,11 +696,13 @@ async function issueToPerson(identifier, body) {
   if (!personAssertions.storable()) {
     log.debug('Leaving issueToPerson(). No directory.');
     return refuse('This process has no directory, so there is nowhere to put ' +
-                  'a person\'s assertion key pair and nothing that could read ' +
-                  'one back. `ldap/ldap_server.js` is what fills that slot.', 'STS-PKI-0107');
+                  'a person\'s assertion key pair and nothing that could ' +
+                  'read one back. `ldap/ldap_server.js` is what fills that ' +
+                  'slot.', 'STS-PKI-0107');
   }
   const purpose = purposeOf(body);
   if (!purpose) {
+    log.debug("Leaving issueToPerson().");
     return refuse('"' + body.purpose + '" is not a profile this service ' +
                   'issues a signing key pair for. It issues ' +
                   pki.PURPOSE_IDS.join(' and ') + '.', 'STS-PKI-0011');
@@ -669,8 +714,9 @@ async function issueToPerson(identifier, body) {
                   'oauthSamlAssertion* off an APPLICATION entry and reads ' +
                   'nothing off a person, so issuing one here would write a ' +
                   'key pair nothing in this service can ever use — a control ' +
-                  'that looks as though it worked. Issue the SAML key pair to ' +
-                  'an application, which is the party RFC 7522 has in mind.', 'STS-PKI-0108');
+                  'that looks as though it worked. Issue the SAML key pair ' +
+                  'to an application, which is the party RFC 7522 has in ' +
+                  'mind.', 'STS-PKI-0108');
   }
   const held = personAssertions.recordFor(identifier);
   if (!held) {
@@ -782,12 +828,13 @@ function clearPerson(identifier) {
                 '", and the issuer declaration with it — ' + done.removed +
                 ' attribute(s). **THIS IS NOT REVOCATION.** The certificate ' +
                 'is still valid, still chains to this realm\'s Root and is ' +
-                'on no list; what changed is that this service will no longer ' +
-                'accept an assertion signed with that key, because the key is ' +
-                'no longer registered against anybody. A certificate this ' +
-                'service issued to a person is still refused as an authority ' +
-                'over anybody else, which it was before and is a property of ' +
-                'the certificate rather than of the entry.' };
+                'on no list; what changed is that this service will no ' +
+                'longer accept an assertion signed with that key, because ' +
+                'the key is no longer registered against anybody. A ' +
+                'certificate this service issued to a person is still ' +
+                'refused as an authority over anybody else, which it was ' +
+                'before and is a property of the certificate rather than of ' +
+                'the entry.' };
 }
 
 async function pkiAction(body) {
@@ -820,7 +867,8 @@ async function pkiAction(body) {
                   'realm\'s certificate authority is edited in that realm: ' +
                   'switch to it with the realm switcher and try again. The ' +
                   'Root and the process branch are the exception and may be ' +
-                  'edited from any realm, because they belong to none.', 'STS-PKI-0112');
+                  'edited from any realm, because they belong to none.',
+                  'STS-PKI-0112');
   }
 
   if (action === 'build') {
@@ -878,14 +926,15 @@ async function pkiAction(body) {
                   'was removed. ' + cleared.issuedCount + ' certificate(s) ' +
                   'were issued from it and every one of them now chains to ' +
                   'nothing. The key pairs are still on the application ' +
-                  'entries and will still SIGN — what stopped is this service ' +
-                  'being able to see that it issued them.' };
+                  'entries and will still SIGN — what stopped is this ' +
+                  'service being able to see that it issued them.' };
   }
 
   if (action === 'issue') {
     const identifier = String(body.identifier || '').trim();
     const target = targetOf(body);
     if (!target) {
+      log.debug("Leaving pkiAction().");
       return refuse('"' + body.target + '" is not a kind of subject this ' +
                     'service issues a signing key pair to. It issues to ' +
                     pki.SUBJECT_KIND_IDS.join(' and ') + ' — an application, ' +
@@ -894,13 +943,17 @@ async function pkiAction(body) {
                     'about themselves.', 'STS-PKI-0012');
     }
     if (target === 'person') {
+      log.debug("Leaving pkiAction().");
       return await issueToPerson(identifier, body);
     }
     if (!identifier) {
-      return refuse('Name the application the key pair is for.', 'STS-PKI-0113');
+      log.debug("Leaving pkiAction().");
+      return refuse('Name the application the key pair is for.',
+                    'STS-PKI-0113');
     }
     const entry = applications.get(identifier);
     if (!entry) {
+      log.debug("Leaving pkiAction().");
       // Refused rather than creating one, which is the opposite of what
       // `seen()` does and is right here: `seen()` records something that
       // PRESENTED an identifier, and this would be inventing an application in
@@ -913,6 +966,7 @@ async function pkiAction(body) {
     }
     const purpose = purposeOf(body);
     if (!purpose) {
+      log.debug("Leaving pkiAction().");
       return refuse('"' + body.purpose + '" is not a profile this service ' +
                     'issues a signing key pair for. It issues ' +
                     pki.PURPOSE_IDS.join(' and ') + ' — RFC 7523\'s JWT ' +
@@ -947,11 +1001,13 @@ async function pkiAction(body) {
         attribute: writes[i][0], mode: 'set', value: writes[i][1]
       });
       if (!done || done.ok === false) {
-        log.error(errorCodes.tag('STS-PKI-0115') + 'pki_admin: a signing key pair was issued for "' +
+        log.error(errorCodes.tag('STS-PKI-0115') + 'pki_admin: a signing key ' +
+                                                   'pair was issued for "' +
                   identifier + '" and ' + writes[i][0] + ' could not be ' +
                   'written: ' + ((done && done.errors) || []).join(' ') +
                   '. The private key is not stored anywhere else and is now ' +
                   'lost; issue again.');
+        log.debug("Leaving pkiAction().");
         return refuse('The key pair was issued and `' + writes[i][0] + '` ' +
                       'could not be written to the application entry: ' +
                       ((done && done.errors) || []).join(' ') + ' This ' +
@@ -961,6 +1017,7 @@ async function pkiAction(body) {
     }
     log.debug('Leaving pkiAction(). Issued.');
     const table = PURPOSE_WRITES[purpose];
+    log.debug("Leaving pkiAction().");
     return { ok: true,
              why: 'A ' + record.keyAlg + ' signing key pair was issued to "' +
                   identifier + '" for ' + record.purposeLabel + ', signed by ' +
@@ -971,9 +1028,9 @@ async function pkiAction(body) {
                   'valid until ' + record.notAfter + '. It can sign a client ' +
                   'assertion now; for it to be accepted as an AUTHORIZATION ' +
                   'grant, declare the issuer it will use on ' +
-                  table.issuerAttribute + '. This is a SEPARATE key pair from ' +
-                  'the other profile\'s — an application may hold both, and ' +
-                  'neither can sign for the other.',
+                  table.issuerAttribute + '. This is a SEPARATE key pair ' +
+                  'from the other profile\'s — an application may hold both, ' +
+                  'and neither can sign for the other.',
              purpose: purpose,
              attributes: table.attributes.slice(),
              kid: record.kid,
@@ -986,19 +1043,24 @@ async function pkiAction(body) {
     const identifier = String(body.identifier || '').trim();
     const target = targetOf(body);
     if (!target) {
+      log.debug("Leaving pkiAction().");
       return refuse('"' + body.target + '" is not a kind of subject this ' +
                     'service issues a signing key pair to, so there is none ' +
                     'of that kind to take off. It issues to ' +
                     pki.SUBJECT_KIND_IDS.join(' and ') + '.', 'STS-PKI-0012');
     }
     if (target === 'person') {
+      log.debug("Leaving pkiAction().");
       return clearPerson(identifier);
     }
     if (!identifier) {
-      return refuse('Name the application to take the key pair off.', 'STS-PKI-0113');
+      log.debug("Leaving pkiAction().");
+      return refuse('Name the application to take the key pair off.',
+                    'STS-PKI-0113');
     }
     const purpose = purposeOf(body);
     if (!purpose) {
+      log.debug("Leaving pkiAction().");
       return refuse('"' + body.purpose + '" is not a profile this service ' +
                     'issues a signing key pair for. It issues ' +
                     pki.PURPOSE_IDS.join(' and ') + '.', 'STS-PKI-0011');
@@ -1016,6 +1078,7 @@ async function pkiAction(body) {
       }
     });
     if (!removed) {
+      log.debug("Leaving pkiAction().");
       return refuse('Nothing was taken off "' + identifier + '" — it has no ' +
                     'key pair issued for that profile, or there is no such ' +
                     'application. The other profile\'s key pair, if it holds ' +
@@ -1115,9 +1178,10 @@ async function pkiAction(body) {
     return { ok: true,
              why: 'The ' + useCaseId + ' Issuing CA was re-issued from this ' +
                   'scope\'s Intermediate with a new key pair, and ' +
-                  done.recertified + ' certificate(s) under it were re-minted ' +
-                  'from it. Every other use case is untouched, which is the ' +
-                  'whole reason each has an authority of its own.' };
+                  done.recertified + ' certificate(s) under it were ' +
+                  're-minted from it. Every other use case is untouched, ' +
+                  'which is the whole reason each has an authority of its ' +
+                  'own.' };
   }
 
   if (action === 'recertify') {
@@ -1219,9 +1283,9 @@ async function pkiAction(body) {
                ? done.why
                : 'Certificate ' + done.entry.serialHex + ' is on the "' +
                  String(body.ca || '') + '" authority\'s revocation list as "' +
-                 done.entry.reason + '". Its CRL and its OCSP responder say so ' +
-                 'from now on. NOTHING ELSE CHANGED: whoever holds that key ' +
-                 'still holds it, the certificate still chains, and this ' +
+                 done.entry.reason + '". Its CRL and its OCSP responder say ' +
+                 'so from now on. NOTHING ELSE CHANGED: whoever holds that ' +
+                 'key still holds it, the certificate still chains, and this ' +
                  'service does not consult its own lists — so what this buys ' +
                  'is that a relying party which DOES check can now find out.' };
   }
@@ -1411,9 +1475,9 @@ function chainTable(chain) {
         (tier.expired ? ' <strong>(expired)</strong>' : '') + '</td>' +
       '<td><code>' + esc(tier.keyAlg) + '</code> / <code>' +
         esc(tier.signatureAlg) + '</code></td>' +
-      '<td><code>' + esc(tier.thumbprint.slice(0, 16)) + '&hellip;</code></td>' +
-      '</tr>' +
-      '<tr><td colspan="6">' + admin.tip(tier.what,
+      '<td><code>' + esc(tier.thumbprint.slice(0, 16)) +
+      '&hellip;</code></td></tr><tr><td ' +
+      'colspan="6">' + admin.tip(tier.what,
         'What the ' + tier.label + ' is for') + '</td></tr>';
   }).join('');
   log.debug('Leaving chainTable().');
@@ -1442,6 +1506,8 @@ function pemBlocks(chain) {
 }
 
 function algorithmOptions(json, selected) {
+  log.debug("Entering algorithmOptions().");
+  log.debug("Leaving algorithmOptions().");
   return json.keyAlgorithms.map(function (one) {
     return '<option value="' + esc(one.id) + '"' +
       (one.id === selected ? ' selected' : '') + '>' + esc(one.label) +
@@ -1495,6 +1561,8 @@ function signatureOptions(json, keyAlg) {
 
 // A one-line text box, with the draft's value in it.
 function textField(draft, name, label, title, extra) {
+  log.debug("Entering textField().");
+  log.debug("Leaving textField().");
   return '<label' + admin.tip(title) + '>' + esc(label) +
     ' <input type="text" name="' + esc(name) + '" value="' +
     esc(String(draft[name] === undefined ? '' : draft[name])) + '"' +
@@ -1505,6 +1573,8 @@ function textField(draft, name, label, title, extra) {
 // extension cards each with a four-line box is a page nobody can see the foot
 // of, and every one of these grammars is one item per line.
 function areaField(draft, name, label, title, rows, placeholder) {
+  log.debug("Entering areaField().");
+  log.debug("Leaving areaField().");
   return '<div class="pki-field"><label' + admin.tip(title) + '>' + esc(label) +
     '<textarea name="' + esc(name) + '" rows="' + (rows || 2) + '"' +
     (placeholder ? ' placeholder="' + esc(placeholder) + '"' : '') + '>' +
@@ -1517,8 +1587,10 @@ function areaField(draft, name, label, title, rows, placeholder) {
 // `<input type="hidden" value="0">` beside each would make every one of these
 // post twice and the last-one-wins parser would decide the answer.
 function checkField(draft, name, label, title) {
-  return '<label class="pki-flag"' + admin.tip(title) + '><input type="checkbox" ' +
-    'name="' + esc(name) + '" value="1"' +
+  log.debug("Entering checkField().");
+  log.debug("Leaving checkField().");
+  return '<label class="pki-flag"' + admin.tip(title) + '><input ' +
+    'type="checkbox" name="' + esc(name) + '" value="1"' +
     (draft[name] ? ' checked' : '') + '> ' + esc(label) + '</label> ';
 }
 
@@ -1526,6 +1598,7 @@ function checkField(draft, name, label, title) {
 // option in an `<optgroup>`, which is how forty-one key algorithms become a
 // menu with landmarks in it rather than a scroll bar.
 function selectField(draft, name, label, title, options, extra) {
+  log.debug("Entering selectField().");
   const current = String(draft[name] === undefined ? '' : draft[name]);
   let html = '';
   let group = null;
@@ -1546,6 +1619,7 @@ function selectField(draft, name, label, title, options, extra) {
   if (group) {
     html += '</optgroup>';
   }
+  log.debug("Leaving selectField().");
   return '<label' + admin.tip(title) + '>' + esc(label) +
     ' <select name="' + esc(name) + '"' + (extra || '') + '>' + html +
     '</select></label> ';
@@ -1554,6 +1628,8 @@ function selectField(draft, name, label, title, options, extra) {
 // One extension card: the head is the extension's own checkbox and its
 // critical flag, the body is whatever that extension carries.
 function extCard(head, body) {
+  log.debug("Entering extCard().");
+  log.debug("Leaving extCard().");
   return '<div class="pki-ext"><div class="pki-exthead">' + head + '</div>' +
     (body || '') + '</div>';
 }
@@ -1598,7 +1674,8 @@ function extensionCards(json, draft) {
     checkField(draft, 'pki_eku_critical', 'critical',
                'Marking this critical means a validator that does not ' +
                'recognise one of the OIDs must reject the certificate.'),
-    '<div class="pki-flags">' + json.workbench.extendedKeyUsages.map(function (one) {
+    '<div class="pki-flags">' +
+    json.workbench.extendedKeyUsages.map(function (one) {
       return checkField(draft, 'pki_eku_' + one.name, one.name, one.oid);
     }).join('') + '</div>' +
     areaField(draft, 'pki_eku_extra', 'Further OIDs (one per line)',
@@ -1671,8 +1748,8 @@ function extensionCards(json, draft) {
                'chain.'),
     areaField(draft, 'pki_aia', 'Access descriptions, one per line',
               'ocsp:<url>, caissuers:<url>, timestamping:<url>, ' +
-              'carepository:<url>, or <oid>:<url> for a method this page does ' +
-              'not name.', 2,
+              'carepository:<url>, or <oid>:<url> for a method this page ' +
+              'does not name.', 2,
               'ocsp:http://ocsp.example.com\ncaissuers:http://example.com/ca.cer')));
 
   cards.push(extCard(
@@ -1693,7 +1770,8 @@ function extensionCards(json, draft) {
     areaField(draft, 'pki_policies', 'Policies, one per line',
               '<policy oid>, optionally followed by |cps=<uri> and ' +
               '|notice=<text>. 2.5.29.32.0 is anyPolicy.', 2,
-              '1.3.6.1.4.1.99999.1.1|cps=https://example.com/cps|notice=Test certificates only')));
+              '1.3.6.1.4.1.99999.1.1|cps=https://example.com/cps|notice=Test ' +
+              'certificates only')));
 
   cards.push(extCard(
     checkField(draft, 'pki_ext_policy_mappings', 'policyMappings',
@@ -1722,14 +1800,16 @@ function extensionCards(json, draft) {
                'Limits the names a CA below this one may certify — the ' +
                'extension that makes a private CA safe to trust. RFC 5280: ' +
                'MUST be critical, and only meaningful in a CA certificate.') +
-    checkField(draft, 'pki_nc_critical', 'critical', 'RFC 5280: MUST be critical.'),
+    checkField(draft, 'pki_nc_critical', 'critical', 'RFC 5280: MUST be ' +
+                                                     'critical.'),
     areaField(draft, 'pki_name_constraints', 'Constraints, one per line',
               '"permit <name>" or "exclude <name>", using the subjectAltName ' +
               'syntax. An IP constraint takes a PREFIX (10.0.0.0/8): a name ' +
               'constraint’s iPAddress is the address followed by its ' +
               'mask, which is the one place a general name is not simply an ' +
               'address.', 2,
-              'permit dns:example.com\npermit ip:10.0.0.0/8\nexclude dns:bad.example.com')));
+              'permit dns:example.com\npermit ip:10.0.0.0/8\nexclude ' +
+              'dns:bad.example.com')));
 
   cards.push(extCard(
     checkField(draft, 'pki_ext_inhibit_any', 'inhibitAnyPolicy',
@@ -1770,8 +1850,10 @@ function extensionCards(json, draft) {
   cards.push(extCard(
     checkField(draft, 'pki_ext_ns_cert_type', 'Netscape certificate type',
                'A pre-RFC 5280 relic that some old appliances still read. ' +
-               'Kept for the same reason SHA-1 is: this is where you find out.'),
-    '<div class="pki-flags">' + json.workbench.netscapeTypes.map(function (one) {
+               'Kept for the same reason SHA-1 is: this is where you find ' +
+               'out.'),
+    '<div class="pki-flags">' +
+    json.workbench.netscapeTypes.map(function (one) {
       return checkField(draft, 'pki_ns_' + one.name, one.name, '');
     }).join('') + '</div>'));
 
@@ -1788,8 +1870,8 @@ function extensionCards(json, draft) {
     'set would be whatever this page happens to know about, which is not ' +
     'what a debugging tool is for.') + '>Any other extension</strong>',
     areaField(draft, 'pki_custom_extensions', 'One per line',
-              '<oid>|<critical or ->|<base64 DER of the extension value>. The ' +
-              'value is the DER of the extnValue’s contents, not the ' +
+              '<oid>|<critical or ->|<base64 DER of the extension value>. ' +
+              'The value is the DER of the extnValue’s contents, not the ' +
               'OCTET STRING wrapping it.', 2,
               '1.3.6.1.4.1.99999.7.7|-|DANDYWJj')));
 
@@ -1820,11 +1902,11 @@ function certificateColumn(json, draft) {
       'The profile sets the extensions below to what that kind of ' +
       'certificate normally carries; every one of them is then editable, ' +
       'which is the point &mdash; issuing the certificate that is wrong in ' +
-      'exactly one way is how you find out what refuses it and what does not. ' +
-      '<strong>Pressing <em>Apply the profile</em> rewrites the extension ' +
-      'boxes</strong>, because on this console the form IS the extension set: ' +
-      'a profile that changed what gets issued and not what is shown would be ' +
-      'a page that lies about what it is about to do.',
+      'exactly one way is how you find out what refuses it and what does ' +
+      'not. <strong>Pressing <em>Apply the profile</em> rewrites the ' +
+      'extension boxes</strong>, because on this console the form IS the ' +
+      'extension set: a profile that changed what gets issued and not what ' +
+      'is shown would be a page that lies about what it is about to do.',
       'What the profile does, and why every field it sets stays editable') +
     '<div class="pki-row">' +
     selectField(draft, 'pki_profile', 'Profile',
@@ -1847,9 +1929,10 @@ function certificateColumn(json, draft) {
       '>Apply the profile</button>' +
     '</div>' +
     (profile.selfSigned
-      ? admin.note('<strong>' + esc(profile.label) + ' is SELF-SIGNED</strong>, ' +
-        'so the key pair below signs its own certificate and <em>Signed by</em> ' +
-        'is ignored. A "root" signed by something else is an intermediate.')
+      ? admin.note('<strong>' + esc(profile.label) + ' is ' +
+        'SELF-SIGNED</strong>, so the key pair below signs its own ' +
+        'certificate and <em>Signed by</em> is ignored. A "root" signed by ' +
+        'something else is an intermediate.')
       : '') +
     '<div class="pki-row">' +
     selectField(draft, 'pki_issuer', 'Signed by',
@@ -1896,8 +1979,8 @@ function certificateColumn(json, draft) {
               'Hex, and editable. A random 128-bit positive serial is filled ' +
               'in for you and a fresh one replaces it after every issue — ' +
               'that is what the CA/Browser Forum requires, and what makes a ' +
-              'collision on the signed bytes impractical to arrange. Cleared, ' +
-              'one is generated at issue time anyway.', ' size="36"') +
+              'collision on the signed bytes impractical to arrange. ' +
+              'Cleared, one is generated at issue time anyway.', ' size="36"') +
     textField(draft, 'pki_validity_years', 'Validity (years)',
               'Counted from Not Before, and used only when Not After below ' +
               'is empty. The profile sets it — 20 for a root, 10 for an ' +
@@ -1913,7 +1996,8 @@ function certificateColumn(json, draft) {
               ' size="20" placeholder="2026-01-01T00:00"') +
     textField(draft, 'pki_not_after', 'Not After',
               'Optional — empty means Not Before plus the validity in years ' +
-              'beside it.', ' size="20" placeholder="(Not Before + validity)"') +
+              'beside it.',
+              ' size="20" placeholder="(Not Before + validity)"') +
     '</div>' +
     '</div>';
   log.debug('Leaving certificateColumn().');
@@ -1949,7 +2033,8 @@ function keyPairColumn(json, draft) {
     (slow.length
       ? admin.warn(
         '<strong>' + esc(slow.map(function (one) { return one.family; })
-          .filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', ')) +
+          .filter(function (v, i, a) { return a.indexOf(v) === i; })
+                             .join(', ')) +
         ' key generation takes SECONDS and it runs on this thread.</strong> ' +
         'This process owns six listener families on one thread, so while a ' +
         'key like that is being made this service answers nobody &mdash; not ' +
@@ -1959,8 +2044,8 @@ function keyPairColumn(json, draft) {
         'constructions, which is independent of the vendored one on purpose, ' +
         'and crossing the two to save a button a few seconds is exactly the ' +
         'defect that independence exists to expose. In <code>dispatch</code> ' +
-        'mode the console holds affinity to a request worker, so the stall is ' +
-        'that worker\'s rather than the listener\'s.',
+        'mode the console holds affinity to a request worker, so the stall ' +
+        'is that worker\'s rather than the listener\'s.',
         'One algorithm family is slow, and the cost is real')
       : '') +
     '<div class="pki-row">' +
@@ -1974,9 +2059,9 @@ function keyPairColumn(json, draft) {
                'Show the key pair as JWK instead of PEM. The conversion is ' +
                'key material only — the same key either way. A POST-QUANTUM ' +
                'pair is shown as PEM whatever this says, because these two ' +
-               'boxes are also the INPUT for a reuse and a round trip through ' +
-               'a representation this encoder cannot read back would lose the ' +
-               'key.') +
+               'boxes are also the INPUT for a reuse and a round trip ' +
+               'through a representation this encoder cannot read back would ' +
+               'lose the key.') +
     '<button type="submit" name="generate" value="1"' +
       admin.tip('Generate a key pair into the two boxes below WITHOUT ' +
                 'issuing anything, and tick nothing. It exists because ' +
@@ -2011,15 +2096,16 @@ function keyPairColumn(json, draft) {
               'SubjectPublicKeyInfo PEM (or JWK). This is what the ' +
               'certificate certifies.', 3) +
     '<div class="pki-row">' +
-    checkField(draft, 'pki_gen_csr', 'generate a CSR when the certificate is issued',
+    checkField(draft, 'pki_gen_csr', 'generate a CSR when the certificate is ' +
+                                     'issued',
                'Also build the PKCS#10 certification request this key pair ' +
                'and subject would have sent to an external authority. It is ' +
                'FOR REFERENCE: this page signs the certificate itself, so ' +
                'nothing here consumes the CSR — it is what you would paste ' +
-               'into a CA that will not take a certificate you made yourself. ' +
-               'The signature on it is by the private key above, which is the ' +
-               'proof of possession that lets an authority certify a key it ' +
-               'has never seen.') +
+               'into a CA that will not take a certificate you made ' +
+               'yourself. The signature on it is by the private key above, ' +
+               'which is the proof of possession that lets an authority ' +
+               'certify a key it has never seen.') +
     '</div>' +
     areaField(draft, 'pki_csr', 'CSR (PKCS#10)',
               'The certification request for the key pair and subject above, ' +
@@ -2040,12 +2126,13 @@ function keyPairColumn(json, draft) {
       (wb.pqMode === 'hybrid' ? '' : ' — not in use') + '</div>' +
     admin.note(
       'ITU-T X.509 (2019) clause 9.8 adds three non-critical extensions that ' +
-      'mirror three fields of the certificate: <code>subjectAltPublicKeyInfo' +
-      '</code> (2.5.29.72), <code>altSignatureAlgorithm</code> (2.5.29.73) ' +
-      'and <code>altSignatureValue</code> (2.5.29.74). A certificate ' +
-      'carrying them is signed twice, with two keys, and a validator that has ' +
-      'never heard of the extensions sees an ordinary certificate and accepts ' +
-      'it &mdash; which is the entire point. The alternative signature does ' +
+      'mirror three fields of the certificate: ' +
+      '<code>subjectAltPublicKeyInfo</code> (2.5.29.72), ' +
+      '<code>altSignatureAlgorithm</code> (2.5.29.73) and ' +
+      '<code>altSignatureValue</code> (2.5.29.74). A certificate carrying ' +
+      'them is signed twice, with two keys, and a validator that has never ' +
+      'heard of the extensions sees an ordinary certificate and accepts it ' +
+      '&mdash; which is the entire point. The alternative signature does ' +
       '<strong>not</strong> cover the whole TBSCertificate: it covers the ' +
       '<em>preTBSCertificate</em>, which is the TBSCertificate with the ' +
       '<code>signature</code> field removed and without the ' +
@@ -2056,9 +2143,9 @@ function keyPairColumn(json, draft) {
       'What the second key is for') +
     '<div class="pki-row">' +
     selectField(draft, 'pki_alt_key_alg', 'Alternative Algorithm',
-                'Where the post-quantum half of a hybrid certificate goes, so ' +
-                'the list is the post-quantum algorithms that can sign — a ' +
-                'hybrid certificate whose second key is also RSA is a ' +
+                'Where the post-quantum half of a hybrid certificate goes, ' +
+                'so the list is the post-quantum algorithms that can sign — ' +
+                'a hybrid certificate whose second key is also RSA is a ' +
                 'certificate signed twice by the same century.',
                 wb.alternativeKeyAlgorithms.map(function (one) {
                   return { value: one.id, group: one.family,
@@ -2090,18 +2177,18 @@ function keyPairColumn(json, draft) {
       '<code>.p12</code> from here and one from that page import identically ' +
       'into keytool, OpenSSL, Windows and macOS. <strong>It needs Admin ' +
       'Write</strong>, like every other door here that hands over a private ' +
-      'key: reading this console needs Admin Read, and taking a key out of it ' +
-      'needs the other role.',
+      'key: reading this console needs Admin Read, and taking a key out of ' +
+      'it needs the other role.',
       'What Download writes') +
     '<div class="pki-row">' +
     selectField(draft, 'pki_ks_format', 'Keystore Format',
                 'PEM: the private key and public key (and the chain, if an ' +
                 'object is selected) in one file. DER: two binary files, of ' +
-                'which the PRIVATE one is sent — this service will not take a ' +
-                'zip dependency to send two, and the public half comes out of ' +
-                'the private one with one openssl command. JWK: a JWK set. ' +
-                'PKCS#12: a password-protected .p12 holding the key and its ' +
-                'certificate chain.',
+                'which the PRIVATE one is sent — this service will not take ' +
+                'a zip dependency to send two, and the public half comes out ' +
+                'of the private one with one openssl command. JWK: a JWK ' +
+                'set. PKCS#12: a password-protected .p12 holding the key and ' +
+                'its certificate chain.',
                 wb.keystoreFormats.map(function (one) {
                   return { value: one, label: one.toUpperCase() };
                 })) +
@@ -2112,13 +2199,13 @@ function keyPairColumn(json, draft) {
       'name="pki_ks_password" value="" autocomplete="new-password"></label> ' +
     checkField(draft, 'pki_ks_include_chain', 'include the chain',
                'Put the selected object\'s whole certificate chain in the ' +
-               'file, which is what makes a PKCS#12 importable as an identity ' +
-               'rather than as a bare key.') +
+               'file, which is what makes a PKCS#12 importable as an ' +
+               'identity rather than as a bare key.') +
     '<button type="submit" name="export" value="1" ' +
       'formaction="/admin/pki/export"' +
       admin.tip('Download the key pair. This button posts the same form to a ' +
-                'different endpoint, because the answer is a FILE rather than ' +
-                'a page.') + '>Download</button>' +
+                'different endpoint, because the answer is a FILE rather ' +
+                'than a page.') + '>Download</button>' +
     '</div>' +
     '</div>';
   log.debug('Leaving keyPairColumn().');
@@ -2192,7 +2279,8 @@ function subjectColumn(json, draft) {
               'description, businessCategory, postalCode, STREET, initials, ' +
               'pseudonym, dnQualifier, generationQualifier and the three EV ' +
               'jurisdiction attributes; anything else is taken as an OID.', 3,
-              'businessCategory=Private Organization\n1.3.6.1.4.1.311.60.2.1.3=US') +
+              'businessCategory=Private ' +
+              'Organization\n1.3.6.1.4.1.311.60.2.1.3=US') +
     '</div>';
   log.debug('Leaving subjectColumn().');
   return html;
@@ -2299,15 +2387,14 @@ function certificatePane(json, draft) {
       'use that it does not, plus anything at all by OID. The encoder is ' +
       '<code>common/vendored/x509.js</code>, that project&rsquo;s own PKI ' +
       'code byte-identical, so a certificate issued here and one issued ' +
-      'there are built by <em>one</em> encoder.' +
-      '<p><strong>What is different is where the computation happens.</strong> ' +
-      'That page runs Web Crypto in your browser and filters its menus as you ' +
-      'change them; this console is <code>script-src &#39;none&#39;</code>, ' +
-      'so every choice is a form field and every computation is here. The ' +
-      'two <em>Apply</em> buttons are what that costs: narrowing a menu or ' +
-      'rewriting the extension boxes from a profile is a round trip rather ' +
-      'than an event handler.</p>' +
-      '<p><strong>A <code>cRLDistributionPoints</code> or an ' +
+      'there are built by <em>one</em> encoder.<p><strong>What is different ' +
+      'is where the computation happens.</strong> That page runs Web Crypto ' +
+      'in your browser and filters its menus as you change them; this ' +
+      'console is <code>script-src &#39;none&#39;</code>, so every choice is ' +
+      'a form field and every computation is here. The two <em>Apply</em> ' +
+      'buttons are what that costs: narrowing a menu or rewriting the ' +
+      'extension boxes from a profile is a round trip rather than an event ' +
+      'handler.</p><p><strong>A <code>cRLDistributionPoints</code> or an ' +
       '<code>authorityInfoAccess</code> you type below is a URL you are ' +
       'ASSERTING, and this pane keeps no promise about it.</strong> That was ' +
       'true of every address on this page until 2026-09-11 and it is still ' +
@@ -2374,6 +2461,8 @@ function certificatePane(json, draft) {
 function paneActionFrom(body) {
   log.debug('Entering paneActionFrom().');
   const pressed = function (name) {
+    log.debug("Entering pressed().");
+    log.debug("Leaving pressed().");
     return body[name] !== undefined && body[name] !== '';
   };
   let out = { action: 'issue-certificate' };
@@ -2426,9 +2515,12 @@ function paneActionFrom(body) {
 // exactly as well and a reader can select text out of.
 // ===========================================================================
 function tierRow(tier, depth, extra) {
+  log.debug("Entering tierRow().");
   if (!tier) {
+    log.debug("Leaving tierRow().");
     return '';
   }
+  log.debug("Leaving tierRow().");
   return '<tr>' +
     '<td style="padding-left:' + (depth * 1.4) + 'rem">' +
     (depth ? '<span class="pki-branch">&#9492;&#9472;</span> ' : '') +
@@ -2440,8 +2532,8 @@ function tierRow(tier, depth, extra) {
       (tier.expired ? ' <strong>(expired)</strong>' : '') + '</td>' +
     '<td><code>' + esc(tier.keyAlg) + '</code> / <code>' +
       esc(tier.signatureAlg) + '</code></td>' +
-    '<td><code>' + esc(String(tier.thumbprint).slice(0, 16)) + '&hellip;</code></td>' +
-    '</tr>';
+    '<td><code>' + esc(String(tier.thumbprint).slice(0, 16)) +
+    '&hellip;</code></td></tr>';
 }
 
 function treeSection(json) {
@@ -2482,8 +2574,8 @@ function treeSection(json) {
       // question a reader brings to a tree of CAs is which of them is actually
       // doing anything.
       one.certified.forEach(function (cert) {
-        rows += '<tr><td style="padding-left:4.2rem"><span class="pki-branch">' +
-          '&#9492;&#9472;</span> ' + esc(cert.label) +
+        rows += '<tr><td style="padding-left:4.2rem"><span ' +
+          'class="pki-branch">&#9492;&#9472;</span> ' + esc(cert.label) +
           (cert.pinned ? ' <em>(your key)</em>' : '') + '</td>' +
           '<td><code>' + esc(cert.subject) + '</code></td>' +
           '<td>' + esc(String(cert.notAfter).slice(0, 10)) +
@@ -2524,24 +2616,25 @@ function scopeControls(json, scope) {
     '<label' + admin.tip('The key algorithm every CA in this branch is ' +
       'generated with. The Root keeps its own — a branch built with a ' +
       'different algorithm from the Root is perfectly legal, and the ' +
-      'SIGNATURE on each tier is the one its issuer can produce whatever this ' +
-      'says.') + '>Key algorithm <select name="keyAlg">' +
+      'SIGNATURE on each tier is the one its issuer can produce whatever ' +
+      'this says.') + '>Key algorithm <select name="keyAlg">' +
     algorithmOptions(json, scope.keyAlg ||
                      config.value('pki.keyAlgorithm')) + '</select></label> ' +
     '<button type="submit"' +
     admin.tip('Replace this branch: a new Intermediate CA and a new Issuing ' +
               'CA for every use case under it. The Root is NOT touched — ' +
               'every other scope hangs from it. Everything this branch had ' +
-              'issued chains to nothing the moment this returns, which is why ' +
-              'the certificates under it are re-minted in the same act.') +
+              'issued chains to nothing the moment this returns, which is ' +
+              'why the certificates under it are re-minted in the same act.') +
     '>' + (scope.built ? 'Rebuild' : 'Build') + ' this branch</button>' +
     '</form>';
   if (!scope.built) {
     log.debug('Leaving scopeControls(). Not built.');
     return html;
   }
-  html += '<table><thead><tr><th>Use case</th><th>Issuing CA</th>' +
-    '<th>Certified</th><th>Reissue</th><th>Your own CA</th></tr></thead><tbody>';
+  html += '<table><thead><tr><th>Use case</th><th>Issuing ' +
+    'CA</th><th>Certified</th><th>Reissue</th><th>Your own ' +
+    'CA</th></tr></thead><tbody>';
   scope.issuing.forEach(function (one) {
     html += '<tr>' +
       '<td><strong>' + esc(one.label) + '</strong>' +
@@ -2566,8 +2659,9 @@ function scopeControls(json, scope) {
         (one.certified.length
           ? '<form method="post" action="/admin/pki">' +
             '<input type="hidden" name="action" value="recertify">' +
-            '<input type="hidden" name="scope" value="' + esc(scope.scope) + '">' +
-            '<input type="hidden" name="useCase" value="' + esc(one.id) + '">' +
+            '<input type="hidden" name="scope" value="' + esc(scope.scope) +
+            '"><input ' +
+            'type="hidden" name="useCase" value="' + esc(one.id) + '">' +
             '<button type="submit"' +
             admin.tip('Re-issue the certificates under this CA from the same ' +
                       'authority, with fresh serials and a fresh validity ' +
@@ -2584,24 +2678,24 @@ function scopeControls(json, scope) {
               'Replace what this service generated for one SLOT with a key ' +
               'pair of your own. <strong>With no certificate this service ' +
               'issues one</strong> from the authority above, so your key ' +
-              'chains to this service&rsquo;s Root exactly as a generated one ' +
-              'would; with a certificate, the pair is used as you supplied it ' +
-              'and chains wherever that certificate chains.') +
+              'chains to this service&rsquo;s Root exactly as a generated ' +
+              'one would; with a certificate, the pair is used as you ' +
+              'supplied it and chains wherever that certificate chains.') +
             '<form method="post" action="/admin/pki">' +
             '<input type="hidden" name="action" value="pin-key">' +
-            '<input type="hidden" name="scope" value="' + esc(scope.scope) + '">' +
-            '<input type="hidden" name="useCase" value="' + esc(one.id) + '">' +
+            '<input type="hidden" name="scope" value="' + esc(scope.scope) +
+            '"><input ' +
+            'type="hidden" name="useCase" value="' + esc(one.id) + '">' +
             '<label>Slot <select name="slot">' +
             one.certified.map(function (cert) {
               return '<option value="' + esc(cert.slot) + '">' +
                 esc(cert.slot) + '</option>';
-            }).join('') + '</select></label>' +
-            '<div class="pki-field"><label>Private key (PEM)' +
-            '<textarea name="privateKeyPem" rows="3"></textarea></label></div>' +
-            '<div class="pki-field"><label>Certificate (PEM, optional)' +
-            '<textarea name="certificatePem" rows="2"></textarea></label></div>' +
-            '<button type="submit">Use this key pair</button>' +
-            '</form></details>'
+            }).join('') + '</select></label><div ' +
+            'class="pki-field"><label>Private key (PEM)<textarea ' +
+            'name="privateKeyPem" rows="3"></textarea></label></div><div ' +
+            'class="pki-field"><label>Certificate (PEM, optional)<textarea ' +
+            'name="certificatePem" rows="2"></textarea></label></div><button ' +
+            'type="submit">Use this key pair</button></form></details>'
           : '') +
         '<details><summary>Import a CA</summary>' +
         '<form method="post" action="/admin/pki">' +
@@ -2625,15 +2719,17 @@ function scopeControls(json, scope) {
 // different act with a different consequence: every branch in the process
 // hangs from it.
 function rootControls(json) {
+  log.debug("Entering rootControls().");
   const tree = json.tree;
+  log.debug("Leaving rootControls().");
   return '<h4>The Root CA</h4>' +
     admin.warn(
       '<strong>Replacing the Root replaces the trust anchor for the whole ' +
       'service.</strong> Every scope’s Intermediate is signed by it, so ' +
-      'rebuilding it here re-signs all of them in the same act — and anything ' +
-      'that was trusting the old Root stops trusting this service until it is ' +
-      'given the new one. That is the cost of one anchor covering everything, ' +
-      'and it is the reason the button says what it does.',
+      'rebuilding it here re-signs all of them in the same act — and ' +
+      'anything that was trusting the old Root stops trusting this service ' +
+      'until it is given the new one. That is the cost of one anchor ' +
+      'covering everything, and it is the reason the button says what it does.',
       'This replaces the anchor everything hangs from') +
     '<form method="post" action="/admin/pki">' +
     '<input type="hidden" name="action" value="build-root">' +
@@ -2651,19 +2747,20 @@ function rootControls(json) {
       'every Intermediate from it instead of building one &mdash; so the ' +
       'whole tree chains to your own corporate authority and a relying party ' +
       'that already trusts it needs nothing new. <strong>The key is stored ' +
-      'exactly as this service stores its own</strong>: in the realm keystore ' +
-      'row, sealed under the key-encryption key wherever that key outlives ' +
-      'the process, and in the clear in development mode where it does not.') +
+      'exactly as this service stores its own</strong>: in the realm ' +
+      'keystore row, sealed under the key-encryption key wherever that key ' +
+      'outlives the process, and in the clear in development mode where it ' +
+      'does not.') +
     '<form method="post" action="/admin/pki">' +
     '<input type="hidden" name="action" value="import-ca">' +
-    '<input type="hidden" name="scope" value="' + esc(pki.SERVICE_SCOPE) + '">' +
-    '<input type="hidden" name="useCase" value="root">' +
-    '<div class="pki-field"><label>Certificate (PEM)' +
-    '<textarea name="certificatePem" rows="3"></textarea></label></div>' +
-    '<div class="pki-field"><label>Private key (PEM)' +
-    '<textarea name="privateKeyPem" rows="3"></textarea></label></div>' +
-    '<button type="submit">Use this as the Root CA</button>' +
-    '</form></details>';
+    '<input type="hidden" name="scope" value="' + esc(pki.SERVICE_SCOPE) +
+    '"><input ' +
+    'type="hidden" name="useCase" value="root"><div ' +
+    'class="pki-field"><label>Certificate (PEM)<textarea ' +
+    'name="certificatePem" rows="3"></textarea></label></div><div ' +
+    'class="pki-field"><label>Private key (PEM)<textarea ' +
+    'name="privateKeyPem" rows="3"></textarea></label></div><button ' +
+    'type="submit">Use this as the Root CA</button></form></details>';
 }
 
 
@@ -2696,25 +2793,26 @@ function rootControls(json) {
 // Root. `spiffe/spiffe_ca.js`'s own header carries the argument in full.
 // ---------------------------------------------------------------------------
 function notCertifiedNote(json) {
+  log.debug("Entering notCertifiedNote().");
+  log.debug("Leaving notCertifiedNote().");
   return admin.warn(
     '<strong>One family of key material in this service is deliberately NOT ' +
     'a leaf of this tree: the eleven post-quantum signing keys per ' +
-    'realm.</strong> They ' +
-    'are generated by <code>common/pq_jose.js</code> — this service&rsquo;s ' +
-    'OWN reading of ML-DSA, SLH-DSA and the composite algorithms, which is ' +
-    'deliberately independent of the vendored implementation the certificate ' +
-    'encoder uses. Handing a key made by one to the other would be exactly ' +
-    'the defect that independence exists to expose, so they carry no ' +
-    'certificate at all and are published as bare AKP JWKs. ' +
-    '<code>common/vendored/CLAUDE.md</code> argues it at length.' +
-    '<p><strong>The SPIFFE X.509 authority used to be the second entry here ' +
-    'and is now under this Root</strong> (2026-09-11) — it is the ' +
+    'realm.</strong> They are generated by <code>common/pq_jose.js</code> — ' +
+    'this service&rsquo;s OWN reading of ML-DSA, SLH-DSA and the composite ' +
+    'algorithms, which is deliberately independent of the vendored ' +
+    'implementation the certificate encoder uses. Handing a key made by one ' +
+    'to the other would be exactly the defect that independence exists to ' +
+    'expose, so they carry no certificate at all and are published as bare ' +
+    'AKP JWKs. <code>common/vendored/CLAUDE.md</code> argues it at ' +
+    'length.<p><strong>The SPIFFE X.509 authority used to be the second ' +
+    'entry here and is now under this Root</strong> (2026-09-11) — it is the ' +
     '<code>SPIFFE authority</code> Issuing CA in each realm\'s branch above, ' +
     'and every X509-SVID this service mints is a leaf of it. It is the one ' +
     'Issuing CA in this hierarchy with <code>pathLen: 1</code> rather than ' +
     '<code>0</code>, because <code>NewDownstreamX509CA</code> on the SPIRE ' +
-    'Server API asks it for a CA and not a leaf; the realm Intermediate above ' +
-    'it is widened to <code>2</code> to match, and ' +
+    'Server API asks it for a CA and not a leaf; the realm Intermediate ' +
+    'above it is widened to <code>2</code> to match, and ' +
     '<code>common/pki.js</code> derives the second from the first so the two ' +
     'cannot drift. <a href="/admin/spiffe">The SPIFFE page</a> reports which ' +
     'authority each realm is actually using — a realm with no branch built ' +
@@ -2847,6 +2945,8 @@ function revocationModel() {
 }
 
 function reasonSelect(name) {
+  log.debug("Entering reasonSelect().");
+  log.debug("Leaving reasonSelect().");
   return '<select name="' + esc(name) + '">' +
     pkiRevocation.REASONS.map(function (one) {
       // `superseded` is preselected because it is what a rotation writes and
@@ -2861,10 +2961,13 @@ function reasonSelect(name) {
 }
 
 function issuedRevocationRows(authority) {
+  log.debug("Entering issuedRevocationRows().");
   if (!authority.issued.length) {
+    log.debug("Leaving issuedRevocationRows().");
     return '<tr><td colspan="4"><em>This authority has issued nothing this ' +
            'process can still see.</em></td></tr>';
   }
+  log.debug("Leaving issuedRevocationRows().");
   return authority.issued.map(function (cert) {
     const state = cert.revoked
       ? '<span class="bad">revoked</span> ' +
@@ -2878,8 +2981,9 @@ function issuedRevocationRows(authority) {
             '<input type="hidden" name="action" value="release-hold">' +
             '<input type="hidden" name="scope" value="' +
               esc(authority.scope) + '">' +
-            '<input type="hidden" name="ca" value="' + esc(authority.ca) + '">' +
-            '<input type="hidden" name="serialHex" value="' +
+            '<input type="hidden" name="ca" value="' + esc(authority.ca) +
+            '"><input ' +
+            'type="hidden" name="serialHex" value="' +
               esc(cert.serialHex) + '">' +
             '<button type="submit"' +
             admin.tip('Take this serial off the list. Only a ' +
@@ -2891,11 +2995,13 @@ function issuedRevocationRows(authority) {
           : '<span class="muted">permanent</span>')
       : '<form method="post" action="/admin/pki">' +
         '<input type="hidden" name="action" value="revoke-certificate">' +
-        '<input type="hidden" name="scope" value="' + esc(authority.scope) + '">' +
-        '<input type="hidden" name="ca" value="' + esc(authority.ca) + '">' +
+        '<input type="hidden" name="scope" value="' + esc(authority.scope) +
+        '"><input ' +
+        'type="hidden" name="ca" value="' + esc(authority.ca) + '">' +
         '<input type="hidden" name="serialHex" value="' +
           esc(cert.serialHex) + '">' +
-        '<input type="hidden" name="subject" value="' + esc(cert.subject) + '">' +
+        '<input type="hidden" name="subject" value="' + esc(cert.subject) +
+        '">' +
         reasonSelect('reason') +
         '<input type="text" name="note" placeholder="note (optional)" ' +
           'maxlength="200">' +
@@ -2916,18 +3022,20 @@ function issuedRevocationRows(authority) {
 }
 
 function authorityBlock(authority) {
+  log.debug("Entering authorityBlock().");
   const orphans = authority.revokedNotIssued.length
     ? admin.note(
         '<p><strong>' + authority.revokedNotIssued.length + ' serial(s) on ' +
         'this list name a certificate this process no longer holds a record ' +
         'of.</strong> That is the ORDINARY case rather than an error: a ' +
-        'certificate superseded by a rotation is revoked and then REPLACED in ' +
-        'the register, so the old serial stays on the list with nothing left ' +
-        'to point at. RFC 5280 does not ask a CA to still hold what it signed ' +
-        'in order to revoke it &mdash; and a validator checking one of these ' +
-        'is checking exactly the certificate it was meant to.</p>' +
-        '<table class="grid"><thead><tr><th>Serial</th><th>Revoked</th>' +
-        '<th>Reason</th><th>Subject as recorded</th></tr></thead><tbody>' +
+        'certificate superseded by a rotation is revoked and then REPLACED ' +
+        'in the register, so the old serial stays on the list with nothing ' +
+        'left to point at. RFC 5280 does not ask a CA to still hold what it ' +
+        'signed in order to revoke it &mdash; and a validator checking one ' +
+        'of these is checking exactly the certificate it was meant ' +
+        'to.</p><table class="grid"><thead><tr><th>Serial</th><th>' +
+        'Revoked</th><th>Reason</th><th>Subject as ' +
+        'recorded</th></tr></thead><tbody>' +
         authority.revokedNotIssued.map(function (entry) {
           return '<tr><td><code>' + esc(entry.serialHex) + '</code></td>' +
                  '<td>' + esc(String(entry.revokedAt)) + '</td>' +
@@ -2940,6 +3048,7 @@ function authorityBlock(authority) {
         'certificate left to show')
     : '';
 
+  log.debug("Leaving authorityBlock().");
   return '<h4>' + esc(authority.label) + '</h4>' +
     '<p><code>' + esc(authority.subject) + '</code></p>' +
     '<p class="muted">' + authority.issued.length + ' issued, ' +
@@ -2970,44 +3079,43 @@ function revocationPane(json) {
   }
 
   const what = admin.note(
-    '<p><strong>A revocation is made BY AN ISSUER</strong>, which is why this ' +
-    'pane is organised by authority rather than by certificate: a serial ' +
-    'number is unique only within one issuer, so <em>revoke serial 4f2a</em> ' +
-    'is not a question this service can answer. It is also why there is one ' +
-    'CRL and one OCSP responder per authority rather than one per realm ' +
-    '&mdash; a list per realm would be a document with no valid issuer, and ' +
-    'nothing could sign it.</p>' +
-    '<p><strong>This is not the <em>Take the key pair off</em> control in the ' +
-    'Applications table, and the difference matters.</strong> That one ' +
-    'changes an application&rsquo;s directory entry, so this service stops ' +
-    'ACCEPTING what the key signs &mdash; and the certificate goes on ' +
-    'chaining to this realm&rsquo;s Root for anybody who only checks the ' +
-    'chain. This one changes what the CRL and the OCSP responder SAY, and ' +
-    'changes nothing about who holds what. An operator dealing with a ' +
-    'compromised key pair almost certainly wants both, and they are two ' +
-    'buttons because they are two acts with different blast radii.</p>' +
-    '<p><strong>This service PUBLISHES revocation and cannot make anybody ' +
-    'consult it.</strong> A certificate revoked here goes on the list and its ' +
-    'responder answers <code>revoked</code>; whether that stops anything ' +
-    'depends entirely on the relying party. That is true of every ' +
-    'certificate authority there has ever been, and it is exactly why a ' +
-    'client author would point their stack at this one. <strong>This service ' +
-    'does not consult it either</strong> &mdash; a client certificate ' +
-    'presented on 8443 or 9443 is checked against the anchors on ' +
-    '<code>/tls/trust</code> and no CRL is fetched for it, so a certificate ' +
-    'revoked here still gets in here.</p>',
+    '<p><strong>A revocation is made BY AN ISSUER</strong>, which is why ' +
+    'this pane is organised by authority rather than by certificate: a ' +
+    'serial number is unique only within one issuer, so <em>revoke serial ' +
+    '4f2a</em> is not a question this service can answer. It is also why ' +
+    'there is one CRL and one OCSP responder per authority rather than one ' +
+    'per realm &mdash; a list per realm would be a document with no valid ' +
+    'issuer, and nothing could sign it.</p><p><strong>This is not the ' +
+    '<em>Take the key pair off</em> control in the Applications table, and ' +
+    'the difference matters.</strong> That one changes an ' +
+    'application&rsquo;s directory entry, so this service stops ACCEPTING ' +
+    'what the key signs &mdash; and the certificate goes on chaining to this ' +
+    'realm&rsquo;s Root for anybody who only checks the chain. This one ' +
+    'changes what the CRL and the OCSP responder SAY, and changes nothing ' +
+    'about who holds what. An operator dealing with a compromised key pair ' +
+    'almost certainly wants both, and they are two buttons because they are ' +
+    'two acts with different blast radii.</p><p><strong>This service ' +
+    'PUBLISHES revocation and cannot make anybody consult it.</strong> A ' +
+    'certificate revoked here goes on the list and its responder answers ' +
+    '<code>revoked</code>; whether that stops anything depends entirely on ' +
+    'the relying party. That is true of every certificate authority there ' +
+    'has ever been, and it is exactly why a client author would point their ' +
+    'stack at this one. <strong>This service does not consult it ' +
+    'either</strong> &mdash; a client certificate presented on 8443 or 9443 ' +
+    'is checked against the anchors on <code>/tls/trust</code> and no CRL is ' +
+    'fetched for it, so a certificate revoked here still gets in here.</p>',
     'What revoking here does, and the three things it does not do');
 
   const rotation = admin.note(
-    '<p>Most entries on these lists were not put there by hand. <strong>Every ' +
-    'rotation revokes what it replaced</strong>, as <code>superseded</code>: ' +
-    'reissuing a use case&rsquo;s Issuing CA puts every leaf that CA had ' +
-    'signed on its own list and puts the replaced CA on the ' +
-    'Intermediate&rsquo;s, and replacing the Root does the same one tier up. ' +
-    'That is what makes the lists worth reading &mdash; a service where only ' +
-    'hand-revocations appeared would publish an empty CRL for ever while ' +
-    'quietly leaving superseded certificates chaining.</p>' +
-    '<p>A CRL is <strong>built and signed on demand rather than cached</strong>, ' +
+    '<p>Most entries on these lists were not put there by hand. ' +
+    '<strong>Every rotation revokes what it replaced</strong>, as ' +
+    '<code>superseded</code>: reissuing a use case&rsquo;s Issuing CA puts ' +
+    'every leaf that CA had signed on its own list and puts the replaced CA ' +
+    'on the Intermediate&rsquo;s, and replacing the Root does the same one ' +
+    'tier up. That is what makes the lists worth reading &mdash; a service ' +
+    'where only hand-revocations appeared would publish an empty CRL for ' +
+    'ever while quietly leaving superseded certificates chaining.</p><p>A ' +
+    'CRL is <strong>built and signed on demand rather than cached</strong>, ' +
     'so <code>thisUpdate</code> is always now and a revocation is visible to ' +
     'the next fetch. <code>pki.crlLifetimeMinutes</code> is ' +
     esc(String(model.crlLifetimeMinutes)) + ' minute(s), which is what ' +
@@ -3023,11 +3131,12 @@ function revocationPane(json) {
   const reasons = admin.note(
     '<p>RFC 5280 section 5.3.1 defines eleven values and this service offers ' +
     'nine. <code>7</code> is unused and has never meant anything; ' +
-    '<code>removeFromCRL</code> is a delta-CRL verb rather than a reason, and ' +
-    'this service publishes no delta CRLs, so offering it would be a control ' +
-    'that could never be honoured.</p><ul>' +
+    '<code>removeFromCRL</code> is a delta-CRL verb rather than a reason, ' +
+    'and this service publishes no delta CRLs, so offering it would be a ' +
+    'control that could never be honoured.</p><ul>' +
     model.reasons.map(function (one) {
-      return '<li><code>' + esc(one.id) + '</code> (' + one.code + ') &mdash; ' +
+      return '<li><code>' + esc(one.id) + '</code> (' + one.code +
+             ') &mdash; ' +
              esc(one.what.replace(/\*\*/g, '')) + '</li>';
     }).join('') + '</ul>',
     'The nine reasons, and the two that are deliberately missing');
@@ -3052,9 +3161,13 @@ function renderPki(req, res, draft, banner, extra) {
     admin.tile(chain ? 'yes' : 'no', 'hierarchy built') +
     admin.tile(chain ? String(chain.tiers.length) : '0', 'CA tiers') +
     admin.tile(chain ? String(chain.issuedCount) : '0', 'certificates issued') +
-    admin.tile(json.issued.filter(function (one) { return one.hasKeyPair; }).length,
+    admin.tile(json.issued.filter(function (one) {
+      return one.hasKeyPair;
+    }).length,
                'applications holding one') +
-    admin.tile(json.persons.filter(function (one) { return one.hasKeyPair; }).length,
+    admin.tile(json.persons.filter(function (one) {
+      return one.hasKeyPair;
+    }).length,
                'people holding one') +
     admin.tile(json.realm, 'trust realm') +
     '</div>';
@@ -3067,20 +3180,20 @@ function renderPki(req, res, draft, banner, extra) {
     '7523</strong>: an application can authenticate to the token endpoint, ' +
     'or present an authorization grant, with a signed assertion instead of a ' +
     'shared secret &mdash; and a signing key nobody vouched for is a key an ' +
-    'operator has to move by hand.</p>' +
-    '<p><strong>All three tiers are built in one act, or none is.</strong> A ' +
-    'trust chain is only worth anything whole: an Issuing CA with no ' +
-    'Intermediate above it is a two-tier chain wearing a three-tier name, ' +
-    'and a half-built hierarchy is exactly the state in which somebody ' +
-    'issues a certificate that verifies here and nowhere else.</p>' +
-    '<p><strong>It is per realm.</strong> A trust realm is a logical identity ' +
-    'service with its own signing key and its own applications; a CA shared ' +
-    'across realms would be one authority vouching for several services, ' +
-    'which is the one thing a realm boundary exists to prevent. This page ' +
-    'shows the <code>' + esc(json.realm) + '</code> realm.</p>' +
-    '<p>The encoder is <code>common/vendored/x509.js</code> &mdash; the ' +
-    'parent project&rsquo;s own PKI code, byte-identical, the same one behind ' +
-    'its <em>PKI / X.509</em> workflow page. So a certificate issued here and ' +
+    'operator has to move by hand.</p><p><strong>All three tiers are built ' +
+    'in one act, or none is.</strong> A trust chain is only worth anything ' +
+    'whole: an Issuing CA with no Intermediate above it is a two-tier chain ' +
+    'wearing a three-tier name, and a half-built hierarchy is exactly the ' +
+    'state in which somebody issues a certificate that verifies here and ' +
+    'nowhere else.</p><p><strong>It is per realm.</strong> A trust realm is ' +
+    'a logical identity service with its own signing key and its own ' +
+    'applications; a CA shared across realms would be one authority vouching ' +
+    'for several services, which is the one thing a realm boundary exists to ' +
+    'prevent. This page shows the ' +
+    '<code>' + esc(json.realm) + '</code> realm.</p><p>The encoder ' +
+    'is <code>common/vendored/x509.js</code> &mdash; the parent ' +
+    'project&rsquo;s own PKI code, byte-identical, the same one behind its ' +
+    '<em>PKI / X.509</em> workflow page. So a certificate issued here and ' +
     'one issued there are built by <em>one</em> encoder, and a difference ' +
     'between them is a difference in the arguments rather than in two ' +
     'implementations that drifted.</p>',
@@ -3110,12 +3223,13 @@ function renderPki(req, res, draft, banner, extra) {
     '<label>Signature algorithm <select name="signatureAlg">' +
       signatureOptions(json, keyAlg) + '</select></label> ' +
     '<label>Organisation (O=) <input name="organisation" value="' +
-      esc(config.value('pki.organisation')) + '"></label> ' +
-    '<label>Country (C=) <input name="country" size="4" maxlength="2"></label>' +
-    '<p>' + pki.TIERS.map(function (tier) {
+      esc(config.value('pki.organisation')) + '"></label> <label>Country ' +
+    '(C=) <input name="country" size="4" ' +
+    'maxlength="2"></label><p>' + pki.TIERS.map(function (tier) {
       return '<label>' + esc(tier.label) + ' CN <input name="cn_' +
-        esc(tier.id) + '" placeholder="(named after the organisation)"></label> ' +
-        '<label>years <input name="years_' + esc(tier.id) +
+        esc(tier.id) + '" placeholder="(named after the ' +
+        'organisation)"></label> <label>years <input ' +
+        'name="years_' + esc(tier.id) +
         '" size="4" placeholder="' +
         esc(String((json.tiers.filter(function (t) {
           return t.id === tier.id;
@@ -3211,22 +3325,23 @@ function renderPki(req, res, draft, banner, extra) {
         'sealed exactly as an application’s is.',
         'What a person’s key pair is for') +
       admin.warn(
-        '<p><strong>A person’s assertion may only be about themselves.</strong> ' +
-        'The <code>iss</code> and the <code>sub</code> must name the same ' +
-        'person, and one naming anybody else is refused — a key issued to one ' +
-        'resource owner is that person’s credential rather than permission to ' +
-        'speak for the others, and without the rule anybody given a key here ' +
-        'could obtain a token as anybody in this realm. <strong>A party that ' +
-        'may assert about other people is an APPLICATION</strong> with the ' +
-        'issuer declared on it as <code>oauthAssertionIssuer</code>, which is ' +
-        'a decision an operator makes deliberately. That is the whole ' +
-        'difference between the two controls.</p>' +
-        '<p><strong>The private key is shown once.</strong> It comes back on ' +
-        'the page this form posts to and there is no second door to it: it is ' +
-        'sealed on the entry and nothing here opens it. An application’s is ' +
-        'different because <code>/admin/applications</code> already opens ' +
-        'that one, and a console page that printed a <em>person’s</em> ' +
-        'private key on every visit would be a worse answer than this.</p>',
+        '<p><strong>A person’s assertion may only be about ' +
+        'themselves.</strong> The <code>iss</code> and the <code>sub</code> ' +
+        'must name the same person, and one naming anybody else is refused — ' +
+        'a key issued to one resource owner is that person’s credential ' +
+        'rather than permission to speak for the others, and without the ' +
+        'rule anybody given a key here could obtain a token as anybody in ' +
+        'this realm. <strong>A party that may assert about other people is ' +
+        'an APPLICATION</strong> with the issuer declared on it as ' +
+        '<code>oauthAssertionIssuer</code>, which is a decision an operator ' +
+        'makes deliberately. That is the whole difference between the two ' +
+        'controls.</p><p><strong>The private key is shown once.</strong> It ' +
+        'comes back on the page this form posts to and there is no second ' +
+        'door to it: it is sealed on the entry and nothing here opens it. An ' +
+        'application’s is different because <code>/admin/applications</code> ' +
+        'already opens that one, and a console page that printed a ' +
+        '<em>person’s</em> private key on every visit would be a worse ' +
+        'answer than this.</p>',
         'Two things to know before you press it') +
       '<form method="post" action="/admin/pki/person">' +
       '<input type="hidden" name="action" value="issue">' +
@@ -3292,7 +3407,8 @@ function renderPki(req, res, draft, banner, extra) {
             esc(one.identifier) + '</a></td>' +
           '<td>' + esc(one.purposeLabel) + '</td>' +
           '<td><code>' + esc(one.handle || '—') + '</code>' +
-            (one.handle ? ' <small>(' + esc(one.handleLabel) + ')</small>' : '') +
+            (one.handle ? ' <small>(' + esc(one.handleLabel) + ')</small>' :
+             '') +
             '</td>' +
           '<td>' + esc(one.expiresAt ? one.expiresAt.slice(0, 8) : '—') +
             '</td>' +
@@ -3314,47 +3430,45 @@ function renderPki(req, res, draft, banner, extra) {
             : '') + '</td>' +
           '</tr>';
       }).join('') + '</tbody></table>'
-    : '<p>No application in this realm holds a key pair issued here, and none ' +
-      'declares an assertion issuer.</p>';
+    : '<p>No application in this realm holds a key pair issued here, and ' +
+      'none declares an assertion issuer.</p>';
 
   const twoActs = admin.note(
     '<p>Holding a key pair and being <em>trusted to assert</em> are two ' +
     'different things, and this table shows both because an application ' +
-    'commonly has one and not the other.</p>' +
-    '<p><strong>A key pair</strong> lets an application sign. That is all ' +
-    'RFC 7523 <em>section 2.2</em> needs &mdash; client authentication, ' +
-    'where the assertion says who is calling &mdash; so an application with a ' +
-    'key pair and no declared issuer can already authenticate at the token ' +
-    'endpoint with <code>private_key_jwt</code>.</p>' +
-    '<p><strong>A declared <code>iss</code></strong> ' +
-    '(<code>oauthAssertionIssuer</code>, set on the application&rsquo;s own ' +
-    'page) is what section <em>2.1</em> needs &mdash; the authorization ' +
-    'grant, where the assertion says who the token is <em>for</em>. That ' +
-    'grant has no browser, no password and no consent step in it, so the ' +
-    'signature is the whole of its security: this service will not accept ' +
-    'one from an issuer nobody declared, and ' +
+    'commonly has one and not the other.</p><p><strong>A key pair</strong> ' +
+    'lets an application sign. That is all RFC 7523 <em>section 2.2</em> ' +
+    'needs &mdash; client authentication, where the assertion says who is ' +
+    'calling &mdash; so an application with a key pair and no declared ' +
+    'issuer can already authenticate at the token endpoint with ' +
+    '<code>private_key_jwt</code>.</p><p><strong>A declared ' +
+    '<code>iss</code></strong> (<code>oauthAssertionIssuer</code>, set on ' +
+    'the application&rsquo;s own page) is what section <em>2.1</em> needs ' +
+    '&mdash; the authorization grant, where the assertion says who the token ' +
+    'is <em>for</em>. That grant has no browser, no password and no consent ' +
+    'step in it, so the signature is the whole of its security: this service ' +
+    'will not accept one from an issuer nobody declared, and ' +
     '<code>oauth2.jwtBearerRequireRegisteredIssuer</code> is on by default ' +
-    'for the same reason federation refuses by default.</p>' +
-    '<p>An assertion a client issues <em>about itself</em> needs no ' +
-    'declaration: its <code>iss</code> is its own <code>client_id</code>, ' +
-    'and that lookup already succeeds.</p>' +
-    '<p><strong>RFC 7522 is the same two acts over a SAML 2.0 assertion</strong>, ' +
-    'with its own key pair and its own declaration ' +
-    '(<code>oauthSamlAssertionIssuer</code>). The two profiles are kept apart ' +
-    'deliberately: an application trusted to assert as a JWT has not thereby ' +
-    'been trusted to assert as SAML, and the key pairs cannot stand in for ' +
-    'one another. There is one further difference, and it is the only place ' +
-    'this service is <em>stricter</em> for SAML: a JWT assertion may carry ' +
-    'its certificate chain in <code>x5c</code> and be accepted because the ' +
-    'chain reaches this realm&rsquo;s Root, and a SAML assertion may not. A ' +
-    'chain proves the <em>realm</em> issued a key; the URI subjectAltName in ' +
-    'the leaf says who to, and the JWT grant reads it for exactly one ' +
-    'purpose &mdash; holding a PERSON to asserting about themselves &mdash; ' +
-    'rather than binding an application. So a chain still says nothing ' +
-    'usable about <em>which</em> application holds a key, and accepting one ' +
-    'here would let ' +
-    'an application&rsquo;s RFC 7523 leaf sign a SAML assertion, which is ' +
-    'exactly the crossing the two key pairs exist to prevent.</p>',
+    'for the same reason federation refuses by default.</p><p>An assertion a ' +
+    'client issues <em>about itself</em> needs no declaration: its ' +
+    '<code>iss</code> is its own <code>client_id</code>, and that lookup ' +
+    'already succeeds.</p><p><strong>RFC 7522 is the same two acts over a ' +
+    'SAML 2.0 assertion</strong>, with its own key pair and its own ' +
+    'declaration (<code>oauthSamlAssertionIssuer</code>). The two profiles ' +
+    'are kept apart deliberately: an application trusted to assert as a JWT ' +
+    'has not thereby been trusted to assert as SAML, and the key pairs ' +
+    'cannot stand in for one another. There is one further difference, and ' +
+    'it is the only place this service is <em>stricter</em> for SAML: a JWT ' +
+    'assertion may carry its certificate chain in <code>x5c</code> and be ' +
+    'accepted because the chain reaches this realm&rsquo;s Root, and a SAML ' +
+    'assertion may not. A chain proves the <em>realm</em> issued a key; the ' +
+    'URI subjectAltName in the leaf says who to, and the JWT grant reads it ' +
+    'for exactly one purpose &mdash; holding a PERSON to asserting about ' +
+    'themselves &mdash; rather than binding an application. So a chain still ' +
+    'says nothing usable about <em>which</em> application holds a key, and ' +
+    'accepting one here would let an application&rsquo;s RFC 7523 leaf sign ' +
+    'a SAML assertion, which is exactly the crossing the two key pairs exist ' +
+    'to prevent.</p>',
     'A key pair is not a trust decision');
 
   admin.respond(req, res, json, 'PKI', '/admin/pki',
@@ -3363,38 +3477,36 @@ function renderPki(req, res, draft, banner, extra) {
                 tiles + what + limits +
                 '<h3>The hierarchy</h3>' +
                 admin.note(
-                  '<strong>One Root CA for the whole service, an Intermediate ' +
-                  'CA per scope, and an Issuing CA for each use case under ' +
-                  'it.</strong> Every key pair this service generates is a ' +
-                  'leaf of this tree &mdash; the signing keys of every realm, ' +
-                  'and the certificate the TLS listeners serve &mdash; so an ' +
-                  'operator installs ONE anchor and it covers 8443, 9443, ' +
-                  'LDAPS 636, the main port and every token this service ' +
-                  'signs.' +
-                  '<p><strong>A realm shares the Root and has an Intermediate ' +
-                  'of its own</strong>, and that is where the realm boundary ' +
-                  'is: with one Root, &ldquo;this chains to our Root&rdquo; is ' +
-                  'true of every realm&rsquo;s certificates, so a path is ' +
-                  'checked against this realm&rsquo;s own Intermediate ' +
-                  'instead. A certificate issued in one realm still does not ' +
-                  'verify in another.</p>' +
-                  '<p><strong>What is drawn below is the ' +
+                  '<strong>One Root CA for the whole service, an ' +
+                  'Intermediate CA per scope, and an Issuing CA for each use ' +
+                  'case under it.</strong> Every key pair this service ' +
+                  'generates is a leaf of this tree &mdash; the signing keys ' +
+                  'of every realm, and the certificate the TLS listeners ' +
+                  'serve &mdash; so an operator installs ONE anchor and it ' +
+                  'covers 8443, 9443, LDAPS 636, the main port and every ' +
+                  'token this service signs.<p><strong>A realm shares the ' +
+                  'Root and has an Intermediate of its own</strong>, and ' +
+                  'that is where the realm boundary is: with one Root, ' +
+                  '&ldquo;this chains to our Root&rdquo; is true of every ' +
+                  'realm&rsquo;s certificates, so a path is checked against ' +
+                  'this realm&rsquo;s own Intermediate instead. A ' +
+                  'certificate issued in one realm still does not verify in ' +
+                  'another.</p><p><strong>What is drawn below is the ' +
                   esc(realmLabel()) + ' realm&rsquo;s, and only ' +
-                  'that.</strong> The Root, because every realm hangs from it; ' +
-                  'the <em>process</em> branch, because the TLS and SPIFFE ' +
-                  'authorities certify sockets every realm answers on; and ' +
-                  'this realm&rsquo;s own Intermediate with its Issuing CAs. ' +
-                  'Another realm&rsquo;s branch is not here and cannot be ' +
-                  'edited from here &mdash; <strong>switch realms to reach ' +
-                  'it</strong>, which is how every other setting on this ' +
-                  'console already works. <code>GET /admin-api/pki</code> ' +
-                  'answers exactly this, in whichever realm it is reached ' +
-                  'in.</p>' +
-                  '<p>It is built at startup (<code>pki.autoBuild</code>). ' +
-                  'Turning that off is how this service behaves as it did ' +
-                  'before 2026-09-11: nothing is built until Build is pressed ' +
-                  'and every key carries the self-signed certificate it was ' +
-                  'born with.</p>',
+                  'that.</strong> The Root, because every realm hangs from ' +
+                  'it; the <em>process</em> branch, because the TLS and ' +
+                  'SPIFFE authorities certify sockets every realm answers ' +
+                  'on; and this realm&rsquo;s own Intermediate with its ' +
+                  'Issuing CAs. Another realm&rsquo;s branch is not here and ' +
+                  'cannot be edited from here &mdash; <strong>switch realms ' +
+                  'to reach it</strong>, which is how every other setting on ' +
+                  'this console already works. <code>GET ' +
+                  '/admin-api/pki</code> answers exactly this, in whichever ' +
+                  'realm it is reached in.</p><p>It is built at startup ' +
+                  '(<code>pki.autoBuild</code>). Turning that off is how ' +
+                  'this service behaves as it did before 2026-09-11: nothing ' +
+                  'is built until Build is pressed and every key carries the ' +
+                  'self-signed certificate it was born with.</p>',
                   'What this tree is, and where the realm boundary went') +
                 treeSection(json) +
                 notCertifiedNote(json) +
@@ -3405,11 +3517,12 @@ function renderPki(req, res, draft, banner, extra) {
                 }).join('') +
                 (chain ? '<h3>This realm&rsquo;s three-tier view</h3>' +
                          admin.note(
-                           'The Root, this realm&rsquo;s Intermediate and its ' +
-                           '<em>application assertion</em> Issuing CA &mdash; ' +
-                           'which is what <code>GET /admin-api/pki</code> has ' +
-                           'always answered and what RFC 7523 needs. The ' +
-                           'other Issuing CAs are in the tree above.') +
+                           'The Root, this realm&rsquo;s Intermediate and ' +
+                           'its <em>application assertion</em> Issuing CA ' +
+                           '&mdash; which is what <code>GET ' +
+                           '/admin-api/pki</code> has always answered and ' +
+                           'what RFC 7523 needs. The other Issuing CAs are ' +
+                           'in the tree above.') +
                          chainTable(chain) +
                          pemBlocks(chain) : '') +
                 buildForm + issueForm +
@@ -3478,7 +3591,9 @@ app.post('/admin/pki/certificate', function (req, res) {
     renderPki(req, res, result.draft || authoring.draftFrom(body), banner);
     log.debug('Leaving the admin PKI pane action. ' + pressed.action + '.');
   }).catch(function (e) {
-    log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the pane\'s ' + pressed.action + ' action threw: ' +
+    log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the pane\'s ' +
+        pressed.action + ' ' +
+        'action threw: ' +
               (e && e.stack ? e.stack : e));
     errorCodes.mark(res, 'STS-PKI-0102');
     renderPki(req, res, authoring.draftFrom(body),
@@ -3543,7 +3658,8 @@ app.post('/admin/pki/export', function (req, res) {
       log.debug('Leaving the admin PKI export. Sent ' + file.name + ', ' +
                 data.length + ' bytes.');
     }).catch(function (e) {
-      log.error(errorCodes.tag('STS-PKI-0103') + 'pki_admin: the export threw: ' + (e && e.stack ? e.stack : e));
+      log.error(errorCodes.tag('STS-PKI-0103') +
+                'pki_admin: the export threw: ' + (e && e.stack ? e.stack : e));
       errorCodes.mark(res, 'STS-PKI-0103');
       renderPki(req, res, draft,
                 admin.warn(esc('That export failed: ' +
@@ -3574,8 +3690,9 @@ app.post('/admin/pki', function (req, res) {
     admin.respondToAction(req, res, '/admin/pki', result);
     log.debug('Leaving the admin PKI action.');
   }).catch(function (e) {
-    log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the ' + String(body && body.action) + ' action ' +
-              'threw: ' + (e && e.stack ? e.stack : e));
+    log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the ' +
+              String(body && body.action) + ' ' +
+              'action threw: ' + (e && e.stack ? e.stack : e));
     errorCodes.mark(res, 'STS-PKI-0102');
     admin.respondToAction(req, res, '/admin/pki',
                           refuse('That action failed: ' +
@@ -3630,7 +3747,8 @@ app.post('/admin/pki/person', function (req, res) {
     const message = result.ok ? String(result.why || 'Done.')
       : ((result.errors || []).join(' ') || String(result.why || ''));
     const banner = result.ok
-      ? admin.note(esc(message).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'))
+      ? admin.note(esc(message).replace(/\*\*(.+?)\*\*/g,
+                                        '<strong>$1</strong>'))
       : admin.warn(esc(message), 'That was refused');
     // THE KEY ITSELF, in a block of its own under the banner. It is HERE and
     // nowhere else in this console — see `issueToPerson()`'s header for why
@@ -3646,8 +3764,9 @@ app.post('/admin/pki/person', function (req, res) {
         '<p>The assertion it signs carries <code>iss</code> and ' +
         '<code>sub</code> of <code>' + esc(String(result.issuer)) +
         '</code>, an <code>aud</code> of this service’s token endpoint or ' +
-        'issuer, an <code>exp</code> and a <code>jti</code>, and is presented ' +
-        'as <code>grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer</code> ' +
+        'issuer, an <code>exp</code> and a <code>jti</code>, and is ' +
+        'presented as ' +
+        '<code>grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer</code> ' +
         'with <code>assertion=&lt;the JWT&gt;</code>. <code>kid</code> is ' +
         '<code>' + esc(String(result.kid)) + '</code> and the algorithm is ' +
         '<code>' + esc(String(result.jwsAlg)) + '</code>.</p>' +
@@ -3661,7 +3780,8 @@ app.post('/admin/pki/person', function (req, res) {
     log.debug('Leaving the admin PKI person action. ' +
               (result.ok ? 'Issued.' : 'Refused.'));
   }).catch(function (e) {
-    log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the person issue action threw: ' +
+    log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the person issue ' +
+                                               'action threw: ' +
               (e && e.stack ? e.stack : e));
     errorCodes.mark(res, 'STS-PKI-0102');
     renderPki(req, res, authoring.draftFrom(body),
@@ -3678,7 +3798,11 @@ module.exports = {
   // the console does not.
   pkiView: pkiJson,
   pkiAction: pkiAction,
-  pkiActionNames: function () { return PKI_ACTIONS.slice(); },
+  pkiActionNames: function () {
+    log.debug("Entering pkiActionNames().");
+    log.debug("Leaving pkiActionNames().");
+    return PKI_ACTIONS.slice();
+  },
   // For `tests/pki_authoring.js` ONLY, and it is worth saying why a renderer
   // is exported at all. The pane's field table is declared in
   // `common/pki_authoring.js` and DRAWN here, and the two going out of step is

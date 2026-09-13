@@ -160,11 +160,16 @@ const byKind = {};
 const PAGE = 500;
 
 function enabled() {
+  log.debug("Entering enabled().");
+  log.debug("Leaving enabled().");
   return !!driver && !stopped && !!config.value('persistence.coordinate');
 }
 
 function intervalMs() {
-  return Math.max(250, Number(config.value('persistence.pollInterval')) || 5000);
+  log.debug("Entering intervalMs().");
+  log.debug("Leaving intervalMs().");
+  return Math.max(250,
+                  Number(config.value('persistence.pollInterval')) || 5000);
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +179,8 @@ function intervalMs() {
 // that driver's unit of writing is a whole file.
 // ---------------------------------------------------------------------------
 function supports(theDriver) {
+  log.debug("Entering supports().");
+  log.debug("Leaving supports().");
   return !!(theDriver &&
             typeof theDriver.changesSince === 'function' &&
             typeof theDriver.latestChangeSeq === 'function');
@@ -203,6 +210,7 @@ function start(theDriver, theAppliers) {
     return Promise.resolve({ coordinating: false });
   }
 
+  log.debug("Leaving start().");
   return driver.latestChangeSeq().then(function (seq) {
     applied = seq;
     startedAt = new Date().toISOString();
@@ -241,7 +249,9 @@ function start(theDriver, theAppliers) {
 }
 
 function schedule() {
+  log.debug("Entering schedule().");
   if (timer || stopped) {
+    log.debug("Leaving schedule().");
     return;
   }
   timer = setTimeout(function () {
@@ -258,23 +268,28 @@ function schedule() {
   if (timer.unref) {
     timer.unref();
   }
+  log.debug("Leaving schedule().");
 }
 
 // A nudge arrived. Pull NOW rather than at the next tick — and if one is
 // already running, remember to go round again, because the row that woke us
 // may have been committed after the running pull took its page.
 function wake() {
+  log.debug("Entering wake().");
   if (!enabled()) {
+    log.debug("Leaving wake().");
     return;
   }
   if (running) {
     pendingWake = true;
+    log.debug("Leaving wake().");
     return;
   }
   pull().catch(function (err) {
     log.error(errorCodes.tag('STS-STORE-0038') +
               'persistence: a nudged change pull failed: ' + err.message);
   });
+  log.debug("Leaving wake().");
 }
 
 // ---------------------------------------------------------------------------
@@ -334,6 +349,7 @@ function syncNow() {
   const target = typeof driver.latestBlockingChangeSeq === 'function'
     ? driver.latestBlockingChangeSeq()
     : driver.latestChangeSeq();
+  log.debug("Leaving syncNow().");
   return Promise.resolve(target).then(function (target) {
     const want = Number(target) || 0;
     // ----------------------------------------------------------------------
@@ -377,9 +393,11 @@ function syncNow() {
     // for a request could be missing from the very next read, which
     // `admin_api` reported as "NO /healthcheck row of any kind came back".
     const inFlight = runningPull || Promise.resolve();
-    const opening = inFlight.catch(function () {
+    const opening = inFlight.catch(function (e) {
       // A pull that failed is the timer's business to report; this pass only
       // needs to know it has finished.
+      log.debug("Caught in syncNow(): a pull in flight failed: " +
+                ((e && e.message) || e));
     }).then(function () {
       return pull();
     }).catch(function (e) {
@@ -391,7 +409,9 @@ function syncNow() {
     return opening.then(function () {
 
     function step(attempts) {
+      log.debug("Entering step().");
       if (applied >= want) {
+        log.debug("Leaving step().");
         return { caughtUp: true, applied: applied, target: want,
                  coordinating: true };
       }
@@ -404,10 +424,12 @@ function syncNow() {
                  'persistence: a read barrier gave up at ' + applied +
                  ' of ' + want + '. The request is being answered from what ' +
                  'this process has.');
+        log.debug("Leaving step().");
         return { caughtUp: false, applied: applied, target: want,
                  coordinating: true };
       }
       if (running) {
+        log.debug("Leaving step().");
         // A pull is in flight and will advance `applied`. Waited out rather
         // than duplicated — see the header.
         return new Promise(function (resolve) {
@@ -416,6 +438,7 @@ function syncNow() {
           return step(attempts - 1);
         });
       }
+      log.debug("Leaving step().");
       return pull().then(function () {
         return step(attempts - 1);
       });
@@ -433,7 +456,9 @@ function syncNow() {
 }
 
 function pull() {
+  log.debug("Entering pull().");
   if (!enabled() || running) {
+    log.debug("Leaving pull().");
     return Promise.resolve({ applied: 0 });
   }
   running = true;
@@ -442,6 +467,8 @@ function pull() {
   runningPull = new Promise(function (resolve) { settle = resolve; });
 
   function page() {
+    log.debug("Entering page().");
+    log.debug("Leaving page().");
     return driver.changesSince(applied, PAGE).then(function (rows) {
       if (!rows.length) {
         return 0;
@@ -516,6 +543,7 @@ function pull() {
     });
   }
 
+  log.debug("Leaving pull().");
   return page().then(function () {
     pulls++;
     lastPullAt = new Date().toISOString();
@@ -558,6 +586,7 @@ function pull() {
 // this file and it is why the wrapper is here rather than in each applier.
 // ---------------------------------------------------------------------------
 function applyRows(rows) {
+  log.debug("Entering applyRows().");
   // COALESCED: a page can name one directory entry ten times, and re-reading
   // it ten times would be ten queries for one answer. The LAST occurrence
   // wins, which is also the correct one — it is the latest committed state.
@@ -600,8 +629,8 @@ function applyRows(rows) {
         return Promise.resolve(applier.prepare(rowsOfKind)).catch(function (e) {
           log.warn(errorCodes.tag('STS-STORE-0041') +
                    'replication: preparing ' + rowsOfKind.length + ' "' + kind +
-                   '" row(s) failed (' + e.message + '); they are applied one ' +
-                   'at a time.');
+                   '" row(s) failed (' + e.message + '); they are applied ' +
+                   'one at a time.');
         });
       });
     }
@@ -641,11 +670,13 @@ function applyRows(rows) {
         // exercised.
         // -----------------------------------------------------------------
         function failed(err) {
+          log.debug("Entering failed().");
           log.error(errorCodes.tag('STS-STORE-0042') +
                     'persistence: a "' + row.kind + '" change for "' +
                     row.key + '" in realm "' + (row.realm || 'default') +
                     '" could not be applied: ' + err.message +
                     '. The rest of the page is unaffected.');
+          log.debug("Leaving failed().");
         }
         let out = null;
         try {
@@ -658,6 +689,7 @@ function applyRows(rows) {
       });
     });
   });
+  log.debug("Leaving applyRows().");
   // THE PAGE'S WORKING SET GOES WITH THE PAGE. A prefetch held past the page
   // it was read for would be this process believing a row is still there
   // because it was there a page ago; see persistence_minted.js's prefetch().
@@ -697,6 +729,7 @@ function applyRows(rows) {
 const contributions = new Map();
 
 function contribute(handle, realmId, key, origin, value) {
+  log.debug("Entering contribute().");
   let byRealm = contributions.get(handle);
   if (!byRealm) {
     byRealm = new Map();
@@ -716,9 +749,11 @@ function contribute(handle, realmId, key, origin, value) {
   }
   if (value === null || value === undefined) {
     byOrigin.delete(origin);
+    log.debug("Leaving contribute().");
     return;
   }
   byOrigin.set(origin, value);
+  log.debug("Leaving contribute().");
 }
 
 // What every OTHER process has contributed under this handle, realm and key,
@@ -731,20 +766,25 @@ function contribute(handle, realmId, key, origin, value) {
 // wants: these are all read from inside a request or a console page, where the
 // realm is already established.
 function remoteRows(handle, realmId, key) {
+  log.debug("Entering remoteRows().");
   const byRealm = contributions.get(handle);
   if (!byRealm) {
+    log.debug("Leaving remoteRows().");
     return [];
   }
   const byKey = byRealm.get(String(realmId === undefined
                                    ? realms.currentId() : (realmId || '')));
   if (!byKey) {
+    log.debug("Leaving remoteRows().");
     return [];
   }
   const byOrigin = byKey.get(String(key === undefined || key === null
                                     ? '' : key));
   if (!byOrigin) {
+    log.debug("Leaving remoteRows().");
     return [];
   }
+  log.debug("Leaving remoteRows().");
   return Array.from(byOrigin.values());
 }
 
@@ -752,12 +792,15 @@ function remoteRows(handle, realmId, key) {
 // What a MAP-shaped counter store needs before it can ask for each: another
 // process may be counting a path this one has never served.
 function remoteKeys(handle, realmId) {
+  log.debug("Entering remoteKeys().");
   const byRealm = contributions.get(handle);
   if (!byRealm) {
+    log.debug("Leaving remoteKeys().");
     return [];
   }
   const byKey = byRealm.get(String(realmId === undefined
                                    ? realms.currentId() : (realmId || '')));
+  log.debug("Leaving remoteKeys().");
   return byKey ? Array.from(byKey.keys()) : [];
 }
 
@@ -765,6 +808,7 @@ function remoteKeys(handle, realmId) {
 // single-process deployment can be told it is one rather than being shown an
 // empty fan-in it has to interpret.
 function origins() {
+  log.debug("Entering origins().");
   const all = new Set();
   contributions.forEach(function (byRealm) {
     byRealm.forEach(function (byKey) {
@@ -773,6 +817,7 @@ function origins() {
       });
     });
   });
+  log.debug("Leaving origins().");
   return Array.from(all);
 }
 
@@ -792,6 +837,8 @@ function stop() {
 }
 
 function status() {
+  log.debug("Entering status().");
+  log.debug("Leaving status().");
   return {
     coordinating: enabled(),
     supported: supports(driver),
@@ -819,6 +866,7 @@ function status() {
 
 // For the tests, and for the reason `keystore.reset()` is exported.
 function reset() {
+  log.debug("Entering reset().");
   driver = null;
   appliers = null;
   origin = '';
@@ -844,6 +892,7 @@ function reset() {
   rowsApplied = 0;
   nudges = 0;
   Object.keys(byKind).forEach(function (k) { delete byKind[k]; });
+  log.debug("Leaving reset().");
 }
 
 module.exports = {

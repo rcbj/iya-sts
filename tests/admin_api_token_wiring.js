@@ -49,9 +49,17 @@
 const fs = require('fs');
 const path = require('path');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'admin_api_token_wiring',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 
 function read(rel) {
+  log.debug("Entering read().");
+  log.debug("Leaving read().");
   return fs.readFileSync(path.join(ROOT, rel), 'utf8');
 }
 
@@ -62,6 +70,7 @@ function read(rel) {
 const MINTING_LAUNCHERS = ['local-run-tests.sh', 'docker-run-tests.sh'];
 
 function run(t) {
+  log.debug("Entering run().");
   t.log.info('=== the two docker launchers mint one themselves ===');
   MINTING_LAUNCHERS.forEach(function (name) {
     const text = read(name);
@@ -138,6 +147,7 @@ function run(t) {
           'and every job is given the preload that presents it',
           'the token is carried into twenty-three jobs by that preload ' +
           'rather than by each of them growing an HTTP client of its own');
+  log.debug("Leaving run().");
 }
 
 module.exports = {

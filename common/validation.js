@@ -57,10 +57,10 @@
 // ambiguity entirely.
 //
 // **A PARAMETER THAT MAY LEGITIMATELY REPEAT SAYS SO IN ITS SCHEMA**, as
-// `repeatable(...)`. RFC 8707's `resource` and RFC 8693's `audience` are the two
-// that do. They are then kept as arrays and nothing is thrown away, which is
-// the behaviour `helpers.bodyValues()` already had to be written by hand to get
-// back after `parseBody()` had flattened it.
+// `repeatable(...)`. RFC 8707's `resource` and RFC 8693's `audience` are the
+// two that do. They are then kept as arrays and nothing is thrown away, which
+// is the behaviour `helpers.bodyValues()` already had to be written by hand to
+// get back after `parseBody()` had flattened it.
 //
 // ---------------------------------------------------------------------------
 // CONTROL CHARACTERS ARE REFUSED EVERYWHERE, AND THE RULE IS NOT THE SAME IN
@@ -130,9 +130,9 @@ const { z } = require('zod');
 const config = require('./config');
 const { DOMParser } = require('@xmldom/xmldom');
 const zlib = require('zlib');
-// The registry of failure codes. A LEAF that requires nothing, so this closes no
-// cycle. The guard below marks its refusals with one, on the RESPONSE OBJECT and
-// never in the body — see common/error_codes.js.
+// The registry of failure codes. A LEAF that requires nothing, so this closes
+// no cycle. The guard below marks its refusals with one, on the RESPONSE OBJECT
+// and never in the body — see common/error_codes.js.
 const errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({
@@ -164,10 +164,12 @@ const CAP = {
   NAME: 256,            // a username, a group name, a principal name
   TOKEN: 4096,          // an opaque credential: a code, a token, an artifact
   URI: 2048,            // the de-facto browser limit, and more than any of ours needs
-  SCOPE: 2048,          // a space-delimited list, which grows with the deployment
+  SCOPE:
+    2048,          // a space-delimited list, which grows with the deployment
   DEFAULT: 4096,        // the backstop for a field whose schema did not say
   TEXT: 65536,          // a console textarea: a policy, a PEM block, an LDIF fragment
-  LARGE: 1048576        // a SAML message, a SOAP envelope, an XACML request document
+  LARGE:
+    1048576        // a SAML message, a SOAP envelope, an XACML request document
 };
 
 // ---------------------------------------------------------------------------
@@ -220,6 +222,8 @@ const POLLUTING_KEYS = ['__proto__', 'constructor', 'prototype'];
 // want different amounts of it.
 // ---------------------------------------------------------------------------
 function refusal(code, field, detail) {
+  log.debug("Entering refusal().");
+  log.debug("Leaving refusal().");
   return { ok: false, code: code, field: field, detail: detail };
 }
 
@@ -241,21 +245,27 @@ function refusal(code, field, detail) {
 // Note what this does NOT do: it does not choose. See the header.
 // ---------------------------------------------------------------------------
 function scalar(value, field, allowText) {
+  log.debug("Entering scalar().");
   if (value === undefined || value === null) {
+    log.debug("Leaving scalar().");
     return { ok: true, value: undefined };
   }
   if (Array.isArray(value)) {
+    log.debug("Leaving scalar().");
     return refusal('repeated', field,
                    'the parameter "' + field + '" was given ' + value.length +
-                   ' times and this endpoint takes it once. It is refused rather ' +
-                   'than resolved to one of them, because choosing silently is ' +
-                   'how two readers of the same request come to disagree.');
+                   ' times and this endpoint takes it once. It is refused ' +
+                   'rather than resolved to one of them, because choosing ' +
+                   'silently is how two readers of the same request come to ' +
+                   'disagree.');
   }
   if (typeof value === 'object') {
+    log.debug("Leaving scalar().");
     return refusal('structured', field,
-                   'the parameter "' + field + '" arrived as a structure rather ' +
-                   'than a value. Express parses "' + field + '[key]=..." into an ' +
-                   'object; this endpoint takes a single value.');
+                   'the parameter "' + field + '" arrived as a structure ' +
+                   'rather than a value. Express parses ' +
+                   '"' + field + '[key]=..." ' +
+                   'into an object; this endpoint takes a single value.');
   }
   // A number or a boolean is what a JSON body legitimately carries, and the
   // schema below decides whether this field was allowed to be one. Coercing
@@ -263,15 +273,18 @@ function scalar(value, field, allowText) {
   const text = typeof value === 'string' ? value : String(value);
   const forbidden = allowText ? CONTROL_TEXT : CONTROL_STRICT;
   if (forbidden.test(text)) {
+    log.debug("Leaving scalar().");
     return refusal('control-character', field,
-                   'the value of "' + field + '" contains a control character. ' +
+                   'the value of "' + field +
+                   '" contains a control character. ' +
                    (allowText
-                     ? 'A line break is allowed in this field; the other control ' +
-                       'characters are not.'
-                     : 'A carriage return or newline here would reach a response ' +
-                       'header, a log line or a directory query as a second ' +
-                       'instruction rather than as text.'));
+                     ? 'A line break is allowed in this field; the other ' +
+                       'control characters are not.'
+                     : 'A carriage return or newline here would reach a ' +
+                       'response header, a log line or a directory query as ' +
+                       'a second instruction rather than as text.'));
   }
+  log.debug("Leaving scalar().");
   return { ok: true, value: text };
 }
 
@@ -288,14 +301,17 @@ function scalar(value, field, allowText) {
 // against silently accepting a repeat that was not.
 // ---------------------------------------------------------------------------
 function isArraySchema(schema) {
+  log.debug("Entering isArraySchema().");
   let current = schema;
   for (let depth = 0; depth < 8 && current; depth++) {
     const def = current._def || current.def;
     if (!def) {
+      log.debug("Leaving isArraySchema().");
       return false;
     }
     const kind = def.typeName || def.type;
     if (kind === 'ZodArray' || kind === 'array') {
+      log.debug("Leaving isArraySchema().");
       return true;
     }
     const inner = def.innerType || def.schema;
@@ -303,8 +319,10 @@ function isArraySchema(schema) {
       current = inner;
       continue;
     }
+    log.debug("Leaving isArraySchema().");
     return false;
   }
+  log.debug("Leaving isArraySchema().");
   return false;
 }
 
@@ -335,7 +353,8 @@ function flatten(input, shape, allowText) {
       return refusal('polluting-key', key,
                      'the parameter name "' + key + '" is refused. It is a ' +
                      'property of every object in javascript, and a request ' +
-                     'that sets it is not asking for anything this service offers.');
+                     'that sets it is not asking for anything this service ' +
+                     'offers.');
     }
     const declared = shape ? shape[key] : undefined;
     const repeats = declared ? isArraySchema(declared) : false;
@@ -346,7 +365,8 @@ function flatten(input, shape, allowText) {
       for (let j = 0; j < list.length; j++) {
         const one = scalar(list[j], key, allowText);
         if (!one.ok) {
-          log.debug("Leaving flatten(). An element of a repeated parameter was refused.");
+          log.debug("Leaving flatten(). An element of a repeated parameter " +
+                    "was refused.");
           return one;
         }
         if (one.value !== undefined) {
@@ -383,7 +403,8 @@ function fromZod(error, where) {
   if (!issues.length) {
     log.debug("Leaving fromZod(). No issue was reported.");
     return refusal('invalid', '(request)',
-                   'the ' + where + ' did not validate and no reason was given.');
+                   'the ' + where +
+                   ' did not validate and no reason was given.');
   }
   const first = issues[0];
   const path = Array.isArray(first.path) ? first.path : [];
@@ -427,7 +448,8 @@ function check(req, where, schema) {
   const parsed = schema.safeParse(flat.value);
   if (!parsed.success) {
     const why = fromZod(parsed.error, where);
-    log.debug("Leaving check(). The schema refused: " + why.code + " " + why.field);
+    log.debug("Leaving check(). The schema refused: " + why.code + " " +
+              why.field);
     return why;
   }
   log.debug("Leaving check(). Accepted.");
@@ -459,13 +481,15 @@ function checkParsed(value, where, schema) {
   const shape = schema && schema.shape ? schema.shape : undefined;
   const flat = flatten(value, shape, where === 'body');
   if (!flat.ok) {
-    log.debug("Leaving checkParsed(). The input was refused before the schema ran.");
+    log.debug("Leaving checkParsed(). The input was refused before the " +
+              "schema ran.");
     return flat;
   }
   const parsed = schema.safeParse(flat.value);
   if (!parsed.success) {
     const why = fromZod(parsed.error, where);
-    log.debug("Leaving checkParsed(). The schema refused: " + why.code + " " + why.field);
+    log.debug("Leaving checkParsed(). The schema refused: " + why.code + " " +
+              why.field);
     return why;
   }
   log.debug("Leaving checkParsed(). Accepted.");
@@ -477,6 +501,8 @@ function checkParsed(value, where, schema) {
 // schema is still being written, so that the type-confusion class is closed
 // everywhere before the per-endpoint work is finished.
 function scalars(req, where) {
+  log.debug("Entering scalars().");
+  log.debug("Leaving scalars().");
   return flatten(req ? req[where] : undefined, undefined, where === 'body');
 }
 
@@ -498,11 +524,11 @@ function scalars(req, where) {
 // So this walks the document instead and asserts only the things that are true
 // of ANY JSON this service accepts, whatever its shape:
 //
-//   * NO POLLUTING KEY, at any depth. This is the one that matters. `JSON.parse`
-//     produces a real own `__proto__` property, and a registration document is
-//     merged into a record — `applications.js` rebuilds a client from the stored
-//     document and then overwrites members from attributes — so the ingredient
-//     and the recipe are both present here.
+//   * NO POLLUTING KEY, at any depth. This is the one that matters.
+//     `JSON.parse` produces a real own `__proto__` property, and a registration
+//     document is merged into a record — `applications.js` rebuilds a client
+//     from the stored document and then overwrites members from attributes — so
+//     the ingredient and the recipe are both present here.
 //   * A BOUNDED DEPTH, because a deeply nested document is a stack overflow in
 //     whatever walks it next, and nothing this service accepts is deep.
 //   * A BOUNDED KEY COUNT, for the same reason a field has a length cap: the
@@ -522,7 +548,9 @@ function checkDocument(value, where, opts) {
   let bad = null;
 
   const walk = function (node, depth, path) {
+    log.debug("Entering walk().");
     if (bad) {
+      log.debug("Leaving walk().");
       return;
     }
     if (depth > maxDepth) {
@@ -530,15 +558,18 @@ function checkDocument(value, where, opts) {
                     'the ' + where + ' is nested more than ' + maxDepth +
                     ' levels deep. Nothing this service accepts is, and what ' +
                     'reads it next would recurse as far as the document says.');
+      log.debug("Leaving walk().");
       return;
     }
     if (Array.isArray(node)) {
       for (let i = 0; i < node.length && !bad; i++) {
         walk(node[i], depth + 1, path);
       }
+      log.debug("Leaving walk().");
       return;
     }
     if (node === null || typeof node !== 'object') {
+      log.debug("Leaving walk().");
       return;
     }
     const names = Object.keys(node);
@@ -549,18 +580,22 @@ function checkDocument(value, where, opts) {
         bad = refusal('too-many-keys', path || '(document)',
                       'the ' + where + ' carries more than ' + maxKeys +
                       ' members.');
+        log.debug("Leaving walk().");
         return;
       }
       if (POLLUTING_KEYS.indexOf(name) >= 0) {
         bad = refusal('polluting-key', name,
                       'the ' + where + ' carries a member named "' + name +
-                      '"' + (path ? ' under "' + path + '"' : '') + '. It is a ' +
-                      'property of every object in javascript, and a document ' +
-                      'that sets it is not describing anything this service offers.');
+                      '"' + (path ? ' under "' + path + '"' : '') + '. It is ' +
+                      'a property of every object in javascript, and a ' +
+                      'document that sets it is not describing anything this ' +
+                      'service offers.');
+        log.debug("Leaving walk().");
         return;
       }
       walk(node[name], depth + 1, path ? path + '.' + name : name);
     }
+    log.debug("Leaving walk().");
   };
 
   walk(value, 0, '');
@@ -636,6 +671,8 @@ function checkDocument(value, where, opts) {
 // parsed. Both are covered by the per-endpoint schemas.
 // ---------------------------------------------------------------------------
 function guard() {
+  log.debug("Entering guard().");
+  log.debug("Leaving guard().");
   return function (req, res, next) {
     log.debug("Entering the validation guard.");
     const query = req.query;
@@ -651,8 +688,8 @@ function guard() {
       if (POLLUTING_KEYS.indexOf(key) >= 0) {
         code = 'STS-HTTP-0010';
         why = refusal('polluting-key', key,
-                      'the parameter name "' + key + '" is refused everywhere ' +
-                      'in this service.');
+                      'the parameter name "' + key + '" is refused ' +
+                      'everywhere in this service.');
       } else {
         // A repeat is NOT refused here (see above), so each value of one is
         // checked on its own. `flatten()` cannot be reused: it would refuse the
@@ -664,17 +701,20 @@ function guard() {
             code = 'STS-HTTP-0011';
             why = refusal('control-character', key,
                           'the value of "' + key + '" contains a control ' +
-                          'character. A carriage return or newline in a query ' +
-                          'parameter reaches a response header, a log line or ' +
-                          'a directory query as a second instruction rather ' +
-                          'than as text.');
+                          'character. A carriage return or newline in a ' +
+                          'query parameter reaches a response header, a log ' +
+                          'line or a directory query as a second instruction ' +
+                          'rather than as text.');
           }
         }
       }
       if (why) {
         log.warn('validation: refused a request to ' + req.method + ' ' +
-                 (req.path || req.url) + ' — ' + why.code + ' on "' + why.field + '".');
-        errorCodes.mark(res, code === 'STS-HTTP-0010' ? 'STS-HTTP-0010' : 'STS-HTTP-0011');
+                 (req.path || req.url) + ' — ' + why.code + ' on "' +
+                 why.field + '".');
+        errorCodes.mark(res,
+                        code === 'STS-HTTP-0010' ? 'STS-HTTP-0010' :
+                        'STS-HTTP-0011');
         res.status(400).type('text/plain').send(
           'Bad Request: ' + why.detail + '\n\n' +
           'This is refused before any endpoint sees it, in development mode ' +
@@ -684,7 +724,8 @@ function guard() {
         return undefined;
       }
     }
-    log.debug("Leaving the validation guard. " + keys.length + " parameter(s) passed.");
+    log.debug("Leaving the validation guard. " + keys.length + " " +
+        "parameter(s) passed.");
     return next();
   };
 }
@@ -756,9 +797,11 @@ function parseXml(xml, what, opts) {
   try {
     const parser = new DOMParser({
       onError: function (level, message) {
+        log.debug("Entering onError().");
         if (level === 'error' || level === 'fatalError') {
           errors.push(String(message));
         }
+        log.debug("Leaving onError().");
       }
     });
     doc = parser.parseFromString(text, 'text/xml');
@@ -777,7 +820,8 @@ function parseXml(xml, what, opts) {
   if (!doc || !doc.documentElement) {
     log.debug("Leaving parseXml(). No document element.");
     return refusal('malformed', label,
-                   'the ' + label + ' parsed to nothing. It carries no root element.');
+                   'the ' + label + ' parsed to nothing. It carries no root ' +
+                                    'element.');
   }
   log.debug("Leaving parseXml(). Read <" + doc.documentElement.nodeName + ">.");
   return { ok: true, value: doc };
@@ -834,7 +878,8 @@ function inflate(buf, what, opts) {
     // inflate past the ceiling. `code` tells them apart for a caller that
     // cares — ERR_BUFFER_TOO_LARGE is the bomb.
     log.debug("Leaving inflate(). " + (e && e.code ? e.code : 'failed') + ".");
-    return refusal(e && e.code === 'ERR_BUFFER_TOO_LARGE' ? 'too-large' : 'not-deflated',
+    return refusal(e && e.code === 'ERR_BUFFER_TOO_LARGE' ? 'too-large' :
+                   'not-deflated',
                    label,
                    e && e.code === 'ERR_BUFFER_TOO_LARGE'
                      ? 'the ' + label + ' inflates past ' + max + ' bytes. A ' +
@@ -892,13 +937,16 @@ const base64url = z.string().min(1).max(CAP.TOKEN)
 // becomes script in somebody's browser, and this service puts caller-supplied
 // URIs into links and Location headers on a dozen pages.
 // ---------------------------------------------------------------------------
-const DANGEROUS_SCHEMES = ['javascript:', 'data:', 'vbscript:', 'file:', 'blob:'];
+const DANGEROUS_SCHEMES = ['javascript:', 'data:', 'vbscript:', 'file:',
+                           'blob:'];
 
 const uri = z.string().min(1).max(CAP.URI).refine(function (value) {
   let parsed = null;
   try {
     parsed = new URL(value);
   } catch (e) {
+    log.debug("Caught in a callback in module scope: " +
+              ((e && e.message) || e));
     // Not a URL at all. The refusal is the answer; the parse error itself says
     // nothing a caller can act on beyond "it did not parse".
     return false;
@@ -921,6 +969,8 @@ const httpUri = z.string().min(1).max(CAP.URI).refine(function (value) {
   try {
     parsed = new URL(value);
   } catch (e) {
+    log.debug("Caught in a callback in module scope: " +
+              ((e && e.message) || e));
     // Not a URL; refused for the same reason as `uri` above.
     return false;
   }
@@ -962,12 +1012,16 @@ const flag = z.enum(['true', 'false', 'on', 'off', '1', '0', 'yes', 'no']);
 // parameter is. Coercion is right here and wrong for most things: the value is
 // unambiguously meant to be a number and there is no second reading of "300".
 function integer(min, max) {
+  log.debug("Entering integer().");
+  log.debug("Leaving integer().");
   return z.coerce.number().int().min(min).max(max);
 }
 
 // A value from a closed set this service defines. A thin wrapper so that call
 // sites read as declarations rather than as zod.
 function oneOf(values) {
+  log.debug("Entering oneOf().");
+  log.debug("Leaving oneOf().");
   return z.enum(values);
 }
 
@@ -976,6 +1030,8 @@ function oneOf(values) {
 // greppable: every repeatable parameter in this service is one call to this,
 // and `flatten()` above keys its whole behaviour off the array-ness this makes.
 function repeatable(inner) {
+  log.debug("Entering repeatable().");
+  log.debug("Leaving repeatable().");
   return z.array(inner);
 }
 
@@ -1007,6 +1063,8 @@ function repeatable(inner) {
 // all, which is true of very little that arrives from a browser.
 // ---------------------------------------------------------------------------
 function opt(inner) {
+  log.debug("Entering opt().");
+  log.debug("Leaving opt().");
   return z.union([z.literal(''), inner]).optional();
 }
 
@@ -1021,7 +1079,8 @@ function report() {
     unconditional: true,
     modeIndependent: 'Shape is refused in development and product alike. ' +
                      'Existence and credentials remain with mode.js.',
-    repeatedParameters: 'refused unless the schema declares the parameter repeatable',
+    repeatedParameters: 'refused unless the schema declares the parameter ' +
+                        'repeatable',
     unknownParameters: 'stripped, as RFC 6749 section 3.1 requires',
     controlCharacters: 'refused everywhere; tab, newline and carriage return ' +
                        'are allowed in body fields only',

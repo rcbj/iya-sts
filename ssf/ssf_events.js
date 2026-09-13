@@ -158,10 +158,12 @@ const SSF_EVENTS = [
           'delivery path, so a 202 from the receiver\'s push endpoint (or a ' +
           'poll that returns it) is the first evidence the pipe works.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const payload = {};
       if (values && typeof values.state === 'string' && values.state !== '') {
         payload.state = values.state;
       }
+      log.debug("Leaving generate().");
       return payload;
     }
   },
@@ -184,6 +186,7 @@ const SSF_EVENTS = [
           'paused at the transmitter looks exactly like a service where ' +
           'nothing has happened lately.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const payload = {
         status: STATUSES.indexOf(asked.status) >= 0 ? asked.status : 'enabled'
@@ -191,6 +194,7 @@ const SSF_EVENTS = [
       if (typeof asked.reason === 'string' && asked.reason !== '') {
         payload.reason = asked.reason;
       }
+      log.debug("Leaving generate().");
       return payload;
     }
   }
@@ -265,6 +269,8 @@ const CAEP_COMMON_MEMBERS = [
 // draws them in this order, and a table whose columns move between rows is
 // harder to read than one with a column too many.
 function withCommon(members) {
+  log.debug("Entering withCommon().");
+  log.debug("Leaving withCommon().");
   return (members || []).concat(CAEP_COMMON_MEMBERS);
 }
 
@@ -302,6 +308,8 @@ const CAEP_EVENTS = [
           'subject is a COMPLEX one, the revocation applies to any session ' +
           'matching every part of it at once.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -335,6 +343,7 @@ const CAEP_EVENTS = [
           'did not expect. This service emits one on every sign-in unless ' +
           'caep.autoEmit is off.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const payload = {};
       if (typeof asked.fp_ua === 'string' && asked.fp_ua !== '') {
@@ -349,6 +358,7 @@ const CAEP_EVENTS = [
       if (typeof asked.ext_id === 'string' && asked.ext_id !== '') {
         payload.ext_id = asked.ext_id;
       }
+      log.debug("Leaving generate().");
       return payload;
     }
   },
@@ -376,6 +386,7 @@ const CAEP_EVENTS = [
           'request is answered from a session that already existed, which ' +
           'is exactly single sign-on.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const payload = {};
       if (typeof asked.fp_ua === 'string' && asked.fp_ua !== '') {
@@ -384,6 +395,7 @@ const CAEP_EVENTS = [
       if (typeof asked.ext_id === 'string' && asked.ext_id !== '') {
         payload.ext_id = asked.ext_id;
       }
+      log.debug("Leaving generate().");
       return payload;
     }
   },
@@ -407,11 +419,13 @@ const CAEP_EVENTS = [
           'have to wait for a refresh to find out that somebody left the ' +
           'group that authorises them.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const claims = (asked.claims && typeof asked.claims === 'object' &&
                       !Array.isArray(asked.claims))
         ? asked.claims
         : { groups: ['everyone'] };
+      log.debug("Leaving generate().");
       return { claims: claims };
     }
   },
@@ -456,6 +470,7 @@ const CAEP_EVENTS = [
           'to establish, and it does change what that session should be ' +
           'allowed to do next.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const payload = {
         credential_type: typeof asked.credential_type === 'string' &&
@@ -469,6 +484,7 @@ const CAEP_EVENTS = [
             payload[name] = asked[name];
           }
         });
+      log.debug("Leaving generate().");
       return payload;
     }
   },
@@ -508,6 +524,7 @@ const CAEP_EVENTS = [
           'session carried forward past the window its step-up was good ' +
           'for, both lower assurance without anybody signing in again.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const payload = {
         namespace: typeof asked.namespace === 'string' &&
@@ -524,6 +541,7 @@ const CAEP_EVENTS = [
       if (['increase', 'decrease'].indexOf(asked.change_direction) >= 0) {
         payload.change_direction = asked.change_direction;
       }
+      log.debug("Leaving generate().");
       return payload;
     }
   },
@@ -554,8 +572,10 @@ const CAEP_EVENTS = [
           'unaffected and a receiver cannot tell that from a subject ' +
           'naming only them.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const allowed = ['compliant', 'not-compliant'];
+      log.debug("Leaving generate().");
       return {
         previous_status: allowed.indexOf(asked.previous_status) >= 0
           ? asked.previous_status : 'compliant',
@@ -598,6 +618,7 @@ const CAEP_EVENTS = [
           'a reason and why a receiver is expected to weigh it rather than ' +
           'act on it.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const levels = ['LOW', 'MEDIUM', 'HIGH'];
       const payload = {
@@ -613,6 +634,7 @@ const CAEP_EVENTS = [
       if (typeof asked.risk_reason === 'string' && asked.risk_reason !== '') {
         payload.risk_reason = asked.risk_reason;
       }
+      log.debug("Leaving generate().");
       return payload;
     }
   }
@@ -713,6 +735,8 @@ const RISC_EVENTS = [
           'the person may never comply. What a receiver learns is that this ' +
           'provider no longer trusts what it currently holds.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -730,6 +754,8 @@ const RISC_EVENTS = [
           'whole of its meaning — a disabled account may come back, and ' +
           'this one may not.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -755,11 +781,13 @@ const RISC_EVENTS = [
           'ordinary account-takeover signal, and the pair it forms with ' +
           'account-enabled is what makes it different from a purge.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const payload = {};
       if (typeof asked.reason === 'string' && asked.reason !== '') {
         payload.reason = asked.reason;
       }
+      log.debug("Leaving generate().");
       return payload;
     }
   },
@@ -775,6 +803,8 @@ const RISC_EVENTS = [
           'account-disabled and ignores this one has locked somebody out ' +
           'permanently on the strength of an incident that was resolved.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -805,6 +835,7 @@ const RISC_EVENTS = [
           'where that address is merely a username may not — it sends ' +
           'recovery-information-changed instead.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
       const payload = {};
       // **IT READS THE SPECIFICATION'S SPELLING AND ONLY THAT ONE, AND
@@ -818,6 +849,7 @@ const RISC_EVENTS = [
       if (typeof asked['new-value'] === 'string' && asked['new-value']) {
         payload['new-value'] = asked['new-value'];
       }
+      log.debug("Leaving generate().");
       return payload;
     }
   },
@@ -837,6 +869,8 @@ const RISC_EVENTS = [
           'was compromised. It is the whole argument for keying on ' +
           'iss_sub rather than on an email address.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -862,7 +896,9 @@ const RISC_EVENTS = [
           'on it differently by type: a compromised password is a reset, ' +
           'and a compromised hardware key is a revocation.',
     generate: function (values) {
+      log.debug("Entering generate().");
       const asked = values || {};
+      log.debug("Leaving generate().");
       return {
         credential_type: typeof asked.credential_type === 'string' &&
           asked.credential_type !== '' ? asked.credential_type : 'password'
@@ -883,6 +919,8 @@ const RISC_EVENTS = [
           'be sent about an account which has opted OUT, because without it ' +
           'a receiver would never learn that one came back.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -899,6 +937,8 @@ const RISC_EVENTS = [
           'opting out the moment they take an account over and silencing ' +
           'the very events that would report them.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -916,6 +956,8 @@ const RISC_EVENTS = [
           'ignores, because there is no unknown-event-type error in this ' +
           'protocol.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -933,6 +975,8 @@ const RISC_EVENTS = [
           'it would leave a receiver waiting for signals that stopped ' +
           'without notice.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -949,6 +993,8 @@ const RISC_EVENTS = [
           'the recovery channel takes over, and the transmitter cannot tell ' +
           'which. A receiver is expected to weigh it, not act on it.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -967,6 +1013,8 @@ const RISC_EVENTS = [
           'WHICH information moved, deliberately: that would be publishing ' +
           'somebody\'s recovery address to every receiver on the stream.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   },
@@ -991,6 +1039,8 @@ const RISC_EVENTS = [
           'mean different things, so this is the pair to check when a ' +
           'receiver ends more sessions than anybody intended.',
     generate: function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
       return {};
     }
   }
@@ -1435,6 +1485,7 @@ function signSet(claims, options) {
   log.debug('Entering signSet().');
   const settings = options || {};
   const alg = settings.algorithm || signingAlgorithm();
+  log.debug("Leaving signSet().");
   return signJwtAsAsync(claims, alg, null, { session: settings.session,
     // RFC 8417 section 2.2's media type, and it is a SHOULD that behaves
     // like a MUST: a receiver that dispatches on `typ` — and several do —
@@ -1564,14 +1615,14 @@ function publicKeyForHeader(header) {
   // ---------------------------------------------------------------------
   // **ON THE `kid`, AND ON THE ALGORITHM ONLY WHERE THERE IS NO `kid`
   // (2026-09-12).** This read `alg === 'RS256' || kid === STS.kid`, so EVERY
-  // RS256 SET — including one a foreign transmitter signed and labelled with its
-  // own kid — was checked against this service's RSA key and reported
+  // RS256 SET — including one a foreign transmitter signed and labelled with
+  // its own kid — was checked against this service's RSA key and reported
   // "invalid". That is a false statement about somebody else's signature: the
   // honest answer is the sentence `verifySet()` gives for a key this service
   // does not hold, *not verifiable here*, and a receiver page that says
-  // "invalid" teaches whoever reads it that the other transmitter is broken.
-  // A SET that names no kid is still tried against the RSA key, because that
-  // is the only key it could be claiming.
+  // "invalid" teaches whoever reads it that the other transmitter is broken. A
+  // SET that names no kid is still tried against the RSA key, because that is
+  // the only key it could be claiming.
   // ---------------------------------------------------------------------
   if (kid ? kid === STS.kid : alg === 'RS256') {
     // The RSA key is not in the list below — it is `STS.privateKey`/`STS.kid`,

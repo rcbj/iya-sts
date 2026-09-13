@@ -66,6 +66,8 @@ const TYPE = model.TYPE;
 // PATHS.
 // ---------------------------------------------------------------------------
 function segmentsOf(path) {
+  log.debug("Entering segmentsOf().");
+  log.debug("Leaving segmentsOf().");
   return String(path || '').split('.').filter(function (one) {
     return one.length > 0;
   });
@@ -115,63 +117,81 @@ function nodeAt(policy, path) {
 // every caller of the one-argument form meant before policy sets were
 // editable.
 function kindAt(path, node) {
+  log.debug("Entering kindAt().");
   const segments = segmentsOf(path);
   if (node && node.kind === 'PolicySet') {
+    log.debug("Leaving kindAt().");
     return 'policySet';
   }
   if (node && (node.kind === 'PolicyIdReference' ||
                node.kind === 'PolicySetIdReference')) {
+    log.debug("Leaving kindAt().");
     return 'reference';
   }
   if (!segments.length) {
+    log.debug("Leaving kindAt().");
     return 'policy';
   }
   const last = segments[segments.length - 1];
   const previous = segments.length > 1 ? segments[segments.length - 2] : '';
   if (last === 'target') {
+    log.debug("Leaving kindAt().");
     return 'target';
   }
   if (last === 'condition' || last === 'expression') {
+    log.debug("Leaving kindAt().");
     return 'expression';
   }
   if (previous === 'rules') {
+    log.debug("Leaving kindAt().");
     return 'rule';
   }
   if (previous === 'anyOf') {
+    log.debug("Leaving kindAt().");
     return 'anyOf';
   }
   if (previous === 'allOf') {
+    log.debug("Leaving kindAt().");
     return 'allOf';
   }
   if (previous === 'matches') {
+    log.debug("Leaving kindAt().");
     return 'match';
   }
   if (previous === 'args') {
+    log.debug("Leaving kindAt().");
     return 'expression';
   }
   if (previous === 'obligations' || previous === 'advice') {
+    log.debug("Leaving kindAt().");
     return 'obligation';
   }
   if (previous === 'assignments') {
+    log.debug("Leaving kindAt().");
     return 'assignment';
   }
   if (previous === 'variables') {
+    log.debug("Leaving kindAt().");
     return 'variable';
   }
   if (previous === 'children') {
+    log.debug("Leaving kindAt().");
     // A PolicySet's child, and the node above already answered the two cases
     // that are not a Policy. Without the node this is the safe answer: a
     // Policy offers rules, which is what a child of a set usually is.
     return 'policy';
   }
   if (previous === 'combinerParameters' || previous === 'parameters') {
+    log.debug("Leaving kindAt().");
     return 'combinerParameter';
   }
   if (previous === 'ruleCombinerParameters' ||
       previous === 'policyCombinerParameters' ||
       previous === 'policySetCombinerParameters') {
+    log.debug("Leaving kindAt().");
     return 'combinerParameterGroup';
   }
+  log.debug("Leaving kindAt().");
   return 'unknown';
 }
 
@@ -200,6 +220,8 @@ function enclosingPolicy(policy, path) {
 }
 
 function isPolicySet(node) {
+  log.debug("Entering isPolicySet().");
+  log.debug("Leaving isPolicySet().");
   return !!(node && node.kind === 'PolicySet');
 }
 
@@ -256,11 +278,15 @@ function applyFunctions() {
 }
 
 function shortName(uri) {
+  log.debug("Entering shortName().");
+  log.debug("Leaving shortName().");
   return String(uri).replace(/^urn:oasis:names:tc:xacml:[0-9.]+:function:/, '');
 }
 
 function shortType(uri) {
+  log.debug("Entering shortType().");
   const row = uri ? datatypes.typeOf(uri) : null;
+  log.debug("Leaving shortType().");
   return row ? row.name : (uri || 'any');
 }
 
@@ -269,29 +295,38 @@ function shortType(uri) {
 // has no case for is named by its kind, because a blank row in a tree is a
 // node somebody cannot select.
 function describeExpression(expression) {
+  log.debug("Entering describeExpression().");
   if (!expression) {
+    log.debug("Leaving describeExpression().");
     return 'nothing';
   }
   if (expression.kind === 'value') {
+    log.debug("Leaving describeExpression().");
     return '"' + expression.lexical + '" (' + shortType(expression.type) + ')';
   }
   if (expression.kind === 'designator') {
+    log.debug("Leaving describeExpression().");
     return expression.attributeId + ' from ' +
       categoryLabel(expression.category);
   }
   if (expression.kind === 'selector') {
+    log.debug("Leaving describeExpression().");
     return expression.path + ' in ' + categoryLabel(expression.category);
   }
   if (expression.kind === 'variableRef') {
+    log.debug("Leaving describeExpression().");
     return '$' + expression.variableId;
   }
   if (expression.kind === 'function') {
+    log.debug("Leaving describeExpression().");
     return shortName(expression.functionId) + ' (as a value)';
   }
   if (expression.kind === 'apply') {
+    log.debug("Leaving describeExpression().");
     return shortName(expression.functionId) + '(' +
       (expression.args || []).length + ')';
   }
+  log.debug("Leaving describeExpression().");
   return String(expression.kind);
 }
 
@@ -302,9 +337,11 @@ const COMMON_TYPES = [TYPE.STRING, TYPE.BOOLEAN, TYPE.INTEGER, TYPE.DOUBLE,
                       TYPE.ANYURI, TYPE.DATE, TYPE.DATETIME, TYPE.TIME];
 
 function typeMenu() {
+  log.debug("Entering typeMenu().");
   const rest = Object.keys(datatypes.TYPES).filter(function (uri) {
     return COMMON_TYPES.indexOf(uri) < 0;
   }).sort();
+  log.debug("Leaving typeMenu().");
   return COMMON_TYPES.concat(rest).map(function (uri) {
     return { uri: uri, label: shortType(uri) };
   });
@@ -388,6 +425,8 @@ const POLICY_ALG_MENU = [
 // Which menu a node's combining algorithm comes from. One function, so that
 // the page, the edit and the refusal cannot disagree about it.
 function algorithmMenuFor(node) {
+  log.debug("Entering algorithmMenuFor().");
+  log.debug("Leaving algorithmMenuFor().");
   return isPolicySet(node) ? POLICY_ALG_MENU : RULE_ALG_MENU;
 }
 
@@ -1083,7 +1122,8 @@ function applyEdit(policy, path, action, params) {
     if (given.contextSelectorId !== undefined) {
       node.contextSelectorId = String(given.contextSelectorId) || null;
     }
-    if (given.namespacePrefix !== undefined || given.namespaceUri !== undefined) {
+    if (given.namespacePrefix !== undefined ||
+        given.namespaceUri !== undefined) {
       // ONE BINDING AT A TIME, because a no-JavaScript console cannot grow a
       // row. A prefix with no URI REMOVES that binding, which is the only way
       // to take one away without a second control.
@@ -1178,9 +1218,12 @@ function applyEdit(policy, path, action, params) {
 // controls for it are <select>s with an explicit false, and a field that is
 // genuinely absent keeps what was there.
 function flagOf(given, current) {
+  log.debug("Entering flagOf().");
   if (given === undefined || given === null || given === '') {
+    log.debug("Leaving flagOf().");
     return !!current;
   }
+  log.debug("Leaving flagOf().");
   return given === true || given === 'true' || given === 'on' || given === '1';
 }
 
@@ -1196,25 +1239,31 @@ function renameVariableReferences(holder, from, to) {
   let count = 0;
 
   function walk(expression) {
+    log.debug("Entering walk().");
     if (!expression) {
+      log.debug("Leaving walk().");
       return;
     }
     if (expression.kind === 'variableRef' && expression.variableId === from) {
       expression.variableId = to;
       count += 1;
+      log.debug("Leaving walk().");
       return;
     }
     if (expression.kind === 'apply') {
       (expression.args || []).forEach(walk);
     }
+    log.debug("Leaving walk().");
   }
 
   function walkHolders(list) {
+    log.debug("Entering walkHolders().");
     (list || []).forEach(function (one) {
       (one.assignments || []).forEach(function (assignment) {
         walk(assignment.expression);
       });
     });
+    log.debug("Leaving walkHolders().");
   }
 
   Object.keys(holder.variables || {}).forEach(function (id) {
@@ -1239,24 +1288,30 @@ function renameVariableReferences(holder, from, to) {
 // be explained, rather than discovered later as a row whose buttons do
 // nothing.
 function checkVariableId(id) {
+  log.debug("Entering checkVariableId().");
   if (!id) {
+    log.debug("Leaving checkVariableId().");
     return null;
   }
   if (id.indexOf('.') >= 0) {
+    log.debug("Leaving checkVariableId().");
     return 'A variable name may not contain a dot in this editor. XACML ' +
            'allows one; this page addresses a node by a dotted path, so "' +
            id + '" would produce a row that cannot be edited or removed. ' +
            'The document itself would be valid — which is why this is ' +
            'refused here rather than by the validator.';
   }
+  log.debug("Leaving checkVariableId().");
   return null;
 }
 
 function newMatch(given) {
+  log.debug("Entering newMatch().");
   const matchId = given.matchId || (F1 + 'string-equal');
   const definition = functions.lookup(matchId);
   const type = definition && definition.args && definition.args.length === 2
     ? definition.args[0].type : TYPE.STRING;
+  log.debug("Leaving newMatch().");
   return {
     matchId: matchId,
     value: { kind: 'value', type: type,
@@ -1270,12 +1325,15 @@ function newMatch(given) {
 }
 
 function newExpression(action, given, inScope) {
+  log.debug("Entering newExpression().");
   if (action === 'set-expression-value') {
+    log.debug("Leaving newExpression().");
     return { ok: true, expression: { kind: 'value',
                                      type: given.type || TYPE.STRING,
                                      lexical: given.lexical || '' } };
   }
   if (action === 'set-expression-designator') {
+    log.debug("Leaving newExpression().");
     return { ok: true, expression: {
       kind: 'designator',
       category: given.category || model.CATEGORY.ACCESS_SUBJECT,
@@ -1284,6 +1342,7 @@ function newExpression(action, given, inScope) {
       issuer: null, mustBePresent: false } };
   }
   if (action === 'set-expression-selector') {
+    log.debug("Leaving newExpression().");
     return { ok: true, expression: {
       kind: 'selector',
       category: given.category || model.CATEGORY.RESOURCE,
@@ -1299,8 +1358,10 @@ function newExpression(action, given, inScope) {
   if (action === 'set-expression-function') {
     const named = given.functionId || (F1 + 'string-equal');
     if (!functions.lookup(named)) {
+      log.debug("Leaving newExpression().");
       return { ok: false, why: 'There is no function "' + named + '".' };
     }
+    log.debug("Leaving newExpression().");
     // A FUNCTION AS A VALUE, not a call: `<Function FunctionId="..."/>` is
     // what the first argument of `any-of` or `map` is, and applying it there
     // instead is the commonest way to write a higher-order function wrongly.
@@ -1311,6 +1372,7 @@ function newExpression(action, given, inScope) {
     const chosen = given.variableId ||
                    (available.length ? available[0].id : '');
     if (!chosen) {
+      log.debug("Leaving newExpression().");
       // Cannot happen through the console — `optionsAt()` withdraws the option
       // where there is nothing to name — and can happen through /admin-api,
       // which is not the menu.
@@ -1323,18 +1385,21 @@ function newExpression(action, given, inScope) {
       return one.id === chosen;
     }).length > 0;
     if (!known) {
+      log.debug("Leaving newExpression().");
       return { ok: false,
                why: 'This policy defines no $' + chosen + '. A ' +
                     'VariableReference may only name a VariableDefinition on ' +
                     'the SAME policy — section 5.24 — and the document would ' +
                     'not load.' };
     }
+    log.debug("Leaving newExpression().");
     return { ok: true, expression: { kind: 'variableRef',
                                      variableId: chosen } };
   }
   const functionId = given.functionId || (F1 + 'string-equal');
   const definition = functions.lookup(functionId);
   if (!definition) {
+    log.debug("Leaving newExpression().");
     return { ok: false, why: 'There is no function "' + functionId + '".' };
   }
   // ARGUMENTS ARE PRE-BUILT TO THE FUNCTION'S DECLARED ARITY AND TYPES, so the
@@ -1369,6 +1434,7 @@ function newExpression(action, given, inScope) {
     return { kind: 'value', type: parameter.type || TYPE.STRING,
              lexical: '' };
   });
+  log.debug("Leaving newExpression().");
   return { ok: true, expression: { kind: 'apply', functionId: functionId,
                                    args: args } };
 }
@@ -1386,12 +1452,16 @@ function tree(policy) {
   const rows = [];
 
   function push(path, depth, kind, label, detail) {
+    log.debug("Entering push().");
     rows.push({ path: path, depth: depth, kind: kind, label: label,
                 detail: detail || '' });
+    log.debug("Leaving push().");
   }
 
   function walkExpression(expression, path, depth, label) {
+    log.debug("Entering walkExpression().");
     if (!expression) {
+      log.debug("Leaving walkExpression().");
       return;
     }
     if (expression.kind === 'apply') {
@@ -1401,6 +1471,7 @@ function tree(policy) {
       (expression.args || []).forEach(function (argument, index) {
         walkExpression(argument, path + '.args.' + index, depth + 1, '');
       });
+      log.debug("Leaving walkExpression().");
       return;
     }
     if (expression.kind === 'value') {
@@ -1408,6 +1479,7 @@ function tree(policy) {
            shortType(expression.type) +
            (expression.xpathCategory
               ? ', over ' + categoryLabel(expression.xpathCategory) : ''));
+      log.debug("Leaving walkExpression().");
       return;
     }
     if (expression.kind === 'designator') {
@@ -1416,6 +1488,7 @@ function tree(policy) {
            categoryLabel(expression.category) +
            (expression.issuer ? ', issued by ' + expression.issuer : '') +
            (expression.mustBePresent ? ', must be present' : ''));
+      log.debug("Leaving walkExpression().");
       return;
     }
     // AN AttributeSelector IS DRAWN AS ITS PATH, because that is what it is —
@@ -1435,23 +1508,29 @@ function tree(policy) {
            (expression.mustBePresent ? ', must be present' : '') +
            (bindings.length
               ? ', ' + bindings.length + ' namespace binding(s)' : ''));
+      log.debug("Leaving walkExpression().");
       return;
     }
     if (expression.kind === 'variableRef') {
       push(path, depth, 'expression', label + '$' + expression.variableId, '');
+      log.debug("Leaving walkExpression().");
       return;
     }
     if (expression.kind === 'function') {
       push(path, depth, 'expression',
            label + shortName(expression.functionId),
            'a function used as a VALUE — not applied here');
+      log.debug("Leaving walkExpression().");
       return;
     }
     push(path, depth, 'expression', label + expression.kind, '');
+    log.debug("Leaving walkExpression().");
   }
 
   function walkTarget(target, base, depth) {
+    log.debug("Entering walkTarget().");
     if (!target || !target.anyOf || !target.anyOf.length) {
+      log.debug("Leaving walkTarget().");
       return;
     }
     push(base + '.target', depth, 'target', 'Target',
@@ -1477,6 +1556,7 @@ function tree(policy) {
         });
       });
     });
+    log.debug("Leaving walkTarget().");
   }
 
   // An obligation or an advice, and the ATTRIBUTE ASSIGNMENTS under it — which
@@ -1485,6 +1565,7 @@ function tree(policy) {
   // be seen, edited or removed: the only way to correct a mistyped one was to
   // remove the whole obligation and build it again.
   function walkHolders(list, base, depth, what) {
+    log.debug("Entering walkHolders().");
     (list || []).forEach(function (one, i) {
       const path = base + '.' + (what === 'Advice' ? 'advice' : 'obligations') +
         '.' + i;
@@ -1496,12 +1577,14 @@ function tree(policy) {
         push(assignmentPath, depth + 1, 'assignment', assignment.attributeId,
              (assignment.category
                 ? 'in ' + categoryLabel(assignment.category) + ', ' : '') +
-             (assignment.issuer ? 'issued by ' + assignment.issuer + ', ' : '') +
+             (assignment.issuer ? 'issued by ' + assignment.issuer + ', ' :
+              '') +
              'value: ' + describeExpression(assignment.expression));
         walkExpression(assignment.expression,
                        assignmentPath + '.expression', depth + 2, '');
       });
     });
+    log.debug("Leaving walkHolders().");
   }
 
   // The four combiner-parameter elements, which are SHOWN AND REMOVABLE AND
@@ -1514,6 +1597,7 @@ function tree(policy) {
   // `ou=policies`), and an element the editor did not draw would be one the
   // person could neither see nor delete while the writer faithfully kept it.
   function walkCombinerParameters(node, base, depth) {
+    log.debug("Entering walkCombinerParameters().");
     (node.combinerParameters || []).forEach(function (one, i) {
       push(base + '.combinerParameters.' + i, depth, 'combinerParameter',
            'CombinerParameter ' + one.name,
@@ -1536,6 +1620,7 @@ function tree(policy) {
           });
         });
       });
+    log.debug("Leaving walkCombinerParameters().");
   }
 
   // ONE WALK FOR A POLICY AND A POLICY SET, recursing through the second's
@@ -1544,6 +1629,7 @@ function tree(policy) {
   // Rule the writer would discard, and no way to reach a single thing inside
   // the document.
   function walkPolicy(node, base, depth) {
+    log.debug("Entering walkPolicy().");
     const set = isPolicySet(node);
     push(base, depth, set ? 'policySet' : 'policy', node.id,
          shortAlgorithm(node.combiningAlgId) + ', ' +
@@ -1601,6 +1687,7 @@ function tree(policy) {
     walkCombinerParameters(node, base, depth + 1);
     walkHolders(node.obligations, base, depth + 1, 'Obligation');
     walkHolders(node.advice, base, depth + 1, 'Advice');
+    log.debug("Leaving walkPolicy().");
   }
 
   walkPolicy(policy, '', 0);
@@ -1634,27 +1721,34 @@ function xpathVersionGaps(policy) {
   const gaps = [];
 
   function usesXPath(node) {
+    log.debug("Entering usesXPath().");
     let found = false;
 
     function walkExpression(expression) {
+      log.debug("Entering walkExpression().");
       if (!expression || found) {
+        log.debug("Leaving walkExpression().");
         return;
       }
       if (expression.kind === 'selector') {
         found = true;
+        log.debug("Leaving walkExpression().");
         return;
       }
       if (expression.kind === 'value' &&
           model.canonicalType(expression.type) === TYPE.XPATH_EXPRESSION) {
         found = true;
+        log.debug("Leaving walkExpression().");
         return;
       }
       if (expression.kind === 'apply') {
         (expression.args || []).forEach(walkExpression);
       }
+      log.debug("Leaving walkExpression().");
     }
 
     function walkTarget(target) {
+      log.debug("Entering walkTarget().");
       ((target || {}).anyOf || []).forEach(function (anyOf) {
         (anyOf.allOf || []).forEach(function (allOf) {
           (allOf.matches || []).forEach(function (match) {
@@ -1663,14 +1757,17 @@ function xpathVersionGaps(policy) {
           });
         });
       });
+      log.debug("Leaving walkTarget().");
     }
 
     function walkHolders(list) {
+      log.debug("Entering walkHolders().");
       (list || []).forEach(function (one) {
         (one.assignments || []).forEach(function (assignment) {
           walkExpression(assignment.expression);
         });
       });
+      log.debug("Leaving walkHolders().");
     }
 
     walkTarget(node.target);
@@ -1685,11 +1782,14 @@ function xpathVersionGaps(policy) {
     });
     walkHolders(node.obligations);
     walkHolders(node.advice);
+    log.debug("Leaving usesXPath().");
     return found;
   }
 
   function visit(node) {
+    log.debug("Entering visit().");
     if (!node) {
+      log.debug("Leaving visit().");
       return;
     }
     if (usesXPath(node) && !node.xpathVersion) {
@@ -1702,6 +1802,7 @@ function xpathVersionGaps(policy) {
         }
       });
     }
+    log.debug("Leaving visit().");
   }
 
   visit(policy);
@@ -1714,13 +1815,17 @@ function xpathVersionGaps(policy) {
 // rather than one regular expression asked to do both — the two families of
 // URI differ in more than their last segment.
 function shortAlgorithm(uri) {
+  log.debug("Entering shortAlgorithm().");
+  log.debug("Leaving shortAlgorithm().");
   return String(uri || '').replace(/^.*combining-algorithm:/, '') || '?';
 }
 
 function categoryLabel(uri) {
+  log.debug("Entering categoryLabel().");
   const found = CATEGORY_MENU.filter(function (one) {
     return one.uri === uri;
   })[0];
+  log.debug("Leaving categoryLabel().");
   return found ? found.label : uri;
 }
 

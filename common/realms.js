@@ -63,9 +63,9 @@
 // SPIFFE's four. Those are shared, and each family that can be realm-aware on
 // them is realm-aware by a DIFFERENT discriminator — the Kerberos realm name
 // inside the request, the base DN a search names, the trust domain in an SVID.
-// `kerberos/CLAUDE.md`, `ldap/CLAUDE.md` and `spiffe/CLAUDE.md` carry those; the
-// index of which family is realm-aware how is in `realmSupport()` at the foot
-// of this file, so that a reader can ask this service rather than guess.
+// `kerberos/CLAUDE.md`, `ldap/CLAUDE.md` and `spiffe/CLAUDE.md` carry those;
+// the index of which family is realm-aware how is in `realmSupport()` at the
+// foot of this file, so that a reader can ask this service rather than guess.
 // ---------------------------------------------------------------------------
 
 const { AsyncLocalStorage } = require('async_hooks');
@@ -73,8 +73,8 @@ const bunyan = require('bunyan');
 // config.js is required in the ORDINARY direction and it is safe: that module
 // requires only bunyan and config_file.js, so it cannot reach back here. The
 // dependency the other way — config.js needing to know a realm's overrides — is
-// an INVERTED HOOK filled at the foot of this file, which is rule 3e's shape and
-// passes rule 3e's test: a require in that direction would close a cycle.
+// an INVERTED HOOK filled at the foot of this file, which is rule 3e's shape
+// and passes rule 3e's test: a require in that direction would close a cycle.
 const config = require('./config');
 // The registry of failure codes, a LEAF. NOT audit.js, which requires this
 // file: a failure here is logged with `errorCodes.tag()`, and a refusal handed
@@ -89,9 +89,11 @@ const log = bunyan.createLogger({ name: 'sts-realms' });
 // later push must not overwrite it: the first sentence is the one a caller
 // shows first, and the code should name the same condition.
 function firstCode(target, code) {
+  log.debug("Entering firstCode().");
   if (code && !errorCodes.codeOf(target)) {
     errorCodes.mark(target, code);
   }
+  log.debug("Leaving firstCode().");
   return target;
 }
 config.registerLogger(log);
@@ -130,20 +132,28 @@ const realms = new Map();
 const als = new AsyncLocalStorage();
 
 function current() {
+  log.debug("Entering current().");
+  log.debug("Leaving current().");
   return als.getStore() || DEFAULT_REALM;
 }
 
 function currentId() {
+  log.debug("Entering currentId().");
+  log.debug("Leaving currentId().");
   return current().id;
 }
 
 function isDefault(realm) {
+  log.debug("Entering isDefault().");
+  log.debug("Leaving isDefault().");
   return (realm || current()).id === DEFAULT_ID;
 }
 
 // Run `fn` with `realm` as the ambient realm, for `fn` and for everything it
 // awaits, schedules or calls back into. The return value is fn's.
 function run(realm, fn) {
+  log.debug("Entering run().");
+  log.debug("Leaving run().");
   return als.run(realm || DEFAULT_REALM, fn);
 }
 
@@ -151,7 +161,9 @@ function run(realm, fn) {
 // handler, a gRPC method, a datagram listener — that are handed a function
 // rather than being called inside one.
 function bind(realm, fn) {
+  log.debug("Entering bind().");
   const captured = realm || DEFAULT_REALM;
+  log.debug("Leaving bind().");
   return function () {
     const args = arguments;
     const self = this;
@@ -176,6 +188,8 @@ function bind(realm, fn) {
 // find out whether a realm is the reason for something.
 // ---------------------------------------------------------------------------
 function active() {
+  log.debug("Entering active().");
+  log.debug("Leaving active().");
   return realms.size > 0 && config.value('realms.enabled');
 }
 
@@ -193,21 +207,29 @@ function active() {
 // segment is still what makes it impossible rather than merely refused.
 // ---------------------------------------------------------------------------
 function pathSegment() {
-  return String(config.value('realms.pathSegment') || '').replace(/^\/+|\/+$/g, '');
+  log.debug("Entering pathSegment().");
+  log.debug("Leaving pathSegment().");
+  return String(config.value('realms.pathSegment') || '').replace(/^\/+|\/+$/g,
+                                                                  '');
 }
 
 function prefixOf(realm) {
+  log.debug("Entering prefixOf().");
   const r = realm || current();
   if (r.id === DEFAULT_ID || !active()) {
+    log.debug("Leaving prefixOf().");
     return '';
   }
   const segment = pathSegment();
+  log.debug("Leaving prefixOf().");
   return '/' + (segment ? segment + '/' : '') + r.id;
 }
 
 // The prefix of whatever realm is ambient. THE function every URL builder
 // wants, and the reason `baseUrlOf()` could absorb this for eighty callers.
 function currentPrefix() {
+  log.debug("Entering currentPrefix().");
+  log.debug("Leaving currentPrefix().");
   return prefixOf(current());
 }
 
@@ -239,10 +261,11 @@ function href(path) {
 // and null otherwise — including for a path that opens with the SEGMENT and an
 // undefined realm. That case deliberately falls through to Express's own 404
 // rather than being answered here: `Cannot GET /realm/nope/oauth2/token` is
-// what this repository's own tests/vendored/sts_metadata.js uses to tell an unrouted path
-// from an endpoint legitimately answering 404, and a prettier refusal for
-// unknown realms would break that distinction for every path under the segment.
-// `GET /realms` is where somebody finds out what the realms actually are.
+// what this repository's own tests/vendored/sts_metadata.js uses to tell an
+// unrouted path from an endpoint legitimately answering 404, and a prettier
+// refusal for unknown realms would break that distinction for every path under
+// the segment. `GET /realms` is where somebody finds out what the realms
+// actually are.
 // ---------------------------------------------------------------------------
 function matchPath(pathname) {
   log.debug("Entering matchPath().");
@@ -276,19 +299,26 @@ function matchPath(pathname) {
 // READING THE REGISTRY.
 // ---------------------------------------------------------------------------
 function get(id) {
+  log.debug("Entering get().");
   if (!id || id === DEFAULT_ID) {
+    log.debug("Leaving get().");
     return DEFAULT_REALM;
   }
+  log.debug("Leaving get().");
   return realms.get(String(id)) || null;
 }
 
 // Every realm, the default one first. It is prepended rather than stored so
 // that it cannot be edited out of the table by anything that iterates.
 function list() {
+  log.debug("Entering list().");
+  log.debug("Leaving list().");
   return [DEFAULT_REALM].concat(Array.from(realms.values()));
 }
 
 function count() {
+  log.debug("Entering count().");
+  log.debug("Leaving count().");
   return realms.size + 1;
 }
 
@@ -322,12 +352,18 @@ const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,30}$/;
 // created long after startup, so asking the router at that moment is asking it
 // when the answer is complete. It is the same decision /admin/sts-metadata
 // makes about the same data, and for the same reason.
-let reservedProvider = function () { return []; };
+let reservedProvider = function () {
+  log.debug("Entering reservedProvider().");
+  log.debug("Leaving reservedProvider().");
+  return [];
+};
 
 function reserve(provider) {
+  log.debug("Entering reserve().");
   reservedProvider = typeof provider === 'function'
     ? provider
     : function () { return provider || []; };
+  log.debug("Leaving reserve().");
 }
 
 function reserved() {
@@ -341,7 +377,8 @@ function reserved() {
     // shape must not stop a realm from being created — it must stop the
     // refusal being silent, which is what this line does.
     log.warn(errorCodes.tag('STS-CORE-0017') +
-             'realms: could not read the router to reserve realm ids: ' + e.message);
+             'realms: could not read the router to reserve realm ids: ' +
+             e.message);
   }
   log.debug("Leaving reserved().");
   return paths;
@@ -360,7 +397,8 @@ function validateId(id) {
     return errors;
   }
   if (value === DEFAULT_ID) {
-    errors.push('"' + DEFAULT_ID + '" is the built-in realm and cannot be redefined.');
+    errors.push('"' + DEFAULT_ID + '" is the built-in realm and cannot be ' +
+                                   'redefined.');
     firstCode(errors, 'STS-CORE-0010');
   }
   if (reserved().indexOf(value) >= 0) {
@@ -484,8 +522,8 @@ const NAMED_BY_REALM = [
 // binds every time, explained by `spiffe_server.js`'s refusal but reached by
 // nobody's choice. Two ways out were considered:
 //
-//   * DISTINCT PORTS per realm. Rejected: `spiffe/CLAUDE.md` argues that a realm
-//     is told apart by an ADDRESS with the ports unchanged, so a client
+//   * DISTINCT PORTS per realm. Rejected: `spiffe/CLAUDE.md` argues that a
+//     realm is told apart by an ADDRESS with the ports unchanged, so a client
 //     configured for :8092 reaches every realm where it expects to — and there
 //     is no port this file could pick that is guaranteed free on the host.
 //   * THE TCP LISTENERS OFF (port 0) until an operator gives the realm an
@@ -505,16 +543,36 @@ const NAMED_BY_REALM = [
 // of anything in it. `keepEmpty` is what lets an empty value be seeded at all.
 // ---------------------------------------------------------------------------
 const SEEDED_FOR_REALM = [
-  { key: 'spiffe.enabled', value: function () { return false; } },
+  { key: 'spiffe.enabled', value: function () {
+    log.debug("Entering value().");
+    log.debug("Leaving value().");
+    return false;
+  } },
   { key: 'spiffe.workloadSocket', value: function (id) {
+      log.debug("Entering value().");
+      log.debug("Leaving value().");
       return socketPathFor('spiffe.workloadSocket', id);
     } },
   { key: 'spiffe.serverSocket', value: function (id) {
+      log.debug("Entering value().");
+      log.debug("Leaving value().");
       return socketPathFor('spiffe.serverSocket', id);
     } },
-  { key: 'spiffe.workloadPort', value: function () { return 0; } },
-  { key: 'spiffe.serverPort', value: function () { return 0; } },
-  { key: 'spiffe.adminIds', value: function () { return ''; },
+  { key: 'spiffe.workloadPort', value: function () {
+    log.debug("Entering value().");
+    log.debug("Leaving value().");
+    return 0;
+  } },
+  { key: 'spiffe.serverPort', value: function () {
+    log.debug("Entering value().");
+    log.debug("Leaving value().");
+    return 0;
+  } },
+  { key: 'spiffe.adminIds', value: function () {
+    log.debug("Entering value().");
+    log.debug("Leaving value().");
+    return '';
+  },
     keepEmpty: true }
 ];
 
@@ -524,16 +582,20 @@ const SEEDED_FOR_REALM = [
 // own layout does with a second agent and because a client is pointed at a
 // directory far more often than at a file.
 function socketPathFor(key, id) {
+  log.debug("Entering socketPathFor().");
   const base = run(DEFAULT_REALM, function () {
     return String(config.value(key) || '');
   });
   if (!base) {
+    log.debug("Leaving socketPathFor().");
     return '';
   }
   const cut = base.lastIndexOf('/');
   if (cut < 0) {
+    log.debug("Leaving socketPathFor().");
     return id + '-' + base;
   }
+  log.debug("Leaving socketPathFor().");
   return base.slice(0, cut) + '/' + id + base.slice(cut);
 }
 
@@ -573,7 +635,8 @@ function create(spec) {
   const errors = validateId(id);
   if (errors.length) {
     log.debug("Leaving create(). Refused: " + errors.join(' '));
-    return errorCodes.mark({ ok: false, errors: errors }, errorCodes.codeOf(errors));
+    return errorCodes.mark({ ok: false, errors: errors },
+                           errorCodes.codeOf(errors));
   }
   const overrideErrors = checkOverrides((spec || {}).overrides);
   if (overrideErrors.length) {
@@ -614,7 +677,9 @@ function update(id, changes) {
   const realm = realms.get(String(id || ''));
   if (!realm) {
     log.debug("Leaving update(). No such realm.");
-    return errorCodes.mark({ ok: false, errors: ['No realm called "' + id + '" is defined.'] },
+    return errorCodes.mark({ ok: false,
+                             errors: ['No realm called "' + id + '" ' +
+        'is defined.'] },
                            'STS-CORE-0013');
   }
   const spec = changes || {};
@@ -673,20 +738,24 @@ function update(id, changes) {
 // exists: the reading end and the writing end of one rule, written separately,
 // disagreed within the hour.
 function checkRealmOverride(key, raw) {
+  log.debug("Entering checkRealmOverride().");
   if (String(key || '').indexOf('realms.') === 0) {
+    log.debug("Leaving checkRealmOverride().");
     return '"' + key + '" cannot be set on one realm: it is what decides ' +
       'whether realms exist and where they are found, so a realm carrying it ' +
-      'would be changing how it was reached half way through the request that ' +
-      'reached it. Set it on the service as a whole — /admin/oauth2, or POST ' +
-      '/admin-api/config/set.';
+      'would be changing how it was reached half way through the request ' +
+      'that reached it. Set it on the service as a whole — /admin/oauth2, or ' +
+      'POST /admin-api/config/set.';
   }
   if (config.isPerProcess(key)) {
+    log.debug("Leaving checkRealmOverride().");
     return '"' + key + '" cannot be set on one realm: it is a property of ' +
       'this OS PROCESS rather than of how a realm behaves, so a realm ' +
       'carrying it would be setting it for every other realm as well. Set it ' +
       'on the service as a whole — /admin/config, or POST ' +
       '/admin-api/config/set.';
   }
+  log.debug("Leaving checkRealmOverride().");
   // `true` is the `forRealm` argument, and it is what admits the one setting
   // that is restart-only for the PROCESS and legitimate on a realm:
   // `oauth2.rfc9700`. See the `realmRuntime` paragraph at the top of config.js
@@ -700,12 +769,16 @@ function checkRealmOverride(key, raw) {
 // WHICH CONDITION checkRealmOverride() REFUSED FOR, in its order: the two rules
 // that are this file's, then config.js's own three through its twin.
 function checkRealmOverrideCode(key, raw) {
+  log.debug("Entering checkRealmOverrideCode().");
   if (String(key || '').indexOf('realms.') === 0) {
+    log.debug("Leaving checkRealmOverrideCode().");
     return 'STS-CORE-0014';
   }
   if (config.isPerProcess(key)) {
+    log.debug("Leaving checkRealmOverrideCode().");
     return 'STS-CORE-0015';
   }
+  log.debug("Leaving checkRealmOverrideCode().");
   return config.checkOverrideCode(key, raw, true);
 }
 
@@ -718,7 +791,9 @@ function setOverride(id, key, raw) {
   const realm = realms.get(String(id || ''));
   if (!realm) {
     log.debug("Leaving setOverride(). No such realm.");
-    return errorCodes.mark({ ok: false, errors: ['No realm called "' + id + '" is defined.'] },
+    return errorCodes.mark({ ok: false,
+                             errors: ['No realm called "' + id + '" ' +
+        'is defined.'] },
                            'STS-CORE-0013');
   }
   const problem = checkRealmOverride(key, raw);
@@ -739,12 +814,15 @@ function clearOverride(id, key) {
   const realm = realms.get(String(id || ''));
   if (!realm) {
     log.debug("Leaving clearOverride(). No such realm.");
-    return errorCodes.mark({ ok: false, errors: ['No realm called "' + id + '" is defined.'] },
+    return errorCodes.mark({ ok: false,
+                             errors: ['No realm called "' + id + '" ' +
+        'is defined.'] },
                            'STS-CORE-0013');
   }
   if (!Object.prototype.hasOwnProperty.call(realm.overrides, key)) {
     log.debug("Leaving clearOverride(). Nothing was set.");
-    return errorCodes.mark({ ok: false, errors: ['"' + key + '" is not set on realm "' +
+    return errorCodes.mark({ ok: false, errors: ['"' + key + '" is not set ' +
+        'on realm "' +
       realm.id + '"; it already comes from what the whole service is ' +
       'configured with.'] }, 'STS-CORE-0016');
   }
@@ -760,6 +838,7 @@ function clearOverride(id, key) {
 // took three of four settings and refused the fourth would be a realm nobody
 // asked for.
 function checkOverrides(overrides) {
+  log.debug("Entering checkOverrides().");
   const errors = [];
   Object.keys(overrides || {}).forEach(function (key) {
     // checkRealmOverride() and not config.checkOverride(), so that the two
@@ -773,6 +852,7 @@ function checkOverrides(overrides) {
       firstCode(errors, checkRealmOverrideCode(key, overrides[key]));
     }
   });
+  log.debug("Leaving checkOverrides().");
   return errors;
 }
 
@@ -803,7 +883,9 @@ function checkOverrides(overrides) {
 const watchers = [];
 
 function onChange(fn) {
+  log.debug("Entering onChange().");
   watchers.push(fn);
+  log.debug("Leaving onChange().");
 }
 
 function changed(id, what, info) {
@@ -835,7 +917,9 @@ function changed(id, what, info) {
 const purges = [];
 
 function onRemove(fn) {
+  log.debug("Entering onRemove().");
   purges.push(fn);
+  log.debug("Leaving onRemove().");
 }
 
 // ---------------------------------------------------------------------------
@@ -866,7 +950,9 @@ function onRemove(fn) {
 const builders = [];
 
 function onCreate(fn) {
+  log.debug("Entering onCreate().");
   builders.push(fn);
+  log.debug("Leaving onCreate().");
 }
 
 function built(realm) {
@@ -888,7 +974,9 @@ function remove(id) {
   const realm = realms.get(String(id || ''));
   if (!realm) {
     log.debug("Leaving remove(). No such realm.");
-    return errorCodes.mark({ ok: false, errors: ['No realm called "' + id + '" is defined.'] },
+    return errorCodes.mark({ ok: false,
+                             errors: ['No realm called "' + id + '" ' +
+        'is defined.'] },
                            'STS-CORE-0013');
   }
   realms.delete(realm.id);
@@ -901,7 +989,8 @@ function remove(id) {
       // row is already gone above. Log it and carry on; the worst outcome is
       // state for an id nobody can reach any more.
       log.warn(errorCodes.tag('STS-CORE-0020') +
-               'realms: a store refused to purge "' + realm.id + '": ' + e.message);
+               'realms: a store refused to purge "' + realm.id + '": ' +
+               e.message);
     }
   });
   log.info('realms: "' + realm.id + '" removed, with everything it held.');
@@ -1000,7 +1089,9 @@ function setPersistObserver(fn) {
 const declaredHandles = [];
 
 function declareHandle(options, shape, accessors) {
+  log.debug("Entering declareHandle().");
   if (!options || !options.persist) {
+    log.debug("Leaving declareHandle().");
     return null;
   }
   const handle = String(options.persist);
@@ -1019,6 +1110,7 @@ function declareHandle(options, shape, accessors) {
               'will not be persisted: two stores under one handle would ' +
               'each overwrite the other\'s rows, and the damage would only ' +
               'be visible one restart later.');
+    log.debug("Leaving declareHandle().");
     return null;
   }
   declaredHandles.push({
@@ -1062,15 +1154,19 @@ function declareHandle(options, shape, accessors) {
     restore: accessors.restore,
     remove: accessors.remove
   });
-  log.debug('realms: "' + handle + '" declared as a persistable ' + shape + '.');
+  log.debug('realms: "' + handle + '" declared as a persistable ' + shape +
+            '.');
+  log.debug("Leaving declareHandle().");
   return handle;
 }
 
-// What a store calls when something in it moved. `key` is null for a whole-store
-// change, which is what a counter object reports — those are one small row and
-// rewriting it is cheaper than working out which field moved.
+// What a store calls when something in it moved. `key` is null for a
+// whole-store change, which is what a counter object reports — those are one
+// small row and rewriting it is cheaper than working out which field moved.
 function noteWrite(handle, key) {
+  log.debug("Entering noteWrite().");
   noteWriteIn(handle, currentId(), key);
+  log.debug("Leaving noteWrite().");
 }
 
 // THE SAME, AGAINST A NAMED REALM RATHER THAN THE AMBIENT ONE. `realmMap(id)`
@@ -1079,7 +1175,9 @@ function noteWrite(handle, key) {
 // outside all of them, and journalling those deletes against the default realm
 // would leave the rows it removed standing in every other realm's store.
 function noteWriteIn(handle, realmId, key) {
+  log.debug("Entering noteWriteIn().");
   if (!handle || !persistObserver) {
+    log.debug("Leaving noteWriteIn().");
     return;
   }
   try {
@@ -1090,14 +1188,18 @@ function noteWriteIn(handle, realmId, key) {
     // the request that made it — the same argument persistence.js makes about
     // a failed flush, one layer down.
     log.error(errorCodes.tag('STS-CORE-0023') +
-              'realms: "' + handle + '" could not report a write: ' + e.message);
+              'realms: "' + handle + '" could not report a write: ' +
+              e.message);
   }
+  log.debug("Leaving noteWriteIn().");
 }
 
 // The handles, for the readers named above. The rows themselves rather than
 // copies of them, because they carry the three accessor functions and a copy
 // would be a second object claiming to be the same store.
 function handles() {
+  log.debug("Entering handles().");
+  log.debug("Leaving handles().");
   return declaredHandles.slice();
 }
 
@@ -1106,6 +1208,8 @@ function handles() {
 // build's row, and answering null is what lets the restore say so and move on
 // rather than throwing on somebody else's data.
 function handleFor(name) {
+  log.debug("Entering handleFor().");
+  log.debug("Leaving handleFor().");
   return declaredHandles.find(function (row) {
     return row.handle === String(name);
   }) || null;
@@ -1130,6 +1234,8 @@ const MUTATORS = ['push', 'pop', 'shift', 'unshift', 'splice', 'sort',
 // of a store somebody had just written to came back empty.
 // ---------------------------------------------------------------------------
 function partitionId(realmId) {
+  log.debug("Entering partitionId().");
+  log.debug("Leaving partitionId().");
   return (get(realmId) || DEFAULT_REALM).id;
 }
 
@@ -1138,19 +1244,27 @@ function keyed(factory) {
   const per = new Map();
   onRemove(function (id) { per.delete(id); });
   function forCurrent() {
+    log.debug("Entering forCurrent().");
     const id = currentId();
     if (!per.has(id)) {
       per.set(id, factory(current()));
     }
+    log.debug("Leaving forCurrent().");
     return per.get(id);
   }
   forCurrent.of = function (id) {
+    log.debug("Entering of().");
     if (!per.has(id)) {
       per.set(id, factory(get(id) || DEFAULT_REALM));
     }
+    log.debug("Leaving of().");
     return per.get(id);
   };
-  forCurrent.existing = function () { return per; };
+  forCurrent.existing = function () {
+    log.debug("Entering existing().");
+    log.debug("Leaving existing().");
+    return per;
+  };
   log.debug("Leaving keyed().");
   return forCurrent;
 }
@@ -1166,28 +1280,41 @@ function map(options) {
     // it is anyway, but a dump that depends on ambient state is a dump that
     // silently returns the default realm's rows when somebody forgets.
     dump: function (realmId) {
+      log.debug("Entering dump().");
       const out = [];
       per.of(partitionId(realmId)).forEach(function (v, k) {
         out.push({ key: k, value: v });
       });
+      log.debug("Leaving dump().");
       return out;
     },
     read: function (realmId, k) {
+      log.debug("Entering read().");
       const m = per.of(partitionId(realmId));
+      log.debug("Leaving read().");
       return m.has(k) ? { present: true, value: m.get(k) } : { present: false };
     },
     // NOT `set`, and the difference is the point: this writes without
     // journalling, because what a restore just read out of the store is the
     // one thing that must not be written straight back into it.
-    restore: function (realmId, k, v) { per.of(partitionId(realmId)).set(k, v); },
+    restore: function (realmId, k, v) {
+      log.debug("Entering restore().");
+      per.of(partitionId(realmId)).set(k, v);
+      log.debug("Leaving restore().");
+    },
     // WHAT A REPLICATED DELETE REACHES. It is a fourth accessor rather than a
     // `restore(…, undefined)` because "the value is undefined" and "the key is
     // gone" are different states, and a store that could not tell them apart
     // would answer `has(k) === true` for a key another process deleted.
-    remove: function (realmId, k) { per.of(partitionId(realmId)).delete(k); }
+    remove: function (realmId, k) {
+      log.debug("Entering remove().");
+      per.of(partitionId(realmId)).delete(k);
+      log.debug("Leaving remove().");
+    }
   });
   // ------------------------------------------------------------------------
-  // `realmMap()` HANDS OUT A JOURNALLING VIEW AND NOT THE BARE Map (2026-09-08).
+  // `realmMap()` HANDS OUT A JOURNALLING VIEW AND NOT THE BARE Map
+  // (2026-09-08).
   //
   // It used to return `per()` itself, and a write through it was invisible to
   // the journal — so it never reached the persistence store, never became a
@@ -1214,7 +1341,9 @@ function map(options) {
   // the caller may well write to it from outside any realm at all.
   // ------------------------------------------------------------------------
   function viewOf(realmId, target) {
+    log.debug("Entering viewOf().");
     if (!handle || !persistObserver) {
+      log.debug("Leaving viewOf().");
       // Nothing is journalling this store, so there is nothing to wrap and the
       // bare Map is both correct and cheaper. `realms.map()` with no `persist`
       // is the ordinary case — the embedded directory is one — and it must not
@@ -1223,11 +1352,14 @@ function map(options) {
     }
     const view = new Proxy(target, {
       get: function (t, prop) {
+        log.debug("Entering get().");
         const value = Reflect.get(t, prop, t);
         if (typeof value !== 'function') {
+          log.debug("Leaving get().");
           return value;
         }
         if (prop === 'set') {
+          log.debug("Leaving get().");
           return function (k, v) {
             t.set(k, v);
             noteWriteIn(handle, realmId, k);
@@ -1235,6 +1367,7 @@ function map(options) {
           };
         }
         if (prop === 'delete') {
+          log.debug("Leaving get().");
           return function (k) {
             const gone = t.delete(k);
             // Reported whether or not the key was there, for `delete()`'s
@@ -1244,14 +1377,17 @@ function map(options) {
           };
         }
         if (prop === 'clear') {
+          log.debug("Leaving get().");
           return function () {
             t.forEach(function (v, k) { noteWriteIn(handle, realmId, k); });
             return t.clear();
           };
         }
+        log.debug("Leaving get().");
         return value.bind(t);
       }
     });
+    log.debug("Leaving viewOf().");
     return view;
   }
 
@@ -1260,23 +1396,43 @@ function map(options) {
     // (a purge, a sweep across realms, a console page counting them). It is a
     // JOURNALLING VIEW — see viewOf() above.
     realmMap: function (id) {
+      log.debug("Entering realmMap().");
+      log.debug("Leaving realmMap().");
       return id === undefined
         ? viewOf(currentId(), per())
-        : viewOf(partitionId(id), per.of(id));  // target as before; journal on the RESOLVED id
+        // target as before; journal on the RESOLVED id
+        : viewOf(partitionId(id), per.of(id));
     },
-    get: function (k) { return per().get(k); },
-    set: function (k, v) { per().set(k, v); noteWrite(handle, k); return facade; },
-    has: function (k) { return per().has(k); },
+    get: function (k) {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return per().get(k);
+    },
+    set: function (k, v) {
+      log.debug("Entering set().");
+      per().set(k, v);
+      noteWrite(handle, k);
+      log.debug("Leaving set().");
+      return facade;
+    },
+    has: function (k) {
+      log.debug("Entering has().");
+      log.debug("Leaving has().");
+      return per().has(k);
+    },
     delete: function (k) {
+      log.debug("Entering delete().");
       const gone = per().delete(k);
       // Reported whether or not the key was there. A delete of a key this
       // process never held may still have a ROW — restored from the store and
       // swept before anything read it — and reporting only the hits would
       // leave that row behind for ever.
       noteWrite(handle, k);
+      log.debug("Leaving delete().");
       return gone;
     },
     clear: function () {
+      log.debug("Entering clear().");
       // EVERY KEY NAMED, before the clear rather than after it: afterwards
       // there is nothing left to name, and a store that reported "cleared"
       // without saying what it held would need the flush to read a shadow this
@@ -1284,13 +1440,34 @@ function map(options) {
       if (handle) {
         per().forEach(function (v, k) { noteWrite(handle, k); });
       }
+      log.debug("Leaving clear().");
       return per().clear();
     },
-    forEach: function (fn, thisArg) { return per().forEach(fn, thisArg); },
-    keys: function () { return per().keys(); },
-    values: function () { return per().values(); },
-    entries: function () { return per().entries(); },
-    get size() { return per().size; }
+    forEach: function (fn, thisArg) {
+      log.debug("Entering forEach().");
+      log.debug("Leaving forEach().");
+      return per().forEach(fn, thisArg);
+    },
+    keys: function () {
+      log.debug("Entering keys().");
+      log.debug("Leaving keys().");
+      return per().keys();
+    },
+    values: function () {
+      log.debug("Entering values().");
+      log.debug("Leaving values().");
+      return per().values();
+    },
+    entries: function () {
+      log.debug("Entering entries().");
+      log.debug("Leaving entries().");
+      return per().entries();
+    },
+    get size() {
+      log.debug("Entering size().");
+      log.debug("Leaving size().");
+      return per().size;
+    }
   };
   facade[Symbol.iterator] = function () { return per()[Symbol.iterator](); };
   log.debug("Leaving map().");
@@ -1311,27 +1488,39 @@ function arr(options) {
   // issued register, and both are read whole by everything that reads them.
   const handle = declareHandle(options, 'arr', {
     dump: function (realmId) {
+      log.debug("Entering dump().");
+      log.debug("Leaving dump().");
       return [{ key: '', value: per.of(partitionId(realmId)).slice() }];
     },
     read: function (realmId) {
+      log.debug("Entering read().");
+      log.debug("Leaving read().");
       return { present: true, value: per.of(partitionId(realmId)).slice() };
     },
     restore: function (realmId, key, value) {
+      log.debug("Entering restore().");
       const real = per.of(partitionId(realmId));
       real.length = 0;
       (Array.isArray(value) ? value : []).forEach(function (row) {
         real.push(row);
       });
+      log.debug("Leaving restore().");
     },
     // An array's row is the whole array, so removing it is emptying it.
-    remove: function (realmId) { per.of(partitionId(realmId)).length = 0; }
+    remove: function (realmId) {
+      log.debug("Entering remove().");
+      per.of(partitionId(realmId)).length = 0;
+      log.debug("Leaving remove().");
+    }
   });
   log.debug("Leaving arr().");
   return new Proxy([], {
     get: function (target, prop, receiver) {
+      log.debug("Entering get().");
       const real = per();
       const v = Reflect.get(real, prop, real);
       if (typeof v !== 'function') {
+        log.debug("Leaving get().");
         return v;
       }
       // ---------------------------------------------------------------
@@ -1351,8 +1540,10 @@ function arr(options) {
       // closure for nothing.
       // ---------------------------------------------------------------
       if (!handle || MUTATORS.indexOf(prop) < 0) {
+        log.debug("Leaving get().");
         return v.bind(real);
       }
+      log.debug("Leaving get().");
       return function () {
         const out = v.apply(real, arguments);
         // WHOLE-STORE, not per index. `splice` and `sort` move rows the
@@ -1365,19 +1556,33 @@ function arr(options) {
       };
     },
     set: function (target, prop, value) {
+      log.debug("Entering set().");
       per()[prop] = value;
       noteWrite(handle, null);
+      log.debug("Leaving set().");
       return true;
     },
-    has: function (target, prop) { return prop in per(); },
+    has: function (target, prop) {
+      log.debug("Entering has().");
+      log.debug("Leaving has().");
+      return prop in per();
+    },
     deleteProperty: function (target, prop) {
+      log.debug("Entering deleteProperty().");
       delete per()[prop];
       noteWrite(handle, null);
+      log.debug("Leaving deleteProperty().");
       return true;
     },
-    ownKeys: function () { return Reflect.ownKeys(per()); },
+    ownKeys: function () {
+      log.debug("Entering ownKeys().");
+      log.debug("Leaving ownKeys().");
+      return Reflect.ownKeys(per());
+    },
     getOwnPropertyDescriptor: function (target, prop) {
+      log.debug("Entering getOwnPropertyDescriptor().");
       const d = Object.getOwnPropertyDescriptor(per(), prop);
+      log.debug("Leaving getOwnPropertyDescriptor().");
       // A proxy may not report a property as non-configurable when its target
       // has no such property, and the target here is a permanently empty array.
       // Marking every descriptor configurable is what keeps Object.keys() and
@@ -1385,21 +1590,23 @@ function arr(options) {
       return d ? Object.assign({}, d, { configurable: true }) : undefined;
     },
     defineProperty: function (target, prop, desc) {
+      log.debug("Entering defineProperty().");
       Object.defineProperty(per(), prop, desc);
+      log.debug("Leaving defineProperty().");
       return true;
     }
   });
 }
 
 // A plain object, per realm. Same Proxy for the same reason: these are used as
-// dictionaries with computed keys, `delete` and `Object.keys()`.
-// `factory` is optional and is what makes this usable for SCALARS as well as
-// dictionaries: a module with `let seq = 0` beside a realm-partitioned array has
-// a counter that counts every realm's rows and a list holding one realm's, and
-// the two disagree on the page that shows them both. Declaring
-// `realms.obj(() => ({ seq: 0 }))` and spelling the reads `nums.seq` moves the
-// counter into the partition with the thing it counts — `nums.seq++` works
-// through the proxy exactly as it did through the binding.
+// dictionaries with computed keys, `delete` and `Object.keys()`. `factory` is
+// optional and is what makes this usable for SCALARS as well as dictionaries: a
+// module with `let seq = 0` beside a realm-partitioned array has a counter that
+// counts every realm's rows and a list holding one realm's, and the two
+// disagree on the page that shows them both. Declaring `realms.obj(() => ({
+// seq: 0 }))` and spelling the reads `nums.seq` moves the counter into the
+// partition with the thing it counts — `nums.seq++` works through the proxy
+// exactly as it did through the binding.
 function obj(factory, options) {
   log.debug("Entering obj().");
   const per = keyed(factory || function () { return {}; });
@@ -1409,10 +1616,16 @@ function obj(factory, options) {
   // of scalars nobody wants to read.
   const handle = declareHandle(options, 'obj', {
     dump: function (realmId) {
-      return [{ key: '', value: Object.assign({}, per.of(partitionId(realmId))) }];
+      log.debug("Entering dump().");
+      log.debug("Leaving dump().");
+      return [{ key: '',
+                value: Object.assign({}, per.of(partitionId(realmId))) }];
     },
     read: function (realmId) {
-      return { present: true, value: Object.assign({}, per.of(partitionId(realmId))) };
+      log.debug("Entering read().");
+      log.debug("Leaving read().");
+      return { present: true,
+               value: Object.assign({}, per.of(partitionId(realmId))) };
     },
     // MERGED rather than replaced. The factory has already built this realm's
     // object with every field the current build expects; assigning over it
@@ -1420,46 +1633,68 @@ function obj(factory, options) {
     // making it `undefined`, which is what a wholesale replacement would do
     // and what would then arrive as NaN out of `nums.seq++`.
     restore: function (realmId, key, value) {
+      log.debug("Entering restore().");
       Object.assign(per.of(partitionId(realmId)), value || {});
+      log.debug("Leaving restore().");
     },
     // BACK TO WHAT THE FACTORY BUILDS rather than to an empty object: these
     // are counter sets and claim sets whose fields are read unconditionally,
     // and `nums.seq++` on a `{}` is NaN for ever after.
     remove: function (realmId) {
+      log.debug("Entering remove().");
       const id = partitionId(realmId);
       const real = per.of(id);
       Object.keys(real).forEach(function (k) { delete real[k]; });
       Object.assign(real, (factory ? factory(get(id) || DEFAULT_REALM) : {}));
+      log.debug("Leaving remove().");
     }
   });
   log.debug("Leaving obj().");
   return new Proxy({}, {
     get: function (target, prop) {
+      log.debug("Entering get().");
       const real = per();
       const v = real[prop];
+      log.debug("Leaving get().");
       return typeof v === 'function' ? v.bind(real) : v;
     },
     set: function (target, prop, value) {
+      log.debug("Entering set().");
       per()[prop] = value;
       // WHOLE-STORE, like the array above but for a different reason: these
       // are counters and claim sets — one small object per realm — so the row
       // IS the object and naming a field would mean a row per field.
       noteWrite(handle, null);
+      log.debug("Leaving set().");
       return true;
     },
-    has: function (target, prop) { return prop in per(); },
+    has: function (target, prop) {
+      log.debug("Entering has().");
+      log.debug("Leaving has().");
+      return prop in per();
+    },
     deleteProperty: function (target, prop) {
+      log.debug("Entering deleteProperty().");
       delete per()[prop];
       noteWrite(handle, null);
+      log.debug("Leaving deleteProperty().");
       return true;
     },
-    ownKeys: function () { return Reflect.ownKeys(per()); },
+    ownKeys: function () {
+      log.debug("Entering ownKeys().");
+      log.debug("Leaving ownKeys().");
+      return Reflect.ownKeys(per());
+    },
     getOwnPropertyDescriptor: function (target, prop) {
+      log.debug("Entering getOwnPropertyDescriptor().");
       const d = Object.getOwnPropertyDescriptor(per(), prop);
+      log.debug("Leaving getOwnPropertyDescriptor().");
       return d ? Object.assign({}, d, { configurable: true }) : undefined;
     },
     defineProperty: function (target, prop, desc) {
+      log.debug("Entering defineProperty().");
       Object.defineProperty(per(), prop, desc);
+      log.debug("Leaving defineProperty().");
       return true;
     }
   });
@@ -1518,8 +1753,8 @@ function obj(factory, options) {
 //
 // **A RECONCILER THAT THROWS APPLIES NOTHING**, which is fail-closed on
 // purpose: the rule exists because some incoming rows must not be believed, and
-// a rule that could not be evaluated has not said this one may be. The row stays
-// in the store and the next write of that key through a process that CAN
+// a rule that could not be evaluated has not said this one may be. The row
+// stays in the store and the next write of that key through a process that CAN
 // evaluate it replaces it. Logged, with a code, because it is a defect in the
 // reconciler rather than anything about the row.
 //
@@ -1536,17 +1771,23 @@ function sharedMap(options) {
   const handleName = String((options && options.persist) || '(undeclared)');
   const handle = declareHandle(declared, 'shared-map', {
     dump: function () {
+      log.debug("Entering dump().");
       const out = [];
       real.forEach(function (v, k) { out.push({ key: k, value: v }); });
+      log.debug("Leaving dump().");
       return out;
     },
     read: function (realmId, k) {
+      log.debug("Entering read().");
+      log.debug("Leaving read().");
       return real.has(k) ? { present: true, value: real.get(k) }
                          : { present: false };
     },
     restore: function (realmId, k, v) {
+      log.debug("Entering restore().");
       if (typeof reconcile.restore !== 'function') {
         real.set(k, v);
+        log.debug("Leaving restore().");
         return;
       }
       let admitted;
@@ -1555,17 +1796,21 @@ function sharedMap(options) {
       } catch (e) {
         log.error(errorCodes.tag('STS-CORE-0042') +
                   'realms: "' + handleName + '" could not reconcile a stored ' +
-                  'row under "' + k + '", so it was NOT applied and what this ' +
-                  'process held is unchanged: ' + e.message);
+                  'row under "' + k + '", so it was NOT applied and what ' +
+                  'this process held is unchanged: ' + e.message);
+        log.debug("Leaving restore().");
         return;
       }
       if (admitted !== undefined) {
         real.set(k, admitted);
       }
+      log.debug("Leaving restore().");
     },
     remove: function (realmId, k) {
+      log.debug("Entering remove().");
       if (typeof reconcile.remove !== 'function') {
         real.delete(k);
+        log.debug("Leaving remove().");
         return;
       }
       let allowed = false;
@@ -1574,13 +1819,15 @@ function sharedMap(options) {
       } catch (e) {
         log.error(errorCodes.tag('STS-CORE-0042') +
                   'realms: "' + handleName + '" could not reconcile a stored ' +
-                  'removal of "' + k + '", so it was NOT applied and what this ' +
-                  'process held is unchanged: ' + e.message);
+                  'removal of "' + k + '", so it was NOT applied and what ' +
+                  'this process held is unchanged: ' + e.message);
+        log.debug("Leaving remove().");
         return;
       }
       if (allowed) {
         real.delete(k);
       }
+      log.debug("Leaving remove().");
     }
   });
   // The realm reported is always the empty string, whatever realm the write
@@ -1589,6 +1836,7 @@ function sharedMap(options) {
   // to be current — so a restore would find it under a realm that may not
   // exist by then.
   function note(k) {
+    log.debug("Entering note().");
     if (handle && persistObserver) {
       try {
         persistObserver(handle, '', k === undefined ? null : k);
@@ -1598,21 +1846,64 @@ function sharedMap(options) {
                   e.message);
       }
     }
+    log.debug("Leaving note().");
   }
   const facade = {
-    get: function (k) { return real.get(k); },
-    set: function (k, v) { real.set(k, v); note(k); return facade; },
-    has: function (k) { return real.has(k); },
-    delete: function (k) { const gone = real.delete(k); note(k); return gone; },
+    get: function (k) {
+      log.debug("Entering get().");
+      log.debug("Leaving get().");
+      return real.get(k);
+    },
+    set: function (k, v) {
+      log.debug("Entering set().");
+      real.set(k, v);
+      note(k);
+      log.debug("Leaving set().");
+      return facade;
+    },
+    has: function (k) {
+      log.debug("Entering has().");
+      log.debug("Leaving has().");
+      return real.has(k);
+    },
+    delete: function (k) {
+      log.debug("Entering delete().");
+      const gone = real.delete(k);
+      note(k);
+      log.debug("Leaving delete().");
+      return gone;
+    },
     clear: function () {
+      log.debug("Entering clear().");
       real.forEach(function (v, k) { note(k); });
+      log.debug("Leaving clear().");
       return real.clear();
     },
-    forEach: function (fn, thisArg) { return real.forEach(fn, thisArg); },
-    keys: function () { return real.keys(); },
-    values: function () { return real.values(); },
-    entries: function () { return real.entries(); },
-    get size() { return real.size; }
+    forEach: function (fn, thisArg) {
+      log.debug("Entering forEach().");
+      log.debug("Leaving forEach().");
+      return real.forEach(fn, thisArg);
+    },
+    keys: function () {
+      log.debug("Entering keys().");
+      log.debug("Leaving keys().");
+      return real.keys();
+    },
+    values: function () {
+      log.debug("Entering values().");
+      log.debug("Leaving values().");
+      return real.values();
+    },
+    entries: function () {
+      log.debug("Entering entries().");
+      log.debug("Leaving entries().");
+      return real.entries();
+    },
+    get size() {
+      log.debug("Entering size().");
+      log.debug("Leaving size().");
+      return real.size;
+    }
   };
   facade[Symbol.iterator] = function () { return real[Symbol.iterator](); };
   log.debug("Leaving sharedMap().");
@@ -1637,10 +1928,13 @@ function sharedMap(options) {
 // write wants to name the realm in its log line.
 // ---------------------------------------------------------------------------
 function realmContext() {
+  log.debug("Entering realmContext().");
   const realm = als.getStore();
   if (!realm || realm.id === DEFAULT_ID || !active()) {
+    log.debug("Leaving realmContext().");
     return null;
   }
+  log.debug("Leaving realmContext().");
   return realm;
 }
 
@@ -1660,6 +1954,8 @@ config.setRealmContext(realmContext);
 // path to put a segment in.
 // ---------------------------------------------------------------------------
 function realmSupport() {
+  log.debug("Entering realmSupport().");
+  log.debug("Leaving realmSupport().");
   return [
     { family: 'OAuth 2.0 / OIDC', state: 'full', by: 'path',
       note: 'Its own issuer, signing key, authorization codes, access and ' +
@@ -1668,29 +1964,30 @@ function realmSupport() {
             'The CLIENT REGISTRATIONS are per realm as of 2026-08-25, ' +
             'because the directory is: a client registered under one realm ' +
             'lives in that realm\'s ou=applications and is unknown to every ' +
-            'other. This line said the opposite until then. ' +
-            'RFC 9700 MODE IS PER REALM TOO — `oauth2.rfc9700` is the one ' +
-            'setting here that is restart-only for the process and settable ' +
-            'on a realm, because a realm binds no socket — so one process can ' +
-            'answer permissively at /oauth2/authorize and enforce the BCP at ' +
-            'a realm\'s. What a realm cannot bring with it is a SCHEME: the ' +
+            'other. This line said the opposite until then. RFC 9700 MODE IS ' +
+            'PER REALM TOO — `oauth2.rfc9700` is the one setting here that ' +
+            'is restart-only for the process and settable on a realm, ' +
+            'because a realm binds no socket — so one process can answer ' +
+            'permissively at /oauth2/authorize and enforce the BCP at a ' +
+            'realm\'s. What a realm cannot bring with it is a SCHEME: the ' +
             'main port is https or it is not, for every realm at once, and ' +
             'GET /oauth2/rfc9700 reports which.' },
     { family: 'Authentication service', state: 'full', by: 'path',
       note: 'Its own sessions and WebAuthn credentials, so signing in to one ' +
             'realm signs you in to that realm only. That is the point of a ' +
-            'realm rather than a limitation of one. Who you may sign in AS is ' +
-            'shared only in the sense that this service checks no password ' +
-            'anywhere — the PERSON is an entry in the realm\'s own directory. ' +
-            'The admin console is the ONE reader that crosses this line, and ' +
-            'it crosses it in exactly one direction: it accepts the DEFAULT ' +
-            'realm\'s session and no other. The row below says why.' },
+            'realm rather than a limitation of one. Who you may sign in AS ' +
+            'is shared only in the sense that this service checks no ' +
+            'password anywhere — the PERSON is an entry in the realm\'s own ' +
+            'directory. The admin console is the ONE reader that crosses ' +
+            'this line, and it crosses it in exactly one direction: it ' +
+            'accepts the DEFAULT realm\'s session and no other. The row ' +
+            'below says why.' },
     { family: 'SAML 2.0 / SAML 1.1', state: 'full', by: 'path',
       note: 'Its own entityID and providerID (seeded distinct when the realm ' +
             'is created), its own signing key, request state, artifacts and ' +
             'per-service-provider metadata — whose URL therefore carries the ' +
-            'realm as well as the SP digest. The SERVICE PROVIDER ENTRIES are ' +
-            'per realm, for the reason the OAuth clients are: they are ' +
+            'realm as well as the SP digest. The SERVICE PROVIDER ENTRIES ' +
+            'are per realm, for the reason the OAuth clients are: they are ' +
             'applications in the realm\'s own directory.' },
     { family: 'WS-Trust', state: 'full', by: 'path',
       note: 'Its own token issuer and signing key.' },
@@ -1709,12 +2006,12 @@ function realmSupport() {
             'prefix. The audit sequence numbers are per realm too, so one ' +
             'realm\'s rows are contiguous.' },
     { family: 'SCIM 2.0', state: 'full', by: 'path',
-      note: 'The endpoints AND the store. A user created through one realm\'s ' +
-            '/scim/v2 is an entry in that realm\'s ou=users and exists ' +
-            'nowhere else — this row read `partial` and said the opposite ' +
-            'until 2026-08-25, when the directory became per realm. SCIM ' +
-            'still makes no decision of its own about it: it provisions into ' +
-            'the directory, and the directory is the thing that is ' +
+      note: 'The endpoints AND the store. A user created through one ' +
+            'realm\'s /scim/v2 is an entry in that realm\'s ou=users and ' +
+            'exists nowhere else — this row read `partial` and said the ' +
+            'opposite until 2026-08-25, when the directory became per realm. ' +
+            'SCIM still makes no decision of its own about it: it provisions ' +
+            'into the directory, and the directory is the thing that is ' +
             'partitioned.' },
     { family: 'Admin console and management API', state: 'partial', by: 'path',
       note: 'Every page and every operation is per realm — /admin/config ' +
@@ -1730,50 +2027,51 @@ function realmSupport() {
             'themselves an administrator of the service. The CONSOLE SIGN-ON ' +
             'follows the roster: its gate accepts the DEFAULT realm\'s ' +
             'session and no other, and an unauthenticated reader of any ' +
-            'realm\'s console is sent to the default realm\'s sign-in screen. ' +
-            'Nothing else reads a session across realms at all; in the realm ' +
-            'you switched to, /oauth2/authorize and the SAML and ' +
+            'realm\'s console is sent to the default realm\'s sign-in ' +
+            'screen. Nothing else reads a session across realms at all; in ' +
+            'the realm you switched to, /oauth2/authorize and the SAML and ' +
             'WS-Federation endpoints see none.' },
     { family: 'LDAP (389 / 636)', state: 'full', by: 'dn',
       note: 'A DIRECTORY PER REALM behind one socket — a separate store, not ' +
             'a subtree of a shared one, since 2026-08-25. The DN layout is ' +
             'what a client sees: the default realm is ldap.baseDn itself ' +
-            '(dc=example,dc=com) and every other realm is dc=<id> beneath it. ' +
-            'So ou=users, ou=groups, ' +
-            'ou=applications, ou=federations and the two SPIFFE containers ' +
-            'exist once per realm and share nothing — this row read `none` ' +
-            'and said every realm saw the same people until 2026-08-25. The ' +
-            'realm is in the DN and not in a partitioned store BECAUSE the ' +
-            'socket has no path to put a segment in: an ldapsearch arrives ' +
-            'with a base DN and nothing else, so `-b dc=acme,dc=example,dc=com` ' +
-            'is the only way a client could ever name a realm, and it works. ' +
-            'EVERY OPERATION IS ANSWERED FROM THE STORE THE DN NAMES, since ' +
-            '2026-08-25 and at rcbj\'s request — this line said a subtree ' +
-            'search from the naming context returns every realm\'s entries, ' +
-            'on the argument that a naming context IS the whole tree. It left ' +
-            'port 389 as the one door through which a realm could see another ' +
-            'realm\'s people, groups and applications, while the console, ' +
-            '/scim/v2 and the group claim showed each realm only its own. So ' +
-            '`-b dc=example,dc=com` is the default realm\'s directory, ' +
-            '`-b dc=acme,dc=example,dc=com` is acme\'s, and the root DSE ' +
+            '(dc=example,dc=com) and every other realm is dc=<id> beneath ' +
+            'it. So ou=users, ou=groups, ou=applications, ou=federations and ' +
+            'the two SPIFFE containers exist once per realm and share ' +
+            'nothing — this row read `none` and said every realm saw the ' +
+            'same people until 2026-08-25. The realm is in the DN and not in ' +
+            'a partitioned store BECAUSE the socket has no path to put a ' +
+            'segment in: an ldapsearch arrives with a base DN and nothing ' +
+            'else, so `-b dc=acme,dc=example,dc=com` is the only way a ' +
+            'client could ever name a realm, and it works. EVERY OPERATION ' +
+            'IS ANSWERED FROM THE STORE THE DN NAMES, since 2026-08-25 and ' +
+            'at rcbj\'s request — this line said a subtree search from the ' +
+            'naming context returns every realm\'s entries, on the argument ' +
+            'that a naming context IS the whole tree. It left port 389 as ' +
+            'the one door through which a realm could see another realm\'s ' +
+            'people, groups and applications, while the console, /scim/v2 ' +
+            'and the group claim showed each realm only its own. So `-b ' +
+            'dc=example,dc=com` is the default realm\'s directory, `-b ' +
+            'dc=acme,dc=example,dc=com` is acme\'s, and the root DSE ' +
             'publishes one namingContexts value per realm so that a client ' +
-            'can discover them. An add, modify, delete, compare or base-scope ' +
-            'search is answered in the realm its DN names, because spelling ' +
-            'the DN out is how a client names a realm on a socket with ' +
-            'nowhere else to put one; a modifyDN that would cross a realm is ' +
-            'refused with LDAP_AFFECTS_MULTIPLE_DSAS (71), two realms here ' +
-            'being two directories.' },
+            'can discover them. An add, modify, delete, compare or ' +
+            'base-scope search is answered in the realm its DN names, ' +
+            'because spelling the DN out is how a client names a realm on a ' +
+            'socket with nowhere else to put one; a modifyDN that would ' +
+            'cross a realm is refused with LDAP_AFFECTS_MULTIPLE_DSAS (71), ' +
+            'two realms here being two directories.' },
     { family: 'Kerberos v5', state: 'none', by: 'shared',
       note: 'One KDC, one principal database and one Kerberos realm name for ' +
             'the whole process — over raw UDP/TCP 88 AND over MS-KKDCP, ' +
             'whose /KdcProxy is reachable under a realm prefix but reaches ' +
             'the same KDC behind it. Kerberos ALREADY HAS a realm and it is ' +
-            'the natural discriminator: give each trust realm a krb5.realm of ' +
-            'its own, dispatch a request on the realm name it carries, and ' +
-            'the shared port serves both. What stands in the way is that ' +
+            'the natural discriminator: give each trust realm a krb5.realm ' +
+            'of its own, dispatch a request on the realm name it carries, ' +
+            'and the shared port serves both. What stands in the way is that ' +
             'krb5.realm is not runtime-settable — the principal database and ' +
             'its long-term keys are built from it when the process starts — ' +
-            'so that database has to become per realm and lazily built first.' },
+            'so that database has to become per realm and lazily built ' +
+            'first.' },
     { family: 'TLS (8443 / 9443)', state: 'none', by: 'shared',
       note: 'Their whole content is what the server saw of the connection, ' +
             'which is a property of the socket and not of a realm.' },

@@ -11,15 +11,15 @@
 // protocol module registers its endpoints as a side effect of being required
 // (`const app = require('./app')` then `app.get(...)` at its top level), which
 // keeps every handler exactly where it was written instead of wrapped in a
-// register() function and re-indented. Express applies middleware in the order it
-// was added and only to routes added AFTER it, so the middleware has to be
-// installed by the time any protocol module is loaded — i.e. here, in the module
-// they all require, rather than in server.js, which requires them.
+// register() function and re-indented. Express applies middleware in the order
+// it was added and only to routes added AFTER it, so the middleware has to be
+// installed by the time any protocol module is loaded — i.e. here, in the
+// module they all require, rather than in server.js, which requires them.
 //
 // The consequence to remember when adding a module: server.js requires the
 // protocol modules in a deliberate order, and that order is the route order.
-// Nothing here has overlapping paths, so it does not currently matter — but a new
-// module that registers a wildcard would matter a great deal.
+// Nothing here has overlapping paths, so it does not currently matter — but a
+// new module that registers a wildcard would matter a great deal.
 // ---------------------------------------------------------------------------
 
 const express = require('express');
@@ -39,13 +39,14 @@ const { log, headersOf, bodyOf } = require('./helpers');
 // nothing else here, so it cannot join a cycle; helpers.js above has already
 // pulled it in anyway.
 const realms = require('./realms');
-// The service's own record of what it has done. Required HERE, and the position is
-// load-bearing twice over: the call log below is where the per-endpoint statistics
-// are collected, so this is a real dependency — and because every protocol module
-// requires this file, requiring it here means admin_stats.js has installed its JWT
-// recorder into helpers.js before any route exists and therefore before any token
-// can be minted. See the comment on setJwtRecorder in helpers.js for why that
-// installation is a hook rather than a require in the other direction.
+// The service's own record of what it has done. Required HERE, and the position
+// is load-bearing twice over: the call log below is where the per-endpoint
+// statistics are collected, so this is a real dependency — and because every
+// protocol module requires this file, requiring it here means admin_stats.js
+// has installed its JWT recorder into helpers.js before any route exists and
+// therefore before any token can be minted. See the comment on setJwtRecorder
+// in helpers.js for why that installation is a hook rather than a require in
+// the other direction.
 const stats = require('./admin_stats');
 // The service's account of WHAT HAPPENED, as against how much of it. Required
 // here for the same reason admin_stats.js is and with the same consequence: the
@@ -54,8 +55,8 @@ const stats = require('./admin_stats');
 // the management API and every protocol endpoint — instead of a recording site
 // in each of forty route handlers, thirty-seven of which would never be added.
 // It is a library like admin_stats.js (it registers no route) and it requires
-// only helpers.js and config.js, which is what keeps it out of the cycles rule 2
-// exists to avoid.
+// only helpers.js and config.js, which is what keeps it out of the cycles rule
+// 2 exists to avoid.
 const audit = require('./audit');
 
 // The input guard. A LEAF (rule 3) — it registers no route of its own and
@@ -97,11 +98,12 @@ const app = express();
 //      root-relative link in an HTML page. See below — each is argued where it
 //      is done.
 //
-// **ALL THREE ARE NO-OPS IN THE DEFAULT REALM**, which is the contract realms.js
-// opens with: `currentPrefix()` is the empty string there, `matchPath()` answers
-// null when no realm is defined, and the two wrappers below return before
-// touching anything. A service with no realms defined does not merely behave as
-// it did — it runs the same code it did, with two comparisons added.
+// **ALL THREE ARE NO-OPS IN THE DEFAULT REALM**, which is the contract
+// realms.js opens with: `currentPrefix()` is the empty string there,
+// `matchPath()` answers null when no realm is defined, and the two wrappers
+// below return before touching anything. A service with no realms defined does
+// not merely behave as it did — it runs the same code it did, with two
+// comparisons added.
 // ---------------------------------------------------------------------------
 app.use(function (req, res, next) {
   log.debug("Entering the realm middleware.");
@@ -110,17 +112,19 @@ app.use(function (req, res, next) {
   // Not in a realm — including a path that opens with the realm SEGMENT and an
   // id nobody defined. That case deliberately falls through to Express's own
   // 404 rather than being refused here: `Cannot GET /realm/nope/oauth2/token`
-  // is how this repository's own tests/vendored/sts_metadata.js tells an unrouted path
-  // from an endpoint legitimately answering 404, and a friendlier refusal for
-  // unknown realms would break that distinction for every path under the
-  // segment. `GET /realms` is where somebody finds out what the realms are.
+  // is how this repository's own tests/vendored/sts_metadata.js tells an
+  // unrouted path from an endpoint legitimately answering 404, and a friendlier
+  // refusal for unknown realms would break that distinction for every path
+  // under the segment. `GET /realms` is where somebody finds out what the
+  // realms are.
   if (!match) {
     log.debug("Leaving the realm middleware. Not in a realm.");
     next();
     return;
   }
 
-  const query = String(req.url || '').slice(String(req.url || '').split('?')[0].length);
+  const query = String(req.url || '').slice(String(req.url || '').split(
+      '?')[0].length);
   // `req.originalUrl` is left ALONE and that is deliberate twice over: the call
   // log and the audit log record what was asked for rather than what the router
   // was shown, and Express's 404 body — the one the test above reads — is built
@@ -145,6 +149,8 @@ app.use(function (req, res, next) {
   // ---------------------------------------------------------------------
   const location = res.location;
   res.location = function (url) {
+    log.debug("Entering location().");
+    log.debug("Leaving location().");
     return location.call(res, realms.href(url));
   };
 
@@ -179,10 +185,12 @@ app.use(function (req, res, next) {
   // ---------------------------------------------------------------------
   const send = res.send;
   res.send = function (body) {
+    log.debug("Entering send().");
     const type = String(res.get('Content-Type') || '');
     if (typeof body === 'string' && /html/i.test(type)) {
       arguments[0] = withRealmLinks(body, realms.currentPrefix());
     }
+    log.debug("Leaving send().");
     return send.apply(res, arguments);
   };
 
@@ -194,9 +202,12 @@ app.use(function (req, res, next) {
 // pattern that decides what a link is has one home and one test: `="/` and not
 // `="//`, which is a protocol-relative URL to another host.
 function withRealmLinks(html, prefix) {
+  log.debug("Entering withRealmLinks().");
   if (!prefix) {
+    log.debug("Leaving withRealmLinks().");
     return html;
   }
+  log.debug("Leaving withRealmLinks().");
   return html.replace(/\b(href|action|src)="\/(?!\/)/g, '$1="' + prefix + '/');
 }
 
@@ -231,9 +242,9 @@ realms.reserve(function () {
 // ---------------------------------------------------------------------------
 // AND HERE THE FRONT PROCESS STOPS HANDLING THE REQUEST AND STARTS PROXYING IT.
 //
-// `request_pool.js` argues the whole arrangement; this is where it is installed,
-// and the POSITION belongs in this file because two things pin it, from
-// opposite sides.
+// `request_pool.js` argues the whole arrangement; this is where it is
+// installed, and the POSITION belongs in this file because two things pin it,
+// from opposite sides.
 //
 // **BELOW THE REALM MIDDLEWARE**, because that one decides which realm a
 // request is in and must go on doing so here — the call log, the audit row and
@@ -313,18 +324,18 @@ app.use(function (req, res, next) {
 //   img-src data:       the two QR pages embed the code as a data: URI produced
 //                       by the qrcode library server-side.
 //
-// NOT present, and it must not be added back: **form-action**. It looks obviously
-// right here — the only form posts to /authn/login, which is same-origin — but
-// Chrome enforces form-action against the whole REDIRECT CHAIN that follows a
-// submission, not just its immediate target. This is an authorization server:
-// signing in POSTs the login form and the response is a 302 to the client's
-// redirect_uri, which is by definition another origin. `form-action 'self'`
-// therefore blocks the browser from ever reaching the client, and the symptom is
-// remote from the cause — the sign-in appears to succeed and the wallet simply
-// never comes back. It cost a full SD-JWT VC issuance run to find, and
-// tests/sd_jwt_vc_issuance.js is what catches it (H.1 signs in here).
-// Enumerating allowed redirect origins is not a fix either: this mock accepts
-// arbitrary redirect_uris on purpose.
+// NOT present, and it must not be added back: **form-action**. It looks
+// obviously right here — the only form posts to /authn/login, which is
+// same-origin — but Chrome enforces form-action against the whole REDIRECT
+// CHAIN that follows a submission, not just its immediate target. This is an
+// authorization server: signing in POSTs the login form and the response is a
+// 302 to the client's redirect_uri, which is by definition another origin.
+// `form-action 'self'` therefore blocks the browser from ever reaching the
+// client, and the symptom is remote from the cause — the sign-in appears to
+// succeed and the wallet simply never comes back. It cost a full SD-JWT VC
+// issuance run to find, and tests/sd_jwt_vc_issuance.js is what catches it (H.1
+// signs in here). Enumerating allowed redirect origins is not a fix either:
+// this mock accepts arbitrary redirect_uris on purpose.
 const CSP_DIRECTIVES = {
   'default-src': "'none'",
   'script-src': "'none'",
@@ -360,10 +371,12 @@ const CSP_DIRECTIVES = {
 const UNDROPPABLE = ['frame-ancestors', 'base-uri'];
 
 function contentSecurityPolicy(overrides) {
+  log.debug("Entering contentSecurityPolicy().");
   const merged = Object.assign({}, CSP_DIRECTIVES, overrides || {});
   UNDROPPABLE.forEach(function (name) {
     merged[name] = CSP_DIRECTIVES[name];
   });
+  log.debug("Leaving contentSecurityPolicy().");
   return Object.keys(merged).filter(function (name) {
     return merged[name] !== null && merged[name] !== undefined;
   }).map(function (name) {
@@ -401,17 +414,20 @@ app.use(function (req, res, next) {
   //
   // Wrapping writeHead rather than adding a final 404 handler is deliberate
   // too. A handler would have to reproduce Express's body byte for byte:
-  // `Cannot GET /path` is how this repository's own tests/vendored/sts_metadata.js tells
-  // an unrouted path from an endpoint legitimately answering 404, and a
-  // prettier 404 here would silently break that distinction.
+  // `Cannot GET /path` is how this repository's own
+  // tests/vendored/sts_metadata.js tells an unrouted path from an endpoint
+  // legitimately answering 404, and a prettier 404 here would silently break
+  // that distinction.
   // ---------------------------------------------------------------------
   const writeHead = res.writeHead;
   res.writeHead = function () {
+    log.debug("Entering writeHead().");
     const current = String(res.getHeader('Content-Security-Policy') || '');
     if (current.indexOf('frame-ancestors') < 0) {
       res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
       res.setHeader('X-Frame-Options', 'DENY');
     }
+    log.debug("Leaving writeHead().");
     return writeHead.apply(res, arguments);
   };
   log.debug("Leaving the security-headers middleware.");
@@ -433,31 +449,35 @@ app.use(function (req, res, next) {
 // ceremony: this module installs middleware and has no business knowing which
 // of this service's paths is an authorization endpoint. It asks. The require is
 // safe from here — that module registers no route and requires only helpers.js
-// and config.js, so it cannot join a cycle and cannot move anything in the route
-// order.
+// and config.js, so it cannot join a cycle and cannot move anything in the
+// route order.
 //
 // `origin: false` makes the cors package send no headers at all, which is what
 // "not supported" means. The same options function serves the preflight, or a
 // browser would be told by OPTIONS that a request is allowed and then find the
 // answer unreadable.
 const corsOptions = function (req, callback) {
+  log.debug("Entering corsOptions().");
   if (bcp.corsForbidden(req)) {
     callback(null, { origin: false });
+    log.debug("Leaving corsOptions().");
     return;
   }
   // **GNAP'S DISCOVERY IS AN OPTIONS REQUEST (2026-09-12).** RFC 9635 section 9
-  // has a client "send an HTTP OPTIONS request to the grant request endpoint" and
-  // the AS "MUST respond with a JSON document". The `app.options('*')` below
-  // would otherwise answer every such request as a bare CORS preflight — 204, no
-  // body — before the GNAP route ever ran. `preflightContinue` keeps the CORS
-  // headers and hands the request on, and a browser's real preflight to the
-  // grant endpoint then receives the discovery document with those headers,
-  // which is a valid preflight answer as well.
+  // has a client "send an HTTP OPTIONS request to the grant request endpoint"
+  // and the AS "MUST respond with a JSON document". The `app.options('*')`
+  // below would otherwise answer every such request as a bare CORS preflight —
+  // 204, no body — before the GNAP route ever ran. `preflightContinue` keeps
+  // the CORS headers and hands the request on, and a browser's real preflight
+  // to the grant endpoint then receives the discovery document with those
+  // headers, which is a valid preflight answer as well.
   if (/(^|\/)gnap$/.test(String(req.path || ''))) {
     callback(null, { origin: '*', preflightContinue: true });
+    log.debug("Leaving corsOptions().");
     return;
   }
   callback(null, { origin: '*' });
+  log.debug("Leaving corsOptions().");
 };
 
 app.use(cors(corsOptions));
@@ -533,10 +553,16 @@ app.use(bodyParser.raw({
 // `Content-Encoding` the stream is inflated first, so the buffer is the decoded
 // content, which is also what RFC 9530's `Content-Digest` is defined over.
 app.use(bodyParser.text({
-  type: function () { return true; },
+  type: function () {
+    log.debug("Entering type().");
+    log.debug("Leaving type().");
+    return true;
+  },
   limit: '5mb',
   verify: function (req, res, buffer) {
+    log.debug("Entering verify().");
     req.rawBody = buffer;
+    log.debug("Leaving verify().");
   }
 }));
 
@@ -561,7 +587,8 @@ app.use(function (err, req, res, next) {
   let code = 'STS-HTTP-0014';
   if (type === 'entity.too.large') {
     code = 'STS-HTTP-0004';
-  } else if (type === 'charset.unsupported' || type === 'encoding.unsupported') {
+  } else if (type === 'charset.unsupported' ||
+             type === 'encoding.unsupported') {
     code = 'STS-HTTP-0012';
   } else if (type === 'request.aborted' || type === 'request.size.invalid') {
     code = 'STS-HTTP-0013';
@@ -572,7 +599,8 @@ app.use(function (err, req, res, next) {
     summary: 'The request body of ' + req.method + ' was refused before any ' +
              'endpoint saw it (' + (type || 'unclassified') + ', HTTP ' +
              ((err && (err.status || err.statusCode)) || 500) + ').',
-    outcome: (err && (err.status || err.statusCode) >= 500) ? 'error' : 'refused'
+    outcome: (err && (err.status || err.statusCode) >= 500) ? 'error' :
+              'refused'
   });
   next(err);
 });
@@ -599,22 +627,31 @@ app.use(function (req, res, next) {
     headers: headersOf(req.headers),
     body: bodyOf(req.body)
   };
-  log.debug({ request: request }, 'Request: ' + req.method + ' ' + req.originalUrl);
+  log.debug({ request: request },
+            'Request: ' + req.method + ' ' + req.originalUrl);
 
   let responseBody = '';
   const send = res.send;
   const json = res.json;
   const end = res.end;
   res.send = function (body) {
+    log.debug("Entering send().");
     responseBody = bodyOf(body);
+    log.debug("Leaving send().");
     return send.apply(res, arguments);
   };
   res.json = function (body) {
+    log.debug("Entering json().");
     responseBody = bodyOf(body);
+    log.debug("Leaving json().");
     return json.apply(res, arguments);
   };
   res.end = function (chunk) {
-    if (!responseBody && chunk) responseBody = bodyOf(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk);
+    log.debug("Entering end().");
+    if (!responseBody &&
+        chunk) responseBody = bodyOf(Buffer.isBuffer(chunk) ?
+                                     chunk.toString('utf8') : chunk);
+    log.debug("Leaving end().");
     return end.apply(res, arguments);
   };
 
@@ -633,15 +670,15 @@ app.use(function (req, res, next) {
   // it here makes the answer the same every time rather than usually right.
   // ---------------------------------------------------------------------
   res.on('finish', realms.bind(req.realm, function () {
-    // Counted here rather than at the top of the middleware because the two things
-    // worth counting — the status code and how long it took — do not exist until
-    // the response has gone out. `req.route` is set by Express when it dispatches
-    // into a route, so by now it holds the PATTERN that matched
-    // ("/oauth2/register/:client_id") rather than the URL that was requested; the
-    // metrics table is keyed on it so that one row means one endpoint instead of
-    // one row per client id. A request that matched nothing has no pattern, which
-    // is what `matched` records: those are 404s, and they are the ones the table's
-    // cap collapses when a scanner starts inventing paths.
+    // Counted here rather than at the top of the middleware because the two
+    // things worth counting — the status code and how long it took — do not
+    // exist until the response has gone out. `req.route` is set by Express when
+    // it dispatches into a route, so by now it holds the PATTERN that matched
+    // ("/oauth2/register/:client_id") rather than the URL that was requested;
+    // the metrics table is keyed on it so that one row means one endpoint
+    // instead of one row per client id. A request that matched nothing has no
+    // pattern, which is what `matched` records: those are 404s, and they are
+    // the ones the table's cap collapses when a scanner starts inventing paths.
     const matchedPath = (req.route && req.route.path) || '';
     stats.recordCall({
       method: req.method,
@@ -673,11 +710,12 @@ app.use(function (req, res, next) {
                             durationMs: Date.now() - started,
                             headers: headersOf(res.getHeaders()),
                             body: responseBody } },
-              'Response: ' + res.statusCode + ' ' + req.method + ' ' + req.originalUrl +
+              'Response: ' + res.statusCode + ' ' + req.method + ' ' +
+              req.originalUrl +
               ' in ' + (Date.now() - started) + 'ms');
   }));
-  log.debug("Leaving the call-log middleware. The response will be logged from " +
-            "its finish event.");
+  log.debug("Leaving the call-log middleware. The response will be logged " +
+            "from its finish event.");
   next();
 });
 

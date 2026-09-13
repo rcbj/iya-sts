@@ -191,7 +191,8 @@ function setStore(hooks) {
     return false;
   }
   store = hooks;
-  log.debug('Leaving setStore(). The keystore is backed by the persistence store.');
+  log.debug('Leaving setStore(). The keystore is backed by the persistence ' +
+            'store.');
   return true;
 }
 
@@ -204,9 +205,17 @@ function setStore(hooks) {
 // directory, restart, and assert that the `kid` did not change.
 // ---------------------------------------------------------------------------
 function persists() {
+  log.debug("Entering persists().");
   const source = String(config.value('keys.source') || 'auto');
-  if (source === 'generated') return false;
-  if (source === 'persisted') return true;
+  if (source === 'generated') {
+    log.debug("Leaving persists().");
+    return false;
+  }
+  if (source === 'persisted') {
+    log.debug("Leaving persists().");
+    return true;
+  }
+  log.debug("Leaving persists().");
   return mode.isProduct();
 }
 
@@ -221,8 +230,13 @@ function persists() {
 // opening it for ever.
 // ---------------------------------------------------------------------------
 function retention() {
+  log.debug("Entering retention().");
   const word = String(config.value('keys.plaintextRetention') || 'timed');
-  if (word === 'resident' || word === 'per-use') return word;
+  if (word === 'resident' || word === 'per-use') {
+    log.debug("Leaving retention().");
+    return word;
+  }
+  log.debug("Leaving retention().");
   return 'timed';
 }
 
@@ -231,8 +245,13 @@ function retention() {
 // are the same request, and a `timed` policy with a zero timeout would arm a
 // `setTimeout(0)` per signature, which is strictly worse than the immediate.
 function plaintextTtlMs() {
+  log.debug("Entering plaintextTtlMs().");
   const seconds = Number(config.value('keys.plaintextTtlS'));
-  if (!isFinite(seconds) || seconds < 0) return 300000;
+  if (!isFinite(seconds) || seconds < 0) {
+    log.debug("Leaving plaintextTtlMs().");
+    return 300000;
+  }
+  log.debug("Leaving plaintextTtlMs().");
   return Math.floor(seconds) * 1000;
 }
 
@@ -246,15 +265,22 @@ function plaintextTtlMs() {
 // KeyObject's copy lives in the OpenSSL heap.
 // ---------------------------------------------------------------------------
 function purgeFor(realmId) {
+  log.debug("Entering purgeFor().");
   const id = String(realmId || '');
   const entry = material.get(id);
-  if (!entry) return false;
+  if (!entry) {
+    log.debug("Leaving purgeFor().");
+    return false;
+  }
   if (entry.timer) {
     clearTimeout(entry.timer);
     entry.timer = null;
   }
   entry.immediate = false;
-  if (!entry.plain && !entry.parsed) return false;
+  if (!entry.plain && !entry.parsed) {
+    log.debug("Leaving purgeFor().");
+    return false;
+  }
   if (entry.buffer && Buffer.isBuffer(entry.buffer)) {
     entry.buffer.fill(0);
   }
@@ -263,6 +289,7 @@ function purgeFor(realmId) {
   entry.parsed = null;
   log.debug('purgeFor(): the "' + id + '" realm\'s decrypted signing key was ' +
             'dropped.');
+  log.debug("Leaving purgeFor().");
   return true;
 }
 
@@ -298,16 +325,24 @@ function purgeAll() {
 // it is stated rather than rounded off.
 // ---------------------------------------------------------------------------
 function armPurge(realmId) {
+  log.debug("Entering armPurge().");
   const id = String(realmId || '');
   const entry = material.get(id);
-  if (!entry) return;
+  if (!entry) {
+    log.debug("Leaving armPurge().");
+    return;
+  }
   const policy = retention();
   if (policy === 'resident') {
+    log.debug("Leaving armPurge().");
     return;
   }
   const ttl = plaintextTtlMs();
   if (policy === 'per-use' || ttl === 0) {
-    if (entry.immediate) return;
+    if (entry.immediate) {
+      log.debug("Leaving armPurge().");
+      return;
+    }
     entry.immediate = true;
     setImmediate(function () {
       // Re-read the policy: it is runtime-settable, and an immediate queued
@@ -319,11 +354,13 @@ function armPurge(realmId) {
       }
       purgeFor(id);
     });
+    log.debug("Leaving armPurge().");
     return;
   }
   if (entry.timer) clearTimeout(entry.timer);
   entry.timer = setTimeout(function () { purgeFor(id); }, ttl);
   if (typeof entry.timer.unref === 'function') entry.timer.unref();
+  log.debug("Leaving armPurge().");
 }
 
 // ---------------------------------------------------------------------------
@@ -335,13 +372,18 @@ function armPurge(realmId) {
 // none, which `deserialiseRefreshTokenKeys()` reads back as nothing to restore.
 // ---------------------------------------------------------------------------
 function serialiseRefreshTokenKeys(held) {
+  log.debug("Entering serialiseRefreshTokenKeys().");
   if (!held || !held.rsa || !held.ec || !held.secret) {
+    log.debug("Leaving serialiseRefreshTokenKeys().");
     return null;
   }
+  log.debug("Leaving serialiseRefreshTokenKeys().");
   return {
-    rsa: { privateKeyPem: held.rsa.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+    rsa: { privateKeyPem: held.rsa.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }),
            publicJwk: held.rsa.publicJwk },
-    ec: { privateKeyPem: held.ec.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+    ec: { privateKeyPem: held.ec.privateKey.export(
+        { type: 'pkcs8', format: 'pem' }),
           publicJwk: held.ec.publicJwk },
     secret: Buffer.from(held.secret).toString('base64'),
     secretKid: held.secretKid
@@ -349,12 +391,16 @@ function serialiseRefreshTokenKeys(held) {
 }
 
 function deserialiseRefreshTokenKeys(blob, nodeCryptoModule) {
+  log.debug("Entering deserialiseRefreshTokenKeys().");
   if (!blob || !blob.rsa || !blob.ec || !blob.secret ||
       !blob.rsa.privateKeyPem || !blob.ec.privateKeyPem) {
+    log.debug("Leaving deserialiseRefreshTokenKeys().");
     return null;
   }
+  log.debug("Leaving deserialiseRefreshTokenKeys().");
   return {
-    rsa: { privateKey: nodeCryptoModule.createPrivateKey(blob.rsa.privateKeyPem),
+    rsa: { privateKey: nodeCryptoModule.createPrivateKey(
+        blob.rsa.privateKeyPem),
            publicJwk: blob.rsa.publicJwk },
     ec: { privateKey: nodeCryptoModule.createPrivateKey(blob.ec.privateKeyPem),
           publicJwk: blob.ec.publicJwk },
@@ -447,13 +493,14 @@ function serialise(keys) {
         }
       : null,
     // **THE REFRESH-TOKEN ENCRYPTION KEYS (2026-09-12)** — the realm's own RSA
-    // pair, EC pair and symmetric secret that `oauth-oidc/refresh_token_crypto.js`
-    // encrypts every refresh token to. Written down and shared exactly as the
-    // request-encryption key above is, and for its reason: a refresh token
-    // outlives the process that minted it in product mode, and a request worker
-    // that encrypted to a key another worker does not hold would mint a token
-    // nothing else can open. NULL rather than absent for the same reason too;
-    // `helpers.js`'s refreshTokenKeysFor() backfills a set written before it.
+    // pair, EC pair and symmetric secret that
+    // `oauth-oidc/refresh_token_crypto.js` encrypts every refresh token to.
+    // Written down and shared exactly as the request-encryption key above is,
+    // and for its reason: a refresh token outlives the process that minted it
+    // in product mode, and a request worker that encrypted to a key another
+    // worker does not hold would mint a token nothing else can open. NULL
+    // rather than absent for the same reason too; `helpers.js`'s
+    // refreshTokenKeysFor() backfills a set written before it.
     refreshTokenEncKeys: serialiseRefreshTokenKeys(keys.refreshTokenEncKeys)
   };
   log.debug('Leaving serialise(). ' + out.extraKeys.length + ' extra key(s).');
@@ -488,15 +535,19 @@ function deserialise(blob, nodeCrypto) {
     }),
     // THE REQUEST-ENCRYPTION KEY, put back. Null on a blob written before it
     // joined the set, which `helpers.js`'s requestEncryptionKeyFor() backfills.
-    vciRequestEncKey: (blob.vciRequestEncKey && blob.vciRequestEncKey.privateKeyPem)
+    vciRequestEncKey: (blob.vciRequestEncKey &&
+                       blob.vciRequestEncKey.privateKeyPem)
       ? {
-          privateKey: nodeCrypto.createPrivateKey(blob.vciRequestEncKey.privateKeyPem),
+          privateKey: nodeCrypto.createPrivateKey(
+              blob.vciRequestEncKey.privateKeyPem),
           publicJwk: blob.vciRequestEncKey.publicJwk
         }
       : null,
-    refreshTokenEncKeys: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys, nodeCrypto)
+    refreshTokenEncKeys: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys,
+                                                     nodeCrypto)
   };
-  log.debug('Leaving deserialise(). ' + out.extraKeys.length + ' extra key(s).');
+  log.debug('Leaving deserialise(). ' + out.extraKeys.length +
+            ' extra key(s).');
   return out;
 }
 
@@ -523,9 +574,9 @@ async function start() {
   if (!store) {
     throw new Error(errorCodes.tag('STS-KEYS-0027') +
                     'key material is configured to persist (keys.source=' +
-                    config.value('keys.source') + ') and no persistence store ' +
-                    'is open. Product mode requires one: set persistence.mode ' +
-                    'to ldif or postgres.');
+                    config.value('keys.source') + ') and no persistence ' +
+                    'store is open. Product mode requires one: set ' +
+                    'persistence.mode to ldif or postgres.');
   }
   kek = await secrets.readKek();
   // Fail here rather than at the first decrypt, so the message names the KEK
@@ -551,9 +602,9 @@ async function start() {
       // provider, the wrong file mounted — and the overwhelmingly wrong
       // response is to generate a new signing key and carry on.
       throw new Error(errorCodes.tag('STS-KEYS-0029') +
-                      'the stored key material for the "' + realmId + '" realm ' +
-                      'could not be decrypted. The key-encryption key is ' +
-                      'almost certainly not the one it was encrypted with ' +
+                      'the stored key material for the "' + realmId + '" ' +
+                      'realm could not be decrypted. The key-encryption key ' +
+                      'is almost certainly not the one it was encrypted with ' +
                       '(provider: ' + secrets.describe().provider + '). This ' +
                       'service will NOT start rather than generate a new ' +
                       'signing key, because doing that would silently stop ' +
@@ -599,8 +650,8 @@ async function start() {
            'loaded from the ' + config.value('persistence.mode') + ' store, ' +
            'encrypted with AES-256-GCM under a key read from ' +
            secrets.describe().label + '. A realm with no stored keys gets ' +
-           'them generated and written on first use. WHAT IS RESIDENT IN THIS ' +
-           'PROCESS IS THE CIPHERTEXT: a private key is decrypted when ' +
+           'them generated and written on first use. WHAT IS RESIDENT IN ' +
+           'THIS PROCESS IS THE CIPHERTEXT: a private key is decrypted when ' +
            'something signs with it and dropped again (' +
            retentionSentence() + ').');
   log.debug('Leaving start(). ' + loaded + ' realm(s).');
@@ -659,13 +710,17 @@ let adoptListener = null;
 // and request_worker.js in a worker. Unset in a service with no pool, where
 // every one of these functions is inert and nothing calls them twice.
 function setKeyPublisher(fn) {
+  log.debug("Entering setKeyPublisher().");
   publisher = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving setKeyPublisher().");
 }
 
 // Filled by helpers.js: "drop the cached key set for this realm". See
 // adoptShared() for why adopting without it changes nothing.
 function onAdopt(fn) {
+  log.debug("Entering onAdopt().");
   adoptListener = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving onAdopt().");
 }
 
 // What a sibling process already generated, as a key set this process can use,
@@ -673,6 +728,7 @@ function onAdopt(fn) {
 // about several processes agreeing within one run, which is a different
 // question from whether anything is written down.
 function sharedFor(realmId, nodeCryptoModule) {
+  log.debug("Entering sharedFor().");
   // -------------------------------------------------------------------------
   // **THIS ANSWERED `null` WHENEVER THE KEYSTORE PERSISTED UNTIL 2026-09-09,
   // AND THAT WAS A BUG WITH A CORRECT-SOUNDING REASON.** The reason read:
@@ -709,8 +765,10 @@ function sharedFor(realmId, nodeCryptoModule) {
   // -------------------------------------------------------------------------
   const blob = shared.get(String(realmId || ''));
   if (!blob) {
+    log.debug("Leaving sharedFor().");
     return null;
   }
+  log.debug("Leaving sharedFor().");
   return deserialise(blob, nodeCryptoModule || nodeCrypto);
 }
 
@@ -718,7 +776,9 @@ function sharedFor(realmId, nodeCryptoModule) {
 // have generated already — the sender is the authority, and the caller decided
 // that before calling.
 function adoptShared(realmId, blob) {
+  log.debug("Entering adoptShared().");
   if (!blob) {
+    log.debug("Leaving adoptShared().");
     return false;
   }
   const id = String(realmId || '');
@@ -780,6 +840,7 @@ function adoptShared(realmId, blob) {
   }
   log.debug('adoptShared(): the "' + realmId + '" realm\'s signing keys came ' +
             'from another process in this service.');
+  log.debug("Leaving adoptShared().");
   return true;
 }
 
@@ -787,6 +848,7 @@ function adoptShared(realmId, blob) {
 // this process's answer and offers them to the rest of the service; the
 // publisher decides whether they win.
 function publishShared(realmId, keys) {
+  log.debug("Entering publishShared().");
   // **THIS RETURNED EARLY WHENEVER THE KEYSTORE PERSISTED UNTIL 2026-09-09,
   // AND IT IS THE OTHER HALF OF THE BUG `sharedFor()` DESCRIBES.** Removing
   // that guard alone changed NOTHING measurable: with nobody publishing, the
@@ -813,12 +875,14 @@ function publishShared(realmId, keys) {
     try {
       enriching = enriches(serialise(keys), held);
     } catch (e) {
+      log.debug("Caught in publishShared(): " + ((e && e.message) || e));
       // A set that cannot be serialised is not an enrichment of anything; the
       // branch below reports the serialisation failure on the path that
       // actually tries to share it.
       enriching = false;
     }
     if (!enriching) {
+      log.debug("Leaving publishShared().");
       // **FALSE AND NOT undefined SINCE 2026-09-12**, and it is read: the
       // caller that warms a realm's post-quantum keys writes them to the
       // STORE as well, and a process whose offer lost the race must not write
@@ -835,12 +899,14 @@ function publishShared(realmId, keys) {
               'serialised for sharing: ' + e.message + '. This process will ' +
               'use them alone, which means a second process holds different ' +
               'ones.');
+    log.debug("Leaving publishShared().");
     return false;
   }
   shared.set(id, blob);
   if (publisher) {
     publisher(id, blob);
   }
+  log.debug("Leaving publishShared().");
   return true;
 }
 
@@ -862,7 +928,9 @@ function publishShared(realmId, keys) {
 // that has lost them, and every process would go back to generating its own.
 // ---------------------------------------------------------------------------
 function enriches(candidate, held) {
+  log.debug("Entering enriches().");
   if (!candidate || !held || candidate.certB64 !== held.certB64) {
+    log.debug("Leaving enriches().");
     return false;
   }
   const pqHere = (candidate.pqKeys || []).length;
@@ -874,8 +942,10 @@ function enriches(candidate, held) {
   const rtHere = candidate.refreshTokenEncKeys ? 1 : 0;
   const rtThere = held.refreshTokenEncKeys ? 1 : 0;
   if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere) {
+    log.debug("Leaving enriches().");
     return false;
   }
+  log.debug("Leaving enriches().");
   return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere;
 }
 
@@ -891,6 +961,7 @@ function enriches(candidate, held) {
 // which is `stsKeysFor`'s own order and for its reason.
 // ---------------------------------------------------------------------------
 function requestEncryptionKeyHeldFor(realmId) {
+  log.debug("Entering requestEncryptionKeyHeldFor().");
   const id = String(realmId || '');
   const fromStore = storedFor(id);
   const blob = (fromStore && fromStore.vciRequestEncKey)
@@ -898,24 +969,30 @@ function requestEncryptionKeyHeldFor(realmId) {
     : shared.get(id);
   const member = blob && blob.vciRequestEncKey;
   if (!member || !member.privateKeyPem || !member.publicJwk) {
+    log.debug("Leaving requestEncryptionKeyHeldFor().");
     return null;
   }
+  log.debug("Leaving requestEncryptionKeyHeldFor().");
   return { privateKey: nodeCrypto.createPrivateKey(member.privateKeyPem),
            publicJwk: member.publicJwk };
 }
 
 // ---------------------------------------------------------------------------
 // THE REFRESH-TOKEN ENCRYPTION KEYS SOME PROCESS ALREADY MADE FOR THIS REALM,
-// deserialised, or null. It READS and never makes — `requestEncryptionKeyHeldFor()`
-// above, for the same backfill, in the same order: stored, then shared.
+// deserialised, or null. It READS and never makes —
+// `requestEncryptionKeyHeldFor()` above, for the same backfill, in the same
+// order: stored, then shared.
 // ---------------------------------------------------------------------------
 function refreshTokenKeysHeldFor(realmId) {
+  log.debug("Entering refreshTokenKeysHeldFor().");
   const id = String(realmId || '');
   const fromStore = storedFor(id);
   const blob = (fromStore && fromStore.refreshTokenEncKeys)
     ? fromStore
     : shared.get(id);
-  return deserialiseRefreshTokenKeys(blob && blob.refreshTokenEncKeys, nodeCrypto);
+  log.debug("Leaving refreshTokenKeysHeldFor().");
+  return deserialiseRefreshTokenKeys(blob && blob.refreshTokenEncKeys,
+                                     nodeCrypto);
 }
 
 // Every realm this process holds keys for, for the fork-time seed.
@@ -923,22 +1000,34 @@ function refreshTokenKeysHeldFor(realmId) {
 // `sharedFor()` deserialises; this is the stored form, which is what has to be
 // compared and rebroadcast.
 function sharedBlobFor(realmId) {
+  log.debug("Entering sharedBlobFor().");
+  log.debug("Leaving sharedBlobFor().");
   return shared.get(String(realmId || '')) || null;
 }
 
 function sharedAll() {
+  log.debug("Entering sharedAll().");
   const out = [];
   shared.forEach(function (blob, id) { out.push({ realm: id, blob: blob }); });
+  log.debug("Leaving sharedAll().");
   return out;
 }
 
 function storedFor(realmId) {
-  if (!persists()) return null;
+  log.debug("Entering storedFor().");
+  if (!persists()) {
+    log.debug("Leaving storedFor().");
+    return null;
+  }
   const id = String(realmId || '');
   const entry = material.get(id);
-  if (!entry) return null;
+  if (!entry) {
+    log.debug("Leaving storedFor().");
+    return null;
+  }
   if (entry.plain) {
     armPurge(id);
+    log.debug("Leaving storedFor().");
     return entry.plain;
   }
   if (!kek) {
@@ -951,6 +1040,7 @@ function storedFor(realmId) {
               'encrypted and there is no key-encryption key to open it with. ' +
               'A new signing key will be generated, and every token issued ' +
               'under the stored one stops verifying.');
+    log.debug("Leaving storedFor().");
     return null;
   }
   let buffer;
@@ -963,12 +1053,15 @@ function storedFor(realmId) {
     log.error(errorCodes.tag('STS-KEYS-0033') +
               'keystore: the "' + id + '" realm\'s key material decrypted at ' +
               'startup and does NOT decrypt now: ' + e.message);
+    log.debug("Leaving storedFor().");
     return null;
   }
   entry.buffer = buffer;
   entry.plain = JSON.parse(buffer.toString('utf8'));
-  log.debug('storedFor(): the "' + id + '" realm\'s signing key was decrypted.');
+  log.debug('storedFor(): the "' + id +
+            '" realm\'s signing key was decrypted.');
   armPurge(id);
+  log.debug("Leaving storedFor().");
   return entry.plain;
 }
 
@@ -987,11 +1080,18 @@ function storedFor(realmId) {
 // names. Under `timed` a realm signing steadily parses once.
 // ---------------------------------------------------------------------------
 function privateMaterialFor(realmId) {
+  log.debug("Entering privateMaterialFor().");
   const id = String(realmId || '');
   const blob = storedFor(id);
-  if (!blob) return null;
+  if (!blob) {
+    log.debug("Leaving privateMaterialFor().");
+    return null;
+  }
   const entry = material.get(id);
-  if (entry.parsed) return entry.parsed;
+  if (entry.parsed) {
+    log.debug("Leaving privateMaterialFor().");
+    return entry.parsed;
+  }
   const parsed = {
     privateKeyPem: blob.privateKeyPem,
     privateKey: nodeCrypto.createPrivateKey(blob.privateKeyPem),
@@ -1060,22 +1160,27 @@ function privateMaterialFor(realmId) {
   entry.parsed = parsed;
   log.debug('privateMaterialFor(): the "' + id + '" realm\'s ' +
             (parsed.extra.size + 1) + ' private key(s) were parsed.');
+  log.debug("Leaving privateMaterialFor().");
   return parsed;
 }
 
 // One sentence naming the policy in force, used by the startup line, the
 // report and the console so that three surfaces cannot describe it differently.
 function retentionSentence() {
+  log.debug("Entering retentionSentence().");
   const policy = retention();
   if (policy === 'resident') {
-    return 'keys.plaintextRetention is "resident", so a decrypted key is kept ' +
-           'for the life of the process — which is what this service did ' +
-           'before the setting existed';
+    log.debug("Leaving retentionSentence().");
+    return 'keys.plaintextRetention is "resident", so a decrypted key is ' +
+           'kept for the life of the process — which is what this service ' +
+           'did before the setting existed';
   }
   if (policy === 'per-use' || plaintextTtlMs() === 0) {
-    return 'keys.plaintextRetention is "' + policy + '", so a decrypted key is ' +
-           'dropped at the end of the turn of the event loop that needed it';
+    log.debug("Leaving retentionSentence().");
+    return 'keys.plaintextRetention is "' + policy + '", so a decrypted key ' +
+           'is dropped at the end of the turn of the event loop that needed it';
   }
+  log.debug("Leaving retentionSentence().");
   return 'keys.plaintextRetention is "timed", so a decrypted key is dropped ' +
          'after ' + (plaintextTtlMs() / 1000) + 's unused';
 }
@@ -1187,6 +1292,7 @@ async function rotate(realmId) {
       log.error(errorCodes.tag('STS-KEYS-0036') +
                 'keystore: the stored keys for "' + id + '" could not be ' +
                 'removed: ' + e.message);
+      log.debug("Leaving rotate().");
       return { ok: false, errors: ['The stored keys could not be removed: ' +
                                    e.message] };
     }
@@ -1267,7 +1373,9 @@ realms.onRemove(function (id) {
 
 // What the console and the metadata report draw. Says WHERE and never WHAT.
 function report() {
+  log.debug("Entering report().");
   const on = persists();
+  log.debug("Leaving report().");
   return {
     persisting: on,
     source: String(config.value('keys.source') || 'auto'),
@@ -1374,15 +1482,18 @@ function report() {
 let ephemeral = false;
 
 function useEphemeralKek(hex) {
+  log.debug("Entering useEphemeralKek().");
   if (persists()) {
     log.error(errorCodes.tag('STS-KEYS-0038') +
               'keystore: an ephemeral key-encryption key was offered while ' +
-              'the keystore persists. Refused: in product mode the KEK is the ' +
-              'operator\'s and the store outlives this process.');
+              'the keystore persists. Refused: in product mode the KEK is ' +
+              'the operator\'s and the store outlives this process.');
+    log.debug("Leaving useEphemeralKek().");
     return false;
   }
   const bytes = String(hex || '');
   if (!bytes) {
+    log.debug("Leaving useEphemeralKek().");
     return false;
   }
   kek = bytes;
@@ -1393,6 +1504,7 @@ function useEphemeralKek(hex) {
     log.error(errorCodes.tag('STS-KEYS-0039') +
               'keystore: the ephemeral key-encryption key was not usable: ' +
               e.message);
+    log.debug("Leaving useEphemeralKek().");
     return false;
   }
   ephemeral = true;
@@ -1401,22 +1513,29 @@ function useEphemeralKek(hex) {
            'is generated per run and never written down, so nothing minted ' +
            'survives a restart — which is what development mode has always ' +
            'promised.');
+  log.debug("Leaving useEphemeralKek().");
   return true;
 }
 
 // True when minted state is shareable BECAUSE of the line above rather than
 // because this is a product deployment. `persistence_minted.js` reads it.
 function hasEphemeralKek() {
+  log.debug("Entering hasEphemeralKek().");
+  log.debug("Leaving hasEphemeralKek().");
   return ephemeral && !!kek;
 }
 
 // The material, for handing to a request worker over IPC. Null unless this
 // process generated one.
 function ephemeralKek() {
+  log.debug("Entering ephemeralKek().");
+  log.debug("Leaving ephemeralKek().");
   return ephemeral ? kek : null;
 }
 
 function sealed() {
+  log.debug("Entering sealed().");
+  log.debug("Leaving sealed().");
   return !!kek;
 }
 
@@ -1509,12 +1628,15 @@ let pkiPublisher = null;
 // replacement for a second kind of payload, and getting it wrong there would
 // have broken signing.
 function setPkiPublisher(fn) {
+  log.debug("Entering setPkiPublisher().");
   pkiPublisher = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving setPkiPublisher().");
 }
 
 // What another process built, adopted whole. The sender is the authority: see
 // the paragraph above on why there is no arbitration here.
 function adoptPki(realmId, chain) {
+  log.debug("Entering adoptPki().");
   const id = String(realmId || '');
   if (chain) {
     pkiHeld.set(id, chain);
@@ -1523,13 +1645,18 @@ function adoptPki(realmId, chain) {
   }
   log.debug('adoptPki(): the "' + id + '" realm\'s certificate authority ' +
             'came from another process in this service.');
+  log.debug("Leaving adoptPki().");
   return true;
 }
 
 // Every hierarchy this process holds, for the fork-time seed.
 function pkiAll() {
+  log.debug("Entering pkiAll().");
   const out = [];
-  pkiHeld.forEach(function (chain, id) { out.push({ realm: id, chain: chain }); });
+  pkiHeld.forEach(function (chain, id) {
+    out.push({ realm: id, chain: chain });
+  });
+  log.debug("Leaving pkiAll().");
   return out;
 }
 
@@ -1537,6 +1664,8 @@ function pkiAll() {
 // the console draws it inside a render and the token endpoint reads its trust
 // anchors inside a client-authentication check.
 function pkiFor(realmId) {
+  log.debug("Entering pkiFor().");
+  log.debug("Leaving pkiFor().");
   return pkiHeld.get(String(realmId || '')) || null;
 }
 
@@ -1600,6 +1729,7 @@ function attachPki(realmId, chain) {
 }
 
 function reset() {
+  log.debug("Entering reset().");
   shared.clear();
   pkiHeld.clear();
   publisher = null;

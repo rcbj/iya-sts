@@ -45,6 +45,12 @@ const os = require('os');
 const path = require('path');
 const nodeCrypto = require('crypto');
 
+// This file's own logger, for the Entering/Leaving lines and the handled
+// exceptions the code style asks for. Its level is LOG_LEVEL, which is also
+// what the harness's assertion logger reads.
+const log = require('bunyan').createLogger({ name: 'kerberos_person_keys',
+  level: process.env.LOG_LEVEL || 'info' });
+
 const ROOT = path.join(__dirname, '..');
 
 // ---------------------------------------------------------------------------
@@ -54,18 +60,37 @@ const ROOT = path.join(__dirname, '..');
 // records, a negative size being a hole.
 // ---------------------------------------------------------------------------
 function independentKeytabRead(buf) {
+  log.debug("Entering independentKeytabRead().");
   const out = [];
   if (buf[0] !== 0x05 || buf[1] !== 0x02) {
     throw new Error('not 0x0502');
   }
   let i = 2;
-  const u16 = function () { const v = (buf[i] << 8) | buf[i + 1]; i += 2; return v; };
+  const u16 = function () {
+    log.debug("Entering u16().");
+    const v = (buf[i] << 8) | buf[i + 1];
+    i += 2;
+    log.debug("Leaving u16().");
+    return v;
+  };
+
   const u32 = function () {
-    const v = ((buf[i] << 24) >>> 0) + (buf[i + 1] << 16) + (buf[i + 2] << 8) + buf[i + 3];
+    log.debug("Entering u32().");
+    const v = ((buf[i] << 24) >>> 0) + (buf[i + 1] << 16) + (buf[i +
+        2] << 8) + buf[i + 3];
     i += 4;
+    log.debug("Leaving u32().");
     return v >>> 0;
   };
-  const str = function () { const n = u16(); const s = buf.slice(i, i + n); i += n; return s; };
+
+  const str = function () {
+    log.debug("Entering str().");
+    const n = u16();
+    const s = buf.slice(i, i + n);
+    i += n;
+    log.debug("Leaving str().");
+    return s;
+  };
   while (i < buf.length) {
     let size = u32();
     if (size & 0x80000000) {
@@ -93,6 +118,7 @@ function independentKeytabRead(buf) {
     out.push({ realm: realm, name: name, type: type, when: when, vno: vno,
                enctype: enctype, key: key.toString('hex') });
   }
+  log.debug("Leaving independentKeytabRead().");
   return out;
 }
 
@@ -100,10 +126,15 @@ function independentKeytabRead(buf) {
 // 1. STRING-TO-KEY THROUGH THE PATH THE STORED KEYS TAKE.
 // ---------------------------------------------------------------------------
 async function stringToKeyMatchesRfc3962(t) {
-  t.log.info('=== RFC 3962 Appendix B, through krb5_person_keys.deriveKey() ===');
+  log.debug("Entering stringToKeyMatchesRfc3962().");
+  t.log.info('=== RFC 3962 Appendix B, through krb5_person_keys.deriveKey() ' +
+             '===');
   const personKeys = require('../kerberos/krb5_person_keys');
   const iter = function (n) {
-    return new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
+    log.debug("Entering iter().");
+    log.debug("Leaving iter().");
+    return new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255,
+                           n & 255]);
   };
   // RFC 3962 Appendix B: pass phrase "password", salt "ATHENA.MIT.EDUraeburn".
   const vectors = [
@@ -119,39 +150,50 @@ async function stringToKeyMatchesRfc3962(t) {
       'ATHENA.MIT.EDUraeburn', iter(v.n))).toString('hex');
     const k18 = Buffer.from(await personKeys.deriveKey(18, 'password',
       'ATHENA.MIT.EDUraeburn', iter(v.n))).toString('hex');
-    t.equal(k17, v.k17, 'AES128 string-to-key at ' + v.n + ' iteration(s) is RFC 3962\'s');
-    t.equal(k18, v.k18, 'AES256 string-to-key at ' + v.n + ' iteration(s) is RFC 3962\'s');
+    t.equal(k17, v.k17, 'AES128 string-to-key at ' + v.n + ' iteration(s) is ' +
+        'RFC 3962\'s');
+    t.equal(k18, v.k18, 'AES256 string-to-key at ' + v.n + ' iteration(s) is ' +
+        'RFC 3962\'s');
   }
+  log.debug("Leaving stringToKeyMatchesRfc3962().");
 }
 
 // ---------------------------------------------------------------------------
 // 2. THE KEYTAB WRITER AGAINST AN INDEPENDENT READER.
 // ---------------------------------------------------------------------------
 function theKeytabRoundTrips(t) {
+  log.debug("Entering theKeytabRoundTrips().");
   t.log.info('=== an MIT keytab, written here and read independently ===');
   const keytab = require('../kerberos/krb5_keytab');
   const k1 = nodeCrypto.randomBytes(32);
   const k2 = nodeCrypto.randomBytes(16);
   const bytes = keytab.writeKeytab([
-    { realm: 'EXAMPLE.COM', components: ['HTTP', 'web.example.com'], timestamp: 1700000000,
+    { realm: 'EXAMPLE.COM', components: ['HTTP', 'web.example.com'],
+      timestamp: 1700000000,
       kvno: 7, etype: 18, key: k1 },
-    { realm: 'EXAMPLE.COM', components: ['HTTP', 'web.example.com'], timestamp: 1700000000,
+    { realm: 'EXAMPLE.COM', components: ['HTTP', 'web.example.com'],
+      timestamp: 1700000000,
       kvno: 300, etype: 23, key: k2 }
   ]);
   const read = independentKeytabRead(bytes);
   t.equal(read.length, 2, 'the independent reader finds both entries');
-  t.check(read[0].realm === 'EXAMPLE.COM' && read[0].name.join('/') === 'HTTP/web.example.com' &&
-          read[0].enctype === 18 && read[0].vno === 7 && read[0].key === k1.toString('hex') &&
+  t.check(read[0].realm === 'EXAMPLE.COM' &&
+          read[0].name.join('/') === 'HTTP/web.example.com' &&
+          read[0].enctype === 18 && read[0].vno === 7 &&
+          read[0].key === k1.toString('hex') &&
           read[0].type === 1 && read[0].when === 1700000000,
-          'every field of the first entry is what was written', JSON.stringify(read[0]));
-  t.check(read[1].vno === 300 && read[1].enctype === 23 && read[1].key === k2.toString('hex'),
-          'a kvno above 255 survives through the 32-bit field, which the 8-bit one ' +
-          'alone would have wrapped to 44', JSON.stringify(read[1]));
+          'every field of the first entry is what was written', JSON.stringify(
+              read[0]));
+  t.check(read[1].vno === 300 && read[1].enctype === 23 &&
+          read[1].key === k2.toString('hex'),
+          'a kvno above 255 survives through the 32-bit field, which the ' +
+          '8-bit one alone would have wrapped to 44', JSON.stringify(read[1]));
   // A HOLE — a deleted entry, negative size — is skipped by both readers.
   const hole = Buffer.alloc(4 + 10);
   hole.writeInt32BE(-10, 0);
   const holed = Buffer.concat([bytes.subarray(0, 2), hole, bytes.subarray(2)]);
-  t.equal(independentKeytabRead(holed).length, 2, 'the independent reader skips a hole');
+  t.equal(independentKeytabRead(holed).length, 2, 'the independent reader ' +
+                                                  'skips a hole');
   t.equal(keytab.readKeytab(holed).length, 2, 'and so does the module\'s own');
   let refused = false;
   try {
@@ -160,27 +202,35 @@ function theKeytabRoundTrips(t) {
     refused = /truncated|runs past|ends before/.test(e.message);
   }
   t.check(refused, 'a truncated keytab is REFUSED rather than read half-way');
+  log.debug("Leaving theKeytabRoundTrips().");
 }
 
 // ---------------------------------------------------------------------------
 // 3. DEVELOPMENT MODE IS EXACTLY WHAT IT WAS.
 // ---------------------------------------------------------------------------
 async function developmentIsUnchanged(t) {
-  t.log.info('=== development: the shared password, on-demand accounts, no derivation ===');
+  log.debug("Entering developmentIsUnchanged().");
+  t.log.info('=== development: the shared password, on-demand accounts, no ' +
+             'derivation ===');
   const principals = require('../kerberos/krb5_principals.js');
   const personKeys = require('../kerberos/krb5_person_keys');
   const report = await driveAsExchange(principals.USER_PASSWORD, 'alice');
-  t.check(report.ok === true, 'a development AS-REQ for alice with krb5.userPassword gets a TGT',
+  t.check(report.ok === true, 'a development AS-REQ for alice with ' +
+                              'krb5.userPassword gets a TGT',
           JSON.stringify(report));
   const fresh = 'devprobe' + Math.random().toString(36).slice(2, 8);
   const onDemand = await driveAsExchange(principals.USER_PASSWORD, fresh);
-  t.check(onDemand.ok === true, 'a name nobody configured is still created on demand',
+  t.check(onDemand.ok === true, 'a name nobody configured is still created ' +
+                                'on demand',
           JSON.stringify(onDemand));
   const record = principals.find([fresh]);
-  t.check(!!record && record.autoCreated === true && record.directoryKeys === false &&
+  t.check(!!record && record.autoCreated === true &&
+          record.directoryKeys === false &&
           record.password === principals.USER_PASSWORD,
-          'and it is an ordinary on-demand account keyed from the shared password');
-  t.check(personKeys.productKdc() === false, 'the register knows this is a development KDC');
+          'and it is an ordinary on-demand account keyed from the shared ' +
+          'password');
+  t.check(personKeys.productKdc() === false, 'the register knows this is a ' +
+                                             'development KDC');
   // A DIRECTORY THAT RECORDS EVERY CALL, so that "derives nothing" is asserted
   // against a register that COULD have — with no directory installed, the
   // observer returns before the mode is even asked. Put back afterwards to
@@ -188,44 +238,76 @@ async function developmentIsUnchanged(t) {
   const before = personKeys.currentDirectory();
   const calls = [];
   const stub = {
-    readPerson: function (n) { calls.push('read ' + n);
-      return { username: n, keys: '', info: '', passwordHash: '$scrypt$x' }; },
-    writePerson: function (n) { calls.push('write ' + n); return true; },
-    personKeyInfos: function () { return []; },
-    readService: function () { return null; },
-    writeService: function () { return false; },
-    serviceKeyInfos: function () { return []; }
+    readPerson: function (n) {
+      log.debug("Entering readPerson().");
+      calls.push('read ' + n);
+      log.debug("Leaving readPerson().");
+      return { username: n, keys: '', info: '', passwordHash: '$scrypt$x' };
+    },
+    writePerson: function (n) {
+      log.debug("Entering writePerson().");
+      calls.push('write ' + n);
+      log.debug("Leaving writePerson().");
+      return true;
+    },
+    personKeyInfos: function () {
+      log.debug("Entering personKeyInfos().");
+      log.debug("Leaving personKeyInfos().");
+      return [];
+    },
+    readService: function () {
+      log.debug("Entering readService().");
+      log.debug("Leaving readService().");
+      return null;
+    },
+    writeService: function () {
+      log.debug("Entering writeService().");
+      log.debug("Leaving writeService().");
+      return false;
+    },
+    serviceKeyInfos: function () {
+      log.debug("Entering serviceKeyInfos().");
+      log.debug("Leaving serviceKeyInfos().");
+      return [];
+    }
   };
   personKeys.setDirectory(stub);
   try {
     personKeys.observePassword('alice', 'Some-Password-123!', { event: 'set' });
     await personKeys.idle();
     t.check(calls.length === 0,
-            'a password observed in development derives NOTHING and reads nothing — its ' +
-            'KDC never reads a stored person key, so a key there would be ' +
-            'password-equivalent material with no reader', JSON.stringify(calls));
+            'a password observed in development derives NOTHING and reads ' +
+            'nothing — its KDC never reads a stored person key, so a key ' +
+            'there would be password-equivalent material with no ' +
+            'reader', JSON.stringify(calls));
   } finally {
     personKeys.setDirectory(before);
   }
+  log.debug("Leaving developmentIsUnchanged().");
 }
 
 // An AS exchange in THIS process, against its own development KDC.
 async function driveAsExchange(password, name) {
+  log.debug("Entering driveAsExchange().");
   const principals = require('../kerberos/krb5_principals.js');
   const kdc = require('../kerberos/krb5_kdc.js');
   const msgs = require('../kerberos/krb5_messages.js');
   const kcrypto = require('../kerberos/krb5_crypto.js');
   const prim = require('../kerberos/krb5_primitives.js');
   const profile = kcrypto.etypeById(18);
-  const key = await profile.stringToKey(password, prim.utf8(principals.REALM + name), null);
+  const key = await profile.stringToKey(password,
+                                        prim.utf8(principals.REALM + name),
+                                        null);
   const now = new Date();
-  const cipher = await profile.encrypt(key, kcrypto.KEY_USAGE.AS_REQ_PA_ENC_TIMESTAMP,
+  const cipher = await profile.encrypt(key,
+    kcrypto.KEY_USAGE.AS_REQ_PA_ENC_TIMESTAMP,
     msgs.encPaEncTsEnc(now, now.getMilliseconds() * 1000));
   const bytes = msgs.encKdcReq({
     msgType: msgs.MSG_TYPE.AS_REQ,
     padata: [{ type: msgs.PA_TYPE.ENC_TIMESTAMP,
                value: msgs.encEncryptedData({ etype: 18, cipher: cipher }) }],
-    reqBody: { kdcOptions: [], cname: { type: 1, name: [name] }, realm: principals.REALM,
+    reqBody: { kdcOptions: [], cname: { type: 1, name: [name] },
+               realm: principals.REALM,
                sname: { type: 2, name: ['krbtgt', principals.REALM] },
                till: new Date(Date.now() + 3600000), nonce: 4242, etypes: [18] }
   });
@@ -233,8 +315,10 @@ async function driveAsExchange(password, name) {
   const id = msgs.identify(reply);
   if (id.applicationNumber === msgs.APPLICATION.KRB_ERROR) {
     const e = msgs.readKrbError(reply);
+    log.debug("Leaving driveAsExchange().");
     return { ok: false, code: e.errorCode, eText: e.eText };
   }
+  log.debug("Leaving driveAsExchange().");
   return { ok: true };
 }
 
@@ -273,7 +357,8 @@ async function productChild() {
   const applications = require(R + '/common/applications');
   const cryptoLib = require(R + '/common/crypto');
   out.productKdc = personKeys.productKdc();
-  out.sourceInstalled = principals.keySourceInstalled() && personKeys.installed();
+  out.sourceInstalled = principals.keySourceInstalled() &&
+                        personKeys.installed();
 
   async function asReq(name, password, sname) {
     const etype = 18;
@@ -281,19 +366,24 @@ async function productChild() {
     const padata = [];
     let key = null;
     if (password !== null) {
-      key = await profile.stringToKey(password, prim.utf8(principals.REALM + name), null);
+      key = await profile.stringToKey(password,
+                                      prim.utf8(principals.REALM + name), null);
       const now = new Date();
-      const cipher = await profile.encrypt(key, kcrypto.KEY_USAGE.AS_REQ_PA_ENC_TIMESTAMP,
+      const cipher = await profile.encrypt(key,
+        kcrypto.KEY_USAGE.AS_REQ_PA_ENC_TIMESTAMP,
         msgs.encPaEncTsEnc(now, now.getMilliseconds() * 1000));
       padata.push({ type: msgs.PA_TYPE.ENC_TIMESTAMP,
-                    value: msgs.encEncryptedData({ etype: etype, cipher: cipher }) });
+                    value: msgs.encEncryptedData(
+                        { etype: etype, cipher: cipher }) });
     }
     const target = sname || ['krbtgt', principals.REALM];
     const bytes = msgs.encKdcReq({
       msgType: msgs.MSG_TYPE.AS_REQ, padata: padata,
-      reqBody: { kdcOptions: [], cname: { type: 1, name: [name] }, realm: principals.REALM,
+      reqBody: { kdcOptions: [], cname: { type: 1, name: [name] },
+                 realm: principals.REALM,
                  sname: { type: target[0] === 'krbtgt' ? 2 : 3, name: target },
-                 till: new Date(Date.now() + 3600000), nonce: 777, etypes: [etype] }
+                 till: new Date(Date.now() + 3600000), nonce: 777, etypes: [
+                   etype] }
     });
     const reply = await kdc.handleMessage(bytes);
     const id = msgs.identify(reply);
@@ -304,10 +394,12 @@ async function productChild() {
     const rep = msgs.readKdcRep(reply);
     let enc = null;
     try {
-      enc = msgs.readEncKdcRepPart(await profile.decrypt(key, kcrypto.KEY_USAGE.AS_REP_ENCPART,
+      enc = msgs.readEncKdcRepPart(await profile.decrypt(key,
+                                                         kcrypto.KEY_USAGE.AS_REP_ENCPART,
                                                          rep.encPart.cipher));
     } catch (e) {
-      return { ok: false, code: -1, eText: 'the AS-REP did not decrypt under the client key: ' +
+      return { ok: false, code: -1, eText: 'the AS-REP did not decrypt under ' +
+                                           'the client key: ' +
                                           e.message };
     }
     return { ok: true, rep: rep, enc: enc, nonce: enc.nonce };
@@ -324,12 +416,15 @@ async function productChild() {
     const sessionKey = earlier.enc.key;
     const profile = kcrypto.etypeById(sessionKey.etype);
     const reqBody = { kdcOptions: [], realm: principals.REALM,
-                      sname: { type: sname[0] === 'krbtgt' ? 2 : (sname.length > 1 ? 3 : 1),
+                      sname: { type: sname[0] === 'krbtgt' ? 2 :
+                                     (sname.length > 1 ? 3 : 1),
                                name: sname },
-                      till: new Date(Date.now() + 3600000), nonce: 5000 + tgsCounter,
+                      till: new Date(Date.now() + 3600000),
+                      nonce: 5000 + tgsCounter,
                       etypes: [18] };
     const raw = msgs.encKdcReqBody(reqBody);
-    const cksum = await profile.checksum(sessionKey.key, kcrypto.KEY_USAGE.TGS_REQ_AUTH_CKSUM,
+    const cksum = await profile.checksum(sessionKey.key,
+                                         kcrypto.KEY_USAGE.TGS_REQ_AUTH_CKSUM,
                                          raw);
     const auth = msgs.encAuthenticator({ crealm: principals.REALM,
       cname: { type: 1, name: [clientName] },
@@ -350,6 +445,7 @@ async function productChild() {
     const rep = msgs.readKdcRep(reply);
     return { ok: true, kvno: rep.ticket.encPart.kvno };
   }
+
   const brief = function (r) {
     return { ok: r.ok, code: r.code, eText: r.eText,
              kvno: r.kvno !== undefined ? r.kvno
@@ -371,13 +467,17 @@ async function productChild() {
   out.steps.set = set.ok;
   await personKeys.idle();
   const people = personKeys.listPeople();
-  out.alice = people.filter(function (p) { return p.username === 'kpalice'; })[0] || null;
+  out.alice = people.filter(function (p) {
+    return p.username === 'kpalice';
+  })[0] || null;
   const stored = entryOf('kpalice');
   const rawKeys = (stored && stored.attributes.stskrb5keys) || [];
-  out.storedSealed = rawKeys.length === 1 && String(rawKeys[0]).indexOf('$aesgcm$') === 0;
+  out.storedSealed = rawKeys.length === 1 &&
+                     String(rawKeys[0]).indexOf('$aesgcm$') === 0;
   out.storedClearMentionsKey = /"keys"/.test(String(rawKeys[0] || ''));
   const good = await asReq('kpalice', PW);
-  out.goodAs = { ok: good.ok, code: good.code, eText: good.eText, nonce: good.nonce };
+  out.goodAs = { ok: good.ok, code: good.code, eText: good.eText,
+                 nonce: good.nonce };
   const bad = await asReq('kpalice', 'Wrong-Password-Entirely-1!');
   out.badAs = { ok: bad.ok, code: bad.code, eText: bad.eText };
   // THE SHARED DEVELOPMENT PASSWORD MUST BE NOTHING TO A DIRECTORY PERSON, and
@@ -389,9 +489,11 @@ async function productChild() {
   out.recordDirectoryKeys = record ? record.directoryKeys : null;
   out.recordJsonHasKeys = record ? /"keys"/.test(JSON.stringify(record)) : null;
 
-  // The actual key bytes, from inside the seal, so the parent can look for them.
+  // The actual key bytes, from inside the seal, so the parent can look for
+  // them.
   const opened = JSON.parse(keystore.open(String(rawKeys[0]), 'kerberos-keys'));
-  out.keyMaterial = Object.keys(opened.keys).map(function (e) { return opened.keys[e]; });
+  out.keyMaterial = Object.keys(opened.keys)
+                          .map(function (e) { return opened.keys[e]; });
   out.boundName = opened.name;
 
   // --- a person with a password and NO keys, then the upgrade on a verify ---
@@ -408,27 +510,32 @@ async function productChild() {
   out.bobVerified = verified.ok;
   await personKeys.idle();
   const upgraded = await asReq('kpbob', PW);
-  out.upgradedAs = { ok: upgraded.ok, code: upgraded.code, eText: upgraded.eText };
-  const wrongVerify = await credentials.verifyAsync('kpcarol-nobody', PW, { via: 'test' });
+  out.upgradedAs = { ok: upgraded.ok, code: upgraded.code,
+                     eText: upgraded.eText };
+  const wrongVerify = await credentials.verifyAsync('kpcarol-nobody', PW,
+                                                    { via: 'test' });
   out.nobodyVerified = wrongVerify.ok;
   const unknown = await asReq('kpnobody', PW);
   out.unknownAs = { ok: unknown.ok, code: unknown.code, eText: unknown.eText };
 
   // --- a password change bumps the kvno and the old password stops working ---
   const kvnoBefore = out.alice ? out.alice.kvno : null;
-  // TWO TICKETS ISSUED BEFORE THE CHANGE: alice's own TGT (sealed under krbtgt),
-  // and a ticket FOR alice — sealed under HER long-term key at kvno 3 — which is
-  // the one a password change would strand without a kept previous version.
+  // TWO TICKETS ISSUED BEFORE THE CHANGE: alice's own TGT (sealed under
+  // krbtgt), and a ticket FOR alice — sealed under HER long-term key at kvno 3
+  // — which is the one a password change would strand without a kept previous
+  // version.
   const aliceTgt = await asReq('kpalice', PW);
   const toAlice3 = await asReq('kpbob', PW, ['kpalice']);
   out.toAlice3 = brief(toAlice3);
   const PW2 = 'Another-Strong-Pass-42?';
   credentials.setPassword('kpalice', PW2);
   await personKeys.idle();
-  // AFTER THE CHANGE: both old tickets still open at the KDC, and what it issues
-  // for alice now is under kvno 4.
-  out.tgtAfterChange = brief(await tgsReq(aliceTgt, 'kpalice', ['krbtgt', principals.REALM]));
-  out.toAlice3AfterChange = brief(await tgsReq(toAlice3, 'kpbob', ['krbtgt', principals.REALM]));
+  // AFTER THE CHANGE: both old tickets still open at the KDC, and what it
+  // issues for alice now is under kvno 4.
+  out.tgtAfterChange = brief(await tgsReq(aliceTgt, 'kpalice',
+                                          ['krbtgt', principals.REALM]));
+  out.toAlice3AfterChange = brief(await tgsReq(toAlice3, 'kpbob',
+                                               ['krbtgt', principals.REALM]));
   const toAlice4 = await asReq('kpbob', PW, ['kpalice']);
   out.toAlice4 = brief(toAlice4);
   out.aliceRetainedAfterChange = (personKeys.listPeople().filter(function (p) {
@@ -448,7 +555,8 @@ async function productChild() {
   const realms = require(R + '/common/realms');
   realms.run(realms.DEFAULT_REALM, function () {
     const located = directory.existingUserEntry('kpalice');
-    located.attributes.userpassword = [cryptoLib.hashSecret('Planted-Elsewhere-77!')];
+    located.attributes.userpassword = [cryptoLib.hashSecret(
+        'Planted-Elsewhere-77!')];
   });
   const staleAs = await asReq('kpalice', PW2);
   out.staleAs = { ok: staleAs.ok, code: staleAs.code, eText: staleAs.eText };
@@ -461,33 +569,41 @@ async function productChild() {
   out.aliceKvno5 = (personKeys.listPeople().filter(function (p) {
     return p.username === 'kpalice';
   })[0] || {}).kvno;
-  out.count3 = brief(await tgsReq(toAlice3, 'kpbob', ['krbtgt', principals.REALM]));
-  out.count4 = brief(await tgsReq(toAlice4, 'kpbob', ['krbtgt', principals.REALM]));
+  out.count3 = brief(await tgsReq(toAlice3, 'kpbob',
+                                  ['krbtgt', principals.REALM]));
+  out.count4 = brief(await tgsReq(toAlice4, 'kpbob',
+                                  ['krbtgt', principals.REALM]));
   // A LIFETIME OF ONE SECOND reaches a version retired under the default one,
   // because the bound is read at every read ...
   config.setOverride('krb5.retainedKeyTtlS', '1');
   await new Promise(function (resolve) { setTimeout(resolve, 1300); });
-  out.ttlExpired4 = brief(await tgsReq(toAlice4, 'kpbob', ['krbtgt', principals.REALM]));
+  out.ttlExpired4 = brief(await tgsReq(toAlice4, 'kpbob',
+                                       ['krbtgt', principals.REALM]));
   out.ttlListed = (personKeys.listPeople().filter(function (p) {
     return p.username === 'kpalice';
   })[0] || {}).retained || null;
   // ... and clearing it gives back only what the bound it was RETIRED under
   // still allows.
   config.clearOverride('krb5.retainedKeyTtlS');
-  out.ttlRestored4 = brief(await tgsReq(toAlice4, 'kpbob', ['krbtgt', principals.REALM]));
+  out.ttlRestored4 = brief(await tgsReq(toAlice4, 'kpbob',
+                                        ['krbtgt', principals.REALM]));
   // DROP NOW, through the console's own action.
   const droppedPerson = actions.kerberosPrincipalsAction(
-    { action: 'drop-previous-person-keys', username: 'kpalice' }, { actor: 'test', via: 'api' });
+    { action: 'drop-previous-person-keys', username: 'kpalice' },
+    { actor: 'test', via: 'api' });
   out.dropPerson = { ok: droppedPerson.ok, dropped: droppedPerson.dropped,
-                     kvnos: droppedPerson.kvnos, errors: droppedPerson.errors || null };
-  out.afterDrop4 = brief(await tgsReq(toAlice4, 'kpbob', ['krbtgt', principals.REALM]));
+                     kvnos: droppedPerson.kvnos,
+                     errors: droppedPerson.errors || null };
+  out.afterDrop4 = brief(await tgsReq(toAlice4, 'kpbob',
+                                      ['krbtgt', principals.REALM]));
   out.afterDropSignIn = brief(await asReq('kpalice', PW2 + 'x'));
   out.afterDropOldPassword = brief(await asReq('kpalice', PW2));
   out.afterDropListed = (personKeys.listPeople().filter(function (p) {
     return p.username === 'kpalice';
   })[0] || {}).retained || null;
   const droppedAgain = actions.kerberosPrincipalsAction(
-    { action: 'drop-previous-person-keys', username: 'kpalice' }, { actor: 'test', via: 'api' });
+    { action: 'drop-previous-person-keys', username: 'kpalice' },
+    { actor: 'test', via: 'api' });
   out.dropAgain = { ok: droppedAgain.ok, dropped: droppedAgain.dropped };
   // The retained versions sit inside the seal and nowhere else.
   const aliceSealed = realms.run(realms.DEFAULT_REALM, function () {
@@ -496,10 +612,10 @@ async function productChild() {
   out.infoHasKeys = /"keys"/.test(JSON.stringify(aliceSealed || ''));
 
   // --- a copied sealed value on somebody else's entry names the wrong person ---
-  // The PASSWORD HASH is copied with it, so the stamp matches and the name inside
-  // the seal is the only thing between bob's entry and alice's keys. The request
-  // uses alice's SALT, which is what a client following PA-ETYPE-INFO2 would do
-  // if the KDC advertised the copied record's salt.
+  // The PASSWORD HASH is copied with it, so the stamp matches and the name
+  // inside the seal is the only thing between bob's entry and alice's keys. The
+  // request uses alice's SALT, which is what a client following PA-ETYPE-INFO2
+  // would do if the KDC advertised the copied record's salt.
   const bobBefore = realms.run(realms.DEFAULT_REALM, function () {
     const b = directory.existingUserEntry('kpbob').attributes;
     return { keys: b.stskrb5keys, info: b.stskrb5keyinfo, pw: b.userpassword };
@@ -512,16 +628,22 @@ async function productChild() {
   });
   const copiedKdc = await (async function () {
     const profile = kcrypto.etypeById(18);
-    const key = await profile.stringToKey(PW2 + 'x', prim.utf8(principals.REALM + 'kpalice'), null);
+    const key = await profile.stringToKey(PW2 + 'x',
+                                          prim.utf8(
+                                              principals.REALM + 'kpalice'),
+                                          null);
     const now = new Date();
-    const cipher = await profile.encrypt(key, kcrypto.KEY_USAGE.AS_REQ_PA_ENC_TIMESTAMP,
+    const cipher = await profile.encrypt(key,
+      kcrypto.KEY_USAGE.AS_REQ_PA_ENC_TIMESTAMP,
       msgs.encPaEncTsEnc(now, now.getMilliseconds() * 1000));
     const bytes = msgs.encKdcReq({ msgType: msgs.MSG_TYPE.AS_REQ,
       padata: [{ type: msgs.PA_TYPE.ENC_TIMESTAMP,
                  value: msgs.encEncryptedData({ etype: 18, cipher: cipher }) }],
-      reqBody: { kdcOptions: [], cname: { type: 1, name: ['kpbob'] }, realm: principals.REALM,
+      reqBody: { kdcOptions: [], cname: { type: 1, name: ['kpbob'] },
+                 realm: principals.REALM,
                  sname: { type: 2, name: ['krbtgt', principals.REALM] },
-                 till: new Date(Date.now() + 3600000), nonce: 9, etypes: [18] } });
+                 till: new Date(Date.now() + 3600000), nonce: 9, etypes: [
+                   18] } });
     const reply = await kdc.handleMessage(bytes);
     if (msgs.identify(reply).applicationNumber === msgs.APPLICATION.KRB_ERROR) {
       const e = msgs.readKrbError(reply);
@@ -538,18 +660,23 @@ async function productChild() {
   // --- and a CLEAR value planted while keys persist is refused ---
   realms.run(realms.DEFAULT_REALM, function () {
     const b = directory.existingUserEntry('kpbob').attributes;
-    b.stskrb5keys = [JSON.stringify({ v: 1, name: 'kpbob', realm: principals.REALM, kvno: 9,
-                                      salt: principals.REALM + 'kpbob', stamp: 'x', keys: {} })];
+    b.stskrb5keys = [JSON.stringify({ v: 1, name: 'kpbob',
+                                      realm: principals.REALM, kvno: 9,
+                                      salt: principals.REALM +
+                                            'kpbob', stamp: 'x', keys: {} })];
   });
   out.plantedState = personKeys.personKeys('kpbob').state;
 
   // --- keys never in audit rows, in the views, or on the directory dump ---
   const auditText = JSON.stringify(audit.list());
-  out.auditHasKey = out.keyMaterial.some(function (k) { return auditText.indexOf(k) >= 0; });
-  out.auditHasPassword = auditText.indexOf(PW) >= 0 || auditText.indexOf(PW2) >= 0;
+  out.auditHasKey = out.keyMaterial.some(function (
+      k) { return auditText.indexOf(k) >= 0; });
+  out.auditHasPassword = auditText.indexOf(PW) >= 0 ||
+                         auditText.indexOf(PW2) >= 0;
   out.auditHasDerivedRow = /krb5\.keys\.derived/.test(auditText);
   const viewText = JSON.stringify(views.kerberosPrincipalsJson({ query: {} }));
-  out.viewHasKey = out.keyMaterial.some(function (k) { return viewText.indexOf(k) >= 0; }) ||
+  out.viewHasKey = out.keyMaterial.some(function (
+      k) { return viewText.indexOf(k) >= 0; }) ||
                    viewText.indexOf('$aesgcm$') >= 0;
   const dump = realms.run(realms.DEFAULT_REALM, function () {
     return JSON.stringify(directory.objectFor('kpalice'));
@@ -558,19 +685,22 @@ async function productChild() {
 
   // --- a service principal: create, keytab, KDC, acceptor, rotate ---
   const created = actions.kerberosPrincipalsAction(
-    { action: 'create-service', spn: 'HTTP/web.example.com' }, { actor: 'test', via: 'api' });
+    { action: 'create-service', spn: 'HTTP/web.example.com' },
+    { actor: 'test', via: 'api' });
   out.createOk = created.ok;
   out.createErrors = created.errors || null;
   out.keytab = created.keytab || '';
   out.createKvno = created.kvno;
   const svcView = JSON.stringify(views.kerberosPrincipalsJson({ query: {} }));
   const appView = realms.run(realms.DEFAULT_REALM, function () {
-    return JSON.stringify(applications.get('HTTP/web.example.com@' + principals.REALM));
+    return JSON.stringify(applications.get('HTTP/web.example.com@' +
+                                           principals.REALM));
   });
   out.appViewWithheld = /withheld: Kerberos key material/.test(appView);
   out.serviceAccount = principals.serviceAccount();
-  // A SIGHTING REWRITES THE APPLICATION ENTRY FROM ITS RECORD, which is what the
-  // KDC does on every ticket it issues for the SPN; the stored key must survive.
+  // A SIGHTING REWRITES THE APPLICATION ENTRY FROM ITS RECORD, which is what
+  // the KDC does on every ticket it issues for the SPN; the stored key must
+  // survive.
   realms.run(realms.DEFAULT_REALM, function () {
     applications.seen({ identifier: 'HTTP/web.example.com@' + principals.REALM,
                         kind: 'kerberos-service', protocol: 'Kerberos v5',
@@ -584,10 +714,13 @@ async function productChild() {
   out.bobReset = credentials.setPassword('kpbob', PW3).ok;
   await personKeys.idle();
   const svcTicket = await asReq('kpbob', PW3, ['HTTP', 'web.example.com']);
-  out.svcTicket = { ok: svcTicket.ok, code: svcTicket.code, eText: svcTicket.eText,
-                    kvno: svcTicket.ok ? svcTicket.rep.ticket.encPart.kvno : null };
+  out.svcTicket = { ok: svcTicket.ok, code: svcTicket.code,
+                    eText: svcTicket.eText,
+                    kvno: svcTicket.ok ? svcTicket.rep.ticket.encPart.kvno :
+                          null };
   if (svcTicket.ok) {
-    out.ticketCipherHex = Buffer.from(svcTicket.rep.ticket.encPart.cipher).toString('hex');
+    out.ticketCipherHex = Buffer.from(svcTicket.rep.ticket.encPart.cipher)
+                                .toString('hex');
     out.ticketEtype = svcTicket.rep.ticket.encPart.etype;
     const sessionKey = svcTicket.enc.key;
     const authProfile = kcrypto.etypeById(sessionKey.etype);
@@ -604,11 +737,13 @@ async function productChild() {
       });
       return gss.encodeInitialContextToken(gss.TOK_ID.AP_REQ, apReq);
     };
-    const accepted = await service.acceptRaw(await makeApReq(123456), { record: false });
+    const accepted = await service.acceptRaw(await makeApReq(123456),
+                                             { record: false });
     out.acceptorOk = accepted.ok;
-    out.acceptorFailed = (accepted.checks || []).filter(function (c) { return !c.ok; });
-    // An AP-REQ for ANY service ticket, so a ticket issued at kvno 4 or 5 can be
-    // presented beside the kvno-3 one. The acceptor's replay cache keys on
+    out.acceptorFailed = (accepted.checks || []).filter(
+        function (c) { return !c.ok; });
+    // An AP-REQ for ANY service ticket, so a ticket issued at kvno 4 or 5 can
+    // be presented beside the kvno-3 one. The acceptor's replay cache keys on
     // ctime and cusec, so every call carries a fresh cusec.
     let apCusec = 200000;
     const acceptTicket = async function (issued) {
@@ -620,28 +755,35 @@ async function productChild() {
                                            cusec: apCusec, ctime: new Date() });
       const apReq = msgs.encApReq({ apOptions: [], ticket: issued.rep.ticket,
         authenticator: { etype: key.etype,
-          cipher: await profile.encrypt(key.key, kcrypto.KEY_USAGE.AP_REQ_AUTH, auth) } });
+          cipher: await profile.encrypt(key.key, kcrypto.KEY_USAGE.AP_REQ_AUTH,
+                                        auth) } });
       const answer = await service.acceptRaw(
-        gss.encodeInitialContextToken(gss.TOK_ID.AP_REQ, apReq), { record: false });
+        gss.encodeInitialContextToken(gss.TOK_ID.AP_REQ, apReq),
+        { record: false });
       const versionCheck = (answer.checks || []).filter(function (c) {
         return c.name === 'key version matches';
       })[0] || {};
       return { ok: answer.ok, errorCode: answer.errorCode || null,
-               versionOk: versionCheck.ok, versionDetail: versionCheck.detail || '',
-               failed: (answer.checks || []).filter(function (c) { return !c.ok; })
+               versionOk: versionCheck.ok,
+               versionDetail: versionCheck.detail || '',
+               failed: (answer.checks || []).filter(
+                   function (c) { return !c.ok; })
                  .map(function (c) { return c.name + ': ' + c.detail; }) };
     };
     const rotated = actions.kerberosPrincipalsAction(
-      { action: 'rotate-service', spn: 'HTTP/web.example.com' }, { actor: 'test', via: 'api' });
+      { action: 'rotate-service', spn: 'HTTP/web.example.com' },
+      { actor: 'test', via: 'api' });
     out.rotateOk = rotated.ok;
     out.rotateKvno = rotated.kvno;
     out.rotateKeytab = rotated.keytab || '';
     out.rotateKeytabKvnos = rotated.keytabKvnos || null;
     out.rotateRetained = rotated.retained || null;
-    const afterRotate = await service.acceptRaw(await makeApReq(654321), { record: false });
+    const afterRotate = await service.acceptRaw(await makeApReq(654321),
+                                                { record: false });
     out.afterRotateOk = afterRotate.ok;
     out.afterRotateCode = afterRotate.errorCode || null;
-    out.afterRotateFailed = (afterRotate.checks || []).filter(function (c) { return !c.ok; })
+    out.afterRotateFailed = (afterRotate.checks || []).filter(
+        function (c) { return !c.ok; })
       .map(function (c) { return c.name + ': ' + c.detail; });
     // THE KDC NOW ISSUES UNDER kvno 4, and the acceptor takes both.
     const svc4 = await asReq('kpbob', PW3, ['HTTP', 'web.example.com']);
@@ -649,18 +791,21 @@ async function productChild() {
     out.accept3 = await acceptTicket(svcTicket);
     out.accept4 = svc4.ok ? await acceptTicket(svc4) : null;
     // THE KDC's TGS OPENS THE kvno-3 TICKET UNDER THE KEPT VERSION TOO.
-    out.tgs3 = brief(await tgsReq(svcTicket, 'kpbob', ['krbtgt', principals.REALM]));
-    // A SECOND ROTATION: kvno 5, and with one version kept the keytab holds 5 and
-    // 4 and not 3, and the kvno-3 ticket is refused.
+    out.tgs3 = brief(await tgsReq(svcTicket, 'kpbob',
+                                  ['krbtgt', principals.REALM]));
+    // A SECOND ROTATION: kvno 5, and with one version kept the keytab holds 5
+    // and 4 and not 3, and the kvno-3 ticket is refused.
     const rotated2 = actions.kerberosPrincipalsAction(
-      { action: 'rotate-service', spn: 'HTTP/web.example.com' }, { actor: 'test', via: 'api' });
+      { action: 'rotate-service', spn: 'HTTP/web.example.com' },
+      { actor: 'test', via: 'api' });
     out.rotate2Kvno = rotated2.kvno;
     out.rotate2Keytab = rotated2.keytab || '';
     const svc5 = await asReq('kpbob', PW3, ['HTTP', 'web.example.com']);
     out.svc5 = brief(svc5);
     out.accept3After2 = await acceptTicket(svcTicket);
     out.accept4After2 = svc4.ok ? await acceptTicket(svc4) : null;
-    out.tgs3After2 = brief(await tgsReq(svcTicket, 'kpbob', ['krbtgt', principals.REALM]));
+    out.tgs3After2 = brief(await tgsReq(svcTicket, 'kpbob',
+                                        ['krbtgt', principals.REALM]));
     out.servicesListed = (personKeys.listServices().filter(function (s) {
       return s.spn === 'HTTP/web.example.com';
     })[0] || {}).retained || null;
@@ -669,39 +814,51 @@ async function productChild() {
       { action: 'drop-previous-service-keys', spn: 'HTTP/web.example.com' },
       { actor: 'test', via: 'api' });
     out.dropService = { ok: droppedService.ok, dropped: droppedService.dropped,
-                        kvnos: droppedService.kvnos, errors: droppedService.errors || null };
+                        kvnos: droppedService.kvnos,
+                        errors: droppedService.errors || null };
     out.accept4AfterDrop = svc4.ok ? await acceptTicket(svc4) : null;
     out.tgs4AfterDrop = svc4.ok
       ? brief(await tgsReq(svc4, 'kpbob', ['krbtgt', principals.REALM])) : null;
     out.accept5AfterDrop = svc5.ok ? await acceptTicket(svc5) : null;
     out.dropUnknown = actions.kerberosPrincipalsAction(
-      { action: 'drop-previous-service-keys', spn: 'HTTP/nobody.example.com' }, {}).ok;
+      { action: 'drop-previous-service-keys', spn: 'HTTP/nobody.example.com' },
+      {}).ok;
   }
-  out.svcViewHasKeytab = !!out.keytab && svcView.indexOf(out.keytab.slice(0, 40)) >= 0;
+  out.svcViewHasKeytab = !!out.keytab &&
+                         svcView.indexOf(out.keytab.slice(0, 40)) >= 0;
   const deleted = actions.kerberosPrincipalsAction(
-    { action: 'delete-service', spn: 'HTTP/web.example.com' }, { actor: 'test', via: 'api' });
+    { action: 'delete-service', spn: 'HTTP/web.example.com' },
+    { actor: 'test', via: 'api' });
   out.deleteOk = deleted.ok;
   out.afterDeleteFind = !!principals.find(['HTTP', 'web.example.com']);
   const again = actions.kerberosPrincipalsAction(
-    { action: 'rotate-service', spn: 'HTTP/web.example.com' }, { actor: 'test', via: 'api' });
+    { action: 'rotate-service', spn: 'HTTP/web.example.com' },
+    { actor: 'test', via: 'api' });
   out.rotateAfterDelete = { ok: again.ok, errors: again.errors };
   out.krbtgtRefused = actions.kerberosPrincipalsAction(
-    { action: 'create-service', spn: 'krbtgt/' + principals.REALM }, {}).ok === false;
-  out.unknownAction = actions.kerberosPrincipalsAction({ action: 'nope' }, {}).errors;
+    { action: 'create-service', spn: 'krbtgt/' + principals.REALM },
+    {}).ok === false;
+  out.unknownAction = actions.kerberosPrincipalsAction({ action: 'nope' },
+                                                       {}).errors;
   const cleared = actions.kerberosPrincipalsAction(
     { action: 'clear-person-keys', username: 'kpbob' }, { actor: 'test' });
   out.clearOk = cleared.ok && cleared.cleared;
   const afterClear = await asReq('kpbob', PW3);
-  out.afterClearAs = { ok: afterClear.ok, code: afterClear.code, eText: afterClear.eText };
+  out.afterClearAs = { ok: afterClear.ok, code: afterClear.code,
+                       eText: afterClear.eText };
   const auditAll = JSON.stringify(audit.list());
-  out.auditHasKeytab = !!out.keytab && auditAll.indexOf(out.keytab.slice(0, 40)) >= 0;
+  out.auditHasKeytab = !!out.keytab &&
+                       auditAll.indexOf(out.keytab.slice(0, 40)) >= 0;
   out.auditHasDropRow = /admin\.krb5\.previous\.dropped/.test(auditAll);
-  out.dumpHasKey = out.keyMaterial.some(function (k) { return dump.indexOf(k) >= 0; });
+  out.dumpHasKey = out.keyMaterial.some(function (
+      k) { return dump.indexOf(k) >= 0; });
   return out;
 }
+
 /* eslint-enable no-undef */
 
 function inAProductChild(t) {
+  log.debug("Entering inAProductChild().");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'krb5-person-keys-'));
   const kekFile = path.join(dir, 'kek');
   fs.writeFileSync(kekFile, nodeCrypto.randomBytes(32).toString('base64'),
@@ -714,16 +871,18 @@ function inAProductChild(t) {
     }
   });
   const script = 'delete process.env.CONFIG_FILE;' +
-    '(' + productChild.toString() + ')().then(function (r) {' +
-    'require("fs").writeFileSync(process.env.KP_OUT, JSON.stringify(r)); process.exit(0); })' +
-    '.catch(function (e) { require("fs").writeFileSync(process.env.KP_OUT, ' +
-    'JSON.stringify({ crashed: e.stack || e.message })); process.exit(0); });';
+    '(' + productChild.toString() + ')().then(function (r) ' +
+    '{require("fs").writeFileSync(process.env.KP_OUT, JSON.stringify(r)); ' +
+    'process.exit(0); }).catch(function (e) { ' +
+    'require("fs").writeFileSync(process.env.KP_OUT, JSON.stringify({ ' +
+    'crashed: e.stack || e.message })); process.exit(0); });';
   const run = childProcess.spawnSync(process.execPath, ['-e', script], {
     env: Object.assign(clean, {
       LOG_LEVEL: 'fatal', KP_ROOT: ROOT, KP_OUT: outFile,
       STS_MODE: 'product',
       KRB5_KRBTGT_PASSWORD: 'not-the-published-krbtgt-secret',
-      STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file', STS_KEYS_KEK_FILE: kekFile
+      STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+      STS_KEYS_KEK_FILE: kekFile
     }),
     encoding: 'utf8', timeout: 180000
   });
@@ -731,142 +890,197 @@ function inAProductChild(t) {
   try {
     report = JSON.parse(fs.readFileSync(outFile, 'utf8'));
   } catch (e) {
-    // No report: the child died before writing one. The assertion below says so.
+    log.debug("Caught in inAProductChild(): " + ((e && e.message) || e));
+    // No report: the child died before writing one. The assertion below says
+    // so.
     report = null;
   }
   try {
     fs.rmSync(dir, { recursive: true, force: true });
   } catch (e) {
     // Best effort: a temporary directory left behind is litter, not a failure.
+    log.debug("Caught in inAProductChild(): " + ((e && e.message) || e));
   }
-  t.check(report !== null && !report.crashed, 'the product-mode child ran to the end',
+  t.check(report !== null && !report.crashed, 'the product-mode child ran to ' +
+                                              'the end',
           'exit ' + run.status + ' ' + (report && report.crashed) + ' ' +
           String(run.stderr || '').slice(0, 800));
+  log.debug("Leaving inAProductChild().");
   return report;
 }
 
 function productModeAuthenticatesPeople(t, r) {
-  t.log.info('=== product mode: a person authenticates with their own password ===');
-  t.check(r.productKdc === true && r.sourceInstalled === true && r.persists === true,
-          'the child is a product KDC with the key source installed and a persisting ' +
-          'key-encryption key', JSON.stringify({ productKdc: r.productKdc,
-                                                 sourceInstalled: r.sourceInstalled,
+  log.debug("Entering productModeAuthenticatesPeople().");
+  t.log.info('=== product mode: a person authenticates with their own ' +
+             'password ===');
+  t.check(r.productKdc === true && r.sourceInstalled === true &&
+          r.persists === true,
+          'the child is a product KDC with the key source installed and a ' +
+          'persisting key-encryption ' +
+          'key', JSON.stringify({ productKdc: r.productKdc,
+                                                 sourceInstalled:
+                                                   r.sourceInstalled,
                                                  persists: r.persists }));
-  t.check(r.steps.created && r.steps.set, 'a person was created and given a password');
-  t.check(!!r.alice && r.alice.kvno === 3 && r.alice.sealed === true && r.alice.current === true &&
+  t.check(r.steps.created && r.steps.set, 'a person was created and given a ' +
+                                          'password');
+  t.check(!!r.alice && r.alice.kvno === 3 && r.alice.sealed === true &&
+          r.alice.current === true &&
           r.alice.etypes.length === 5,
-          'SETTING THE PASSWORD DERIVED KEYS: kvno krb5.kvno, every enctype, sealed, and ' +
-          'matching the password', JSON.stringify(r.alice));
+          'SETTING THE PASSWORD DERIVED KEYS: kvno krb5.kvno, every enctype, ' +
+          'sealed, and matching the password', JSON.stringify(r.alice));
   t.check(r.storedSealed === true && r.storedClearMentionsKey === false,
           'the entry holds ONE sealed value and no key in the clear');
   t.equal(r.boundName, 'kpalice', 'the name is sealed WITH the keys');
   t.check(r.goodAs.ok === true && r.goodAs.nonce === 777,
-          'A REAL AS-REQ WITH THE RIGHT PASSWORD GETS AN AS-REP whose enc-part decrypts ' +
-          'under the key the CLIENT derived, nonce intact', JSON.stringify(r.goodAs));
+          'A REAL AS-REQ WITH THE RIGHT PASSWORD GETS AN AS-REP whose ' +
+          'enc-part decrypts under the key the CLIENT derived, nonce ' +
+          'intact', JSON.stringify(r.goodAs));
   t.check(r.badAs.ok === false && r.badAs.code === 24,
           'the same request with a wrong password is KDC_ERR_PREAUTH_FAILED',
           JSON.stringify(r.badAs));
   t.check(r.sharedAs.ok === false && r.sharedAs.code === 24,
-          'AND krb5.userPassword — the shared development password — IS REFUSED for a ' +
-          'directory person', JSON.stringify(r.sharedAs));
+          'AND krb5.userPassword — the shared development password — IS ' +
+          'REFUSED for a directory person', JSON.stringify(r.sharedAs));
   t.check(r.recordPassword === null && r.recordDirectoryKeys === true &&
           r.recordJsonHasKeys === false,
-          'the principal record carries NO password and its serialised (persisted) form ' +
-          'carries no key', JSON.stringify({ password: r.recordPassword,
-                                              directoryKeys: r.recordDirectoryKeys,
-                                              keysInJson: r.recordJsonHasKeys }));
+          'the principal record carries NO password and its serialised ' +
+          '(persisted) form carries no ' +
+          'key', JSON.stringify({ password: r.recordPassword,
+                                              directoryKeys:
+                                                r.recordDirectoryKeys,
+                                              keysInJson:
+                                                r.recordJsonHasKeys }));
+  log.debug("Leaving productModeAuthenticatesPeople().");
 }
 
 function productModeRefusesAndUpgrades(t, r) {
-  t.log.info('=== product mode: no keys, the upgrade on a verify, and the refusals ===');
-  t.check(r.offAs.ok === false && r.offAs.code === 6 && /krb5\.personKeys/.test(r.offAs.eText),
+  log.debug("Entering productModeRefusesAndUpgrades().");
+  t.log.info('=== product mode: no keys, the upgrade on a verify, and the ' +
+             'refusals ===');
+  t.check(r.offAs.ok === false && r.offAs.code === 6 &&
+          /krb5\.personKeys/.test(r.offAs.eText),
           'with krb5.personKeys off a person is refused, naming the setting',
           JSON.stringify(r.offAs));
   t.check(r.noKeysAs.ok === false && r.noKeysAs.code === 6 &&
           /no Kerberos keys yet - sign in once with the password, or reset it/.test(r.noKeysAs.eText),
-          'A PERSON WITH A PASSWORD AND NO KEYS is refused KDC_ERR_C_PRINCIPAL_UNKNOWN ' +
-          'with the sign-in-once e-text', JSON.stringify(r.noKeysAs));
+          'A PERSON WITH A PASSWORD AND NO KEYS is refused ' +
+          'KDC_ERR_C_PRINCIPAL_UNKNOWN with the sign-in-once ' +
+          'e-text', JSON.stringify(r.noKeysAs));
   t.check(r.bobVerified === true && r.upgradedAs.ok === true,
-          'A VERIFIED SIGN-IN DERIVES THE MISSING KEYS, and the next AS-REQ succeeds',
+          'A VERIFIED SIGN-IN DERIVES THE MISSING KEYS, and the next AS-REQ ' +
+          'succeeds',
           JSON.stringify(r.upgradedAs));
-  t.check(r.nobodyVerified === false && r.unknownAs.ok === false && r.unknownAs.code === 6 &&
+  t.check(r.nobodyVerified === false && r.unknownAs.ok === false &&
+          r.unknownAs.code === 6 &&
           /nobody by that name/.test(r.unknownAs.eText),
-          'somebody not in the directory is unknown, and says so', JSON.stringify(r.unknownAs));
+          'somebody not in the directory is unknown, and says so',
+          JSON.stringify(r.unknownAs));
   t.check(r.kvnoBefore === 3 && r.kvnoAfter === 4,
-          'A PASSWORD CHANGE ADDS ONE TO THE KVNO', r.kvnoBefore + ' -> ' + r.kvnoAfter);
+          'A PASSWORD CHANGE ADDS ONE TO THE KVNO',
+          r.kvnoBefore + ' -> ' + r.kvnoAfter);
   t.check(r.oldAs.ok === false && r.oldAs.code === 24,
-          'and a ticket request with the OLD password is refused', JSON.stringify(r.oldAs));
-  t.check(r.newAs.ok === true, 'while the new password works', JSON.stringify(r.newAs));
-  t.check(r.staleAs.ok === false && r.staleAs.code === 6 && /no longer has/.test(r.staleAs.eText),
-          'A PASSWORD WRITTEN BEHIND THE OBSERVER\'S BACK makes the stored keys STALE, and ' +
-          'the KDC refuses them rather than accepting a key for a password the entry no ' +
-          'longer holds', JSON.stringify(r.staleAs));
+          'and a ticket request with the OLD password is refused',
+          JSON.stringify(r.oldAs));
+  t.check(r.newAs.ok === true, 'while the new password works',
+          JSON.stringify(r.newAs));
+  t.check(r.staleAs.ok === false && r.staleAs.code === 6 &&
+          /no longer has/.test(r.staleAs.eText),
+          'A PASSWORD WRITTEN BEHIND THE OBSERVER\'S BACK makes the stored ' +
+          'keys STALE, and the KDC refuses them rather than accepting a key ' +
+          'for a password the entry no longer ' +
+          'holds', JSON.stringify(r.staleAs));
   t.check(r.copiedAs.ok === false && r.copiedAs.code === 6,
-          'a sealed value copied onto another person\'s entry — WITH that person\'s ' +
-          'password hash, so the stamp matches — is refused: the name is inside the ' +
-          'seal', JSON.stringify(r.copiedAs));
+          'a sealed value copied onto another person\'s entry — WITH that ' +
+          'person\'s password hash, so the stamp matches — is refused: the ' +
+          'name is inside the seal', JSON.stringify(r.copiedAs));
   t.equal(r.plantedState, 'unreadable',
-          'and a CLEAR value planted while keys persist is refused as unreadable');
+          'and a CLEAR value planted while keys persist is refused as ' +
+          'unreadable');
+  log.debug("Leaving productModeRefusesAndUpgrades().");
 }
 
 function keysAreNeverShown(t, r) {
+  log.debug("Entering keysAreNeverShown().");
   t.log.info('=== no key in an audit row, a view or a dump ===');
   t.check(Array.isArray(r.keyMaterial) && r.keyMaterial.length === 5,
           'the child read the real key bytes out of the seal to look for them');
   t.check(r.auditHasDerivedRow === true, 'the derivation IS audited');
   t.check(r.auditHasKey === false && r.auditHasPassword === false,
           'and no audit row carries a key or a password');
-  t.check(r.viewHasKey === false, 'the console/API view carries no key and no ciphertext');
+  t.check(r.viewHasKey === false, 'the console/API view carries no key and ' +
+                                  'no ciphertext');
   t.check(r.dumpHasKey === false,
-          'the directory entry as the console draws it carries no key in the clear');
+          'the directory entry as the console draws it carries no key in the ' +
+          'clear');
   t.check(/withheld: Kerberos key material/.test(r.withheldHelper),
           'the dump and a search withhold the attribute');
+  log.debug("Leaving keysAreNeverShown().");
 }
 
 function servicePrincipalsWork(t, r) {
-  t.log.info('=== a service principal: keytab, KDC, acceptor, rotate, delete ===');
+  log.debug("Entering servicePrincipalsWork().");
+  t.log.info('=== a service principal: keytab, KDC, acceptor, rotate, delete ' +
+             '===');
   t.check(r.createOk === true && r.createKvno === 3 && r.keytab.length > 100,
           'create-service answers with a keytab at kvno krb5.kvno',
-          JSON.stringify({ ok: r.createOk, errors: r.createErrors, kvno: r.createKvno }));
+          JSON.stringify({ ok: r.createOk, errors: r.createErrors,
+                           kvno: r.createKvno }));
   const entries = independentKeytabRead(Buffer.from(r.keytab, 'base64'));
   t.check(entries.length === 5 && entries.every(function (e) {
-    return e.name.join('/') === 'HTTP/web.example.com' && e.realm === 'EXAMPLE.COM' && e.vno === 3;
-  }), 'THE KEYTAB PARSES WITH THE INDEPENDENT READER: five enctypes for the SPN at kvno 3',
+    return e.name.join('/') === 'HTTP/web.example.com' &&
+           e.realm === 'EXAMPLE.COM' && e.vno === 3;
+  }), 'THE KEYTAB PARSES WITH THE INDEPENDENT READER: five enctypes for the ' +
+      'SPN at kvno 3',
      JSON.stringify(entries.map(function (e) { return [e.enctype, e.vno]; })));
-  t.check(r.appViewWithheld === true, 'the application view withholds the stored key');
+  t.check(r.appViewWithheld === true, 'the application view withholds the ' +
+                                      'stored key');
   t.check(r.keysSurviveSighting === true,
-          'a sighting — which REPLACES the application entry from its record — keeps the ' +
-          'stored key');
-  t.check(r.serviceAccount.available === true && r.serviceAccount.storedKey === true,
-          'the acceptor\'s account — refused in product for its published password — is ' +
-          'available once a key is stored for its SPN', JSON.stringify(r.serviceAccount));
-  t.check(r.bobReset === true, 'a planted value is replaced by the next password set');
+          'a sighting — which REPLACES the application entry from its record ' +
+          '— keeps the stored key');
+  t.check(r.serviceAccount.available === true &&
+          r.serviceAccount.storedKey === true,
+          'the acceptor\'s account — refused in product for its published ' +
+          'password — is available once a key is stored for its ' +
+          'SPN', JSON.stringify(r.serviceAccount));
+  t.check(r.bobReset === true, 'a planted value is replaced by the next ' +
+                               'password set');
   t.check(r.svcTicket.ok === true && r.svcTicket.kvno === 3,
-          'the KDC issues a service ticket for the SPN under the stored key\'s kvno',
+          'the KDC issues a service ticket for the SPN under the stored ' +
+          'key\'s kvno',
           JSON.stringify(r.svcTicket));
   if (r.ticketCipherHex) {
     t.check(r.acceptorOk === true, 'THE ACCEPTOR ACCEPTS A TICKET FOR IT',
             JSON.stringify(r.acceptorFailed));
-    t.check(r.rotateOk === true && r.rotateKvno === 4, 'rotate-service moves the kvno to 4');
+    t.check(r.rotateOk === true && r.rotateKvno === 4, 'rotate-service moves ' +
+                                                       'the kvno to 4');
     t.check(r.afterRotateOk === true,
-            'AND A TICKET ISSUED UNDER THE PREVIOUS KEY IS STILL ACCEPTED after the ' +
-            'rotation — the version it replaced is kept (krb5.retainedKeyVersions 1)',
-            JSON.stringify({ code: r.afterRotateCode, failed: r.afterRotateFailed }));
+            'AND A TICKET ISSUED UNDER THE PREVIOUS KEY IS STILL ACCEPTED ' +
+            'after the rotation — the version it replaced is kept ' +
+            '(krb5.retainedKeyVersions 1)',
+            JSON.stringify({ code: r.afterRotateCode,
+                             failed: r.afterRotateFailed }));
   }
-  t.check(r.svcViewHasKeytab === false, 'the keytab is not in the view afterwards');
+  t.check(r.svcViewHasKeytab === false, 'the keytab is not in the view ' +
+                                        'afterwards');
   t.check(r.auditHasKeytab === false, 'nor in any audit row');
   t.check(r.deleteOk === true && r.afterDeleteFind === false,
-          'delete-service removes the key, and a product KDC then has no account for the SPN');
-  t.check(r.rotateAfterDelete.ok === false, 'rotating a deleted principal is refused');
+          'delete-service removes the key, and a product KDC then has no ' +
+          'account for the SPN');
+  t.check(r.rotateAfterDelete.ok === false, 'rotating a deleted principal is ' +
+                                            'refused');
   t.check(r.krbtgtRefused === true, 'krbtgt/* is refused');
   t.check(Array.isArray(r.unknownAction) &&
           /Unknown action "nope"\. There are six: create-service, rotate-service, delete-service, clear-person-keys, drop-previous-service-keys, drop-previous-person-keys\./
             .test(r.unknownAction.join(' ')),
-          'an unknown action gets the house sentence', JSON.stringify(r.unknownAction));
-  t.check(r.clearOk === true && r.afterClearAs.ok === false && r.afterClearAs.code === 6 &&
+          'an unknown action gets the house sentence',
+          JSON.stringify(r.unknownAction));
+  t.check(r.clearOk === true && r.afterClearAs.ok === false &&
+          r.afterClearAs.code === 6 &&
           /no Kerberos keys yet/.test(r.afterClearAs.eText),
-          'clear-person-keys takes a person\'s keys away and the KDC says sign in once',
+          'clear-person-keys takes a person\'s keys away and the KDC says ' +
+          'sign in once',
           JSON.stringify(r.afterClearAs));
+  log.debug("Leaving servicePrincipalsWork().");
 }
 
 // ---------------------------------------------------------------------------
@@ -875,81 +1089,104 @@ function servicePrincipalsWork(t, r) {
 // else: pre-authentication, issuance and the bounds are each asserted.
 // ---------------------------------------------------------------------------
 function previousPersonVersionsAreKept(t, r) {
+  log.debug("Entering previousPersonVersionsAreKept().");
   t.log.info('=== previous key versions: a person ===');
   t.check(r.toAlice3.ok === true && r.toAlice3.kvno === 3,
-          'before the password change the KDC issues a ticket FOR alice under her kvno 3',
+          'before the password change the KDC issues a ticket FOR alice ' +
+          'under her kvno 3',
           JSON.stringify(r.toAlice3));
   t.check(r.tgtAfterChange.ok === true,
-          'a TGT issued before the password change still works in a TGS-REQ after it',
+          'a TGT issued before the password change still works in a TGS-REQ ' +
+          'after it',
           JSON.stringify(r.tgtAfterChange));
   t.check(r.toAlice3AfterChange.ok === true,
-          'A TICKET SEALED UNDER ALICE\'S PREVIOUS KEY (kvno 3) IS STILL OPENED BY THE ' +
-          'KDC after her password moved to kvno 4', JSON.stringify(r.toAlice3AfterChange));
+          'A TICKET SEALED UNDER ALICE\'S PREVIOUS KEY (kvno 3) IS STILL ' +
+          'OPENED BY THE KDC after her password moved to kvno ' +
+          '4', JSON.stringify(r.toAlice3AfterChange));
   t.check(r.oldAs.ok === false && r.oldAs.code === 24,
-          'while the OLD PASSWORD IS REFUSED at pre-authentication — a kept version is ' +
-          'never a way in', JSON.stringify(r.oldAs));
+          'while the OLD PASSWORD IS REFUSED at pre-authentication — a kept ' +
+          'version is never a way in', JSON.stringify(r.oldAs));
   t.check(r.toAlice4.ok === true && r.toAlice4.kvno === 4,
-          'and what the KDC ISSUES for alice now is under the current kvno 4, never the ' +
-          'kept one', JSON.stringify(r.toAlice4));
-  t.check(Array.isArray(r.aliceRetainedAfterChange) && r.aliceRetainedAfterChange.length === 1 &&
+          'and what the KDC ISSUES for alice now is under the current kvno ' +
+          '4, never the kept one', JSON.stringify(r.toAlice4));
+  t.check(Array.isArray(r.aliceRetainedAfterChange) &&
+          r.aliceRetainedAfterChange.length === 1 &&
           r.aliceRetainedAfterChange[0].kvno === 3 &&
           r.aliceRetainedAfterChange[0].etypes.length === 5 &&
           !isNaN(Date.parse(r.aliceRetainedAfterChange[0].expiresAt)),
           'the people list shows the kept version: kvno, enctypes and expiry',
           JSON.stringify(r.aliceRetainedAfterChange));
   t.check(r.infoHasKeys === false,
-          'and the public info attribute carries no key for it — the kept keys are inside ' +
-          'the seal with the current ones');
+          'and the public info attribute carries no key for it — the kept ' +
+          'keys are inside the seal with the current ones');
   t.equal(r.aliceKvno5, 5, 'a further password change moves alice to kvno 5');
   t.check(r.count3.ok === false && r.count3.code === 44 &&
-          /version 3/.test(String(r.count3.eText)) && /keeps previous version 4/.test(String(r.count3.eText)),
-          'THE COUNT BOUND: with krb5.retainedKeyVersions 1 only kvno 4 is kept, and a ticket ' +
-          'under kvno 3 is refused KRB_AP_ERR_BADKEYVER naming what IS kept',
+          /version 3/.test(String(r.count3.eText)) &&
+          /keeps previous version 4/.test(String(r.count3.eText)),
+          'THE COUNT BOUND: with krb5.retainedKeyVersions 1 only kvno 4 is ' +
+          'kept, and a ticket under kvno 3 is refused KRB_AP_ERR_BADKEYVER ' +
+          'naming what IS kept',
           JSON.stringify(r.count3));
   t.check(r.count4.ok === true, 'while the ticket under kvno 4 is still opened',
           JSON.stringify(r.count4));
   t.check(r.ttlExpired4.ok === false && r.ttlExpired4.code === 44,
-          'THE LIFETIME BOUND: with krb5.retainedKeyTtlS at 1 and a second gone, the kvno-4 ' +
-          'ticket is refused — the bound is read at the read, not only when the version ' +
-          'was retired', JSON.stringify(r.ttlExpired4));
+          'THE LIFETIME BOUND: with krb5.retainedKeyTtlS at 1 and a second ' +
+          'gone, the kvno-4 ticket is refused — the bound is read at the ' +
+          'read, not only when the version was ' +
+          'retired', JSON.stringify(r.ttlExpired4));
   t.check(Array.isArray(r.ttlListed) && r.ttlListed.length === 0,
-          'and the list stops showing the expired version at once', JSON.stringify(r.ttlListed));
+          'and the list stops showing the expired version at once',
+          JSON.stringify(r.ttlListed));
   t.check(r.ttlRestored4.ok === true,
-          'clearing that override gives back only what the bound it was RETIRED under still ' +
-          'allows, which here is the version', JSON.stringify(r.ttlRestored4));
+          'clearing that override gives back only what the bound it was ' +
+          'RETIRED under still allows, which here is the ' +
+          'version', JSON.stringify(r.ttlRestored4));
   t.check(r.dropPerson.ok === true && r.dropPerson.dropped === 1 &&
           JSON.stringify(r.dropPerson.kvnos) === '[4]',
-          'drop-previous-person-keys drops kvno 4', JSON.stringify(r.dropPerson));
+          'drop-previous-person-keys drops kvno 4',
+          JSON.stringify(r.dropPerson));
   t.check(r.afterDrop4.ok === false && r.afterDrop4.code === 44,
-          'AND THE kvno-4 TICKET IS REFUSED KRB_AP_ERR_BADKEYVER FROM THE NEXT REQUEST',
+          'AND THE kvno-4 TICKET IS REFUSED KRB_AP_ERR_BADKEYVER FROM THE ' +
+          'NEXT REQUEST',
           JSON.stringify(r.afterDrop4));
   t.check(r.afterDropSignIn.ok === true,
-          'while the current key — and so alice\'s sign-in with her current password — is ' +
-          'untouched', JSON.stringify(r.afterDropSignIn));
-  t.check(r.afterDropOldPassword.ok === false && r.afterDropOldPassword.code === 24,
-          'and her previous password is refused', JSON.stringify(r.afterDropOldPassword));
+          'while the current key — and so alice\'s sign-in with her current ' +
+          'password — is untouched', JSON.stringify(r.afterDropSignIn));
+  t.check(r.afterDropOldPassword.ok === false &&
+          r.afterDropOldPassword.code === 24,
+          'and her previous password is refused', JSON.stringify(
+              r.afterDropOldPassword));
   t.check(Array.isArray(r.afterDropListed) && r.afterDropListed.length === 0 &&
           r.dropAgain.ok === true && r.dropAgain.dropped === 0,
-          'the list shows nothing kept, and a second drop answers dropped: 0 rather than ' +
-          'refusing', JSON.stringify({ listed: r.afterDropListed, again: r.dropAgain }));
+          'the list shows nothing kept, and a second drop answers dropped: 0 ' +
+          'rather than ' +
+          'refusing',
+          JSON.stringify({ listed: r.afterDropListed, again: r.dropAgain }));
+  log.debug("Leaving previousPersonVersionsAreKept().");
 }
 
 function previousServiceVersionsAreKept(t, r) {
+  log.debug("Entering previousServiceVersionsAreKept().");
   t.log.info('=== previous key versions: a service principal ===');
   if (!r.ticketCipherHex) {
     t.check(false, 'the service ticket needed for these assertions was issued');
+    log.debug("Leaving previousServiceVersionsAreKept().");
     return;
   }
   const created = independentKeytabRead(Buffer.from(r.keytab, 'base64'));
-  const rotated = independentKeytabRead(Buffer.from(r.rotateKeytab || '', 'base64'));
+  const rotated = independentKeytabRead(Buffer.from(r.rotateKeytab || '',
+                                                    'base64'));
   const vnos = function (entries) {
+    log.debug("Entering vnos().");
+    log.debug("Leaving vnos().");
     return entries.map(function (e) { return e.vno; })
       .filter(function (v, i, all) { return all.indexOf(v) === i; }).sort();
   };
   t.check(rotated.length === 10 && JSON.stringify(vnos(rotated)) === '[3,4]' &&
           JSON.stringify(r.rotateKeytabKvnos) === '[4,3]',
-          'THE ROTATION\'S KEYTAB CARRIES BOTH kvnos — five enctypes at 4 and five at 3 — ' +
-          'read by the independent reader, as MIT\'s ktadd without -k leaves one',
+          'THE ROTATION\'S KEYTAB CARRIES BOTH kvnos — five enctypes at 4 ' +
+          'and five at 3 — read by the independent reader, as MIT\'s ktadd ' +
+          'without -k leaves one',
           JSON.stringify({ vnos: vnos(rotated), count: rotated.length,
                            keytabKvnos: r.rotateKeytabKvnos }));
   const sameOld = created.every(function (old) {
@@ -957,64 +1194,87 @@ function previousServiceVersionsAreKept(t, r) {
       return e.vno === 3 && e.enctype === old.enctype && e.key === old.key;
     });
   });
-  t.check(sameOld, 'and its kvno-3 entries are the SAME keys the create handed over, not new ones');
+  t.check(sameOld, 'and its kvno-3 entries are the SAME keys the create ' +
+                   'handed over, not new ones');
   t.check(Array.isArray(r.rotateRetained) && r.rotateRetained.length === 1 &&
           r.rotateRetained[0].kvno === 3,
-          'the rotate reply says which previous version is kept, and until when',
+          'the rotate reply says which previous version is kept, and until ' +
+          'when',
           JSON.stringify(r.rotateRetained));
   t.check(r.svc4.ok === true && r.svc4.kvno === 4,
-          'the KDC issues a new ticket for the SPN under the current kvno 4', JSON.stringify(r.svc4));
-  t.check(r.accept3 && r.accept3.ok === true && /PREVIOUS version/.test(r.accept3.versionDetail),
-          'THE ACCEPTOR ACCEPTS THE kvno-3 TICKET under the kept version, and says so',
+          'the KDC issues a new ticket for the SPN under the current kvno 4',
+          JSON.stringify(r.svc4));
+  t.check(r.accept3 && r.accept3.ok === true &&
+          /PREVIOUS version/.test(r.accept3.versionDetail),
+          'THE ACCEPTOR ACCEPTS THE kvno-3 TICKET under the kept version, ' +
+          'and says so',
           JSON.stringify(r.accept3));
-  t.check(r.accept4 && r.accept4.ok === true, 'and the kvno-4 ticket under the current key',
+  t.check(r.accept4 && r.accept4.ok === true, 'and the kvno-4 ticket under ' +
+                                              'the current key',
           JSON.stringify(r.accept4));
   t.check(r.tgs3.ok === true,
-          'the KDC\'s TGS-REQ opens the kvno-3 service ticket under the kept version too',
+          'the KDC\'s TGS-REQ opens the kvno-3 service ticket under the kept ' +
+          'version too',
           JSON.stringify(r.tgs3));
   t.check(r.rotate2Kvno === 5 &&
-          JSON.stringify(vnos(independentKeytabRead(Buffer.from(r.rotate2Keytab || '', 'base64')))) ===
+          JSON.stringify(vnos(independentKeytabRead(
+              Buffer.from(r.rotate2Keytab || '', 'base64')))) ===
             '[4,5]',
-          'a second rotation keeps ONE version: its keytab holds kvno 5 and 4, not 3',
+          'a second rotation keeps ONE version: its keytab holds kvno 5 and ' +
+          '4, not 3',
           String(r.rotate2Kvno));
-  t.check(r.svc5.ok === true && r.svc5.kvno === 5, 'and the KDC issues under kvno 5',
+  t.check(r.svc5.ok === true && r.svc5.kvno === 5, 'and the KDC issues under ' +
+                                                   'kvno 5',
           JSON.stringify(r.svc5));
   t.check(r.accept3After2 && r.accept3After2.ok === false &&
-          r.accept3After2.errorCode === 'STS-KRB-0068' && r.accept3After2.versionOk === false,
+          r.accept3After2.errorCode === 'STS-KRB-0068' &&
+          r.accept3After2.versionOk === false,
           'THE COUNT BOUND AT THE ACCEPTOR: the kvno-3 ticket is now refused ' +
           'KRB_AP_ERR_BADKEYVER', JSON.stringify(r.accept3After2));
   t.check(r.tgs3After2.ok === false && r.tgs3After2.code === 44,
           'and at the KDC', JSON.stringify(r.tgs3After2));
   t.check(r.accept4After2 && r.accept4After2.ok === true,
-          'while the kvno-4 ticket is still accepted', JSON.stringify(r.accept4After2));
+          'while the kvno-4 ticket is still accepted',
+          JSON.stringify(r.accept4After2));
   t.check(Array.isArray(r.servicesListed) && r.servicesListed.length === 1 &&
-          r.servicesListed[0].kvno === 4 && r.servicesListed[0].etypes.length === 5,
-          'the service list shows kvno 4 kept', JSON.stringify(r.servicesListed));
+          r.servicesListed[0].kvno === 4 &&
+          r.servicesListed[0].etypes.length === 5,
+          'the service list shows kvno 4 kept',
+          JSON.stringify(r.servicesListed));
   t.check(r.dropService.ok === true && r.dropService.dropped === 1 &&
           JSON.stringify(r.dropService.kvnos) === '[4]',
-          'drop-previous-service-keys drops kvno 4', JSON.stringify(r.dropService));
+          'drop-previous-service-keys drops kvno 4',
+          JSON.stringify(r.dropService));
   t.check(r.accept4AfterDrop && r.accept4AfterDrop.ok === false &&
           r.accept4AfterDrop.errorCode === 'STS-KRB-0068',
-          'AFTER THE DROP THE kvno-4 TICKET IS REFUSED KRB_AP_ERR_BADKEYVER at the acceptor',
+          'AFTER THE DROP THE kvno-4 TICKET IS REFUSED KRB_AP_ERR_BADKEYVER ' +
+          'at the acceptor',
           JSON.stringify(r.accept4AfterDrop));
-  t.check(r.tgs4AfterDrop && r.tgs4AfterDrop.ok === false && r.tgs4AfterDrop.code === 44,
+  t.check(r.tgs4AfterDrop && r.tgs4AfterDrop.ok === false &&
+          r.tgs4AfterDrop.code === 44,
           'and at the KDC', JSON.stringify(r.tgs4AfterDrop));
   t.check(r.accept5AfterDrop && r.accept5AfterDrop.ok === true,
-          'while the current kvno 5 is untouched', JSON.stringify(r.accept5AfterDrop));
-  t.check(r.dropUnknown === false, 'a drop for an SPN holding no stored key is refused');
+          'while the current kvno 5 is untouched',
+          JSON.stringify(r.accept5AfterDrop));
+  t.check(r.dropUnknown === false, 'a drop for an SPN holding no stored key ' +
+                                   'is refused');
   t.check(r.auditHasDropRow === true, 'the drops are audited');
+  log.debug("Leaving previousServiceVersionsAreKept().");
 }
 
 module.exports = {
   name: 'kerberos_person_keys',
-  describe: 'a directory person\'s Kerberos keys derived from their own password in ' +
-            'product mode, and service principals with random keys and a keytab',
+  describe: 'a directory person\'s Kerberos keys derived from their own ' +
+            'password in product mode, and service principals with random ' +
+            'keys and a keytab',
   run: async function (t) {
+    log.debug("Entering run().");
     await stringToKeyMatchesRfc3962(t);
     theKeytabRoundTrips(t);
     await developmentIsUnchanged(t);
     const report = inAProductChild(t);
     if (!report || report.crashed) {
+      log.debug("Leaving run().");
       return;
     }
     productModeAuthenticatesPeople(t, report);
@@ -1023,5 +1283,6 @@ module.exports = {
     servicePrincipalsWork(t, report);
     previousPersonVersionsAreKept(t, report);
     previousServiceVersionsAreKept(t, report);
+    log.debug("Leaving run().");
   }
 };
