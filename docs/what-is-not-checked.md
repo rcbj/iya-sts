@@ -340,6 +340,13 @@ So the ISSUER has to be configured before anything is believed:
   an `x5c` chain the assertion carries **that builds a path to this realm's Root
   CA** — a certificate that arrives WITH the signature is not evidence on its
   own, which is the one check in the PKI family a security claim rests on;
+* **and since 2026-09-13 the certificate behind that key has its WHOLE chain
+  validated every time it verifies an assertion**, RFC 7522's included: every
+  link in date and verifying, every issuer a CA permitted to sign within its
+  path length, the signer not a CA, and the path ending in this realm or at a
+  self-signed root registered with the certificate. A registered chain used to
+  be checked once, when it was written down. A bare key has no chain and is
+  unaffected;
 * `jwks_uri` is still **never followed**, for the reason above: it is a URL a
   caller supplied.
 
@@ -366,7 +373,7 @@ answers no OCSP*.
 It publishes both now. Every certificate authority in `/admin/pki` signs an RFC
 5280 CRL and answers RFC 6960 OCSP, at `/pki/crl/{scope}/{ca}` and
 `/pki/ocsp/{scope}/{ca}` and in the embedded directory under `ou=crl`; every
-certificate this service issues names its own in three schemes; a pane on that
+certificate this service issues names its own over plain http and ldap; a pane on that
 page revokes one by hand; and anything replaced or rotated goes on its issuer's
 list as `superseded` with nobody asking.
 
@@ -407,7 +414,7 @@ What is still not checked:
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
 control labelled *Take the key pair off*, and it is not revocation either:
 
-* what it does is clear the six attributes from the application's entry, so
+* what it does is clear the seven attributes from the application's entry, so
   **this service** will no longer accept an assertion signed with that key,
   because the key is no longer registered against that application;
 * the certificate is still valid, still chains to this realm's Root, and would

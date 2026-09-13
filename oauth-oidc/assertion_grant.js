@@ -26,7 +26,8 @@
 //                          FOR, and is a replacement for an authorization
 //                          code. **This file is what was missing.**
 //
-// They share a format, a claim set and a replay cache and nothing else. In the
+// They share a format, a claim set and — since 2026-09-13 — one used-assertion
+// history (`common/used_assertions.js`), and nothing else. In the
 // first the `sub` MUST be the client; in the second the `sub` is a PERSON and
 // being the client would be the degenerate case. Reading one file and
 // concluding the other is covered is the mistake this paragraph exists to
@@ -94,7 +95,8 @@
 //   RFC 7523 section 3 claim 5   `nbf`   checked, with the configured skew
 //   RFC 7523 section 3 claim 6   `iat`   checked, and it bounds the LIFETIME
 //                                        (`oauth2.jwtBearerMaxLifetimeS`)
-//   RFC 7523 section 3 claim 7   `jti`   checked against a replay cache and
+//   RFC 7523 section 3 claim 7   `jti`   spent once, ever, against the
+//                                        used-assertion history, and
 //                                        REQUIRED here — see below
 //   RFC 7523 section 3 claim 8   other claims are carried onto the token
 //   RFC 7523 section 3 claim 10  **the assertion may be ENCRYPTED** — a nested
@@ -122,8 +124,8 @@
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route, so its position in the require
 // order is not a position. It requires `helpers.js`, `config.js`,
-// `applications.js`, `common/crypto.js`, `common/pki.js` and `common/realms.js`
-// — none of which requires it back — and it is required by `oauth2.js` (9) and
+// `applications.js`, `common/crypto.js`, `common/pki.js` and
+// `common/used_assertions.js` — none of which requires it back — and it is required by `oauth2.js` (9) and
 // by `client_auth.js`, which takes its key reading and its JWE unwrap from
 // here rather than keeping a second copy of either.
 //
@@ -134,9 +136,11 @@
 // ===========================================================================
 
 const nodeCrypto = require('crypto');
-const realms = require('../common/realms');
 const stsCrypto = require('../common/crypto');
 const pki = require('../common/pki');
+// A LEAF that requires nothing: the code a chain refusal carries is read off
+// the verdict `pki.verifySignerChain()` returns.
+const errorCodes = require('../common/error_codes');
 // A library (rule 3) that registers no route: the revocation check a
 // REGISTERED key's certificate gets when it verifies an assertion below.
 const revocationStatus = require('../common/revocation_status');
@@ -161,50 +165,29 @@ const GRANT_TYPE = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
 const GRANT_ERROR = 'invalid_grant';
 
 // ---------------------------------------------------------------------------
-// THE REPLAY CACHE. Per trust realm, like every other store here — an
-// assertion is minted for one authorization server and a realm IS one.
+// THE USED-ASSERTION HISTORY, AND IT IS NOT A SECOND CACHE ANY MORE
+// (2026-09-13).
 //
-// It is a SECOND cache beside `client_auth.js`'s and that is deliberate: a
-// document used to authenticate a client and a document used to authorize an
-// issuance are two different credentials, they are keyed differently (by
-// client, and by issuer), and sharing one cache would mean an assertion
-// presented as a client credential silently spending the jti of an
-// authorization grant from the same party. Two caches cannot do that.
+// This file kept a replay cache of its own beside `client_auth.js`'s and argued
+// that was deliberate: a document used to authenticate a client and a document
+// used to authorize an issuance were two credentials, keyed differently, and one
+// cache would let an assertion presented as a client credential spend the jti
+// of a grant from the same party. **The owner reversed that, and the argument
+// did not survive being read against the rule it was for.** A jti is the
+// ISSUER's name for one document (RFC 7519 section 4.1.7 requires it be
+// unique to that issuer), so two documents from one party sharing one is
+// already a broken issuer — and one document spent as a client assertion AND
+// as a grant is a JWT used twice, which "once" forbids. Both now spend against
+// `common/used_assertions.js`, keyed by issuer and jti whatever the document
+// is presented as. That module argues the rest: why it persists in every store,
+// why the claim is atomic across processes, and why an assertion is spent only
+// when tokens are issued.
 //
-// **A FULL CACHE REFUSES; IT NO LONGER FORGETS (2026-09-12, every mode).** It
-// dropped its oldest entry when it passed a thousand, expired or not — so a
-// thousand fresh assertions bought a replay of any older one still inside its
-// `exp`. The cap is `oauth2.assertionReplayCacheSize`, expired entries are
-// swept first, and a cache still full of LIVE entries refuses the next grant.
-// `client_auth.js` argues the trade at length and this is the same one.
-// `MAX_ASSERTIONS` is the default, kept under its old name.
+// **A FULL HISTORY REFUSES; IT NEVER FORGETS** — the 2026-09-12 rule, moved
+// with it unchanged. `oauth2.assertionReplayCacheSize` is one count per realm
+// now rather than one per cache.
 // ---------------------------------------------------------------------------
-const MAX_ASSERTIONS = 1000;
-const seenAssertions = realms.map({ persist: 'assertion_grant.seen' });
-
-function maxAssertions() {
-  log.debug("Entering maxAssertions().");
-  const count = Number(config.value('oauth2.assertionReplayCacheSize'));
-  log.debug("Leaving maxAssertions().");
-  return isFinite(count) && count > 0 ? Math.floor(count) : MAX_ASSERTIONS;
-}
-
-// Sweeps what has expired and answers whether there is room for one more. It
-// never deletes an unexpired entry.
-function forgetStaleAssertions() {
-  log.debug('Entering forgetStaleAssertions().');
-  const now = Date.now();
-  seenAssertions.forEach(function (forgetAt, key) {
-    if (forgetAt < now) {
-      seenAssertions.delete(key);
-    }
-  });
-  const room = seenAssertions.size < maxAssertions();
-  log.debug('Leaving forgetStaleAssertions(). ' + seenAssertions.size + ' ' +
-      'live; ' +
-            (room ? 'room for another.' : 'FULL.'));
-  return room;
-}
+const usedAssertions = require('../common/used_assertions');
 
 function skewSeconds() {
   log.debug("Entering skewSeconds().");
@@ -678,6 +661,21 @@ async function keyFromChain(header) {
                     'to this realm\'s certificate authority and was refused ' +
                     'on revocation: ' + checked.revocation.why };
   }
+  const entitlement = errorCodes.codeOf(checked);
+  if (!checked.ok && (entitlement === 'STS-PKI-0158' ||
+                      entitlement === 'STS-PKI-0159')) {
+    // IT CHAINS HERE AND A CERTIFICATE ON IT WAS NOT ENTITLED TO DO WHAT IT
+    // DID (2026-09-13) — a certificate signed by one of this service's own
+    // LEAVES, or a CA's certificate presented as the signer. "It does not chain
+    // here" would be false about it, and the fix is not the same: nothing is
+    // wrong with the anchor, somebody built a link that was never theirs to.
+    log.debug('Leaving keyFromChain(). It chains here through a link that ' +
+              'may not sign.');
+    return { errorCode: entitlement,
+             error: 'the certificate path in this assertion\'s x5c header ' +
+                    'ends at this realm\'s certificate authority and was ' +
+                    'refused: ' + checked.why };
+  }
   if (!checked.ok) {
     log.debug('Leaving keyFromChain(). It does not chain here.');
     return { errorCode: 'STS-OAUTH-0035', error: 'the certificate in this ' +
@@ -945,6 +943,40 @@ async function verify(opts) {
                           ' as `aud`, and be unexpired.' };
   }
 
+  // --- The registered key's CHAIN, now that it has been USED ---------------
+  // (2026-09-13.) A key out of the party's JWKS that carries an `x5c` is
+  // believed only while the WHOLE chain of that certificate holds: the
+  // certificate must hold this key, every link must verify and be in date,
+  // every issuer must be a CA permitted to sign, and the path must end in this
+  // realm or at the self-signed root registered with it. Until this date the
+  // chain was checked when it was registered and never again, so an expired
+  // certificate, an expired intermediate or a replaced Root went on verifying
+  // assertions. `pki.verifySignerChain()` argues the three anchors. A key from
+  // the assertion's own `x5c` was path-checked by `keyFromChain()` on the way
+  // in, and a bare key has no certificate to chain.
+  let keyChain = null;
+  const usedX5c = usedKey && usedKey.source !== 'x5c' && usedKey.jwk &&
+                  Array.isArray(usedKey.jwk.x5c) ? usedKey.jwk.x5c : [];
+  if (usedX5c.length) {
+    keyChain = await pki.verifySignerChain(undefined, {
+      certificate: usedX5c[0], chain: usedX5c.slice(1), key: usedKey.jwk,
+      source: 'the key "' + (usedKey.kid || '(no kid)') + '" in ' +
+              usedKey.source + ' for "' + iss + '"'
+    });
+    if (!keyChain.ok) {
+      log.warn('assertion_grant: the registered key that verified an ' +
+               'assertion from "' + iss + '" has a chain that does not ' +
+               'hold: ' + keyChain.why);
+      log.debug('Leaving verify(). The registered key\'s chain is refused.');
+      return { ok: false,
+               errorCode: errorCodes.codeOf(keyChain) || 'STS-PKI-0157',
+               error: GRANT_ERROR,
+               description: 'the certificate of the key registered for "' +
+                            iss + '" that verified this assertion does not ' +
+                            'have a valid trust chain: ' + keyChain.why };
+    }
+  }
+
   // --- The registered key's certificate, now that it has been USED ---------
   // A key out of the party's JWKS carries its certificate in `x5c` when it has
   // one; that certificate is checked for revocation exactly as a presented one
@@ -1108,24 +1140,37 @@ async function verify(opts) {
                           'remembered — so accepting one means accepting a ' +
                           'credential this service has no way to spend.' };
   }
-  const room = forgetStaleAssertions();
-  const key = iss + ':' + String(claims.jti);
-  if (seenAssertions.has(key)) {
+  // Remembered until it EXPIRES rather than for a fixed window, so the history
+  // and the `exp` check cover exactly the same span with no gap in which a
+  // replay would be accepted because the row had been swept early. It is the
+  // LAST refusal of the document itself — nothing below this line refuses — so
+  // an assertion refused for any other reason is not also used up.
+  const spent = await usedAssertions.claim({
+    format: 'jwt', use: 'authorization-grant',
+    issuer: iss, identifier: String(claims.jti),
+    // The client making the token request, where it named itself. Recorded on
+    // the row for the console; it is not part of what the history is keyed by.
+    clientId: String(options.requestingClientId || ''), subject: sub,
+    expiresAt: (Number(claims.exp) * 1000) + skewSeconds() * 1000,
+    request: options.request
+  });
+  if (!spent.ok && spent.reason === 'replay') {
     log.warn('assertion_grant: "' + iss + '" replayed the assertion jti ' +
              claims.jti + '. A signed assertion is a credential until it ' +
              'expires, so a second use of one is refused.');
     log.debug('Leaving verify(). The jti was replayed.');
     return { ok: false, errorCode: 'STS-OAUTH-0054', error: GRANT_ERROR,
-             description: 'this assertion has been used already. Its `jti` ' +
-                          'is remembered until the assertion expires, ' +
+             description: 'this assertion has been used already' +
+                          usedAssertions.usedAs(spent.existing) + '. Its ' +
+                          '`jti` is remembered until the assertion expires, ' +
                           'because a signed assertion captured off the wire ' +
                           'is a credential until then. Mint a fresh one per ' +
                           'request.' };
   }
-  if (!room) {
-    log.warn('assertion_grant: the replay cache for this realm is full of ' +
-             'unexpired assertions (oauth2.assertionReplayCacheSize ' +
-             '= ' + maxAssertions() + '), ' +
+  if (!spent.ok && spent.reason === 'full') {
+    log.warn('assertion_grant: the used-assertion history for this realm is ' +
+             'full of unexpired rows (oauth2.assertionReplayCacheSize ' +
+             '= ' + spent.cap + '), ' +
              'so a new grant from ' +
              '"' + iss + '" is REFUSED rather than a live ' +
              'one being forgotten.');
@@ -1137,11 +1182,14 @@ async function verify(opts) {
                           'it will not forget one that could still be ' +
                           'replayed in order to accept yours. Retry shortly.' };
   }
-  // Remembered until it EXPIRES rather than for a fixed window, so the cache
-  // and the `exp` check cover exactly the same span with no gap in which a
-  // replay would be accepted because the entry had been swept early.
-  seenAssertions.set(key,
-    (Number(claims.exp) * 1000) + skewSeconds() * 1000);
+  if (!spent.ok) {
+    log.debug('Leaving verify(). The history could not be asked.');
+    return { ok: false, errorCode: 'STS-OAUTH-0243', error: GRANT_ERROR,
+             description: 'this assertion verified, and this authorization ' +
+                          'server could not record that it has been used, ' +
+                          'so it is refused rather than accepted ' +
+                          'unrecorded. Retry with a fresh assertion.' };
+  }
 
   // --- RFC 7521 section 4.1: the requested scope ---------------------------
   // **NARROWED AND NEVER WIDENED.** An assertion that names a `scope` is the
@@ -1236,6 +1284,12 @@ async function verify(opts) {
       ? { status: keyRevocation.status, bare: !!keyRevocation.bare,
           policy: keyRevocation.policy || '', why: keyRevocation.why }
       : null,
+    // What the chain check said about that key's certificate: null where there
+    // was no registered certificate to check (an `x5c` header, path-checked on
+    // the way in, or a bare key), and otherwise the anchor it was validated to.
+    keyChain: keyChain
+      ? { anchor: keyChain.anchor, path: keyChain.path || [] }
+      : null,
     confirmation: confirmation,
     expiresAt: Number(claims.exp) * 1000,
     // RFC 7523 section 3 claim 8: an assertion MAY carry other claims. They
@@ -1286,10 +1340,12 @@ module.exports = {
   keyFromChain: keyFromChain,
   verify: verify,
   extraClaimsFrom: extraClaimsFrom,
-  // For the pages that report how many assertions are being remembered.
+  // For the pages that report how many assertions are being remembered: the
+  // realm's used-assertion history, which this grant shares with client
+  // authentication and with RFC 7522.
   assertionsRemembered: function () {
     log.debug("Entering assertionsRemembered().");
     log.debug("Leaving assertionsRemembered().");
-    return seenAssertions.size;
+    return usedAssertions.summary().live;
   }
 };

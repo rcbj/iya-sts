@@ -65,16 +65,14 @@
 // ---------------------------------------------------------------------------
 // It is a LIBRARY (rule 3): it registers no route and requires `helpers.js`,
 // `config.js` and `mtls.js` — none of which requires it back — so it cannot
-// join a cycle. It holds ONE piece of state, the assertion `jti` cache, for the
-// same reason `dpop.js` holds one: a replayed assertion is a replayed
-// credential, and RFC 7523 section 3 says so.
+// join a cycle. It holds NO state of its own since 2026-09-13: the assertion
+// `jti` cache it kept became `common/used_assertions.js`, the one history every
+// RFC 7523 and RFC 7522 assertion is spent against, whatever it is presented
+// as. A replayed assertion is a replayed credential, and RFC 7523 section 3
+// says so.
 // ===========================================================================
 
 const crypto = require('crypto');
-// TRUST REALMS: the stores below are partitioned by realm. It requires
-// config.js and nothing else here, so it cannot join a cycle and it registers
-// no route, so its position is not a position at all.
-const realms = require('../common/realms');
 const jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
@@ -89,6 +87,11 @@ const mtls = require('./mtls');
 // A library (rule 3): the revocation check a REGISTERED key's certificate gets
 // when it verifies a client assertion.
 const revocationStatus = require('../common/revocation_status');
+// A LEAF (rule 3w): the chain check a REGISTERED key's certificate gets when it
+// verifies a client assertion, and the error-code registry its refusal's code
+// is read from. `assertion_grant.js` below already requires both.
+const pki = require('../common/pki');
+const errorCodes = require('../common/error_codes');
 // RFC 7521 AND THE OTHER HALF OF RFC 7523. That module owns the assertion
 // FORMAT — how a registered JWKS is read, and how an encrypted assertion is
 // unwrapped — and this file takes both from it rather than keeping a second
@@ -156,61 +159,38 @@ function isAsymmetric(method) {
 }
 
 // ---------------------------------------------------------------------------
-// The assertion `jti` cache. RFC 7523 section 3: an authorization server MAY
+// THE USED-ASSERTION HISTORY. RFC 7523 section 3: an authorization server MAY
 // reject an assertion whose jti it has already seen, and OpenID Connect Core
 // section 9 says the jti must be used only once. A signed assertion captured
 // off the wire is a credential until it expires, so "may" is not the useful
 // reading — it is remembered for as long as the assertion could still be valid
 // and refused after that by `exp` instead.
 //
-// ~~Bounded like every other cache here. A forgotten jti is a check not made,
-// never a false refusal, which is why eviction is by AGE and the cap only ever
-// drops the oldest.~~
+// **THIS FILE KEPT ITS OWN CACHE UNTIL 2026-09-13 AND NOW SPENDS AGAINST
+// `common/used_assertions.js`.** That module argues why: a cache here was
+// forgotten at a restart in development, never held by the ldif store,
+// converged rather than agreed across processes, and — the one that is this
+// file's — was a different cache from `assertion_grant.js`'s, so one JWT could
+// authenticate a client AND be spent as a grant. The rule that a FULL history
+// refuses rather than forgets (`oauth2.assertionReplayCacheSize`, 2026-09-12)
+// moved with it unchanged.
 //
-// **THAT PARAGRAPH HAD THE TRADE BACKWARDS FOR THIS CACHE, AND IT CHANGED ON
-// 2026-09-12 IN EVERY MODE.** "A check not made" is harmless for a cache that
-// protects against a client BUG; this one protects against a CAPTURED
-// CREDENTIAL, and a forgotten live jti is that credential accepted a second
-// time. Dropping the oldest meant a thousand fresh assertions from anybody
-// bought a replay of any older one still inside its `exp`. So the cap is now
-// `oauth2.assertionReplayCacheSize`, EXPIRED entries are swept first, and a
-// cache still full of live entries REFUSES THE NEW ASSERTION — a false refusal
-// of a fresh credential, which the client recovers from by retrying, instead
-// of a replay nobody could detect. `MAX_ASSERTIONS` is the default, kept under
-// its old name.
+// **AND A CLIENT ASSERTION IS NOW VERIFIED ONCE PER REQUEST**, which is the
+// half of this change that is a bug fix rather than a design. The token
+// endpoint asks this file twice about one request: `oauth2_bcp.js`'s
+// `checkClientAuthentication()` (the RFC 9700 policy) and then
+// `observeClientAuthentication()` (the fact the role gate and product mode
+// read). With a jti spent on the first call, the second was a REPLAY of the
+// request's own assertion — so in RFC 9700 mode every `private_key_jwt`,
+// `client_secret_jwt` and `saml2_bearer` client was observed as NOT
+// authenticated, and in product mode on top of it was refused `invalid_client`
+// having authenticated perfectly. `verify()` keeps the answer for an
+// assertion on the request object, under a Symbol nothing serialises, and a
+// second question about the same document on the same request gets the same
+// answer. A different document on the same request is verified afresh.
 // ---------------------------------------------------------------------------
-const MAX_ASSERTIONS = 1000;
-
-function maxAssertions() {
-  log.debug("Entering maxAssertions().");
-  const count = Number(config.value('oauth2.assertionReplayCacheSize'));
-  log.debug("Leaving maxAssertions().");
-  return isFinite(count) && count > 0 ? Math.floor(count) : MAX_ASSERTIONS;
-}
-// PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
-// realm and hands out the ambient realm's — so every reader below is
-// unchanged and every one of them is now realm-correct. In the default realm,
-// and in a service with no realms defined, there is exactly one partition and
-// this behaves as the plain Map it replaced. See common/realms.js.
-// jti -> forget-at
-const seenAssertions = realms.map({ persist: 'client_auth.seenAssertions' });
-
-// Sweeps what has expired, and answers whether there is ROOM for one more.
-// It never deletes an entry that has not expired — see the header above.
-function forgetStaleAssertions() {
-  log.debug("Entering forgetStaleAssertions().");
-  const now = Date.now();
-  seenAssertions.forEach(function (forgetAt, jti) {
-    if (forgetAt < now) {
-      seenAssertions.delete(jti);
-    }
-  });
-  const room = seenAssertions.size < maxAssertions();
-  log.debug("Leaving forgetStaleAssertions(). " + seenAssertions.size + " " +
-      "live; " +
-            (room ? "room for another." : "FULL."));
-  return room;
-}
+const usedAssertions = require('../common/used_assertions');
+const VERIFIED_ON_REQUEST = Symbol('sts.clientAuth.verifiedAssertions');
 
 // The lifetime ceiling a client assertion is held to, in seconds, or 0 for
 // none. It is `oauth2.jwtBearerMaxLifetimeS` — the grant's own setting —
@@ -495,6 +475,36 @@ async function verifyAssertion(opts) {
                               'or ') + ' ' +
                           'as `aud`, and be unexpired.' };
   }
+  // THE REGISTERED KEY'S CHAIN, NOW THAT IT HAS VERIFIED SOMETHING
+  // (2026-09-13). A key out of `jwks` or `oauthAssertionJwks` carrying an `x5c`
+  // is believed only while that certificate's WHOLE chain holds — the
+  // certificate holds this key, every link verifies and is in date, every
+  // issuer may issue, and the path ends in this realm or at the self-signed
+  // root registered with it. `assertion_grant.js` makes the same call for
+  // section 2.1, through the same function, so the two halves of RFC 7523
+  // cannot disagree about what a registered certificate is worth.
+  if (usedEntry && usedEntry.jwk && Array.isArray(usedEntry.jwk.x5c) &&
+      usedEntry.jwk.x5c.length) {
+    const keyChain = await pki.verifySignerChain(undefined, {
+      certificate: usedEntry.jwk.x5c[0], chain: usedEntry.jwk.x5c.slice(1),
+      key: usedEntry.jwk,
+      source: 'the key "' + (usedEntry.kid || '(no kid)') +
+              '" registered for client "' + clientId + '"'
+    });
+    if (!keyChain.ok) {
+      log.warn('client_auth: the registered key that verified client "' +
+               clientId + '"\'s assertion has a chain that does not hold: ' +
+               keyChain.why);
+      log.debug("Leaving verifyAssertion(). The registered key's chain is " +
+                "refused.");
+      return { ok: false,
+               errorCode: errorCodes.codeOf(keyChain) || 'STS-PKI-0157',
+               description: 'the certificate of the key this client ' +
+                            'registered, which verified the assertion, does ' +
+                            'not have a valid trust chain: ' + keyChain.why };
+    }
+    log.debug('verifyAssertion(): ' + pki.signerChainSummary(keyChain) + '.');
+  }
   // THE REGISTERED KEY'S CERTIFICATE, NOW THAT IT HAS VERIFIED SOMETHING. A key
   // out of `jwks` or `oauthAssertionJwks` that carries an `x5c` is checked for
   // revocation as a presented certificate is — before the jti is spent, so a
@@ -591,9 +601,27 @@ async function verifyAssertion(opts) {
                                      'carry a `jti`, so that this server can ' +
                                      'refuse a replay of it.' };
   }
-  const room = forgetStaleAssertions();
-  const key = clientId + ':' + String(claims.jti);
-  if (seenAssertions.has(key)) {
+  // Remembered until it expires — not for a fixed window — so the history and
+  // the `exp` check cover exactly the same span between them, with no gap in
+  // which a replay would be accepted because the row had been swept early. An
+  // assertion with NO `exp` (development only, see above) is remembered for the
+  // lifetime ceiling where there is one and for five minutes where there is not
+  // — it stays presentable after that, which is the permissiveness development
+  // mode has, stated here rather than pretended away.
+  const remembered = hasExp
+    ? Number(claims.exp) * 1000
+    : Date.now() +
+      (Number(config.value('oauth2.jwtBearerMaxLifetimeS')) || 300) * 1000;
+  // The LAST check, after every refusal of the document itself, so that an
+  // assertion refused for any other reason is not also used up.
+  const spent = await usedAssertions.claim({
+    format: 'jwt', use: 'client-authentication',
+    issuer: clientId, identifier: String(claims.jti),
+    clientId: clientId, subject: clientId,
+    expiresAt: remembered + clockSkewSeconds() * 1000,
+    request: opts.request
+  });
+  if (!spent.ok && spent.reason === 'replay') {
     log.warn('client_auth: client "' + clientId + '" replayed the assertion ' +
                                                   'jti ' + claims.jti +
              '. A signed assertion is a credential until it expires, so a ' +
@@ -601,16 +629,18 @@ async function verifyAssertion(opts) {
     log.debug("Leaving verifyAssertion(). The jti was replayed.");
     return { ok: false, errorCode: 'STS-OAUTH-0012', description: 'this ' +
                                      'client_assertion has been used ' +
-                                     'already. Its `jti` is remembered until ' +
+                                     'already' +
+                                     usedAssertions.usedAs(spent.existing) +
+                                     '. Its `jti` is remembered until ' +
                                      'the assertion expires, because a ' +
                                      'signed assertion captured off the wire ' +
                                      'is a credential until then. Mint a ' +
                                      'fresh one per request.' };
   }
-  if (!room) {
-    log.warn('client_auth: the client assertion replay cache for this realm ' +
-             'is full of unexpired entries (oauth2.assertionReplayCacheSize ' +
-             '= ' + maxAssertions() +
+  if (!spent.ok && spent.reason === 'full') {
+    log.warn('client_auth: the used-assertion history for this realm ' +
+             'is full of unexpired rows (oauth2.assertionReplayCacheSize ' +
+             '= ' + spent.cap +
              '), so a new assertion from "' + clientId + '" is REFUSED ' +
              'rather than a live one being forgotten.');
     log.debug("Leaving verifyAssertion(). The replay cache is full.");
@@ -624,18 +654,18 @@ async function verifyAssertion(opts) {
                                      'yours. Retry shortly, with a ' +
                                      'short-lived assertion.' };
   }
-  // Remembered until it expires — not for a fixed window — so the cache and the
-  // `exp` check cover exactly the same span between them, with no gap in which
-  // a replay would be accepted because the entry had been swept early. An
-  // assertion with NO `exp` (development only, see above) is remembered for the
-  // lifetime ceiling where there is one and for five minutes where there is not
-  // — it stays presentable after that, which is the permissiveness development
-  // mode has, stated here rather than pretended away.
-  const remembered = hasExp
-    ? Number(claims.exp) * 1000
-    : Date.now() +
-      (Number(config.value('oauth2.jwtBearerMaxLifetimeS')) || 300) * 1000;
-  seenAssertions.set(key, remembered + clockSkewSeconds() * 1000);
+  if (!spent.ok) {
+    log.debug("Leaving verifyAssertion(). The history could not be asked.");
+    // The store's own message goes to the log (used_assertions.js tags it)
+    // and not to the client: it is a sentence about this service's database.
+    return { ok: false, errorCode: 'STS-OAUTH-0243', description: 'this ' +
+                                     'client assertion verified, and this ' +
+                                     'authorization server could not record ' +
+                                     'that it has been used, so it is ' +
+                                     'refused rather than accepted ' +
+                                     'unrecorded. Retry with a fresh ' +
+                                     'assertion.' };
+  }
   log.debug("Leaving verifyAssertion(). Verified. alg=" + alg + ", jti=" +
             claims.jti);
   return { ok: true, alg: alg, jti: String(claims.jti) };
@@ -781,6 +811,39 @@ function verifyCertificate(opts) {
 // 2.5's policy question and it lives in `oauth2_bcp.js`. This answers only
 // "does what arrived prove this client", which is protocol.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// ONE VERIFICATION OF ONE ASSERTION PER REQUEST. See the header above
+// `usedAssertions` for the double-spend this closes. Keyed by a digest of
+// everything that decides the answer — the method, the client, the type and
+// the document — so a request presenting two different assertions verifies
+// both, and one presenting the same one twice is answered once. The PROMISE
+// is kept rather than the result, so a second caller that arrives while the
+// first is still verifying waits for that verification instead of starting a
+// second one that would find the first one's claim.
+// ---------------------------------------------------------------------------
+function verifiedOnce(request, parts, run) {
+  log.debug("Entering verifiedOnce().");
+  if (!request || typeof request !== 'object') {
+    log.debug("Leaving verifiedOnce(). No request to remember it on.");
+    return run();
+  }
+  let held = request[VERIFIED_ON_REQUEST];
+  if (!held) {
+    held = new Map();
+    request[VERIFIED_ON_REQUEST] = held;
+  }
+  const key = crypto.createHash('sha256').update(parts.join('\n'))
+    .digest('base64url');
+  if (held.has(key)) {
+    log.debug("Leaving verifiedOnce(). Answered already on this request.");
+    return held.get(key);
+  }
+  const answer = run();
+  held.set(key, answer);
+  log.debug("Leaving verifiedOnce(). Verifying.");
+  return answer;
+}
+
 // ASYNCHRONOUS BECAUSE verifyAssertion() IS. The four methods that are not an
 // assertion — the two secret ones and the two RFC 8705 certificate ones —
 // resolve without leaving this process; nothing about what any of them decides
@@ -838,17 +901,25 @@ async function verify(opts) {
                                        'request says "' +
                                        (info.assertionType || '') + '".' };
     }
-    const checked = await verifyAssertion({
-      method: method, assertion: info.assertion, clientId: info.clientId,
-      clientSecret: info.clientSecret, jwks: info.jwks, jwksUri: info.jwksUri,
-      // The JWKS this service ISSUED to this client from its own certificate
-      // authority, beside the one the client registered. Two attributes and
-      // not one: a client that registered its own keys and was later issued a
-      // pair by an operator has two ways to sign, both of which somebody
-      // deliberately arranged.
-      assertionJwks: info.assertionJwks,
-      audiences: info.audiences
-    });
+    const checked = await verifiedOnce(info.request,
+      [method, info.clientId, info.assertionType, info.assertion],
+      function () {
+        return verifyAssertion({
+          method: method, assertion: info.assertion, clientId: info.clientId,
+          clientSecret: info.clientSecret, jwks: info.jwks,
+          jwksUri: info.jwksUri,
+          // The JWKS this service ISSUED to this client from its own
+          // certificate authority, beside the one the client registered. Two
+          // attributes and not one: a client that registered its own keys and
+          // was later issued a pair by an operator has two ways to sign, both
+          // of which somebody deliberately arranged.
+          assertionJwks: info.assertionJwks,
+          audiences: info.audiences,
+          // What binds the used-assertion claim to this response, so that an
+          // assertion is spent only when tokens are issued.
+          request: info.request
+        });
+      });
     if (!checked.ok) {
       log.debug("Leaving verify(). The assertion was refused.");
       log.debug("Leaving verify().");
@@ -906,16 +977,22 @@ async function verify(opts) {
                                            'registered for the SAML 2.0 one'
                                          : '') + '.' };
     }
-    const checked = await samlAssertionGrant.verify({
-      assertion: info.assertion,
-      clientId: info.clientId,
-      // The two RFC 7522 attributes, handed over rather than looked up,
-      // because this function is given FIELDS by its caller. Neither of them
-      // is an `oauthAssertion*` one.
-      registeredCertificate: info.samlSigningCertificate,
-      issuedCertificate: info.samlAssertionCertificate,
-      audiences: info.audiences
-    });
+    const checked = await verifiedOnce(info.request,
+      [method, info.clientId, info.assertionType, info.assertion],
+      function () {
+        return samlAssertionGrant.verify({
+          assertion: info.assertion,
+          clientId: info.clientId,
+          // The two RFC 7522 attributes, handed over rather than looked up,
+          // because this function is given FIELDS by its caller. Neither of
+          // them is an `oauthAssertion*` one.
+          registeredCertificate: info.samlSigningCertificate,
+          issuedCertificate: info.samlAssertionCertificate,
+          issuedCertificateChain: info.samlAssertionCertificateChain,
+          audiences: info.audiences,
+          request: info.request
+        });
+      });
     if (!checked.ok) {
       log.debug("Leaving verify(). The SAML assertion was refused.");
       return { ok: false, errorCode: checked.errorCode,
@@ -966,10 +1043,12 @@ module.exports = {
   isAsymmetric: isAsymmetric,
   subjectRfc4514: subjectRfc4514,
   verify: verify,
-  // For the pages that report how many assertions are being remembered.
+  // For the pages that report how many assertions are being remembered. The
+  // history is one per realm now, shared with both grant profiles, so this is
+  // that history's count rather than a count of client assertions alone.
   assertionsRemembered: function () {
     log.debug("Entering assertionsRemembered().");
     log.debug("Leaving assertionsRemembered().");
-    return seenAssertions.size;
+    return usedAssertions.summary().live;
   }
 };

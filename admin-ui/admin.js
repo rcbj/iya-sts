@@ -144,6 +144,7 @@ const DELEGATION_PER_PAGE = adminViews.DELEGATION_PER_PAGE;
 const MAX_ROWS = adminViews.MAX_ROWS;
 const auditView = adminViews.auditView;
 const errorCodesView = adminViews.errorCodesView;
+const usedAssertionsView = adminViews.usedAssertionsView;
 const delegationView = adminViews.delegationView;
 const clusterSummary = adminViews.clusterSummary;
 const permissionGroupsView = adminViews.permissionGroupsView;
@@ -348,6 +349,14 @@ const APP_BUILD_INFO = version.buildInfo(APP_VERSION);
 // asks for no slot, both ways round. `/admin/persistence` renders its
 // `status()` and `GET /admin/ldap/service` publishes the same object.
 const persistence = require('../persistence/persistence');
+// WHERE THE TWO PRIMORDIAL SECRETS COME FROM, and whether the keystore is
+// reading one at all — for the runtime line at the foot of every page
+// (`runtimeFooter()`). Both are LEAVES (rule 3): `secrets.js` requires only
+// `config` and `error_codes`, `keystore.js` is loaded long before this module
+// by the startup it serves, so neither require can move a route or close a
+// cycle.
+const secrets = require('../common/secrets');
+const keystore = require('../common/keystore');
 // TRUST REALMS: the registry behind /admin/realms, and the switcher this shell
 // draws on every page. It requires config.js and nothing else here, registers
 // no route, and is already loaded by helpers.js — so its position is not a
@@ -1777,6 +1786,25 @@ const SECTIONS = [
                'Revocation here is the SAME revocation RFC 7009\'s ' +
                '<code>/oauth2/revoke</code> performs, so introspection, ' +
                'UserInfo and the refresh grant all honour it.' },
+      // IMMEDIATELY AFTER TOKENS, AND THE PAIR IS THE ARGUMENT: that page is
+      // what this service HANDED OUT and this one is what it was HANDED and
+      // spent. Filed under Monitoring rather than beside the RFC 7523 and RFC
+      // 7522 settings under Protocols, because it answers "has this assertion
+      // been used, by whom, and until when is that remembered" — a question
+      // about what happened, which is this section's heading.
+      { path: '/admin/used-assertions', label: 'Used assertions',
+        blurb: 'Every RFC 7523 JWT and RFC 7522 SAML assertion this realm ' +
+               'has ACCEPTED — as client authentication or as an ' +
+               'authorization grant — and that has not yet expired. <strong>' +
+               'Each is accepted once, ever</strong>: one history for both ' +
+               'uses and both profiles, persisted in whatever store is open ' +
+               'so a restart forgets nothing, and on postgres claimed ' +
+               'atomically so no two processes accept one assertion. An ' +
+               'assertion is spent only when the token request it came with ' +
+               'issued tokens; a request that failed for another reason ' +
+               'releases it. A row is kept until the assertion would have ' +
+               'expired and not a moment longer. No control: forgetting a ' +
+               'row would make a still-valid assertion usable again.' },
       // Beside the tokens it points at rather than under Protocols, and that
       // was the decision: delegation is the one feature here that is
       // deliberately NOT a protocol family — six of its eight mechanisms come
@@ -3648,6 +3676,144 @@ function sideColumn(active, up, req, gate) {
   return html;
 }
 
+// ---------------------------------------------------------------------------
+// WHAT THIS PROCESS IS RUNNING AS, under the version at the foot of every page
+// (2026-09-13).
+//
+// Four facts somebody asks in front of this console as often as "which build":
+// whether requests are DISPATCHED to request workers or answered by one
+// process, whether the realm is in PRODUCT or DEVELOPMENT mode, which
+// PERSISTENCE store is open, and where the two primordial SECRETS — the
+// key-encryption key and the database password — are read from. Each answer
+// was a page away (`/admin/persistence`, `/admin/secrets`, `global.mode` on
+// `/admin/config`), and
+// the pages that change what an endpoint does are exactly where a reader needs
+// to know which of those worlds they are changing it in.
+//
+// **EVERY FACT IS READ FROM THE MODULE THAT OWNS IT, PER RENDER.** The mode is
+// runtime-settable and per realm, the store's `status()` is what
+// `/admin/persistence` draws, and `secrets.describe()` is what `/admin/secrets`
+// draws — so the footer cannot say something those pages do not. It says
+// WHERE a secret comes from and never WHAT it is, which is `describe()`'s own
+// rule.
+//
+// **IT MAY NOT BREAK A PAGE.** Each fact is computed inside its own guard and
+// a fact that throws is drawn as `unknown`: a footer that took the console down
+// would cost every page for one line of information.
+// ---------------------------------------------------------------------------
+function runtimeFacts() {
+  log.debug("Entering runtimeFacts().");
+  const facts = {};
+  try {
+    const count = parseInt(config.value('workers.requestCount'), 10) || 0;
+    const rawDispatch = config.value('workers.dispatch');
+    const dispatch = (Array.isArray(rawDispatch) ? rawDispatch
+                                                 : String(rawDispatch || '')
+                                                     .split(','))
+      .map(function (one) { return String(one).trim(); })
+      .filter(Boolean);
+    facts.process = count > 0 && dispatch.length
+      ? 'dispatch (' + count + ' request worker' + (count === 1 ? '' : 's') +
+        (process.env.STS_REQUEST_WORKER
+          ? '; this page from worker ' + process.pid : '') + ')'
+      : 'single process';
+  } catch (e) {
+    log.debug("Caught in runtimeFacts(): " + ((e && e.message) || e));
+    // Drawn as unknown rather than guessed; see the header.
+    facts.process = 'unknown';
+  }
+  try {
+    facts.mode = mode.current();
+  } catch (e) {
+    log.debug("Caught in runtimeFacts(): " + ((e && e.message) || e));
+    // Drawn as unknown rather than guessed; see the header.
+    facts.mode = 'unknown';
+  }
+  let store = null;
+  // THE STORE THAT IS OPEN, which is not always the one configured:
+  // `status().mode` is `memory` until `persistence.start()` has opened the
+  // configured store, and a store that cannot open stops the service — so a
+  // mismatch is only ever a process that has not opened it, and it is SAID
+  // rather than hidden behind the configured name.
+  let effective = 'memory';
+  try {
+    store = persistence.status();
+    effective = String(store.mode || store.configuredMode || 'memory');
+    const db = store.database;
+    facts.database = effective === 'postgres'
+      ? (db ? 'postgres (' + db.host + ':' + db.port + '/' + db.database + ')'
+            : 'postgres')
+      : effective === 'ldif'
+        ? 'ldif (' + (store.dataDir || 'no data directory') + ')'
+        : effective === 'memory' ? 'memory (nothing written down)'
+                                 : effective;
+    if (store.mode && store.configuredMode &&
+        store.configuredMode !== store.mode) {
+      facts.database += ' — persistence.mode is ' + store.configuredMode +
+                        ' and no such store is open in this process';
+    }
+  } catch (e) {
+    log.debug("Caught in runtimeFacts(): " + ((e && e.message) || e));
+    // Drawn as unknown rather than guessed; see the header.
+    facts.database = 'unknown';
+  }
+  try {
+    const kek = secrets.describe();
+    const kekFrom = kek.configured
+      ? kek.label + (kek.where && kek.where.from ? ' (' + kek.where.from + ')'
+                                                 : '')
+      : 'not configured';
+    facts.keyEncryptionKey = keystore.persists()
+      ? kekFrom
+      : 'not read (signing keys are generated at start)';
+  } catch (e) {
+    log.debug("Caught in runtimeFacts(): " + ((e && e.message) || e));
+    // Drawn as unknown rather than guessed; see the header.
+    facts.keyEncryptionKey = 'unknown';
+  }
+  try {
+    const password = secrets.describeDatabasePassword();
+    facts.databasePassword = effective !== 'postgres'
+      ? 'not used (no database)'
+      : password.configured
+        ? password.label + (password.where && password.where.from
+          ? ' (' + password.where.from + ')' : '')
+        : 'the connection string';
+  } catch (e) {
+    log.debug("Caught in runtimeFacts(): " + ((e && e.message) || e));
+    // Drawn as unknown rather than guessed; see the header.
+    facts.databasePassword = 'unknown';
+  }
+  log.debug("Leaving runtimeFacts().");
+  return facts;
+}
+
+// **NOT DRAWN FOR A READER WITH NO SESSION**, on the rule `refreshLink()` and
+// `sideColumn()` follow: the shell draws the sign-out page, the callback's
+// refusal and a 401 for somebody the gate has not let in, and this line names
+// a database host and the paths secrets are read from. Those belong to people
+// who may read `/admin/persistence` and `/admin/secrets`, not to anybody who
+// can reach the sign-out page.
+function runtimeFooter(gate) {
+  log.debug("Entering runtimeFooter().");
+  if (gate && gate.enforced && !gate.session) {
+    log.debug("Leaving runtimeFooter(). Nobody is signed in.");
+    return '';
+  }
+  const facts = runtimeFacts();
+  const html = '<div class="runtime">' +
+    'running as <code>' + esc(facts.process) + '</code>' +
+    ' &middot; mode <code>' + esc(facts.mode) + '</code>' +
+    ' &middot; database <code>' + esc(facts.database) + '</code>' +
+    ' &middot; secret store: key-encryption key <code>' +
+    esc(facts.keyEncryptionKey) + '</code>, database password <code>' +
+    esc(facts.databasePassword) + '</code>' +
+    ' &middot; <a href="/admin/persistence">persistence</a>, ' +
+    '<a href="/admin/secrets">secrets</a></div>';
+  log.debug("Leaving runtimeFooter().");
+  return html;
+}
+
 function page(title, active, inner, up, gate, req) {
   log.debug("Entering page(). title=" + title + ", up=" +
             (up ? up.href : "none"));
@@ -4391,6 +4557,9 @@ function page(title, active, inner, up, gate, req) {
     esc(APP_VERSION.version) + '</code>' +
     (APP_VERSION.stamped ? '' : ' (not a stamped build — this process is a ' +
      'checkout, and the build number is when it started)') + '</div>' +
+    // AND WHAT THIS PROCESS IS RUNNING AS — dispatch or single process, the
+    // mode, the store and the secret stores. See runtimeFooter().
+    runtimeFooter(gate) +
     // FOUR closing divs now, not two: the .meta block, the .card it is inside,
     // the .main column that holds the card and the .shell that holds the two
     // columns. Getting this wrong leaves a document that renders and does not
@@ -9162,6 +9331,152 @@ app.get('/admin/audit', function (req, res) {
           { settings: configSettingsJson('/admin/audit') }),
           'Audit log', '/admin/audit', inner);
   log.debug("Leaving the admin audit page.");
+});
+
+// ---------------------------------------------------------------------------
+// GET /admin/used-assertions — WHAT THIS REALM HAS BEEN HANDED AND SPENT
+// (2026-09-13).
+//
+// Drawn from `adminViews.usedAssertionsView()`, which
+// `GET /admin-api/used-assertions` answers from too — rule 7, one function.
+// A PROMISE, because on a postgres store the history is the database's and
+// reading it is a query; a store that cannot be read is a page saying so
+// rather than a request that never answers.
+//
+// **NO CONTROL, AND THAT IS THE PAGE.** A Forget button would make an
+// assertion that is still inside its validity usable a second time, which is
+// the one thing the history exists to prevent. A row goes away when the
+// assertion expires, and no other way.
+// ---------------------------------------------------------------------------
+app.get('/admin/used-assertions', function (req, res) {
+  log.debug("Entering the admin used assertions page.");
+  usedAssertionsView(req.query).then(function (view) {
+    const json = view.json;
+    const paging = view.paging;
+    const filter = view.filter;
+    const filterParams = { q: filter.q, format: filter.format, use: filter.use,
+                           state: filter.state,
+                           per: req.query.per ? paging.perPage : '' };
+    const nav = pageNavPair('/admin/used-assertions', filterParams, paging);
+
+    const optionsOf = function (table, chosen, allLabel) {
+      log.debug("Entering optionsOf().");
+      log.debug("Leaving optionsOf().");
+      return '<option value=""' + (chosen ? '' : ' selected') + '>' +
+        esc(allLabel) + '</option>' +
+        Object.keys(table).map(function (id) {
+          return '<option value="' + esc(id) + '"' +
+                 (id === chosen ? ' selected' : '') + '>' + esc(id) + ' — ' +
+                 esc(table[id]) + '</option>';
+        }).join('');
+    };
+
+    const rows = view.rows.map(function (row) {
+      return '<tr><td>' + esc(whenText(row.usedAt)) + '</td>' +
+        '<td>' + esc(row.format === 'saml' ? 'SAML 2.0' : 'JWT') + '</td>' +
+        '<td>' + esc(row.use === 'authorization-grant' ? 'grant'
+                                                       : 'client auth') +
+        '</td>' +
+        '<td class="who">' + shortened(row.issuer, 40) + '</td>' +
+        '<td class="who">' + shortened(row.identifier, 32) + '</td>' +
+        '<td class="who">' + (row.clientId ? shortened(row.clientId, 32)
+          : '<span class="state-none">—</span>') + '</td>' +
+        '<td class="who">' + (row.subject ? shortened(row.subject, 32)
+          : '<span class="state-none">—</span>') + '</td>' +
+        '<td>' + (row.state === 'spent' ? 'spent'
+          : '<span class="state-none" title="' +
+            esc(json.states.reserved) + '">in flight</span>') + '</td>' +
+        '<td>' + esc(whenText(row.expiresAt)) + '</td></tr>';
+    }).join('');
+
+    const filtering = filter.q || filter.format || filter.use || filter.state;
+    const storeSentence = json.persistent
+      ? note('<strong>Held in the <code>' + esc(json.store) + '</code> ' +
+             'store</strong>, so it survives a restart' +
+             (json.atomicAcrossProcesses
+               ? ', and recording a use is one atomic claim in that ' +
+                 'database, so every process against it agrees at once.'
+               : '. That store does not coordinate processes, and a service ' +
+                 'that dispatches refuses to start without one that does.'))
+      : warn('<strong>Held in this process only.</strong> ' + esc(json.storeNote),
+             'Not persisted');
+
+    const inner = messagesOf(req) +
+      '<div class="tiles">' +
+        tile(json.live, 'unexpired rows in this realm') +
+        tile(json.cap, 'the most it will hold') +
+        tile(json.matched, filtering ? 'match' : 'listed') +
+        tile(json.store, 'store') +
+      '</div>' +
+
+      note('Every <strong>RFC 7523</strong> JWT and <strong>RFC 7522</strong> ' +
+      'SAML assertion this realm has accepted — to authenticate a client ' +
+      '(<code>client_assertion</code>) or as an authorization grant ' +
+      '(<code>assertion</code>) — and that has not yet expired. <strong>An ' +
+      'assertion is accepted once, ever</strong>: this is ONE history for ' +
+      'both uses and both profiles, keyed by the document\'s format, its ' +
+      'issuer and its <code>jti</code> or <code>ID</code>, so a JWT that ' +
+      'authenticated a client cannot then be spent as a grant. The assertion ' +
+      'itself is never stored.') +
+
+      note('<strong>In flight</strong> is an assertion that was accepted on ' +
+      'a token request whose response has not finished; a replay racing it ' +
+      'is refused exactly as on a spent one. It becomes <strong>spent</strong> ' +
+      'only when that response is a 2xx — tokens were issued — and a request ' +
+      'that failed for another reason (a bad code, an invalid scope, the ' +
+      'issuance gate) RELEASES it, because an assertion that bought nothing ' +
+      'has not been used.') +
+
+      storeSentence +
+
+      note('A row is kept until the assertion would have expired — its ' +
+      '<code>exp</code> or <code>NotOnOrAfter</code> plus the clock skew ' +
+      'allowed when it was read — and not a moment longer. When ' +
+      '<code>oauth2.assertionReplayCacheSize</code> unexpired rows are held, ' +
+      'the next assertion is REFUSED rather than a live row forgotten.') +
+
+      '<form method="get" action="/admin/used-assertions"><div class="formrow">' +
+        '<label for="q">Text</label>' +
+        '<input type="text" id="q" name="q" size="28" value="' +
+        esc(filter.q) + '" placeholder="an issuer, a jti, a client">' +
+        '<label for="format">Format</label><select id="format" name="format">' +
+        optionsOf(json.formats, filter.format, 'both') + '</select>' +
+        '<label for="use">Use</label><select id="use" name="use">' +
+        optionsOf(json.uses, filter.use, 'both') + '</select>' +
+        '<label for="state">State</label><select id="state" name="state">' +
+        optionsOf(json.states, filter.state, 'both') + '</select>' +
+        '<label for="per">Per page</label><select id="per" name="per">' +
+        perPageOptions(paging.perPage) + '</select>' +
+        '<button class="secondary">Filter</button>' +
+        (filtering ? ' <a href="/admin/used-assertions">clear</a>' : '') +
+      '</div></form>' +
+      nav.head +
+      '<table><tr><th>Used</th><th>Format</th><th>As</th><th>Issuer</th>' +
+      '<th>jti / ID</th><th>Client</th><th>Subject</th><th>State</th>' +
+      '<th>Remembered until</th></tr>' +
+      (rows || '<tr><td colspan="9">' + (filtering ? 'Nothing matches.'
+        : 'No assertion has been accepted in this realm, or every one has ' +
+          'expired.') + '</td></tr>') +
+      '</table>' +
+      nav.foot +
+
+      note('This list is <code>GET /admin-api/used-assertions</code> with the ' +
+      'same parameters. Paging is <code>?page=</code> and <code>?per=</code> ' +
+      '(at most ' + MAX_ROWS + ' rows a page).');
+
+    respond(req, res, json, 'Used assertions', '/admin/used-assertions', inner);
+    log.debug("Leaving the admin used assertions page.");
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-ADMIN-0643') + 'admin: the used-assertion ' +
+              'history could not be read: ' + ((e && e.message) || e));
+    errorCodes.mark(res, 'STS-ADMIN-0643');
+    respond(req, res, { ok: false, error: String((e && e.message) || e) },
+            'Used assertions', '/admin/used-assertions',
+            warn('The used-assertion history could not be read from the ' +
+                 'store: ' + esc(String((e && e.message) || e)),
+                 'It could not be read'));
+    log.debug("Leaving the admin used assertions page. It threw.");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -15805,6 +16120,220 @@ function mfaSection(row, key, state, back) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// A PERSON'S CREDENTIALS: THEIR RFC 7523 AND RFC 7522 KEY PAIRS, ON THEIR OWN
+// PAGE (2026-09-13).
+//
+// The application page's Credentials section, for a person. Per profile: the
+// key pair on their entry and where it came from, and the controls that
+// REPLACE it — issue one from this realm's certificate authority, or upload a
+// certificate the person already holds (this realm's alone, or another
+// authority's with its whole chain) — and take it off.
+//
+// **THE SAME ACTIONS AND NOT NEW ONES.** Issue is `/admin/pki`'s `issue` with
+// `target=person`, posted to `/admin/pki/person` because what comes back is a
+// PRIVATE KEY and that route answers with a page rather than a redirect;
+// Upload is `upload-certificate` and Take off is `revoke`, both to
+// `/admin/pki`. All three carry `from`, so the handler sends the reader back
+// here through userReturnTo(), and all three are `/admin-api/pki/{action}` with
+// no second operation — moving a form is not moving an action.
+//
+// **WHAT IS DIFFERENT FROM THE APPLICATION'S IS THE PRIVATE KEY.** An
+// application's is readable afterwards through `applications.view()`; a
+// person's is not readable by anybody, so this section says whether one is
+// held and the issue page is the one place it is ever shown.
+//
+// **THE CONTROLS NEED ADMIN WRITE AND ARE DRAWN ONLY FOR IT**, the
+// second-factor section's rule beside it: a button whose only outcome is the
+// gate's refusal is a control that can only fail.
+// ---------------------------------------------------------------------------
+function userCredentialsSection(key, state, gate, back) {
+  log.debug("Entering userCredentialsSection(). key=" + key);
+  const hidden = function (name, value) {
+    log.debug("Entering hidden().");
+    log.debug("Leaving hidden().");
+    return '<input type="hidden" name="' + name + '" value="' + esc(value) +
+           '">';
+  };
+  const heading = '<h2 id="credentials">Credentials: assertion key pairs</h2>' +
+    note('What this person can SIGN an authorization grant with: a key pair ' +
+    'for RFC 7523&rsquo;s JWT bearer assertion and one for RFC 7522&rsquo;s ' +
+    'SAML 2.0 bearer assertion, on their own directory entry. ' +
+    '<strong>A person&rsquo;s assertion may only be about ' +
+    'themselves</strong> &mdash; the token endpoint refuses one naming ' +
+    'anybody else as its <code>sub</code> or <code>&lt;Subject&gt;</code>, ' +
+    'because a key on one person&rsquo;s entry is that person&rsquo;s ' +
+    'credential rather than permission to speak for others. A party that may ' +
+    'assert about other people is an APPLICATION with the issuer declared on ' +
+    'it. The two profiles&rsquo; key pairs share no attribute, so neither ' +
+    'signs for the other and taking one off leaves the other working.');
+  if (!state.storable) {
+    log.debug("Leaving userCredentialsSection(). No directory.");
+    return heading + warn('This process has no directory, so nobody can hold ' +
+      'an assertion key pair.', 'No directory');
+  }
+  if (!state.found) {
+    log.debug("Leaving userCredentialsSection(). No entry.");
+    return heading + note('<code>' + esc(key) + '</code> has no entry under ' +
+      '<code>ou=users</code> in this realm, so there is nowhere to put a key ' +
+      'pair. An identity this service has seen without a directory entry ' +
+      '&mdash; a client, a bind DN, a subject somebody else asserted &mdash; ' +
+      'cannot hold one.');
+  }
+  const username = state.username;
+  const algOptions = state.ca.keyAlgorithms.map(function (one) {
+    return '<option value="' + esc(one.id) + '">' + esc(one.label) +
+           '</option>';
+  }).join('');
+  const purposeHtml = state.purposes.map(function (p) {
+    const names = p.attributes;
+    const anchor = 'credentials-' + p.id;
+    const chainCells = p.chain.length
+      ? '<ol>' + p.chain.map(function (link) {
+          return '<li>' + certificateCells(link) + '</li>';
+        }).join('') + '</ol>'
+      : (p.held ? '<span class="state-none">none stored</span>' : '&mdash;');
+    const managed = p.held
+      ? '<table><tr><th>Fact</th><th>Value</th></tr>' +
+        '<tr><td>Source<div class="sub"><code>' + esc(names.source) +
+        '</code></div></td><td><code>' + esc(p.source) + '</code>' +
+        '<div class="sub">' + (PERSON_KEY_SOURCE_SENTENCES[p.source] ||
+                               esc(p.source)) + '</div></td></tr>' +
+        '<tr><td>Certificate<div class="sub"><code>' + esc(names.certificate) +
+        '</code></div></td><td>' + certificateCells(p.certificate) +
+        '</td></tr>' +
+        '<tr><td>Chain<div class="sub"><code>' + esc(names.chain) +
+        '</code></div></td><td>' + chainCells + '</td></tr>' +
+        '<tr><td>Key handle<div class="sub"><code>' + esc(names.handle) +
+        '</code></div></td><td><code>' + esc(p.handle || '—') + '</code> ' +
+        '<span class="sub">(' + esc(p.handleLabel) + ')</span></td></tr>' +
+        '<tr><td>Private key<div class="sub"><code>' +
+        esc(names.privateKey) + '</code></div></td><td>' +
+        (p.privateKeyHeld
+          ? '<span class="state-valid">held by this service</span>' +
+            (state.sealsAtRest ? ' &mdash; sealed at rest' : '') +
+            '<div class="sub">It was shown once, when it was issued, and ' +
+            'nothing opens it again &mdash; not this page, not ' +
+            '<code>/admin-api</code>. Issuing again replaces it.</div>'
+          : '<span class="state-none">not held here</span><div class="sub">' +
+            'The person keeps their own private key.</div>') +
+        '</td></tr>' +
+        '<tr><td>Asserts as<div class="sub"><code>' + esc(names.issuer) +
+        '</code></div></td><td>' + p.effectiveIssuers.map(function (iss) {
+          return '<code>' + esc(iss) + '</code>';
+        }).join('<br>') + (p.issuers.length ? ''
+          : ' <span class="sub">(their own name &mdash; nothing is ' +
+            'declared)</span>') + '</td></tr></table>'
+      : note('No key pair is held for this profile. Issue one from this ' +
+             'realm&rsquo;s certificate authority, or upload a certificate ' +
+             'the person already holds.') +
+        (p.issuers.length
+          ? note('An issuer is declared for it (' + p.issuers.map(
+              function (iss) {
+                return '<code>' + esc(iss) + '</code>';
+              }).join(', ') + ') and nothing can be signed under it until a ' +
+              'key pair is here.')
+          : '');
+
+    if (!gate.write) {
+      return '<h3 id="' + anchor + '">' + esc(p.label) + '</h3>' + managed +
+        note('Replacing or taking off a key pair needs <strong>Admin ' +
+             'Write</strong>.');
+    }
+    const issueForm = state.ca.available
+      ? '<form method="post" action="/admin/pki/person">' +
+        '<div class="formrow">' + hidden('action', 'issue') +
+        hidden('target', 'person') + hidden('from', '/admin/users') +
+        hidden('back', back) + hidden('identifier', username) +
+        hidden('purpose', p.id) +
+        '<label for="' + anchor + '-alg">Key algorithm</label>' +
+        '<select id="' + anchor + '-alg" name="leafKeyAlg">' +
+        '<option value="">(the Issuing CA&rsquo;s: ' + esc(state.ca.keyAlg) +
+        ')</option>' + algOptions + '</select>' +
+        '<label for="' + anchor + '-days">Days</label>' +
+        '<input type="number" id="' + anchor + '-days" name="days" min="1" ' +
+        'value="' + esc(String(state.ca.leafLifetimeDays)) + '">' +
+        '<label for="' + anchor + '-issuer">Declared issuer</label>' +
+        '<input id="' + anchor + '-issuer" name="issuer" placeholder="' +
+        '(their username)">' +
+        '<button type="submit">' + (p.held
+          ? 'Replace it with a key pair from this realm&rsquo;s CA'
+          : 'Issue a key pair from this realm&rsquo;s CA') + '</button>' +
+        '</div></form>'
+      : note('This realm has no certificate authority yet, so there is ' +
+             'nothing to issue a key pair from. <a href="/admin/pki">Build ' +
+             'one on the PKI page</a>, or upload a certificate below.');
+
+    const uploadForm = '<form method="post" action="/admin/pki">' +
+      hidden('action', 'upload-certificate') + hidden('target', 'person') +
+      hidden('from', '/admin/users') + hidden('back', back) +
+      hidden('identifier', username) + hidden('purpose', p.id) +
+      '<div class="formrow"><label for="' + anchor + '-cert">Certificate ' +
+      '(PEM)</label><textarea id="' + anchor + '-cert" name="certificate" ' +
+      'rows="6" required placeholder="-----BEGIN ' +
+      'CERTIFICATE-----"></textarea></div><div class="formrow"><label ' +
+      'for="' + anchor + '-chain">Chain ' +
+      '(PEM, every intermediate and the root)</label><textarea id="' + anchor +
+      '-chain" name="chain" rows="6" placeholder="-----BEGIN CERTIFICATE-----' +
+      '"></textarea></div><div class="formrow"><button type="submit">' +
+      (p.held ? 'Replace it with this certificate' : 'Upload the certificate') +
+      '</button></div></form>';
+
+    const takeOff = p.held || p.issuers.length
+      ? '<form method="post" action="/admin/pki">' +
+        '<div class="formrow">' + hidden('action', 'revoke') +
+        hidden('target', 'person') + hidden('from', '/admin/users') +
+        hidden('back', back) + hidden('identifier', username) +
+        hidden('purpose', p.id) +
+        '<button type="submit" class="danger">Take this key pair off</button>' +
+        '<span class="sub">Not revocation: the certificate stays valid and ' +
+        'this service stops accepting what it signs. The declared issuer ' +
+        'goes with it; the other profile&rsquo;s key pair is untouched.' +
+        '</span></div></form>'
+      : '';
+
+    return '<h3 id="' + anchor + '">' + esc(p.label) + '</h3>' + managed +
+      '<h4>Replace it</h4>' +
+      note('<strong>Either way REPLACES the key pair on this entry.</strong> ' +
+      'Issuing generates a new key pair here and signs it with this ' +
+      'realm&rsquo;s Issuing CA; the private key is sealed on the entry and ' +
+      '<strong>shown once</strong>, on the page the button opens. Uploading ' +
+      'registers a certificate the person already holds, and this service ' +
+      'keeps no private key for it. A certificate from THIS realm&rsquo;s ' +
+      'authority may be uploaded alone, and must have been issued to this ' +
+      'person. <strong>One from any other authority must come with its full ' +
+      'chain</strong> &mdash; every intermediate and the self-signed root ' +
+      '&mdash; and every link is verified. An upload carrying a private key ' +
+      'is refused.') +
+      issueForm + uploadForm + takeOff;
+  }).join('');
+  log.debug("Leaving userCredentialsSection().");
+  return heading + purposeHtml +
+    (state.selfService
+      ? note('The person can also issue themselves an RFC 7523 key pair at ' +
+             '<code>/portal/signing-key</code>; that door offers the JWT ' +
+             'profile only.')
+      : '');
+}
+
+// The application section's sentences, said about a person: who holds the
+// private key is the one thing that changes.
+const PERSON_KEY_SOURCE_SENTENCES = {
+  'issued': 'Issued here &mdash; generated by this service and signed by ' +
+            'this realm&rsquo;s Issuing CA. The private key is sealed on ' +
+            'this entry.',
+  'uploaded-realm-ca': 'Uploaded &mdash; a certificate this realm&rsquo;s ' +
+            'own certificate authority issued to this person. They hold the ' +
+            'private key; this service does not.',
+  'uploaded-external-ca': 'Uploaded &mdash; a certificate from an external ' +
+            'certificate authority, accepted with its whole chain up to a ' +
+            'self-signed root, every link verified. They hold the private ' +
+            'key; this service does not.',
+  'unrecorded': 'A certificate with no recorded source and no private key ' +
+            'here &mdash; written by hand, or by a build older than the ' +
+            'provenance attribute.'
+};
+
 function userDetailPage(req, key) {
   log.debug("Entering userDetailPage(). key=" + key);
   const view = adminViews.userDetailJson(req, key);
@@ -15994,6 +16523,11 @@ function userDetailPage(req, key) {
     // column summarises, with the whole account above it for context.
     // ---------------------------------------------------------------------
     mfa.html +
+
+    // What they can SIGN a grant with (2026-09-13), after what they sign IN
+    // with and before the buttons that end what they hold.
+    userCredentialsSection(key, view.credentialsState, gateStateFor(req),
+                           back) +
 
     // ---------------------------------------------------------------------
     // TWO BUTTONS, AND THE ORDER IS THE ARGUMENT (2026-09-05).
@@ -17958,7 +18492,9 @@ function respondToApplicationAction(req, res, body, result) {
   const named = made ||
     (result.ok !== false ? String(body.application || '').trim() : '');
   const back = named
-    ? '/admin/applications' + queryWith(listView, { application: named })
+    ? '/admin/applications' + queryWith(listView, { application: named }) +
+      // Back to the section the button was in, which is four screens down.
+      (String(body.action || '') === 'regenerate-secret' ? '#credentials' : '')
     : '/admin/applications' + queryWith(listView, {});
   respondToAction(req, res, back, result);
   log.debug("Leaving the admin applications action endpoint.");
@@ -18670,6 +19206,326 @@ function applicationObservedAddressesSection(req, view, carryBack) {
   return html;
 }
 
+// ---------------------------------------------------------------------------
+// WHERE A FORM POSTED FROM AN APPLICATION'S PAGE TO ANOTHER HANDLER GOES BACK
+// TO (2026-09-13). The Credentials section below draws `/admin/pki`'s issue,
+// upload and take-off controls, which post to that page's handler — moving a
+// FORM is not moving an ACTION — and that handler asks this for the way back.
+// Exported for `admin-ui/pki_admin.js`; the destination is REBUILT from the
+// identifier and the list state `back` carries, never echoed, for
+// `permissionsReturnTo()`'s reason one section up.
+// ---------------------------------------------------------------------------
+function applicationReturnTo(body, identifier, anchor) {
+  log.debug("Entering applicationReturnTo(). identifier=" + identifier);
+  const listView = listViewFromBack('/admin/applications', body && body.back);
+  log.debug("Leaving applicationReturnTo().");
+  return '/admin/applications' +
+         queryWith(listView, { application: String(identifier) }) +
+         (anchor === '#credentials' ? anchor : '');
+}
+
+// And a PERSON's page (2026-09-13), whose Credentials section draws the same
+// `/admin/pki` controls for that person's RFC 7523 and RFC 7522 key pairs. The
+// same rule, the same shape: the name arrives in the body and the destination
+// is rebuilt around it, never echoed.
+function userReturnTo(body, key, anchor) {
+  log.debug("Entering userReturnTo(). key=" + key);
+  const listView = listViewFromBack('/admin/users', body && body.back);
+  log.debug("Leaving userReturnTo().");
+  return '/admin/users' + queryWith(listView, { user: String(key) }) +
+         (anchor === '#credentials' ? anchor : '');
+}
+
+// What each recorded provenance of a managed key pair means, in the words the
+// section draws. KEY_SOURCES in `common/applications.js` is the vocabulary;
+// `unrecorded` is this page's own word for an entry that holds a certificate
+// and no provenance, which only a hand edit or an older build produces.
+const KEY_SOURCE_SENTENCES = {
+  'issued': 'Issued here &mdash; generated by this service and signed by ' +
+            'this realm&rsquo;s Issuing CA. The private key is on this entry.',
+  'uploaded-realm-ca': 'Uploaded &mdash; a certificate this realm&rsquo;s ' +
+            'own certificate authority issued. The application holds the ' +
+            'private key; this service does not.',
+  'uploaded-external-ca': 'Uploaded &mdash; a certificate from an external ' +
+            'certificate authority, accepted with its whole chain up to a ' +
+            'self-signed root, every link verified. The application holds ' +
+            'the private key; this service does not.',
+  'unrecorded': 'A certificate with no recorded source and no private key ' +
+            'here &mdash; written by hand, or by a build older than the ' +
+            'provenance attribute.'
+};
+
+function certificateCells(summary) {
+  log.debug("Entering certificateCells().");
+  if (!summary) {
+    log.debug("Leaving certificateCells(). None.");
+    return '<span class="state-none">none</span>';
+  }
+  if (summary.unreadable) {
+    log.debug("Leaving certificateCells(). Unreadable.");
+    return '<span class="state-revoked">unreadable: ' +
+           esc(summary.unreadable) + '</span>';
+  }
+  log.debug("Leaving certificateCells().");
+  return '<code>' + esc(summary.subject) + '</code>' +
+    '<div class="sub">issued by <code>' + esc(summary.issuer) + '</code>' +
+    (summary.selfSigned ? ' (self-signed)' : '') + ' &middot; serial <code>' +
+    esc(summary.serialHex) + '</code> &middot; valid until <code>' +
+    esc(summary.notAfter) + '</code>' +
+    (summary.expired ? ' <span class="state-revoked">expired</span>' : '') +
+    ' &middot; ' + esc(summary.keyType) + '</div>';
+}
+
+// ---------------------------------------------------------------------------
+// CREDENTIALS: THE CLIENT SECRET AND THE KEY PAIRS, ON THE APPLICATION'S OWN
+// PAGE (2026-09-13).
+//
+// Every value here was already on the entry and in the attribute table below;
+// what this adds is the READING — which certificate, issued by whom, through
+// what chain, and whether this service holds the private half — and the
+// controls that REPLACE a key pair, which lived only on `/admin/pki` where the
+// application had to be typed into a box.
+//
+// **THREE CONTROLS PER PROFILE, AND NONE OF THEM IS NEW AS AN ACTION BUT ONE.**
+// Issue and Take off post to `/admin/pki`'s existing `issue` and `revoke`;
+// Upload posts `upload-certificate` beside them. All three carry `from`, so
+// that page's handler sends the reader back here (`applicationReturnTo()`),
+// and all three reach `/admin-api/pki/{action}` with no second operation —
+// rule 7 read the way `/admin/delegation`'s grant form reads it.
+//
+// **THE ISSUE CONTROL IS NOT DRAWN IN A REALM WITH NO CERTIFICATE AUTHORITY**,
+// because its only outcome there is a refusal. Upload still is: a certificate
+// from somebody else's authority needs nothing from this realm's.
+//
+// **NO SCRIPT.** The secret is behind a `<details>`, which is how this console
+// folds everything, and the upload is two textareas.
+// ---------------------------------------------------------------------------
+function applicationCredentialsSection(req, view, carryBack) {
+  log.debug("Entering applicationCredentialsSection().");
+  const row = view.row;
+  const state = view.credentialsState;
+  const id = row.identifier;
+  const hidden = function (name, value) {
+    log.debug("Entering hidden().");
+    log.debug("Leaving hidden().");
+    return '<input type="hidden" name="' + name + '" value="' + esc(value) +
+           '">';
+  };
+  const secret = state.clientSecret;
+  const secretHtml = '<h3 id="credentials-secret">Client secret</h3>' +
+    note('<code>oauthClientSecret</code> is what <code>client_secret_basic' +
+    '</code>, <code>client_secret_post</code> and <code>client_secret_jwt' +
+    '</code> authenticate with. The token endpoint CHECKS it in RFC 9700 ' +
+    'mode and in product mode. <strong>Regenerating replaces it at ' +
+    'once</strong>: the old secret stops authenticating on the next request, ' +
+    'so the client has to be given the new one before it next asks for a ' +
+    'token. The new value is minted here &mdash; ' +
+    '<code>oauth2.registeredSecretBytes</code> random bytes, as a ' +
+    'registration mints one &mdash; and never typed.') +
+    '<table><tr><th>Credential</th><th>Held</th></tr>' +
+    '<tr><td><code>oauthClientSecret</code>' +
+    (secret.authMethod
+      ? '<div class="sub">token endpoint auth method <code>' +
+        esc(secret.authMethod) + '</code></div>' : '') + '</td><td>' +
+    (secret.held
+      ? '<details class="fold"><summary>Show the client secret</summary>' +
+        '<code>' + esc(secret.value) + '</code></details>'
+      : '<span class="state-none">none</span>') + '</td></tr>' +
+    '<tr><td><code>appRegistrationAccessToken</code><div class="sub">RFC ' +
+    '7592&rsquo;s credential for reading and changing the registration ' +
+    '&mdash; not a client secret</div></td><td>' +
+    (secret.registrationAccessTokenHeld
+      ? '<details class="fold"><summary>Show the registration access token' +
+        '</summary><code>' + esc(secret.registrationAccessToken) +
+        '</code></details>'
+      : '<span class="state-none">none</span>') + '</td></tr></table>' +
+    '<form method="post" action="/admin/applications">' + carryBack +
+    '<div class="formrow">' + hidden('action', 'regenerate-secret') +
+    hidden('application', id) +
+    '<button type="submit"' + (secret.held ? ' class="danger"' : '') + '>' +
+    (secret.held ? 'Regenerate the client secret'
+                 : 'Generate a client secret') + '</button>' +
+    '<span class="sub">' + (secret.held
+      ? 'The current secret stops working immediately.'
+      : 'This application holds none yet.') + '</span></div></form>';
+
+  const algOptions = state.ca.keyAlgorithms.map(function (one) {
+    return '<option value="' + esc(one.id) + '">' + esc(one.label) +
+           '</option>';
+  }).join('');
+  const purposeHtml = state.purposes.map(function (p) {
+    const names = p.attributes;
+    const anchor = 'credentials-' + p.id;
+    const chainCells = p.chain.length
+      ? '<ol>' + p.chain.map(function (link) {
+          return '<li>' + certificateCells(link) + '</li>';
+        }).join('') + '</ol>'
+      : (p.held
+        ? '<span class="state-none">none stored</span>' : '&mdash;');
+    const managed = p.held
+      ? '<table><tr><th>Fact</th><th>Value</th></tr>' +
+        '<tr><td>Source<div class="sub"><code>' + esc(names.source) +
+        '</code></div></td><td><code>' + esc(p.source) + '</code>' +
+        '<div class="sub">' + (KEY_SOURCE_SENTENCES[p.source] ||
+                               esc(p.source)) + '</div></td></tr>' +
+        '<tr><td>Certificate<div class="sub"><code>' + esc(names.certificate) +
+        '</code></div></td><td>' + certificateCells(p.certificate) +
+        '</td></tr>' +
+        '<tr><td>Chain<div class="sub"><code>' + esc(names.chain) +
+        '</code></div></td><td>' + chainCells + '</td></tr>' +
+        '<tr><td>Key handle<div class="sub"><code>' + esc(names.handle) +
+        '</code></div></td><td><code>' + esc(p.handle || '—') + '</code> ' +
+        '<span class="sub">(' + esc(p.handleLabel) + ')</span></td></tr>' +
+        '<tr><td>Private key<div class="sub"><code>' +
+        esc(names.privateKey) + '</code></div></td><td>' +
+        (p.privateKeyHeld
+          ? '<span class="state-valid">held by this service</span>' +
+            (p.sealedAtRest ? ' &mdash; sealed at rest' : '') +
+            '<div class="sub">Collect it from the attribute table below.' +
+            '</div>'
+          : '<span class="state-none">not held here</span><div class="sub">' +
+            'The application keeps its own private key.</div>') +
+        '</td></tr>' +
+        '<tr><td>Declared issuer<div class="sub"><code>' + esc(names.issuer) +
+        '</code></div></td><td>' + (p.issuers.length
+          ? p.issuers.map(function (iss) {
+              return '<code>' + esc(iss) + '</code>';
+            }).join('<br>')
+          : '<em>none &mdash; it can authenticate, and cannot present an ' +
+            'authorization grant</em>') + '</td></tr></table>'
+      : note('No key pair is managed for this profile. Issue one from this ' +
+             'realm&rsquo;s certificate authority, or upload a certificate ' +
+             'the application already holds.');
+
+    const issueForm = state.ca.available
+      ? '<form method="post" action="/admin/pki">' + carryBack +
+        '<div class="formrow">' + hidden('action', 'issue') +
+        hidden('from', '/admin/applications') + hidden('identifier', id) +
+        hidden('purpose', p.id) +
+        '<label for="' + anchor + '-alg">Key algorithm</label>' +
+        '<select id="' + anchor + '-alg" name="leafKeyAlg">' +
+        '<option value="">(the Issuing CA&rsquo;s: ' + esc(state.ca.keyAlg) +
+        ')</option>' + algOptions + '</select>' +
+        '<label for="' + anchor + '-days">Days</label>' +
+        '<input type="number" id="' + anchor + '-days" name="days" min="1" ' +
+        'value="' + esc(String(state.ca.leafLifetimeDays)) + '">' +
+        '<button type="submit">' + (p.held
+          ? 'Replace it with a key pair from this realm&rsquo;s CA'
+          : 'Issue a key pair from this realm&rsquo;s CA') + '</button>' +
+        '</div></form>'
+      : note('This realm has no certificate authority yet, so there is ' +
+             'nothing to issue a key pair from. <a href="/admin/pki">Build ' +
+             'one on the PKI page</a>, or upload a certificate below.');
+
+    const uploadForm = '<form method="post" action="/admin/pki">' + carryBack +
+      hidden('action', 'upload-certificate') +
+      hidden('from', '/admin/applications') + hidden('identifier', id) +
+      hidden('purpose', p.id) +
+      '<div class="formrow"><label for="' + anchor + '-cert">Certificate ' +
+      '(PEM)</label><textarea id="' + anchor + '-cert" name="certificate" ' +
+      'rows="6" required placeholder="-----BEGIN ' +
+      'CERTIFICATE-----"></textarea></div><div class="formrow"><label ' +
+      'for="' + anchor + '-chain">Chain ' +
+      '(PEM, every intermediate and the root)</label><textarea id="' + anchor +
+      '-chain" name="chain" rows="6" placeholder="-----BEGIN CERTIFICATE-----' +
+      '"></textarea></div><div class="formrow"><button type="submit">' +
+      (p.held ? 'Replace it with this certificate' : 'Upload the certificate') +
+      '</button></div></form>';
+
+    const takeOff = p.held
+      ? '<form method="post" action="/admin/pki">' + carryBack +
+        '<div class="formrow">' + hidden('action', 'revoke') +
+        hidden('from', '/admin/applications') + hidden('identifier', id) +
+        hidden('purpose', p.id) +
+        '<button type="submit" class="danger">Take this key pair off</button>' +
+        '<span class="sub">Not revocation: the certificate stays valid and ' +
+        'this service stops accepting what it signs. The other ' +
+        'profile&rsquo;s key pair is untouched.</span></div></form>'
+      : '';
+
+    const registered = p.registered;
+    const registeredRows = p.id === 'jwt'
+      ? (registered.keys.length
+        ? '<table><tr><th>kid</th><th>Key</th><th>Certificate</th></tr>' +
+          registered.keys.map(function (key) {
+            return '<tr><td><code>' + esc(key.kid || '—') + '</code></td>' +
+              '<td><code>' + esc(key.kty) + '</code>' +
+              (key.alg ? ' <code>' + esc(key.alg) + '</code>' : '') +
+              '</td><td>' + (key.certificate
+                ? certificateCells(key.certificate)
+                : '<span class="state-none">bare key</span>') + '</td></tr>';
+          }).join('') + '</table>'
+        : '<p class="sub">' + (registered.problem
+          ? '<span class="state-revoked">' + esc(registered.problem) +
+            '</span>'
+          : 'None registered.') + '</p>')
+      : (registered.certificates.length
+        ? '<table><tr><th>Certificate</th></tr>' +
+          registered.certificates.map(function (cert) {
+            return '<tr><td>' + certificateCells(cert) + '</td></tr>';
+          }).join('') + '</table>'
+        : '<p class="sub">' + (registered.problem
+          ? '<span class="state-revoked">' + esc(registered.problem) +
+            '</span>'
+          : 'None registered.') + '</p>');
+
+    return '<h3 id="' + anchor + '">' + esc(p.label) + '</h3>' +
+      managed +
+      '<h4>Regenerate it</h4>' +
+      note('<strong>Either way REPLACES the key pair on this entry.</strong> ' +
+      'Issuing generates a new key pair here and signs it with this ' +
+      'realm&rsquo;s Issuing CA; the private key is sealed on the entry. ' +
+      'Uploading registers a certificate the application already holds, and ' +
+      'this service keeps no private key for it. A certificate from THIS ' +
+      'realm&rsquo;s authority may be uploaded alone. <strong>One from any ' +
+      'other authority must come with its full chain</strong> &mdash; every ' +
+      'intermediate and the self-signed root &mdash; and every link is ' +
+      'verified: signatures, names, validity, and that each issuer is a CA ' +
+      'allowed to sign. An upload carrying a private key is refused.') +
+      issueForm + uploadForm + takeOff +
+      '<h4>Keys the application registered itself</h4>' +
+      note('<code>' + esc(registered.attribute) + '</code>, registered by ' +
+      'value and verified beside the key pair above &mdash; replacing that ' +
+      'pair leaves these alone. Change them with the attribute editor ' +
+      'below.') +
+      registeredRows;
+  }).join('');
+
+  // THE ASSERTION PROFILES ONLY FOR AN OAUTH 2.0 CLIENT (2026-09-13). See
+  // `oauthDeclared` in admin-core/admin_views.js. The markup above is still
+  // built and then dropped rather than guarded, so the two branches cannot
+  // drift in what a profile section says.
+  const heldElsewhere = state.purposes.filter(function (p) {
+    return p.held || p.issuers.length;
+  });
+  const assertionHtml = state.oauthDeclared
+    ? purposeHtml
+    : '<h3 id="credentials-assertions">Assertion key pairs</h3>' +
+      note('The RFC 7523 (JWT bearer) and RFC 7522 (SAML 2.0 bearer) ' +
+      'sections are shown only for an application declared as ' +
+      '<strong>OAuth 2.0</strong> or <strong>OpenID Connect</strong>, ' +
+      'because both profiles are used at the token endpoint. Declare one ' +
+      'of those families under <em>Protocol families</em> to manage its ' +
+      'key pairs here.') +
+      (heldElsewhere.length
+        ? warn('This entry already carries ' + heldElsewhere.map(function (p) {
+            return esc(p.label);
+          }).join(' and ') + ' material, and hiding the section does not ' +
+          'take it off: the token endpoint still verifies what it signs. ' +
+          'Its attributes are in the table below.', 'Still in effect')
+        : '');
+
+  log.debug("Leaving applicationCredentialsSection(). oauthDeclared=" +
+            state.oauthDeclared);
+  return '<h2 id="credentials">Credentials</h2>' +
+    note('What this application authenticates and signs with: its client ' +
+    'secret, and for each assertion profile the key pair this service ' +
+    'manages beside the keys the application registered itself. The two ' +
+    'profiles&rsquo; key pairs are separate on purpose &mdash; neither can ' +
+    'sign for the other &mdash; so each has its own controls.') +
+    secretHtml + assertionHtml;
+}
+
 // The drill-down. Its one list is the ATTRIBUTE table, which is paged under a
 // name of its own (`attributesPage`) rather than the bare `page` — the
 // convention pagingOf()'s header describes for a view that holds more than the
@@ -18767,6 +19623,9 @@ function applicationDetailPage(req, identifier) {
       : '<span class="state-none">nothing recorded</span>') + '</td></tr>' +
     '</table>' +
     protocolFamilySection(row) +
+    // THE CREDENTIALS, above the raw entry because they are what a reader
+    // most often opens this page to find — see the section's header.
+    applicationCredentialsSection(req, view, carryBack) +
     '<h2>Its directory entry</h2><p class="sub">Every attribute the entry ' +
     'carries &mdash; the operational ones and <code>entryDN</code> included, ' +
     'which a SEARCH would return only when asked for by name (RFC 4511 ' +
@@ -32679,6 +33538,14 @@ module.exports = {
   // second way is the one that goes stale.
   // ---------------------------------------------------------------------
   respondToAction: respondToAction,
+  // For `admin-ui/pki_admin.js`, whose key-pair controls are drawn on an
+  // application's page too — see applicationReturnTo().
+  applicationReturnTo: applicationReturnTo,
+  userReturnTo: userReturnTo,
+  // And the trail a page drawn there hangs under, so the one-time key page an
+  // issue from a person's own page answers with is `Users › Signing key pair`
+  // rather than a page with no way up.
+  upTo: upTo,
   // THE FOLDS AND THE TOOLTIPS, for the same one module. They are exported for
   // the reason page() is: `sts_metadata.js` draws a console page, and a page
   // drawn in this console's shell whose prose did not fold would be the one

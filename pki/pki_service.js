@@ -13,13 +13,18 @@
 // before it has authenticated to anybody, and a revocation list nobody can
 // read is a revocation nobody acts on.
 //
-// Four routes, and the shape of the first three is the same:
+// Six routes, and the shape of the first four is the same:
 //
 //   GET  /pki/crl/{scope}/{ca}.crl    the signed CRL, DER
 //   GET  /pki/ca/{scope}/{ca}.cer     the authority's own certificate, DER
-//   GET  /pki/ocsp/{scope}/{ca}/{b64} RFC 6960 section A.1.1, base64 in a path
+//   GET  /pki/ocsp/{scope}/{ca}/{b64} RFC 6960 section A.1.1, base64 appended
 //   POST /pki/ocsp/{scope}/{ca}       RFC 6960 section A.1.1, DER in a body
+//   GET  /pki/ocsp/{scope}/{ca}       the address as written, asking nothing
 //   GET  /pki/revocation              what this service publishes, as JSON
+//
+// **AND ON TWO LISTENERS** since 2026-09-13: the main port, and the plain-HTTP
+// revocation listener at the foot of this file, which serves `/pki/` and
+// nothing else and is the address every certificate names.
 //
 // **`{scope}` IS IN THE PATH AND NOT TAKEN FROM THE REALM PREFIX**, which is
 // the one routing decision here. Every other endpoint in this service reads
@@ -40,6 +45,8 @@
 // will not parse an error page.
 // ===========================================================================
 
+const http = require('http');
+const nodeCrypto = require('crypto');
 const app = require('../common/app');
 const { log, parseBody } = require('../common/helpers');
 const config = require('../common/config');
@@ -169,12 +176,21 @@ function caCertificateFor(req, res, scopeSegment, caId) {
   const der = Buffer.from(
     String(authority.tier.certificatePem).replace(/-----[^-]+-----/g, '')
       .replace(/\s+/g, ''), 'base64');
-  // **CACHEABLE, unlike every other place this service publishes a
-  // certificate.** A CA certificate is a durable document by construction —
-  // an authority that changed would be a different authority with a different
-  // name — so a client is entitled to keep it, and the `caIssuers` fetch is
-  // meant to happen once.
-  sendDer(res, 'application/pkix-cert', der, true);
+  // **REVALIDATED RATHER THAN CACHED FOR AN HOUR (2026-09-13).** This said a
+  // CA certificate is durable by construction — *an authority that changed
+  // would be a different authority with a different name* — and sent
+  // `max-age` for the CRL lifetime. It is not true here: a rebuilt branch and a
+  // replaced Root keep their subjects and their caIssuers URL, so a client
+  // holding the old certificate for an hour built chains to a key that no
+  // longer signs anything. `no-cache` with a strong ETag lets a client keep the
+  // bytes and costs it one conditional request to learn they are still right.
+  res.status(200)
+     .set('Content-Type', 'application/pkix-cert')
+     .set('Content-Length', String(der.length))
+     .set('Cache-Control', 'no-cache')
+     .set('ETag', '"' + nodeCrypto.createHash('sha1').update(der)
+       .digest('hex') + '"')
+     .send(der);
   log.debug("Leaving caCertificateFor().");
 }
 
@@ -188,28 +204,81 @@ function caCertificateFor(req, res, scopeSegment, caId) {
 // arrived raw is a space by then, which is why it is put back. Getting this
 // wrong produces `malformedRequest` for a request that was perfectly well
 // formed, and the client has no way to tell the two apart.
+//
+// **AND A `/` THE CLIENT DID NOT ENCODE IS STILL PART OF THE REQUEST
+// (2026-09-13).** The route was `/:request`, one path segment, so a base64
+// request containing a raw `/` — RFC 5019 section 5 says a client MUST encode
+// it, and some do not — split into two segments and answered Express's HTML 404,
+// which reads as a responder that is not there. `/*` takes the rest of the path
+// whole.
+//
+// **A REQUEST THAT IS NOT ONE IS ANSWERED `malformedRequest`, NOT A 400.** RFC
+// 6960 section 2.3: *malformedRequest — the request received does not conform
+// to the OCSP syntax.* A path segment that is not base64, or decodes to nothing,
+// is exactly that, and an OCSP client dispatches on the response status rather
+// than on a text body it will not parse.
 // ---------------------------------------------------------------------------
-app.get('/pki/ocsp/:scope/:ca/:request', function (req, res) {
+app.get('/pki/ocsp/:scope/:ca/*', function (req, res) {
   log.debug('Entering the OCSP endpoint (GET).');
-  let der = null;
+  let der = Buffer.alloc(0);
   try {
-    const text = String(req.params.request).replace(/ /g, '+');
-    der = Buffer.from(text, 'base64');
+    const text = String(req.params[0] || '').replace(/ /g, '+');
+    der = /^[A-Za-z0-9+/=_-]+$/.test(text)
+      ? Buffer.from(text, 'base64') : Buffer.alloc(0);
   } catch (e) {
     log.debug("Caught in a callback in module scope: " +
               ((e && e.message) || e));
-    der = null;
-  }
-  if (!der || !der.length) {
-    errorCodes.mark(res, 'STS-PKI-0071');
-    refuse(res, 400,
-           'That is not a base64 OCSP request. RFC 6960 appendix A.1.1: the ' +
-           'GET form is the base64 of the DER request, URL-encoded, as the ' +
-           'last path segment.');
-    log.debug('Leaving the OCSP endpoint. Not base64.');
-    return;
+    der = Buffer.alloc(0);
   }
   answer(req, res, String(req.params.scope), String(req.params.ca), der);
+});
+
+// ---------------------------------------------------------------------------
+// GET /pki/ocsp/{scope}/{ca} — THE ADDRESS AS IT IS WRITTEN IN A CERTIFICATE.
+//
+// **THIS WAS EXPRESS'S 404 UNTIL 2026-09-13, AND IT IS THE FIRST URL ANYBODY
+// TRIES.** The `id-ad-ocsp` access location in every certificate this service
+// issues is this path with nothing after it, because RFC 6960 appendix A.1.1
+// makes it the BASE of both transports: a POST to it, or a GET to it with the
+// base64 of a request appended. Only the POST and the suffixed GET had routes,
+// so the one fetch a person makes first — the URL copied out of `openssl x509
+// -text` — answered `Cannot GET`, which reads exactly like a responder that is
+// not there, and cannot be told apart from an authority this service does not
+// have.
+//
+// RFC 6960 defines no answer to a GET that carries no request, so this one is
+// the nearest thing to useful the specification allows: a 400 naming both
+// transports for an authority that exists, and the CRL endpoint's own 404 for
+// one that does not — so "this responder exists and you asked it nothing" and
+// "there is no such responder" are two different answers. Text and not an
+// OCSPResponse, because no OCSP client makes this request and a person does.
+// ---------------------------------------------------------------------------
+app.get('/pki/ocsp/:scope/:ca', function (req, res) {
+  log.debug('Entering the OCSP endpoint (GET with no request).');
+  const scopeSegment = String(req.params.scope);
+  const caId = String(req.params.ca);
+  const scope = revocation.scopeFromSegment(scopeSegment);
+  if (!revocation.authorityFor(scope, caId)) {
+    errorCodes.mark(res, 'STS-PKI-0131');
+    refuse(res, 404,
+           'There is no "' + caId + '" certificate authority in the "' +
+           scopeSegment + '" scope of this service, so there is no OCSP ' +
+           'responder for it. GET /pki/revocation lists every responder this ' +
+           'service answers.');
+    log.debug('Leaving the OCSP endpoint. No such authority.');
+    return;
+  }
+  errorCodes.mark(res, 'STS-PKI-0130');
+  refuse(res, 400,
+         'This is the OCSP responder of the "' + caId + '" certificate ' +
+         'authority in the "' + scopeSegment + '" scope, and this request ' +
+         'asked it nothing. RFC 6960 appendix A.1.1 defines two transports ' +
+         'on this address: POST the DER OCSPRequest here as ' +
+         'application/ocsp-request, or GET this address with "/" and the ' +
+         'URL-encoded base64 of the DER request appended. For example: ' +
+         'openssl ocsp -issuer issuer.pem -cert cert.pem -url <this URL> ' +
+         '-CAfile root.pem');
+  log.debug('Leaving the OCSP endpoint. No request.');
 });
 
 app.post('/pki/ocsp/:scope/:ca', function (req, res) {
@@ -236,15 +305,10 @@ app.post('/pki/ocsp/:scope/:ca', function (req, res) {
   const body = req.body;
   const der = Buffer.isBuffer(body) ? body
     : (typeof body === 'string' ? Buffer.from(body, 'binary') : null);
-  if (!der || !der.length) {
-    errorCodes.mark(res, 'STS-PKI-0072');
-    refuse(res, 400,
-           'An OCSP request has a body, and it must be sent as ' +
-           'application/ocsp-request so that the bytes arrive intact. This ' +
-           'one had none.');
-    log.debug('Leaving the OCSP endpoint. No body.');
-    return;
-  }
+  // NO BODY IS A REQUEST THAT DOES NOT CONFORM TO THE OCSP SYNTAX, and it is
+  // answered `malformedRequest` inside the protocol rather than a 400 — see
+  // the GET route above. `answer()` hands it to the responder like any other
+  // bytes, which is what keeps the two transports answering alike.
   // A CAP, because this is an unauthenticated endpoint that reads a body. An
   // OCSP request for one certificate is about eighty bytes and for a hundred
   // is still under ten kilobytes; a megabyte is a client doing something
@@ -262,32 +326,66 @@ app.post('/pki/ocsp/:scope/:ca', function (req, res) {
   answer(req, res, String(req.params.scope), String(req.params.ca), der);
 });
 
-function answer(req, res, scopeSegment, caId, der) {
-  log.debug('Entering answer(). scope=' + scopeSegment + ' ca=' + caId);
-  if (!der || !der.length) {
-    errorCodes.mark(res, 'STS-PKI-0072');
-    refuse(res, 400, 'An OCSP request has a body. This one had none.');
-    log.debug('Leaving answer(). Empty request.');
+// ---------------------------------------------------------------------------
+// THE CACHE HEADERS AN AUTHORITATIVE OCSP ANSWER CARRIES (RFC 5019 section 6.2).
+//
+// It was sent `Cache-Control: no-store`, on the argument that the interesting
+// thing a person does here is revoke something and ask again. RFC 5019 section
+// 6.2 says the opposite in capitals: *OCSP responders MUST NOT include a
+// "Pragma: no-cache", "Cache-Control: no-cache", or "Cache-Control: no-store"
+// header in authoritative OCSP responses*, and asks for `max-age` no later than
+// `nextUpdate`, `Last-Modified` at `thisUpdate`, `Expires` at `nextUpdate` and
+// an `ETag` of the response. What a person revoking something needs is served
+// anyway: a client asking with a nonce gets an answer no cache may hand to
+// anybody else, and `nextUpdate` is `pki.crlLifetimeMinutes` away.
+//
+// **A RESPONSE CARRYING A NONCE IS `private, max-age=0`**, because that answer
+// belongs to one request and a shared cache handing it to the next asker would
+// be the replay a nonce exists to detect. **A REFUSAL (`malformedRequest`,
+// `unauthorized`, `internalError`) is not authoritative**, carries no
+// `nextUpdate` and stays `no-store`.
+// ---------------------------------------------------------------------------
+function sendOcsp(res, made) {
+  log.debug("Entering sendOcsp().");
+  if (made.status !== 'successful' || !made.nextUpdate) {
+    sendDer(res, 'application/ocsp-response', made.der, false);
+    log.debug("Leaving sendOcsp(). Not an authoritative answer.");
     return;
   }
+  const nextMs = new Date(made.nextUpdate).getTime();
+  const maxAge = Math.max(0, Math.floor((nextMs - Date.now()) / 1000));
+  res.status(200)
+     .set('Content-Type', 'application/ocsp-response')
+     .set('Content-Length', String(made.der.length))
+     .set('Cache-Control', made.nonce
+       ? 'private, max-age=0, no-transform'
+       : 'max-age=' + maxAge + ', public, no-transform, must-revalidate')
+     .set('Last-Modified', new Date(made.thisUpdate).toUTCString())
+     .set('Expires', new Date(nextMs).toUTCString())
+     .set('ETag', '"' + nodeCrypto.createHash('sha1').update(made.der)
+       .digest('hex') + '"')
+     .send(made.der);
+  log.debug("Leaving sendOcsp(). Authoritative.");
+}
+
+function answer(req, res, scopeSegment, caId, der) {
+  log.debug('Entering answer(). scope=' + scopeSegment + ' ca=' + caId);
   const scope = revocation.scopeFromSegment(scopeSegment);
-  revocation.answerOcsp(scope, caId, der).then(function (made) {
+  revocation.answerOcsp(scope, caId, der || Buffer.alloc(0))
+    .then(function (made) {
     // **EVEN A REFUSAL IS AN OCSP RESPONSE.** `malformedRequest` and
     // `unauthorized` are statuses inside the protocol, not HTTP errors, so a
     // client that meets one can report what happened rather than guessing from
     // a status code. The HTTP status stays 200 for all of them, which is what
     // RFC 6960 section A.2 asks for.
     //
-    // An OCSP answer is NOT cacheable here: it carries `nextUpdate`, and the
-    // interesting thing a person does with this responder is revoke something
-    // and ask again.
     // An OCSP REFUSAL (`unauthorized`, `malformedRequest`, `internalError`)
     // carries its code on the answer; `good`, `revoked` and `unknown` are
     // answers rather than failures and carry none.
     if (errorCodes.codeOf(made)) {
       errorCodes.mark(res, errorCodes.codeOf(made));
     }
-    sendDer(res, 'application/ocsp-response', made.der, false);
+    sendOcsp(res, made);
     log.debug('Leaving answer(). ' + made.status + '.');
   }).catch(function (e) {
     log.error(errorCodes.tag('STS-PKI-0074') + 'pki: an OCSP request to the "' +
@@ -339,7 +437,7 @@ app.get('/pki/revocation', function (req, res) {
         label: one.label,
         subject: one.tier.subject,
         revokedCount: revocation.listFor(one.scope, one.ca).length,
-        crl: { http: points.http, ldap: points.ldap, ldaps: points.ldaps },
+        crl: { http: points.http, ldap: points.ldap },
         ocsp: points.ocsp,
         caIssuers: points.caIssuers,
         directoryDn: points.dn
@@ -357,10 +455,107 @@ log.info('The PKI revocation endpoints are registered: a CRL at ' +
          'GET|POST /pki/ocsp/{scope}/{ca}, the issuing certificate at ' +
          'GET /pki/ca/{scope}/{ca}.cer, and an index of all of them at ' +
          'GET /pki/revocation. Every certificate this service issues names ' +
-         'its own in three schemes — http, ldap and ldaps.');
+         'its CRL over http and ldap, its OCSP responder and its issuer\'s ' +
+         'certificate over http.');
+
+// ===========================================================================
+// THE PLAIN-HTTP LISTENER, AND WHY THIS SERVICE HAS ONE AT ALL (2026-09-13).
+//
+// **EVERY CERTIFICATE NAMED `https://` FOR ITS REVOCATION ADDRESSES**, on the
+// main port, and two specifications say not to:
+//
+//   * **RFC 5280 section 8**: *CAs SHOULD NOT include URIs that specify https,
+//     ldaps, or similar schemes in extensions*, and one that does MUST make
+//     sure the server's certificate can be validated without the information
+//     at that URI. Here it could not: the main port's own TLS certificate
+//     names its OCSP responder and its issuer's certificate ON THAT LISTENER,
+//     so a client that checks revocation before it trusts a connection needs
+//     the answer to open the connection that carries the answer.
+//   * **RFC 5019 section 5**: *the OCSP responder MUST support requests and
+//     responses over HTTP.*
+//
+// The main port is TLS or it is not, for every path at once, and turning it
+// into plain HTTP to satisfy this would undo the RFC 9700 argument that made it
+// TLS. So there is a SECOND listener, plain HTTP, which answers `/pki/` and
+// nothing else, and the certificates name it.
+//
+// **IT CARRIES NOTHING SECRET AND NOTHING THAT NEEDS INTEGRITY FROM THE
+// TRANSPORT.** A CRL and an OCSP response are signed by the authority they are
+// about, and a relying party verifies them against a key it already trusts; a
+// CA certificate fetched from a caIssuers address is only ever used if it
+// chains to an anchor the relying party holds. That is the whole reason the
+// specifications ask for plain HTTP here and nowhere else.
+//
+// **EVERYTHING ELSE IS REFUSED ON THIS SOCKET, BEFORE THE APP SEES IT.** The
+// app behind it is the whole service — the console, the token endpoint,
+// `/admin-api` — and a plain-HTTP door onto any of those would be a door no
+// setting in this service opens on purpose. The check is on the PATH before
+// express is reached, so no middleware ordering can widen it.
+//
+// `pki.httpPort` 0 binds nothing, and the certificates then name the main
+// port's own scheme and port instead — see `httpBase()` in
+// `common/pki_revocation.js`.
+// ===========================================================================
+let httpListening = false;
+let httpListenError = '';
+let httpBoundPort = 0;
+
+function revocationOnly(req, res) {
+  log.debug("Entering revocationOnly().");
+  const path = String(req.url || '').split('?')[0];
+  if (/^\/pki\//.test(path) && path.indexOf('..') < 0) {
+    log.debug("Leaving revocationOnly(). Handed to the app.");
+    app(req, res);
+    return;
+  }
+  errorCodes.mark(res, 'STS-PKI-0134');
+  res.statusCode = 404;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.end('This plain-HTTP listener serves the revocation endpoints under ' +
+          '/pki/ and nothing else. Everything else this service answers is ' +
+          'on its main port.\n');
+  log.debug("Leaving revocationOnly(). Not a revocation path.");
+}
+
+function listen() {
+  log.debug("Entering listen().");
+  const port = Number(config.value('pki.httpPort'));
+  if (!(port > 0)) {
+    httpListenError = 'pki.httpPort is 0, so no plain-HTTP revocation ' +
+                      'listener was bound';
+    log.debug("Leaving listen(). Switched off.");
+    return { whenReady: Promise.resolve({ port: null,
+                                          why: httpListenError }) };
+  }
+  const server = http.createServer(revocationOnly);
+  const whenReady = new Promise(function (resolve, reject) {
+    server.once('error', function (err) {
+      httpListenError = err.message;
+      reject(err);
+    });
+    server.listen(port, config.value('global.host'), function () {
+      httpListening = true;
+      httpBoundPort = server.address().port;
+      resolve({ port: httpBoundPort });
+    });
+  });
+  log.debug("Leaving listen().");
+  return { whenReady: whenReady, server: server };
+}
+
+function status() {
+  log.debug("Entering status().");
+  log.debug("Leaving status().");
+  return { listening: httpListening, port: httpBoundPort || null,
+           listenError: httpListenError || null };
+}
 
 module.exports = {
   // For `sts_metadata.js` and the tests: the shapes, so nothing has to
   // hand-build one of these URLs.
-  cacheSeconds: cacheSeconds
+  cacheSeconds: cacheSeconds,
+  listen: listen,
+  status: status,
+  revocationOnly: revocationOnly
 };

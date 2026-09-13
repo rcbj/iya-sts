@@ -573,8 +573,8 @@ const NAV = [
       // about how this service lets something act as them will look in the
       // list of credentials, and moving the heading's meaning to fit one page
       // would misfile the other three.
-      { path: BASE + '/signing-key', label: 'Signing key',
-        heading: 'Your signing key' }
+      { path: BASE + '/signing-key', label: 'Signing keys',
+        heading: 'Your signing keys' }
     ] }
 ];
 
@@ -2454,6 +2454,168 @@ function readableDate(value) {
   return found ? found[1] + '-' + found[2] + '-' + found[3] : 'unknown';
 }
 
+// ---------------------------------------------------------------------------
+// THE TWO PROFILES THIS PAGE ISSUES FOR (2026-09-13). RFC 7523's JWT bearer
+// grant and RFC 7522's SAML 2.0 bearer grant are two key pairs on two attribute
+// sets that share no name, so a person may hold either, both or neither, and
+// each has its own Generate and its own Take off. The attribute names come
+// from `personAssertions.KEY_PAIR_ATTRIBUTES` rather than being written here,
+// so this page and `/admin/users?user=` cannot disagree about which attribute
+// holds the handle.
+//
+// The words are the page's: what the key is for, the grant type a client
+// names, and what the one-time card tells somebody to do with the private key.
+// ---------------------------------------------------------------------------
+const SIGNING_KEY_PROFILES = [
+  { id: 'jwt', rfc: 'RFC 7523', title: 'JWT bearer grant',
+    grantType: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    document: 'a JSON Web Token' },
+  { id: 'saml', rfc: 'RFC 7522', title: 'SAML 2.0 bearer grant',
+    grantType: 'urn:ietf:params:oauth:grant-type:saml2-bearer',
+    document: 'a SAML 2.0 assertion' }
+];
+
+function signingKeyProfile(id) {
+  log.debug("Entering signingKeyProfile().");
+  const found = SIGNING_KEY_PROFILES.filter(function (one) {
+    return one.id === id;
+  })[0] || null;
+  log.debug("Leaving signingKeyProfile().");
+  return found;
+}
+
+// What a person holds for one profile, read off `recordFor()`'s record by the
+// register's own attribute table. Null where nothing is held.
+function heldProfile(held, profile) {
+  log.debug("Entering heldProfile().");
+  const names = personAssertions.KEY_PAIR_ATTRIBUTES[profile.id];
+  if (!held || !names || !held[names.present]) {
+    log.debug("Leaving heldProfile(). Nothing held.");
+    return null;
+  }
+  log.debug("Leaving heldProfile().");
+  return {
+    handleLabel: profile.id === 'saml' ? 'Thumbprint' : 'Key',
+    handle: held[names.handle] || '',
+    expiresAt: held[names.expiresAt] || '',
+    certificate: held[names.certificate] || '',
+    issuers: profile.id === 'saml' ? held.samlEffectiveIssuers
+                                   : held.effectiveIssuers
+  };
+}
+
+// The one-time card's instructions, per profile. The JWT half is what this
+// page said before RFC 7522 joined it, word for word.
+function freshInstructions(profile, fresh, username, tokenEndpoint) {
+  log.debug("Entering freshInstructions().");
+  const who = esc(String(fresh.issuer || username));
+  let how;
+  if (profile.id === 'saml') {
+    how = '<p class="note"><strong>What to do with it.</strong> Build a ' +
+      'SAML 2.0 <code>&lt;Assertion&gt;</code> whose <code>&lt;Issuer&gt;' +
+      '</code> and <code>&lt;Subject&gt;&lt;NameID&gt;</code> are both ' +
+      '<code>' + who + '</code>, with an <code>&lt;Audience&gt;</code> and a ' +
+      'bearer <code>&lt;SubjectConfirmationData Recipient&gt;</code> of ' +
+      '<code>' + esc(tokenEndpoint) + '</code> and a ' +
+      '<code>NotOnOrAfter</code> a minute or two ahead. Sign it with an ' +
+      'enveloped XML Signature using this key, base64url-encode the ' +
+      'document, and present it to the token endpoint as an RFC 7522 ' +
+      'section 2.1 authorization grant. This service matches the signature ' +
+      'to the certificate it holds for you, thumbprint <code>' +
+      esc(String(fresh.thumbprint || '')) + '</code>.</p>' +
+      '<pre class="pem">' + esc('curl -X POST ' + tokenEndpoint + ' \\\n' +
+      '  -d grant_type=' + profile.grantType + ' \\\n' +
+      '  -d assertion=<the signed assertion, base64url>') + '</pre>' +
+      '<p class="note"><strong>The <code>&lt;Subject&gt;</code> can only ' +
+      'ever be you.</strong> An assertion signed with this key that names ' +
+      'somebody else is refused — the key says who you are, and it is not ' +
+      'permission to speak for anybody.</p>';
+  } else {
+    how = '<p class="note"><strong>What to do with it.</strong> Sign a JSON ' +
+      'Web Token with it and present that to the token endpoint as an RFC ' +
+      '7523 section 2.1 authorization grant. The claims are <code>iss</code> ' +
+      'and <code>sub</code> both <code>' + who + '</code>, an ' +
+      '<code>aud</code> of <code>' + esc(tokenEndpoint) + '</code>, an ' +
+      '<code>exp</code> a minute or two ahead, and a <code>jti</code> you do ' +
+      'not reuse. The header carries <code>alg</code> <code>' +
+      esc(String(fresh.jwsAlg || '')) + '</code> and <code>kid</code> <code>' +
+      esc(String(fresh.kid || '')) + '</code>.</p>' +
+      '<pre class="pem">' + esc('curl -X POST ' + tokenEndpoint + ' \\\n' +
+      '  -d grant_type=' + profile.grantType + ' \\\n' +
+      '  -d assertion=<the signed JWT>') + '</pre>' +
+      '<p class="note"><strong>`sub` can only ever be you.</strong> An ' +
+      'assertion signed with this key that names somebody else is refused — ' +
+      'the key says who you are, and it is not permission to speak for ' +
+      'anybody.</p>';
+  }
+  log.debug("Leaving freshInstructions().");
+  return how;
+}
+
+// One profile's card: what is held, and its two controls.
+function profileCard(profile, held, csrf, issuable, offered) {
+  log.debug("Entering profileCard(). profile=" + profile.id);
+  const mine = heldProfile(held, profile);
+  const heading = '<h2 id="' + profile.id + '">' + esc(profile.rfc) + ': ' +
+    esc(profile.title) + '</h2>';
+  const status = !held
+    ? ''
+    : (mine
+      ? '<table><tr><th>' + mine.handleLabel + '</th><td><code>' +
+        esc(mine.handle) + '</code></td></tr>' +
+        '<tr><th>You assert as</th><td>' +
+        (mine.issuers || []).map(function (one) {
+          return '<code>' + esc(one) + '</code>';
+        }).join(' ') + '</td></tr>' +
+        '<tr><th>Good until</th><td>' +
+        esc(readableDate(mine.expiresAt)) + '</td></tr></table>' +
+        (mine.certificate
+          ? '<details><summary>Your certificate (public — this is the half ' +
+            'anybody may hold)</summary><pre class="pem">' +
+            esc(mine.certificate) + '</pre></details>'
+          : '')
+      : '<p class="sub">You have no ' + esc(profile.rfc) +
+        ' signing key.</p>');
+
+  const hidden = csrf + '<input type="hidden" name="purpose" value="' +
+    profile.id + '">';
+  let controls = '';
+  if (held && issuable && offered) {
+    controls =
+      '<form method="post" action="' + BASE + '/signing-key">' + hidden +
+      '<input type="hidden" name="action" value="generate">' +
+      '<button' + (mine ? ' class="secondary"' : '') + '>' +
+      (mine ? 'Generate a new ' + esc(profile.rfc) + ' key pair'
+            : 'Generate my ' + esc(profile.rfc) + ' signing key') +
+      '</button></form>' +
+      (mine
+        ? '<p class="note"><strong>Generating replaces what you ' +
+          'have.</strong> The ' + esc(profile.rfc) + ' key you hold now ' +
+          'stops being accepted the moment the new one is written, and ' +
+          'anything signing with it starts being refused. Your other signing ' +
+          'key, if you hold one, is untouched.</p>'
+        : '<p class="note">The private half is shown once, on the page that ' +
+          'comes back. Nothing here can show it to you again.</p>');
+  }
+  const removeForm = mine
+    ? '<form method="post" action="' + BASE + '/signing-key">' + hidden +
+      '<input type="hidden" name="action" value="remove"><button ' +
+      'class="danger">Take my ' + esc(profile.rfc) + ' signing key off' +
+      '</button></form><p ' +
+      'class="note"><strong>This is not revocation.</strong> The certificate ' +
+      'stays valid and still chains to this service&rsquo;s root; what ' +
+      'changes is that this service stops accepting what the key signs, ' +
+      'because the key is no longer registered against you. Your other ' +
+      'signing key, your password, your security keys and your ' +
+      'authenticator app are untouched — this is not a way you sign in.</p>'
+    : '';
+  log.debug("Leaving profileCard().");
+  return '<div class="card">' + heading + status + controls + removeForm +
+    '</div>';
+}
+
+// `fresh`, when it is set, carries `purpose`: which profile the key it holds
+// was just issued for, so the one-time card tells somebody what to do with IT.
 function signingKeyPage(session, message, error, fresh, base) {
   log.debug("Entering signingKeyPage().");
   const username = session.user.username;
@@ -2467,31 +2629,18 @@ function signingKeyPage(session, message, error, fresh, base) {
   // -----------------------------------------------------------------------
   // THE CARD THAT ONLY EXISTS FOR ONE RESPONSE: the key itself.
   // -----------------------------------------------------------------------
+  const freshProfile = fresh
+    ? (signingKeyProfile(fresh.purpose) || SIGNING_KEY_PROFILES[0]) : null;
   const freshCard = (fresh && fresh.privateKeyPem)
-    ? '<div class="card"><h2>Save this private key</h2><p ' +
+    ? '<div class="card"><h2>Save this ' + esc(freshProfile.rfc) +
+      ' private key</h2><p ' +
       'class="sub"><strong>This is the only time it will be shown.</strong> ' +
       'It is stored on your entry encrypted, and nothing in this service — ' +
       'not this page, not an administrator — can print it again. Copy it ' +
       'now; if you lose it, generate a new key pair, which replaces this ' +
       'one.</p><pre ' +
       'class="pem">' + esc(String(fresh.privateKeyPem)) + '</pre>' +
-      '<p class="note"><strong>What to do with it.</strong> Sign a JSON Web ' +
-      'Token with it and present that to the token endpoint as an RFC 7523 ' +
-      'section 2.1 authorization grant. The claims are <code>iss</code> and ' +
-      '<code>sub</code> both <code>' + esc(String(fresh.issuer || username)) +
-      '</code>, an <code>aud</code> of <code>' + esc(tokenEndpoint) +
-      '</code>, an <code>exp</code> a minute or two ahead, and a ' +
-      '<code>jti</code> you do not reuse. The header carries ' +
-      '<code>alg</code> <code>' + esc(String(fresh.jwsAlg || '')) +
-      '</code> and <code>kid</code> <code>' + esc(String(fresh.kid || '')) +
-      '</code>.</p>' +
-      '<pre class="pem">' + esc('curl -X POST ' + tokenEndpoint + ' \\\n' +
-      '  -d grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer \\\n' +
-      '  -d assertion=&lt;the signed JWT&gt;') + '</pre>' +
-      '<p class="note"><strong>`sub` can only ever be you.</strong> An ' +
-      'assertion signed with this key that names somebody else is refused — ' +
-      'the key says who you are, and it is not permission to speak for ' +
-      'anybody.</p>' +
+      freshInstructions(freshProfile, fresh, username, tokenEndpoint) +
       '</div>'
     : '';
 
@@ -2501,86 +2650,52 @@ function signingKeyPage(session, message, error, fresh, base) {
   // -----------------------------------------------------------------------
   const what =
     '<p class="sub">A signing key lets something act as you <strong>without ' +
-    'a browser</strong>: a script or a service signs a short-lived token ' +
+    'a browser</strong>: a script or a service signs a short-lived document ' +
     'with it and this identity provider hands back an access token for you. ' +
     'No password is typed and no sign-in screen is drawn — the signature is ' +
-    'the whole of it.</p><p class="note">It is RFC 7523&rsquo;s <em>JWT ' +
-    'bearer authorization grant</em>. This service issues the key pair from ' +
-    'its own certificate authority, keeps the public half on your entry to ' +
-    'check signatures with, and gives you the private half once.</p>';
-
-  const statusBlock = !held
-    ? '<p class="sub">This service holds no entry for you, so there is ' +
-      'nowhere to put a key pair.</p>'
-    : (held.hasKeyPair
-      ? '<table><tr><th>Key</th><td><code>' + esc(held.stsAssertionKid || '') +
-        '</code></td></tr>' +
-        '<tr><th>You assert as</th><td>' +
-        held.effectiveIssuers.map(function (one) {
-          return '<code>' + esc(one) + '</code>';
-        }).join(' ') + '</td></tr>' +
-        '<tr><th>Good until</th><td>' +
-        esc(readableDate(held.stsAssertionExpiresAt)) + '</td></tr></table>' +
-        (held.stsAssertionCertificate
-          ? '<details><summary>Your certificate (public — this is the half ' +
-            'anybody may hold)</summary><pre class="pem">' +
-            esc(held.stsAssertionCertificate) + '</pre></details>'
-          : '')
-      : '<p class="sub">You have no signing key.</p>');
+    'the whole of it.</p><p class="note">There are two kinds, one per ' +
+    'document format, and they are <strong>separate key pairs</strong>: ' +
+    'RFC 7523&rsquo;s <em>JWT bearer authorization grant</em> signs a JSON ' +
+    'Web Token, and RFC 7522&rsquo;s <em>SAML 2.0 bearer authorization ' +
+    'grant</em> signs a SAML assertion. A key issued for one is refused by ' +
+    'the other. This service issues each key pair from its own certificate ' +
+    'authority, keeps the public half on your entry to check signatures ' +
+    'with, and gives you the private half once.</p>';
 
   // -----------------------------------------------------------------------
-  // THE CONTROLS. Two forms and three states: nothing to issue from, the
-  // feature turned off, and the ordinary case.
+  // WHAT APPLIES TO BOTH: no entry, no certificate authority, or the feature
+  // turned off. Said once rather than once per profile.
   // -----------------------------------------------------------------------
-  let controls = '';
-  if (!issuable) {
-    controls = '<p class="note"><strong>Nothing can be issued here at the ' +
+  let shared = '';
+  if (!held) {
+    shared = '<p class="sub">This service holds no entry for you, so there ' +
+      'is nowhere to put a key pair.</p>';
+  } else if (!issuable) {
+    shared = '<p class="note"><strong>Nothing can be issued here at the ' +
       'moment.</strong> This service has no certificate authority in this ' +
       'realm, and building one is an administrator&rsquo;s job rather than ' +
       'something this page can do.</p>';
   } else if (!offered) {
-    controls = '<p class="note"><strong>This service does not let people ' +
+    shared = '<p class="note"><strong>This service does not let people ' +
       'issue their own signing keys</strong> ' +
       '(<code>pki.personSelfService</code> is off). An administrator can ' +
       'still issue one to you.' +
-      (held && held.hasKeyPair
-        ? ' The key you already hold is unaffected and goes on working.'
+      ((held.hasKeyPair || held.hasSamlKeyPair)
+        ? ' The keys you already hold are unaffected and go on working.'
         : '') + '</p>';
-  } else if (held) {
-    controls =
-      '<form method="post" action="' + BASE + '/signing-key">' + csrf +
-      '<input type="hidden" name="action" value="generate">' +
-      '<button' + (held.hasKeyPair ? ' class="secondary"' : '') + '>' +
-      (held.hasKeyPair ? 'Generate a new key pair' :
-       'Generate my signing key') +
-      '</button></form>' +
-      (held.hasKeyPair
-        ? '<p class="note"><strong>Generating replaces what you ' +
-          'have.</strong> The key you hold now stops being accepted the ' +
-          'moment the new one is written, and anything signing with it ' +
-          'starts being refused.</p>'
-        : '<p class="note">The private half is shown once, on the page that ' +
-          'comes back. Nothing here can show it to you again.</p>');
   }
-
-  const removeForm = (held && held.hasKeyPair)
-    ? '<form method="post" action="' + BASE + '/signing-key">' + csrf +
-      '<input type="hidden" name="action" value="remove"><button ' +
-      'class="danger">Take my signing key off</button></form><p ' +
-      'class="note"><strong>This is not revocation.</strong> The certificate ' +
-      'stays valid and still chains to this service&rsquo;s root; what ' +
-      'changes is that this service stops accepting what the key signs, ' +
-      'because the key is no longer registered against you. Your password, ' +
-      'your security keys and your authenticator app are untouched — this is ' +
-      'not a way you sign in.</p>'
-    : '';
 
   const html = shell(BASE + '/signing-key', session, message, error,
     freshCard +
-    '<div class="card">' + what + statusBlock + controls + removeForm +
-    '</div>');
+    '<div class="card">' + what + shared + '</div>' +
+    SIGNING_KEY_PROFILES.map(function (profile) {
+      return profileCard(profile, held, csrf, issuable, offered);
+    }).join(''));
   log.debug('Leaving signingKeyPage(). ' +
-            (held && held.hasKeyPair ? 'A key pair.' : 'No key pair.'));
+            (held && held.hasKeyPair ? 'A JWT key pair. ' : 'No JWT key ' +
+             'pair. ') +
+            (held && held.hasSamlKeyPair ? 'A SAML key pair.'
+                                         : 'No SAML key pair.'));
   return html;
 }
 
@@ -2632,6 +2747,11 @@ async function pendingEnrolmentFor(username, base) {
 // entry, which is a takeover rather than a leak.
 const SIGNING_KEY_FORM = vz.object({
   action: vt.opt(vt.oneOf(['generate', 'remove'])),
+  // WHICH PROFILE (2026-09-13): RFC 7523's JWT key pair or RFC 7522's SAML
+  // one. Absent means `jwt`, which is what every form and client posted before
+  // the second profile existed. A closed list, so anything else is refused at
+  // the shape rather than reaching `common/pki.js`.
+  purpose: vt.opt(vt.oneOf(['jwt', 'saml'])),
   csrf_token: vt.opt(vt.token)
 });
 
@@ -3777,6 +3897,7 @@ app.post(BASE + '/signing-key', async function (req, res) {
   }
   const body = posted.value;
   const action = String(body.action || '');
+  const profile = signingKeyProfile(String(body.purpose || 'jwt'));
 
   const csrf = websecurity.checkCsrf(session.id, body);
   if (!csrf.ok) {
@@ -3796,28 +3917,32 @@ app.post(BASE + '/signing-key', async function (req, res) {
   }
 
   if (action === 'remove') {
-    const removed = personAssertions.clear(username);
+    // ONE PROFILE AT A TIME: taking the RFC 7522 key pair off leaves the
+    // RFC 7523 one working, and the reverse.
+    const removed = personAssertions.clear(username, profile.id);
     if (!removed.ok) {
       log.debug('Leaving POST ' + BASE + '/signing-key. Nothing to remove.');
       errorCodes.mark(res, 'STS-PORTAL-0027');
       return send(res, 400, signingKeyPage(session, null,
-        'You hold no signing key, so there was nothing to take off.', null,
-        base));
+        'You hold no ' + profile.rfc + ' signing key, so there was nothing ' +
+        'to take off.', null, base));
     }
     audit.record({
       category: 'authentication', action: 'portal.signing-key.removed',
       actor: username, outcome: 'success',
-      summary: username + ' took their own RFC 7523 signing key off',
-      detail: { attributes: removed.removed,
+      summary: username + ' took their own ' + profile.rfc + ' signing key ' +
+               'off',
+      detail: { purpose: profile.id, attributes: removed.removed,
                 address: websecurity.addressOf(req) }
     });
-    log.info('portal: ' + username + ' removed their assertion signing key. ' +
-             'Assertions signed with it are refused from now on; the ' +
-             'certificate itself is on no revocation list.');
+    log.info('portal: ' + username + ' removed their ' + profile.rfc +
+             ' assertion signing key. Assertions signed with it are refused ' +
+             'from now on; the certificate itself is on no revocation list.');
     log.debug('Leaving POST ' + BASE + '/signing-key. Removed.');
     res.status(303).set('Location', BASE + '/signing-key?done=' +
-      encodeURIComponent('Your signing key is off. Anything still signing ' +
-                         'with it will be refused from now on.')).end();
+      encodeURIComponent('Your ' + profile.rfc + ' signing key is off. ' +
+                         'Anything still signing with it will be refused ' +
+                         'from now on.')).end();
     return undefined;
   }
 
@@ -3858,7 +3983,7 @@ app.post(BASE + '/signing-key', async function (req, res) {
     }
     const issued = await pki.issueSigningKeyPair(undefined, {
       identifier: username,
-      purpose: 'jwt',
+      purpose: profile.id,
       // WHAT PUTS `urn:sts:person:<name>` IN THE CERTIFICATE, and the
       // whole reason this page may exist: it is what holds the key to
       // asserting about its own holder even when it is presented on its `x5c`
@@ -3874,7 +3999,8 @@ app.post(BASE + '/signing-key', async function (req, res) {
         (issued.errors || ['A key pair could not be issued.'])[0], null, base));
     }
     const record = issued.issued;
-    const written = personAssertions.write(username, record, {});
+    const written = personAssertions.write(username, record,
+                                           { purpose: profile.id });
     if (!written.ok) {
       // THE KEY PAIR IS GONE AND THE PAGE SAYS SO. `common/pki.js` hands one
       // over ONCE and keeps no copy, so a failed write is not a state to
@@ -3892,13 +4018,19 @@ app.post(BASE + '/signing-key', async function (req, res) {
     audit.record({
       category: 'authentication', action: 'portal.signing-key.issued',
       actor: username, outcome: 'success',
-      summary: username + ' issued themselves an RFC 7523 signing key pair',
-      detail: { kid: record.kid, notAfter: record.notAfter,
+      summary: username + ' issued themselves an ' + profile.rfc +
+               ' signing key pair',
+      detail: { purpose: profile.id, kid: record.kid,
+                thumbprint: record.certificateThumbprint,
+                notAfter: record.notAfter,
                 keyAlg: record.keyAlg,
                 address: websecurity.addressOf(req) }
     });
-    log.info('portal: ' + username + ' issued themselves an RFC 7523 signing ' +
-             'key pair, kid=' + record.kid + ', valid until ' +
+    log.info('portal: ' + username + ' issued themselves an ' + profile.rfc +
+             ' signing key pair, ' +
+             (profile.id === 'saml' ? 'thumbprint=' +
+              record.certificateThumbprint : 'kid=' + record.kid) +
+             ', valid until ' +
              record.notAfter + '. The private half was shown to them once ' +
              'and is not readable again.');
     log.debug('Leaving POST ' + BASE + '/signing-key. Issued and showing.');
@@ -3907,9 +4039,11 @@ app.post(BASE + '/signing-key', async function (req, res) {
     // to put a private key, and a query string would write it into a browser
     // history entry and every log between here and the person.
     return send(res, 200, signingKeyPage(session, null, null, {
+      purpose: profile.id,
       privateKeyPem: record.privateKeyPem,
       certificatePem: record.certificatePem,
       kid: record.kid,
+      thumbprint: record.certificateThumbprint,
       jwsAlg: record.jwsAlg,
       issuer: username
     }, base));

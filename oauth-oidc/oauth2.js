@@ -6894,7 +6894,13 @@ async function tokenGrant(req, res) {
       // token endpoint and OpenID Connect Core section 9 names the ISSUER, and
       // deployments differ — so both are accepted rather than half the client
       // libraries in the world being refused.
-      audiences: [base + '/oauth2/token', issuerOf(base), base]
+      audiences: [base + '/oauth2/token', issuerOf(base), base],
+      // THE RESPONSE THIS GRANT IS ANSWERED ON, so that the assertion is spent
+      // in the used-assertion history only if tokens are issued — a refusal
+      // further down this branch releases it. And the client asking, for the
+      // history's row.
+      request: req,
+      requestingClientId: String(client.client_id || '')
     });
     if (!checked.ok) {
       log.debug("Leaving the token endpoint. The assertion was refused.");
@@ -7059,7 +7065,11 @@ async function tokenGrant(req, res) {
       // THREE the JWT profile accepts, because the question — which
       // authorization server was this minted for — has the same three answers
       // here and a deployment that spells it as the issuer is not wrong.
-      audiences: [base + '/oauth2/token', issuerOf(base), base]
+      audiences: [base + '/oauth2/token', issuerOf(base), base],
+      // As for the JWT profile above: spent only if tokens are issued. NOT
+      // `clientId`, which would put this call in RFC 7522 section 2.2.
+      request: req,
+      requestingClientId: String(client.client_id || '')
     });
     if (!checked.ok) {
       log.debug("Leaving the token endpoint. The SAML assertion was refused.");
@@ -7076,7 +7086,11 @@ async function tokenGrant(req, res) {
       method: 'RFC 7522 SAML 2.0 bearer assertion' +
               (checked.encrypted ? ' (encrypted)' : ''),
       sub: subject.sub, client_id: client.client_id,
-      note: 'A trusted party asserted this person in a SAML 2.0 assertion. ' +
+      note: (checked.issuerKind === 'person'
+              ? 'This person asserted THEMSELVES in a SAML 2.0 assertion, ' +
+                'signed with the RFC 7522 key pair on their own entry. '
+              : 'A trusted party asserted this person in a SAML 2.0 ' +
+                'assertion. ') +
             'It was verified for real — the XML Signature over the ' +
             '<Assertion> itself, the Issuer, the AudienceRestriction, the ' +
             'bearer SubjectConfirmation and its Recipient, both NotOnOrAfter ' +
@@ -7128,7 +7142,14 @@ async function tokenGrant(req, res) {
       intermediary: {
         presented: checked.issuer,
         application: checked.application || checked.issuer,
-        what: checked.declared
+        // A person who asserted about themselves is not a third party — the
+        // JWT grant's sentence above, for this profile (2026-09-13).
+        what: checked.issuerKind === 'person'
+          ? 'the person who signed the assertion, which is the same person ' +
+            'the token is for. They hold an RFC 7522 signing key pair of ' +
+            'their own (stsSamlAssertion* on their entry), and a person\'s ' +
+            'key may only assert about that person.'
+          : checked.declared
           ? 'the party that signed the assertion, declared on an application ' +
             'entry as oauthSamlAssertionIssuer'
           : 'the party that signed the assertion. No application declares ' +
@@ -7144,7 +7165,11 @@ async function tokenGrant(req, res) {
           : 'unstated — this request named no client, which RFC 7521 section ' +
             '6.2 permits when the assertion identifies the party'
       },
-      authorizedBy: checked.declared
+      authorizedBy: checked.issuerKind === 'person'
+        ? 'an XML Signature that verified against the RFC 7522 certificate ' +
+          'on "' + checked.person + '"\'s own entry, and a <Subject> naming ' +
+          'that same person.'
+        : checked.declared
         ? 'oauthSamlAssertionIssuer on an application entry in this realm, ' +
           'and an XML Signature that verified against a certificate ' +
           'registered for it under the RFC 7522 attributes. **The RFC 7523 ' +

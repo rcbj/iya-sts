@@ -371,6 +371,19 @@ function create(options) {
     return path.join(dir, 'realm-' + id + '.ldif');
   }
 
+  // `used-assertions-<id>.json`, with `realmFile()`'s check for the same
+  // reason: a filename built from data.
+  function usedAssertionsFile(realmId) {
+    log.debug("Entering usedAssertionsFile().");
+    const id = String(realmId || '');
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) {
+      throw new Error('persistence: "' + id + '" is not a realm id this ' +
+                      'driver will build a filename from.');
+    }
+    log.debug("Leaving usedAssertionsFile().");
+    return path.join(dir, 'used-assertions-' + id + '.json');
+  }
+
   function writeAtomic(file, text) {
     log.debug('Entering writeAtomic(). file=' + file);
     const tmp = file + '.tmp';
@@ -672,11 +685,119 @@ function create(options) {
         log.debug('Leaving the ldif driver deleteKeys(). ' + kept.length +
                   ' realm(s) left.');
       });
+    },
+
+    // -----------------------------------------------------------------------
+    // THE USED-ASSERTION HISTORY (2026-09-13), and it is the one thing this
+    // driver holds that a REQUEST writes rather than a person typing.
+    //
+    // **THE ARGUMENT BELOW AGAINST MINTED STATE IS WHY THIS IS AFFORDABLE AND
+    // NOT A CONTRADICTION OF IT.** That argument is about SIZE AND RATE — an
+    // audit ring and a session table rewritten per request. This file is one
+    // realm's UNEXPIRED rows, bounded by `oauth2.assertionReplayCacheSize`
+    // (a thousand by default), each a couple of hundred bytes, and it changes
+    // only when an assertion is presented, which is a fraction of token
+    // requests. What it buys is the property `common/used_assertions.js` exists
+    // for: an assertion spent before a restart is still spent after one, and a
+    // deployment that chose this store is owed that as much as one that chose
+    // a database.
+    //
+    // ONE FILE PER REALM, `used-assertions-<id>.json`, so a claim in `acme`
+    // rewrites acme's rows and nobody else's. The rows hold no credential — an
+    // issuer, a `jti` or `ID`, a client, a subject — but the file is `0o600`
+    // like everything else this driver writes.
+    // -----------------------------------------------------------------------
+    loadUsedAssertions: function () {
+      log.debug('Entering the ldif driver loadUsedAssertions().');
+      log.debug("Leaving loadUsedAssertions().");
+      return Promise.resolve().then(function () {
+        let names;
+        try {
+          names = fs.readdirSync(dir);
+        } catch (err) {
+          if (err.code === 'ENOENT') {
+            log.debug('Leaving loadUsedAssertions(). No data directory yet.');
+            return {};
+          }
+          throw err;
+        }
+        const out = {};
+        names.filter(function (name) {
+          return /^used-assertions-[a-z0-9][a-z0-9-]*\.json$/.test(name);
+        }).forEach(function (name) {
+          const realmId = name.replace(/^used-assertions-/, '')
+            .replace(/\.json$/, '');
+          const text = readIfPresent(path.join(dir, name));
+          if (text === null) {
+            return;
+          }
+          try {
+            out[realmId] = (JSON.parse(text) || {}).rows || [];
+          } catch (e) {
+            // NOT RETHROWN, AND NOT SILENTLY EMPTY EITHER. A file this service
+            // cannot parse is a history it cannot consult, and starting with
+            // no history is the restart-replay this file exists to close — so
+            // it is logged at error, named, and the realm starts empty only
+            // because refusing to start over one realm's history would take
+            // every other protocol down with it.
+            log.error(errorCodes.tag('STS-STORE-0045') +
+                      'persistence: ' + name + ' could not be parsed (' +
+                      e.message + '). The used-assertion history for the ' +
+                      'realm "' + realmId + '" starts EMPTY, so an assertion ' +
+                      'spent before this restart and still unexpired will be ' +
+                      'accepted once more.');
+            out[realmId] = [];
+          }
+        });
+        log.debug('Leaving the ldif driver loadUsedAssertions(). ' +
+                  Object.keys(out).length + ' realm(s).');
+        return out;
+      });
+    },
+
+    saveUsedAssertions: function (realmId, rows) {
+      log.debug('Entering the ldif driver saveUsedAssertions(). realm=' +
+                realmId);
+      log.debug("Leaving saveUsedAssertions().");
+      return Promise.resolve().then(function () {
+        writeAtomic(usedAssertionsFile(realmId), JSON.stringify({
+          version: 1,
+          note: 'Every RFC 7523 and RFC 7522 assertion the "' + realmId +
+                '" realm has accepted and that has not yet expired, so that ' +
+                'none is accepted twice across a restart. It holds no ' +
+                'assertion and no credential. Rewritten whenever an ' +
+                'assertion is presented; editing it while the service runs ' +
+                'is lost at the next one, and deleting a row while the ' +
+                'service is stopped lets that assertion be used again.',
+          rows: rows
+        }) + '\n');
+        log.debug('Leaving the ldif driver saveUsedAssertions(). ' +
+                  rows.length + ' row(s).');
+      });
+    },
+
+    removeUsedAssertions: function (realmId) {
+      log.debug('Entering the ldif driver removeUsedAssertions(). realm=' +
+                realmId);
+      log.debug("Leaving removeUsedAssertions().");
+      return Promise.resolve().then(function () {
+        try {
+          fs.unlinkSync(usedAssertionsFile(realmId));
+        } catch (err) {
+          if (err.code !== 'ENOENT') {
+            throw err;
+          }
+          log.debug('Caught in removeUsedAssertions(): there was no file, ' +
+                    'which is the state this was trying to reach.');
+        }
+      });
     }
 
     // -----------------------------------------------------------------------
     // AND NO `loadMinted`, `saveMinted` OR `purgeMinted` — DELIBERATELY, AND
-    // THE ABSENCE IS THE ANSWER RATHER THAN AN OMISSION.
+    // THE ABSENCE IS THE ANSWER RATHER THAN AN OMISSION. (The used-assertion
+    // history above is the one request-written thing this driver holds, and
+    // its header says why the argument below does not reach it.)
     //
     // Since 2026-09-06 product mode writes down what this process MINTS:
     // sessions, tokens, authorization codes, SAML artifacts, Kerberos

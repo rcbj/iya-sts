@@ -195,9 +195,10 @@ async function run(t) {
   const written = personAssertions.write(ALICE, record, {});
   t.check(written.ok, 'the key pair is written onto the person\'s own entry',
           (written.errors || []).join(' '));
-  t.equal(written.written.length, 6,
-          'six attributes — the JWKS, the certificate, the chain, the ' +
-          'private key, the kid and the expiry. All six or none: ' +
+  t.equal(written.written.length, 7,
+          'seven attributes — the private key, the certificate, the JWKS, ' +
+          'the chain, the kid, the expiry and (since 2026-09-13) where the ' +
+          'key pair came from. All or none: ' +
           'common/pki.js hands a key pair over once and keeps no copy, so a ' +
           'half-written entry is a key pair that is gone with a certificate ' +
           'claiming otherwise');
@@ -215,8 +216,9 @@ async function run(t) {
           'the store holds — the seal protects the store rather than the ' +
           'caller that owns the register');
   t.equal(personAssertions.SEALED_ATTRIBUTES.join(','),
-          'stsAssertionPrivateKey',
-          'and exactly one of the seven is private key material. It is a ' +
+          'stsAssertionPrivateKey,stsSamlAssertionPrivateKey',
+          'and exactly one attribute PER PROFILE is private key material — ' +
+          'the RFC 7522 set arrived on 2026-09-13 with its own. It is a ' +
           'LIST rather than an `if` because "is this attribute a private ' +
           'key" is a question somebody adding an attribute has to answer, ' +
           'and a list is where they will look');

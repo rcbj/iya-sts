@@ -1,13 +1,14 @@
 # admin-core/
 
 **What the admin console and the management API both do, in a directory
-neither of them owns.** Two files, both of which arrived on 2026-09-12 out of
-`admin-ui/admin.js`:
+neither of them owns.** Two files arrived on 2026-09-12 out of
+`admin-ui/admin.js`, and a third was written here on 2026-09-13:
 
 | File | | |
 |---|---|---|
 | `admin_actions.js` | **what CHANGES state** | 31 actions, the tables they dispatch on, the helpers they share |
 | `admin_views.js` | **what ANSWERS a question** | 38 functions that compute a JSON answer and build no markup |
+| `certificate_views.js` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
 
 **Read each file's own header first.** They carry the argument at length: what
 may be in them, what may not, why they are not in `common/`, and why the
@@ -261,3 +262,42 @@ that meant one thing in the page's scope and another in the layer's:
 `tests/vendored/sts_admin_api_operations.js` and `sts_admin_console.js` found
 every one. That is the whole argument for running the owned jobs against a
 change of this shape — see `tests/CLAUDE.md`.
+
+## `certificate_views.js`: THE CERTIFICATE DETAILS DIALOG'S CATALOGUE (2026-09-13)
+
+`/admin/pki` and `/admin/crypto-metadata` open a certificate's every X.509 field
+and its trust chain in a dialog over the page, and `GET /admin-api/certificates`
+answers the same thing for a machine. **This file is the one place that decides
+which certificates any of the three may open**, which is the half of the feature
+that is not a rendering. The model is `common/certificate_details.js` and the
+dialog is `admin-ui/certificate_dialog.js`; the file headers argue each.
+
+Four decisions, and each is a refusal:
+
+* **A CERTIFICATE IS NAMED BY ITS SHA-256 AND LOOKED UP, NEVER SENT.** A view
+  that described a PEM from the query string would render an attacker's
+  certificate — subject, extension values, chain status — under this console's
+  header from a link somebody was sent. The only certificates that resolve are
+  the ones in the CATALOGUE: what this service holds.
+* **THE CATALOGUE IS PER REALM.** The service Root, the process branch, and THIS
+  realm's Intermediate, Issuing CAs and what they certified, plus this realm's
+  signing keys, the workbench store, the TLS listeners, the SPIFFE authorities
+  and the key pairs issued to applications and people. Another realm's branch is
+  not in it, so its certificates are refused here and open under that realm's
+  prefix — `verifyLeaf()`'s boundary, drawn on a page.
+* **THE CHAIN IS BUILT OVER THE AUTHORITIES AND NEVER OVER THE HOLDERS.** The
+  authorities are a few dozen certificates in memory; the holders walk the
+  directory, which a bulk-loaded realm holds fifty thousand people in. A lookup
+  asks the authorities first, and a leaf signs nothing, so it is never a
+  candidate issuer.
+* **`tls/tls_server.js` AND `spiffe/spiffe_ca.js` ARE REQUIRED INSIDE THE
+  FUNCTIONS**, for rule 1: `admin-ui/pki_admin.js` requires this file at 18a and
+  the TLS module registers routes at 20. A request runs after every module has
+  loaded, so inside a function the require is a cache hit. `admin_views.js` is
+  required lazily too, for the same reason read the other way.
+
+It is here rather than in `common/` because both surfaces read it and it reads
+the two route-registering modules above — lazily, but it reads them — which is
+what this directory's position rule is about. `tests/admin_actions_layer.js`
+still passes with it here, and `tests/certificate_details.js` pins the
+catalogue and its boundary.

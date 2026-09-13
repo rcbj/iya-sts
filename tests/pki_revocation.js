@@ -462,12 +462,17 @@ async function run(t) {
     // DIFFERENT DANGER.** The probe above asks the right responder about a
     // serial it never issued. This one asks the `jose` responder about a
     // certificate the `xml` authority issued — a request whose CertID hashes
-    // name ANOTHER ISSUER. RFC 6960's answer is `unknown` in both cases and
-    // the reasons are not alike: the first is a serial out of range, and this
-    // is a responder being asked to speak for somebody else's certificate
-    // authority. A responder that answered `good` here would vouch for every
-    // issuer in the world, and the certificate really does exist and really
-    // is good — at its own responder.
+    // name ANOTHER ISSUER. A responder that answered `good` here would vouch
+    // for every issuer in the world, and the certificate really does exist
+    // and really is good — at its own responder.
+    //
+    // **THE ANSWER IS `unauthorized` SINCE 2026-09-13, AND IT WAS A SIGNED
+    // `unknown`.** A signed answer about a certificate this authority did not
+    // issue is one no client can verify — RFC 6960 section 2.2 wants the
+    // issuing CA's key or a responder it delegated to — and section 2.3 and
+    // RFC 5019 section 2.2.3 name the answer for a responder that is not
+    // authoritative for the request: `unauthorized`, unsigned. OpenSSL
+    // refused the old one with *missing ocspsigning usage*.
     //
     // It was added because a mutant survived: turning the first branch's
     // `unknown` into `good` broke nothing, since no test had ever sent a
@@ -477,15 +482,16 @@ async function run(t) {
     if (xmlLeaf) {
       const foreign = await revocation.answerOcsp(REALM, 'jose',
         ocspRequestFor(xmlIssuerPem, xmlLeaf.serialHex, false));
-      t.equal(((foreign.answers || [])[0] || {}).status, 'unknown',
-              'a request naming ANOTHER AUTHORITY\'s certificate is UNKNOWN ' +
-              'at this responder, even though that certificate exists and is ' +
-              'perfectly good at its own — a responder that vouched for it ' +
-              'would vouch for every issuer in the world');
-      t.equal(((foreign.answers || [])[0] || {}).why, 'another issuer',
-              'and it says which of the two kinds of not-knowing it is: the ' +
-              'CertID hashes name a different issuer, which is not the same ' +
-              'fact as a serial this authority has no record of');
+      t.equal(foreign.status, 'unauthorized',
+              'a request naming ANOTHER AUTHORITY\'s certificate is refused ' +
+              '`unauthorized` at this responder, even though that certificate ' +
+              'exists and is perfectly good at its own — a responder that ' +
+              'vouched for it would vouch for every issuer in the world, and ' +
+              'a signed `unknown` is an answer no client could verify');
+      t.check(!foreign.answers,
+              'and it carries no per-certificate answer at all: ' +
+              '`unauthorized` has no responseBytes (RFC 6960 section 4.2.1)',
+              JSON.stringify(foreign.answers));
       const atItsOwn = await ask(REALM, 'xml', xmlIssuerPem,
                                  xmlLeaf.serialHex, false);
       t.equal(atItsOwn.certStatus, 'good',
@@ -661,15 +667,20 @@ async function run(t) {
           'unspecified, so the commonest entry on any of these lists would ' +
           'otherwise carry no reason at all');
 
-  t.log.info('=== G. every certificate NAMES its own lists, in three ' +
-             'schemes ===');
+  t.log.info('=== G. every certificate NAMES its own lists, over http and ' +
+             'ldap ===');
 
   // The addresses are only worth having if they are INSIDE the certificates,
   // because that is the only way a client that was handed a leaf finds them.
   const points = revocation.distributionPoints(REALM, 'jose');
-  t.check(/^http/.test(points.http) && /^ldap:/.test(points.ldap) &&
-          /^ldaps:/.test(points.ldaps) && /^http/.test(points.ocsp),
-          'an authority has a CRL in three schemes and an OCSP responder',
+  t.check(/^http:/.test(points.http) && /^ldap:/.test(points.ldap) &&
+          /^http:/.test(points.ocsp) && /^http:/.test(points.caIssuers),
+          'an authority has a CRL over http and ldap, an OCSP responder and a ' +
+          'caIssuers address, all plain http',
+          JSON.stringify(points));
+  t.check(points.ldaps === undefined,
+          'and NO ldaps:// address — RFC 5280 section 8 says a CA SHOULD NOT ' +
+          'write one into an extension, and this service did until 2026-09-13',
           JSON.stringify(points));
   t.check(/certificateRevocationList;binary/.test(points.ldap),
           'and the LDAP form carries the ATTRIBUTE DESCRIPTION (RFC 4523 ' +
@@ -685,10 +696,10 @@ async function run(t) {
       ['x509', '-in', leafFile, '-noout', '-text'], { encoding: 'utf8' });
     t.check(/X509v3 CRL Distribution Points/.test(text),
             'and a leaf this authority signed carries cRLDistributionPoints');
-    t.check(/URI:http/.test(text) && /URI:ldap:/.test(text) &&
-            /URI:ldaps:/.test(text),
-            'naming all THREE schemes, which is what was asked for: a client ' +
-            'that can only reach one of them still finds a list',
+    t.check(/URI:http:/.test(text) && /URI:ldap:/.test(text) &&
+            !/URI:ldaps:/.test(text) && !/URI:https:/.test(text),
+            'naming http and ldap and neither https nor ldaps (RFC 5280 ' +
+            'section 8)',
             (text.match(/URI:[^\s]*/g) || []).slice(0, 4).join(' '));
     t.check(/OCSP - URI:http/.test(text),
             'and an Authority Information Access naming its OCSP responder');
@@ -721,11 +732,10 @@ async function run(t) {
     t.check(described.extensions.some(function (one) {
               return one.oid === '2.5.29.31';
             }) && flat.indexOf(pointsFor.http) >= 0 &&
-            flat.indexOf(pointsFor.ldap) >= 0 &&
-            flat.indexOf(pointsFor.ldaps) >= 0,
+            flat.indexOf(pointsFor.ldap) >= 0,
             'and the ' + label + ' key pair carries cRLDistributionPoints ' +
-            '(2.5.29.31) naming the ASSERTIONS Issuing CA\'s list in all ' +
-            'three schemes — the authority that signed it, not the realm');
+            '(2.5.29.31) naming the ASSERTIONS Issuing CA\'s list over http ' +
+            'and ldap — the authority that signed it, not the realm');
     t.check(described.extensions.some(function (one) {
               return one.oid === '1.3.6.1.5.5.7.1.1';
             }) && flat.indexOf(pointsFor.ocsp) >= 0 &&

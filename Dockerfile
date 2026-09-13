@@ -275,6 +275,9 @@ ENV CONFIG_FILE=./env/local.js
 # separately. A compose file that publishes 389 and not 636 offers a directory a
 # TLS client cannot reach, with nothing in the image to say why.
 EXPOSE 8081
+# The plain-HTTP revocation listener (2026-09-13): /pki/ only, and the
+# address every certificate names for its CRL and OCSP responder.
+EXPOSE 8082
 EXPOSE 88/tcp
 EXPOSE 88/udp
 EXPOSE 389

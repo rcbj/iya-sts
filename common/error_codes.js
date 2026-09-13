@@ -523,6 +523,11 @@ const CODES = [
       'restored or replicated row (or its removal) may be applied, so it was ' +
       'not applied and what the process held is unchanged.',
     spec: '' },
+  { code: 'STS-CORE-0043',
+    summary: 'The plain-HTTP revocation listener (pki.httpPort) could not ' +
+      'bind, so every http:// CRL, OCSP and caIssuers address in this ' +
+      'service\'s certificates answers nothing.',
+    spec: '' },
   // ===== WORKER ============================================================
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
@@ -871,6 +876,28 @@ const CODES = [
     spec: '' },
   { code: 'STS-STORE-0043',
     summary: 'Clearing an applier\'s per-page replication state failed.',
+    spec: '' },
+  { code: 'STS-STORE-0044',
+    summary: 'The open persistence driver has no used-assertion functions, ' +
+      'so the used-assertion history is held in this process and forgotten ' +
+      'at a restart.',
+    spec: '' },
+  { code: 'STS-STORE-0045',
+    summary: 'Writing the used-assertion history to a file store failed; a ' +
+      'claim that could not be written is refused, a confirmation is lost.',
+    spec: '' },
+  { code: 'STS-STORE-0046',
+    summary: 'The database store could not be asked whether an assertion ' +
+      'has been used; the assertion is refused.',
+    spec: '' },
+  { code: 'STS-STORE-0047',
+    summary: 'Sweeping expired used-assertion rows, or removing a removed ' +
+      'realm\'s, failed; the rows are ignored by every read and expire.',
+    spec: '' },
+  { code: 'STS-STORE-0048',
+    summary: 'Confirming or releasing a used-assertion claim when its ' +
+      'response finished failed; the row stays reserved until the assertion ' +
+      'expires.',
     spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',
@@ -1415,11 +1442,16 @@ const CODES = [
       'an authority this service does not hold.',
     spec: 'HTTP 404 text/plain' },
   { code: 'STS-PKI-0071',
-    summary: 'An OCSP GET request path segment was not a base64 DER request.',
-    spec: 'HTTP 400 text/plain' },
+    summary: 'An OCSP GET request path segment was not a base64 DER request. ' +
+      'Retired 2026-09-13: such a request does not conform to the OCSP ' +
+      'syntax and is answered malformedRequest inside the protocol ' +
+      '(STS-PKI-0066), as RFC 6960 section 2.3 asks.',
+    spec: 'HTTP 400 text/plain', retired: true },
   { code: 'STS-PKI-0072',
-    summary: 'An OCSP request arrived with no body.',
-    spec: 'HTTP 400 text/plain' },
+    summary: 'An OCSP request arrived with no body. Retired 2026-09-13, for ' +
+      'STS-PKI-0071\'s reason: it is answered malformedRequest ' +
+      '(STS-PKI-0066).',
+    spec: 'HTTP 400 text/plain', retired: true },
   { code: 'STS-PKI-0073',
     summary: 'An OCSP POST body was larger than the 64KB this responder ' +
       'accepts.',
@@ -1583,9 +1615,10 @@ const CODES = [
       'errors}' },
   { code: 'STS-PKI-0108',
     summary: 'An RFC 7522 (SAML) signing key pair was asked for a person; ' +
-      'only applications may hold one.',
+      'only applications may hold one. Retired 2026-09-13: a person may ' +
+      'hold an RFC 7522 key pair, and the SAML bearer grant reads it.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
-      'errors}' },
+      'errors}', retired: true },
   { code: 'STS-PKI-0109',
     summary: 'A person key-pair action named nobody in this realm.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
@@ -1714,6 +1747,153 @@ const CODES = [
     spec: 'Per door: invalid_client or invalid_grant at the token endpoint; ' +
       'the federated sign-in refused with the reason on the error page; ' +
       'invalid_request at the OID4VP response endpoint' },
+  { code: 'STS-PKI-0130',
+    summary: 'The OCSP responder address of a certificate authority this ' +
+      'service holds was fetched with a GET carrying no request — the URL ' +
+      'exactly as it is written in a certificate\'s Authority Information ' +
+      'Access, which RFC 6960 appendix A.1.1 makes the base of both ' +
+      'transports rather than a document.',
+    spec: 'HTTP 400 text/plain naming the POST and GET transports' },
+  { code: 'STS-PKI-0131',
+    summary: 'The OCSP responder address of a certificate authority this ' +
+      'service does not hold was fetched with a GET carrying no request.',
+    spec: 'HTTP 404 text/plain' },
+  { code: 'STS-PKI-0132',
+    summary: 'An OCSP request carried a nonce of 0 octets or more than 32, ' +
+      'which RFC 8954 section 2.1 requires a responder to reject.',
+    spec: 'OCSPResponse malformedRequest(1), HTTP 200' },
+  { code: 'STS-PKI-0133',
+    summary: 'An OCSP request named no certificate the responder\'s ' +
+      'authority issued — every CertID\'s issuer name and key hashes belong ' +
+      'to somebody else — so the responder is not authoritative for any of ' +
+      'it (RFC 6960 section 2.3, RFC 5019 section 2.2.3).',
+    spec: 'OCSPResponse unauthorized(6), HTTP 200' },
+  { code: 'STS-PKI-0134',
+    summary: 'A request reached the plain-HTTP revocation listener for a ' +
+      'path outside /pki/. That socket serves the revocation endpoints and ' +
+      'nothing else.',
+    spec: 'HTTP 404 text/plain' },
+  { code: 'STS-PKI-0140',
+    summary: 'A certificate upload named no application, or the registration ' +
+      'it produced could not be written.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0141',
+    summary: 'A certificate upload carried a PRIVATE KEY block. Nothing was ' +
+      'stored; the application keeps its own key.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0142',
+    summary: 'A certificate upload carried no PEM certificate, or a PEM ' +
+      'block that is not a certificate.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0143',
+    summary: 'A certificate in an upload, or the chain it forms, could not ' +
+      'be parsed.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0144',
+    summary: 'The first certificate of an upload is a certificate authority ' +
+      'rather than the signing leaf.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0145',
+    summary: 'An uploaded certificate is expired or not yet valid.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0146',
+    summary: 'An uploaded certificate carries a key the profile\'s verifier ' +
+      'cannot use, or a KeyUsage that forbids digitalSignature.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0147',
+    summary: 'An uploaded certificate\'s chain is incomplete: it does not ' +
+      'reach a self-signed root, or the certificate is itself self-signed.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0148',
+    summary: 'A certificate upload carried a certificate that is not on the ' +
+      'path from the leaf to its root.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0149',
+    summary: 'An uploaded certificate chains to this service\'s own Root and ' +
+      'was refused by the realm path check (another realm\'s branch, a ' +
+      'failed link, or revocation).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0150',
+    summary: 'An external chain uploaded with a certificate does not verify: ' +
+      'a signature, an issuer name or a validity window failed.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0151',
+    summary: 'An issuer in an uploaded external chain is not a CA, may not ' +
+      'sign certificates, or has its path length constraint exceeded.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0152',
+    summary: 'An uploaded certificate\'s chain verifies and the certificate ' +
+      'was refused on revocation.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0153',
+    summary: 'A certificate upload targeted a person. Only an application\'s ' +
+      'key pair is replaced by an uploaded certificate. Retired 2026-09-13: ' +
+      'a person\'s key pair may be replaced by an uploaded certificate too.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}', retired: true },
+  { code: 'STS-PKI-0154',
+    summary: 'An uploaded certificate verified and one of the attributes it ' +
+      'replaces could not be written to the application entry.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0155',
+    summary: 'An uploaded certificate this realm issued would widen its ' +
+      'holder: for a person, its subjectAltName names somebody else ' +
+      '(another urn:sts:person: or an urn:sts:application:); for an ' +
+      'application, it names a urn:sts:person:.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0156',
+    summary: 'The certificate behind a key that verified an RFC 7523 or RFC ' +
+      '7522 assertion has an INCOMPLETE chain: it is not this realm\'s, and ' +
+      'nothing registered with it reaches a self-signed root ' +
+      '(pki.verifySignerChain).',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication' },
+  { code: 'STS-PKI-0157',
+    summary: 'The chain of the certificate behind a key that verified an RFC ' +
+      '7523 or RFC 7522 assertion does not verify: a signature, an issuer ' +
+      'name or a validity window failed — the leaf expired, an intermediate ' +
+      'expired, or a pinned self-signed certificate no longer holds.',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication' },
+  { code: 'STS-PKI-0158',
+    summary: 'A certificate that signs another on a signer\'s path is not ' +
+      'permitted to: no basicConstraints cA=TRUE, a KeyUsage without ' +
+      'keyCertSign, or a pathLenConstraint exceeded. Raised for a presented ' +
+      'x5c (pki.verifyLeaf) and for a registered chain at use.',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication' },
+  { code: 'STS-PKI-0159',
+    summary: 'The certificate whose key verified an assertion may not sign ' +
+      'one: it is a certificate authority, or its KeyUsage does not permit ' +
+      'digitalSignature.',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication' },
+  { code: 'STS-PKI-0160',
+    summary: 'A registered JWK\'s x5c certificate does not hold the key the ' +
+      'JWK represents (RFC 7517 section 4.7), so its chain says nothing ' +
+      'about the key that verified the assertion.',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication' },
+  { code: 'STS-PKI-0161',
+    summary: 'A certificate behind a key that verified an assertion, or one ' +
+      'in its registered chain, could not be read.',
+    spec: 'invalid_grant at the grant, invalid_client at client ' +
+      'authentication' },
   // ===== AUTHN =============================================================
   { code: 'STS-AUTHN-0001',
     summary: 'A request to the sign-in screen or the federation chooser ' +
@@ -2358,13 +2538,14 @@ const CODES = [
       'not be refused.',
     spec: 'invalid_client (HTTP 401)' },
   { code: 'STS-OAUTH-0012',
-    summary: 'A JWT client assertion was replayed: its jti has already been ' +
-      'used.',
+    summary: 'A JWT client assertion was replayed: its issuer and jti are ' +
+      'already in the used-assertion history, spent or held by a request in ' +
+      'flight, as a client assertion or as a grant.',
     spec: 'invalid_client (HTTP 401)' },
   { code: 'STS-OAUTH-0013',
-    summary: 'The client-assertion replay cache for the realm is full of ' +
-      'unexpired entries (oauth2.assertionReplayCacheSize), so a new ' +
-      'client assertion was refused.',
+    summary: 'The used-assertion history for the realm holds ' +
+      'oauth2.assertionReplayCacheSize unexpired rows, so a new client ' +
+      'assertion was refused rather than a live row forgotten.',
     spec: 'invalid_client (HTTP 401)' },
   { code: 'STS-OAUTH-0014',
     summary: 'A client registered for RFC 8705 certificate authentication ' +
@@ -2527,12 +2708,13 @@ const CODES = [
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0054',
     summary: 'An RFC 7523 authorization-grant assertion was replayed: its ' +
-      'jti has already been used.',
+      'issuer and jti are already in the used-assertion history, spent or ' +
+      'held by a request in flight, as a grant or as a client assertion.',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0055',
-    summary: 'The RFC 7523 grant replay cache for the realm is full of ' +
-      'unexpired entries (oauth2.assertionReplayCacheSize), so a new ' +
-      'grant was refused.',
+    summary: 'The used-assertion history for the realm holds ' +
+      'oauth2.assertionReplayCacheSize unexpired rows, so a new RFC 7523 ' +
+      'grant was refused rather than a live row forgotten.',
     spec: 'invalid_grant (HTTP 400)' },
   { code: 'STS-OAUTH-0056',
     summary: 'An RFC 7522 SAML 2.0 bearer grant was requested while ' +
@@ -2638,13 +2820,14 @@ const CODES = [
       'spent.',
     spec: 'invalid_grant (HTTP 400) or invalid_client (HTTP 401)' },
   { code: 'STS-OAUTH-0082',
-    summary: 'An RFC 7522 SAML assertion was replayed: its ID has already ' +
-      'been used.',
+    summary: 'An RFC 7522 SAML assertion was replayed: its Issuer and ID ' +
+      'are already in the used-assertion history, spent or held by a request ' +
+      'in flight, under either section.',
     spec: 'invalid_grant (HTTP 400) or invalid_client (HTTP 401)' },
   { code: 'STS-OAUTH-0083',
-    summary: 'The RFC 7522 replay cache for the realm is full of unexpired ' +
-      'entries (oauth2.assertionReplayCacheSize), so a new SAML ' +
-      'assertion was refused.',
+    summary: 'The used-assertion history for the realm holds ' +
+      'oauth2.assertionReplayCacheSize unexpired rows, so a new SAML ' +
+      'assertion was refused rather than a live row forgotten.',
     spec: 'invalid_grant (HTTP 400) or invalid_client (HTTP 401)' },
   { code: 'STS-OAUTH-0084',
     summary: 'The person-assertion register was handed an incomplete ' +
@@ -3284,6 +3467,17 @@ const CODES = [
       'common/crypto.js does not implement; refresh tokens were encrypted ' +
       'with the default instead.',
     spec: '' },
+  { code: 'STS-OAUTH-0242',
+    summary: 'An RFC 7522 SAML 2.0 bearer grant was signed by a PERSON\'s ' +
+      'registered RFC 7522 key pair and its <Subject> names somebody other ' +
+      'than that person; a person\'s key may only assert about themselves.',
+    spec: 'invalid_grant (HTTP 400)' },
+  { code: 'STS-OAUTH-0243',
+    summary: 'An RFC 7523 or RFC 7522 assertion verified and the ' +
+      'used-assertion history could not be consulted or written, so it was ' +
+      'refused: an assertion this service cannot prove unused is not one it ' +
+      'accepts.',
+    spec: 'invalid_client (HTTP 401) or invalid_grant (HTTP 400)' },
   // ===== SAML ==============================================================
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
@@ -4578,8 +4772,7 @@ const CODES = [
     spec: '' },
   { code: 'STS-LDAP-0031',
     summary: 'A certificate authority\'s CRL could not be published into the ' +
-      'directory; its ldap:// and ldaps:// distribution points fetch ' +
-      'nothing.',
+      'directory; its ldap:// distribution point fetches nothing.',
     spec: '' },
   { code: 'STS-LDAP-0032',
     summary: 'The account-change observer threw after a directory write; the ' +
@@ -8106,6 +8299,26 @@ const CODES = [
     summary: 'The Kerberos key register has no directory in this process, so ' +
       'a principal could be neither listed nor changed.',
     spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-ADMIN-0620',
+    summary: 'Regenerating an application\'s client secret was refused: the ' +
+      'application is not in the registry.',
+    spec: 'HTTP 400 { ok: false, errors } / 303 with error=' },
+  { code: 'STS-ADMIN-0640',
+    summary: 'A certificate details view was asked for with a value that is ' +
+      'not a SHA-256 certificate fingerprint (64 hexadecimal digits).',
+    spec: 'the page with a dialog saying so / HTTP 400 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0641',
+    summary: 'A certificate details view named a fingerprint this service ' +
+      'does not hold in the trust realm the request was reached in.',
+    spec: 'the page with a dialog saying so / HTTP 404 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0642',
+    summary: 'A certificate this service holds could not be described or its ' +
+      'chain could not be built.',
+    spec: 'the page with a dialog saying so / HTTP 500 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0643',
+    summary: 'The used-assertion history page could not be drawn, because ' +
+      'the store holding the history could not be read.',
+    spec: 'the page with a warning saying so' },
   // ===== API ===============================================================
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
@@ -8374,6 +8587,15 @@ const CODES = [
       '(including an unknown action) and the action layer attached no more ' +
       'specific code.',
     spec: 'HTTP 400 { ok: false, errors }' },
+  { code: 'STS-API-0080',
+    summary: 'A management API certificate details request was refused and ' +
+      'the view attached no more specific code.',
+    spec: 'HTTP 400 { ok: false, errors }' },
+  { code: 'STS-API-0081',
+    summary: 'The used-assertion history could not be read for ' +
+      'GET /admin-api/used-assertions, because the store holding it could ' +
+      'not be queried.',
+    spec: 'HTTP 500 { ok: false, errors }' },
   // ===== PORTAL ============================================================
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
@@ -8790,6 +9012,15 @@ const CODES = [
   { code: 'STS-REG-0053',
     summary: 'An ssfAllowedEvents value was neither caep, risc nor an event ' +
       'type URI this transmitter knows.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0060',
+    summary: 'A write of oauthAssertionKeySource or ' +
+      'oauthSamlAssertionKeySource named a value outside issued, ' +
+      'uploaded-realm-ca and uploaded-external-ca.',
+    spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-REG-0061',
+    summary: 'Regenerating the client secret of sts-management-api was ' +
+      'refused because adminApi.clientSecret pins it.',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' }
   // ===== END ===============================================================
 ];

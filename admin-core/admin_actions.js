@@ -1709,6 +1709,7 @@ function applicationFieldsFrom(body) {
 // ../mgmt-api/CLAUDE.md, which is the rule that sentence serves.
 const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
                              'confirm-address', 'discard-address',
+                             'regenerate-secret',
                              'revoke-registration', 'refresh-metadata',
                              'forget'];
 
@@ -1718,7 +1719,7 @@ function applicationsAction(body, protocols) {
   const action = String(body.action || '');
   const identifier = String(body.application || '').trim();
   const needsOne = ['set', 'add', 'remove', 'confirm-address',
-                    'discard-address',
+                    'discard-address', 'regenerate-secret',
                     'revoke-registration', 'forget'];
   if (needsOne.indexOf(action) >= 0 && !identifier) {
     log.debug("Leaving applicationsAction(). No application named.");
@@ -1827,6 +1828,21 @@ function applicationsAction(body, protocols) {
     log.debug("Leaving applicationsAction(). " + action + " " +
               (result.ok ? 'ok' : 'refused') + ".");
     return refusedBy('STS-ADMIN-0531', result);
+  }
+
+  // ---------------------------------------------------------------------
+  // A NEW CLIENT SECRET (2026-09-13), from the Credentials section of the
+  // application's own page. Minted by `applications.regenerateClientSecret()`
+  // — this action decides nothing about what a secret looks like — and the
+  // reply carries it, which is what `/admin-api` hands a caller. The console
+  // redirects with the MESSAGE only: the new value is on the page it lands
+  // on, behind the same fold the old one was, and a secret in a query string
+  // would be a secret in the browser history and every log on the way.
+  if (action === 'regenerate-secret') {
+    const result = applications.regenerateClientSecret(identifier);
+    log.debug("Leaving applicationsAction(). regenerate-secret " +
+              (result.ok ? 'ok' : 'refused') + ".");
+    return refusedBy('STS-ADMIN-0620', result);
   }
 
   // ---------------------------------------------------------------------

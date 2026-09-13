@@ -148,7 +148,7 @@ All eleven items of §3, including the three most implementations get wrong.
 | 3 `<Subject>` | required; for client authentication the `<NameID>` MUST be the `client_id` |
 | 4 an expiry | from the `<Conditions>` `NotOnOrAfter` **or** a `<SubjectConfirmationData>` one. **Either satisfies it** — half the implementations in the world require the first |
 | 5 `<SubjectConfirmation>` | at least one `bearer` one; its `Recipient` is checked against the token endpoint; its `Address` is **read and reported and never enforced** (the item leaves it to the server, and a source address is a proxy's as often as a client's) |
-| 6 the instants | both with `oauth2.clientAssertionSkewS`. **An expired `<SubjectConfirmation>` is DISCARDED and the others still considered** — the item's own words, "MUST reject the `<SubjectConfirmation>` (but MAY still use the rest of the Assertion)" — where an expired `<Conditions>` makes the whole assertion invalid. And the `ID` is remembered until the assertion expires, so a **replay is refused** |
+| 6 the instants | both with `oauth2.clientAssertionSkewS`. **An expired `<SubjectConfirmation>` is DISCARDED and the others still considered** — the item's own words, "MUST reject the `<SubjectConfirmation>` (but MAY still use the rest of the Assertion)" — where an expired `<Conditions>` makes the whole assertion invalid. And the `Issuer` and `ID` are remembered until the assertion expires, so a **replay is refused** — in the same used-assertion history the JWT profile uses: once, ever, across both sections, surviving a restart in the `ldif` and `postgres` stores, and spent only when the token request issues tokens (see [JWT assertions](jwt-assertions.md) for what "used" means) |
 | 7 `<AuthnStatement>` | carried and reported, never required. Its presence says the issuer authenticated the subject itself; its absence says the client is acting autonomously on their behalf, and the reports say which |
 | 8 `<AttributeStatement>` | carried onto the token, as above |
 | 9 the signature | **required**. An unsigned assertion is refused by name — it is this profile's `alg: "none"` |
@@ -196,6 +196,26 @@ A certificate in `<ds:KeyInfo>` is used to *choose* among what is registered
 against the asserting party and never as a key in its own right. One matching
 nothing registered is refused by name.
 
+### The registered certificate's whole chain is validated at every use
+
+Since 2026-09-13, in both modes. The certificate that verified the signature
+counts only while its trust chain holds: every link verifies and is in date,
+every issuer is a CA permitted to sign certificates within its path length, the
+certificate itself is not a CA and may sign, and the path ends at **this
+realm's** certificate authority or at a self-signed root registered with it.
+
+* A certificate this realm issued may be registered alone.
+* One from another authority must be registered with its whole chain. On
+  `oauthSamlAssertionSigningCertificate` the chain goes **in the same value**,
+  as further PEM blocks after the certificate; an uploaded certificate keeps its
+  chain in `oauthSamlAssertionCertificateChain`.
+* A self-signed certificate registered by value is its own whole chain — its
+  self-signature and validity are checked, and a `cA=TRUE` on it is not refused.
+
+A refusal is `invalid_grant` (`invalid_client` for client authentication),
+recorded as `STS-PKI-0156` to `STS-PKI-0161`. Until that date the chain was
+checked when a certificate was registered and never again.
+
 ## Two key pairs, one application
 
 | | RFC 7523 | RFC 7522 |
@@ -223,16 +243,38 @@ issued for.
 on such a row — the key handle, the expiry, the declared issuer, whether there
 is a key pair to take off — is per profile.
 
+## A person can be the issuer too (2026-09-13)
+
+A person may hold an RFC 7522 key pair on their own directory entry —
+`stsSamlAssertionCertificate`, its chain, `stsSamlAssertionThumbprint` and a
+sealed `stsSamlAssertionPrivateKey`, a set sharing no name with the JWT one — and
+sign a SAML assertion **about themselves**: the `<Issuer>` is their username (or
+`stsSamlAssertionIssuer`, if one is declared) and the `<Subject>` must name the
+same person. One naming anybody else is refused `invalid_grant` with a sentence
+saying why; a party that may assert about other people is an application with
+`oauthSamlAssertionIssuer` declared on it.
+
+The key pair is issued, uploaded or taken off from the **Credentials** section of
+`/admin/users?user=<name>`, or through `/admin-api/pki/issue`,
+`/pki/upload-certificate` and `/pki/revoke` with `target: "person"` and
+`purpose: "saml"`. As for an application, the verifier checks only the
+certificate registered on the person's entry — a chain to the Root alone is still
+refused, and the person's RFC 7523 key does not sign for this profile.
+
+**A person can issue it themselves**, on `/portal/signing-key`: the RFC 7522 card
+has its own *Generate* and *Take off*, the private key is shown once with the
+`<Issuer>`, `<Subject>`, audience and certificate thumbprint to use, and taking
+it off leaves their RFC 7523 key working. `pki.personSelfService` turns the
+self-service door off for both profiles; it takes away no key already held.
+
 ## What it still does not do
 
-* **Revocation is published and never consulted.** Since 2026-09-11 every
-  certificate authority here signs a CRL and answers OCSP, and the certificate
-  issued for this profile names both inside itself — but nothing in this
-  service fetches a list when an assertion arrives, so a certificate revoked on
-  `/admin/pki` still verifies an RFC 7522 assertion here. *Take the key pair
-  off* is a third act again: it stops this service accepting what that key
-  signs, puts nothing on any list, and does not stop the certificate chaining.
-  See [What is not checked](what-is-not-checked.md).
+* ~~**Revocation is published and never consulted.**~~ **Consulted since
+  2026-09-12**: the registered certificate that verified an assertion is checked
+  for revocation after its chain (`STS-PKI-0129`). *Take the key pair off* is a
+  third act again: it stops this service accepting what that key signs, puts
+  nothing on any list, and does not stop the certificate chaining. See
+  [What is not checked](what-is-not-checked.md).
 * **The `Address` on a `<SubjectConfirmationData>` is not enforced**, for the
   reason in the table above.
 * **A `<Response>` is not accepted**, nor is a SAML 1.1 assertion: RFC 7522 is

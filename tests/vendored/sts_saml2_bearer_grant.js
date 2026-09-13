@@ -303,11 +303,20 @@ async function test() {
           assert.strictEqual(jwtIssued.purpose, "jwt");
           assert.strictEqual(samlIssued.purpose, "saml");
         });
-  check("and the SAML reply names the attributes it wrote — FIVE, not six, " +
-        "because SAML has no JWKS: what a party registers for that profile " +
-        "IS a certificate", function () {
-          assert.strictEqual(samlIssued.attributes.length, 5,
-            JSON.stringify(samlIssued.attributes));
+  // ONE FEWER THAN THE JWT PROFILE'S, which is the claim; the numbers moved
+  // from five and six on 2026-09-13, when both sets gained the provenance
+  // attribute (`…KeySource`) that records an issue from an upload.
+  check("and the SAML reply names the attributes it wrote — ONE FEWER than " +
+        "the JWT profile's, because SAML has no JWKS: what a party registers " +
+        "for that profile IS a certificate", function () {
+          assert.strictEqual(samlIssued.attributes.length,
+            jwtIssued.attributes.length - 1,
+            JSON.stringify(samlIssued.attributes) + " against " +
+            JSON.stringify(jwtIssued.attributes));
+          assert.ok(jwtIssued.attributes.indexOf("oauthAssertionJwks") >= 0 &&
+                    samlIssued.attributes.every(function (name) {
+                      return !/Jwks/.test(name);
+                    }), "the difference is not the JWKS");
           assert.ok(samlIssued.attributes.every(function (name) {
             return /^oauthSamlAssertion/.test(name);
           }), JSON.stringify(samlIssued.attributes));
@@ -969,10 +978,88 @@ async function test() {
             "oauthAssertionPrivateKey was taken off too");
         });
 
+  // -------------------------------------------------------------------------
+  // 13. ONCE, EVER, ACROSS THE TWO SECTIONS (2026-09-13).
+  //
+  // Both RFC 7522 sections always shared one cache here — a document that
+  // would authenticate a client would also grant for it. What changed is that
+  // the cache became `common/used_assertions.js`, persisted and shared with the
+  // JWT profile, and that an assertion is spent only when tokens are issued.
+  // This section keeps the cross-section rule honest against that module over
+  // HTTP, in both directions, and reads the history back.
+  // -------------------------------------------------------------------------
+  log.info("=== 13. once, ever, across both sections ===");
+  await ok(realmApi + "/applications/add",
+           { application: AUTH_CLIENT, attribute: "oauthSamlAssertionIssuer",
+             value: AUTH_CLIENT },
+           "declared the authenticating client as a SAML assertion issuer too");
+  const bothWays = clientAssertion({});
+  const authFirst = await tokenRequest({ grant_type: "client_credentials",
+    scope: "openid", client_id: AUTH_CLIENT, client_assertion_type: CLIENT_TYPE,
+    client_assertion: bothWays });
+  check("a SAML assertion authenticates the client (section 2.2)",
+        function () {
+          assert.strictEqual(authFirst.status, 200,
+            JSON.stringify(authFirst.body).slice(0, 300));
+        });
+  const thenGrant = await tokenRequest({ grant_type: GRANT,
+                                         assertion: bothWays });
+  check("AND THE SAME DOCUMENT AS A GRANT (section 2.1) IS REFUSED, naming " +
+        "the section it was spent under", function () {
+          const said = refused(thenGrant, "invalid_grant",
+                               "a client assertion re-presented as a grant");
+          assert.ok(/used already — under RFC 7522 section 2\.2/.test(said),
+            said.slice(0, 250));
+        });
+
+  const grantFirst = clientAssertion({});
+  const grantedFirst = await tokenRequest({ grant_type: GRANT,
+                                            assertion: grantFirst });
+  check("the reverse starts with a document accepted as a grant", function () {
+    assert.strictEqual(grantedFirst.status, 200,
+      JSON.stringify(grantedFirst.body).slice(0, 300));
+  });
+  // RFC 9700 mode, for the reason section 8 gives: without it a spent client
+  // assertion is observed and not refused.
+  await ok(realmApi + "/config/set", { key: "oauth2.rfc9700", value: "true" },
+           "put this realm into RFC 9700 mode");
+  try {
+    const thenClient = await tokenRequest({ grant_type: "client_credentials",
+      scope: "openid", client_id: AUTH_CLIENT,
+      client_assertion_type: CLIENT_TYPE, client_assertion: grantFirst });
+    check("and a document spent as a grant is refused as a client " +
+          "assertion, invalid_client, naming section 2.1", function () {
+            assert.strictEqual(thenClient.status, 401,
+              JSON.stringify(thenClient.body).slice(0, 300));
+            assert.ok(/used already — under RFC 7522 section 2\.1/
+                        .test(String(thenClient.body.error_description)),
+              String(thenClient.body.error_description).slice(0, 300));
+          });
+  } finally {
+    await post(realmApi + "/config/reset", { key: "oauth2.rfc9700" });
+  }
+  const samlHistory = await get(realmApi + "/used-assertions?format=saml&q=" +
+                                encodeURIComponent(AUTH_CLIENT) + "&per=100");
+  check("GET /admin-api/used-assertions lists both documents under the " +
+        "SAML format with the Issuer and the section each was spent under",
+        function () {
+          assert.strictEqual(samlHistory.status, 200);
+          const rows = samlHistory.body.rows || [];
+          assert.ok(rows.length >= 2 && rows.every(function (one) {
+            return one.format === "saml" && one.issuer === AUTH_CLIENT;
+          }), JSON.stringify(rows).slice(0, 400));
+          const uses = rows.map(function (one) { return one.use; });
+          assert.ok(uses.indexOf("client-authentication") >= 0 &&
+                    uses.indexOf("authorization-grant") >= 0,
+            JSON.stringify(uses));
+          assert.ok(JSON.stringify(samlHistory.body).indexOf("Signature") < 0,
+            "an XML Signature — part of an assertion — is in the reply");
+        });
+
   // A FLOOR ON THE CHECK COUNT, for `sts_roles.js`'s reason: a section that
   // stops being called takes its assertions with it and the run still says
   // "passed", which is the one failure a suite cannot report about itself.
-  assert.ok(checks >= 40,
+  assert.ok(checks >= 45,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -989,7 +1076,8 @@ program
       "suite's own, the fourteen ways it is refused, the same document " +
       "authenticating a client under section 2.2, and the claim the whole " +
       "design rests on: neither key pair can sign for the other profile, at " +
-      "either grant.")
+      "either grant — and, since 2026-09-13, one document spent once across " +
+      "both sections, read back from /admin-api/used-assertions.")
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

@@ -443,7 +443,7 @@ outlived it would verify against nothing.
 |---|---|
 | the embedded LDAP directory — which is also the applications registry, the federation register and the SPIFFE registry, because in this service those *are* directory entries | sessions, access tokens, ID Tokens, refresh tokens |
 | the trust realm registry: names, descriptions, per-realm settings | authorization codes, pre-authorized codes, SAML artifacts |
-| runtime setting changes — what the console and `POST /admin-api/config/set` write | Kerberos tickets, the replay caches, the statistics, the audit log |
+| runtime setting changes — what the console and `POST /admin-api/config/set` write | Kerberos tickets, the replay caches (bar the RFC 7523 / 7522 used-assertion history, which a store keeps in both modes), the statistics, the audit log |
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -478,7 +478,8 @@ committed; a `LISTEN`/`NOTIFY` nudge only makes that prompt, so a missed
 notification costs latency and never a change. `persistence.coordinate` turns it
 off and `persistence.pollInterval` sets the worst-case lag. It shares **state and
 not sockets** — the KDC, the LDAP listeners, the TLS ports and SPIFFE's four are
-per process — and the replay caches *converge* rather than synchronise. See
+per process — and the replay caches *converge* rather than synchronise, except
+the RFC 7523 / RFC 7522 used-assertion history, which is claimed atomically. See
 [Persistence](persistence.md).
 
 ### The TOTP settings, and the two that behave differently from the rest

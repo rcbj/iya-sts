@@ -825,7 +825,7 @@ async function test() {
           assert.ok(String(apiView.body.residency).length > 40);
         });
   check("and the REGISTER is beside the note, one entry per certificate " +
-        "authority, each naming its CRL in three schemes and its OCSP " +
+        "authority, each naming its CRL over http and ldap and its OCSP " +
         "responder — because an empty list and no lists at all are " +
         "different answers and one field could only carry one of them",
         function () {
@@ -839,8 +839,9 @@ async function test() {
           register.authorities.forEach(function (one) {
             assert.ok(/^http/.test(one.crl.http), one.ca + " has no HTTP CRL");
             assert.ok(/^ldap:/.test(one.crl.ldap), one.ca + " has no LDAP CRL");
-            assert.ok(/^ldaps:/.test(one.crl.ldaps), one.ca + " has no LDAPS " +
-                "CRL");
+            // No ldaps:// since 2026-09-13 — RFC 5280 section 8.
+            assert.ok(one.crl.ldaps === undefined, one.ca + " still names an " +
+                "LDAPS CRL, which RFC 5280 section 8 says a CA SHOULD NOT");
             assert.ok(/^http/.test(one.ocsp), one.ca + " has no responder");
           });
         });
@@ -1029,10 +1030,193 @@ async function test() {
                   "else");
         });
 
+  // -------------------------------------------------------------------------
+  // 14. ONCE, EVER (2026-09-13) — ONE HISTORY FOR BOTH USES, SPENT ONLY WHEN
+  // TOKENS ARE ISSUED, AND ONE VERIFICATION PER REQUEST.
+  //
+  // Section 5 asserts a replay inside ONE use. What it cannot see is the four
+  // things `common/used_assertions.js` changed: a JWT that authenticated a
+  // client could ALSO be spent as a grant (two caches keyed two ways); a token
+  // request that failed for another reason used the assertion up anyway; and in
+  // RFC 9700 mode the token endpoint verified a client assertion TWICE — the
+  // policy check spent it and the observation that follows met a replay of the
+  // request's own document, so the client was observed as unauthenticated and
+  // a role requiring authentication refused it. Each is asserted here as the
+  // transition that shows it, with the persistence half left to
+  // `tests/used_assertions.js`, because no request can restart the service.
+  // -------------------------------------------------------------------------
+  log.info("=== 14. once, ever ===");
+  const ONCE = usernameFor("onceclient");
+  const CLIENT_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
+  await ok(realmApi + "/applications/create",
+           { identifier: ONCE, protocols: ["oauth2"],
+             fields: { oauthClientId: ONCE,
+                       oauthTokenEndpointAuthMethod: "private_key_jwt" } },
+           "created an application that authenticates with a JWT");
+  const onceIssued = await ok(realmApi + "/pki/issue", { identifier: ONCE },
+                              "issued it a signing key pair");
+  const onceView = await get(realmApi + "/applications?application=" +
+                             encodeURIComponent(ONCE));
+  const onceKey = (((onceView.body.application || onceView.body).fields) ||
+                   {}).oauthAssertionPrivateKey;
+  assert.ok(onceKey, "the issued private key is not on " + ONCE + "'s entry");
+  // The same party is trusted to assert as a GRANT, so one document can be
+  // presented as either and the only thing that can refuse the second use is
+  // the history.
+  await ok(realmApi + "/applications/add",
+           { application: ONCE, attribute: "oauthAssertionIssuer",
+             value: ONCE },
+           "declared it as an assertion issuer too");
+  function onceJwt() {
+    log.debug("Entering onceJwt().");
+    log.debug("Leaving onceJwt().");
+    return signJws({ alg: onceIssued.jwsAlg, typ: "JWT", kid: onceIssued.kid },
+      { iss: ONCE, sub: ONCE, aud: TOKEN_ENDPOINT, iat: now(),
+        exp: now() + 120, jti: jti() }, onceKey);
+  }
+  function asClient(assertion, extra) {
+    log.debug("Entering asClient().");
+    log.debug("Leaving asClient().");
+    return tokenRequest(Object.assign({ grant_type: "client_credentials",
+      scope: "openid", client_id: ONCE, client_assertion_type: CLIENT_TYPE,
+      client_assertion: assertion }, extra || {}));
+  }
+
+  const authFirst = onceJwt();
+  const authedFirst = await asClient(authFirst);
+  check("a JWT authenticates the client at client_credentials", function () {
+    assert.strictEqual(authedFirst.status, 200,
+      JSON.stringify(authedFirst.body).slice(0, 300));
+  });
+  const thenGrant = await tokenRequest({ grant_type: GRANT,
+                                         assertion: authFirst });
+  check("AND THE SAME JWT PRESENTED AS A GRANT IS REFUSED — one history for " +
+        "both uses. Two caches keyed two ways accepted it, which is a JWT " +
+        "used twice", function () {
+          const said = refused(thenGrant, "invalid_grant",
+                               "a client assertion re-presented as a grant");
+          assert.ok(/used already — as a client assertion/.test(said),
+            "the refusal should say what it was spent as; it said " +
+            said.slice(0, 250));
+        });
+
+  const grantFirst = onceJwt();
+  const grantedFirst = await tokenRequest({ grant_type: GRANT,
+                                            assertion: grantFirst });
+  check("the reverse starts with a JWT accepted as a grant", function () {
+    assert.strictEqual(grantedFirst.status, 200,
+      JSON.stringify(grantedFirst.body).slice(0, 300));
+  });
+
+  // RFC 9700 MODE IN THIS REALM ONLY, which is what makes client
+  // authentication REQUIRED — without it a spent client assertion is observed
+  // and not refused, and the next three checks would assert nothing.
+  await ok(realmApi + "/config/set", { key: "oauth2.rfc9700", value: "true" },
+           "put this realm into RFC 9700 mode");
+  try {
+    const thenClient = await asClient(grantFirst);
+    check("and a JWT spent as a grant is refused as a client assertion, " +
+          "invalid_client, naming the grant", function () {
+            assert.strictEqual(thenClient.status, 401,
+              JSON.stringify(thenClient.body).slice(0, 300));
+            assert.strictEqual(thenClient.body.error, "invalid_client");
+            assert.ok(/used already — as an authorization grant/
+                        .test(String(thenClient.body.error_description)),
+              String(thenClient.body.error_description).slice(0, 300));
+          });
+
+    // RELEASED WHEN THE REQUEST FAILS FOR ANOTHER REASON. The client assertion
+    // verifies and is claimed; the request is then refused for a malformed
+    // RFC 8707 resource, which is decided after client authentication.
+    const released = onceJwt();
+    const badResource = await asClient(released,
+      { resource: "https://api.example.test/#fragment" });
+    check("a token request refused AFTER its client assertion verified — an " +
+          "RFC 8707 resource with a fragment — issues nothing", function () {
+            assert.strictEqual(badResource.status, 400,
+              JSON.stringify(badResource.body).slice(0, 300));
+            assert.strictEqual(badResource.body.error, "invalid_target");
+          });
+    const retried = await asClient(released);
+    check("SO THE ASSERTION WAS NOT USED, and the same one succeeds on the " +
+          "retry. Spending it on a refusal that had nothing to do with it " +
+          "refused a good credential for somebody else's mistake", function () {
+            assert.strictEqual(retried.status, 200,
+              JSON.stringify(retried.body).slice(0, 300));
+          });
+    const thirdTime = await asClient(released);
+    check("and once tokens HAVE been issued for it, it is spent", function () {
+      assert.strictEqual(thirdTime.status, 401,
+        JSON.stringify(thirdTime.body).slice(0, 300));
+    });
+
+    // ONE VERIFICATION PER REQUEST. With the application narrowed to a role
+    // only an AUTHENTICATED application holds, the observation the role gate
+    // reads is what decides — and it was the second verification of the
+    // request's own assertion.
+    await ok(realmApi + "/applications/add",
+             { application: ONCE, attribute: "appRequiredRole",
+               value: "ALL_AUTHENTICATED_APPLICATIONS" },
+             "required an authenticated application");
+    try {
+      const narrowed = await asClient(onceJwt());
+      check("IN RFC 9700 MODE A CLIENT AUTHENTICATED BY JWT HOLDS " +
+            "ALL_AUTHENTICATED_APPLICATIONS. The policy check and the " +
+            "observation are two questions about one request and get one " +
+            "answer; before, the observation met a replay of the request's " +
+            "own assertion and this was access_denied", function () {
+              assert.strictEqual(narrowed.status, 200,
+                JSON.stringify(narrowed.body).slice(0, 300));
+            });
+    } finally {
+      await post(realmApi + "/applications/remove",
+                 { application: ONCE, attribute: "appRequiredRole",
+                   value: "ALL_AUTHENTICATED_APPLICATIONS" });
+    }
+  } finally {
+    await post(realmApi + "/config/reset", { key: "oauth2.rfc9700" });
+  }
+
+  const history = await get(realmApi + "/used-assertions?q=" +
+                            encodeURIComponent(ONCE) + "&per=100");
+  check("GET /admin-api/used-assertions lists what this realm spent, the " +
+        "client assertion and the grant each under the use it was spent as",
+        function () {
+          assert.strictEqual(history.status, 200,
+            JSON.stringify(history.body).slice(0, 300));
+          const rows = history.body.rows || [];
+          const uses = rows.map(function (one) { return one.use; });
+          assert.ok(uses.indexOf("client-authentication") >= 0 &&
+                    uses.indexOf("authorization-grant") >= 0,
+            "uses listed: " + JSON.stringify(uses));
+          assert.ok(rows.every(function (one) {
+            return one.issuer === ONCE && one.state === "spent" &&
+                   one.expiresAt > Date.now();
+          }), JSON.stringify(rows).slice(0, 400));
+          assert.ok(history.body.live >= rows.length &&
+                    history.body.cap > 0, "live=" + history.body.live);
+        });
+  check("and NO row carries an assertion — a history of used credentials " +
+        "must not be a place to steal one from", function () {
+          const whole = JSON.stringify(history.body);
+          assert.ok(whole.indexOf(authFirst) < 0 &&
+                    whole.indexOf(authFirst.split(".")[2]) < 0,
+            "an assertion or its signature is in the reply");
+        });
+  const grantsOnly = await get(realmApi + "/used-assertions?use=" +
+                               "authorization-grant&q=" +
+                               encodeURIComponent(ONCE));
+  check("and the filter narrows by use", function () {
+    assert.ok((grantsOnly.body.rows || []).length > 0 &&
+              grantsOnly.body.rows.every(function (one) {
+                return one.use === "authorization-grant";
+              }), JSON.stringify(grantsOnly.body.rows).slice(0, 300));
+  });
+
   // A FLOOR ON THE CHECK COUNT, for `sts_roles.js`'s reason: a section that
   // stops being called takes its assertions with it and the run still says
   // "passed", which is the one failure a suite cannot report about itself.
-  assert.ok(checks >= 41,
+  assert.ok(checks >= 52,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -1053,7 +1237,11 @@ program
       "PERSON as the issuer: a key pair issued onto their own ou=users " +
       "entry, an assertion about themselves accepted, and one about somebody " +
       "else refused both on the registered key and on the certificate " +
-      "presented alone.")
+      "presented alone — and, since 2026-09-13, ONCE EVER: a JWT that " +
+      "authenticated a client refused as a grant and the reverse, an " +
+      "assertion released by a request refused for another reason, one " +
+      "verification of a client assertion per request in RFC 9700 mode, " +
+      "and the history at /admin-api/used-assertions.")
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

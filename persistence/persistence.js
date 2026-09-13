@@ -199,6 +199,12 @@ const secrets = require('../common/secrets');
 // no route and requires this module for nothing — it is HANDED the driver
 // below, the way `keystore.setStore()` is, so the two can be tested apart.
 const minted = require('./persistence_minted');
+// THE USED-ASSERTION HISTORY (2026-09-13): every RFC 7523 and RFC 7522
+// assertion this service has accepted, persisted in EVERY store and both modes
+// rather than as minted state — see that module's header for why. A LIBRARY in
+// `common/` that requires `config`, `realms` and `error_codes` and nothing that
+// requires this file, so the require closes no cycle.
+const usedAssertions = require('../common/used_assertions');
 // SEVERAL PROCESSES AGAINST ONE STORE. A LIBRARY (rule 3), handed the driver
 // and the appliers below — it requires this module for nothing, which is what
 // lets `tests/replication.js` drive it against a stub with no database.
@@ -1147,6 +1153,17 @@ function openStore(chosen, resolvedUrl) {
     // is open".
     // ---------------------------------------------------------------------
     minted.setDriver(driver, activeMode);
+    // -------------------------------------------------------------------
+    // AND THE USED-ASSERTION HISTORY ITS STORE, BEFORE ANYTHING IS SERVED.
+    // A file store is READ here: a token request answered from an empty copy
+    // of a history that exists on disk would accept every assertion spent
+    // before the restart, which is the replay this history exists to close.
+    // Unlike the minted journal it is NOT gated by the mode — the keys that
+    // verify an assertion are the client's, on its directory entry, and they
+    // persist in every store.
+    // -------------------------------------------------------------------
+    return usedAssertions.setStore(driver, activeMode);
+  }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;
   }).then(function (saved) {
     if (saved && Object.keys(saved).length) {
@@ -1445,6 +1462,11 @@ function stop() {
     // only unwritten work is a session must still write the session.
     return minted.stop();
   }).then(function () {
+    // Writes whatever confirmation a file store still owes, and puts the
+    // history back in this process's memory before the driver it was using
+    // is closed underneath it.
+    return usedAssertions.clearStore();
+  }).then(function () {
     stopped = true;
     return driver.close();
   }).then(function () {
@@ -1697,6 +1719,10 @@ function status() {
     // both draw this, so they cannot disagree about what is being written
     // down — rule 7's shape applied to a report rather than to an action.
     minted: minted.status(),
+    // The RFC 7523 / RFC 7522 used-assertion history, which is NOT minted
+    // state: it persists in both modes wherever a driver can hold it, so the
+    // page answering "what survives a restart" has to say so separately.
+    usedAssertions: usedAssertions.summary(),
     // AND WHAT IT SHARES WITH OTHER PROCESSES. One report from the module that
     // does the work, for the same reason as the line above.
     replication: replication.status(),

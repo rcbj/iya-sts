@@ -234,6 +234,44 @@ CREATE TABLE IF NOT EXISTS sts_changes (
 
 CREATE INDEX IF NOT EXISTS sts_changes_at ON sts_changes (at);
 
+-- ---------------------------------------------------------------------------
+-- THE USED-ASSERTION HISTORY (2026-09-13): every RFC 7523 JWT and RFC 7522
+-- SAML assertion this service accepted, kept until it would have expired, so
+-- that none is accepted twice. It persists in both modes, unlike `sts_minted`,
+-- because the key that verifies an assertion is the CLIENT's and outlives a
+-- restart in every store.
+--
+-- A TABLE OF ITS OWN BECAUSE RECORDING A USE IS AN ATOMIC CLAIM: `(realm, key)`
+-- is the primary key and the service inserts with ON CONFLICT, so two processes
+-- against this database cannot both accept one assertion. A journalled row in
+-- `sts_minted` would reach another process only after the change log had been
+-- pulled.
+--
+-- NOT SEALED, AND NOTHING IN IT IS A CREDENTIAL: `key` is a SHA-256 of the
+-- format, issuer and identifier, and the assertion itself is never stored.
+-- Times are milliseconds. A database built by an EARLIER copy of this file has
+-- no such table; running this file again as the owner adds it and changes
+-- nothing else.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sts_used_assertions (
+  realm       text   NOT NULL,
+  key         text   NOT NULL,
+  format      text   NOT NULL,
+  used_as     text   NOT NULL,
+  issuer      text   NOT NULL,
+  identifier  text   NOT NULL,
+  client_id   text   NOT NULL DEFAULT '',
+  subject     text   NOT NULL DEFAULT '',
+  state       text   NOT NULL,
+  reservation text   NOT NULL,
+  origin      text   NOT NULL DEFAULT '',
+  used_at     bigint NOT NULL,
+  spent_at    bigint NOT NULL DEFAULT 0,
+  expires_at  bigint NOT NULL,
+  PRIMARY KEY (realm, key));
+
+CREATE INDEX IF NOT EXISTS sts_used_assertions_expiry ON sts_used_assertions (realm, expires_at);
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version int PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now());
@@ -241,7 +279,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (3) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (4) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

@@ -453,10 +453,23 @@ function realmBaseDn(id) {
 // on every revocation and on every start — and that is the honest trade for a
 // protocol with no way to ask a directory to compute something.
 // ===========================================================================
-function crlContainerDn(scopeId) {
-  log.debug("Entering crlContainerDn().");
-  log.debug("Leaving crlContainerDn().");
-  return 'ou=crl,' + realmBaseDn(scopeIdToRealm(scopeId));
+// The containers between a realm's base and one CRL entry, outermost first:
+// `ou=crl` always, and `ou=service` or `ou=process` beneath it for the two
+// starred scopes. Derived from the DN `pkiRevocation.crlDn()` answers rather
+// than composed here, because a second composition is how the address in a
+// certificate and the address of the entry came to name one entry for two
+// authorities (2026-09-13 — see `crlDn()`).
+function crlContainersFor(dn, base) {
+  log.debug("Entering crlContainersFor().");
+  const containers = [];
+  let parent = dn.slice(dn.indexOf(',') + 1);
+  while (parent && normalizeDn(parent) !== normalizeDn(base) &&
+         parent.indexOf(',') > 0) {
+    containers.unshift(parent);
+    parent = parent.slice(parent.indexOf(',') + 1);
+  }
+  log.debug("Leaving crlContainersFor().");
+  return containers;
 }
 
 // A PKI scope id as a REALM id. The two starred scopes — the service Root and
@@ -483,21 +496,48 @@ function publishCrl(scopeId, caId, der) {
     log.debug('Leaving publishCrl(). Switched off.');
     return false;
   }
-  const container = crlContainerDn(scopeId);
-  const dn = 'cn=' + String(caId) + ',' + container;
+  const base = realmBaseDn(scopeIdToRealm(scopeId));
+  const dn = pkiRevocation.crlDn(scopeId, caId);
+  // **IN THE REALM THE DN NAMES, AND UNTIL 2026-09-13 IT WAS IN WHICHEVER
+  // REALM HAPPENED TO BE AMBIENT.** `putEntry()` writes the ambient realm's
+  // store, and the two callers that publish every list — the startup pass and
+  // the refresh timer — run in NO request, so every realm's lists landed in
+  // the DEFAULT realm's store under a DN beginning `dc=<realm>`. The socket
+  // answers a DN out of the store its realm names (`inRealmOf()`), so each of
+  // those entries was unreachable and every `ldap://` distribution point in
+  // every realm's certificates answered `noSuchObject`. It is the same
+  // sentence every LDAP handler here already acts on: the DN decides the
+  // store.
+  log.debug('Leaving publishCrl(). Entering the realm of ' + dn + '.');
+  return inRealmOf(dn, function () {
+    return writeCrlEntry(scopeId, caId, der, base, dn);
+  });
+}
+
+function writeCrlEntry(scopeId, caId, der, base, dn) {
+  log.debug('Entering writeCrlEntry(). ' + dn);
   try {
-    // The container, made on demand. `putEntry()` is a SET, so writing it
+    // The containers, made on demand. `putEntry()` is a SET, so writing one
     // again is harmless and there is no "does it exist" to get wrong.
-    putEntry(container, {
-      objectClass: ['top', 'organizationalUnit'],
-      ou: ['crl'],
-      description: ['Certificate revocation lists published by this ' +
-                    'service\'s own certificate authorities (RFC 4523). ' +
-                    'Each entry carries a signed DER CRL in ' +
-                    'certificateRevocationList;binary, and the ldap:// and ' +
-                    'ldaps:// distribution points in every certificate this ' +
-                    'service issues name one of them.']
-    }, { origin: 'pki' });
+    crlContainersFor(dn, base).forEach(function (container) {
+      const ou = container.slice(0, container.indexOf(',')).replace(/^ou=/i,
+                                                                     '');
+      putEntry(container, {
+        objectClass: ['top', 'organizationalUnit'],
+        ou: [ou],
+        description: [ou === 'crl'
+          ? 'Certificate revocation lists published by this ' +
+            'service\'s own certificate authorities (RFC 4523). ' +
+            'Each entry carries a signed DER CRL in ' +
+            'certificateRevocationList;binary, and the ldap:// ' +
+            'distribution point in every certificate this service ' +
+            'issues names one of them.'
+          : 'The CRLs of the "' + ou + '" branch, which belongs to no ' +
+            'realm and so lives beneath the default realm\'s ou=crl. A ' +
+            'container of its own, because its authorities share ids ' +
+            '(`intermediate`) with the default realm\'s own.']
+      }, { origin: 'pki' });
+    });
     putEntry(dn, {
       objectClass: ['top', 'cRLDistributionPoint'],
       cn: [String(caId)],
@@ -510,11 +550,14 @@ function publishCrl(scopeId, caId, der) {
       description: ['The CRL signed by the "' + String(caId) + '" ' +
                     'certificate authority of the ' +
                     '"' + String(scopeId || 'default') +
-                    '" scope. Republished on every revocation and at every ' +
-                    'start; the register in the keystore row is the truth ' +
-                    'and this is a cache of what it currently signs.']
+                    '" scope. Republished on every revocation, whenever ' +
+                    'the authority\'s branch changes, and at half of ' +
+                    'pki.crlLifetimeMinutes so the copy here is never past ' +
+                    'its nextUpdate; the register in the keystore row is the ' +
+                    'truth and this is a cache of what it currently signs.']
     }, { origin: 'pki' });
-    log.debug('Leaving publishCrl(). ' + dn + ', ' + der.length + ' bytes.');
+    log.debug('Leaving writeCrlEntry(). ' + dn + ', ' + der.length +
+              ' bytes.');
     return true;
   } catch (e) {
     // Named and swallowed: a CRL that could not be written to the directory is
@@ -524,9 +567,9 @@ function publishCrl(scopeId, caId, der) {
     log.error(errorCodes.tag('STS-LDAP-0031') +
               'ldap: the "' + caId + '" CRL could not be published at ' + dn +
               ': ' + e.message + '. It is still served over HTTP — the ' +
-              'ldap:// and ldaps:// distribution points in certificates this ' +
+              'ldap:// distribution point in certificates this ' +
               'authority signed will fetch nothing.');
-    log.debug('Leaving publishCrl(). It threw.');
+    log.debug('Leaving writeCrlEntry(). It threw.');
     return false;
   }
 }
@@ -1563,6 +1606,13 @@ const STANDARD_NAMES = [
   'employeeType', 'jpegPhoto', 'labeledURI', 'mobile', 'pager', 'photo',
   'preferredLanguage', 'userCertificate', 'userPKCS12', 'userSMIMECertificate',
 
+  // RFC 4523 — the PKI types. `certificateRevocationList` is the one this
+  // service WRITES, on every `cRLDistributionPoint` entry under `ou=crl`, and
+  // it was coming back as `certificaterevocationlist;binary` to a client
+  // reading the distribution point a certificate named.
+  'authorityRevocationList', 'cACertificate', 'certificateRevocationList',
+  'crossCertificatePair', 'deltaRevocationList', 'supportedAlgorithms',
+
   // RFC 2307 — NIS. `memberUid` is the one that earns its place beyond the
   // display: it holds a BARE USER NAME where member and uniqueMember hold a DN,
   // which is why /admin/groups resolves it differently — see MEMBER_ATTRIBUTES.
@@ -1802,7 +1852,18 @@ const OWN_NAMES = [
   // kid and an expiry are all things a relying party is MEANT to be given.
   'stsAssertionIssuer', 'stsAssertionJwks', 'stsAssertionCertificate',
   'stsAssertionCertificateChain', 'stsAssertionPrivateKey',
-  'stsAssertionKid', 'stsAssertionExpiresAt',
+  'stsAssertionKid', 'stsAssertionExpiresAt', 'stsAssertionKeySource',
+
+  // AND THE PERSON'S RFC 7522 KEY PAIR, SINCE 2026-09-13 — a fourth set,
+  // sharing no name with the three above it for the reason they share none
+  // with each other. `stsSamlAssertionPrivateKey` is sealed like its JWT twin;
+  // the thumbprint is the handle an XML Signature's certificate is matched by.
+  // `…KeySource` on both records whether the pair was issued here or a
+  // certificate was uploaded in its place.
+  'stsSamlAssertionIssuer', 'stsSamlAssertionCertificate',
+  'stsSamlAssertionCertificateChain', 'stsSamlAssertionPrivateKey',
+  'stsSamlAssertionThumbprint', 'stsSamlAssertionExpiresAt',
+  'stsSamlAssertionKeySource',
 
   // AND A SEVENTH SINCE 2026-09-12: A PERSON'S KERBEROS LONG-TERM KEYS, derived
   // from their own password by `kerberos/krb5_person_keys.js` so that a
@@ -2035,8 +2096,31 @@ function depthUnder(dn, base) {
 
 function canonicalName(lower) {
   log.debug("Entering canonicalName().");
+  // AN ATTRIBUTE DESCRIPTION MAY CARRY OPTIONS (RFC 4512 section 2.5) —
+  // `certificateRevocationList;binary` — and the table knows TYPES, so the
+  // type is spelt and the options are kept as written.
+  const at = String(lower).indexOf(';');
+  if (at > 0) {
+    const type = lower.slice(0, at);
+    log.debug("Leaving canonicalName(). With options.");
+    return (CANONICAL_NAMES[type] || type) + lower.slice(at);
+  }
   log.debug("Leaving canonicalName().");
   return CANONICAL_NAMES[lower] || lower;
+}
+
+// The attribute TYPE of a stored attribute name, with the `;binary` transfer
+// option taken off. RFC 4522 section 3: *an attribute description with the
+// binary option references exactly the same attribute as the attribute
+// description without the binary option* — so a request for
+// `certificateRevocationList` and one for `certificateRevocationList;binary`
+// are asking for one attribute, and a filter on either names it too. The
+// entries this service writes store the CRL under the `;binary` spelling, and
+// until 2026-09-13 a request or a filter naming the plain type found nothing.
+function withoutBinaryOption(lower) {
+  log.debug("Entering withoutBinaryOption().");
+  log.debug("Leaving withoutBinaryOption().");
+  return String(lower).replace(/;binary$/i, '');
 }
 
 // The scope, as one of 'base' | 'one' | 'sub'.
@@ -2168,6 +2252,12 @@ function matchable(stored) {
   const out = {};
   Object.keys(stored.attributes).forEach(function (name) {
     out[name] = stored.attributes[name].slice(0);
+    // A filter naming the TYPE matches a value stored under its `;binary`
+    // spelling — see `withoutBinaryOption()`.
+    const type = withoutBinaryOption(name);
+    if (type !== name && !out[type]) {
+      out[type] = stored.attributes[name].slice(0);
+    }
   });
   out.entrydn = [stored.dn];
   log.debug("Leaving matchable().");
@@ -2236,7 +2326,12 @@ function toSearchEntry(stored, requested, messageId) {
   const attributes = {};
   Object.keys(stored.attributes).forEach(function (name) {
     const isOperational = OPERATIONAL.indexOf(name) !== -1;
-    const askedFor = wanted.indexOf(name) !== -1;
+    const type = withoutBinaryOption(name);
+    // RFC 4522 sections 3 and 5: either spelling asks for the attribute, and
+    // an attribute stored in binary form is RETURNED in it either way.
+    const askedFor = wanted.indexOf(name) !== -1 ||
+      (type !== name && (wanted.indexOf(type) !== -1 ||
+                         wanted.indexOf(type + ';binary') !== -1));
     // A CREDENTIAL IS NOT SENT AT ALL IN PRODUCT MODE, asked for by name or not
     // (2026-09-12) — see *THE DIRECTORY'S READ AND BIND SECURITY*.
     if (withheldFromReaders(name)) {
@@ -6201,8 +6296,8 @@ if (typeof pkiRevocation.setDirectory === 'function') {
   });
 } else {
   log.warn('ldap: common/pki_revocation.js offers no setDirectory(), so no ' +
-           'CRL is published into this directory and the ldap:// and ' +
-           'ldaps:// distribution points in certificates this service issues ' +
+           'CRL is published into this directory and the ldap:// ' +
+           'distribution point in certificates this service issues ' +
            'will fetch nothing. They are still served over HTTP.');
 }
 
@@ -6941,7 +7036,7 @@ const SECRET_ATTRIBUTES = [
   'userpassword', 'pwdhistory',
   'oauthclientsecret', 'appregistrationaccesstoken', 'fedclientsecret',
   'oauthassertionprivatekey', 'oauthsamlassertionprivatekey',
-  'stsassertionprivatekey',
+  'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
   'stskrb5keys', 'krb5servicekeys',
   // GNAP (2026-09-12): a client's shared secret for a key reference, and a
@@ -6988,10 +7083,43 @@ function matchableForReader(stored) {
 // A search or compare on a connection that has not bound as anybody. Answers
 // null or the recorded ldapjs error. The root DSE is never refused here — the
 // search handler answers it before this is asked.
+//
+// **ONE READ IS ALLOWED UNBOUND, IN BOTH MODES AND ON BOTH LISTENERS: A BASE
+// SEARCH OF A CRL ENTRY (2026-09-13).** Every certificate this service issues
+// names an `ldap://` CRL distribution point, and the relying party that follows
+// it holds no credential for this directory and never will — RFC 4523's
+// `cRLDistributionPoint` exists to be read anonymously, which is how every CA
+// directory publishes one. Product mode refused it: the plain listener binds
+// nobody (13) and a read needs a bind (50), so the one LDAP address a
+// certificate carries answered a refusal to exactly the reader it was written
+// for. A CRL is a SIGNED PUBLIC DOCUMENT — the HTTP distribution point beside it
+// is ungated in every mode for that reason — so what is exempted is that and
+// nothing wider: base scope, an entry of class `cRLDistributionPoint` under an
+// `ou=crl` container. A one-level or subtree search, a compare, and a search of
+// anything else still need the bind.
+function isCrlDistributionEntry(req, operation, dn) {
+  log.debug("Entering isCrlDistributionEntry().");
+  if (operation !== 'search' || !req || scopeOf(req) !== 'base' ||
+      !/,ou=crl,/i.test(normalizeDn(dn))) {
+    log.debug("Leaving isCrlDistributionEntry(). Not a base read of ou=crl.");
+    return false;
+  }
+  const entry = getEntry(dn);
+  const classes = entry ? valuesOf(entry.attributes.objectclass) : [];
+  log.debug("Leaving isCrlDistributionEntry().");
+  return classes.some(function (one) {
+    return String(one).toLowerCase() === 'crldistributionpoint';
+  });
+}
+
 function directoryReadRefusal(req, operation, dn) {
   log.debug('Entering directoryReadRefusal(). ' + operation + ' ' + dn);
   if (!mode.requiresDirectoryBind() || boundDnOf(req)) {
     log.debug('Leaving directoryReadRefusal(). Allowed.');
+    return null;
+  }
+  if (isCrlDistributionEntry(req, operation, dn)) {
+    log.debug('Leaving directoryReadRefusal(). A CRL, which is public.');
     return null;
   }
   log.info('ldap: refusing an unauthenticated ' + operation + ' of ' + dn +

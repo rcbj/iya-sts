@@ -182,12 +182,13 @@ per-start certificate is exactly the thing this service exists to exercise.
 
 ### The ports
 
-Ten bindings across nine numbers — 88 is listed twice because TCP and UDP are two
+Eleven bindings across ten numbers — 88 is listed twice because TCP and UDP are two
 sockets. Every default is in the table; every one is settable.
 
 | Port | | Setting / env var | What is on it |
 |---|---|---|---|
 | **8081** | tcp | `global.port` / `STS_PORT` | **The main port, and everything path-based is here** — OAuth 2.0 / OIDC, both SAML profiles, WS-Trust, WS-Federation, federation, SCIM, OID4VC, Shared Signals, XACML, `/admin`, `/portal`, `/admin-api`, the SPIFFE **bundle** endpoint, and Kerberos over **MS-KKDCP at `/KdcProxy`**. **HTTPS** unless `STS_HTTPS=false` — one listener, never both schemes |
+| **8082** | tcp | `pki.httpPort` / `PKI_HTTP_PORT` | **Plain HTTP, `/pki/` and nothing else** — the CRLs, OCSP responders and CA certificates, at the address every certificate this service issues names for them. Plain on purpose: RFC 5280 section 8 says a CA SHOULD NOT write an https URI into an extension, and RFC 5019 section 5 says an OCSP responder MUST answer HTTP. Every other path is a 404. `0` turns it off, and certificates then name the main port |
 | **8443** | tcp | `tls.port` / `STS_TLS_PORT` | The TLS endpoint that **asks** for a client certificate and never refuses one |
 | **9443** | tcp | `tls.mutualPort` / `STS_MTLS_PORT` | The one that **requires** it — node refuses an unverified certificate during the handshake, so nothing here runs for one |
 | **88** | **tcp** | `krb5.kdcPort` / `KRB5_KDC_PORT` | The KDC. `0` asks for any free port — it does not turn it off |
@@ -220,7 +221,11 @@ the live Express router, so a protocol that registers no route is invisible to
 it — the raw listeners are described there by hand or they go unlisted with
 nothing failing.
 
-**`docker-compose.yml` publishes 8081 only.** The rest are `EXPOSE`d, which
+**`docker-compose.yml` publishes 8081 and 8082.** 8082 is published because its
+whole purpose is to be reached from outside — every certificate this service
+issues names it — and the stack TELLS the service which host port it landed on
+(`STS_PKI_HOST_PORT` → `PKI_DISTRIBUTION_PORT`), since nothing inside a container
+can see the host side of a port mapping. The rest are `EXPOSE`d, which
 publishes nothing; 389 and 636 are deliberately left unpublished, because the
 host most likely to want a mock directory is a host already running slapd. And
 **9090 is not this service** — it is the `xacml-pep/` container, a separate
@@ -731,7 +736,7 @@ unedited service behaves exactly as it did.
 | `oauth2.saml2BearerGrant` | `STS_OAUTH2_SAML2_BEARER_GRANT` | `true` | yes | Whether the token endpoint performs `grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer` (RFC 7522 section 2.1). The metadata advertises the grant only while it is on. **It is a separate setting from `oauth2.jwtBearerGrant` and not the same switch**: RFC 7522 and RFC 7523 are two profiles of one framework and a deployment legitimately offers one and not the other, so a single switch would make "turn the JWT grant off" also turn off a grant a SAML deployment depends on. It does NOT affect section 2.2 — client authentication by SAML assertion. |
 | `oauth2.saml2BearerRequireRegisteredIssuer` | `STS_OAUTH2_SAML2_BEARER_REQUIRE_REGISTERED_ISSUER` | `true` | yes | Whether that grant is refused when no application in the realm declares the assertion's `<Issuer>` on `oauthSamlAssertionIssuer`. **ON**, for the reason the JWT row above is on. Turning it off does not make the grant accept unsigned assertions, and it does not make it accept a certificate this service holds no registration for: a SAML assertion is only ever verified against a certificate registered against the asserting party under the RFC 7522 attributes, and there is no setting that changes that. |
 | `oauth2.saml2BearerMaxLifetimeS` | `STS_OAUTH2_SAML2_BEARER_MAX_LIFETIME_S` | `300` | yes | The most seconds between a SAML assertion's `IssueInstant` and its expiry that this authorization server accepts. RFC 7522 section 3 item 6 says a server may reject an assertion whose `NotOnOrAfter` is unreasonably far in the future and leaves "unreasonable" to it. Zero switches the check off. The expiry it measures to is the `<Conditions>` `NotOnOrAfter` where there is one and the `<SubjectConfirmationData>` one otherwise, which is item 4's own ordering. |
-| `oauth2.assertionReplayCacheSize` | `STS_OAUTH2_ASSERTION_REPLAY_CACHE_SIZE` | `1000` | yes | How many unexpired assertion identifiers each of the three replay caches remembers per trust realm — RFC 7523 client assertions, RFC 7523 authorization grants, and RFC 7522 SAML assertions, each its own cache. **A FULL CACHE REFUSES THE NEXT ASSERTION RATHER THAN FORGETTING A LIVE ONE**, and that is a change: until 2026-09-12 each dropped its oldest entry whether or not it had expired, which let a captured assertion be replayed as soon as a thousand newer ones had pushed it out. Expired entries are swept first, so the refusal is reached only by that many assertions being live at once — raise this, or shorten oauth2.jwtBearerMaxLifetimeS, rather than accept a replay window. |
+| `oauth2.assertionReplayCacheSize` | `STS_OAUTH2_ASSERTION_REPLAY_CACHE_SIZE` | `1000` | yes | How many unexpired rows the USED-ASSERTION HISTORY holds per trust realm: every RFC 7523 JWT and RFC 7522 SAML assertion accepted, as client authentication or as a grant, in ONE history (it was three caches until 2026-09-13). The history persists in the ldif and postgres stores in both modes, so this bounds a file or a table as well as memory. **A FULL HISTORY REFUSES THE NEXT ASSERTION RATHER THAN FORGETTING A LIVE ONE**: until 2026-09-12 the caches dropped their oldest entry whether or not it had expired, which let a captured assertion be replayed as soon as a thousand newer ones had pushed it out. Expired rows are swept first, so the refusal is reached only by that many assertions being live at once — raise this, or shorten oauth2.jwtBearerMaxLifetimeS, rather than accept a replay window. /admin/used-assertions lists what is held. |
 | `oauth2.dpopNonceRequired` | `STS_OAUTH2_DPOP_NONCE_REQUIRED` | `false` | yes | Require every DPoP proof to carry a nonce this server supplied (RFC 9449 sections 8 and 9), which turns the first request of a session into a 401 or 400 and a retry. It makes proofs FRESHER and never makes them mandatory: a request with no DPoP header is still a Bearer request. PER TRUST REALM since 2026-09-12 — it was one switch for the whole process, so a realm turning it on turned it on for every other. In development POST /dpop/nonce-mode writes this setting for the realm it is reached in; in product that endpoint refuses and this row — through /admin/oauth2 or POST /admin-api/config/set, both behind a credential — is the only way to change it. |
 | `oauth2.dpopIatSkewS` | `STS_OAUTH2_DPOP_IAT_SKEW_S` | `300` | yes | How far a DPoP proof's `iat` may be from now, either way (RFC 9449 section 11.1). It is how long a captured proof stays useful for the same method and URI, so it is short; the jti replay cache remembers a proof for twice this, so the two cover the same span. |
 | `oauth2.dpopNonceTtlS` | `STS_OAUTH2_DPOP_NONCE_TTL_S` | `300` | yes | How long a server-supplied DPoP nonce is accepted after it was handed out. Only read while oauth2.dpopNonceRequired is on. |
@@ -753,7 +758,7 @@ unedited service behaves exactly as it did.
 | `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Which signature algorithm the tiers sign each other with. **Empty means "the right one for the key algorithm"**, which is what almost every deployment wants: an EC key's digest is decided by its CURVE, and a fixed value here would hand a P-521 key SHA-256 — legal, verifying, and nobody's intention. |
 | `pki.organisation` | `STS_PKI_ORGANISATION` | `sts` | yes | The `O=` every tier of a new hierarchy carries, and what the tiers are named after when the form gives no common names. |
 | `pki.leafLifetimeDays` | `STS_PKI_LEAF_LIFETIME_DAYS` | `365` | yes | How long a signing certificate issued to an application or a person is good for when the request names no lifetime — every door that issues one, since 2026-09-12. **Clamped** to the Issuing CA's own expiry rather than refused where it would overshoot. |
-| `pki.personSelfService` | `STS_PKI_PERSON_SELF_SERVICE` | `true` | yes | Whether `/portal/signing-key` lets a person issue **themselves** an RFC 7523 key pair. The key can only assert about its own holder, so it is a credential for an account they are already signed in to. **Turning it off takes nobody's key away** — one already on an entry goes on verifying — and it stops new ones from the PORTAL only; `/admin/pki` and `POST /admin-api/pki/issue` are an operator's door and are unaffected. |
+| `pki.personSelfService` | `STS_PKI_PERSON_SELF_SERVICE` | `true` | yes | Whether `/portal/signing-key` lets a person issue **themselves** an RFC 7523 or RFC 7522 key pair (one switch for both). The key can only assert about its own holder, so it is a credential for an account they are already signed in to. **Turning it off takes nobody's key away** — one already on an entry goes on verifying — and it stops new ones from the PORTAL only; `/admin/pki` and `POST /admin-api/pki/issue` are an operator's door and are unaffected. |
 | `pki.personSelfServicePerIdentity` | `STS_PKI_PERSON_SELF_SERVICE_PER_IDENTITY` | `5` | yes | How many self-issued key pairs one person may generate on `/portal/signing-key` per `security.rateLimitWindowS` window. |
 | `pki.personSelfServicePerAddress` | `STS_PKI_PERSON_SELF_SERVICE_PER_ADDRESS` | `5` | yes | The same limit per client ADDRESS, counted across everybody behind it — its own row so a deployment reached through one NAT can raise it without raising what one person may do. |
 | `pki.rootLifetimeYears` | `STS_PKI_ROOT_LIFETIME_YEARS` | `0` | yes | How long a Root CA is built for when the build names no lifetime. **Zero is the `root-ca` profile's own twenty years.** |
@@ -1639,7 +1644,11 @@ version.
 **Nothing this service MINTS ever persists, in any mode.** Sessions, access
 tokens, ID Tokens, refresh tokens, authorization codes, pre-authorized codes,
 SAML artifacts, Kerberos tickets, the replay caches, the statistics and the audit
-log are all still in memory and still gone with the process.
+log are all still in memory and still gone with the process. **The one exception,
+since 2026-09-13, is the RFC 7523 / RFC 7522 used-assertion history**: it persists
+in the `ldif` and `postgres` stores in both modes, because the key that verifies a
+client's assertion is the client's and survives a restart — so an assertion spent
+before one must still be refused after it. See `/admin/used-assertions`.
 
 That is deliberate, and the section immediately above is the reason: **the
 signing key is regenerated on every start.** A token restored from a disk would
@@ -1768,7 +1777,9 @@ KDC, both LDAP listeners, the two TLS ports and SPIFFE's four are bound per
 process and always will be. And the **replay caches and DPoP `jti` sets converge
 rather than synchronise**: between a write in one process and its arrival in
 another there is a window the size of the poll interval in which a proof one
-process refused is accepted by another. Sticky sessions at the load balancer
+process refused is accepted by another. **Not the RFC 7523 / RFC 7522
+used-assertion history** (2026-09-13): recording a use there is one atomic
+`INSERT … ON CONFLICT` in its own table, so every process agrees at once. Sticky sessions at the load balancer
 close it; nothing here does. `status.coordinates` and `status.replication` report
 all of it.
 
@@ -2442,6 +2453,11 @@ the client, audience (the token endpoint *or* the issuer, because RFC 7523 and O
 Core §9 differ and half the client libraries in the world pick one each), expiry with
 a configurable skew, and a `jti` remembered until the assertion expires — a signed
 assertion captured off the wire is a credential until then, so a replay is refused.
+**Once, ever, since 2026-09-13**: one used-assertion history covers client
+authentication and the grant and both profiles, so a JWT that authenticated a
+client is refused as a grant; it persists in the `ldif` and `postgres` stores in
+both modes and is claimed atomically on postgres; and an assertion is spent only
+when its token request issues tokens. `/admin/used-assertions` lists it.
 
 **AND SINCE 2026-09-10 AN ASSERTION MAY ARRIVE ENCRYPTED, WHICH IS RFC 7523
 SECTION 3'S CLAIM 10.** A nested JWT — a JWE whose plaintext is the JWS — in any
@@ -6688,7 +6704,7 @@ holding a private key this service was told to trust signed the document.
 |---|---|
 | §3 claim 5, `nbf` | checked, against `oauth2.clientAssertionSkewS` |
 | §3 claim 6, `iat` | checked, and it **bounds the lifetime** — `oauth2.jwtBearerMaxLifetimeS`, 300s, which RFC 7521 §5.2 invites and leaves to the server |
-| §3 claim 7, `jti` | checked against a replay cache, and **required** here. That is §3's own last paragraph read literally: it says a server MAY refuse a reused assertion, and one with no `jti` cannot be remembered — so accepting it means accepting a bearer credential this service has no way to spend |
+| §3 claim 7, `jti` | spent **once, ever**, against the used-assertion history — one history for client authentication and the grant, and for RFC 7522 too, persisted in every store with one, claimed atomically on postgres, and spent only when the token request issues tokens (`/admin/used-assertions`) — and **required** here. That is §3's own last paragraph read literally: it says a server MAY refuse a reused assertion, and one with no `jti` cannot be remembered — so accepting it means accepting a bearer credential this service has no way to spend |
 | §3 claim 8, other claims | carried onto the issued access token. The profile's own twelve are stripped first: an `exp` copied off an assertion would be a token lifetime chosen by whoever signed it |
 | §3 claim 10, **encryption** | a nested JWT, sixteen key management algorithms against six content encryption ones, to this service's own RSA or EC key or under the client secret |
 | RFC 7521 §4.1, `scope` | **narrowed** against what the assertion carries and never widened. Where the assertion names none, the request decides |
@@ -6769,10 +6785,16 @@ admit every realm's clients to every other realm's token endpoint with every
 signature verifying. A certificate issued in one realm still does not verify in
 another.
 
-**ONE THING IS DELIBERATELY NOT A LEAF OF IT** and it is said on the page: the
-eleven post-quantum keys per realm, which come from `common/pq_jose.js` — this
-service's own reading of those constructions, independent of the vendored
-encoder on purpose.
+**THE ELEVEN POST-QUANTUM KEYS PER REALM ARE LEAVES OF IT SINCE 2026-09-13**,
+and this paragraph read *ONE THING IS DELIBERATELY NOT A LEAF OF IT* until then.
+They are issued from the realm's own JOSE Issuing CA as they are made, and the
+reason they had been left out is still honoured rather than waived: they are
+generated and signed with by `common/pq_jose.js` — this service's own reading of
+those constructions, independent of the vendored encoder on purpose — and only
+their PUBLIC keys reach the certificate encoder, with the one layout difference
+between the two readings written out and a signature from one checked under the
+other. The JWKS is unchanged. An ML-DSA listener certificate is a leaf of the
+TLS Issuing CA the same way.
 
 **THE SPIFFE X.509 AUTHORITY WAS THE SECOND AND CAME UNDER THE ROOT ON
 2026-09-11.** That sentence read *self-signed, because one process holds two
@@ -6794,7 +6816,7 @@ sockets. A realm with no hierarchy falls back to the self-signed authority this
 service always had and says so on `/admin/spiffe` and `GET /spiffe`.
 
 **THE KEY PAIR GOES ONTO THE APPLICATION'S OWN ENTRY, AND THIS SERVICE KEEPS NO
-SECOND COPY.** Six attributes — `oauthAssertionPrivateKey` (**sealed at rest**
+SECOND COPY.** Seven attributes — `oauthAssertionPrivateKey` (**sealed at rest**
 under the same key-encryption key as the hierarchy it was issued from, wherever
 that key outlives the process, so a directory dump, an LDIF file, a database row
 or a backup holds `$aesgcm$…`; the console and `/admin-api` open it for a caller
@@ -6805,8 +6827,13 @@ decision `oauthClientSecret` and `GET /krb5/principals` both make and for their
 reason: a debugger whose credentials are unusable without reading the source is
 worse than one that says what they are), `oauthAssertionCertificate`,
 `oauthAssertionCertificateChain`, `oauthAssertionJwks` (carrying `x5c` and
-`x5t#S256`), `oauthAssertionKid` and `oauthAssertionExpiresAt`. It is handed
-over once, at issuance, and forgotten. **`oauthJwks` is never overwritten**: a
+`x5t#S256`), `oauthAssertionKid`, `oauthAssertionExpiresAt` and
+`oauthAssertionKeySource` (`issued`, or where an uploaded certificate came
+from). It is handed over once, at issuance, and forgotten. **Since 2026-09-13
+the application's own page can replace the pair** — by issuing again, or by
+uploading a certificate the application already holds, an external CA's with
+its full chain up to a self-signed root — and regenerate its client secret; see
+`docs/pki.md`. **`oauthJwks` is never overwritten**: a
 client that registered its own keys and is later issued a pair has two ways to
 sign, both of which somebody deliberately arranged.
 
@@ -6829,7 +6856,7 @@ draws both columns for that reason.
   CRL and answers RFC 6960 OCSP — `/pki/crl/{scope}/{ca}`,
   `/pki/ocsp/{scope}/{ca}`, `/pki/ca/{scope}/{ca}.cer` and an index at
   `/pki/revocation`, plus a copy of each list in the directory under `ou=crl` —
-  every certificate names its own in three schemes, a pane on `/admin/pki`
+  every certificate names its own over plain http and ldap, a pane on `/admin/pki`
   revokes one by hand with any of the nine RFC 5280 reasons, and anything
   rotated goes on its issuer's list as `superseded` automatically. **What this
   service does not do is CONSULT one, its own included**: a client certificate

@@ -414,6 +414,23 @@ function announce() {
     log.error(errorCodes.tag('STS-CORE-0031') +
               'spiffe: the SPIFFE listeners could not start: ' + err.message);
   });
+  // THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13): `/pki/` and nothing else,
+  // because RFC 5280 section 8 and RFC 5019 section 5 put CRL and OCSP
+  // addresses on http:// — see pki/pki_service.js. Recorded rather than
+  // thrown, for the reason every raw listener here is.
+  require('./pki/pki_service').listen().whenReady.then(function (ready) {
+    if (ready.port) {
+      log.info('pki: the revocation endpoints are also on plain HTTP port ' +
+               ready.port + ' (/pki/ only), which is the address every ' +
+               'certificate this service issues names for its CRL, its OCSP ' +
+               'responder and its issuer\'s certificate.');
+    }
+  }).catch(function (err) {
+    log.error(errorCodes.tag('STS-CORE-0043') + 'pki: the plain-HTTP ' +
+              'revocation listener could not start: ' + err.message + '. ' +
+              'Every http:// CRL and OCSP address in this service\'s ' +
+              'certificates will answer nothing.');
+  });
   const tlsListeners = tlsServer.listen();
   tlsListeners.whenReady.then(function (ready) {
     log.info('tls: an HTTPS endpoint that reports the connection back to ' +

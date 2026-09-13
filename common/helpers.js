@@ -682,6 +682,53 @@ function certifyLater(realmId, keys) {
   log.debug("Leaving certifyLater().");
 }
 
+// ---------------------------------------------------------------------------
+// THE SAME, FOR THE ELEVEN POST-QUANTUM KEYS (2026-09-13).
+//
+// `certifyLater()` runs when a key set is GENERATED, and the post-quantum half
+// does not exist then — it is made on first use, seconds later, on the worker
+// pool. So it is certified where it is made: `pqKeysFor()` and
+// `pqKeysForAsync()` call this once they hold the set this realm keeps.
+//
+// **ONLY THE PUBLIC JWKS ARE HANDED OVER.** `pki.certifyPqKeys()` reads `alg`
+// and `publicJwk` and nothing else, and passing a list without the private
+// bytes makes that a property of the call rather than of the callee's manners —
+// `common/vendored/CLAUDE.md`'s rule about this service's post-quantum keys and
+// the certificate encoder is about exactly that boundary.
+// ---------------------------------------------------------------------------
+function certifyPqLater(realmId, pqKeys) {
+  log.debug("Entering certifyPqLater().");
+  const publicHalves = (pqKeys || []).map(function (one) {
+    return { alg: one.alg, publicJwk: one.publicJwk };
+  });
+  setImmediate(function () {
+    let pki = null;
+    try {
+      pki = require('./pki');
+    } catch (e) {
+      log.debug("Caught in a callback in certifyPqLater(): " +
+                ((e && e.message) || e));
+      // No certificate authority in this process: the keys go on being
+      // published as bare AKP JWKs, which is all they ever were before.
+      return;
+    }
+    Promise.resolve(pki.certifyPqKeys(realmId, publicHalves))
+      .then(function (done) {
+        if (done && !done.ok && (done.errors || []).length) {
+          log.debug('The "' + realmId + '" realm\'s post-quantum keys were ' +
+                    'not certified: ' + done.errors.join(' '));
+        }
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-CORE-0024') +
+                  'The "' + realmId + '" realm\'s post-quantum signing keys ' +
+                  'could not be certified under its JOSE Issuing CA: ' +
+                  e.message + '. They still SIGN — what they lack is a ' +
+                  'certificate chaining to this service\'s Root.');
+      });
+  });
+  log.debug("Leaving certifyPqLater().");
+}
+
 function certifiedView(set, realmId, stored) {
   log.debug("Entering certifiedView().");
   // The certificate this key set was BORN with, captured before the getters
@@ -1043,6 +1090,15 @@ const stsKeysFor = realms.keyed(function (realm) {
   const stored = keystore.storedFor(realm.id);
   if (stored) {
     const restored = lazyKeySet(realm.id, stored);
+    // A post-quantum set written down before its keys were issued from the
+    // realm's JOSE Issuing CA (2026-09-13) has no certificates in the register
+    // and nothing else would ever give it any — so a restore asks. It is a
+    // no-op for a set that is already certified, which is every restore after
+    // the first: `certifyPqKeys()` compares the key and the issuer and leaves
+    // both alone. The public halves only, as always.
+    if ((stored.pqKeys || []).length) {
+      certifyPqLater(realm.id, stored.pqKeys);
+    }
     log.info('A signing key was RESTORED for the "' + realm.id + '" realm: ' +
              'kid=' + restored.kid + '. It was generated on ' +
              new Date(restored.createdAt || 0).toISOString() + ' and read ' +
@@ -1665,6 +1721,9 @@ function pqKeysFor(keys) {
     log.info('The post-quantum signing keys were generated for the "' +
              keys.realm + '" realm: ' + keys.pqKeys.length + ' key(s) in ' +
              (Date.now() - started) + 'ms.');
+    // And issued from this realm's JOSE Issuing CA, as every other key it
+    // signs with is. Not awaited: this is a synchronous caller.
+    certifyPqLater(keys.realm, keys.pqKeys);
   }
   log.debug("Leaving pqKeysFor(). " + keys.pqKeys.length + " key(s).");
   return keys.pqKeys;
@@ -1729,8 +1788,11 @@ function pqKeysForAsync(keys) {
       // which is what it did until 2026-09-07. `publishShared()` takes a richer
       // blob for a realm it already holds when the certificate matches; see the
       // enrichment branch there.
+      // Whether this process's set is the one the realm keeps. `undefined`
+      // where nothing was offered, which is "yes": there is nobody to lose to.
+      let took;
       if (keys.realm) {
-        const took = keystore.publishShared(keys.realm, keys);
+        took = keystore.publishShared(keys.realm, keys);
         // ---------------------------------------------------------------
         // **AND WRITTEN DOWN, WHICH THEY WERE NOT UNTIL 2026-09-12.**
         //
@@ -1760,6 +1822,18 @@ function pqKeysForAsync(keys) {
         if (took !== false) {
           keystore.remember(keys.realm, keys);
         }
+      }
+      // -----------------------------------------------------------------
+      // **AND ISSUED FROM THIS REALM'S JOSE ISSUING CA (2026-09-13)** — by
+      // the process whose set is the realm's, under the rule `remember()`
+      // just followed and for its reason. A process that lost the race would
+      // certify keys it is about to be told to discard, and the certificate
+      // register is SHARED: its certificate would overwrite the winner's
+      // slot with one over a key nobody signs with. The winner certifies; a
+      // loser adopts the winner's keys and the winner's certificates both.
+      // -----------------------------------------------------------------
+      if (took !== false) {
+        certifyPqLater(keys.realm, made);
       }
       log.info('The post-quantum signing keys were generated for the "' +
                keys.realm + '" realm: ' + made.length + ' key(s) in ' +

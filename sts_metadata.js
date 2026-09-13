@@ -891,8 +891,8 @@ const SPECS = [
               'run together. Section 5 is implemented: every authority in ' +
               '/admin/pki signs a CRL, served at /pki/crl/{scope}/{ca} and ' +
               'published into the directory under ou=crl, and every ' +
-              'certificate this service issues names its own in three ' +
-              'schemes. What is unchanged is the VERIFYING side — a client ' +
+              'certificate this service issues names its own over http and ' +
+              'ldap. What is unchanged is the VERIFYING side — a client ' +
               'certificate presented to this service is checked against the ' +
               'anchors on /tls/trust and no CRL is fetched and no OCSP ' +
               'responder is consulted for it, so a certificate revoked here ' +
@@ -911,12 +911,34 @@ const SPECS = [
               'delegated responder certificate — legal under section 4.2.2.2 ' +
               'and the simplest thing for a client to verify — so there is ' +
               'no id-kp-OCSPSigning EKU and no id-pkix-ocsp-nocheck ' +
-              'anywhere. NOT DONE: request signatures are neither required ' +
-              'nor verified, there is no responder ID by key hash (it is by ' +
-              'name), no CRL reference extension, no archive cutoff, no ' +
-              'service locator, and this service CONSULTS no responder of ' +
-              'anybody else\'s when it verifies a certificate presented to ' +
-              'it.' },
+              'anywhere. The responder ID is BY KEY HASH (section 4.2.2.3), ' +
+              'every time field is whole seconds, a request about no ' +
+              'certificate this authority issued is answered `unauthorized` ' +
+              'unsigned (section 2.3) rather than a signed `unknown` nobody ' +
+              'could verify, and a nonce of 0 or more than 32 octets is ' +
+              '`malformedRequest` (RFC 8954 section 2.1). Every certificate ' +
+              'names the responder over PLAIN HTTP, on `pki.httpPort`. NOT ' +
+              'DONE: request signatures are neither required nor verified, ' +
+              'no CRL reference extension, no archive cutoff, no service ' +
+              'locator.' },
+  { id: 'rfc5019', name: 'The Lightweight OCSP Profile for High-Volume ' +
+                         'Environments (RFC 5019)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc5019',
+    coverage: 'partial: the parts a responder owes. Plain HTTP (section 5) — ' +
+              'the responder answers on `pki.httpPort` as well as the TLS ' +
+              'main port, and certificates name the plain one; GET with the ' +
+              'base64 request appended; no fractional seconds in any ' +
+              'GeneralizedTime (section 2.2.4); the responder ID by key hash ' +
+              '(section 2.2.2); `unauthorized` for a request it is not ' +
+              'authoritative for (section 2.2.3); and the caching headers of ' +
+              'section 6.2 — max-age no later than nextUpdate, Last-Modified, ' +
+              'Expires and a strong ETag, never no-cache or no-store on an ' +
+              'authoritative answer. NOT DONE: responses are signed on ' +
+              'request rather than PRE-PRODUCED (section 2.2.1 recommends ' +
+              'pre-production for high volume), and an answer to a request ' +
+              'carrying a nonce is marked private rather than served from a ' +
+              'cache.' },
   { id: 'ws-trust', name: 'WS-Trust 1.4 (and 1.0-1.3)',
     where: 'OASIS ws-sx',
     url: 'https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html',
@@ -1233,7 +1255,11 @@ const SPECS = [
               'be one this authorization server trusts, the assertion must ' +
               'name it as the audience (an array is allowed and any member ' +
               'may match), the signature must verify, the expiry is enforced ' +
-              'with a configurable skew, and a replay is refused. Section ' +
+              'with a configurable skew, and a replay is refused — ONCE, ' +
+              'EVER: one used-assertion history for both uses and both ' +
+              'profiles, persisted in every store with one and claimed ' +
+              'atomically on postgres, spent only when tokens are issued, ' +
+              'and listed at /admin/used-assertions. Section ' +
               '5.2 (6)\'s invitation to refuse an unreasonable lifetime is ' +
               'taken, at oauth2.jwtBearerMaxLifetimeS. Section 6.2: ' +
               '`client_id` may be omitted where the assertion identifies the ' +
@@ -1255,7 +1281,10 @@ const SPECS = [
               'token endpoint or the issuer (RFC 7523 and OpenID Connect ' +
               'Core section 9 name different ones and deployments differ), ' +
               'expiry with a configurable skew, and a jti remembered until ' +
-              'the assertion expires so a replay is refused. An assertion ' +
+              'the assertion expires so a replay is refused — in the one ' +
+              'used-assertion history the grant spends against too, so a ' +
+              'JWT that authenticated a client cannot also be a grant. An ' +
+              'assertion ' +
               'nominating an HMAC alg for private_key_jwt is REFUSED rather ' +
               'than verified with the public key as a secret — the classic ' +
               'forgery, and one anybody can perform because the key is ' +
@@ -1263,7 +1292,7 @@ const SPECS = [
               'getting a token rather than of authenticating a client — and ' +
               'every claim in section 3 is checked, the five OPTIONAL ones ' +
               'included: `nbf` and `iat` against the same skew, `iat` also ' +
-              'bounding the LIFETIME, `jti` against a replay cache and ' +
+              'bounding the LIFETIME, `jti` against that same history and ' +
               'REQUIRED here (section 3\'s own last paragraph read ' +
               'literally: an assertion with no jti cannot be remembered, so ' +
               'accepting one means accepting a bearer credential this ' +
@@ -1309,8 +1338,9 @@ const SPECS = [
               'checked against the token endpoint and its Address READ AND ' +
               'NOT ENFORCED (item 5); both NotOnOrAfter instants with a ' +
               'configurable skew, an expired <SubjectConfirmation> DISCARDED ' +
-              'rather than made fatal, and a replay cache on the assertion ' +
-              'ID (item 6); the <AuthnStatement>, carried and reported and ' +
+              'rather than made fatal, and the used-assertion history on the ' +
+              'Issuer and ID, shared by both sections and persisted (item ' +
+              '6); the <AuthnStatement>, carried and reported and ' +
               'never required (item 7); every <AttributeStatement> attribute ' +
               'carried onto the issued token (item 8); the signature, ' +
               'REQUIRED, an unsigned assertion refused by name (item 9); an ' +
@@ -2219,13 +2249,18 @@ const ENDPOINTS = [
           'Cache-Control says the same thing nextUpdate does, computed from ' +
           '`pki.crlLifetimeMinutes`. THE SAME DOCUMENT IS IN THE DIRECTORY, ' +
           'as `certificateRevocationList;binary` under ou=crl (RFC 4523 ' +
-          'section 4), which is what the `ldap://` and `ldaps://` ' +
-          'distribution points in every certificate this service issues ' +
-          'resolve to. Ungated, and it has to be: a relying party fetches ' +
-          'this before it has decided to trust anything.' },
+          'section 4), which is what the `ldap://` distribution point in ' +
+          'every certificate this service issues resolves to. Ungated, and ' +
+          'it has to be: a relying party fetches this before it has decided ' +
+          'to trust anything. EVERY CERTIFICATE NAMES IT OVER PLAIN HTTP, on ' +
+          '`pki.httpPort`, a second listener that answers /pki/ and nothing ' +
+          'else — RFC 5280 section 8 says a CA SHOULD NOT write an https or ' +
+          'ldaps URI into an extension, and RFC 5019 section 5 says an OCSP ' +
+          'responder MUST answer plain HTTP. The main port answers these ' +
+          'paths too.' },
   { path: '/pki/ocsp/:scope/:ca', group: 'PKI',
     name: 'The OCSP responder of one authority (POST)',
-    specs: ['rfc6960'],
+    specs: ['rfc6960', 'rfc5019'],
     what: 'RFC 6960 over HTTP, appendix A.1.1: the DER request as the body, ' +
           '`application/ocsp-request` in and `application/ocsp-response` ' +
           'out. Same {scope} and {ca} as the CRL above, and the same ' +
@@ -2240,19 +2275,26 @@ const ENDPOINTS = [
           'client can report what happened rather than guessing from a ' +
           'status code. The body is read raw and capped at 64KB, which is a ' +
           'thousand times a real request for one certificate.' },
-  { path: '/pki/ocsp/:scope/:ca/:request', group: 'PKI',
+  { path: '/pki/ocsp/:scope/:ca/*', group: 'PKI',
     name: 'The OCSP responder of one authority (GET)',
-    specs: ['rfc6960'],
+    specs: ['rfc6960', 'rfc5019'],
     what: 'THE OTHER TRANSPORT RFC 6960 APPENDIX A.1.1 DEFINES, and the one ' +
-          'a cache can serve: the base64 of the DER request, URL-encoded, as ' +
-          'the last path segment. It needs decoding TWICE \u2014 base64 ' +
-          'contains `+`, `/` and `=`, all of which a client must ' +
+          'a cache can serve: the base64 of the DER request, URL-encoded, ' +
+          'appended to the responder address. It needs decoding TWICE \u2014 ' +
+          'base64 contains `+`, `/` and `=`, all of which a client must ' +
           'percent-encode and some do not, and express has already decoded ' +
           'the parameter once by the time it arrives \u2014 so a `+` that ' +
-          'came through raw is a space and is put back. Getting that wrong ' +
-          'produces `malformedRequest` for a request that was perfectly well ' +
-          'formed, with no way for the client to tell the two apart. ' +
-          'Identical answer to the POST form.' },
+          'came through raw is a space and is put back, and a raw `/` is ' +
+          'kept, because the route takes the REST of the path rather than ' +
+          'one segment. Something that is not a request is answered ' +
+          '`malformedRequest` inside the protocol (RFC 6960 section 2.3). ' +
+          'An authoritative answer carries RFC 5019 section 6.2\'s cache ' +
+          'headers \u2014 max-age to nextUpdate, Last-Modified, Expires, a ' +
+          'strong ETag \u2014 and one carrying a nonce is private. ' +
+          'Identical answer to the POST form. A GET of the address with ' +
+          'NOTHING appended \u2014 which is what a person copying the URL out ' +
+          'of a certificate does first \u2014 is a 400 naming both ' +
+          'transports, and was an unrouted 404 until 2026-09-13.' },
   { path: '/pki/ca/:scope/:ca', group: 'PKI',
     name: 'One certificate authority\'s own certificate',
     specs: ['rfc5280'],
@@ -2273,8 +2315,8 @@ const ENDPOINTS = [
           'client at these endpoints needs to know what the addresses ARE, ' +
           'and reading them out of a certificate with `openssl x509 -text` ' +
           'is a poor first step. One row per authority with its subject, how ' +
-          'many certificates it has revoked, and its CRL in all three ' +
-          'schemes (http, ldap, ldaps) beside its OCSP and caIssuers ' +
+          'many certificates it has revoked, and its CRL in both schemes ' +
+          '(http, ldap) beside its OCSP and caIssuers ' +
           'addresses. NO SERIAL NUMBERS ARE IN IT \u2014 the list of what is ' +
           'revoked is the CRL, and a JSON copy beside it would be a second ' +
           'answer to the same question: the one that goes stale, and the one ' +
@@ -4437,6 +4479,19 @@ const ENDPOINTS = [
           'and never writes one — and a decrypt-this button would be the one ' +
           'door onto material no door is supposed to have. Add ?format=json, ' +
           'or GET /admin-api/encryption.' },
+  { path: '/admin/used-assertions', group: 'Admin', name: 'Used assertions',
+    specs: ['rfc7521', 'rfc7522', 'rfc7523'],
+    what: 'Every RFC 7523 JWT and RFC 7522 SAML assertion this realm has ' +
+          'accepted — as client authentication or as an authorization grant ' +
+          '— and that has not yet expired: format, use, issuer, jti or ID, ' +
+          'client, subject, whether its token request has finished, and ' +
+          'until when it is remembered. An assertion is accepted ONCE, EVER: ' +
+          'one history for both uses and both profiles, persisted in the ' +
+          'ldif and postgres stores in both modes, claimed atomically on ' +
+          'postgres so no two processes accept one assertion, and spent only ' +
+          'when the token request issued tokens. No control — forgetting a ' +
+          'row would make a still-valid assertion usable again. Add ' +
+          '?format=json, or GET /admin-api/used-assertions.' },
   { path: '/admin/error-codes', group: 'Admin', name: 'Error codes',
     specs: [],
     what: 'NON-SPEC. Every way this service can fail or refuse, organised by ' +
@@ -5028,8 +5083,8 @@ const ENDPOINTS = [
           'certificate is the half of a pair meant to be handed around. PER ' +
           'REALM, like the hierarchy itself. `revocation` IS THE REGISTER ' +
           'since 2026-09-11 — one entry per certificate authority with what ' +
-          'it issued, what is on its list, and its CRL and OCSP addresses in ' +
-          'three schemes — and `revocationNote` beside it is the durable ' +
+          'it issued, what is on its list, and its CRL and OCSP addresses ' +
+          'over http and ldap — and `revocationNote` beside it is the durable ' +
           'SENTENCE: revocation here is PUBLISHED and never CONSULTED, so a ' +
           'certificate revoked on this page still authenticates to this ' +
           'service. They are two members because an empty list and no lists ' +
@@ -5891,6 +5946,17 @@ const ENDPOINTS = [
           'permissions, and refusing an unrecognised one would make it ' +
           'impossible to consent openid. NONE OF THE FOUR TOUCHES WHAT WAS ' +
           'ALREADY ISSUED.' },
+  { path: '/admin-api/used-assertions', group: 'Management API',
+    name: 'Used assertions',
+    specs: ['rfc7521', 'rfc7522', 'rfc7523'],
+    what: 'NON-SPEC surface over a spec behaviour. The used-assertion history ' +
+          'as JSON: every RFC 7523 and RFC 7522 assertion this realm accepted ' +
+          'and that has not yet expired, with where the history is held ' +
+          '(persistent, atomic across processes), the live count against ' +
+          'oauth2.assertionReplayCacheSize, filtered by text, format, use and ' +
+          'state and paged with ?page= and ?per=. No assertion and no ' +
+          'credential in any row. READ ONLY. Mirrors GET ' +
+          '/admin/used-assertions.' },
   { path: '/admin-api/error-codes', group: 'Management API',
     name: 'Error codes',
     specs: [],

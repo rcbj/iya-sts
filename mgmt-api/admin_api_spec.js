@@ -893,7 +893,17 @@ const SCHEMAS = {
                                 'says why — a post-quantum key that has not ' +
                                 'been made yet, or one with no interoperable ' +
                                 'encoding.' },
-        usedFor: { type: 'array', items: { type: 'string' } }
+        usedFor: { type: 'array', items: { type: 'string' } },
+        pqc: { type: ['object', 'null'],
+               description: 'Whether this key pair uses a post-quantum ' +
+                            'algorithm — the icon /admin/keys draws. `null` ' +
+                            'for a classical key; otherwise `kind` (`pq` for ' +
+                            'ML-DSA or SLH-DSA, `composite` for a ' +
+                            'post-quantum half and a classical half, `kem` ' +
+                            'for ML-KEM, `hybrid` for a classical key whose ' +
+                            'certificate carries an alternative ' +
+                            'post-quantum key), `algorithm`, `label`, ' +
+                            '`family` and `standard`.' }
       }) }
     }),
 
@@ -1221,7 +1231,24 @@ const SCHEMAS = {
                      'directory is loaded in this process — which is a ' +
                      'different answer from an entry that is not there, and ' +
                      'that one is an object whose `found` is false.'
-      }
+      },
+      credentials: openObject(
+        'This person\'s assertion key pairs (2026-09-13): `keyPairs`, one ' +
+        'per profile — `jwt` (RFC 7523, `stsAssertion*`) and `saml` (RFC ' +
+        '7522, `stsSamlAssertion*`) — each with `held`, `source` (`issued`, ' +
+        '`uploaded-realm-ca`, `uploaded-external-ca`), `privateKeyHeld`, the ' +
+        'parsed `certificate` and `chain`, the key `handle`, the declared ' +
+        'and effective issuers and the attribute names. **No private key is ' +
+        'in it**: a person\'s is shown once, by the issue, and has no read ' +
+        'door. Replaced through POST /admin-api/pki/issue and ' +
+        '/pki/upload-certificate with `target=person`, and taken off with ' +
+        '/pki/revoke.', {
+          keyPairs: { type: 'array',
+                      items: openObject('One profile\'s key pair.', {}) },
+          storable: { type: 'boolean' },
+          found: { type: 'boolean' },
+          caAvailable: { type: 'boolean' }
+        })
     }),
 
   Saml2ServiceProviderList: openObject(

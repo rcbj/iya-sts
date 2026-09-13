@@ -172,6 +172,16 @@ const clientAuth = require('../oauth-oidc/client_auth');
 const mtls = require('../oauth-oidc/mtls');
 const oauth2 = require('../oauth-oidc/oauth2');
 const tlsServer = require('../tls/tls_server');
+// A certificate's details in a dialog over this page (2026-09-13): the model's
+// fingerprint, and the one renderer `/admin/pki` draws the same dialog with.
+// Both are libraries and register nothing, so this require moves no route.
+const certificateDetails = require('../common/certificate_details');
+const certificateDialog = require('./certificate_dialog');
+const certificateViews = require('../admin-core/certificate_views');
+// Which key pairs use a post-quantum algorithm, and the one icon that says so
+// (2026-09-13) — `/admin/pki` draws with the same pair. See pqc_badge.js.
+const pqcSupport = require('../common/pqc_support');
+const pqcBadge = require('./pqc_badge');
 
 const esc = xmlEscape;
 const xmldsig = stsCrypto.xmldsig;
@@ -328,8 +338,10 @@ const FAMILIES = [
                'CA itself rather than a delegated responder certificate ' +
                '(RFC 6960 section 4.2.2.2), so a client verifies with the ' +
                'anchor it already has. Every certificate this service issues ' +
-               'names its own CRL in three schemes (http, ldap, ldaps) and ' +
-               'its responder in an Authority Information Access.' },
+               'names its own CRL over plain http and ldap and its ' +
+               'responder in an Authority Information Access — never https ' +
+               'or ldaps, which RFC 5280 section 8 says a CA SHOULD NOT ' +
+               'write into an extension.' },
         // **THIS ROW SAID `NONE` UNTIL 2026-09-12** — nothing fetched a CRL
         // and nothing asked a responder, so a certificate revoked on /admin/pki
         // still authenticated here. It is read from the module that performs
@@ -1662,6 +1674,45 @@ function driftReport() {
 // present only once something has brought them into being, and reports honestly
 // which of the two states this realm is in.
 // ---------------------------------------------------------------------------
+// THE SHA-256 OF A CERTIFICATE THIS PAGE LINKS TO, or '' where the key has
+// none (2026-09-13). It is the handle a details dialog is opened by, and it is
+// public for the reason every fingerprint on this page is.
+function certificateFingerprint(pem) {
+  log.debug("Entering certificateFingerprint().");
+  if (!pem) {
+    log.debug("Leaving certificateFingerprint(). None.");
+    return '';
+  }
+  try {
+    log.debug("Leaving certificateFingerprint().");
+    return certificateDetails.fingerprintOf(pem);
+  } catch (e) {
+    log.debug("Caught in certificateFingerprint(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving certificateFingerprint(). Unreadable.");
+    return '';
+  }
+}
+
+// The certificate this realm's JOSE Issuing CA issued over one slot, as a
+// fingerprint. The DEFAULT realm's scope is the empty string, which is what
+// `pki.js` addresses it by.
+function slotCertificateFingerprint(slot) {
+  log.debug("Entering slotCertificateFingerprint().");
+  let held = null;
+  try {
+    held = pki.publishedCertificateFor(
+      realms.currentId() === realms.DEFAULT_ID ? '' : realms.currentId(),
+      'jose', slot);
+  } catch (e) {
+    log.debug("Caught in slotCertificateFingerprint(): " +
+              ((e && e.message) || e));
+    held = null;
+  }
+  log.debug("Leaving slotCertificateFingerprint().");
+  return held ? certificateFingerprint(held.certificatePem) : '';
+}
+
 function keyMaterial() {
   log.debug("Entering keyMaterial().");
   const keys = stsKeysFor();
@@ -1672,20 +1723,31 @@ function keyMaterial() {
     regeneratedEveryStart: true,
     signing: {
       kty: 'RSA', bits: 2048, alg: 'RS256', kid: String(keys.kid || ''),
-      certificate: 'self-signed, SHA-256, serial 02, five years',
+      // What the key PUBLISHES, which stopped being a self-signed certificate
+      // on 2026-09-11; this string said *self-signed, SHA-256, serial 02, five
+      // years* until the certificate became openable from this page and the
+      // dialog beside it said otherwise.
+      certificate: (keys.certChainPem || []).length
+        ? 'issued by this realm\'s JOSE Issuing CA under the service Root'
+        : 'self-signed',
+      certificateFingerprint: certificateFingerprint(keys.certPem),
       what: 'The realm\'s one RSA key. It signs every access token, every ' +
             'refresh token, the default ID Token, and every XML document ' +
             'this service mints.'
     },
     curveKeys: (keys.extraKeys || []).map(function (one) {
       return { alg: one.alg, kty: one.publicJwk.kty,
-               crv: one.publicJwk.crv || '', kid: one.publicJwk.kid };
+               crv: one.publicJwk.crv || '', kid: one.publicJwk.kid,
+               certificateFingerprint: slotCertificateFingerprint(
+                 one.publicJwk.crv ? one.alg + ':' + one.publicJwk.crv
+                                   : one.alg) };
     }),
     postQuantum: {
       algorithms: pqJose.PQ_ALGS.slice(0),
       generated: Array.isArray(keys.pqKeys),
       keys: (keys.pqKeys || []).map(function (one) {
-        return { alg: one.alg, kty: 'AKP', kid: one.publicJwk.kid };
+        return { alg: one.alg, kty: 'AKP', kid: one.publicJwk.kid,
+                 certificateFingerprint: slotCertificateFingerprint(one.alg) };
       }),
       what: 'Made on FIRST USE rather than at start — one SLH-DSA keygen is ' +
             'most of two seconds, which would be paid by every realm whether ' +
@@ -1704,6 +1766,14 @@ function keyMaterial() {
       subject: cert.subject,
       names: cert.names,
       fingerprint256: cert.fingerprint256,
+      // Every certificate the listeners present, the ML-DSA ones included,
+      // as the handle a details dialog opens by.
+      certificates: (typeof tlsServer.serverCertificateChains === 'function'
+        ? tlsServer.serverCertificateChains() : []).map(function (one) {
+          return { algorithm: one.algorithm,
+                   certificateFingerprint: certificateFingerprint(
+                     one.certPem) };
+        }),
       notAfter: cert.notAfter,
       perRealm: false,
       what: 'RSA 2048, SHA-256, self-signed, serial 03, two years. Shared by ' +
@@ -1739,6 +1809,10 @@ function keyMaterial() {
       x509KeyType: String(config.value('spiffe.x509KeyType')),
       jwtKeyType: String(config.value('spiffe.jwtKeyType')),
       x509Authorities: (spiffe.x509Authorities || []).length,
+      // The ACTIVE authority's certificate, as the handle a details dialog
+      // opens by (2026-09-13).
+      authorityFingerprint: certificateFingerprint(
+        ((spiffe.x509Authorities || [])[0] || {}).certificatePem),
       trustAnchors: (spiffe.trustAnchors || []).length,
       jwtAuthorities: (spiffe.jwtAuthorities || []).length
     }
@@ -2373,6 +2447,17 @@ function renderFamilies(report) {
   return html;
 }
 
+// A "View details" link on a key row, opening the certificate dialog over
+// this page and closing back to this section. Nothing where the key holds no
+// certificate — a BBS key, a post-quantum key not made yet.
+function certificateLink(fingerprint, text) {
+  log.debug("Entering certificateLink().");
+  const html = certificateDialog.link('/admin/crypto-metadata', fingerprint,
+                                      'keys', text);
+  log.debug("Leaving certificateLink().");
+  return html ? '<br>' + html : '';
+}
+
 function renderKeys(report) {
   log.debug("Entering renderKeys().");
   const keys = report.keys;
@@ -2390,19 +2475,23 @@ function renderKeys(report) {
     '<th>Identifier</th><th>Scope</th></tr></thead><tbody>' +
     '<tr><td class="n">Signing key</td><td><code>RSA 2048</code> ' +
     '<code>RS256</code></td><td><code>' + esc(keys.signing.kid) +
-    '</code></td><td>this realm</td></tr>' +
+    '</code>' + certificateLink(keys.signing.certificateFingerprint) +
+    '</td><td>this realm</td></tr>' +
     keys.curveKeys.map(function (one) {
       return '<tr><td class="n">Curve key</td><td><code>' + esc(one.alg) +
         '</code> <code>' + esc(one.kty) +
         (one.crv ? '</code> <code>' + esc(one.crv) : '') +
         '</code></td><td><code>' + esc(one.kid) +
-        '</code></td><td>this realm</td></tr>';
+        '</code>' + certificateLink(one.certificateFingerprint) +
+        '</td><td>this realm</td></tr>';
     }).join('') +
     (keys.postQuantum.generated
       ? keys.postQuantum.keys.map(function (one) {
           return '<tr><td class="n">Post-quantum key</td><td><code>' +
             esc(one.alg) + '</code> <code>AKP</code></td><td><code>' +
-            esc(one.kid) + '</code></td><td>this realm</td></tr>';
+            esc(one.kid) + '</code>' +
+            certificateLink(one.certificateFingerprint) +
+            '</td><td>this realm</td></tr>';
         }).join('')
       : '<tr><td class="n">Post-quantum keys</td><td><code>AKP</code>, ' +
         esc(keys.postQuantum.algorithms.length) +
@@ -2414,7 +2503,10 @@ function renderKeys(report) {
     '<td>this realm</td></tr>' +
     '<tr><td class="n">TLS certificate</td><td><code>RSA 2048</code> ' +
     '<code>SHA-256</code></td><td><code>' + esc(keys.tls.fingerprint256) +
-    '</code></td><td>the process</td></tr>' +
+    '</code>' + (keys.tls.certificates || []).map(function (one) {
+      return certificateLink(one.certificateFingerprint,
+                             'View details (' + one.algorithm + ')');
+    }).join('') + '</td><td>the process</td></tr>' +
     '<tr><td class="n">SPIFFE X.509 authority</td><td><code>' +
     esc(keys.spiffe.authorityKeyType || keys.spiffe.x509KeyType) +
     '</code></td><td>' +
@@ -2423,7 +2515,8 @@ function renderKeys(report) {
         (keys.spiffe.authoritySource === 'pki'
           ? 'this realm\'s <a href="/admin/pki">SPIFFE Issuing CA</a>'
           : '<span class="why">self-signed &mdash; this realm has no ' +
-            'certificate authority</span>')
+            'certificate authority</span>') +
+        certificateLink(keys.spiffe.authorityFingerprint)
       : '<span class="why">not started</span>') +
     '</td><td>this realm</td></tr>' +
     '<tr><td class="n">SPIFFE X509-SVID key</td><td><code>' +
@@ -2867,11 +2960,39 @@ function renderInner(report) {
 app.get('/admin/crypto-metadata', function (req, res) {
   log.debug("Entering the crypto metadata endpoint.");
   const report = cryptoJson(baseUrlOf(req));
-  admin.respond(req, res, report, 'Cryptography', '/admin/crypto-metadata',
-                renderInner(report));
-  log.debug("Leaving the crypto metadata endpoint. " + report.families.length +
-            " identity service(s), " + report.standards.length +
-            " standard(s).");
+  if (!certificateDialog.requested(req)) {
+    admin.respond(req, res, report, 'Cryptography', '/admin/crypto-metadata',
+                  renderInner(report));
+    log.debug("Leaving the crypto metadata endpoint. " +
+              report.families.length + " identity service(s), " +
+              report.standards.length + " standard(s).");
+    return;
+  }
+  // A CERTIFICATE'S DETAILS OVER THE PAGE (2026-09-13) — `/admin/pki`'s route
+  // does the same with the same two modules; see certificate_dialog.js.
+  const draw = function (view) {
+    log.debug("Entering draw().");
+    report.certificateDetails = view;
+    admin.respond(req, res, report, 'Cryptography', '/admin/crypto-metadata',
+                  renderInner(report) +
+                  certificateDialog.dialog('/admin/crypto-metadata', view,
+                                           req.query.from));
+    log.debug("Leaving draw().");
+  };
+  certificateViews.detailsView(req).then(function (view) {
+    if (!view.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(view) || 'STS-ADMIN-0641');
+    }
+    draw(view);
+    log.debug("Leaving the crypto metadata endpoint. With a certificate " +
+              "dialog.");
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-ADMIN-0642') + 'crypto_metadata: the ' +
+              'certificate details view failed: ' + e.message);
+    errorCodes.mark(res, 'STS-ADMIN-0642');
+    draw({ ok: false, errors: ['The certificate could not be opened: ' +
+                               e.message] });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -3190,9 +3311,15 @@ function keyInventory() {
       alg: alg, kty: 'AKP', crv: '', bits: 0,
       kid: made ? String(made.publicJwk.kid || '') : '',
       scope: 'realm', realm: realms.currentId(),
-      hasCertificate: false,
+      // **ISSUED FROM THIS REALM'S JOSE ISSUING CA SINCE 2026-09-13**, and
+      // `false` for as long as these keys existed before that. The slot is the
+      // algorithm, as `common/pki.js`'s `certifyPqKeys()` files it.
+      certifiedBy: made ? certifierOf('jose', alg) : null,
+      hasCertificate: !!(made && certifierOf('jose', alg)),
       generated: !!made,
-      // RFC 9964's key type, for which there is no PKCS#8 encoding here.
+      // RFC 9964's key type, for which there is no PKCS#8 encoding here — so
+      // still no PKCS#12 either, certificate or not: that format wraps a
+      // private key. The certificate travels with the JWK export instead.
       formats: made ? ['jwk'] : [],
       usedFor: [
         'An ID Token or a signed UserInfo response for a client that ' +
@@ -3222,6 +3349,14 @@ function keyInventory() {
     ]
   });
 
+  // WHETHER EACH ONE USES A POST-QUANTUM ALGORITHM (2026-09-13), from the one
+  // classifier `/admin/pki` asks too: `null` for a classical key, otherwise
+  // the kind (`pq` or `composite` here), the algorithm, a label and the
+  // standard. On the row rather than decided by the page, so
+  // `GET /admin-api/keys` answers what the icon on `/admin/keys` says.
+  rows.forEach(function (row) {
+    row.pqc = pqcSupport.of({ algorithms: [row.alg] });
+  });
   log.debug("Leaving keyInventory(). " + rows.length + " key(s).");
   return rows;
 }
@@ -3363,12 +3498,36 @@ async function exportKey(id, format, password) {
     // inventing a format, and a file no library reads is worse than a refusal
     // that says why.
     const text = JSON.stringify(made.publicJwk, null, 2);
+    const files = [{ name: row.alg.toLowerCase() + '-public.jwk.json',
+                     data: text, mime: 'application/jwk+json' }];
+    // AND THE CERTIFICATE THIS REALM'S JOSE ISSUING CA ISSUED OVER IT
+    // (2026-09-13), leaf first with the chain under it and without the Root —
+    // public, and the one thing about this key a relying party could not get
+    // from the JWKS.
+    let held = null;
+    try {
+      held = stsPki.publishedCertificateFor(
+        realms.currentId() === 'default' ? '' : realms.currentId(),
+        'jose', row.alg);
+    } catch (e) {
+      log.debug("Caught in exportKey(): " + ((e && e.message) || e));
+      held = null;
+    }
+    if (held) {
+      files.push({ name: row.alg.toLowerCase() + '-chain.pem',
+                   data: [held.certificatePem].concat(held.chainPem).join(''),
+                   mime: 'application/x-pem-file' });
+    }
     log.debug("Leaving exportKey(). An AKP public JWK.");
     return { ok: true, publicOnly: true,
-             files: [{ name: row.alg.toLowerCase() + '-public.jwk.json',
-                       data: text, mime: 'application/jwk+json' }],
-             status: 'The PUBLIC half of ' + row.alg + ' as an AKP JWK. ' +
-                     'There is no interoperable private encoding for this ' +
+             files: files,
+             status: 'The PUBLIC half of ' + row.alg + ' as an AKP JWK' +
+                     (held ? '; the certificate this realm\'s JOSE Issuing ' +
+                             'CA issued over it, with its chain, is the ' +
+                             'second file — which the management API ' +
+                             'returns and a browser download, being one ' +
+                             'file, does not' : '') +
+                     '. There is no interoperable private encoding for this ' +
                      'key type to hand over, so the private half stays in ' +
                      'the process.' };
   }
@@ -3561,6 +3720,8 @@ function renderKeyPairs(report) {
     'the same code the debugger\'s PKI page has been exercised through. A ' +
     'second exporter beside it would be the worse copy.');
 
+  html += pqcBadge.legend();
+
   html += '<h2 id="keys">The key pairs</h2>' +
     '<table><thead><tr><th class="n">Key</th><th>Type</th><th>Identifier</th>' +
     '<th>Scope</th><th>Formats</th></tr></thead><tbody>' +
@@ -3569,7 +3730,8 @@ function renderKeyPairs(report) {
         esc(row.label) + '</a></td>' +
         '<td><code>' + esc(row.alg) + '</code> <code>' + esc(row.kty) +
         '</code>' + (row.crv ? ' <code>' + esc(row.crv) + '</code>' : '') +
-        (row.bits ? ' ' + esc(row.bits) + '-bit' : '') + '</td>' +
+        (row.bits ? ' ' + esc(row.bits) + '-bit' : '') +
+        pqcBadge.badge(row.pqc) + '</td>' +
         '<td>' + (row.kid ? '<code>' + esc(row.kid) + '</code>'
                   : (row.fingerprint ?
                      '<code>' + esc(row.fingerprint) + '</code>'
@@ -3582,7 +3744,8 @@ function renderKeyPairs(report) {
     }).join('') + '</tbody></table>';
 
   report.keys.forEach(function (row) {
-    html += '<h3 id="key-' + esc(row.id) + '">' + esc(row.label) + '</h3>' +
+    html += '<h3 id="key-' + esc(row.id) + '">' + esc(row.label) +
+      pqcBadge.badge(row.pqc) + '</h3>' +
       '<table><tbody><tr><th class="n">Used for</th><td><ul>' +
       row.usedFor.map(function (what) {
         return '<li>' + prose(what) + '</li>';

@@ -87,6 +87,15 @@ const realms = require('../common/realms');
 const { log, parseBody, stsKeysFor } = require('../common/helpers');
 // The error-code registry (a leaf). See `refuse()` below for where a code goes.
 const errorCodes = require('../common/error_codes');
+// A certificate's details, in a dialog over this page (2026-09-13). The
+// catalogue and the model are `admin-core/`'s and the dialog is the one
+// renderer `/admin/crypto-metadata` draws too — see certificate_dialog.js.
+const certificateViews = require('../admin-core/certificate_views');
+const certificateDialog = require('./certificate_dialog');
+// Which key pairs use a post-quantum algorithm, and the one icon that says so
+// (2026-09-13) — the same pair `/admin/keys` draws with. See pqc_badge.js.
+const pqcSupport = require('../common/pqc_support');
+const pqcBadge = require('./pqc_badge');
 
 // RFC 4517 GeneralizedTime, which is how every timestamp in this directory is
 // spelled. Written here rather than imported because `applications.js` keeps
@@ -129,14 +138,22 @@ const esc = admin.esc;
 // ---------------------------------------------------------------------------
 const PURPOSE_WRITES = {
   jwt: {
-    issuerAttribute: 'oauthAssertionIssuer',
-    handleAttribute: 'oauthAssertionKid',
-    handleLabel: 'kid',
-    privateKeyAttribute: 'oauthAssertionPrivateKey',
-    expiresAttribute: 'oauthAssertionExpiresAt',
+    // THE NAMES are `applications.KEY_PAIR_ATTRIBUTES`'s, which the schema
+    // owns and the application page reads too (2026-09-13); the WRITES below
+    // are this table's.
+    issuerAttribute: applications.KEY_PAIR_ATTRIBUTES.jwt.issuer,
+    handleAttribute: applications.KEY_PAIR_ATTRIBUTES.jwt.handle,
+    handleLabel: applications.KEY_PAIR_ATTRIBUTES.jwt.handleLabel,
+    privateKeyAttribute: applications.KEY_PAIR_ATTRIBUTES.jwt.privateKey,
+    expiresAttribute: applications.KEY_PAIR_ATTRIBUTES.jwt.expires,
+    certificateAttribute: applications.KEY_PAIR_ATTRIBUTES.jwt.certificate,
+    chainAttribute: applications.KEY_PAIR_ATTRIBUTES.jwt.chain,
+    sourceAttribute: applications.KEY_PAIR_ATTRIBUTES.jwt.source,
+    registeredAttribute: applications.KEY_PAIR_ATTRIBUTES.jwt.registered,
     attributes: ['oauthAssertionJwks', 'oauthAssertionCertificate',
                  'oauthAssertionCertificateChain', 'oauthAssertionPrivateKey',
-                 'oauthAssertionKid', 'oauthAssertionExpiresAt'],
+                 'oauthAssertionKid', 'oauthAssertionExpiresAt',
+                 'oauthAssertionKeySource'],
     valuesOf: function (record) {
       log.debug("Entering valuesOf().");
       log.debug("Leaving valuesOf().");
@@ -147,21 +164,29 @@ const PURPOSE_WRITES = {
         ['oauthAssertionPrivateKey', record.privateKeyPem],
         ['oauthAssertionKid', record.kid],
         ['oauthAssertionExpiresAt',
-         generalizedTime(new Date(record.notAfter))]
+         generalizedTime(new Date(record.notAfter))],
+        // `issued` for a key pair generated here; an upload's record says
+        // which kind of upload it was. See KEY_SOURCES in applications.js.
+        ['oauthAssertionKeySource', record.source || 'issued']
       ];
     }
   },
   saml: {
-    issuerAttribute: 'oauthSamlAssertionIssuer',
-    handleAttribute: 'oauthSamlAssertionThumbprint',
-    handleLabel: 'thumbprint',
-    privateKeyAttribute: 'oauthSamlAssertionPrivateKey',
-    expiresAttribute: 'oauthSamlAssertionExpiresAt',
+    issuerAttribute: applications.KEY_PAIR_ATTRIBUTES.saml.issuer,
+    handleAttribute: applications.KEY_PAIR_ATTRIBUTES.saml.handle,
+    handleLabel: applications.KEY_PAIR_ATTRIBUTES.saml.handleLabel,
+    privateKeyAttribute: applications.KEY_PAIR_ATTRIBUTES.saml.privateKey,
+    expiresAttribute: applications.KEY_PAIR_ATTRIBUTES.saml.expires,
+    certificateAttribute: applications.KEY_PAIR_ATTRIBUTES.saml.certificate,
+    chainAttribute: applications.KEY_PAIR_ATTRIBUTES.saml.chain,
+    sourceAttribute: applications.KEY_PAIR_ATTRIBUTES.saml.source,
+    registeredAttribute: applications.KEY_PAIR_ATTRIBUTES.saml.registered,
     attributes: ['oauthSamlAssertionCertificate',
                  'oauthSamlAssertionCertificateChain',
                  'oauthSamlAssertionPrivateKey',
                  'oauthSamlAssertionThumbprint',
-                 'oauthSamlAssertionExpiresAt'],
+                 'oauthSamlAssertionExpiresAt',
+                 'oauthSamlAssertionKeySource'],
     valuesOf: function (record) {
       log.debug("Entering valuesOf().");
       log.debug("Leaving valuesOf().");
@@ -171,7 +196,8 @@ const PURPOSE_WRITES = {
         ['oauthSamlAssertionPrivateKey', record.privateKeyPem],
         ['oauthSamlAssertionThumbprint', record.certificateThumbprint],
         ['oauthSamlAssertionExpiresAt',
-         generalizedTime(new Date(record.notAfter))]
+         generalizedTime(new Date(record.notAfter))],
+        ['oauthSamlAssertionKeySource', record.source || 'issued']
       ];
     }
   }
@@ -223,6 +249,11 @@ function purposeOf(body) {
 // with a DRAFT as well as a verdict, which is what the console's own POST
 // re-renders and what lets a machine drive the pane through the API.
 const PKI_ACTIONS = ['build', 'clear', 'issue', 'revoke',
+                     // An application's key pair replaced by a certificate
+                     // the application brought, since 2026-09-13 — the
+                     // other half of `issue`, and drawn beside it on the
+                     // application's own page.
+                     'upload-certificate',
                      'apply-profile', 'generate-keys', 'generate-alt-keys',
                      'issue-certificate', 'use-key', 'remove-object',
                      'clear-store', 'export',
@@ -456,7 +487,16 @@ function pkiJson(req, draft) {
             ? String(fields[table.handleAttribute]) : '',
           expiresAt: fields[table.expiresAttribute]
             ? String(fields[table.expiresAttribute]) : '',
-          hasKeyPair: !!fields[table.privateKeyAttribute],
+          // A MANAGED KEY PAIR — issued here, or a certificate uploaded in its
+          // place (2026-09-13). The second has no private key on the entry,
+          // which is why this reads the certificate as well; the private half
+          // is `privateKeyHeld`, and `source` says which of the two it was.
+          hasKeyPair: !!(fields[table.privateKeyAttribute] ||
+                         fields[table.certificateAttribute]),
+          privateKeyHeld: !!fields[table.privateKeyAttribute],
+          source: fields[table.sourceAttribute]
+            ? String(fields[table.sourceAttribute])
+            : (fields[table.privateKeyAttribute] ? 'issued' : ''),
           // The declaration, which is the trust decision and is a separate act
           // from being issued a key pair — an application may hold one and
           // declare no issuer, which means it can sign and this service will
@@ -469,7 +509,12 @@ function pkiJson(req, draft) {
           // shapes show through this table.
           registeredOwnKeys: purpose === 'saml'
             ? !!fields.oauthSamlAssertionSigningCertificate
-            : !!fields.oauthJwks
+            : !!fields.oauthJwks,
+          // Whether the key pair on the entry uses a post-quantum algorithm,
+          // read off its certificate (2026-09-13): `null` for a classical key
+          // or none, otherwise `pqc_support.js`'s kind, label and standard.
+          pqc: pqcSupport.of({ certificatePem:
+            fields[table.certificateAttribute] })
         };
       }).filter(function (one) {
         return one.hasKeyPair || one.assertionIssuers.length ||
@@ -487,12 +532,21 @@ function pkiJson(req, draft) {
     // key would hand it to everybody who can read the console, on every
     // visit. The issue reply is the one door, and it opens once.
     //
-    // ONE ROW PER PERSON rather than one per profile, which is the shape of a
-    // fact rather than a style: a person may hold ONE key pair, because RFC
-    // 7522's verifier reads nothing off a person and a SAML key pair here
-    // would be one nothing can use.
+    // ONE ROW PER PERSON, with the RFC 7522 key pair nested as `saml`
+    // (2026-09-13). It was one row because a person could hold ONE key pair —
+    // RFC 7522's verifier read nothing off a person — and the verifier reads a
+    // person's now. The JWT members keep their names so a reader written
+    // before that day reads the profile it always did; the page draws a row
+    // per profile held, as it does for applications.
     // ---------------------------------------------------------------------
-    persons: personAssertions.holders(),
+    // Each with `pqc`, read off the person's certificate as `issued` above.
+    persons: personAssertions.holders().map(function (one) {
+      return Object.assign({}, one, {
+        pqc: pqcSupport.of({ certificatePem: one.certificatePem }),
+        saml: Object.assign({}, one.saml, {
+          pqc: pqcSupport.of({ certificatePem: one.saml.certificatePem }) })
+      });
+    }),
     personsStorable: personAssertions.storable(),
     personAttributes: personAssertions.ATTRIBUTES.slice(),
     personIssuerAttribute: personAssertions.ISSUER_ATTRIBUTE,
@@ -661,14 +715,16 @@ function valuesOf(value) {
 // profile, the certificate, the algorithms — is the same, which is why it is a
 // FIELD on the Issue action and not an action of its own.
 //
-// **ONE: THE PROFILE CAN ONLY BE `jwt`.** RFC 7522's verifier
-// (`oauth-oidc/saml_assertion_grant.js`) reads `oauthSamlAssertion*` off an
-// APPLICATION entry and nothing else, so a SAML key pair on a person's entry
-// would be a key pair nothing in this service reads — a control that appears
-// to work and silently does nothing, which is worse than a refusal that says
-// which door is open.
+// ~~**ONE: THE PROFILE CAN ONLY BE `jwt`.**~~ **BOTH PROFILES SINCE
+// 2026-09-13.** This read: RFC 7522's verifier reads `oauthSamlAssertion*` off
+// an APPLICATION entry and nothing else, so a SAML key pair on a person's entry
+// would be one nothing reads — a control that appears to work and silently does
+// nothing. That was true, and the refusal (`STS-PKI-0108`, retired) was right
+// while it was; `oauth-oidc/saml_assertion_grant.js` reads a person's
+// `stsSamlAssertion*` now, under the same self-only rule the JWT grant applies.
 //
-// **TWO: IT WRITES `stsAssertion*` THROUGH `common/person_assertions.js`**
+// **TWO: IT WRITES `stsAssertion*` OR `stsSamlAssertion*` THROUGH
+// `common/person_assertions.js`**
 // rather than `oauthAssertion*` through `applications.updateApplication()`.
 // The two attribute sets share no name on purpose and no code path crosses
 // them: that is `applications.js`'s rule about its own pair, made a third time
@@ -707,17 +763,6 @@ async function issueToPerson(identifier, body) {
                   'issues a signing key pair for. It issues ' +
                   pki.PURPOSE_IDS.join(' and ') + '.', 'STS-PKI-0011');
   }
-  if (purpose !== 'jwt') {
-    log.debug('Leaving issueToPerson(). The wrong profile.');
-    return refuse('A person may hold an RFC 7523 (JWT) key pair and not an ' +
-                  'RFC 7522 (SAML) one. That profile\'s verifier reads ' +
-                  'oauthSamlAssertion* off an APPLICATION entry and reads ' +
-                  'nothing off a person, so issuing one here would write a ' +
-                  'key pair nothing in this service can ever use — a control ' +
-                  'that looks as though it worked. Issue the SAML key pair ' +
-                  'to an application, which is the party RFC 7522 has in ' +
-                  'mind.', 'STS-PKI-0108');
-  }
   const held = personAssertions.recordFor(identifier);
   if (!held) {
     // Refused rather than creating one, which is the application branch's
@@ -753,11 +798,12 @@ async function issueToPerson(identifier, body) {
   const record = issued.issued;
   const declared = String(body.issuer || '').trim();
   const written = personAssertions.write(identifier, record,
-                                         declared ? { issuer: declared } : {});
+    declared ? { issuer: declared, purpose: purpose } : { purpose: purpose });
   if (!written.ok) {
     log.debug('Leaving issueToPerson(). The write failed.');
     return refusedBy(written, 'STS-PKI-0110');
   }
+  const saml = purpose === 'saml';
   log.debug('Leaving issueToPerson(). Issued.');
   return {
     ok: true,
@@ -766,24 +812,31 @@ async function issueToPerson(identifier, body) {
     person: identifier,
     attributes: written.written.slice(),
     kid: record.kid,
+    thumbprint: record.certificateThumbprint,
     notAfter: record.notAfter,
     jwsAlg: record.jwsAlg,
     issuer: declared || identifier,
     declared: !!declared,
     certificatePem: record.certificatePem,
     chainPem: record.chainPem.join(''),
-    jwks: record.jwks,
+    jwks: saml ? null : record.jwks,
     // ONCE. See the header above: this is the only door a person's private key
     // ever comes out of.
     privateKeyPem: record.privateKeyPem,
     why: 'A ' + record.keyAlg + ' signing key pair was issued to "' +
          identifier + '" — a PERSON — for ' + record.purposeLabel + ', ' +
          'signed by this realm\'s Issuing CA, and written onto their ' +
-         'directory entry as ' + written.written.join(', ') + '. kid=' +
-         record.kid + ', valid until ' + record.notAfter + '. They can ' +
-         'present an RFC 7523 section 2.1 assertion as `iss` "' +
-         (declared || identifier) + '" now, and it may name ONLY themselves ' +
-         'as `sub`: a person\'s key is their own credential rather than ' +
+         'directory entry as ' + written.written.join(', ') + '. ' +
+         (saml ? 'thumbprint=' + record.certificateThumbprint
+               : 'kid=' + record.kid) +
+         ', valid until ' + record.notAfter + '. They can ' +
+         (saml ? 'present an RFC 7522 section 2.1 SAML 2.0 assertion with ' +
+                 '<Issuer> "' + (declared || identifier) + '" now, and its ' +
+                 '<Subject> may name ONLY themselves'
+               : 'present an RFC 7523 section 2.1 assertion as `iss` "' +
+                 (declared || identifier) + '" now, and it may name ONLY ' +
+                 'themselves as `sub`') +
+         ': a person\'s key is their own credential rather than ' +
          'permission to speak for anybody else, and an assertion from them ' +
          'about a third party is refused. **The private key is in this reply ' +
          'and this service will not hand it over again** — it is sealed on ' +
@@ -799,8 +852,12 @@ async function issueToPerson(identifier, body) {
 // issued, and a person may not: everything in `stsAssertion*` was put there by
 // the issue, so leaving the declaration would leave somebody declared as an
 // issuer with no key to issue with.
-function clearPerson(identifier) {
-  log.debug('Entering clearPerson(). identifier=' + identifier);
+//
+// ONE PROFILE's key pair, since 2026-09-13 — a person may hold both, and taking
+// one off leaves the other working, which is the application arm's rule.
+function clearPerson(identifier, purpose) {
+  log.debug('Entering clearPerson(). identifier=' + identifier +
+            ' purpose=' + purpose);
   if (!identifier) {
     log.debug('Leaving clearPerson(). No name.');
     return refuse('Name the person to take the key pair off.', 'STS-PKI-0106');
@@ -810,7 +867,7 @@ function clearPerson(identifier) {
     return refuse('This process has no directory, so nobody holds a key pair ' +
                   'to take off.', 'STS-PKI-0107');
   }
-  const done = personAssertions.clear(identifier);
+  const done = personAssertions.clear(identifier, purpose);
   if (done.unknown) {
     log.debug('Leaving clearPerson(). Nobody by that name.');
     return refuse('There is nobody called "' + identifier + '" in the "' +
@@ -819,12 +876,17 @@ function clearPerson(identifier) {
   if (!done.ok) {
     log.debug('Leaving clearPerson(). Nothing to take off.');
     return refuse('Nothing was taken off "' + identifier + '" — they hold no ' +
-                  'assertion key pair and declare no issuer.', 'STS-PKI-0111');
+                  (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') + ' key ' +
+                  'pair and declare no issuer for it. The other profile\'s ' +
+                  'key pair, if they hold one, is untouched either way.',
+                  'STS-PKI-0111');
   }
   log.debug('Leaving clearPerson(). Cleared.');
   return { ok: true, target: 'person', person: identifier,
+           purpose: purpose,
            removed: done.removed,
-           why: 'The RFC 7523 signing key pair was taken off "' + identifier +
+           why: 'The ' + (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') +
+                ' signing key pair was taken off "' + identifier +
                 '", and the issuer declaration with it — ' + done.removed +
                 ' attribute(s). **THIS IS NOT REVOCATION.** The certificate ' +
                 'is still valid, still chains to this realm\'s Root and is ' +
@@ -835,6 +897,91 @@ function clearPerson(identifier) {
                 'refused as an authority over anybody else, which it was ' +
                 'before and is a property of the certificate rather than of ' +
                 'the entry.' };
+}
+
+// ---------------------------------------------------------------------------
+// A CERTIFICATE IN PLACE OF A PERSON'S KEY PAIR (2026-09-13). `pki.js`'s
+// `registerCertificate()` decides the chain exactly as it does for an
+// application — with `subjectKind: 'person'`, so a certificate this realm
+// issued must name THIS person — and `person_assertions.write()` puts the
+// record on the entry through the set the issue writes, with an empty private
+// key that clears the one an earlier issue left. No private key comes back,
+// because none was given: the person holds it.
+// ---------------------------------------------------------------------------
+async function uploadForPerson(identifier, body) {
+  log.debug('Entering uploadForPerson(). identifier=' + identifier);
+  if (!identifier) {
+    log.debug('Leaving uploadForPerson(). No name.');
+    return refuse('Name the person the certificate is for.', 'STS-PKI-0106');
+  }
+  if (!personAssertions.storable()) {
+    log.debug('Leaving uploadForPerson(). No directory.');
+    return refuse('This process has no directory, so there is nowhere to put ' +
+                  'a person\'s certificate.', 'STS-PKI-0107');
+  }
+  const purpose = purposeOf(body);
+  if (!purpose) {
+    log.debug('Leaving uploadForPerson(). An unknown profile.');
+    return refuse('"' + body.purpose + '" is not a profile a person may hold ' +
+                  'a key pair for. There are ' + pki.PURPOSE_IDS.join(' and ') +
+                  '.', 'STS-PKI-0011');
+  }
+  if (!personAssertions.recordFor(identifier)) {
+    log.debug('Leaving uploadForPerson(). Nobody by that name.');
+    return refuse('There is nobody called "' + identifier + '" in the "' +
+                  realmLabel() + '" realm. Create them on /admin/users first.',
+                  'STS-PKI-0109');
+  }
+  const registered = await pki.registerCertificate(undefined, {
+    identifier: identifier,
+    purpose: purpose,
+    subjectKind: 'person',
+    certificatePem: body.certificate,
+    chainPem: body.chain
+  });
+  if (!registered.ok) {
+    log.debug('Leaving uploadForPerson(). The upload was refused.');
+    return refusedBy(registered, 'STS-PKI-0140');
+  }
+  const record = registered.registered;
+  const written = personAssertions.write(identifier, record,
+                                         { purpose: purpose });
+  if (!written.ok) {
+    log.debug('Leaving uploadForPerson(). The write failed.');
+    return refusedBy(written, 'STS-PKI-0110');
+  }
+  const names = personAssertions.KEY_PAIR_ATTRIBUTES[purpose];
+  log.debug('Leaving uploadForPerson(). Uploaded.');
+  return { ok: true,
+           target: 'person',
+           person: identifier,
+           purpose: purpose,
+           source: record.source,
+           attributes: written.written.slice(),
+           kid: record.kid,
+           thumbprint: record.certificateThumbprint,
+           subject: record.subject,
+           issuer: record.issuer,
+           chain: record.chainSubjects.slice(),
+           notAfter: record.notAfter,
+           revocation: record.revocation,
+           why: 'The certificate "' + record.subject + '", issued by "' +
+                record.issuer + '", replaced the ' +
+                pki.purposeFor(purpose).label + ' key pair on "' +
+                identifier + '" — a PERSON — (' +
+                (record.source === 'uploaded-realm-ca'
+                  ? 'this realm\'s own certificate authority issued it to ' +
+                    'them'
+                  : 'an external certificate authority issued it, and its ' +
+                    'chain of ' + record.chainSubjects.length +
+                    ' certificate(s) up to a self-signed root verified') +
+                '). ' + names.handleLabel + '=' +
+                (purpose === 'saml' ? record.certificateThumbprint
+                                    : record.kid) +
+                ', valid until ' + record.notAfter + '. The person holds the ' +
+                'private key and this service holds none; any key pair ' +
+                'issued to them here before is gone from the entry. An ' +
+                'assertion signed with it may name ONLY them.' };
 }
 
 async function pkiAction(body) {
@@ -992,8 +1139,9 @@ async function pkiAction(body) {
     // `common/pki.js` forgot the private key on the way out of that call, so
     // if any of these writes fails the key pair is GONE — which is why they
     // are done together and why a failure reports which one. WHICH writes is
-    // PURPOSE_WRITES's, above: six for RFC 7523 and five for RFC 7522, and
-    // the difference is that SAML has no JWKS.
+    // PURPOSE_WRITES's, above: seven for RFC 7523 and six for RFC 7522
+    // (both counting the provenance attribute since 2026-09-13), and the
+    // difference is that SAML has no JWKS.
     // ---------------------------------------------------------------------
     const writes = PURPOSE_WRITES[purpose].valuesOf(record);
     for (let i = 0; i < writes.length; i++) {
@@ -1039,6 +1187,134 @@ async function pkiAction(body) {
              jwsAlg: record.jwsAlg };
   }
 
+  // =======================================================================
+  // UPLOAD A CERTIFICATE IN PLACE OF THE KEY PAIR (2026-09-13).
+  //
+  // The other way an application's RFC 7523 or RFC 7522 key pair is replaced,
+  // beside `issue`: the application generated its own key pair and brings the
+  // certificate. `common/pki.js`'s `registerCertificate()` decides whether the
+  // chain is complete and verifies — this realm's own authority may be
+  // represented by the leaf alone, anybody else's must arrive with every
+  // intermediate and a self-signed root — and hands back a record in the
+  // issue's shape with an EMPTY private key, so the writes below are
+  // PURPOSE_WRITES's, the same table an issue writes through.
+  //
+  // **THE EMPTY PRIVATE KEY IS WRITTEN, AND THAT IS WHAT MAKES IT A
+  // REPLACEMENT.** Leaving the issued key pair's private half on the entry
+  // beside somebody else's certificate would be an entry holding a key for a
+  // certificate it does not match — and `/admin/applications` would go on
+  // handing it out as though it signed for this application.
+  //
+  // ~~APPLICATIONS ONLY.~~ **A PERSON TOO, SINCE 2026-09-13**, with
+  // `target=person`. This read: *an upload door for somebody else's entry
+  // would be an operator registering a key a person never saw.* The concern
+  // is the private key, and an upload carries none — the person generated the
+  // key pair and holds it, and what an operator registers is the certificate
+  // they were issued, by this realm or by an authority the whole chain names.
+  // What an upload cannot do for a person is widen them: the grant still holds
+  // their key to assertions about themselves, and a certificate this realm
+  // issued to somebody ELSE is refused by name (`STS-PKI-0155`).
+  // =======================================================================
+  if (action === 'upload-certificate') {
+    const identifier = String(body.identifier || '').trim();
+    const target = targetOf(body);
+    if (!target) {
+      log.debug("Leaving pkiAction(). An unknown target.");
+      return refuse('"' + body.target + '" is not a kind of subject a ' +
+                    'certificate is registered for. There are ' +
+                    pki.SUBJECT_KIND_IDS.join(' and ') + '.', 'STS-PKI-0012');
+    }
+    if (target === 'person') {
+      log.debug("Leaving pkiAction().");
+      return await uploadForPerson(identifier, body);
+    }
+    if (!identifier) {
+      log.debug("Leaving pkiAction().");
+      return refuse('Name the application the certificate is for.',
+                    'STS-PKI-0113');
+    }
+    if (!applications.get(identifier)) {
+      log.debug("Leaving pkiAction(). No such application.");
+      return refuse('There is no application "' + identifier + '" in this ' +
+                    'realm. Create it on /admin/applications first.',
+                    'STS-PKI-0114');
+    }
+    const purpose = purposeOf(body);
+    if (!purpose) {
+      log.debug("Leaving pkiAction().");
+      return refuse('"' + body.purpose + '" is not a profile this service ' +
+                    'registers a signing certificate for. It registers ' +
+                    pki.PURPOSE_IDS.join(' and ') + '.', 'STS-PKI-0011');
+    }
+    const registered = await pki.registerCertificate(undefined, {
+      identifier: identifier,
+      purpose: purpose,
+      certificatePem: body.certificate,
+      chainPem: body.chain
+    });
+    if (!registered.ok) {
+      log.debug('Leaving pkiAction(). The upload was refused.');
+      return refusedBy(registered, 'STS-PKI-0140');
+    }
+    const record = registered.registered;
+    const table = PURPOSE_WRITES[purpose];
+    // THE PRIVATE KEY GOES FIRST: a write that failed after it would leave
+    // the OLD certificate with no private key on the entry, which refuses
+    // rather than signs — where the other order could leave a new certificate
+    // beside an old key.
+    const writes = table.valuesOf(record).sort(function (a, b) {
+      return (a[0] === table.privateKeyAttribute ? -1 : 0) -
+             (b[0] === table.privateKeyAttribute ? -1 : 0);
+    });
+    for (let i = 0; i < writes.length; i++) {
+      const done = applications.updateApplication(identifier, {
+        attribute: writes[i][0], mode: 'set', value: writes[i][1]
+      });
+      if (!done || done.ok === false) {
+        log.error(errorCodes.tag('STS-PKI-0154') + 'pki_admin: a certificate ' +
+                  'uploaded for "' + identifier + '" could not be written: ' +
+                  writes[i][0] + ': ' +
+                  ((done && done.errors) || []).join(' '));
+        log.debug("Leaving pkiAction(). A write failed.");
+        return refuse('The certificate verified and `' + writes[i][0] + '` ' +
+                      'could not be written to the application entry: ' +
+                      ((done && done.errors) || []).join(' ') + ' The entry ' +
+                      'may hold part of the upload; upload again.',
+                      'STS-PKI-0154');
+      }
+    }
+    log.debug('Leaving pkiAction(). Uploaded.');
+    return { ok: true,
+             purpose: purpose,
+             source: record.source,
+             attributes: table.attributes.slice(),
+             kid: record.kid,
+             thumbprint: record.certificateThumbprint,
+             subject: record.subject,
+             issuer: record.issuer,
+             chain: record.chainSubjects.slice(),
+             notAfter: record.notAfter,
+             revocation: record.revocation,
+             why: 'The certificate "' + record.subject + '", issued by "' +
+                  record.issuer + '", replaced the ' +
+                  pki.purposeFor(purpose).label + ' key pair on "' +
+                  identifier + '" (' +
+                  (record.source === 'uploaded-realm-ca'
+                    ? 'this realm\'s own certificate authority issued it'
+                    : 'an external certificate authority issued it, and its ' +
+                      'chain of ' + record.chainSubjects.length +
+                      ' certificate(s) up to a self-signed root verified') +
+                  '). ' + table.handleLabel + '=' +
+                  (purpose === 'saml' ? record.certificateThumbprint
+                                      : record.kid) +
+                  ', valid until ' + record.notAfter + '. The application ' +
+                  'holds the private key; this service holds none, and any ' +
+                  'key pair issued here before is gone from the entry. For ' +
+                  'it to be accepted as an AUTHORIZATION grant the issuer it ' +
+                  'will use must be declared on ' + table.issuerAttribute +
+                  '.' };
+  }
+
   if (action === 'revoke') {
     const identifier = String(body.identifier || '').trim();
     const target = targetOf(body);
@@ -1050,8 +1326,14 @@ async function pkiAction(body) {
                     pki.SUBJECT_KIND_IDS.join(' and ') + '.', 'STS-PKI-0012');
     }
     if (target === 'person') {
+      if (!purposeOf(body)) {
+        log.debug("Leaving pkiAction(). An unknown profile.");
+        return refuse('"' + body.purpose + '" is not a profile a person may ' +
+                      'hold a key pair for. There are ' +
+                      pki.PURPOSE_IDS.join(' and ') + '.', 'STS-PKI-0011');
+      }
       log.debug("Leaving pkiAction().");
-      return clearPerson(identifier);
+      return clearPerson(identifier, purposeOf(body));
     }
     if (!identifier) {
       log.debug("Leaving pkiAction().");
@@ -1271,7 +1553,7 @@ async function pkiAction(body) {
     // **PUBLISHED TO THE DIRECTORY IMMEDIATELY, AND THE HTTP SIDE NEEDS
     // NOTHING.** A CRL is built and signed on demand at
     // `/pki/crl/{scope}/{ca}`, so the next fetch there already carries this
-    // entry; the `ldap://` and `ldaps://` addresses in every certificate this
+    // entry; the `ldap://` address in every certificate this
     // authority signed point at a DOCUMENT under `ou=crl`, and a document has
     // to be rewritten or it goes on saying what it said before. That
     // asymmetry is the whole reason this line exists and the reason there is
@@ -1474,9 +1756,13 @@ function chainTable(chain) {
       '<td>' + esc(tier.notAfter.slice(0, 10)) +
         (tier.expired ? ' <strong>(expired)</strong>' : '') + '</td>' +
       '<td><code>' + esc(tier.keyAlg) + '</code> / <code>' +
-        esc(tier.signatureAlg) + '</code></td>' +
+        esc(tier.signatureAlg) + '</code>' +
+        pqcBadge.badgeFor({ certificatePem: tier.certificatePem,
+                            algorithms: [tier.keyAlg] }) + '</td>' +
       '<td><code>' + esc(tier.thumbprint.slice(0, 16)) +
-      '&hellip;</code></td></tr><tr><td ' +
+      '&hellip;</code><br>' +
+      certificateDialog.link('/admin/pki', tier.thumbprint, 'pki-chain') +
+      '</td></tr><tr><td ' +
       'colspan="6">' + admin.tip(tier.what,
         'What the ' + tier.label + ' is for') + '</td></tr>';
   }).join('');
@@ -2334,6 +2620,8 @@ function storeTable(json, draft) {
         (one.expired ? ' <strong>(expired)</strong>' : '') + '</td>' +
       '<td><code>' + esc(one.keyAlg) + '</code> / <code>' +
         esc(one.signatureAlg) + '</code>' +
+        pqcBadge.badgeFor({ certificatePem: one.certificatePem,
+                            algorithms: [one.keyAlg] }) +
         (one.altKeyAlg
           ? '<br><small>alt <code>' + esc(one.altKeyAlg) + '</code>' +
             (one.altSigned ? ', signed' : ', key only') + '</small>'
@@ -2354,7 +2642,9 @@ function storeTable(json, draft) {
                   'certificates are still valid documents — and will say ' +
                   'that their issuer is missing.') + '>Remove</button>' +
       '</td></tr>' +
-      '<tr><td colspan="8"><details><summary>Certificate (PEM)' +
+      '<tr><td colspan="8">' +
+        certificateDialog.link('/admin/pki', one.thumbprint, 'workbench') +
+        '<details><summary>Certificate (PEM)' +
         (one.hasCsr ? ' and certification request' : '') + '</summary><pre>' +
         esc(one.certificatePem) + (one.csrPem ? '\n' + esc(one.csrPem) : '') +
         '</pre></details></td></tr>';
@@ -2531,9 +2821,13 @@ function tierRow(tier, depth, extra) {
     '<td>' + esc(String(tier.notAfter).slice(0, 10)) +
       (tier.expired ? ' <strong>(expired)</strong>' : '') + '</td>' +
     '<td><code>' + esc(tier.keyAlg) + '</code> / <code>' +
-      esc(tier.signatureAlg) + '</code></td>' +
+      esc(tier.signatureAlg) + '</code>' +
+      pqcBadge.badgeFor({ certificatePem: tier.certificatePem,
+                          algorithms: [tier.keyAlg] }) + '</td>' +
     '<td><code>' + esc(String(tier.thumbprint).slice(0, 16)) +
-    '&hellip;</code></td></tr>';
+    '&hellip;</code><br>' +
+    certificateDialog.link('/admin/pki', tier.thumbprint, 'pki-tree') +
+    '</td></tr>';
 }
 
 function treeSection(json) {
@@ -2580,9 +2874,14 @@ function treeSection(json) {
           '<td><code>' + esc(cert.subject) + '</code></td>' +
           '<td>' + esc(String(cert.notAfter).slice(0, 10)) +
             (cert.expired ? ' <strong>(expired)</strong>' : '') + '</td>' +
-          '<td><code>' + esc(cert.alg || cert.keyAlg || '') + '</code></td>' +
+          '<td><code>' + esc(cert.alg || cert.keyAlg || '') + '</code>' +
+            pqcBadge.badgeFor({ certificatePem: cert.certificatePem,
+                                algorithms: [cert.keyAlg, cert.alg] }) +
+            '</td>' +
           '<td><code>' + esc(String(cert.thumbprint).slice(0, 16)) +
-            '&hellip;</code></td></tr>';
+            '&hellip;</code><br>' +
+            certificateDialog.link('/admin/pki', cert.thumbprint,
+                                   'pki-tree') + '</td></tr>';
       });
       if (!one.certified.length) {
         rows += '<tr><td style="padding-left:4.2rem"><em>nothing certified ' +
@@ -2765,8 +3064,27 @@ function rootControls(json) {
 
 
 // ---------------------------------------------------------------------------
-// WHAT IS NOT A LEAF OF THIS TREE, SAID ON THE PAGE RATHER THAN LEFT TO BE
-// DISCOVERED.
+// WHAT THIS TREE COVERS, SAID ON THE PAGE RATHER THAN LEFT TO BE DISCOVERED.
+//
+// **THIS WAS A WARNING ABOUT WHAT IT DID NOT COVER UNTIL 2026-09-13**, headed
+// *What one anchor does not cover*, and its first paragraph read: *One
+// family of key material in this service is deliberately NOT a leaf of this
+// tree: the eleven post-quantum signing keys per realm. They are generated by
+// common/pq_jose.js — this service's OWN reading of ML-DSA, SLH-DSA and the
+// composite algorithms, which is deliberately independent of the vendored
+// implementation the certificate encoder uses. Handing a key made by one to
+// the other would be exactly the defect that independence exists to expose,
+// so they carry no certificate at all and are published as bare AKP JWKs.*
+//
+// It was reversed by request, and the independence was kept rather than argued
+// away: only the PUBLIC key crosses, the one byte-layout difference is written
+// out in `common/pki.js`'s `pqSubjectPublicKeyPem()`, and
+// `tests/pq_key_certification.js` holds a `pq_jose.js` signature verifying
+// under the vendored reading against the certificate. `common/pki.js` argues it
+// above `PQ_JOSE_IN_X509`. The ML-DSA listener certificate, which was
+// self-signed beside the certified RSA one, came under the TLS Issuing CA the
+// same day. **It is still a note rather than nothing** because two keys remain
+// outside by their nature, and a reader deciding what to pin needs both named.
 //
 // A page that drew a tree and let a reader conclude "everything is under it"
 // would be the most consequential untruth this console could tell about key
@@ -2792,21 +3110,31 @@ function rootControls(json) {
 // SPIFFE alone is still sayable, by pinning that Issuing CA instead of the
 // Root. `spiffe/spiffe_ca.js`'s own header carries the argument in full.
 // ---------------------------------------------------------------------------
-function notCertifiedNote(json) {
-  log.debug("Entering notCertifiedNote().");
-  log.debug("Leaving notCertifiedNote().");
-  return admin.warn(
-    '<strong>One family of key material in this service is deliberately NOT ' +
-    'a leaf of this tree: the eleven post-quantum signing keys per ' +
-    'realm.</strong> They are generated by <code>common/pq_jose.js</code> — ' +
-    'this service&rsquo;s OWN reading of ML-DSA, SLH-DSA and the composite ' +
-    'algorithms, which is deliberately independent of the vendored ' +
-    'implementation the certificate encoder uses. Handing a key made by one ' +
-    'to the other would be exactly the defect that independence exists to ' +
-    'expose, so they carry no certificate at all and are published as bare ' +
-    'AKP JWKs. <code>common/vendored/CLAUDE.md</code> argues it at ' +
-    'length.<p><strong>The SPIFFE X.509 authority used to be the second ' +
-    'entry here and is now under this Root</strong> (2026-09-11) — it is the ' +
+function coverageNote(json) {
+  log.debug("Entering coverageNote().");
+  log.debug("Leaving coverageNote().");
+  return admin.note(
+    '<strong>Every signing key pair this service generates is a leaf of this ' +
+    'tree, the post-quantum ones included</strong> (2026-09-13). A ' +
+    'realm&rsquo;s eleven post-quantum signing keys &mdash; ML-DSA, SLH-DSA ' +
+    'and the six composites &mdash; are issued from that realm&rsquo;s own ' +
+    '<code>JOSE signing</code> Issuing CA as they are made, and each is ' +
+    'refused in any other realm by the Intermediate boundary every leaf here ' +
+    'is held to. The keys are still generated and signed with by ' +
+    '<code>common/pq_jose.js</code>, this service&rsquo;s own reading of ' +
+    'those constructions: only the PUBLIC key reaches the certificate ' +
+    'encoder, and a signature from one reading is checked to verify under ' +
+    'the other against the certificate. The JWKS is unchanged &mdash; they ' +
+    'are still published as AKP JWKs. An ML-DSA listener certificate ' +
+    '(<code>tls.certificateAlgorithms</code>) is a leaf of the ' +
+    '<code>TLS listeners</code> Issuing CA beside the RSA one.' +
+    '<p><strong>Two keys stay outside, by what they are.</strong> The SPIFFE ' +
+    '<em>JWT</em> authority has no certificate to issue &mdash; a JWT-SVID ' +
+    'is verified against a bare key in the bundle &mdash; and the OpenID4VCI ' +
+    'request-encryption key only DECRYPTS and is trusted because a wallet ' +
+    'read it out of the issuer&rsquo;s own metadata.</p>' +
+    '<p><strong>The SPIFFE X.509 authority used to be on this list and is ' +
+    'under this Root</strong> (2026-09-11) &mdash; it is the ' +
     '<code>SPIFFE authority</code> Issuing CA in each realm\'s branch above, ' +
     'and every X509-SVID this service mints is a leaf of it. It is the one ' +
     'Issuing CA in this hierarchy with <code>pathLen: 1</code> rather than ' +
@@ -2817,7 +3145,7 @@ function notCertifiedNote(json) {
     'cannot drift. <a href="/admin/spiffe">The SPIFFE page</a> reports which ' +
     'authority each realm is actually using — a realm with no branch built ' +
     'still falls back to a self-signed one and says so.</p>',
-    'What one anchor does not cover');
+    'What one anchor covers');
 }
 
 
@@ -2922,7 +3250,7 @@ function revocationModel() {
       revokedNotIssued: revoked.filter(function (entry) {
         return !pkiRevocation.issuedHere(one.scope, one.ca, entry.serialHex);
       }),
-      crl: { http: points.http, ldap: points.ldap, ldaps: points.ldaps },
+      crl: { http: points.http, ldap: points.ldap },
       ocsp: points.ocsp,
       caIssuers: points.caIssuers,
       directoryDn: points.dn
@@ -3055,10 +3383,10 @@ function authorityBlock(authority) {
     authority.revoked.length + ' revoked. A client reads this ' +
     'authority&rsquo;s answer at ' +
     '<code>' + esc(authority.crl.http) + '</code> (HTTP), ' +
-    '<code>' + esc(authority.crl.ldap) + '</code> (LDAP), ' +
-    '<code>' + esc(authority.crl.ldaps) + '</code> (LDAPS) or ' +
+    '<code>' + esc(authority.crl.ldap) + '</code> (LDAP) or ' +
     '<code>' + esc(authority.ocsp) + '</code> (OCSP). ' +
-    'Every certificate this authority signs names all four inside itself.</p>' +
+    'Every certificate this authority signs names all three inside ' +
+    'itself.</p>' +
     '<table class="grid"><thead><tr><th>Serial</th><th>Subject</th>' +
     '<th>Status</th><th></th></tr></thead><tbody>' +
     issuedRevocationRows(authority) +
@@ -3124,7 +3452,7 @@ function revocationPane(json) {
     (model.publishedToDirectory
       ? 'republished as the list changes'
       : 'OFF (<code>pki.publishCrlToDirectory</code>), so the ' +
-        '<code>ldap://</code> and <code>ldaps://</code> addresses inside ' +
+        '<code>ldap://</code> address inside ' +
         'these certificates resolve to nothing') + '.</p>',
     'Why these lists are not empty, and how fresh they are');
 
@@ -3151,9 +3479,17 @@ function revocationPane(json) {
 // person form's POST: a private key is handed over once and a banner is not
 // where a PEM block goes. Every other caller passes nothing and the page is
 // what it was.
-function renderPki(req, res, draft, banner, extra) {
+//
+// `certificate` is the SIXTH, and it is the details view the GET route
+// resolved for `?certificate=` (2026-09-13): its answer goes on the JSON as
+// `certificateDetails` and its dialog is drawn over the page. Absent, both are
+// absent, and the page is byte for byte what it was.
+function renderPki(req, res, draft, banner, extra, certificate) {
   log.debug('Entering renderPki().');
   const json = pkiJson(req, draft);
+  if (certificate) {
+    json.certificateDetails = certificate;
+  }
   const chain = json.chain;
   const keyAlg = config.value('pki.keyAlgorithm');
 
@@ -3166,7 +3502,7 @@ function renderPki(req, res, draft, banner, extra) {
     }).length,
                'applications holding one') +
     admin.tile(json.persons.filter(function (one) {
-      return one.hasKeyPair;
+      return one.hasKeyPair || one.saml.hasKeyPair;
     }).length,
                'people holding one') +
     admin.tile(json.realm, 'trust realm') +
@@ -3254,11 +3590,12 @@ function renderPki(req, res, draft, banner, extra) {
       admin.tip(
         'The key pair is generated here, signed by the Issuing CA, and ' +
         'written onto that application’s entry. WHICH attributes depends ' +
-        'on the profile: RFC 7523 writes six &mdash; ' +
+        'on the profile: RFC 7523 writes seven &mdash; ' +
         'oauthAssertionPrivateKey, oauthAssertionCertificate, ' +
         'oauthAssertionCertificateChain, oauthAssertionJwks, ' +
-        'oauthAssertionKid and oauthAssertionExpiresAt &mdash; and RFC 7522 ' +
-        'writes five under oauthSamlAssertion*, with no JWKS among them ' +
+        'oauthAssertionKid, oauthAssertionExpiresAt and ' +
+        'oauthAssertionKeySource &mdash; and RFC 7522 ' +
+        'writes six under oauthSamlAssertion*, with no JWKS among them ' +
         'because SAML has none: what a party registers for that profile is a ' +
         'certificate. <strong>They are separate key pairs and an application ' +
         'may hold both</strong>; neither can sign for the other’s ' +
@@ -3318,11 +3655,14 @@ function renderPki(req, res, draft, banner, extra) {
         'of their own, signing <em>this is me, issue a token for me</em>, is ' +
         'the profile read literally — and it is the shape a client author ' +
         'most often wants to exercise: no browser, no password, a signature ' +
-        'and an access token. This writes ' +
-        json.personAttributes.map(function (one) {
-          return '<code>' + esc(one) + '</code>';
-        }).join(', ') + ' onto that person’s entry, with the private half ' +
-        'sealed exactly as an application’s is.',
+        'and an access token. RFC 7522 reads the same way for a SAML ' +
+        '<code>&lt;Issuer&gt;</code>. This writes <code>stsAssertion*</code> ' +
+        'for the JWT profile or <code>stsSamlAssertion*</code> for the SAML ' +
+        'one onto that person’s entry — two sets sharing no name, so neither ' +
+        'key pair signs for the other — with the private half sealed exactly ' +
+        'as an application’s is. The person’s own page under ' +
+        '<code>/admin/users</code> draws both, and replaces either with an ' +
+        'uploaded certificate.',
         'What a person’s key pair is for') +
       admin.warn(
         '<p><strong>A person’s assertion may only be about ' +
@@ -3333,7 +3673,9 @@ function renderPki(req, res, draft, banner, extra) {
         'rule anybody given a key here could obtain a token as anybody in ' +
         'this realm. <strong>A party that may assert about other people is ' +
         'an APPLICATION</strong> with the issuer declared on it as ' +
-        '<code>oauthAssertionIssuer</code>, which is a decision an operator ' +
+        '<code>oauthAssertionIssuer</code> (or ' +
+        '<code>oauthSamlAssertionIssuer</code>), which is a decision an ' +
+        'operator ' +
         'makes deliberately. That is the whole difference between the two ' +
         'controls.</p><p><strong>The private key is shown once.</strong> It ' +
         'comes back on the page this form posts to and there is no second ' +
@@ -3346,7 +3688,13 @@ function renderPki(req, res, draft, banner, extra) {
       '<form method="post" action="/admin/pki/person">' +
       '<input type="hidden" name="action" value="issue">' +
       '<input type="hidden" name="target" value="person">' +
-      '<input type="hidden" name="purpose" value="jwt">' +
+      // BOTH PROFILES SINCE 2026-09-13, which is the select this form did not
+      // have: the SAML bearer grant reads a person's RFC 7522 key pair now.
+      '<label>Profile <select name="purpose">' +
+        json.purposes.map(function (one) {
+          return '<option value="' + esc(one.id) + '">' + esc(one.label) +
+                 '</option>';
+        }).join('') + '</select></label> ' +
       '<label>Person <input name="identifier" required ' +
         'placeholder="a username in ou=users"></label> ' +
       '<label>Declared issuer <input name="issuer" ' +
@@ -3368,31 +3716,51 @@ function renderPki(req, res, draft, banner, extra) {
       'pair and an assertion naming a person as its issuer is refused for ' +
       'want of a registered issuer.', 'No directory')
     : (json.persons.length
-      ? '<table><thead><tr><th>Person</th><th>kid</th><th>Expires</th>' +
+      // A ROW PER PROFILE A PERSON HOLDS OR DECLARES (2026-09-13), for the
+      // applications table's reason: every fact on the row — the handle, the
+      // expiry, the declared issuer and the Take-off button — is per profile.
+      ? '<table><thead><tr><th>Person</th><th>Profile</th>' +
+        '<th>Key handle</th><th>Source</th><th>Expires</th>' +
         '<th>Asserts as</th><th></th></tr></thead><tbody>' +
-        json.persons.map(function (one) {
-          return '<tr>' +
-            '<td><a href="/admin/users?user=' +
-              encodeURIComponent(one.username) + '">' +
-              esc(one.username) + '</a></td>' +
-            '<td><code>' + esc(one.kid || '—') + '</code></td>' +
-            '<td>' + esc(one.expiresAt ? one.expiresAt.slice(0, 8) : '—') +
-              '</td>' +
-            '<td>' + one.issuers.map(function (iss) {
-                return '<code>' + esc(iss) + '</code>';
-              }).join('<br>') +
-              (one.declared ? '' : ' <small>(their own name — nothing is ' +
-                                   'declared)</small>') + '</td>' +
-            '<td>' + (one.hasKeyPair
-              ? '<form method="post" action="/admin/pki">' +
-                '<input type="hidden" name="action" value="revoke">' +
-                '<input type="hidden" name="target" value="person">' +
-                '<input type="hidden" name="identifier" value="' +
-                  esc(one.username) + '">' +
-                '<button type="submit">Take this key pair off</button></form>'
-              : '') + '</td>' +
-            '</tr>';
-        }).join('') + '</tbody></table>'
+        json.persons.reduce(function (rows, one) {
+          [{ id: 'jwt', label: 'RFC 7523 (JWT)', handleLabel: 'kid',
+             fact: one, handle: one.kid },
+           { id: 'saml', label: 'RFC 7522 (SAML 2.0)',
+             handleLabel: 'thumbprint', fact: one.saml,
+             handle: one.saml.thumbprint }].forEach(function (p) {
+            if (!p.fact.hasKeyPair && !p.fact.declared) {
+              return;
+            }
+            rows.push('<tr>' +
+              '<td><a href="/admin/users?user=' +
+                encodeURIComponent(one.username) + '#credentials">' +
+                esc(one.username) + '</a></td>' +
+              '<td>' + esc(p.label) + '</td>' +
+              '<td><code>' + esc(p.handle || '—') + '</code>' +
+                (p.handle ? ' <small>(' + p.handleLabel + ')</small>' : '') +
+                pqcBadge.badge(p.fact.pqc) + '</td>' +
+              '<td>' + esc(p.fact.source || '—') + '</td>' +
+              '<td>' + esc(p.fact.expiresAt ? p.fact.expiresAt.slice(0, 8)
+                                            : '—') + '</td>' +
+              '<td>' + p.fact.issuers.map(function (iss) {
+                  return '<code>' + esc(iss) + '</code>';
+                }).join('<br>') +
+                (p.fact.declared ? '' : ' <small>(their own name — nothing ' +
+                                        'is declared)</small>') + '</td>' +
+              '<td>' + (p.fact.hasKeyPair
+                ? '<form method="post" action="/admin/pki">' +
+                  '<input type="hidden" name="action" value="revoke">' +
+                  '<input type="hidden" name="target" value="person">' +
+                  '<input type="hidden" name="purpose" value="' + p.id + '">' +
+                  '<input type="hidden" name="identifier" value="' +
+                    esc(one.username) + '">' +
+                  '<button type="submit">Take this key pair off</button>' +
+                  '</form>'
+                : '') + '</td>' +
+              '</tr>');
+          });
+          return rows;
+        }, []).join('') + '</tbody></table>'
       : '<p>Nobody in this realm holds an assertion key pair.</p>');
 
   const issuedRows = json.issued.length
@@ -3408,7 +3776,7 @@ function renderPki(req, res, draft, banner, extra) {
           '<td>' + esc(one.purposeLabel) + '</td>' +
           '<td><code>' + esc(one.handle || '—') + '</code>' +
             (one.handle ? ' <small>(' + esc(one.handleLabel) + ')</small>' :
-             '') +
+             '') + pqcBadge.badge(one.pqc) +
             '</td>' +
           '<td>' + esc(one.expiresAt ? one.expiresAt.slice(0, 8) : '—') +
             '</td>' +
@@ -3474,8 +3842,8 @@ function renderPki(req, res, draft, banner, extra) {
   admin.respond(req, res, json, 'PKI', '/admin/pki',
                 (banner || '') +
                 (extra || '') +
-                tiles + what + limits +
-                '<h3>The hierarchy</h3>' +
+                tiles + what + limits + pqcBadge.legend() +
+                '<h3 id="pki-tree">The hierarchy</h3>' +
                 admin.note(
                   '<strong>One Root CA for the whole service, an ' +
                   'Intermediate CA per scope, and an Issuing CA for each use ' +
@@ -3509,13 +3877,14 @@ function renderPki(req, res, draft, banner, extra) {
                   'self-signed certificate it was born with.</p>',
                   'What this tree is, and where the realm boundary went') +
                 treeSection(json) +
-                notCertifiedNote(json) +
+                coverageNote(json) +
                 '<h3>Edit the hierarchy</h3>' +
                 rootControls(json) +
                 (json.tree.scopes || []).map(function (scope) {
                   return scopeControls(json, scope);
                 }).join('') +
-                (chain ? '<h3>This realm&rsquo;s three-tier view</h3>' +
+                (chain ? '<h3 id="pki-chain">This realm&rsquo;s three-tier ' +
+                         'view</h3>' +
                          admin.note(
                            'The Root, this realm&rsquo;s Intermediate and ' +
                            'its <em>application assertion</em> Issuing CA ' +
@@ -3531,14 +3900,38 @@ function renderPki(req, res, draft, banner, extra) {
                 '<h3>People</h3>' + personRows +
                 revocationPane(json) +
                 certificatePane(json, json.workbench.draft) +
-                admin.configFormsFor('/admin/pki'));
+                admin.configFormsFor('/admin/pki') +
+                (certificate
+                  ? certificateDialog.dialog('/admin/pki', certificate,
+                                             req.query.from)
+                  : ''));
   log.debug('Leaving renderPki().');
 }
 
 app.get('/admin/pki', function (req, res) {
   log.debug('Entering the admin PKI page.');
-  renderPki(req, res, null, '');
-  log.debug('Leaving the admin PKI page.');
+  if (!certificateDialog.requested(req)) {
+    renderPki(req, res, null, '');
+    log.debug('Leaving the admin PKI page.');
+    return;
+  }
+  // A CERTIFICATE'S DETAILS OVER THE PAGE (2026-09-13). Asynchronous because
+  // verifying a chain is Web Crypto; the page is drawn once the answer is in.
+  // A refusal still opens the dialog, which says why, and is marked — an open
+  // that cannot be answered is a refused lookup, not a page that failed.
+  certificateViews.detailsView(req).then(function (view) {
+    if (!view.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(view) || 'STS-ADMIN-0641');
+    }
+    renderPki(req, res, null, '', '', view);
+    log.debug('Leaving the admin PKI page. With a certificate dialog.');
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-ADMIN-0642') + 'pki_admin: the ' +
+              'certificate details view failed: ' + e.message);
+    errorCodes.mark(res, 'STS-ADMIN-0642');
+    renderPki(req, res, null, '', '', { ok: false, errors: [
+      'The certificate could not be opened: ' + e.message] });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -3669,6 +4062,34 @@ app.post('/admin/pki/export', function (req, res) {
     });
 });
 
+// ---------------------------------------------------------------------------
+// WHERE A PKI ACTION GOES BACK TO (2026-09-13). The key-pair controls are drawn
+// on an application's own page as well as here — moving a FORM is not moving an
+// ACTION, which is `/admin/delegation`'s arrangement with the grant form — so a
+// form posted from there names `from` and goes back there. `from` is a NAME
+// checked against the one page that sends it, never a URL, and the destination
+// is REBUILT from `identifier` by the console, for `permissionsReturnTo()`'s
+// reason: a redirect target taken out of a request body is an open redirect.
+// ---------------------------------------------------------------------------
+function pkiReturnTo(body) {
+  log.debug("Entering pkiReturnTo().");
+  const identifier = String((body && body.identifier) || '').trim();
+  if (String((body && body.from) || '') === '/admin/applications' &&
+      identifier && typeof admin.applicationReturnTo === 'function') {
+    log.debug("Leaving pkiReturnTo(). The application page.");
+    return admin.applicationReturnTo(body, identifier, '#credentials');
+  }
+  // AND A PERSON'S OWN PAGE (2026-09-13), whose Credentials section draws the
+  // same controls. The same rule: a name, and a destination rebuilt.
+  if (String((body && body.from) || '') === '/admin/users' &&
+      identifier && typeof admin.userReturnTo === 'function') {
+    log.debug("Leaving pkiReturnTo(). The person's page.");
+    return admin.userReturnTo(body, identifier, '#credentials');
+  }
+  log.debug("Leaving pkiReturnTo(). This page.");
+  return '/admin/pki';
+}
+
 app.post('/admin/pki', function (req, res) {
   log.debug('Entering the admin PKI action.');
   const body = parseBody(req);
@@ -3687,7 +4108,14 @@ app.post('/admin/pki', function (req, res) {
   // action function in this console.
   pkiAction(body).then(function (result) {
     markRefusal(res, result, 'STS-PKI-0105');
-    admin.respondToAction(req, res, '/admin/pki', result);
+    // A SUCCESS HERE SAYS WHAT IT DID IN `why`, and `respondToAction()` puts
+    // `message` on the redirect — so every notice from this handler read
+    // `undefined`. This page draws no notice and nobody saw it; the
+    // application page this handler now also answers to draws one.
+    const answered = result && result.ok && result.message === undefined &&
+                     result.why
+      ? Object.assign({}, result, { message: result.why }) : result;
+    admin.respondToAction(req, res, pkiReturnTo(body), answered);
     log.debug('Leaving the admin PKI action.');
   }).catch(function (e) {
     log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the ' +
@@ -3754,28 +4182,68 @@ app.post('/admin/pki/person', function (req, res) {
     // nowhere else in this console — see `issueToPerson()`'s header for why
     // there is no read door for it, and `app.js` for why this response, like
     // every document here that publishes a key, is `no-store`.
+    const saml = result.ok && result.purpose === 'saml';
     const keyBlock = result.ok
       ? admin.warn(
         '<p>This is the only time this service will show you this key. It is ' +
         'sealed on <code>' + esc(String(result.person)) + '</code>’s entry ' +
-        'as <code>stsAssertionPrivateKey</code> and nothing in this console ' +
+        'as <code>' +
+        (saml ? 'stsSamlAssertionPrivateKey' : 'stsAssertionPrivateKey') +
+        '</code> and nothing in this console ' +
         'or in <code>/admin-api</code> opens it again. Copy it now; issuing ' +
         'again replaces it.</p>' +
-        '<p>The assertion it signs carries <code>iss</code> and ' +
-        '<code>sub</code> of <code>' + esc(String(result.issuer)) +
-        '</code>, an <code>aud</code> of this service’s token endpoint or ' +
-        'issuer, an <code>exp</code> and a <code>jti</code>, and is ' +
-        'presented as ' +
-        '<code>grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer</code> ' +
-        'with <code>assertion=&lt;the JWT&gt;</code>. <code>kid</code> is ' +
-        '<code>' + esc(String(result.kid)) + '</code> and the algorithm is ' +
-        '<code>' + esc(String(result.jwsAlg)) + '</code>.</p>' +
+        (saml
+          // THE RFC 7522 SHAPE (2026-09-13): what the person signs is an
+          // <Assertion>, so the paragraph names its elements rather than a
+          // JWT's claims.
+          ? '<p>The assertion it signs carries an <code>&lt;Issuer&gt;' +
+            '</code> and a <code>&lt;Subject&gt;</code> of <code>' +
+            esc(String(result.issuer)) + '</code>, an ' +
+            '<code>&lt;AudienceRestriction&gt;</code> naming this ' +
+            'service’s token endpoint, a bearer ' +
+            '<code>&lt;SubjectConfirmation&gt;</code>, a ' +
+            '<code>NotOnOrAfter</code> and an <code>ID</code>, is signed ' +
+            'with an XML Signature over the <code>&lt;Assertion&gt;</code>, ' +
+            'and is presented as ' +
+            '<code>grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer' +
+            '</code> with <code>assertion=&lt;base64url&gt;</code>. The ' +
+            'certificate’s thumbprint is <code>' +
+            esc(String(result.thumbprint)) + '</code>.</p>'
+          : '<p>The assertion it signs carries <code>iss</code> and ' +
+            '<code>sub</code> of <code>' + esc(String(result.issuer)) +
+            '</code>, an <code>aud</code> of this service’s token endpoint ' +
+            'or issuer, an <code>exp</code> and a <code>jti</code>, and is ' +
+            'presented as ' +
+            '<code>grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer' +
+            '</code> with <code>assertion=&lt;the JWT&gt;</code>. ' +
+            '<code>kid</code> is <code>' + esc(String(result.kid)) +
+            '</code> and the algorithm is <code>' +
+            esc(String(result.jwsAlg)) + '</code>.</p>') +
         '<pre>' + esc(String(result.privateKeyPem)) + '</pre>' +
         '<p>The certificate, which is public and is also on the entry:</p>' +
         '<pre>' + esc(String(result.certificatePem)) + '</pre>',
         'The private key, once')
       : '';
     res.set('Cache-Control', 'no-store');
+    // FROM A PERSON'S OWN PAGE (2026-09-13) the answer is drawn in the console
+    // shell with a way back to that person, rather than as the PKI page: the
+    // reader was looking at one person and the next thing they do is look at
+    // them again. `back` is rebuilt by the console from the name, never echoed.
+    if (String(body.from || '') === '/admin/users' &&
+        typeof admin.userReturnTo === 'function' && body.identifier) {
+      const returnTo = admin.userReturnTo(body, String(body.identifier).trim(),
+                                          '#credentials');
+      admin.respond(req, res, { ok: !!result.ok }, 'Signing key pair',
+                    '/admin/users',
+                    banner + keyBlock +
+                    '<p><a class="btn" href="' + esc(returnTo) + '">Back to ' +
+                    esc(String(body.identifier).trim()) + '</a></p>',
+                    admin.upTo ? admin.upTo('/admin/users',
+                                            'Signing key pair', {}) : null);
+      log.debug('Leaving the admin PKI person action. Drawn for the person ' +
+                'page. ' + (result.ok ? 'Issued.' : 'Refused.'));
+      return;
+    }
     renderPki(req, res, authoring.draftFrom(body), banner, keyBlock);
     log.debug('Leaving the admin PKI person action. ' +
               (result.ok ? 'Issued.' : 'Refused.'));

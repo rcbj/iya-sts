@@ -26,9 +26,27 @@ to prevent. It is also the mistake this service had made: the metadata named RFC
 | **§2.2 client authentication** | `client_assertion` + `client_assertion_type` | the CLIENT, necessarily | a client secret |
 | **§2.1 an authorization grant** | `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer` + `assertion` | a PERSON | an authorization code |
 
-They share a format, a claim set and a replay cache and nothing else. A request
-may legitimately carry both — a client authenticating with its own assertion and
-presenting somebody else's as the grant.
+They share a format, a claim set and one **used-assertion history** and nothing
+else. A request may legitimately carry both — a client authenticating with its
+own assertion and presenting somebody else's as the grant — but not the SAME
+document twice: an assertion is accepted **once, ever**, whatever it is presented
+as, so a JWT that authenticated a client is refused as a grant and the reverse.
+
+What "used" means, precisely:
+
+* **Only a successful use counts.** An assertion is held while its token request
+  is being answered and becomes spent only if that response issues tokens. A
+  request refused for a different reason — a bad `resource`, an invalid scope, a
+  role the application requires — releases it, and the same assertion may be
+  retried. A replay racing the first request is refused.
+* **It is remembered until the assertion would have expired** — its `exp` plus
+  `oauth2.clientAssertionSkewS` — and not longer. A later document may reuse a
+  `jti` once the first has expired.
+* **It survives a restart** in the `ldif` and `postgres` stores, in both modes,
+  and on `postgres` two processes cannot both accept one assertion. In the
+  default `memory` mode it lives as long as the process.
+* **It is listed** at `/admin/used-assertions` and `GET /admin-api/used-assertions`,
+  per trust realm. No assertion is stored, only its issuer and identifier.
 
 ## The shortest path from nothing to a working grant
 
@@ -157,9 +175,11 @@ should assert under some other name.
 
 Since 2026-09-12 they do not need you. **`/portal/signing-key`** in the user
 portal is the same act, performed by the person the key is for: they sign in,
-press *Generate my signing key*, and the private half is shown once on the page
-that comes back — with the claims, the `kid` and the algorithm printed beside
-it, and a `curl` line to spend it with.
+press *Generate my RFC 7523 signing key*, and the private half is shown once on
+the page that comes back — with the claims, the `kid` and the algorithm printed
+beside it, and a `curl` line to spend it with. The same page issues the RFC 7522
+(SAML) key pair on a card of its own; see
+[SAML assertions](saml-assertions.md#a-person-can-be-the-issuer-too-2026-09-13).
 
 It is the same code path as the call above (`issueSigningKeyPair()` then the
 same write), so what lands on the entry is identical; what differs is that the
@@ -197,6 +217,13 @@ application may hold a JWKS it registered itself beside the one this service
 issued, and a person may not. Like the application's, it is **not revocation**:
 the certificate is still valid and on no list, and what changes is that this
 service will no longer accept what the key signs.
+
+**Since 2026-09-13 a person's key pair can also be replaced by a certificate
+they already hold**, and a person can hold an RFC 7522 (SAML 2.0) key pair beside
+this one — both from the Credentials section of `/admin/users?user=<name>`, or
+through `/admin-api/pki/upload-certificate` with `target=person`. The rule above
+holds for an uploaded key exactly as for an issued one. [PKI](pki.md) has the
+section.
 
 ## The one thing that is not permissive
 
@@ -241,6 +268,38 @@ against a key the signature came with, which proves nothing at all — so it is
 used only when this service can see that it issued it. That is the point of
 holding a certificate authority.
 
+### The certificate's whole chain is validated every time the key is used
+
+Since 2026-09-13, in both modes, for both halves of RFC 7523. When the key that
+verified an assertion carries a certificate — a JWK with `x5c` in `oauthJwks`,
+`oauthAssertionJwks` or a person's `stsAssertionJwks`, or the JWS `x5c` header —
+the signature counts only if that certificate's trust chain holds **at that
+moment**:
+
+* the first certificate holds the key that verified the signature (RFC 7517
+  section 4.7);
+* every link verifies, names its issuer, and is inside its validity window —
+  the leaf's and every intermediate's;
+* every certificate that signs another is a CA (`basicConstraints cA=TRUE`),
+  its KeyUsage permits `keyCertSign`, and its `pathLenConstraint` holds;
+* the signing certificate is not a CA and its KeyUsage permits
+  `digitalSignature`;
+* the path ends somewhere this service trusts. For a certificate issued by this
+  realm's certificate authority that is **this realm's Intermediate** — the leaf
+  may be registered alone. For anybody else's, the chain must be registered with
+  it **up to and including a self-signed root**; the registration is the trust
+  decision, and nothing is fetched to complete a chain. A self-signed
+  certificate is its own whole chain.
+
+Until that date a registered chain was checked when it was registered and never
+again, so an expired certificate or a replaced Root went on verifying
+assertions; and the `x5c` header's path check looked at signatures but not at
+who was entitled to make them, so an issued leaf — a person's included — could
+sign a certificate of its own and present it. A refusal is `invalid_grant` (or
+`invalid_client` for client authentication), recorded as `STS-PKI-0156` to
+`STS-PKI-0161`. **A bare key, with no certificate, has no chain and is still
+accepted.** Revocation is checked after the chain (`STS-PKI-0129`).
+
 **`jwks_uri` is recorded and never followed.** Fetching a URL somebody
 registered in order to verify a credential is a server-side request forgery with
 a specification citation attached, and it is the same refusal WS-Federation's
@@ -253,7 +312,7 @@ a specification citation attached, and it is the same refusal WS-Federation's
 |---|---|
 | §3 claim 5, `nbf` | checked, against `oauth2.clientAssertionSkewS` |
 | §3 claim 6, `iat` | checked, and it **bounds the lifetime** (`oauth2.jwtBearerMaxLifetimeS`, 300s) — RFC 7521 §5.2 invites a server to refuse an unreasonable one and leaves "unreasonable" to it |
-| §3 claim 7, `jti` | checked against a replay cache and **required** here. §3's own last paragraph says a server MAY refuse a reused assertion; one with no `jti` cannot be remembered, so accepting it means accepting a bearer credential this service has no way to spend |
+| §3 claim 7, `jti` | spent once, ever, against the used-assertion history above, and **required** here. §3's own last paragraph says a server MAY refuse a reused assertion; one with no `jti` cannot be remembered, so accepting it means accepting a bearer credential this service has no way to spend |
 | §3 claim 8, other claims | carried onto the issued access token |
 | §3 claim 10 | the assertion may be **encrypted** — see below |
 | RFC 7521 §4.1, `scope` | **narrowed** against what the assertion carries and never widened. Where the assertion names none, the request decides |

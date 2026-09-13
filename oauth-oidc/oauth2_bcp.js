@@ -2154,6 +2154,7 @@ async function observeClientAuthentication(opts) {
     // refuses.
     samlSigningCertificate: registered.saml_signing_certificate,
     samlAssertionCertificate: registered.saml_assertion_certificate,
+    samlAssertionCertificateChain: registered.saml_assertion_certificate_chain,
     subjectDn: registered.tls_client_auth_subject_dn,
     certificateThumbprint: registered.certificate_thumbprint
   });
@@ -2243,6 +2244,7 @@ async function checkClientAuthentication(opts) {
     // refuses.
     samlSigningCertificate: registered.saml_signing_certificate,
     samlAssertionCertificate: registered.saml_assertion_certificate,
+    samlAssertionCertificateChain: registered.saml_assertion_certificate_chain,
     subjectDn: registered.tls_client_auth_subject_dn,
     certificateThumbprint: registered.certificate_thumbprint
   });

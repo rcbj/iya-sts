@@ -807,6 +807,71 @@ const SERVER_CERTIFICATE = SERVER_CERTIFICATES[0];
 // re-issuing it under this mock's Root would be the opposite of what they
 // asked for.
 // ===========================================================================
+// The extensions every certificate this listener presents is issued with —
+// the RSA one and every ML-DSA one — so the names cannot be carried over for
+// one algorithm and lost for the other.
+function serverCertificateExtensions() {
+  log.debug("Entering serverCertificateExtensions().");
+  log.debug("Leaving serverCertificateExtensions().");
+  return {
+    extKeyUsage: { present: true, critical: false, usages: ['serverAuth'] },
+    // **THE NAMES ARE THE POINT OF THIS CERTIFICATE AND ARE CARRIED OVER
+    // EXACTLY.** Every current client reads the subjectAltName and ignores
+    // the Common Name (RFC 6125, since 2011), so a re-issued certificate
+    // that lost them would be a listener nothing can verify — which is a
+    // worse state than the self-signed one it replaced.
+    subjectAltName: { present: true, critical: false,
+                      names: TLS_HOSTNAMES.map(function (name) {
+                        return { kind: 'dns', value: name };
+                      }).concat(TLS_IPS.map(function (address) {
+                        return { kind: 'ip', value: address };
+                      })) }
+  };
+}
+
+// A certificate `common/pki.js` issued over one of this listener's keys, put
+// on that key's record and onto the sockets. One function for the RSA
+// certificate and every ML-DSA one, so the two cannot come to disagree about
+// what adopting a certificate involves.
+function takeIssuedCertificate(record, certPem, chainPem) {
+  log.debug("Entering takeIssuedCertificate(). " + record.algorithm);
+  record.certPem = certPem;
+  // The chain travels with it: without the Issuing CA and the
+  // Intermediate a client holding only the Root cannot build a path, and
+  // "trust this one anchor" would be true and unusable.
+  record.chainPem = chainPem.slice();
+  record.fingerprint256 = fingerprintOf(certPem);
+  record.selfSigned = false;
+  try {
+    const read = new crypto.X509Certificate(certPem);
+    record.subject = read.subject.replace(/\n/g, ', ');
+    record.notAfter = new Date(read.validTo).toISOString();
+  } catch (e) {
+    // The certificate is in use either way; what is lost is a page's
+    // subject line. Named rather than swallowed.
+    log.warn('tls: the certified ' + record.algorithm + ' server ' +
+             'certificate could not be read back for its subject and ' +
+             'expiry: ' + e.message);
+  }
+  // **AND THE LISTENERS HAVE TO BE TOLD, because they were built at
+  // require time.** `permissiveServer` and `strictServer` are created at
+  // module top level with the secure context evaluated THERE — before
+  // `pki.start()` has run — so mutating the record above is invisible to
+  // a socket that already has a context. `applyAnchors()` is the rebuild
+  // path `POST /tls/trust` already uses, and it re-reads
+  // `secureContextOptions()`, which is where the new certificate and its
+  // chain are picked up. Without this line the certificate is issued,
+  // recorded, reported on every page — and not served, which is the most
+  // convincing way for this to look finished and be wrong.
+  applyAnchors();
+  log.info('tls: the ' + record.algorithm + ' listener certificate is ' +
+           'issued by this service\'s ' +
+           'own TLS Issuing CA and chains to its Root — so one anchor ' +
+           'covers 8443, 9443, LDAPS 636, the main port and every token ' +
+           'this service signs.');
+  log.debug("Leaving takeIssuedCertificate().");
+}
+
 // ---------------------------------------------------------------------------
 // **AND A REQUEST WORKER DOES NOT DO IT AT ALL (2026-09-12), BECAUSE IT DOES
 // NOT OWN THE SOCKET.**
@@ -865,20 +930,7 @@ const SERVER_CERTIFICATE = SERVER_CERTIFICATES[0];
     commonName: TLS_HOSTNAMES[0] || 'localhost',
     profile: 'tls-server',
     keyUsage: ['digitalSignature', 'keyEncipherment'],
-    extensions: {
-      extKeyUsage: { present: true, critical: false, usages: ['serverAuth'] },
-      // **THE NAMES ARE THE POINT OF THIS CERTIFICATE AND ARE CARRIED OVER
-      // EXACTLY.** Every current client reads the subjectAltName and ignores
-      // the Common Name (RFC 6125, since 2011), so a re-issued certificate
-      // that lost them would be a listener nothing can verify — which is a
-      // worse state than the self-signed one it replaced.
-      subjectAltName: { present: true, critical: false,
-                        names: TLS_HOSTNAMES.map(function (name) {
-                          return { kind: 'dns', value: name };
-                        }).concat(TLS_IPS.map(function (address) {
-                          return { kind: 'ip', value: address };
-                        })) }
-    },
+    extensions: serverCertificateExtensions(),
     publicKeyPem: function () {
       log.debug("Entering publicKeyPem().");
       log.debug("Leaving publicKeyPem().");
@@ -887,40 +939,59 @@ const SERVER_CERTIFICATE = SERVER_CERTIFICATES[0];
     },
     onCertified: function (certPem, chainPem) {
       log.debug("Entering onCertified().");
-      SERVER_CERTIFICATE.certPem = certPem;
-      // The chain travels with it: without the Issuing CA and the
-      // Intermediate a client holding only the Root cannot build a path, and
-      // "trust this one anchor" would be true and unusable.
-      SERVER_CERTIFICATE.chainPem = chainPem.slice();
-      SERVER_CERTIFICATE.fingerprint256 = fingerprintOf(certPem);
-      SERVER_CERTIFICATE.selfSigned = false;
-      try {
-        const read = new crypto.X509Certificate(certPem);
-        SERVER_CERTIFICATE.subject = read.subject.replace(/\n/g, ', ');
-        SERVER_CERTIFICATE.notAfter = new Date(read.validTo).toISOString();
-      } catch (e) {
-        // The certificate is in use either way; what is lost is a page's
-        // subject line. Named rather than swallowed.
-        log.warn('tls: the certified server certificate could not be read ' +
-                 'back for its subject and expiry: ' + e.message);
-      }
-      // **AND THE LISTENERS HAVE TO BE TOLD, because they were built at
-      // require time.** `permissiveServer` and `strictServer` are created at
-      // module top level with the secure context evaluated THERE — before
-      // `pki.start()` has run — so mutating the record above is invisible to
-      // a socket that already has a context. `applyAnchors()` is the rebuild
-      // path `POST /tls/trust` already uses, and it re-reads
-      // `secureContextOptions()`, which is where the new certificate and its
-      // chain are picked up. Without this line the certificate is issued,
-      // recorded, reported on every page — and not served, which is the most
-      // convincing way for this to look finished and be wrong.
-      applyAnchors();
-      log.info('tls: the listener certificate is issued by this service\'s ' +
-               'own TLS Issuing CA and chains to its Root — so one anchor ' +
-               'covers 8443, 9443, LDAPS 636, the main port and every token ' +
-               'this service signs.');
+      takeIssuedCertificate(SERVER_CERTIFICATE, certPem, chainPem);
       log.debug("Leaving onCertified().");
     }
+  });
+  // ---------------------------------------------------------------------
+  // **AND EVERY ML-DSA CERTIFICATE BESIDE IT (2026-09-13).** Those were the
+  // one key pair on these sockets still self-signed: a post-quantum
+  // client that offered ML-DSA and was handed that certificate had to pin
+  // it, while a classical client on the same port trusted the Root. Now
+  // both are leaves of the TLS Issuing CA, so one anchor covers whichever
+  // certificate OpenSSL picks for the client.
+  //
+  // The KEY is still made by node's OpenSSL in
+  // `makeMlDsaServerCertificate()`, and what crosses to `common/pki.js`
+  // is its public SubjectPublicKeyInfo, exported by that same OpenSSL —
+  // so the certificate encoder is handed RFC 9881 octets it did not
+  // write. The ISSUING CA signs; nothing here asks the vendored module to
+  // sign with an ML-DSA key.
+  //
+  // A slot per algorithm (`server:ml-dsa-65`) and not a second `server`,
+  // because the register's handle is (use case, slot) and two records in
+  // one slot would be one overwriting the other at every start.
+  // ---------------------------------------------------------------------
+  SERVER_CERTIFICATES.filter(function (one) {
+    return one !== SERVER_CERTIFICATE &&
+           !!stsCrypto.ML_DSA_OIDS[one.algorithm];
+  }).forEach(function (record) {
+    pki.registerCertifiable({
+      scope: pki.PROCESS_SCOPE,
+      useCase: 'tls',
+      slot: 'server:' + record.algorithm,
+      alg: record.algorithm.toUpperCase(),
+      keyAlg: record.algorithm,
+      label: 'TLS server certificate (' + record.algorithm + ')',
+      commonName: TLS_HOSTNAMES[0] || 'localhost',
+      profile: 'tls-server',
+      // digitalSignature ALONE. An ML-DSA key cannot encipher anything, and
+      // TLS 1.3 — the only version that negotiates one — needs nothing
+      // else of a server certificate's key.
+      keyUsage: ['digitalSignature'],
+      extensions: serverCertificateExtensions(),
+      publicKeyPem: function () {
+        log.debug("Entering publicKeyPem().");
+        log.debug("Leaving publicKeyPem().");
+        return crypto.createPublicKey(record.privateKeyPem)
+          .export({ type: 'spki', format: 'pem' });
+      },
+      onCertified: function (certPem, chainPem) {
+        log.debug("Entering onCertified().");
+        takeIssuedCertificate(record, certPem, chainPem);
+        log.debug("Leaving onCertified().");
+      }
+    });
   });
   log.debug("Leaving certifyServerCertificateUnderPki().");
 })();
@@ -1301,11 +1372,31 @@ async function reconcileWithHierarchy() {
     log.debug('Leaving reconcileWithHierarchy(). No Root.');
     return false;
   }
-  if (anchorSigns(root.certificatePem, SERVER_CERTIFICATE)) {
+  // **EVERY CERTIFICATE THIS PROCESS HAD CERTIFIED, NOT ONLY THE FIRST
+  // (2026-09-13).** An ML-DSA certificate beside the RSA one is a leaf of the
+  // same TLS Issuing CA now, so it is stranded by a rebuilt Root in exactly the
+  // same way — and a post-quantum client is handed it by OpenSSL's choice
+  // rather than by anybody's. One that was never certified (its registration
+  // failed) has no chain and is not this function's to repair: it is its own
+  // anchor, as it always was.
+  const mine = SERVER_CERTIFICATES.filter(function (one) {
+    return one === SERVER_CERTIFICATE ||
+           (one.chainPem && one.chainPem.length && !one.handedIn &&
+            one.algorithm !== 'supplied');
+  });
+  const stranded = mine.filter(function (one) {
+    return !anchorSigns(root.certificatePem, one);
+  });
+  if (!stranded.length) {
     log.debug('Leaving reconcileWithHierarchy(). Already chains.');
     return false;
   }
-  const was = SERVER_CERTIFICATE.fingerprint256;
+  const fingerprints = function () {
+    log.debug("Entering fingerprints().");
+    log.debug("Leaving fingerprints().");
+    return mine.map(function (one) { return one.fingerprint256; }).join(',');
+  };
+  const was = fingerprints();
   try {
     await require('../common/pki').certifyRegistered();
   } catch (e) {
@@ -1322,7 +1413,7 @@ async function reconcileWithHierarchy() {
     log.debug('Leaving reconcileWithHierarchy(). Failed.');
     return false;
   }
-  if (SERVER_CERTIFICATE.fingerprint256 === was) {
+  if (fingerprints() === was) {
     log.warn(errorCodes.tag('STS-TLS-0026') +
              'tls: the listener certificate does not chain to this ' +
              'service\'s Root and re-issuing it produced the same ' +
@@ -3066,7 +3157,11 @@ function description(req) {
     serverCertificates: SERVER_CERTIFICATES.map(function (one) {
       return { algorithm: one.algorithm, subject: one.subject,
               names: one.names, fingerprint256: one.fingerprint256,
-              notAfter: one.notAfter };
+              notAfter: one.notAfter,
+              // Whether this one is a leaf of the TLS Issuing CA or still the
+              // self-signed certificate it was born with — per certificate,
+              // since the ML-DSA ones joined the tree (2026-09-13).
+              certified: !!(one.chainPem && one.chainPem.length) };
     }),
     serverCertificateNote: SERVER_CERTIFICATES.length > 1
       ? 'Several certificates are configured (tls.certificateAlgorithms). ' +
@@ -3852,6 +3947,20 @@ module.exports = {
       fingerprint256: SERVER_CERTIFICATE.fingerprint256,
       notAfter: SERVER_CERTIFICATE.notAfter
     };
+  },
+  // EVERY certificate the listeners present, with its chain and nothing
+  // private (2026-09-13). `serverCertificate()` above answers the FIRST, which
+  // is what every existing caller means; an ML-DSA certificate beside it is a
+  // leaf of the same TLS Issuing CA now, and this is where that is visible.
+  serverCertificateChains: function () {
+    log.debug("Entering serverCertificateChains().");
+    log.debug("Leaving serverCertificateChains().");
+    return SERVER_CERTIFICATES.map(function (one) {
+      return { algorithm: one.algorithm, certPem: one.certPem,
+               chainPem: (one.chainPem || []).slice(0),
+               fingerprint256: one.fingerprint256,
+               certified: !!(one.chainPem && one.chainPem.length) };
+    });
   },
   // Every anchor, for a caller building a truststore rather than one
   // connection: with two listener certificates configured there are two, and

@@ -113,14 +113,39 @@ Turn `pki.autoBuild` off and this service behaves exactly as it did before:
 nothing is built until Build is pressed, and every key carries the self-signed
 certificate it was born with.
 
-### One thing is deliberately NOT a leaf of this tree
+### The post-quantum keys are leaves of it too
 
-**The eleven post-quantum keys per realm.** They come from
-`common/pq_jose.js` — this service's own reading of ML-DSA, SLH-DSA and the
-composite algorithms, deliberately independent of the vendored implementation
-the certificate encoder uses. Handing a key made by one to the other is exactly
-the defect that independence exists to expose, so they carry no certificate and
-are published as bare AKP JWKs.
+**Since 2026-09-13, and until then this heading read *One thing is deliberately
+NOT a leaf of this tree*.** A realm's eleven post-quantum signing keys — ML-DSA
+at three sizes, SLH-DSA at two and the six composite ML-DSA + traditional
+algorithms — are issued from that realm's own **JOSE signing** Issuing CA as
+they are made, one certificate per algorithm, and each is refused in any other
+realm by the same Intermediate boundary every leaf here is held to.
+
+What the old sentence was protecting is still true. The keys are generated,
+held and signed with by `common/pq_jose.js` — this service's own reading of
+those constructions, deliberately independent of the vendored implementation
+the certificate encoder uses. **Only the public key crosses**: it is read out of
+the AKP JWK `/oauth2/jwks` already publishes and written into a
+SubjectPublicKeyInfo, with the one layout difference between the two readings —
+an ECDSA half's `0x04` prefix, which JOSE drops and X.509 keeps — written out
+rather than guessed. And the crossing is a check rather than a leap: the test
+suite verifies a signature from `pq_jose.js` under the vendored X.509 reading
+against the key in each certificate.
+
+Nothing a client sees changed. The JWKS still publishes AKP JWKs with the same
+`kid`s; what is new is on this page, in the `certifiedBy` member of each key's
+row in `/admin/keys`' JSON, and in the certificate chain the management API's
+key export returns beside the JWK.
+
+**An ML-DSA listener certificate** (`tls.certificateAlgorithms`) is a leaf of the
+**TLS listeners** Issuing CA beside the RSA one, so one anchor covers whichever
+certificate the handshake picks.
+
+What stays outside is outside by its nature: the SPIFFE JWT authority, which
+has no certificate to issue, and the OpenID4VCI request-encryption key, which
+only decrypts and is trusted because a wallet read it from the issuer's own
+metadata.
 
 ### SPIFFE takes its authority from here now
 
@@ -246,7 +271,7 @@ whole of the change.
 
 ## What issuing writes, and what it forgets
 
-The key pair goes onto that application's **own directory entry**. Six
+The key pair goes onto that application's **own directory entry**. Seven
 attributes:
 
 | Attribute | What it holds |
@@ -257,6 +282,7 @@ attributes:
 | `oauthAssertionJwks` | The public half as a JWKS, each key carrying `x5c` and `x5t#S256` |
 | `oauthAssertionKid` | The `kid`, derived from the key material (RFC 7638) |
 | `oauthAssertionExpiresAt` | When the certificate expires |
+| `oauthAssertionKeySource` | `issued` — or, for a certificate uploaded in its place, where that came from (see [below](#an-applications-credentials-on-its-own-page)) |
 
 **This service keeps no second copy of the private key.** It is handed over
 once, at issuance, and forgotten — so the entry is where it lives.
@@ -302,6 +328,161 @@ Issuing CA is shortened to the CA's own expiry: the ordinary cause is a five-yea
 Issuing CA in its fifth year, and an operator who asked for a year should get
 eleven months rather than an error about arithmetic.
 
+## An application's credentials, on its own page
+
+Since 2026-09-13, `/admin/applications?application=<id>` has a **Credentials**
+section: the application's client secret, and for each assertion profile — RFC
+7523 (JWT) and RFC 7522 (SAML) — the key pair this service manages for it, beside
+the keys the application registered itself (`oauthJwks`,
+`oauthSamlAssertionSigningCertificate`). For each managed key pair it shows the
+certificate, who issued it, the chain above it, the key handle, whether this
+service holds the private key, and **where the key pair came from**:
+
+| `oauthAssertionKeySource` / `oauthSamlAssertionKeySource` | Meaning |
+|---|---|
+| `issued` | Generated here and signed by this realm's Issuing CA. The private key is on the entry. |
+| `uploaded-realm-ca` | A certificate this realm's own CA issued, uploaded in place of a generated pair. The application holds the private key. |
+| `uploaded-external-ca` | A certificate from another CA, uploaded with its full chain. The application holds the private key. |
+
+### Replacing a key pair
+
+Both ways **replace** the key pair for that one profile; the other profile's is
+untouched.
+
+* **Issue from this realm's CA.** The same act as the Issue control above,
+  drawn on the application's page so the application does not have to be typed
+  into a box. It needs this realm to have a CA.
+* **Upload a certificate** the application already holds. **No private key is
+  taken**: an upload carrying one is refused, nothing is stored, and the refusal
+  tells you to treat that key as exposed. The private key attribute on the
+  entry is cleared, so a previously issued key stops signing for the application.
+
+What an upload must include depends on who issued the certificate:
+
+* **This realm's own CA** — the leaf alone is enough; this service holds every
+  tier above it. It is checked exactly as a presented `x5c` is: it must pass
+  through this realm's own Intermediate, and nothing on it may be revoked.
+* **Any other CA** — the leaf **and its full trust chain**: every intermediate
+  and the **self-signed root**, pasted in either box and in any order. Every
+  link is verified: signatures, issuer names, validity windows; every issuer
+  must be a CA whose key usage permits certificate signing and whose path
+  length constraint the chain respects; the leaf must not be a CA and must
+  permit `digitalSignature`. Its revocation is checked the way a registered
+  certificate is checked when it is used. The root does **not** have to be
+  trusted by anything here — you are registering a key, and the chain is the
+  evidence for it — but it has to be there. For an external CA the stored chain
+  keeps the root, because revocation checking needs every issuer.
+
+Refused by name: an incomplete chain, a certificate that is not on the path, a
+self-signed leaf (register that on `oauthJwks` or
+`oauthSamlAssertionSigningCertificate` instead), and a certificate from
+**another realm** of this service, even with its whole chain — every realm
+shares one Root, so such a chain is consistent and is still not this realm's.
+
+The key must be one the profile's verifier can use: RSA of at least 2048 bits
+or ECDSA on P-256, P-384 or P-521 for both profiles, and for RFC 7523 also
+secp256k1 (ES256K) or Ed25519 (EdDSA).
+
+As with an issued key pair, **a key pair is not a trust decision**: to present
+an authorization grant the application's issuer must still be declared on
+`oauthAssertionIssuer` or `oauthSamlAssertionIssuer`.
+
+### The client secret
+
+The section shows `oauthClientSecret` behind a fold, and **Regenerate the client
+secret** mints a new one — `oauth2.registeredSecretBytes` random bytes,
+base64url, as a registration mints one — and replaces the old one at once.
+Wherever the token endpoint checks a secret (RFC 9700 mode, product mode) the old
+one stops working on the next request. The new value is shown on the page and in
+the API reply; the audit log names the attribute and never the value.
+`sts-management-api`'s secret is refused while `adminApi.clientSecret` pins it,
+because every token for `/admin-api` is minted with that setting.
+
+```bash
+H="Authorization: Bearer $ADMIN_TOKEN"
+
+# Replace webapp1's JWT key pair with its own certificate from another CA.
+curl -sk -X POST https://localhost:8081/admin-api/pki/upload-certificate \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d "$(jq -n --rawfile c leaf.pem --rawfile ch chain.pem \
+        '{identifier:"webapp1", purpose:"jwt", certificate:$c, chain:$ch}')"
+
+# What the entry now holds, per profile — no secret and no private key in it.
+curl -sk "https://localhost:8081/admin-api/applications?application=webapp1" \
+  -H "$H" | jq .credentials
+
+# A new client secret, returned once.
+curl -sk -X POST https://localhost:8081/admin-api/applications/regenerate-secret \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"application":"webapp1"}' | jq -r .clientSecret
+```
+
+## A person's credentials, on their own page
+
+Since 2026-09-13, `/admin/users?user=<name>` has a **Credentials** section too:
+the person's own assertion key pairs, one per profile — RFC 7523 (JWT, on
+`stsAssertion*`) and RFC 7522 (SAML 2.0, on `stsSamlAssertion*`). **A person may
+hold an RFC 7522 key pair now**, and the SAML 2.0 bearer grant reads it; until
+that date only an application could.
+
+It shows what the application's section shows — the certificate, its issuer, the
+chain, the key handle (`kid` for JWT, the certificate thumbprint for SAML),
+where the key pair came from (`stsAssertionKeySource` /
+`stsSamlAssertionKeySource`, with the same three values) and the issuer the
+person asserts as — with one difference: **it says whether this service holds
+the private key and never shows it.** A person's private key is shown once, on
+the page the Issue button opens, and nothing opens it again.
+
+The controls are the same three, needing Admin Write:
+
+* **Issue from this realm's CA** — generates a key pair for that profile,
+  signs it with the realm's Issuing CA, seals the private key on the entry and
+  shows it once, with a link back to the person.
+* **Upload a certificate** the person already holds, under exactly the chain
+  rules above — this realm's alone, or another CA's with its full chain to a
+  self-signed root. No private key is taken, and the one an earlier issue left
+  is cleared. **A certificate this realm issued must have been issued to this
+  person**: an application's leaf, or another person's, is refused, because a
+  person's key pair is that one person's credential and registering somebody
+  else's would let its holder assert as them. (For the same reason a person's
+  leaf is refused for an application.) A self-signed certificate is refused —
+  a person has no by-value registration.
+* **Take this key pair off** — that profile's key pair and its declared issuer;
+  the other profile's is untouched. Not revocation.
+
+**Whichever way the key pair got there, a person's assertion may only be about
+themselves**: the JWT grant refuses a `sub`, and the SAML grant a `<Subject>`,
+naming anybody else.
+
+```bash
+H="Authorization: Bearer $ADMIN_TOKEN"
+
+# An RFC 7522 key pair for alice. The reply carries the private key, once.
+curl -sk -X POST https://localhost:8081/admin-api/pki/issue \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"identifier":"alice","target":"person","purpose":"saml"}' > saml.json
+
+# Or replace it with a certificate alice already holds from another CA.
+curl -sk -X POST https://localhost:8081/admin-api/pki/upload-certificate \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d "$(jq -n --rawfile c leaf.pem --rawfile ch chain.pem \
+        '{identifier:"alice", target:"person", purpose:"saml",
+          certificate:$c, chain:$ch}')"
+
+# What her entry holds, per profile — no private key in it.
+curl -sk "https://localhost:8081/admin-api/users?user=alice" \
+  -H "$H" | jq .credentials
+
+# Take the SAML key pair off, leaving the JWT one.
+curl -sk -X POST https://localhost:8081/admin-api/pki/revoke \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d '{"identifier":"alice","target":"person","purpose":"saml"}'
+```
+
+`/portal/signing-key`, where a person issues themselves a key pair, offers both
+profiles since 2026-09-13: a card each, with its own Generate and its own Take
+off, and the one-time page describing the grant the new key is for.
+
 ## Revocation is published, and consulted
 
 **This section said *nothing is ever revoked* until 2026-09-11.** It read *this
@@ -312,10 +493,12 @@ Now:
 
 | | |
 |---|---|
-| **A CRL per authority** | RFC 5280 section 5, DER, at `GET /pki/crl/{scope}/{ca}` — and as `certificateRevocationList;binary` under `ou=crl` in the embedded directory, which is what the `ldap://` and `ldaps://` addresses inside every certificate resolve to. Built and signed ON DEMAND, so `thisUpdate` is always now. |
-| **An OCSP responder per authority** | RFC 6960, both transports of appendix A.1, at `GET|POST /pki/ocsp/{scope}/{ca}`. Signed with the CA ITSELF rather than a delegated responder certificate, so a client verifies with the anchor it already has. The nonce is echoed. |
+| **A CRL per authority** | RFC 5280 section 5, DER, at `GET /pki/crl/{scope}/{ca}` — and as `certificateRevocationList;binary` under `ou=crl` in the embedded directory, which is what the `ldap://` address inside every certificate resolves to, readable anonymously by a base search in every mode. Built and signed ON DEMAND, so `thisUpdate` is always now and every signing gets a new CRL number; the directory copy is republished whenever the branch changes and at half of `pki.crlLifetimeMinutes`, so it is never past its `nextUpdate`. |
+| **An OCSP responder per authority** | RFC 6960, both transports of appendix A.1, at `GET|POST /pki/ocsp/{scope}/{ca}`. Signed with the CA ITSELF rather than a delegated responder certificate, so a client verifies with the anchor it already has; the responder ID is by key hash and every time is whole seconds (RFC 5019). The nonce is echoed, and one of 0 or more than 32 octets is `malformedRequest` (RFC 8954). A request about no certificate this authority issued is `unauthorized`. An authoritative answer carries RFC 5019 section 6.2's cache headers. A GET of the address with nothing appended is a 400 naming both transports. |
 | **The issuing certificate** | `GET /pki/ca/{scope}/{ca}.cer`, which is the `caIssuers` address in every certificate that authority signed. |
-| **An index** | `GET /pki/revocation` — every authority with its addresses in all three schemes, so a person pointing a client at this does not have to read them out of a certificate first. |
+| **An index** | `GET /pki/revocation` — every authority with its addresses, so a person pointing a client at this does not have to read them out of a certificate first. |
+| **The addresses inside a certificate** | `http://` for the CRL, the OCSP responder and the issuer's certificate, and `ldap://` for the CRL — **never `https://` or `ldaps://`**, which RFC 5280 section 8 says a CA SHOULD NOT write into an extension: a client that checks revocation before it trusts a connection cannot fetch the answer over that connection. The `http://` addresses name **`pki.httpPort` (8082)**, a plain listener that answers `/pki/` and nothing else; RFC 5019 section 5 requires an OCSP responder to answer plain HTTP. The main port answers the same paths. |
+| **Behind a port mapping** | The addresses are built from inside the process, so a container must be TOLD where it is reachable: `pki.distributionPort` / `PKI_DISTRIBUTION_PORT` and `pki.distributionLdapPort` / `PKI_DISTRIBUTION_LDAP_PORT` for the published ports, or `pki.distributionBaseUrl` and `pki.distributionLdapHost` for a different name. `docker-compose.yml` publishes 8082 on `STS_PKI_HOST_PORT` and passes it through. A change reaches certificates issued afterwards, never one that exists. |
 | **Per authority and NOT per realm** | A CRL is signed by an ISSUER and lists serials that issuer minted, so a list per realm would be a document with no valid issuer and nothing could sign it. |
 | **A pane on `/admin/pki`** | Pick an authority, see what it has issued, revoke with any of the nine RFC 5280 reasons, release a `certificateHold`. |
 | **Rotation revokes automatically** | Reissuing a use case's Issuing CA puts every leaf it had signed on its own list and the replaced CA on the Intermediate's, as `superseded`. |
@@ -405,7 +588,7 @@ connection is on `GET /tls/whoami`; the policy is on `GET /tls` and
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
 control labelled *Take the key pair off*, and it is **not** revocation:
 
-* it clears the six attributes, so **this service** will no longer accept an
+* it clears the seven attributes, so **this service** will no longer accept an
   assertion signed with that key, because the key is no longer registered
   against that application;
 * the certificate is still valid, still chains to this realm's Root, and would
@@ -477,6 +660,61 @@ browser must never — so the button is a POST and the result is a re-rendered
 page. The debugger's PKI page needs a script because its whole point is that the
 key never leaves the browser; this page's whole point is the opposite.
 
+
+## Which key pairs are post-quantum
+
+A key pair that uses a post-quantum algorithm carries a small lattice icon, here
+and on **Server configuration → Key pairs**:
+
+| Icon | Meaning |
+|---|---|
+| **PQC** | A post-quantum key: ML-DSA (FIPS 204) or SLH-DSA (FIPS 205). |
+| **PQC+** | A composite key: one key with a post-quantum ML-DSA half and a classical half, both of which must verify. |
+| **PQC KEM** | A post-quantum key-establishment key, ML-KEM (FIPS 203). It signs nothing. |
+| **PQC alt** (dashed) | A classical key whose certificate also carries an alternative post-quantum key (X.509 clause 9.8). The key itself is not post-quantum. |
+
+Hover an icon for the exact algorithm. A key with no icon is classical (RSA,
+ECDSA or EdDSA). What decides it is the key's own algorithm, not the signature
+on its certificate: every post-quantum key this service holds is certified by an
+RSA authority and is marked, and an RSA key certified by an ML-DSA authority
+would not be. The same answer is the `pqc` member of each row of
+`GET /admin-api/keys`, and of the application and person key-pair rows of
+`GET /admin-api/pki`.
+
+## Looking inside a certificate
+
+Every certificate on this page — the Root, each Intermediate and Issuing CA,
+everything they certified, the workbench store — and every certificate on
+**Server configuration → Cryptography** has a **View details** link. It opens a
+dialog over the page, in the same tab, with an **×** at the top and a **Close**
+button at the bottom, both of which return you to where you were.
+
+The dialog shows:
+
+* **A summary** — subject, issuer, validity and days left, key, signature
+  algorithm, whether it is a CA, its SHA-256 fingerprint, and every place this
+  service holds it (the Root is the Root and a SPIFFE trust anchor).
+* **The trust chain**, built from the certificates this service holds by
+  matching each issuer's name *and* verifying its signature — so a certificate
+  whose issuer was replaced shows the broken link instead of a stored chain that
+  no longer verifies. Each link says whether its signature verifies, whether its
+  issuer may sign certificates (`keyCertSign`), and whether it is in date; the
+  path is marked **Trusted** only when it ends at this service's Root CA (or a
+  SPIFFE trust anchor this service publishes). Every certificate in the chain
+  can be expanded to its own full fields.
+* **Every X.509 field**, in RFC 5280's order: version, serial number (hex and
+  decimal), the signature algorithm inside the signed part, issuer and subject
+  attribute by attribute with their OIDs, both validity bounds with their ASN.1
+  time type, the public key's algorithm, parameters, size and bytes, both unique
+  identifiers, **every X.509 v3 extension decoded** with its OID and criticality,
+  the outer signature algorithm and value, both fingerprints, and the PEM.
+
+The page still runs no script: opening a dialog adds `?certificate=<SHA-256>` to
+the address, so a dialog can be bookmarked or sent to someone, and **Back**
+closes it. Only certificates this service holds in the trust realm you are in
+can be opened — a certificate from another realm opens under that realm's
+prefix. The same answer is `GET /admin-api/certificates?certificate=<SHA-256>`,
+and `GET /admin-api/certificates` lists every certificate with its fingerprint.
 
 ## The Certificate & Key Configuration pane
 
@@ -707,3 +945,8 @@ never a certificate that exists.
 | `pki.signatureAlgorithm` | *(empty)* | Empty means "the right one for the key algorithm". See above. |
 | `pki.organisation` | `sts` | The `O=` every tier carries, and what the tiers are named after when no common name is given. |
 | `pki.leafLifetimeDays` | `365` | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |
+| `pki.httpPort` | `8082` | The plain-HTTP listener every certificate names for its CRL, OCSP responder and issuer's certificate. `/pki/` only. **Restart-only**; `0` binds nothing and the addresses then name the main port. |
+| `pki.distributionBaseUrl` | *(empty)* | The whole base of the http addresses, when the service is reached by a name or port it cannot derive. |
+| `pki.distributionPort` | `0` | The published port of those addresses; `0` means the listener's own. |
+| `pki.distributionLdapHost` | *(empty)* | The host of the `ldap://` address; empty means the first of `tls.hostnames`. |
+| `pki.distributionLdapPort` | `0` | The published port of the `ldap://` address; `0` means `ldap.port`. |

@@ -6,7 +6,7 @@
 |---|---|
 | `persistence.js` | The driver interface, the mode selection, the diff, the flush scheduler, the restore, the appliers, and the status object three surfaces render. A LIBRARY — it registers no route. |
 | `persistence_ldif.js` | The `ldif` driver, and the RFC 2849 codec under it. `tests/ldif_codec.js` guards the codec. It deliberately has NO `loadMinted`/`saveMinted`/`purgeMinted`, and the absence is the answer — see below. |
-| `persistence_postgres.js` | The `postgres` driver: six tables, one transaction per flush, and a `pg_notify` that something listens to now. |
+| `persistence_postgres.js` | The `postgres` driver: seven tables, one transaction per flush, and a `pg_notify` that something listens to now. The seventh, `sts_used_assertions` (2026-09-13), is written by ATOMIC CLAIM rather than by the flush — see below. |
 | **`persistence_minted.js`** | **What this process MINTS, written down — in product mode, and nowhere else** (2026-09-06). The registry of declared stores, the journal, the seal, the restore. A LIBRARY that is HANDED its driver, which is what lets `tests/minted_persistence.js` drive the whole of it against a stub. |
 | **`persistence_replication.js`** | **Several processes against one store** (2026-09-06). The change-log poller, the `LISTEN` client, and the fan-in for the counters. A LIBRARY, handed its driver and its appliers; `tests/replication.js` drives it against a stub. |
 
@@ -23,7 +23,7 @@ driver that HAS a database answers.
 
 **`METRIC_PROBES` IS A TABLE AND EVERY ENTRY IS A `SELECT`.** There is no query
 box on that page and there must never be one: the role this service dials with
-holds INSERT, UPDATE and DELETE on six tables, so a console that could hand it
+holds INSERT, UPDATE and DELETE on seven tables, so a console that could hand it
 a statement would be a console that could empty the directory. Nothing in any
 probe is composed from anything a request carries, and
 `tests/database_metrics.js` asserts that against the SQL rather than trusting
@@ -105,6 +105,24 @@ either half.**
 Sessions, access tokens, ID Tokens, refresh tokens, authorization codes,
 pre-authorized codes, SAML artifacts, Kerberos tickets, the replay caches, the
 statistics and the audit log are all in memory and gone on restart.
+
+**ONE THING A REQUEST WRITES PERSISTS IN BOTH MODES, AND THE ARGUMENT BELOW IS
+WHY IT MAY (2026-09-13): THE RFC 7523 / RFC 7522 USED-ASSERTION HISTORY.** The
+rule rests on the signing key being regenerated, so that a restored token
+verifies against nothing. An assertion is not signed by this service: it is
+signed by the CLIENT's key, which is on the application's directory entry, which
+persists in every store — so after a restart the assertion still verifies, and
+forgetting it was spent is a replay. `common/used_assertions.js` holds it and
+this module installs its store in `openStore()`, beside the keystore and the
+minted journal and NOT through either: on `postgres` it is its own table
+(`sts_used_assertions`) written by one `INSERT … ON CONFLICT` per assertion so
+that every process agrees at once, and on `ldif` a file per realm
+(`used-assertions-<id>.json`) written before the response leaves. The `ldif`
+driver's refusal of minted state is about size and rate, and this file is
+bounded by `oauth2.assertionReplayCacheSize` and changes only when an assertion
+is presented — its header says so where the refusal is. `memory` keeps it in the
+process, and loses nothing a restart would not also lose: every key that could
+verify one of those assertions goes with it.
 
 That was deliberate rather than unfinished, and there was one fact behind it:
 **the signing key is regenerated on every start.** A token restored from a disk
@@ -594,7 +612,13 @@ slow.
   that is a security statement.** Between a write in one process and its arrival
   in another there is a window the size of `persistence.pollInterval` in which a
   proof one process refused is accepted by another. Sticky sessions close it;
-  nothing here does.
+  nothing here does. **The RFC 7523 / RFC 7522 used-assertion history left this
+  list on 2026-09-13**: it was three journalled caches and a replay to a second
+  worker inside that window was accepted, and it is a table claimed with one
+  atomic statement now, under the primary key's own lock. Measured against a
+  real server: twenty-five concurrent claims of one assertion, one accepted.
+  What is left here is the DPoP `jti` set, the Kerberos acceptor's replay cache
+  and SCIM's Digest and HOBA state.
 * **A realm's signing keys are not adopted mid-life.** `applyKeysChange()` logs
   and does nothing: taking a new key would strand everything this process has
   already signed. Rotation across processes is a rolling restart, which is what
@@ -612,7 +636,14 @@ Implement the contract `persistence.js` calls — `open`, `close`,
 `loadMinted`/`saveMinted`/`purgeMinted` (minted state — `persistence_minted.js`'s
 `supports()`), and `origin`/`latestChangeSeq`/`changesSince`/`readEntry`/
 `readMinted`/`watchChanges`/`purgeChanges` (coordination —
-`persistence_replication.js`'s). A driver missing either group is REPORTED on
+`persistence_replication.js`'s). **A THIRD SINCE 2026-09-13**, and it is
+two alternatives rather than one list: `claimUsedAssertion`/
+`settleUsedAssertion`/`listUsedAssertions`/`purgeUsedAssertions`/
+`removeUsedAssertions` for a DATABASE store, or `loadUsedAssertions`/
+`saveUsedAssertions`/`removeUsedAssertions` for a SNAPSHOT store —
+`common/used_assertions.js`'s `setStore()` tests for them by name and a driver
+with neither is WARNED about (`STS-STORE-0044`) and the history held in memory.
+A driver missing either of the first two groups is REPORTED on
 `/admin/persistence` with the reason rather than silently doing less. Those two
 lists are two copies of one fact; `start()` checks them against each other and
 says so rather than trusting them.

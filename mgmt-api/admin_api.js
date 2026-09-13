@@ -127,6 +127,9 @@ const adminViews = require('../admin-core/admin_views');
 // registers only `/admin/pki`, which is already in the router by now. Compare
 // `admin-ui/crypto_metadata.js`, which is at 20a and therefore needed a slot.
 const pkiAdmin = require('../admin-ui/pki_admin');
+// The certificate catalogue and details model both certificate dialogs read
+// (2026-09-13). A LIBRARY in `admin-core/`, required at 19 like the two above.
+const certificateViews = require('../admin-core/certificate_views');
 // 18b, required in the ORDINARY DIRECTION for the same reason as the line
 // above: it registers `/admin/encryption` at its own require time, which
 // `common/protocol_stack.js` reaches before this file, so this is a cache
@@ -6392,6 +6395,43 @@ const ROUTES = [
         responseDescription: 'The application as it now stands, without the ' +
                              'address or its mark.' },
 
+      // THE CREDENTIALS SECTION'S SECRET CONTROL (2026-09-13).
+      { action: 'regenerate-secret',
+        operationId: 'regenerateApplicationClientSecret',
+        summary: 'Mint a new client secret for an application, replacing the ' +
+                 'old one',
+        description: 'Mints `oauth2.registeredSecretBytes` random bytes, ' +
+                     'base64url — the way `POST /oauth2/register` mints one ' +
+                     '— onto `oauthClientSecret`, and into the stored RFC ' +
+                     '7591 registration document where there is one, with ' +
+                     '`client_secret_expires_at` recomputed from ' +
+                     '`oauth2.registeredSecretLifetimeS`.\n\n**THE OLD ' +
+                     'SECRET STOPS AUTHENTICATING AT ONCE**, wherever the ' +
+                     'token endpoint checks a secret (RFC 9700 mode, product ' +
+                     'mode). **THIS REPLY IS THE ONE PLACE THE NEW VALUE IS ' +
+                     'HANDED OUT BY THIS ACT** — the audit row names the ' +
+                     'attribute and never the value — though `GET ' +
+                     '/admin-api/applications?application=` reads the ' +
+                     'entry\'s secret back for an `admin:read` token, as it ' +
+                     'always has.\n\nThe console\'s and the portal\'s own ' +
+                     'seeded clients read their secret off the entry on ' +
+                     'every sign-in, so regenerating one is safe. ' +
+                     '`sts-management-api` is REFUSED while ' +
+                     '`adminApi.clientSecret` pins its secret: every token ' +
+                     'for this API is minted with that setting, and seeding ' +
+                     'never writes over an existing entry.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: { application: { type: 'string' } },
+          required: ['application'],
+          examples: [{ application: 'my-web-app' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The new secret in `clientSecret`, whether one ' +
+                             'was replaced, and the application as it now ' +
+                             'stands.' },
+
       { action: 'revoke-registration',
         operationId: 'revokeApplicationRegistration',
         summary: 'Withdraw an RFC 7591 registration, keeping the entry',
@@ -9190,8 +9230,8 @@ const ROUTES = [
                  '(/pki/crl/{scope}/{ca}) and answers OCSP ' +
                  '(/pki/ocsp/{scope}/{ca}); `revocation` in the reply is the ' +
                  'REGISTER — one entry per authority with what it issued, ' +
-                 'what is on its list, and its addresses in three schemes — ' +
-                 'and `revocation-certificate` below puts a serial on one. ' +
+                 'what is on its list, and its addresses over http and ldap ' +
+                 '— and `revocation-certificate` below puts a serial on one. ' +
                  'What this service does NOT do is consult a list, its own ' +
                  'included, so a certificate revoked here still ' +
                  'authenticates here. **AND `revoke` BELOW IS A DIFFERENT ' +
@@ -9207,6 +9247,84 @@ const ROUTES = [
       log.debug("Entering the management API PKI endpoint.");
       sendJson(res, 200, pkiAdmin.pkiView(req));
       log.debug("Leaving the management API PKI endpoint.");
+    } },
+
+  // ---------------------------------------------------------------------
+  // RULE 7 FOR THE CERTIFICATE DETAILS DIALOG (2026-09-13). `/admin/pki` and
+  // `/admin/crypto-metadata` open a certificate's every field and its trust
+  // chain over the page; this is the same answer for a machine, from the same
+  // view layer — so a certificate cannot be openable on one door and unknown
+  // on the other. Without `certificate` it is the LIST a caller finds the
+  // fingerprint in.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/certificates', tag: 'PKI',
+    operationId: 'getCertificates',
+    summary: 'Every certificate this trust realm holds, or one of them with ' +
+             'every X.509 field and its trust chain',
+    description: 'Without `certificate`: a LIST of every certificate this ' +
+                 'service holds in the trust realm the request was reached ' +
+                 'in — the service Root, the process branch (TLS and ' +
+                 'SPIFFE), this realm\'s Intermediate, Issuing CAs and what ' +
+                 'they certified, the signing-key certificates, the ' +
+                 'certificate authority workbench, the TLS listener ' +
+                 'certificates, the SPIFFE authorities, and the key pairs ' +
+                 'issued to applications and people — one row per ' +
+                 'certificate with every place it appears.\n\nWith ' +
+                 '`certificate`: that certificate described WHOLE — the ' +
+                 'tbsCertificate in RFC 5280 section 4.1\'s order (version, ' +
+                 'serial, inner signature algorithm, issuer and subject ' +
+                 'RDN by RDN, validity with its ASN.1 time type, the ' +
+                 'public key with its parameters and bytes, both unique ' +
+                 'identifiers, every extension decoded), the outer ' +
+                 'signature algorithm and value, both fingerprints — and ' +
+                 '`chain`, the path to a self-signed certificate BUILT from ' +
+                 'what this service holds by matching each issuer\'s name ' +
+                 'AND verifying its signature, with `chainStatus` saying ' +
+                 'where and why a path stopped. Every certificate in the ' +
+                 'chain is described with the same fields.\n\n**A ' +
+                 'certificate is named by its SHA-256 fingerprint and looked ' +
+                 'up, never sent.** A fingerprint of anything this realm ' +
+                 'does not hold is refused, so a certificate from another ' +
+                 'realm is reached under that realm\'s prefix. Mirrors the ' +
+                 'dialog both pages open with `?certificate=`.',
+    mirrors: 'GET /admin/pki and GET /admin/crypto-metadata',
+    parameters: [
+      { name: 'certificate', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'A SHA-256 certificate fingerprint, 64 hexadecimal ' +
+                     'digits with or without colons — the `fingerprint` of ' +
+                     'a row of the list. Returns that certificate\'s ' +
+                     'details instead of the list.' },
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of the subject, the issuer or where the ' +
+                     'certificate appears, case-insensitive.' }
+    ].concat(pagingParameters()),
+    responseDescription: 'The list, or one certificate with its chain.',
+    handler: function (req, res) {
+      log.debug("Entering the management API certificates endpoint.");
+      if (!String(req.query.certificate || '').trim()) {
+        sendJson(res, 200, certificateViews.listView(req));
+        log.debug("Leaving the management API certificates endpoint. List.");
+        return;
+      }
+      certificateViews.detailsView(req).then(function (view) {
+        if (!view.ok) {
+          const code = errorCodes.codeOf(view) || 'STS-API-0080';
+          errorCodes.mark(res, code);
+          sendJson(res, code === 'STS-ADMIN-0641' ? 404
+            : (code === 'STS-ADMIN-0642' ? 500 : 400), view);
+          log.debug("Leaving the management API certificates endpoint. " +
+                    "Refused.");
+          return;
+        }
+        sendJson(res, 200, view);
+        log.debug("Leaving the management API certificates endpoint. One.");
+      }).catch(function (e) {
+        errorCodes.mark(res, 'STS-ADMIN-0642');
+        log.error(errorCodes.tag('STS-ADMIN-0642') + 'admin_api: the ' +
+                  'certificate details view failed: ' + e.message);
+        sendJson(res, 500, { ok: false, errors: [e.message] });
+      });
     } },
 
   { method: 'POST', route: BASE + '/pki/:action', tag: 'PKI',
@@ -9336,12 +9454,13 @@ const ROUTES = [
                      'lot onto that application\'s directory ' +
                      'entry.\n\n**WHICH ATTRIBUTES DEPENDS ON `purpose`, AND ' +
                      'THE TWO SETS SHARE NONE.** `jwt` (the default, RFC ' +
-                     '7523) writes six — `oauthAssertionPrivateKey`, ' +
+                     '7523) writes seven — `oauthAssertionPrivateKey`, ' +
                      '`oauthAssertionCertificate`, ' +
                      '`oauthAssertionCertificateChain`, `oauthAssertionJwks` ' +
                      '(with `x5c` and `x5t#S256` on the key), ' +
-                     '`oauthAssertionKid` and `oauthAssertionExpiresAt`. ' +
-                     '`saml` (RFC 7522) writes five under ' +
+                     '`oauthAssertionKid`, `oauthAssertionExpiresAt` and ' +
+                     '`oauthAssertionKeySource` (`issued`). ' +
+                     '`saml` (RFC 7522) writes six under ' +
                      '`oauthSamlAssertion*`, with no JWKS among them because ' +
                      'SAML has none — what a party registers for that ' +
                      'profile IS a certificate — and with a ' +
@@ -9423,10 +9542,16 @@ const ROUTES = [
                      'private key on every visit or a key nobody can ever ' +
                      'obtain. `privateKeyPem` is in the reply to ' +
                      '`target=person` and in no other answer this API gives, ' +
-                     'and it is not shown again. `target=person` also ' +
-                     'refuses `purpose=saml`: RFC 7522\'s verifier reads ' +
-                     'nothing off a person, so that key pair would be one ' +
-                     'nothing here can use.',
+                     'and it is not shown again.\n\n**AND SINCE 2026-09-13 ' +
+                     'A PERSON MAY HOLD AN RFC 7522 KEY PAIR TOO**: ' +
+                     '`target=person` with `purpose=saml` writes ' +
+                     '`stsSamlAssertionCertificate`, its chain, a ' +
+                     'thumbprint, ' +
+                     'the expiry, the provenance and a sealed ' +
+                     '`stsSamlAssertionPrivateKey` — a fourth attribute set ' +
+                     'sharing no name with the others. The SAML 2.0 bearer ' +
+                     'grant reads it under the same rule: the ' +
+                     '`<Subject>` must be that person.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -9444,13 +9569,16 @@ const ROUTES = [
                                    '`application`, which is what every ' +
                                    'caller written before this field existed ' +
                                    'sends. `person` writes `stsAssertion*` ' +
-                                   'onto a `ou=users` entry instead, returns ' +
-                                   'the private key once, and refuses ' +
-                                   '`purpose=saml`.' },
+                                   '(or `stsSamlAssertion*` for ' +
+                                   '`purpose=saml`) onto a `ou=users` entry ' +
+                                   'instead and returns the private key ' +
+                                   'once.' },
             issuer: { type: 'string',
-                      description: '`target=person` only: the `iss` their ' +
-                                   'assertions will carry, written as ' +
-                                   '`stsAssertionIssuer`. Defaults to their ' +
+                      description: '`target=person` only: the `iss` (or ' +
+                                   'SAML `<Issuer>`) their assertions will ' +
+                                   'carry, written as `stsAssertionIssuer` ' +
+                                   'or `stsSamlAssertionIssuer`. Defaults to ' +
+                                   'their ' +
                                    'username, which the grant accepts ' +
                                    'without anything being declared — asking ' +
                                    'an operator to write a name down twice ' +
@@ -9503,7 +9631,7 @@ const ROUTES = [
         summary: 'Take an issued key pair off an application, or off a ' +
                  'person — which is NOT revocation',
         description: 'Clears the attributes the issue wrote FOR ONE PROFILE ' +
-                     '— six for `jwt` and five for `saml`. An application ' +
+                     '— seven for `jwt` and six for `saml`. An application ' +
                      'commonly holds both key pairs and this takes ONE off; ' +
                      'clearing both would be an operation whose name said ' +
                      'one thing and did two.\n\n**THIS OPERATION IS NOT THE ' +
@@ -9528,7 +9656,9 @@ const ROUTES = [
                      'and a person may not — everything in `stsAssertion*` ' +
                      'was put there by the issue, so leaving the declaration ' +
                      'would leave somebody declared as an issuer with no key ' +
-                     'to issue with.',
+                     'to issue with. Since 2026-09-13 it takes ONE PROFILE ' +
+                     'off a person too — `stsSamlAssertion*` for ' +
+                     '`purpose=saml` — and leaves the other.',
         requestBodyRequired: true,
         requestBody: {
           type: 'object',
@@ -9541,12 +9671,11 @@ const ROUTES = [
                       description: 'WHOSE key pair. Defaults to ' +
                                    '`application`, which is what every ' +
                                    'caller written before this field existed ' +
-                                   'sends. `person` clears `stsAssertion*` ' +
-                                   'off a `ou=users` entry, the declaration ' +
-                                   'included, and ignores `purpose` — a ' +
-                                   'person holds one key pair, because RFC ' +
-                                   '7522\'s verifier reads nothing off a ' +
-                                   'person.' },
+                                   'sends. `person` clears one profile\'s ' +
+                                   'set off a `ou=users` entry, the ' +
+                                   'declaration included — `stsAssertion*` ' +
+                                   'or, for `purpose=saml`, ' +
+                                   '`stsSamlAssertion*`.' },
             purpose: { type: 'string', enum: ['jwt', 'saml'],
                        description: 'Which profile\'s key pair to take off. ' +
                                     'Defaults to `jwt`. The other one is ' +
@@ -9555,11 +9684,117 @@ const ROUTES = [
           required: ['identifier'],
           examples: [{ identifier: 'webapp1' },
                      { identifier: 'webapp1', purpose: 'saml' },
-                     { identifier: 'alice', target: 'person' }],
+                     { identifier: 'alice', target: 'person' },
+                     { identifier: 'alice', target: 'person',
+                       purpose: 'saml' }],
           additionalProperties: false
         },
         responseDescription: 'Whether anything was taken off, and the ' +
                              'sentence saying what that did and did not do.' },
+
+      // THE OTHER WAY A KEY PAIR IS REPLACED (2026-09-13), drawn beside
+      // `issue` on an application's own console page. `common/pki.js`'s
+      // `registerCertificate()` decides whether the chain is acceptable.
+      { action: 'upload-certificate', operationId: 'uploadPkiCertificate',
+        summary: 'Replace an application\'s or a person\'s key pair with a ' +
+                 'certificate it already holds — issued by this realm\'s ' +
+                 'CA, or by another with its full chain',
+        description: 'The application generated its own key pair and brings ' +
+                     'the CERTIFICATE; this writes it over the key pair this ' +
+                     'service manages for one profile, onto the same ' +
+                     'attributes an `issue` writes — seven for `jwt`, six ' +
+                     'for `saml` — with the private key attribute CLEARED ' +
+                     'and ' +
+                     '`oauthAssertionKeySource` / ' +
+                     '`oauthSamlAssertionKeySource` saying where it came ' +
+                     'from. **No private key is taken**: an upload carrying ' +
+                     'one is refused and nothing is stored.\n\n**WHAT THE ' +
+                     'CHAIN MUST BE DEPENDS ON WHO ISSUED IT.** A ' +
+                     'certificate from THIS REALM\'s own certificate ' +
+                     'authority may be sent alone — the service holds every ' +
+                     'tier above it — and is held to the path check an `x5c` ' +
+                     'is: it must pass through this realm\'s own ' +
+                     'Intermediate and nothing on it may be revoked ' +
+                     '(`uploaded-realm-ca`). A certificate from ANY OTHER ' +
+                     'authority must arrive with its WHOLE chain, every ' +
+                     'intermediate and a SELF-SIGNED root, in either field ' +
+                     'and in any order (`uploaded-external-ca`). Every link ' +
+                     'is verified — signature, issuer name, validity — every ' +
+                     'issuer must be a CA permitted keyCertSign within its ' +
+                     'path length constraint, the leaf must not be a CA and ' +
+                     'must permit digitalSignature, and its revocation is ' +
+                     'checked the way a registered certificate is when it ' +
+                     'is used. An incomplete chain, an unrelated extra ' +
+                     'certificate, a self-signed leaf, and a chain to this ' +
+                     'SERVICE\'s Root through ANOTHER realm\'s ' +
+                     'Intermediate are each refused by name. The external ' +
+                     'root need not be trusted by anything here: the ' +
+                     'application is registering a KEY and the chain is the ' +
+                     'evidence for it.\n\n**THE KEY MUST BE ONE THE ' +
+                     'PROFILE\'s VERIFIER CAN USE**: RSA of at least 2048 ' +
+                     'bits, ECDSA on P-256, P-384 or P-521 — and for `jwt` ' +
+                     'also secp256k1 or Ed25519. The chain is stored WITH ' +
+                     'its root for an external authority, because ' +
+                     'revocation checking needs every issuer; the JWKS ' +
+                     'written for `jwt` carries it in `x5c`.\n\nLike ' +
+                     '`issue`, a key pair is not a trust decision: the ' +
+                     'issuer the application will assert as still has to be ' +
+                     'declared for section 2.1.\n\n**`target=person` ' +
+                     '(2026-09-13) REPLACES A PERSON\'s KEY PAIR** — ' +
+                     '`stsAssertion*` or `stsSamlAssertion*` on their ' +
+                     '`ou=users` entry — under the same chain rules, with ' +
+                     'one more: a certificate this realm issued must name ' +
+                     'THAT person (`urn:sts:person:<name>`), so an ' +
+                     'application\'s leaf or another person\'s is refused. ' +
+                     'For an application, a leaf this realm issued to a ' +
+                     'PERSON is refused. A self-signed certificate is ' +
+                     'refused for a person with no by-value alternative, ' +
+                     'and the grant ' +
+                     'still holds an uploaded key to assertions about the ' +
+                     'person alone.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            identifier: { type: 'string',
+                          description: 'The application, exactly as the ' +
+                                       'registry holds it — or the USERNAME, ' +
+                                       'with `target=person`.' },
+            purpose: { type: 'string', enum: ['jwt', 'saml'],
+                       description: 'Which profile\'s key pair to replace. ' +
+                                    'Defaults to `jwt`; the other is ' +
+                                    'untouched.' },
+            certificate: { type: 'string',
+                           description: 'The leaf certificate, PEM. It may ' +
+                                        'be followed by its chain in the ' +
+                                        'same value.' },
+            chain: { type: 'string',
+                     description: 'The certificates above it, PEM, in any ' +
+                                  'order: every intermediate and the ' +
+                                  'self-signed root for an external ' +
+                                  'authority, nothing for this realm\'s ' +
+                                  'own.' },
+            from: { type: 'string',
+                    description: 'Console only: the page to return to. ' +
+                                 'Ignored by this API.' },
+            target: { type: 'string', enum: ['application', 'person'],
+                      description: 'WHOSE key pair. Defaults to ' +
+                                   '`application`; `person` replaces the ' +
+                                   'key pair on a `ou=users` entry, which ' +
+                                   'must already exist.' }
+          },
+          required: ['identifier', 'certificate'],
+          examples: [{ identifier: 'webapp1', purpose: 'jwt',
+                       certificate: '-----BEGIN CERTIFICATE-----\n…\n' +
+                                    '-----END CERTIFICATE-----',
+                       chain: '-----BEGIN CERTIFICATE-----\n…\n' +
+                              '-----END CERTIFICATE-----' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The source, the subject and issuer, the chain ' +
+                             'it was checked through, the key handle and the ' +
+                             'expiry — or the refusal naming what is wrong ' +
+                             'with the chain.' },
 
       { action: 'clear', operationId: 'clearPkiChain',
         summary: 'Remove this realm\'s certificate authority entirely',
@@ -10791,6 +11026,79 @@ const ROUTES = [
       log.debug("Entering the management API error codes endpoint.");
       sendJson(res, 200, adminViews.errorCodesView(req.query).json);
       log.debug("Leaving the management API error codes endpoint.");
+    } },
+
+  // THE USED-ASSERTION HISTORY (2026-09-13). A read with no write beside it,
+  // which is rule 7 read exactly: the page it mirrors has no control, because
+  // forgetting a row would make a still-valid assertion usable again. A
+  // PROMISE, because on a postgres store the history is the database's.
+  { method: 'GET', path: BASE + '/used-assertions', tag: 'Tokens',
+    operationId: 'getUsedAssertions',
+    summary: 'Every RFC 7523 and RFC 7522 assertion this realm has accepted ' +
+             'and that has not yet expired',
+    description: 'The used-assertion history: every RFC 7523 JWT and RFC ' +
+                 '7522 SAML assertion accepted in THIS REALM — as client ' +
+                 'authentication (`client_assertion`) or as an ' +
+                 'authorization grant (`assertion`) — and not yet expired, ' +
+                 'newest first, filtered and paged.\n\n**AN ASSERTION IS ' +
+                 'ACCEPTED ONCE, EVER.** One history for both uses and both ' +
+                 'profiles, keyed by format, issuer and `jti`/`ID`, so a JWT ' +
+                 'that authenticated a client is refused as a grant and the ' +
+                 'reverse. `state` is `reserved` while the token request it ' +
+                 'came with has not finished, and `spent` once that response ' +
+                 'was a 2xx; a request that failed for another reason ' +
+                 'releases the assertion and it is not listed.\n\n' +
+                 '`persistent` says whether the history survives a restart ' +
+                 '(it does in the `ldif` and `postgres` stores, in both ' +
+                 'modes), and `atomicAcrossProcesses` whether recording a use ' +
+                 'is one claim every process agrees on at once (postgres). A ' +
+                 'row is kept until `expiresAt` — the assertion\'s own expiry ' +
+                 'plus the skew allowed when it was read — and `live` is how ' +
+                 'many are held against `cap` ' +
+                 '(`oauth2.assertionReplayCacheSize`). No assertion and no ' +
+                 'credential is in any row.\n\nREAD ONLY.',
+    mirrors: 'GET /admin/used-assertions',
+    parameters: [
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of the issuer, the `jti` or `ID`, the client ' +
+                     'or the subject, case-insensitive.' },
+      { name: 'format', in: 'query', required: false,
+        schema: { type: 'string', enum: ['jwt', 'saml'] },
+        description: '`jwt` (RFC 7523) or `saml` (RFC 7522).' },
+      { name: 'use', in: 'query', required: false,
+        schema: { type: 'string',
+                  enum: ['client-authentication', 'authorization-grant'] },
+        description: 'What the assertion was accepted AS.' },
+      { name: 'state', in: 'query', required: false,
+        schema: { type: 'string', enum: ['reserved', 'spent'] },
+        description: '`reserved` (its token request has not finished) or ' +
+                     '`spent` (tokens were issued).' }
+    ].concat(pagingParameters()),
+    responseDescription: 'This realm\'s unexpired used assertions, where the ' +
+                         'history is held, and the paging that found them.',
+    responseSchema: { type: 'object',
+      description: 'The used-assertion history: `rows` (this page, each with ' +
+                   '`format`, `formatLabel`, `use`, `useLabel`, `issuer`, ' +
+                   '`identifier`, `clientId`, `subject`, `state`, `usedAt`, ' +
+                   '`spentAt`, `expiresAt` and `origin`, times in ' +
+                   'milliseconds), `store`, `persistent`, ' +
+                   '`atomicAcrossProcesses`, `storeNote`, `cap`, `live`, ' +
+                   '`matched`, `shown`, `filter`, `formats`, `uses`, `states` ' +
+                   'and the paging members.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API used assertions endpoint.");
+      adminViews.usedAssertionsView(req.query).then(function (view) {
+        sendJson(res, 200, view.json);
+        log.debug("Leaving the management API used assertions endpoint.");
+      }).catch(function (e) {
+        errorCodes.mark(res, 'STS-API-0081');
+        sendJson(res, 500, { ok: false, errors: [
+          'The used-assertion history could not be read: ' +
+          (e && e.message ? e.message : String(e))] });
+        log.debug("Leaving the management API used assertions endpoint. It " +
+                  "threw.");
+      });
+      log.debug("Leaving handler().");
     } },
 
   // Delegation. THE SECOND READ-ONLY RESOURCE HERE, and for a related reason to

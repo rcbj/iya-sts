@@ -445,6 +445,12 @@ COMPOSE_ENV=(
   # ---------------------------------------------------------------------
   "STS_HTTPS=${STS_HTTPS:-true}"
   "STS_TEST_SERVICE_URL=$([ "${STS_HTTPS:-true}" = "true" ] && echo https || echo http)://sts:8081"
+  # AND THE ADDRESS INSIDE EVERY CERTIFICATE (2026-09-13): the CRL, OCSP and
+  # caIssuers URLs the service writes are followed by
+  # sts_pki_distribution_points from this runner, so they must name the
+  # service the way the runner does — `sts`, on the plain-HTTP revocation
+  # listener, which is plain whatever STS_HTTPS says about the main port.
+  "PKI_DISTRIBUTION_BASE_URL=http://sts:8082"
   # ---- the remote PEP and the client certificate it presents --------------
   # The three /xacml/pep endpoints are gated: a PEP is admitted by a client
   # certificate this service VERIFIES, whose subject DN resolves to a directory

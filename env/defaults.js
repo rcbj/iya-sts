@@ -285,8 +285,11 @@ var config = {
   // --- PKI -------------------------------------------------------------
   pki: {
     crlLifetimeMinutes: 60,                    // How long a CRL claims to be fresh
+    httpPort: 8082,                            // Plain-HTTP revocation listener port; restart to apply
     distributionBaseUrl: "",                   // Base URL published in CRL and OCSP addresses
-    distributionLdapHost: "",                  // Host published in LDAP and LDAPS CRL addresses
+    distributionPort: 0,                       // Port published in HTTP CRL and OCSP addresses
+    distributionLdapHost: "",                  // Host published in ldap:// CRL addresses
+    distributionLdapPort: 0,                   // Port published in ldap:// CRL addresses
     publishCrlToDirectory: true,               // Publish every CRL into the embedded directory
     autoBuild: true,                           // Build the certificate authority at startup; restart to apply
     keyAlgorithm: "rsa-2048",                  // Default CA key algorithm

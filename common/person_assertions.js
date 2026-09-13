@@ -146,17 +146,90 @@ const ISSUER_ATTRIBUTE = 'stsAssertionIssuer';
 const KEY_ATTRIBUTES = ['stsAssertionJwks', 'stsAssertionCertificate',
                         'stsAssertionCertificateChain',
                         'stsAssertionPrivateKey', 'stsAssertionKid',
-                        'stsAssertionExpiresAt'];
+                        'stsAssertionExpiresAt', 'stsAssertionKeySource'];
+
+// ===========================================================================
+// AN RFC 7522 KEY PAIR TOO, SINCE 2026-09-13, AND IT IS A FOURTH SET.
+//
+// Until this date a person could hold an RFC 7523 key pair and not an RFC
+// 7522 one, and `/admin/pki` refused the second by name — the SAML verifier
+// read `oauthSamlAssertion*` off an application and nothing off a person, so a
+// SAML key pair on a person's entry would have been one nothing could use.
+// **The verifier reads a person's now** (`oauth-oidc/saml_assertion_grant.js`),
+// under the same refusal the JWT profile makes: a person's assertion may name
+// only themselves as its `<Subject>`.
+//
+// `stsSamlAssertion*` shares no name with `stsAssertion*`, for the reason the
+// two application sets share none: no code path crosses them, so a person's
+// JWT key pair cannot sign a SAML assertion and taking one off leaves the
+// other working. There is no JWKS — what an XML Signature is checked against
+// is a certificate, and what matches a presented `<ds:KeyInfo>` is its
+// THUMBPRINT, which is the handle this set stores where the JWT set stores a
+// `kid`.
+//
+// **AND BOTH SETS RECORD WHERE THE KEY PAIR CAME FROM** (`…KeySource`): issued
+// here, or a certificate UPLOADED in its place — this realm's own, or an
+// external authority's with its whole chain — in which case the person keeps
+// the private key and the attribute that would hold it is empty. The words are
+// `applications.KEY_SOURCES`, which this module does not require for
+// `applications.js`'s own reason: it sits on the token endpoint's path, and a
+// vocabulary of three words is not worth a module.
+// ===========================================================================
+const SAML_ISSUER_ATTRIBUTE = 'stsSamlAssertionIssuer';
+
+const SAML_KEY_ATTRIBUTES = ['stsSamlAssertionCertificate',
+                             'stsSamlAssertionCertificateChain',
+                             'stsSamlAssertionPrivateKey',
+                             'stsSamlAssertionThumbprint',
+                             'stsSamlAssertionExpiresAt',
+                             'stsSamlAssertionKeySource'];
+
+// WHICH ATTRIBUTE HOLDS WHICH HALF, PER PROFILE — the shape
+// `applications.KEY_PAIR_ATTRIBUTES` has, so a page drawing an application's
+// key pairs and a person's reads one kind of table. `present` is the attribute
+// whose presence means the profile holds a key pair at all.
+const KEY_PAIR_ATTRIBUTES = {
+  jwt: { issuer: ISSUER_ATTRIBUTE, certificate: 'stsAssertionCertificate',
+         chain: 'stsAssertionCertificateChain',
+         privateKey: 'stsAssertionPrivateKey', handle: 'stsAssertionKid',
+         handleLabel: 'kid', jwks: 'stsAssertionJwks',
+         expiresAt: 'stsAssertionExpiresAt', source: 'stsAssertionKeySource',
+         present: 'stsAssertionJwks',
+         attributes: KEY_ATTRIBUTES.slice() },
+  saml: { issuer: SAML_ISSUER_ATTRIBUTE,
+          certificate: 'stsSamlAssertionCertificate',
+          chain: 'stsSamlAssertionCertificateChain',
+          privateKey: 'stsSamlAssertionPrivateKey',
+          handle: 'stsSamlAssertionThumbprint', handleLabel: 'thumbprint',
+          jwks: '', expiresAt: 'stsSamlAssertionExpiresAt',
+          source: 'stsSamlAssertionKeySource',
+          present: 'stsSamlAssertionCertificate',
+          attributes: SAML_KEY_ATTRIBUTES.slice() }
+};
+
+const PURPOSE_IDS = Object.keys(KEY_PAIR_ATTRIBUTES);
 
 // Every attribute this module owns, which is what the directory has to hand
-// back and what a clear removes.
-const ATTRIBUTES = [ISSUER_ATTRIBUTE].concat(KEY_ATTRIBUTES);
+// back. A clear removes ONE PROFILE's slice of it — see `clear()`.
+const ATTRIBUTES = [ISSUER_ATTRIBUTE].concat(KEY_ATTRIBUTES)
+  .concat([SAML_ISSUER_ATTRIBUTE]).concat(SAML_KEY_ATTRIBUTES);
 
-// The one that is private key material. A list for `applications.js`'s
+// The ones that are private key material. A list for `applications.js`'s
 // reason: *is this attribute private key material* is a question somebody
 // adding a name above has to answer, and a list is where they will look for
-// it.
-const SEALED_ATTRIBUTES = ['stsAssertionPrivateKey'];
+// it. The second arrived with the RFC 7522 set, which is that reason working.
+const SEALED_ATTRIBUTES = ['stsAssertionPrivateKey',
+                           'stsSamlAssertionPrivateKey'];
+
+// An unknown profile id is `''`, and every caller turns that into a refusal
+// rather than a default: quietly writing the other profile's key pair would
+// put a key on the wrong attribute set with nothing saying so.
+function purposeIdOf(purpose) {
+  log.debug("Entering purposeIdOf().");
+  const asked = String(purpose || '').trim() || 'jwt';
+  log.debug("Leaving purposeIdOf().");
+  return KEY_PAIR_ATTRIBUTES[asked] ? asked : '';
+}
 
 const SEAL_LABEL = 'person-private-key';
 
@@ -292,19 +365,28 @@ function recordFor(username) {
   }
   const out = { username: name,
                 issuers: valuesOf(raw[ISSUER_ATTRIBUTE]),
-                hasKeyPair: false };
-  KEY_ATTRIBUTES.forEach(function (attribute) {
+                hasKeyPair: false,
+                samlIssuers: valuesOf(raw[SAML_ISSUER_ATTRIBUTE]),
+                hasSamlKeyPair: false };
+  KEY_ATTRIBUTES.concat(SAML_KEY_ATTRIBUTES).forEach(function (attribute) {
     const first = valuesOf(raw[attribute])[0] || '';
     out[attribute] = openValue(attribute, first, name);
   });
   out.hasKeyPair = !!out.stsAssertionJwks;
+  out.hasSamlKeyPair = !!out.stsSamlAssertionCertificate;
   // THE ISSUER A PERSON ASSERTS UNDER, defaulted to their own name. It is
   // `effectiveIssuers` rather than an overwrite of `issuers` so that a page
   // can tell a DECLARED value from the default — the same distinction
-  // `issuerEntry()` carries as `declared`.
+  // `issuerEntry()` carries as `declared`. One per profile, because the two
+  // declarations are two attributes for `applications.js`'s reason: being
+  // trusted to assert in one document format is not being trusted in the
+  // other.
   out.effectiveIssuers = out.issuers.length ? out.issuers.slice() : [name];
+  out.samlEffectiveIssuers = out.samlIssuers.length
+    ? out.samlIssuers.slice() : [name];
   log.debug('Leaving recordFor(). ' +
-            (out.hasKeyPair ? 'A key pair.' : 'No key pair.'));
+            (out.hasKeyPair ? 'A JWT key pair. ' : 'No JWT key pair. ') +
+            (out.hasSamlKeyPair ? 'A SAML key pair.' : 'No SAML key pair.'));
   return out;
 }
 
@@ -335,26 +417,35 @@ function recordFor(username) {
 // that. An index keyed by declared issuer is the answer if this ever matters;
 // it would be a second copy of what is on the entries, which is the thing this
 // register deliberately does not keep.
+//
+// **`purpose` SAYS WHICH PROFILE IS ASKING** (2026-09-13), and it decides both
+// halves of the question: which declaration is searched and which key pair
+// makes somebody an issuer. A person holding only an RFC 7523 key pair is no
+// RFC 7522 issuer, and the reverse — which is the crossing the two attribute
+// sets exist to prevent, made once here instead of being hoped for. Absent
+// means `jwt`, which is what every caller written before the SAML set sends.
 // ---------------------------------------------------------------------------
-function issuerFor(iss) {
-  log.debug('Entering issuerFor(). iss=' + iss);
+function issuerFor(iss, purpose) {
+  log.debug('Entering issuerFor(). iss=' + iss + ' purpose=' + purpose);
   const wanted = String(iss || '');
-  if (!directory || !wanted) {
-    log.debug('Leaving issuerFor(). No directory or no issuer.');
+  const saml = purposeIdOf(purpose) === 'saml';
+  if (!directory || !wanted || !purposeIdOf(purpose)) {
+    log.debug('Leaving issuerFor(). No directory, issuer or profile.');
     return null;
   }
   const names = directory.persons() || [];
   let fallback = null;
   for (let i = 0; i < names.length; i++) {
     const record = recordFor(names[i]);
-    if (!record || !record.hasKeyPair) {
+    if (!record || !(saml ? record.hasSamlKeyPair : record.hasKeyPair)) {
       continue;
     }
-    if (record.issuers.indexOf(wanted) >= 0) {
+    const declared = saml ? record.samlIssuers : record.issuers;
+    if (declared.indexOf(wanted) >= 0) {
       log.debug('Leaving issuerFor(). Declared by ' + record.username + '.');
       return { identifier: record.username, record: record, declared: true };
     }
-    if (!fallback && !record.issuers.length &&
+    if (!fallback && !declared.length &&
         String(record.username) === wanted) {
       fallback = record;
     }
@@ -373,28 +464,46 @@ function issuerFor(iss) {
 // and `sub` are both the declared issuer name is the same statement as one
 // where both are the username — and refusing that would be refusing the
 // natural spelling of *this is me*.
-function subjectIsSelf(record, sub) {
+// `purpose` picks which declaration counts, for `issuerFor()`'s reason: an
+// RFC 7522 `<Subject>` spelled as the person's declared SAML issuer is *this
+// is me*, and the JWT declaration is a different name for a different
+// profile. A record built by hand (a certificate naming somebody since
+// deleted) carries only `effectiveIssuers`, so the SAML list falls back to it.
+function subjectIsSelf(record, sub, purpose) {
   log.debug("Entering subjectIsSelf().");
   const wanted = String(sub || '');
   if (!record || !wanted) {
     log.debug("Leaving subjectIsSelf().");
     return false;
   }
+  const names = purposeIdOf(purpose) === 'saml'
+    ? (record.samlEffectiveIssuers || record.effectiveIssuers || [])
+    : (record.effectiveIssuers || []);
   log.debug("Leaving subjectIsSelf().");
-  return wanted === String(record.username) ||
-         record.effectiveIssuers.indexOf(wanted) >= 0;
+  return wanted === String(record.username) || names.indexOf(wanted) >= 0;
 }
 
 // ---------------------------------------------------------------------------
-// THE WRITE. All seven values or none of them, and a failure says which one —
+// THE WRITE. Every value or none of them, and a failure says which one —
 // `common/pki.js` hands a key pair over ONCE and keeps no copy, so a write
 // that half-succeeded is a key pair that is gone with a certificate on the
 // entry claiming otherwise.
+//
+// **`opts.purpose` PICKS THE SET** (2026-09-13), defaulting to `jwt` so the two
+// callers written before the SAML set — `/admin/pki` and
+// `/portal/signing-key` — write exactly what they wrote. A record from
+// `pki.registerCertificate()` has an EMPTY private key, and writing it is what
+// makes an upload a REPLACEMENT: an issued key pair's private half left beside
+// somebody else's certificate would be a key for a certificate it does not
+// match. The private key goes
+// FIRST for the same reason: a write that fails after it leaves the old
+// certificate with no key, which refuses rather than signs.
 // ---------------------------------------------------------------------------
 function write(username, record, opts) {
   log.debug('Entering write(). username=' + username);
   const name = String(username || '');
   const options = opts || {};
+  const purpose = purposeIdOf(options.purpose);
   if (!directory) {
     log.debug('Leaving write(). No directory.');
     return { ok: false, errorCode: 'STS-OAUTH-0085',
@@ -403,16 +512,28 @@ function write(username, record, opts) {
                       'fills the slot at require time; a process without it ' +
                       'can verify nothing either.'] };
   }
+  if (!purpose) {
+    log.debug('Leaving write(). An unknown profile.');
+    return { ok: false, errorCode: 'STS-PKI-0011',
+             errors: ['"' + options.purpose + '" is not a profile a person ' +
+                      'may hold a key pair for. There are ' +
+                      PURPOSE_IDS.join(' and ') + '.'] };
+  }
+  const names = KEY_PAIR_ATTRIBUTES[purpose];
   const values = [
-    ['stsAssertionJwks', JSON.stringify(record.jwks)],
-    ['stsAssertionCertificate', record.certificatePem],
-    ['stsAssertionCertificateChain', record.chainPem.join('')],
-    ['stsAssertionPrivateKey', record.privateKeyPem],
-    ['stsAssertionKid', record.kid],
-    ['stsAssertionExpiresAt', generalizedTime(new Date(record.notAfter))]
+    [names.privateKey, record.privateKeyPem || ''],
+    [names.certificate, record.certificatePem],
+    [names.chain, (record.chainPem || []).join('')],
+    [names.handle, purpose === 'saml' ? record.certificateThumbprint
+                                      : record.kid],
+    [names.expiresAt, generalizedTime(new Date(record.notAfter))],
+    [names.source, record.source || 'issued']
   ];
+  if (names.jwks) {
+    values.splice(2, 0, [names.jwks, JSON.stringify(record.jwks)]);
+  }
   if (options.issuer) {
-    values.push([ISSUER_ATTRIBUTE, String(options.issuer)]);
+    values.push([names.issuer, String(options.issuer)]);
   }
   const written = [];
   for (let i = 0; i < values.length; i++) {
@@ -447,9 +568,12 @@ function write(username, record, opts) {
     }
     written.push(attribute);
   }
-  log.info('person_assertions: "' + name + '" now holds an RFC 7523 signing ' +
-           'key pair, kid=' + record.kid + ', valid until ' + record.notAfter +
-           '. It signs assertions ABOUT THAT PERSON and about nobody else.');
+  log.info('person_assertions: "' + name + '" now holds an ' +
+           (purpose === 'saml' ? 'RFC 7522' : 'RFC 7523') + ' signing ' +
+           'key pair (' + (record.source || 'issued') + '), ' +
+           names.handleLabel + '=' + values[3][1] + ', valid until ' +
+           record.notAfter + '. It signs assertions ABOUT THAT PERSON and ' +
+           'about nobody else.');
   log.debug('Leaving write(). ' + written.length + ' attribute(s).');
   return { ok: true, written: written, errors: [] };
 }
@@ -481,11 +605,18 @@ function generalizedTime(when) {
 // leaving the `iss` declaration behind would leave a person declared as an
 // issuer with no key to issue with, which reads on the page as a key pair that
 // would not clear.
-function clear(username) {
-  log.debug('Entering clear(). username=' + username);
+//
+// **ONE PROFILE AT A TIME** (2026-09-13). A person may hold both key pairs,
+// and a control that took one off must leave the other working — the
+// application arm's rule and for its reason. Absent means `jwt`, which is what
+// `/portal/signing-key`'s Remove and `/admin/pki`'s person arm meant when they
+// were written.
+function clear(username, purpose) {
+  log.debug('Entering clear(). username=' + username + ' purpose=' + purpose);
   const name = String(username || '');
-  if (!directory || !name) {
-    log.debug('Leaving clear(). No directory or no name.');
+  const id = purposeIdOf(purpose);
+  if (!directory || !name || !id) {
+    log.debug('Leaving clear(). No directory, name or profile.');
     return { ok: false, errorCode: 'STS-OAUTH-0089', removed: 0 };
   }
   const before = recordFor(name);
@@ -494,10 +625,12 @@ function clear(username) {
     return { ok: false, errorCode: 'STS-OAUTH-0090', removed: 0,
              unknown: true };
   }
+  const names = KEY_PAIR_ATTRIBUTES[id];
   let removed = 0;
-  ATTRIBUTES.forEach(function (attribute) {
-    const held = attribute === ISSUER_ATTRIBUTE
-      ? before.issuers.length : !!before[attribute];
+  [names.issuer].concat(names.attributes).forEach(function (attribute) {
+    const held = attribute === names.issuer
+      ? (id === 'saml' ? before.samlIssuers : before.issuers).length
+      : !!before[attribute];
     if (!held) {
       return;
     }
@@ -525,9 +658,15 @@ function holders() {
   const out = [];
   (directory.persons() || []).forEach(function (name) {
     const record = recordFor(name);
-    if (!record || (!record.hasKeyPair && !record.issuers.length)) {
+    if (!record || (!record.hasKeyPair && !record.issuers.length &&
+                    !record.hasSamlKeyPair && !record.samlIssuers.length)) {
       return;
     }
+    // THE JWT MEMBERS KEEP THEIR NAMES AND MEANINGS, and the SAML key pair is
+    // a nested member beside them (2026-09-13): `/admin/pki` and the
+    // certificate catalogue read the first set, and a row for somebody who
+    // holds only a SAML key pair reads `hasKeyPair: false` there, which is
+    // true of the profile those readers ask about.
     out.push({ username: record.username,
                hasKeyPair: record.hasKeyPair,
                declaredIssuers: record.issuers.slice(),
@@ -535,7 +674,18 @@ function holders() {
                declared: record.issuers.length > 0,
                kid: record.stsAssertionKid,
                expiresAt: record.stsAssertionExpiresAt,
-               certificatePem: record.stsAssertionCertificate });
+               source: record.stsAssertionKeySource ||
+                       (record.hasKeyPair ? 'issued' : ''),
+               certificatePem: record.stsAssertionCertificate,
+               saml: { hasKeyPair: record.hasSamlKeyPair,
+                       declaredIssuers: record.samlIssuers.slice(),
+                       issuers: record.samlEffectiveIssuers.slice(),
+                       declared: record.samlIssuers.length > 0,
+                       thumbprint: record.stsSamlAssertionThumbprint,
+                       expiresAt: record.stsSamlAssertionExpiresAt,
+                       source: record.stsSamlAssertionKeySource ||
+                               (record.hasSamlKeyPair ? 'issued' : ''),
+                       certificatePem: record.stsSamlAssertionCertificate } });
   });
   log.debug('Leaving holders(). ' + out.length + ' person(s).');
   return out;
@@ -544,6 +694,10 @@ function holders() {
 module.exports = {
   ISSUER_ATTRIBUTE: ISSUER_ATTRIBUTE,
   KEY_ATTRIBUTES: KEY_ATTRIBUTES,
+  SAML_ISSUER_ATTRIBUTE: SAML_ISSUER_ATTRIBUTE,
+  SAML_KEY_ATTRIBUTES: SAML_KEY_ATTRIBUTES,
+  KEY_PAIR_ATTRIBUTES: KEY_PAIR_ATTRIBUTES,
+  PURPOSE_IDS: PURPOSE_IDS,
   ATTRIBUTES: ATTRIBUTES,
   SEALED_ATTRIBUTES: SEALED_ATTRIBUTES,
   setDirectory: setDirectory,

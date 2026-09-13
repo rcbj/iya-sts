@@ -905,8 +905,26 @@ all.
 A person issues themselves an **RFC 7523 signing key pair** — the same act
 `/admin/pki` performs for an operator, through the same two functions
 (`pki.issueSigningKeyPair()` and `personAssertions.write()`), writing the same
-seven `stsAssertion*` attributes onto the same entry. What is new is who
-presses the button.
+`stsAssertion*` attributes onto the same entry. What is new is who presses the
+button.
+
+**AND SINCE 2026-09-13 AN RFC 7522 ONE BESIDE IT.** The page draws a card per
+profile from `SIGNING_KEY_PROFILES`, each with its own Generate and its own
+Take off posting a hidden `purpose` (`jwt` or `saml`; absent means `jwt`, which
+is what the form posted before, and anything else is refused at the form's
+shape). The SAML key pair lands on `stsSamlAssertion*` — the set
+`/admin/users?user=` manages — and the two never cross: neither key signs for
+the other profile, and taking one off leaves the other working. The one-time
+card says what to do with the key it holds — claims and a `kid` for a JWT, an
+`<Issuer>`, `<Subject>`, audience and certificate thumbprint for a SAML
+assertion. **Three things are shared rather than doubled**: the rate limit
+(a key generation costs the same CPU either way), `pki.personSelfService`, and
+the error codes, none of which named a profile. The nav label is *Signing
+keys*. `tests/vendored/sts_portal_signing_key.js` section 8 is the proof, and
+its SAN check exists because a JWT leaf written onto the SAML attributes
+verifies exactly like a SAML one — the certificate's subjectAltName is the only
+place the difference shows; five mutants, all caught, that one only after the
+check was added.
 
 **IT IS THE SAME ACT AND NOT A SECOND IMPLEMENTATION**, which is the whole
 reason this page requires `common/pki.js` and `common/person_assertions.js`

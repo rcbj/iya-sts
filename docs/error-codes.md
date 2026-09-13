@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **1987** of them, in **27** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **2027** of them, in **27** subsystems.
 
 ## Where a code appears
 
@@ -50,13 +50,13 @@ is an ordinary outcome.
 ## Contents
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 13
-* [Service core (`STS-CORE`)](#sts-core) — 42
+* [Service core (`STS-CORE`)](#sts-core) — 43
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 37
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 43
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 48
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 54
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 129
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 156
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 141
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 241
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 243
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 54
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 16
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
@@ -71,11 +71,11 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 264
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 70
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 28
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 132
-* [Management API (`STS-API`)](#sts-api) — 58
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 137
+* [Management API (`STS-API`)](#sts-api) — 60
 * [User portal (`STS-PORTAL`)](#sts-portal) — 38
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 53
+* [Registries (`STS-REG`)](#sts-reg) — 55
 
 ## STS-HTTP
 
@@ -149,6 +149,7 @@ Raised from: server.js, common/protocol_stack.js, common/config.js, common/confi
 | `STS-CORE-0040` | No readable VERSION file was found, so the version is reported as 0.0. | — |
 | `STS-CORE-0041` | The build stamp version.json could not be written at image build time. | — |
 | `STS-CORE-0042` | A shared store's reconciler threw while deciding whether a restored or replicated row (or its removal) may be applied, so it was not applied and what the process held is unchanged. | — |
+| `STS-CORE-0043` | The plain-HTTP revocation listener (pki.httpPort) could not bind, so every http:// CRL, OCSP and caIssuers address in this service's certificates answers nothing. | — |
 
 ## STS-WORKER
 
@@ -247,6 +248,11 @@ Raised from: persistence/.
 | `STS-STORE-0041` | Preparing a page of replicated rows of one kind failed; they are applied one at a time. | — |
 | `STS-STORE-0042` | One replicated change could not be applied in this process; the rest of the page is unaffected. | — |
 | `STS-STORE-0043` | Clearing an applier's per-page replication state failed. | — |
+| `STS-STORE-0044` | The open persistence driver has no used-assertion functions, so the used-assertion history is held in this process and forgotten at a restart. | — |
+| `STS-STORE-0045` | Writing the used-assertion history to a file store failed; a claim that could not be written is refused, a confirmation is lost. | — |
+| `STS-STORE-0046` | The database store could not be asked whether an assertion has been used; the assertion is refused. | — |
+| `STS-STORE-0047` | Sweeping expired used-assertion rows, or removing a removed realm's, failed; the rows are ignored by every read and expire. | — |
+| `STS-STORE-0048` | Confirming or releasing a used-assertion claim when its response finished failed; the row stays reserved until the assertion expires. | — |
 
 ## STS-KEYS
 
@@ -389,8 +395,8 @@ Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, c
 | `STS-PKI-0068` | A CRL was requested for a certificate authority this service does not hold. | HTTP 404 text/plain |
 | `STS-PKI-0069` | The CRL endpoint failed while building a CRL. | HTTP 500 text/plain |
 | `STS-PKI-0070` | An authority's CA certificate (caIssuers) was requested for an authority this service does not hold. | HTTP 404 text/plain |
-| `STS-PKI-0071` | An OCSP GET request path segment was not a base64 DER request. | HTTP 400 text/plain |
-| `STS-PKI-0072` | An OCSP request arrived with no body. | HTTP 400 text/plain |
+| `STS-PKI-0071` *(retired)* | An OCSP GET request path segment was not a base64 DER request. Retired 2026-09-13: such a request does not conform to the OCSP syntax and is answered malformedRequest inside the protocol (STS-PKI-0066), as RFC 6960 section 2.3 asks. | HTTP 400 text/plain |
+| `STS-PKI-0072` *(retired)* | An OCSP request arrived with no body. Retired 2026-09-13, for STS-PKI-0071's reason: it is answered malformedRequest (STS-PKI-0066). | HTTP 400 text/plain |
 | `STS-PKI-0073` | An OCSP POST body was larger than the 64KB this responder accepts. | HTTP 413 text/plain |
 | `STS-PKI-0074` | The OCSP endpoint threw while answering a request. | HTTP 500 text/plain |
 | `STS-PKI-0075` | A key pair could not be generated for the certificate authoring pane. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
@@ -426,7 +432,7 @@ Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, c
 | `STS-PKI-0105` | A PKI console or API action was refused by the module behind it without a more specific code (a missing code at that module). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0106` | A person key-pair issue or removal named no person. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0107` | A person key-pair action was asked of a process with no directory to hold it. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0108` | An RFC 7522 (SAML) signing key pair was asked for a person; only applications may hold one. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0108` *(retired)* | An RFC 7522 (SAML) signing key pair was asked for a person; only applications may hold one. Retired 2026-09-13: a person may hold an RFC 7522 key pair, and the SAML bearer grant reads it. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0109` | A person key-pair action named nobody in this realm. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0110` | A person's signing key pair was issued and could not be written onto their entry. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0111` | A person key-pair removal found nothing to take off. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
@@ -448,6 +454,33 @@ Raised from: common/pki.js, common/pki_authoring.js, common/pki_revocation.js, c
 | `STS-PKI-0127` | A delegated OCSP responder's answers were not used because its own certificate is REVOKED on the CRL it names, or because its status could not be established under pki.revocationCheck=hard-fail (RFC 6960 section 4.2.2.2.1). | — |
 | `STS-PKI-0128` | An ldap: or ldaps: revocation address was not dialled or not answered usably: plain ldap is not permitted by pki.revocationLdap, the URL names no host or a critical extension, a name relative to the CRL issuer has no pki.revocationLdapDirectory to be looked up in, or the directory answered with a referral, several entries or no such attribute. | — |
 | `STS-PKI-0129` | A certificate REGISTERED on an application entry (an RFC 7523 key's x5c, an RFC 7522 certificate), on a federation relationship (fedSigningCertificate, or a key in its JWKS) or in oid4vp.trustedIssuerCertificates verified a signature and was then refused because it is revoked, or its status could not be established under pki.revocationCheck=hard-fail. | Per door: invalid_client or invalid_grant at the token endpoint; the federated sign-in refused with the reason on the error page; invalid_request at the OID4VP response endpoint |
+| `STS-PKI-0130` | The OCSP responder address of a certificate authority this service holds was fetched with a GET carrying no request — the URL exactly as it is written in a certificate's Authority Information Access, which RFC 6960 appendix A.1.1 makes the base of both transports rather than a document. | HTTP 400 text/plain naming the POST and GET transports |
+| `STS-PKI-0131` | The OCSP responder address of a certificate authority this service does not hold was fetched with a GET carrying no request. | HTTP 404 text/plain |
+| `STS-PKI-0132` | An OCSP request carried a nonce of 0 octets or more than 32, which RFC 8954 section 2.1 requires a responder to reject. | OCSPResponse malformedRequest(1), HTTP 200 |
+| `STS-PKI-0133` | An OCSP request named no certificate the responder's authority issued — every CertID's issuer name and key hashes belong to somebody else — so the responder is not authoritative for any of it (RFC 6960 section 2.3, RFC 5019 section 2.2.3). | OCSPResponse unauthorized(6), HTTP 200 |
+| `STS-PKI-0134` | A request reached the plain-HTTP revocation listener for a path outside /pki/. That socket serves the revocation endpoints and nothing else. | HTTP 404 text/plain |
+| `STS-PKI-0140` | A certificate upload named no application, or the registration it produced could not be written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0141` | A certificate upload carried a PRIVATE KEY block. Nothing was stored; the application keeps its own key. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0142` | A certificate upload carried no PEM certificate, or a PEM block that is not a certificate. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0143` | A certificate in an upload, or the chain it forms, could not be parsed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0144` | The first certificate of an upload is a certificate authority rather than the signing leaf. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0145` | An uploaded certificate is expired or not yet valid. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0146` | An uploaded certificate carries a key the profile's verifier cannot use, or a KeyUsage that forbids digitalSignature. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0147` | An uploaded certificate's chain is incomplete: it does not reach a self-signed root, or the certificate is itself self-signed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0148` | A certificate upload carried a certificate that is not on the path from the leaf to its root. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0149` | An uploaded certificate chains to this service's own Root and was refused by the realm path check (another realm's branch, a failed link, or revocation). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0150` | An external chain uploaded with a certificate does not verify: a signature, an issuer name or a validity window failed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0151` | An issuer in an uploaded external chain is not a CA, may not sign certificates, or has its path length constraint exceeded. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0152` | An uploaded certificate's chain verifies and the certificate was refused on revocation. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0153` *(retired)* | A certificate upload targeted a person. Only an application's key pair is replaced by an uploaded certificate. Retired 2026-09-13: a person's key pair may be replaced by an uploaded certificate too. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0154` | An uploaded certificate verified and one of the attributes it replaces could not be written to the application entry. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0155` | An uploaded certificate this realm issued would widen its holder: for a person, its subjectAltName names somebody else (another urn:sts:person: or an urn:sts:application:); for an application, it names a urn:sts:person:. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0156` | The certificate behind a key that verified an RFC 7523 or RFC 7522 assertion has an INCOMPLETE chain: it is not this realm's, and nothing registered with it reaches a self-signed root (pki.verifySignerChain). | invalid_grant at the grant, invalid_client at client authentication |
+| `STS-PKI-0157` | The chain of the certificate behind a key that verified an RFC 7523 or RFC 7522 assertion does not verify: a signature, an issuer name or a validity window failed — the leaf expired, an intermediate expired, or a pinned self-signed certificate no longer holds. | invalid_grant at the grant, invalid_client at client authentication |
+| `STS-PKI-0158` | A certificate that signs another on a signer's path is not permitted to: no basicConstraints cA=TRUE, a KeyUsage without keyCertSign, or a pathLenConstraint exceeded. Raised for a presented x5c (pki.verifyLeaf) and for a registered chain at use. | invalid_grant at the grant, invalid_client at client authentication |
+| `STS-PKI-0159` | The certificate whose key verified an assertion may not sign one: it is a certificate authority, or its KeyUsage does not permit digitalSignature. | invalid_grant at the grant, invalid_client at client authentication |
+| `STS-PKI-0160` | A registered JWK's x5c certificate does not hold the key the JWK represents (RFC 7517 section 4.7), so its chain says nothing about the key that verified the assertion. | invalid_grant at the grant, invalid_client at client authentication |
+| `STS-PKI-0161` | A certificate behind a key that verified an assertion, or one in its registered chain, could not be read. | invalid_grant at the grant, invalid_client at client authentication |
 
 ## STS-AUTHN
 
@@ -618,8 +651,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0009` | A JWT client assertion carried no exp, which product mode refuses (RFC 7523 section 3 claim 4). | invalid_client (HTTP 401) |
 | `STS-OAUTH-0010` | A JWT client assertion is valid for longer than oauth2.jwtBearerMaxLifetimeS allows. | invalid_client (HTTP 401) |
 | `STS-OAUTH-0011` | A JWT client assertion carried no jti, so a replay of it could not be refused. | invalid_client (HTTP 401) |
-| `STS-OAUTH-0012` | A JWT client assertion was replayed: its jti has already been used. | invalid_client (HTTP 401) |
-| `STS-OAUTH-0013` | The client-assertion replay cache for the realm is full of unexpired entries (oauth2.assertionReplayCacheSize), so a new client assertion was refused. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0012` | A JWT client assertion was replayed: its issuer and jti are already in the used-assertion history, spent or held by a request in flight, as a client assertion or as a grant. | invalid_client (HTTP 401) |
+| `STS-OAUTH-0013` | The used-assertion history for the realm holds oauth2.assertionReplayCacheSize unexpired rows, so a new client assertion was refused rather than a live row forgotten. | invalid_client (HTTP 401) |
 | `STS-OAUTH-0014` | A client registered for RFC 8705 certificate authentication connected with no TLS client certificate. | invalid_client (HTTP 401) |
 | `STS-OAUTH-0015` | A self_signed_tls_client_auth client has no certificate thumbprint registered to compare against. | invalid_client (HTTP 401) |
 | `STS-OAUTH-0016` | A self_signed_tls_client_auth client presented a certificate whose thumbprint is not the registered one (RFC 8705 section 2.2). | invalid_client (HTTP 401) |
@@ -660,8 +693,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0051` | An RFC 7523 authorization-grant assertion's iat is in the future beyond the allowed clock skew. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0052` | An RFC 7523 authorization-grant assertion is valid for longer than oauth2.jwtBearerMaxLifetimeS allows. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0053` | An RFC 7523 authorization-grant assertion carries no jti, so it could not be spent. | invalid_grant (HTTP 400) |
-| `STS-OAUTH-0054` | An RFC 7523 authorization-grant assertion was replayed: its jti has already been used. | invalid_grant (HTTP 400) |
-| `STS-OAUTH-0055` | The RFC 7523 grant replay cache for the realm is full of unexpired entries (oauth2.assertionReplayCacheSize), so a new grant was refused. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0054` | An RFC 7523 authorization-grant assertion was replayed: its issuer and jti are already in the used-assertion history, spent or held by a request in flight, as a grant or as a client assertion. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0055` | The used-assertion history for the realm holds oauth2.assertionReplayCacheSize unexpired rows, so a new RFC 7523 grant was refused rather than a live row forgotten. | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0056` | An RFC 7522 SAML 2.0 bearer grant was requested while oauth2.saml2BearerGrant is off. | unsupported_grant_type (HTTP 400) |
 | `STS-OAUTH-0057` | An RFC 7522 SAML assertion was missing or would not decode from base64url XML. | invalid_request (HTTP 400) or invalid_client (HTTP 401) |
 | `STS-OAUTH-0058` | An encrypted RFC 7522 SAML assertion would not decrypt. | invalid_grant (HTTP 400) or invalid_client (HTTP 401) |
@@ -688,8 +721,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0079` | An RFC 7522 SAML assertion's IssueInstant is in the future beyond the allowed clock skew. | invalid_grant (HTTP 400) or invalid_client (HTTP 401) |
 | `STS-OAUTH-0080` | An RFC 7522 SAML assertion is valid for longer than oauth2.saml2BearerMaxLifetimeS allows. | invalid_grant (HTTP 400) or invalid_client (HTTP 401) |
 | `STS-OAUTH-0081` | An RFC 7522 SAML assertion carries no ID, so it could not be spent. | invalid_grant (HTTP 400) or invalid_client (HTTP 401) |
-| `STS-OAUTH-0082` | An RFC 7522 SAML assertion was replayed: its ID has already been used. | invalid_grant (HTTP 400) or invalid_client (HTTP 401) |
-| `STS-OAUTH-0083` | The RFC 7522 replay cache for the realm is full of unexpired entries (oauth2.assertionReplayCacheSize), so a new SAML assertion was refused. | invalid_grant (HTTP 400) or invalid_client (HTTP 401) |
+| `STS-OAUTH-0082` | An RFC 7522 SAML assertion was replayed: its Issuer and ID are already in the used-assertion history, spent or held by a request in flight, under either section. | invalid_grant (HTTP 400) or invalid_client (HTTP 401) |
+| `STS-OAUTH-0083` | The used-assertion history for the realm holds oauth2.assertionReplayCacheSize unexpired rows, so a new SAML assertion was refused rather than a live row forgotten. | invalid_grant (HTTP 400) or invalid_client (HTTP 401) |
 | `STS-OAUTH-0084` | The person-assertion register was handed an incomplete directory slot at startup and refused it whole, so no person can hold an RFC 7523 key pair in this process. | — |
 | `STS-OAUTH-0085` | A person's RFC 7523 key pair could not be stored because this process has no directory. | — |
 | `STS-OAUTH-0086` | A person's RFC 7523 private key could not be sealed under the key-encryption key; nothing was written and the issued key pair is lost. | — |
@@ -848,6 +881,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0239` | A refresh token decrypted to something that is not a signed JWT (its JWE did not carry cty JWT around a JWS). | invalid_grant (HTTP 400) |
 | `STS-OAUTH-0240` | A refresh token could not be encrypted at issuance, or the realm's refresh-token encryption keys could not be read; no refresh token was issued. | server_error (HTTP 500) |
 | `STS-OAUTH-0241` | oauth2.refreshTokenEncryptionAlg or …Enc names an algorithm common/crypto.js does not implement; refresh tokens were encrypted with the default instead. | — |
+| `STS-OAUTH-0242` | An RFC 7522 SAML 2.0 bearer grant was signed by a PERSON's registered RFC 7522 key pair and its <Subject> names somebody other than that person; a person's key may only assert about themselves. | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0243` | An RFC 7523 or RFC 7522 assertion verified and the used-assertion history could not be consulted or written, so it was refused: an assertion this service cannot prove unused is not one it accepts. | invalid_client (HTTP 401) or invalid_grant (HTTP 400) |
 
 ## STS-SAML
 
@@ -1206,7 +1241,7 @@ Raised from: ldap/.
 | `STS-LDAP-0028` | The LDAPS listener could not bind its port at startup; LDAPS is not offered. | — |
 | `STS-LDAP-0029` | No server certificate was available when the directory loaded, so LDAPS is not offered. | — |
 | `STS-LDAP-0030` | LDAPS could not be re-keyed with the certificate the service ended up with, so it serves the one built at require time. | — |
-| `STS-LDAP-0031` | A certificate authority's CRL could not be published into the directory; its ldap:// and ldaps:// distribution points fetch nothing. | — |
+| `STS-LDAP-0031` | A certificate authority's CRL could not be published into the directory; its ldap:// distribution point fetches nothing. | — |
 | `STS-LDAP-0032` | The account-change observer threw after a directory write; the write stands and the observer's event was lost. | — |
 | `STS-LDAP-0033` | The LDAP connection watcher failed, so request workers may hold a stale list of bound connections. | — |
 | `STS-LDAP-0034` | A search filter could not be evaluated against an entry (for example an extensible match), so the entry was treated as not matching. | none; the entry is simply not returned |
@@ -2114,6 +2149,11 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0607` | A Kerberos key could not be sealed or written, so nothing was stored and no keytab was handed out. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0608` | A clear-person-keys action named nobody, or somebody not in the default trust realm's directory. | HTTP 400 { ok: false, errors } / 303 with error= |
 | `STS-ADMIN-0609` | The Kerberos key register has no directory in this process, so a principal could be neither listed nor changed. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-ADMIN-0620` | Regenerating an application's client secret was refused: the application is not in the registry. | HTTP 400 { ok: false, errors } / 303 with error= |
+| `STS-ADMIN-0640` | A certificate details view was asked for with a value that is not a SHA-256 certificate fingerprint (64 hexadecimal digits). | the page with a dialog saying so / HTTP 400 { ok: false, errors } |
+| `STS-ADMIN-0641` | A certificate details view named a fingerprint this service does not hold in the trust realm the request was reached in. | the page with a dialog saying so / HTTP 404 { ok: false, errors } |
+| `STS-ADMIN-0642` | A certificate this service holds could not be described or its chain could not be built. | the page with a dialog saying so / HTTP 500 { ok: false, errors } |
+| `STS-ADMIN-0643` | The used-assertion history page could not be drawn, because the store holding the history could not be read. | the page with a warning saying so |
 
 ## STS-API
 
@@ -2181,6 +2221,8 @@ Raised from: mgmt-api/.
 | `STS-API-0063` | A management API SPIFFE registration entries action was refused (including an unknown action) and the action layer attached no more specific code. | HTTP 400 { ok: false, errors } |
 | `STS-API-0064` | A management API SPIFFE agents action was refused (including an unknown action) and the action layer attached no more specific code. | HTTP 400 { ok: false, errors } |
 | `STS-API-0065` | A management API Kerberos principals action was refused (including an unknown action) and the action layer attached no more specific code. | HTTP 400 { ok: false, errors } |
+| `STS-API-0080` | A management API certificate details request was refused and the view attached no more specific code. | HTTP 400 { ok: false, errors } |
+| `STS-API-0081` | The used-assertion history could not be read for GET /admin-api/used-assertions, because the store holding it could not be queried. | HTTP 500 { ok: false, errors } |
 
 ## STS-PORTAL
 
@@ -2306,6 +2348,8 @@ Raised from: common/applications.js, common/consent.js, common/app_permissions.j
 | `STS-REG-0051` | A confirm-address or discard-address named an attribute that is not a return-address attribute. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0052` | A confirm-address or discard-address carried no address. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0053` | An ssfAllowedEvents value was neither caep, risc nor an event type URI this transmitter knows. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0060` | A write of oauthAssertionKeySource or oauthSamlAssertionKeySource named a value outside issued, uploaded-realm-ca and uploaded-external-ca. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0061` | Regenerating the client secret of sts-management-api was refused because adminApi.clientSecret pins it. | the caller's refusal (errors on a console or /admin-api reply) |
 
 ## Adding a code
 

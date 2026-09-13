@@ -28,6 +28,7 @@ answer stopped being the same in every configuration.**
 | the embedded **LDAP directory** — every entry under every realm's base | sessions, access tokens, ID Tokens, refresh tokens | nothing, beyond two caches that are re-derivable |
 | …which is also the **applications registry**, the **federation register**, the **SPIFFE registry** and the **group roster**, because in this service those *are* directory entries | authorization codes, pre-authorized codes, SAML artifacts | |
 | the **trust realm registry** — names, descriptions, per-realm settings | Kerberos principals and tickets, the replay caches | |
+| the **used-assertion history** — every RFC 7523 and RFC 7522 assertion accepted and not yet expired, so none is accepted twice across a restart (both modes; its own table on postgres, a file per realm on ldif) | | |
 | **runtime setting changes** — what the console and `POST /admin-api/config/set` write | the statistics, the counters and the audit log | |
 | the **signing keys**, encrypted (product mode only) | | |
 
@@ -300,6 +301,11 @@ worst-case convergence lag when a notification is lost.
   Between a write in one process and its arrival in another there is a window the
   size of the poll interval in which a proof one process refused is accepted by
   another. Sticky sessions at the load balancer close it; nothing here does.
+  **The RFC 7523 / RFC 7522 used-assertion history does not have that window**:
+  on postgres, recording a use is one atomic `INSERT … ON CONFLICT` in the table
+  `sts_used_assertions`, so two processes can never both accept one assertion.
+  A database built by an older `postgres/schema.sql` has no such table — run
+  that file again as the owner; it adds the table and changes nothing else.
 * **A realm's signing keys are not adopted mid-life.** A key changed in another
   process is logged and ignored here: taking it would strand everything this
   process has already signed. Rotation across processes is a rolling restart.

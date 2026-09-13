@@ -425,6 +425,15 @@ services:
       # whole suite against a plain port — which is the first thing to try if a
       # job fails with something that names a certificate.
       - STS_HTTPS=${STS_HTTPS:-true}
+      # WHERE A CERTIFICATE SAYS ITS CRL AND OCSP RESPONDER ARE (2026-09-13).
+      # This stack publishes no port, and the runner beside it dials the
+      # service as `sts` — so that is the name every certificate has to carry,
+      # or `sts_pki_distribution_points` follows a URL naming `localhost` from
+      # inside the RUNNER's container and reaches nothing. Plain HTTP on 8082,
+      # the revocation listener, whatever STS_HTTPS says about the main port.
+      # The LDAP port needs no mapping: the runner reaches 389 on the bridge.
+      - PKI_DISTRIBUTION_BASE_URL=${PKI_DISTRIBUTION_BASE_URL:-http://sts:8082}
+      - PKI_DISTRIBUTION_LDAP_HOST=${PKI_DISTRIBUTION_LDAP_HOST:-sts}
     # NO `ports:`, DELIBERATELY. Everything that talks to this service is on the
     # bridge with it, so publishing would buy nothing and cost the two things a
     # test stack must not cost: a run would fail to start whenever a dev stack

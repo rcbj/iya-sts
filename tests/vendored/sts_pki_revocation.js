@@ -148,7 +148,7 @@ function looksLikeDer(buf) {
 
 async function test() {
   log.debug("Entering test().");
-  log.info("=== A. the index: ungated, and it names all three schemes ===");
+  log.info("=== A. the index: ungated, and it names both schemes ===");
 
   const index = await anonymous("/pki/revocation");
   check("GET /pki/revocation answers WITH NO CREDENTIAL. It has to: every " +
@@ -171,16 +171,29 @@ async function test() {
             return one.ca === "root";
           }), "no Root authority in the index");
         });
-  check("and every one of them carries its CRL in http, ldap AND ldaps plus " +
-        "an OCSP responder and a caIssuers address — which is what was " +
-        "asked for: a client that can only reach one scheme still finds a " +
-        "list", function () {
+  check("and every one of them carries its CRL over http and ldap plus an " +
+        "OCSP responder and a caIssuers address — a client that can only " +
+        "reach one scheme still finds a list", function () {
           listing.authorities.forEach(function (one) {
             assert.ok(/^https?:/.test(one.crl.http), one.ca + ": http");
             assert.ok(/^ldap:/.test(one.crl.ldap), one.ca + ": ldap");
-            assert.ok(/^ldaps:/.test(one.crl.ldaps), one.ca + ": ldaps");
             assert.ok(/^https?:/.test(one.ocsp), one.ca + ": ocsp");
             assert.ok(/^https?:/.test(one.caIssuers), one.ca + ": caIssuers");
+          });
+        });
+  // RFC 5280 section 8: a CA SHOULD NOT write an https or ldaps URI into an
+  // extension. Until 2026-09-13 every certificate here named both.
+  check("and NONE of them is an ldaps:// or https:// address (RFC 5280 " +
+        "section 8) — the http ones name the plain revocation listener",
+        function () {
+          listing.authorities.forEach(function (one) {
+            assert.ok(!one.crl.ldaps, one.ca + ": still lists ldaps " +
+                      one.crl.ldaps);
+            assert.ok(/^http:/.test(one.crl.http), one.ca + ": " +
+                      one.crl.http);
+            assert.ok(/^http:/.test(one.ocsp), one.ca + ": " + one.ocsp);
+            assert.ok(/^http:/.test(one.caIssuers), one.ca + ": " +
+                      one.caIssuers);
           });
         });
   check("and it says in as many words that this service PUBLISHES revocation " +
@@ -291,9 +304,16 @@ async function test() {
     headers: { "Content-Type": "application/ocsp-request" },
     body: Buffer.alloc(0)
   });
-  check("a POST with NO BODY is refused as a request rather than answered as " +
-        "a certificate status", function () {
-          assert.strictEqual(empty.status, 400, "status " + empty.status);
+  // A 400 until 2026-09-13. RFC 6960 section 2.3: a request that does not
+  // conform to the OCSP syntax is answered `malformedRequest` INSIDE the
+  // protocol, and no body is the plainest case of that.
+  check("a POST with NO BODY is answered malformedRequest inside the protocol " +
+        "(HTTP 200, application/ocsp-response, responseStatus 1) rather than " +
+        "as a certificate status", function () {
+          assert.strictEqual(empty.status, 200, "status " + empty.status);
+          assert.ok(/application\/ocsp-response/.test(empty.type), empty.type);
+          assert.strictEqual(empty.bytes.toString("hex"), "30030a0101",
+            "an unsigned OCSPResponse with responseStatus malformedRequest");
         });
 
   const huge = await anonymous("/pki/ocsp/" + scope + "/" + ca, {

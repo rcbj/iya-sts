@@ -530,6 +530,14 @@ services:
     # told which address it was reached at.
     ports:
       - "${STS_HOST_PORT:-8081}:8081"
+      # THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13). Published because it
+      # is the one listener whose entire purpose is to be reached from outside:
+      # every certificate this service issues names it for its CRL, its OCSP
+      # responder and its issuer's certificate (pki/pki_service.js). The host
+      # side is `STS_PKI_HOST_PORT` for the reason `STS_HOST_PORT` is, and the
+      # SAME variable is handed to the service below as PKI_DISTRIBUTION_PORT,
+      # so the address in a certificate is the address this mapping made.
+      - "${STS_PKI_HOST_PORT:-8082}:8082"
       # The directory's two sockets are NOT published by default, and that is a
       # choice about collisions rather than about usefulness: 389 and 636 are the
       # assigned LDAP ports, so a host already running slapd — which is the host
@@ -641,6 +649,27 @@ services:
       #   curl -k https://localhost:8081/tls/server-certificate
       # ---------------------------------------------------------------------
       - STS_HTTPS=${STS_HTTPS:-true}
+      # ---------------------------------------------------------------------
+      # WHERE A CERTIFICATE SAYS ITS CRL AND OCSP RESPONDER ARE (2026-09-13).
+      #
+      # Every certificate this service issues names its revocation list, its
+      # OCSP responder and its issuer's certificate BY URL, and those URLs are
+      # fetched from OUTSIDE this container. They name the plain-HTTP
+      # revocation listener, on 8082 in here; the host may publish it anywhere
+      # (`STS_PKI_HOST_PORT`, below), and nothing inside the container can see
+      # the host side of that mapping. So the service is TOLD the published
+      # port — without it, a stack published on 18081 issued certificates
+      # naming `https://localhost:8081/pki/…`, which answered nothing from
+      # where a relying party read it.
+      #
+      # `PKI_DISTRIBUTION_BASE_URL` wins over it where a stack is reached by a
+      # name rather than by localhost — docker-compose-run-tests.yml sets it to
+      # the container name its runner dials — and it is passed through here
+      # empty so a caller of this file can say the same.
+      # ---------------------------------------------------------------------
+      - PKI_DISTRIBUTION_PORT=${STS_PKI_HOST_PORT:-8082}
+      - PKI_DISTRIBUTION_BASE_URL=${PKI_DISTRIBUTION_BASE_URL:-}
+      - PKI_DISTRIBUTION_LDAP_HOST=${PKI_DISTRIBUTION_LDAP_HOST:-}
       # ---------------------------------------------------------------------
       # PERSISTENCE. The directory, the trust realms and the runtime setting
       # changes survive `docker compose down` and come back on the next `up`.

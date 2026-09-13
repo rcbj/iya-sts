@@ -3309,6 +3309,8 @@ async function theHandlersNothingEverPressed(driver) {
   await theGroupPageAddsAMember(driver);
   await theTruststorePageAddsAndRemoves(driver);
   await theKerberosPrincipalsPageCreatesAndDeletes(driver);
+  await theCredentialsSectionIsPressed(driver);
+  await thePersonCredentialsSectionIsPressed(driver);
 
   log.debug("Leaving theHandlersNothingEverPressed().");
 }
@@ -3914,6 +3916,310 @@ async function theObservedAddressesArePressed(driver) {
            "drawn with Confirm and Discard, each button reached its own " +
            "action, and the entry and the page agreed afterwards.");
   log.debug("Leaving theObservedAddressesArePressed().");
+}
+
+// ---------------------------------------------------------------------------
+// THE CREDENTIALS SECTION OF AN APPLICATION'S PAGE (2026-09-13): Regenerate,
+// Upload and Take off, pressed in the browser and read back through the API.
+//
+// **TWO OF THE THREE POST TO ANOTHER PAGE'S HANDLER** — `/admin/pki` — and come
+// back through `from`, which is the half nothing else presses: a handler that
+// answered on its own page, or lost the realm prefix on the way back, would
+// write correctly and strand the reader somewhere else. So each press asserts
+// WHERE the browser landed as well as what the entry holds.
+//
+// The operand is this realm's own certificate, issued to a second application
+// through the API, so the upload needs no chain and no external authority —
+// the chain rules are `tests/application_credentials.js`'s, and what is under
+// test here is the form, the return and the write.
+// ---------------------------------------------------------------------------
+async function theCredentialsSectionIsPressed(driver) {
+  log.debug("Entering theCredentialsSectionIsPressed().");
+  log.info("=== An application's Credentials section: regenerate, upload, " +
+           "take off ===");
+  const stamp = names.runStamp().toLowerCase().replace(/[^a-z0-9]/g, "")
+    .slice(0, 8);
+  const APP = "console-creds-" + stamp;
+  const DONOR = "console-creds-donor-" + stamp;
+  await ensureClient(APP);
+  await ensureClient(DONOR);
+  const pkiNow = await apiJson("/realm/" + REALM + "/admin-api/pki");
+  if (!(pkiNow.body && pkiNow.body.chain)) {
+    await apiPostJson(realm("/admin-api/pki/build"),
+                      { organisation: "Console Credentials" });
+  }
+  const donor = await apiPostJson(realm("/admin-api/pki/issue"),
+                                  { identifier: DONOR, purpose: "saml" });
+  assert.ok(donor.status === 200 && donor.body && donor.body.ok,
+    "issuing the donor's SAML key pair answered " + donor.status + " " +
+    String(donor.raw).slice(0, 300));
+  const entryOf = async function (identifier) {
+    log.debug("Entering entryOf().");
+    const reply = await apiJson("/realm/" + REALM +
+                                "/admin-api/applications?application=" +
+                                encodeURIComponent(identifier));
+    log.debug("Leaving entryOf().");
+    return reply.body || {};
+  };
+  const donorPem = (await entryOf(DONOR)).fields.oauthSamlAssertionCertificate;
+  const pageUrl = realm("/admin/applications?application=" +
+                        encodeURIComponent(APP));
+  const onThePage = function (url) {
+    log.debug("Entering onThePage().");
+    const u = new URL(url);
+    log.debug("Leaving onThePage().");
+    return u.pathname === "/realm/" + REALM + "/admin/applications" &&
+           u.searchParams.get("application") === APP &&
+           u.hash === "#credentials";
+  };
+  const formFor = async function (action, purpose) {
+    log.debug("Entering formFor(). action=" + action);
+    const index = await driver.executeScript(`
+      const forms = Array.from(document.forms);
+      for (let i = 0; i < forms.length; i++) {
+        const a = forms[i].elements['action'];
+        const p = forms[i].elements['purpose'];
+        if (a && a.value === arguments[0] &&
+            (!arguments[1] || (p && p.value === arguments[1]))) { return i; }
+      }
+      return -1;
+    `, action, purpose || "");
+    log.debug("Leaving formFor(). " + index);
+    return index;
+  };
+
+  const drawn = await open(driver, pageUrl);
+  check("the application page draws a Credentials section with the secret " +
+        "and both profiles' key pairs", function () {
+    assert.ok(/Credentials/.test(drawn.text) &&
+              /Client secret/.test(drawn.text) &&
+              /RFC 7523/.test(drawn.text) && /RFC 7522/.test(drawn.text),
+      "the Credentials section is not on " + pageUrl);
+  });
+
+  // --- Regenerate ----------------------------------------------------------
+  const secretBefore = (await entryOf(APP)).fields.oauthClientSecret;
+  const regenerate = await formFor("regenerate-secret");
+  check("it draws a Regenerate form", function () {
+    assert.ok(regenerate >= 0, "no regenerate-secret form on " + pageUrl);
+  });
+  await fillAndPress(driver, regenerate, {});
+  const afterRegenerate = await driver.getCurrentUrl();
+  const secretAfter = (await entryOf(APP)).fields.oauthClientSecret;
+  check("Regenerate replaced the secret and came back to the section, with " +
+        "no secret in the address", function () {
+    assert.strictEqual(outcomeOf(afterRegenerate, "error"), "",
+      "regenerating was refused: " + outcomeOf(afterRegenerate, "error"));
+    assert.ok(onThePage(afterRegenerate), "landed on " + afterRegenerate);
+    assert.ok(secretAfter && secretAfter !== secretBefore,
+      "the secret on the entry did not change");
+    assert.ok(afterRegenerate.indexOf(secretAfter) < 0,
+      "the new secret is in the URL");
+  });
+
+  // --- Upload (this realm's own certificate, alone) -------------------------
+  await open(driver, pageUrl);
+  const upload = await formFor("upload-certificate", "saml");
+  check("it draws an Upload form for the SAML key pair", function () {
+    assert.ok(upload >= 0, "no upload-certificate form for saml on " + pageUrl);
+  });
+  await fillAndPress(driver, upload, { certificate: donorPem },
+                     { noTyping: true });
+  const afterUpload = await driver.getCurrentUrl();
+  const uploaded = await entryOf(APP);
+  const samlPair = ((uploaded.credentials || {}).keyPairs || [])
+    .filter(function (one) { return one.purpose === "saml"; })[0] || {};
+  check("Upload, posted to /admin/pki, came back to THIS application's " +
+        "section in THIS realm and wrote the certificate", function () {
+    assert.strictEqual(outcomeOf(afterUpload, "error"), "",
+      "the upload was refused: " + outcomeOf(afterUpload, "error"));
+    assert.ok(onThePage(afterUpload), "landed on " + afterUpload);
+    assert.ok(/replaced the RFC 7522/.test(outcomeOf(afterUpload, "notice")),
+      "the notice drawn on the page after the upload says " +
+      JSON.stringify(outcomeOf(afterUpload, "notice")).slice(0, 200));
+    assert.strictEqual(samlPair.source, "uploaded-realm-ca",
+      JSON.stringify(samlPair).slice(0, 300));
+    assert.strictEqual(uploaded.fields.oauthSamlAssertionCertificate, donorPem);
+  });
+
+  // --- Take off -------------------------------------------------------------
+  const redrawn = await open(driver, pageUrl);
+  check("the redrawn section names where the SAML key pair came from",
+        function () {
+    assert.ok(redrawn.text.indexOf("uploaded-realm-ca") >= 0,
+      "the page does not draw the provenance after the upload");
+  });
+  const takeOff = await formFor("revoke", "saml");
+  await fillAndPress(driver, takeOff, {});
+  const afterTakeOff = await driver.getCurrentUrl();
+  const cleared = await entryOf(APP);
+  check("Take off came back to the section and cleared the SAML key pair",
+        function () {
+    assert.ok(takeOff >= 0, "no take-off form for saml on " + pageUrl);
+    assert.ok(onThePage(afterTakeOff), "landed on " + afterTakeOff);
+    assert.ok(!cleared.fields.oauthSamlAssertionCertificate &&
+              !cleared.fields.oauthSamlAssertionKeySource,
+      "the SAML key pair is still on the entry");
+  });
+  log.info("[credentials] OK — Regenerate replaced the secret, Upload posted " +
+           "to /admin/pki and came back to this application's section in " +
+           "this realm holding the uploaded certificate, and Take off " +
+           "cleared it.");
+  log.debug("Leaving theCredentialsSectionIsPressed().");
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S CREDENTIALS SECTION: ISSUE, UPLOAD, TAKE OFF (2026-09-13).
+//
+// The application section's three presses, on `/admin/users?user=`, and the one
+// thing about them neither the in-process test nor the API job can see: WHERE
+// THE BROWSER LANDS. Issue posts to `/admin/pki/person`, which answers with a
+// PAGE — the private key once, and a way back to this person — rather than a
+// redirect; Upload and Take off post to `/admin/pki` and must come back to this
+// person's section in this realm. The certificate uploaded is the one the
+// Issue page just showed, which is a certificate this realm issued to THIS
+// person — the only kind of this realm's certificate a person may register.
+// ---------------------------------------------------------------------------
+async function thePersonCredentialsSectionIsPressed(driver) {
+  log.debug("Entering thePersonCredentialsSectionIsPressed().");
+  log.info("=== A person's Credentials section: issue, upload, take off ===");
+  const person = names.usernameFor("console-person-creds");
+  const created = await apiPostJson(realm("/admin-api/users/create"),
+    { username: person, invent: false, credential: "none",
+      attributes: { cn: "Console Person Credentials", sn: person } });
+  assert.ok(created.status === 200,
+    "creating the person answered " + created.status + " " +
+    String(created.raw).slice(0, 300));
+  const pkiNow = await apiJson("/realm/" + REALM + "/admin-api/pki");
+  if (!(pkiNow.body && pkiNow.body.chain)) {
+    await apiPostJson(realm("/admin-api/pki/build"),
+                      { organisation: "Console Person Credentials" });
+  }
+  const pageUrl = realm("/admin/users?user=" + encodeURIComponent(person));
+  const samlOf = async function () {
+    log.debug("Entering samlOf().");
+    const reply = await apiJson("/realm/" + REALM + "/admin-api/users?user=" +
+                                encodeURIComponent(person));
+    log.debug("Leaving samlOf().");
+    return (((reply.body || {}).credentials || {}).keyPairs || [])
+      .filter(function (one) { return one.purpose === "saml"; })[0] || {};
+  };
+  const onThePage = function (url) {
+    log.debug("Entering onThePage().");
+    const u = new URL(url);
+    log.debug("Leaving onThePage().");
+    return u.pathname === "/realm/" + REALM + "/admin/users" &&
+           u.searchParams.get("user") === person &&
+           u.hash === "#credentials";
+  };
+  const formFor = async function (action, purpose) {
+    log.debug("Entering formFor(). action=" + action);
+    const index = await driver.executeScript(`
+      const forms = Array.from(document.forms);
+      for (let i = 0; i < forms.length; i++) {
+        const a = forms[i].elements['action'];
+        const p = forms[i].elements['purpose'];
+        const t = forms[i].elements['target'];
+        if (a && a.value === arguments[0] && t && t.value === 'person' &&
+            p && p.value === arguments[1]) { return i; }
+      }
+      return -1;
+    `, action, purpose);
+    log.debug("Leaving formFor(). " + index);
+    return index;
+  };
+
+  const drawn = await open(driver, pageUrl);
+  check("the person's page draws a Credentials section for both profiles",
+        function () {
+    assert.ok(/assertion key pairs/.test(drawn.text) &&
+              /RFC 7523/.test(drawn.text) && /RFC 7522/.test(drawn.text),
+      "the person Credentials section is not on " + pageUrl);
+  });
+
+  // --- Issue ---------------------------------------------------------------
+  const issue = await formFor("issue", "saml");
+  check("it draws an Issue form for the RFC 7522 key pair, posting to " +
+        "/admin/pki/person", function () {
+    assert.ok(issue >= 0, "no person issue form for saml on " + pageUrl);
+  });
+  await fillAndPress(driver, issue, {});
+  const issuedAt = await driver.getCurrentUrl();
+  // textContent and not the survey's visible text: the key is inside a
+  // warning box, which this console folds, and a closed fold is not rendered.
+  const issuedText = await driver.executeScript(
+    "return document.body ? document.body.textContent : '';");
+  const certificatePem = await driver.executeScript(`
+    const pres = Array.from(document.querySelectorAll('pre'));
+    const cert = pres.map(function (p) { return p.textContent; })
+      .filter(function (t) { return t.indexOf('BEGIN CERTIFICATE') >= 0; });
+    return cert.length ? cert[0] : '';
+  `);
+  const backHref = await driver.executeScript(`
+    const a = Array.from(document.querySelectorAll('a.btn')).filter(
+      function (x) { return /^Back to /.test(x.textContent); })[0];
+    return a ? a.href : '';
+  `);
+  const afterIssue = await samlOf();
+  check("Issue answered with a PAGE carrying the private key once, the " +
+        "certificate, and a way back to THIS person in THIS realm",
+        function () {
+    assert.ok(new URL(issuedAt).pathname ===
+              "/realm/" + REALM + "/admin/pki/person", "landed on " + issuedAt);
+    assert.ok(/The private key, once/.test(issuedText) &&
+              /BEGIN (RSA |EC )?PRIVATE KEY/.test(issuedText),
+      "the key page does not show the private key");
+    assert.ok(/BEGIN CERTIFICATE/.test(certificatePem || ""),
+      "no certificate on the key page");
+    assert.ok(backHref && onThePage(backHref), "the way back is " + backHref);
+    assert.ok(issuedAt.indexOf("PRIVATE") < 0, "the key is in the address");
+    assert.strictEqual(afterIssue.source, "issued",
+      JSON.stringify(afterIssue).slice(0, 300));
+  });
+
+  // --- Upload (the certificate this realm just issued to this person) -------
+  await open(driver, pageUrl);
+  const upload = await formFor("upload-certificate", "saml");
+  await fillAndPress(driver, upload, { certificate: certificatePem },
+                     { noTyping: true });
+  const afterUpload = await driver.getCurrentUrl();
+  const uploaded = await samlOf();
+  check("Upload, posted to /admin/pki, came back to THIS person's section " +
+        "and replaced the key pair with the certificate alone", function () {
+    assert.ok(upload >= 0, "no person upload form for saml on " + pageUrl);
+    assert.strictEqual(outcomeOf(afterUpload, "error"), "",
+      "the upload was refused: " + outcomeOf(afterUpload, "error"));
+    assert.ok(onThePage(afterUpload), "landed on " + afterUpload);
+    assert.ok(/replaced the RFC 7522/.test(outcomeOf(afterUpload, "notice")),
+      "the notice says " +
+      JSON.stringify(outcomeOf(afterUpload, "notice")).slice(0, 200));
+    assert.strictEqual(uploaded.source, "uploaded-realm-ca",
+      JSON.stringify(uploaded).slice(0, 300));
+    assert.strictEqual(uploaded.privateKeyHeld, false);
+  });
+
+  // --- Take off -------------------------------------------------------------
+  const redrawn = await open(driver, pageUrl);
+  check("the redrawn section names where the SAML key pair came from",
+        function () {
+    assert.ok(redrawn.text.indexOf("uploaded-realm-ca") >= 0,
+      "the page does not draw the provenance after the upload");
+  });
+  const takeOff = await formFor("revoke", "saml");
+  await fillAndPress(driver, takeOff, {});
+  const afterTakeOff = await driver.getCurrentUrl();
+  const cleared = await samlOf();
+  check("Take off came back to the section and cleared the SAML key pair",
+        function () {
+    assert.ok(takeOff >= 0, "no person take-off form for saml on " + pageUrl);
+    assert.ok(onThePage(afterTakeOff), "landed on " + afterTakeOff);
+    assert.strictEqual(cleared.held, false,
+      JSON.stringify(cleared).slice(0, 300));
+  });
+  log.info("[person credentials] OK — Issue showed the private key once and " +
+           "linked back, Upload came back to this person holding this " +
+           "realm's certificate, and Take off cleared it.");
+  log.debug("Leaving thePersonCredentialsSectionIsPressed().");
 }
 
 // The index of the first POST form on the page whose hidden `action` holds a

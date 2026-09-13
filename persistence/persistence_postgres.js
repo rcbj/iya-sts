@@ -122,12 +122,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 2 SINCE 2026-09-06, when `sts_keys` joined the three tables this driver has
 // always had. Nothing reads this yet — it is here so that a future change has
 // something to look at other than the shape of the tables — but leaving it at 1
-// over a different schema would make the one thing it is for useless.
-const SCHEMA_VERSION = 3;
+// over a different schema would make the one thing it is for useless. 4 SINCE
+// 2026-09-13, for `sts_used_assertions`.
+const SCHEMA_VERSION = 4;
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
 // than a migration table, and that is a decision rather than laziness: this is
-// a mock identity service, the schema is six tables, and a migration
+// a mock identity service, the schema is seven tables, and a migration
 // framework would be a larger dependency than the feature. If a column ever has
 // to change, the honest answer for a service like this one is to say so in the
 // release note and let an operator drop the tables.
@@ -280,6 +281,49 @@ const SCHEMA_OBJECTS = [
   '  at     timestamptz NOT NULL DEFAULT now())' },
   { name: 'sts_changes_at', statement:
   'CREATE INDEX IF NOT EXISTS sts_changes_at ON sts_changes (at)' },
+  // -------------------------------------------------------------------------
+  // THE USED-ASSERTION HISTORY (2026-09-13): every RFC 7523 JWT and RFC 7522
+  // SAML assertion this service accepted, until it would have expired.
+  // `common/used_assertions.js` argues the design; three things are this
+  // table's.
+  //
+  // **A TABLE OF ITS OWN AND NOT A HANDLE IN `sts_minted`**, because what it is
+  // for is an ATOMIC CLAIM: `(realm, key)` is the primary key, and recording a
+  // use is one `INSERT … ON CONFLICT`, so two processes against this store
+  // cannot both accept one assertion. `sts_minted` is written by a journal
+  // flush after the fact and converges through the change log, which is exactly
+  // the window this table exists to close — and it is sealed, so nothing in it
+  // could be compared by SQL anyway.
+  //
+  // **NOT SEALED, AND NOTHING IN IT IS A CREDENTIAL.** `key` is a SHA-256 of the
+  // format, issuer and identifier; the rest is an issuer's name, a `jti` or
+  // `ID`, a client and a subject — what an audit row already carries. The
+  // assertion itself is never stored, so a dump of this table replays nothing.
+  //
+  // **THE TIMES ARE MILLISECONDS IN `bigint`**, the unit every reader of the
+  // row works in, and `expires_at` is what every read filters on — the index is
+  // what makes the live count and the sweep a range scan.
+  // -------------------------------------------------------------------------
+  { name: 'sts_used_assertions', statement:
+  'CREATE TABLE IF NOT EXISTS sts_used_assertions (' +
+  '  realm       text   NOT NULL,' +
+  '  key         text   NOT NULL,' +
+  '  format      text   NOT NULL,' +
+  '  used_as     text   NOT NULL,' +
+  '  issuer      text   NOT NULL,' +
+  '  identifier  text   NOT NULL,' +
+  '  client_id   text   NOT NULL DEFAULT \'\',' +
+  '  subject     text   NOT NULL DEFAULT \'\',' +
+  '  state       text   NOT NULL,' +
+  '  reservation text   NOT NULL,' +
+  '  origin      text   NOT NULL DEFAULT \'\',' +
+  '  used_at     bigint NOT NULL,' +
+  '  spent_at    bigint NOT NULL DEFAULT 0,' +
+  '  expires_at  bigint NOT NULL,' +
+  '  PRIMARY KEY (realm, key))' },
+  { name: 'sts_used_assertions_expiry', statement:
+  'CREATE INDEX IF NOT EXISTS sts_used_assertions_expiry ON ' +
+  'sts_used_assertions (realm, expires_at)' },
   // What version of the above is on disk. One row, and nothing reads it yet —
   // it is here so that a future change has something to look at other than the
   // shape of the tables.
@@ -334,7 +378,7 @@ const SCHEMA =
 // EVERY PROBE FAILS ON ITS OWN, AND THAT IS THE DESIGN RATHER THAN CAUTION.
 //
 // The role this service dials with is `sts_app`, which holds SELECT, INSERT,
-// UPDATE and DELETE on six tables and USAGE — not CREATE — on one schema. It
+// UPDATE and DELETE on seven tables and USAGE — not CREATE — on one schema. It
 // is NOT `pg_monitor`. Most of these views are readable by anybody and a few
 // are not, and which few depends on the server's version and on how the
 // operator set it up. A page that ran all of this as one statement, or that
@@ -614,6 +658,22 @@ const METRIC_PROBES = [
 function create(options) {
   const url = options.url;
   const log = options.log;
+
+  // A stored used-assertion row in the shape `common/used_assertions.js` works
+  // in. `bigint` columns arrive from `pg` as STRINGS, because a 64-bit integer
+  // does not fit a double in general; every time here does, so they are
+  // numbers from here on.
+  function usedRowFrom(row) {
+    log.debug("Entering usedRowFrom().");
+    log.debug("Leaving usedRowFrom().");
+    return {
+      format: row.format, use: row.used_as, issuer: row.issuer,
+      identifier: row.identifier, clientId: row.client_id,
+      subject: row.subject, state: row.state, origin: row.origin,
+      usedAt: Number(row.used_at) || 0, spentAt: Number(row.spent_at) || 0,
+      expiresAt: Number(row.expires_at) || 0
+    };
+  }
 
   if (!url) {
     // ---------------------------------------------------------------------
@@ -2029,6 +2089,159 @@ function create(options) {
       return pool.query('DELETE FROM sts_changes WHERE seq < $1',
                         [Number(beforeSeq) || 0])
         .then(function (r) { return r.rowCount || 0; });
+    },
+
+    // =====================================================================
+    // THE USED-ASSERTION HISTORY. Five statements, and the first is the one
+    // the table exists for.
+    // =====================================================================
+
+    // THE CLAIM. One statement decides all three outcomes a caller cares
+    // about, under the primary key's own lock:
+    //
+    //   * no live row with this key, and room → INSERTED, `claimed: true`;
+    //   * a live row with this key → the conflict's UPDATE is guarded by
+    //     `expires_at < now`, so it updates nothing and nothing is returned;
+    //   * no room → the SELECT feeding the INSERT yields no row.
+    //
+    // An EXPIRED row with the key — a client reusing a jti after its first
+    // document expired, before the sweep — is REPLACED, which is what "until it
+    // would have expired" means. Two concurrent claims for one key: the second
+    // waits on the first's uncommitted row, then sees a live conflict and
+    // updates nothing. The cap's count is not under a lock, so two claims at
+    // the edge can put the realm one or two over; the cap bounds a table, and a
+    // replay is what the key bounds.
+    //
+    // Only on the no-row answer is the store asked again, to say WHICH of the
+    // two refusals it was and whose row it is — a refusal is the uncommon case
+    // and an accepted assertion costs one round trip.
+    claimUsedAssertion: function (row, opts) {
+      log.debug("Entering claimUsedAssertion().");
+      const now = Number(opts.now);
+      const cap = Number(opts.cap);
+      log.debug("Leaving claimUsedAssertion().");
+      return pool.query(
+        'INSERT INTO sts_used_assertions (realm, key, format, used_as, ' +
+        'issuer, identifier, client_id, subject, state, reservation, origin, ' +
+        'used_at, spent_at, expires_at) ' +
+        'SELECT $1::text, $2::text, $3::text, $4::text, $5::text, $6::text, ' +
+        '$7::text, $8::text, $9::text, $10::text, $11::text, $12::bigint, ' +
+        '$13::bigint, $14::bigint ' +
+        'WHERE (SELECT count(*) FROM sts_used_assertions ' +
+        '       WHERE realm = $1::text AND expires_at >= $15::bigint) ' +
+        '      < $16::bigint ' +
+        'ON CONFLICT (realm, key) DO UPDATE SET ' +
+        'format = EXCLUDED.format, used_as = EXCLUDED.used_as, ' +
+        'issuer = EXCLUDED.issuer, identifier = EXCLUDED.identifier, ' +
+        'client_id = EXCLUDED.client_id, subject = EXCLUDED.subject, ' +
+        'state = EXCLUDED.state, reservation = EXCLUDED.reservation, ' +
+        'origin = EXCLUDED.origin, used_at = EXCLUDED.used_at, ' +
+        'spent_at = EXCLUDED.spent_at, expires_at = EXCLUDED.expires_at ' +
+        'WHERE sts_used_assertions.expires_at < $15::bigint ' +
+        'RETURNING key',
+        [row.realm, row.key, row.format, row.use, row.issuer, row.identifier,
+         row.clientId, row.subject, row.state, row.reservation, row.origin,
+         row.usedAt, row.spentAt, row.expiresAt, now, cap]
+      ).then(function (r) {
+        if (r.rowCount) {
+          return { claimed: true };
+        }
+        return Promise.all([
+          pool.query(
+            'SELECT format, used_as, issuer, identifier, client_id, subject, ' +
+            'state, origin, used_at, spent_at, expires_at ' +
+            'FROM sts_used_assertions ' +
+            'WHERE realm = $1 AND key = $2 AND expires_at >= $3',
+            [row.realm, row.key, now]),
+          pool.query(
+            'SELECT count(*) AS live FROM sts_used_assertions ' +
+            'WHERE realm = $1 AND expires_at >= $2', [row.realm, now])
+        ]).then(function (answers) {
+          const found = answers[0].rows[0];
+          const live = Number((answers[1].rows[0] || {}).live) || 0;
+          return { claimed: false, live: live,
+                   existing: found ? usedRowFrom(found) : null };
+        });
+      });
+    },
+
+    // A reservation becomes `spent` when its response finished with a 2xx, and
+    // is DELETED otherwise. Both are pinned to the reservation, so a claim that
+    // outlived its row (it expired and somebody else's replaced it) cannot
+    // settle a row that is not its own.
+    settleUsedAssertion: function (realm, key, reservation, spent, at) {
+      log.debug("Entering settleUsedAssertion(). spent=" + spent);
+      log.debug("Leaving settleUsedAssertion().");
+      return (spent
+        ? pool.query(
+            'UPDATE sts_used_assertions SET state = \'spent\', ' +
+            'spent_at = $4 WHERE realm = $1 AND key = $2 AND reservation = $3',
+            [realm, key, reservation, Number(at)])
+        : pool.query(
+            'DELETE FROM sts_used_assertions WHERE realm = $1 AND key = $2 ' +
+            'AND reservation = $3 AND state = \'reserved\'',
+            [realm, key, reservation])
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // One page of one realm's unexpired rows, newest first, with the count that
+    // matched and the realm's live total. The search is a substring over the
+    // four text columns a reader would paste into it, with `strpos` rather
+    // than `LIKE` so that a `%` or `_` in somebody's jti is a character and not
+    // a pattern.
+    listUsedAssertions: function (realm, opts) {
+      log.debug("Entering listUsedAssertions(). realm=" + realm);
+      const o = opts || {};
+      const now = Number(o.now);
+      const where = 'WHERE realm = $1 AND expires_at >= $2 ' +
+        'AND ($3 = \'\' OR format = $3) AND ($4 = \'\' OR used_as = $4) ' +
+        'AND ($5 = \'\' OR state = $5) ' +
+        'AND ($6 = \'\' OR strpos(lower(issuer || \' \' || identifier || ' +
+        '\' \' || client_id || \' \' || subject), lower($6)) > 0)';
+      const params = [realm, now, o.format || '', o.use || '', o.state || '',
+                      o.q || ''];
+      log.debug("Leaving listUsedAssertions().");
+      return Promise.all([
+        pool.query(
+          'SELECT format, used_as, issuer, identifier, client_id, subject, ' +
+          'state, origin, used_at, spent_at, expires_at ' +
+          'FROM sts_used_assertions ' + where +
+          ' ORDER BY used_at DESC LIMIT $7 OFFSET $8',
+          params.concat([Number(o.limit) || 50, Number(o.offset) || 0])),
+        pool.query('SELECT count(*) AS total FROM sts_used_assertions ' + where,
+                   params),
+        pool.query(
+          'SELECT count(*) AS live FROM sts_used_assertions ' +
+          'WHERE realm = $1 AND expires_at >= $2', [realm, now])
+      ]).then(function (answers) {
+        return {
+          rows: answers[0].rows.map(usedRowFrom),
+          total: Number((answers[1].rows[0] || {}).total) || 0,
+          live: Number((answers[2].rows[0] || {}).live) || 0
+        };
+      });
+    },
+
+    purgeUsedAssertions: function (nowMs) {
+      log.debug("Entering purgeUsedAssertions().");
+      log.debug("Leaving purgeUsedAssertions().");
+      return pool.query('DELETE FROM sts_used_assertions WHERE expires_at < $1',
+                        [Number(nowMs)])
+        .then(function (r) {
+          return r.rowCount || 0;
+        });
+    },
+
+    removeUsedAssertions: function (realm) {
+      log.debug("Entering removeUsedAssertions(). realm=" + realm);
+      log.debug("Leaving removeUsedAssertions().");
+      return pool.query('DELETE FROM sts_used_assertions WHERE realm = $1',
+                        [realm])
+        .then(function (r) {
+          return r.rowCount || 0;
+        });
     },
 
     // Rows older than the retention window. Returns HOW MANY, because the one

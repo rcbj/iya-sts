@@ -4579,6 +4579,158 @@ function theThrowawayRealmIsLeftBehind() {
   log.debug("Leaving theThrowawayRealmIsLeftBehind().");
 }
 
+// ---------------------------------------------------------------------------
+// THE CERTIFICATE DETAILS DOOR (2026-09-13): `GET /certificates`, the list and
+// one certificate with every field and its trust chain — what `/admin/pki` and
+// `/admin/crypto-metadata` open in a dialog.
+//
+// The generic read walk above already asks the list for a 200. What is worth
+// asserting here is what that walk cannot: that a certificate is described
+// WHOLE, that its chain is BUILT and ends at the service Root, that the handle
+// is a fingerprint in either spelling, and that the realm boundary holds — a
+// certificate this realm holds is refused at the default realm's door, which
+// is the dialog's version of `verifyLeaf()`'s rule.
+// ---------------------------------------------------------------------------
+async function theCertificateDetailsAnswer() {
+  log.debug("Entering theCertificateDetailsAnswer().");
+  log.info("=== The certificate details door ===");
+  let list = null;
+  let issuing = null;
+  const deadline = Date.now() + 20000;
+  // The realm's branch is built by a watcher when the realm is created, so it
+  // is waited for rather than assumed.
+  while (Date.now() < deadline) {
+    list = await get("/certificates?per=100");
+    issuing = ((list.body && list.body.certificates) || []).filter(function (
+        row) {
+      return row.appearances.some(function (a) {
+        return /Issuing CA \(realm /.test(a.label);
+      });
+    })[0];
+    if (issuing) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 250); });
+  }
+  assert.strictEqual(list.status, 200,
+    "GET /certificates should answer the list; it answered " + list.status);
+  assert.ok(list.body.certificates.length > 0 &&
+            list.body.certificates.every(function (row) {
+              return /^[0-9a-f]{64}$/.test(row.fingerprint) &&
+                     row.appearances.length > 0;
+            }),
+    "every row of the certificate list should carry a SHA-256 fingerprint " +
+    "and at least one place it appears: " + String(list.raw).slice(0, 400));
+  assert.ok(String(list.raw).indexOf("PRIVATE KEY") < 0,
+    "the certificate list must carry no private key");
+  const root = list.body.certificates.filter(function (row) {
+    return row.appearances.some(function (a) {
+      return a.label === "Service Root CA";
+    });
+  })[0];
+  assert.ok(root, "the list should include the service Root CA");
+  assert.ok(issuing,
+    "the list should include an Issuing CA of " + REALM + "'s own branch " +
+    "within twenty seconds of the realm being created");
+
+  const rootView = await get("/certificates?certificate=" + root.fingerprint);
+  assert.strictEqual(rootView.status, 200,
+    "the Root's details should answer 200; it answered " + rootView.status +
+    " " + String(rootView.raw).slice(0, 300));
+  const rv = rootView.body;
+  assert.ok(rv.ok && rv.chain.length === 1 && rv.chainStatus === "complete" &&
+            rv.chainTrusted === true && /Root CA/.test(rv.chain[0].anchor),
+    "the Root is a one-link chain that ends at itself, trusted as this " +
+    "service's Root: " + JSON.stringify({ status: rv.chainStatus,
+      trusted: rv.chainTrusted, links: (rv.chain || []).length }));
+  const tbs = rv.certificate.fields.tbsCertificate;
+  assert.ok(tbs.version.value === 3 &&
+            /^[0-9a-f]+$/.test(tbs.serialNumber.hex) &&
+            tbs.subject.attributes.length > 0 &&
+            tbs.subjectPublicKeyInfo.publicKeyOctets > 0 &&
+            rv.certificate.fields.signatureValue.octets > 0 &&
+            rv.certificate.fields.signatureAlgorithmsAgree === true,
+    "the details should carry the tbsCertificate and the signature whole");
+  assert.ok(tbs.extensions.some(function (e) {
+    return e.name === "basicConstraints" && e.critical && e.value.ca === true;
+  }) && tbs.extensions.some(function (e) {
+    return e.name === "keyUsage" && e.value.indexOf("keyCertSign") >= 0;
+  }), "the Root's extensions should be decoded, basicConstraints and " +
+      "keyUsage among them");
+  assert.ok(String(rootView.raw).indexOf("PRIVATE KEY") < 0,
+    "a certificate's details must carry no private key");
+
+  const colons = issuing.fingerprint.toUpperCase().match(/.{2}/g).join(":");
+  const issuingView = await get("/certificates?certificate=" + colons);
+  const iv = issuingView.body;
+  assert.ok(issuingView.status === 200 && iv.ok && iv.chain.length === 3 &&
+            iv.chainTrusted === true &&
+            iv.chain[2].fingerprint === root.fingerprint &&
+            iv.chain.every(function (link) {
+              return link.signatureValid === true;
+            }),
+    "an Issuing CA of this realm, named in the colon-separated upper-case " +
+    "spelling, should build a trusted three-link chain ending at the " +
+    "service Root: " + String(issuingView.raw).slice(0, 400));
+
+  const elsewhere = await get("/certificates?certificate=" +
+                              issuing.fingerprint, true);
+  assert.strictEqual(elsewhere.status, 404,
+    "THE REALM BOUNDARY: an Issuing CA of " + REALM + " should be refused " +
+    "404 at the default realm's door, whose catalogue does not hold another " +
+    "realm's branch; it answered " + elsewhere.status);
+  const malformed = await get("/certificates?certificate=not-a-fingerprint");
+  assert.strictEqual(malformed.status, 400,
+    "a value that is not a SHA-256 fingerprint should be refused 400; it " +
+    "answered " + malformed.status);
+  const unknown = await get("/certificates?certificate=" + "0".repeat(64));
+  assert.ok(unknown.status === 404 &&
+            /No certificate/.test((unknown.body.errors || []).join(" ")),
+    "a fingerprint nothing here holds should be refused 404 by name; it " +
+    "answered " + unknown.status + " " + String(unknown.raw).slice(0, 200));
+  log.info("[certificates] OK — " + list.body.total + " certificate(s) held, " +
+           "the Root and a three-link realm chain described and trusted, and " +
+           "another realm's certificate refused.");
+  log.debug("Leaving theCertificateDetailsAnswer().");
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY LIST SAYS WHICH KEY PAIRS ARE POST-QUANTUM (2026-09-13) — the `pqc`
+// member behind the icon `/admin/keys` draws, so a caller reads the same answer
+// the page shows. Every post-quantum signing key row is marked with its kind
+// and the RSA and curve keys are not, which is the two halves a classifier
+// that marked everything, or nothing, would each get wrong.
+// ---------------------------------------------------------------------------
+async function theKeyListMarksPostQuantumKeys() {
+  log.debug("Entering theKeyListMarksPostQuantumKeys().");
+  log.info("=== The key list marks post-quantum key pairs ===");
+  const reply = await get("/keys");
+  assert.strictEqual(reply.status, 200,
+    "GET /keys should answer 200; it answered " + reply.status);
+  const rows = reply.body.keys || [];
+  const wrong = rows.filter(function (row) {
+    const composite = /^ML-DSA-\d+-(ES\d+|Ed\d+)$/.test(row.alg);
+    const pure = /^(ML-DSA-\d+|SLH-DSA-)/.test(row.alg) && !composite;
+    const kind = row.pqc ? row.pqc.kind : null;
+    return !Object.prototype.hasOwnProperty.call(row, "pqc") ||
+           kind !== (composite ? "composite" : (pure ? "pq" : null));
+  }).map(function (row) {
+    return row.alg + " → " + JSON.stringify(row.pqc);
+  });
+  assert.ok(rows.some(function (row) { return row.pqc; }) &&
+            rows.some(function (row) { return row.pqc === null; }),
+    "the key list should hold both marked and unmarked key pairs: " +
+    String(reply.raw).slice(0, 300));
+  assert.deepStrictEqual(wrong, [],
+    "every key row should carry `pqc` — `pq` for ML-DSA and SLH-DSA, " +
+    "`composite` for the six composites, null for RSA and the curves — and " +
+    "these do not: " + wrong.join("; "));
+  log.info("[keys/pqc] OK — " + rows.filter(function (row) {
+    return row.pqc;
+  }).length + " of " + rows.length + " key pairs marked post-quantum.");
+  log.debug("Leaving theKeyListMarksPostQuantumKeys().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving every operation of the management API at " + rootApi);
@@ -4611,6 +4763,8 @@ async function test() {
     await theDirectoryAndSignOutDoorsRoundTrip();
     await theAdminRolesRoundTrip();
     await theTruststoreRoundTrips();
+    await theCertificateDetailsAnswer();
+    await theKeyListMarksPostQuantumKeys();
     await theKerberosPrincipalsRoundTrip();
     const candidate = await theConfigurationDoorsRoundTrip(doc);
     await theConfigurationChangeReachesTheStore(candidate);

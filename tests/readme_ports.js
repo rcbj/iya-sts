@@ -68,8 +68,11 @@ function bindingSettings() {
   log.debug("Entering bindingSettings().");
   log.debug("Leaving bindingSettings().");
   return config.SETTINGS.filter(function (s) {
+    // A port whose DEFAULT is 0 is not a binding: `pki.distributionPort` and
+    // `pki.distributionLdapPort` are ports this service WRITES into a
+    // certificate, and 0 is how they say "the listener's own".
     if (/[Pp]ort$/.test(s.key)) {
-      return typeof s.dflt === 'number';
+      return typeof s.dflt === 'number' && s.dflt > 0;
     }
     if (/Socket$/.test(s.key)) {
       return typeof s.dflt === 'string' && s.dflt.indexOf('/') === 0;

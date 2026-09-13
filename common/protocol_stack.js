@@ -202,10 +202,11 @@ require('../kerberos/spnego_authn');
 // ---------------------------------------------------------------------------
 // 17b. THE REVOCATION ENDPOINTS. `/pki/crl/{scope}/{ca}.crl`,
 // `/pki/ocsp/{scope}/{ca}`, `/pki/ca/{scope}/{ca}.cer` and the index at
-// `/pki/revocation` — the HTTP half of the three schemes every certificate
-// this service issues names in its CRL distribution points and its Authority
-// Information Access. The LDAP and LDAPS halves are the directory's, published
-// into `ou=crl` by `ldap/ldap_server.js`.
+// `/pki/revocation` — the HTTP half of the two schemes every certificate this
+// service issues names in its CRL distribution points and its Authority
+// Information Access (served on the main port and on the plain-HTTP listener
+// `server.js` binds from `pki/pki_service.js`). The LDAP half is the
+// directory's, published into `ou=crl` by `ldap/ldap_server.js`.
 //
 // **A PROTOCOL SURFACE AND NOT A CONSOLE ONE**, which is why it is here among
 // the protocol families rather than beside `/admin/pki` below. Nothing in it

@@ -14,6 +14,7 @@ more than one family needs it, not because it felt general.
 | `admin_stats.js` | The counters, the revocation set, and `recordAuthentication()` — the single authentication funnel. |
 | `audit.js` | What happened, when, and to whom, as discrete events. Sits BESIDE `admin_stats.js`, not under it. |
 | `error_codes.js` | **THE ONE TABLE OF EVERY FAILURE CONDITION (2026-09-12)** — `STS-<SUBSYSTEM>-<NNNN>`, by subsystem, with what the client sees beside each. `mark()`, `tag()`, and the generator for `docs/error-codes.md`. A LEAF that requires nothing. See below. |
+| `used_assertions.js` | **EVERY RFC 7523 JWT AND RFC 7522 SAML ASSERTION ACCEPTED, SO NONE IS ACCEPTED TWICE, EVER (2026-09-13).** One history for client authentication and the grant, both profiles, per realm; persisted in every store with one and in BOTH modes; claimed atomically on postgres; spent only when the token request issues tokens. A LIBRARY (rule 3ae) with its own logger, installed by `persistence.js`. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
 | `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
 | `app_permissions.js` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
@@ -22,6 +23,8 @@ more than one family needs it, not because it felt general.
 | `claim_attributes.js` | Which LDAP attributes a token or an assertion carries, per claim set. |
 | `group_claims.js` | The groups claim, in all five claim sets at once. |
 | `pki_authoring.js` | **THE CERTIFICATE & KEY CONFIGURATION PANE, AS A MODEL (2026-09-10)** — the parent project's *PKI / X.509* workflow: fourteen profiles, five cryptographic approaches, a subject DN, twenty-two X.509v3 extensions, PKCS#10 and four keystore formats, over the same vendored encoder. A LEAF (rule 3aa): it draws no HTML and holds no store. |
+| `pqc_support.js` | **DOES THIS KEY PAIR USE A POST-QUANTUM ALGORITHM — ONE ANSWER (2026-09-13).** Behind the icon on `/admin/pki` and `/admin/keys`, the `pqc` member on those pages' JSON, and the mark in the certificate details dialog. It reads every spelling the two pages hold a key in — a JOSE `alg`, a key-material id, a node key type, an OID, a certificate's SubjectPublicKeyInfo — and answers one of FOUR kinds, because "PQC" is four claims: `pq` (ML-DSA, SLH-DSA), `composite` (one key with a post-quantum and a classical half), `kem` (ML-KEM, which signs nothing), and `hybrid` (a CLASSICAL key whose certificate carries an alternative post-quantum key under X.509 (2019) clause 9.8 — the key itself is not post-quantum). **The key decides, never the signature on its certificate**: an ML-DSA key under an RSA CA is marked and an EC key under an ML-DSA CA is not. A classical key is `null`. A LEAF over `pq_jose.js` and the vendored registry. |
+| `certificate_details.js` | **ONE CERTIFICATE, EVERY FIELD, AND THE PATH IT BUILDS (2026-09-13)** — the model behind the certificate details dialog on `/admin/pki` and `/admin/crypto-metadata` and `GET /admin-api/certificates`: the tbsCertificate in RFC 5280 section 4.1's order (both signature algorithms, every RDN with its OID, each validity bound's ASN.1 time type, the key's parameters and bytes, both unique identifiers, every extension decoded) and a trust chain BUILT by matching each issuer's name AND verifying its signature, because a stored chain is a snapshot and a replaced Root has the same subject as the one it replaced. Built on the vendored inspector (`describeCertificate()`, `verifyChain()`); fingerprints are node's, and a post-quantum key is named from the PQC registry because the inspector summarises a composite by its classical half. A LEAF: it reads no caller's PEM and decides nothing about where a certificate came from — `admin-core/certificate_views.js` does. |
 | `pki.js` | **A CERTIFICATE AUTHORITY PER TRUST REALM, since 2026-09-10** — Root, Intermediate, Issuing, and the signing key pairs it issues to applications. **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms` and the two vendored PKI modules. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
@@ -3695,11 +3698,44 @@ still see Root, Intermediate, Issuing — the third being the `assertions` use
 case, which IS the old `issuing` tier under a name that says which of the five
 it is. Nothing those callers did before this change stopped working.
 
-**WHAT IS DELIBERATELY NOT A LEAF**, said here because an absence is what
+~~**WHAT IS DELIBERATELY NOT A LEAF**, said here because an absence is what
 nothing reports: the eleven post-quantum keys per realm, which come from
 `common/pq_jose.js`, whose independence from the vendored encoder is the point
 of it — see `common/vendored/CLAUDE.md`. It is stated on `/admin/pki` rather
-than left to be discovered.
+than left to be discovered.~~
+
+**THE POST-QUANTUM KEYS ARE LEAVES TOO, SINCE 2026-09-13, AND THE INDEPENDENCE
+WAS KEPT RATHER THAN SPENT.** `certifyPqKeys()` issues each of a realm's eleven
+from that realm's JOSE Issuing CA — reached from `pqKeysForAsync()` and
+`pqKeysFor()` when they are made (by the process whose set the realm keeps,
+`remember()`'s rule), from a store restore, and from `certifyKeySet()` — and the
+ML-DSA listener certificate from the TLS Issuing CA. Four things decide whether
+it is still the arrangement `common/vendored/CLAUDE.md` asks for:
+
+* **ONLY THE PUBLIC KEY CROSSES.** `helpers.js` hands `certifyPqLater()` the
+  `alg` and `publicJwk` of each and nothing else; generation, the private bytes
+  and every signature stay in `pq_jose.js` and the worker pool that runs it.
+* **THE ONE LAYOUT DIFFERENCE IS A TABLE AND A FUNCTION.** `PQ_JOSE_IN_X509`
+  maps each JOSE `alg` to the vendored registry's id, and
+  `pqSubjectPublicKeyPem()` adds the `0x04` an ECDSA composite half carries in
+  X.509 and not in JOSE — refusing, by name, a half that is not the JOSE length
+  rather than guessing.
+* **THE CROSSING IS CHECKED BY BOTH READINGS.** `tests/pq_key_certification.js`
+  verifies a `pq_jose.js` signature under `pqc_x509.js` against the key read
+  back out of each certificate, and shows the untranslated bytes do not verify.
+* **THE REALM BOUNDARY NEEDED NOTHING NEW.** Each lands in its realm's row,
+  under its realm's Intermediate, and `verifyLeaf()` refuses it elsewhere for
+  the reason it refuses every leaf.
+
+**The register now keeps each certificate's subject key**
+(`subjectPublicKeyPem`, `subjectKeyFingerprint`). The fingerprint is how
+`certifyPqKeys()` is idempotent — a key already certified by the current Issuing
+CA is left alone, a DIFFERENT key in the slot is reissued and the old
+certificate superseded — and the PEM is how `recertifyUseCase()` renews a
+composite, whose key node's OpenSSL cannot parse out of the old certificate.
+
+What stays outside is outside by its nature: the SPIFFE JWT authority, which has
+no certificate, and the OpenID4VCI request-encryption key above.
 
 **THE SPIFFE X.509 AUTHORITY WAS THE SECOND ENTRY ON THAT LIST AND CAME OFF IT
 ON 2026-09-11.** The sentence was *self-signed on purpose, and an Issuing CA
@@ -3841,7 +3877,9 @@ and no OCSP is answered, so a certificate this service issued is good until it
 expires* — and `common/pki_revocation.js` reversed both halves of it: every
 authority signs an RFC 5280 CRL and answers RFC 6960 OCSP, one of each per CA
 rather than per realm (a list is signed by an ISSUER, so a list per realm would
-have no valid issuer), every certificate names its own in three schemes, and
+have no valid issuer), every certificate names its own over plain http and ldap
+(never https or ldaps — RFC 5280 section 8 — on `pki.httpPort`, a listener that
+serves `/pki/` and nothing else), and
 anything rotated goes on its issuer's list as `superseded` automatically.
 
 ~~**`verifyLeaf()` STILL DOES NOT LOOK AT ANY OF IT.**~~ **IT LOOKS SINCE
@@ -3852,6 +3890,51 @@ synchronous door, because the checks before it guarantee the path is this
 service's own — and a revoked one is refused with `STS-PKI-0118`.
 `admin-ui/crypto_metadata.js` still draws published and consulted as SEPARATE
 ROWS, because they are still two claims; the section below argues the check.
+
+**AND IT ASKS WHO WAS ENTITLED TO SIGN EACH LINK, SINCE 2026-09-13.** It
+checked every signature, name and validity window and nothing else — so a path
+through one of this service's own LEAVES built, anchored and passed through the
+realm's Intermediate: every issued key pair is handed over with its private
+half, and a holder could sign a certificate of their own and present it under
+their leaf. With no subjectAltName the forged leaf named no person and could
+assert about anybody. `authorityProblem()` (every issuer `cA=TRUE`, `keyCertSign`
+permitted, `pathLenConstraint` held — `STS-PKI-0158`) and `signerProblem()` (the
+signer not a CA, `digitalSignature` permitted — `0159`) are the one set of rules,
+asked AFTER the two realm checks and BEFORE revocation, and
+`registerCertificate()` asks the same functions.
+
+### 3w, CONTINUED: THE SIGNER'S CHAIN AT EVERY USE (2026-09-13)
+
+`verifySignerChain(realm, { certificate, chain, key, source })` is what the three
+RFC 7523 / RFC 7522 verifiers ask once a registered certificate's key has
+verified a signature. **A registered chain used to be checked once, when it was
+written down**, so an expired certificate or intermediate, a rebuilt branch and a
+JWKS pasted by hand went on verifying assertions with only revocation looked at.
+Three anchors, decided by who issued the leaf:
+
+* **`realm`** — the path built by issuer ends at the service Root; `verifyLeaf()`
+  decides it (the realm boundary is its question), called with
+  `revocation: false` because the caller's `registeredVerdictFor()` reports a
+  registered certificate's revocation under `STS-PKI-0129`.
+* **`registered-root`** — anybody else's leaf, with the chain registered beside
+  it ending at a SELF-SIGNED ROOT that was registered too. That is the rule rcbj
+  chose for uploads the same day, held again at use: links, validity,
+  `authorityProblem()`, `signerProblem()`. Nothing is fetched to complete a chain
+  (`STS-PKI-0156`): a certificate from an address inside the certificate is not
+  one anybody registered.
+* **`pinned`** — a self-signed certificate is its own whole chain; its
+  self-signature and validity are checked and `cA=TRUE` is NOT refused, because
+  every `openssl req -x509` certificate carries it.
+
+`key`, where given, must be the key the certificate holds (RFC 7517 section 4.7,
+`STS-PKI-0160`) — compared as SubjectPublicKeyInfo DER, through
+`pqSubjectPublicKeyPem()` and pkijs for a post-quantum JWK, since node cannot read
+that key out of a certificate. **Refused in both modes**, by the user's decision:
+the signature is the whole security of both grants. A bare key is not asked.
+`registerCertificate()` and this function build the path with the one
+`pathByIssuer()` over `realmCandidatesFor()`, so registration and use cannot
+disagree about what the path is. `tests/signer_chain_validation.js` pins it,
+thirteen mutants caught (keyCertSign only after its fixture was added).
 
 `report()` carries `revocation` — the sentence, so every surface drawing it
 repeats one wording — and `/admin/pki` carries `revocationNote` beside
@@ -5144,3 +5227,176 @@ of the product token, because three hand-written strings in three modules is
 three places for a rename to reach two of. It is not a claim about HTTP living
 in a version module: it is the one string in this service that is *made of* the
 version.
+
+## 3w, CONTINUED: A CERTIFICATE UPLOADED IN PLACE OF AN ISSUED KEY PAIR (2026-09-13)
+
+`pki.registerCertificate()` is the second way an application's RFC 7523 or RFC
+7522 key pair is replaced, beside `issueSigningKeyPair()`. The application
+generated its own key pair and brings the certificate; nothing here receives or
+stores a private key, and an upload carrying one is refused by name.
+
+**WHAT "COMPLETE" MEANS DEPENDS ON WHO ISSUED IT.** The path is built by ISSUER
+over the uploaded certificates plus this realm's own tiers and the service Root
+— never by paste order. A path ending at THIS SERVICE'S Root is held to
+`verifyLeaf()` (this realm's Intermediate, nothing revoked), so a leaf this
+realm issued may arrive alone and another realm's leaf is refused even with its
+whole branch: with one Root, "chains to a self-signed root" is true of every
+realm's certificates, and treating that as an external authority would walk the
+realm boundary through an upload form. Any other path must end at a
+self-signed root that was UPLOADED, and is held to the checks a signature walk
+alone misses: every issuer a CA (basicConstraints), permitted keyCertSign,
+within its pathLen; the leaf not a CA and permitted digitalSignature; nothing
+unrelated uploaded; a self-signed leaf refused (it belongs on `oauthJwks` /
+`oauthSamlAssertionSigningCertificate`); revocation checked through
+`revocation_status.registeredVerdictFor()`. The key must be one the profile's
+verifier can use — RSA ≥ 2048 or ECDSA P-256/384/521 for both, secp256k1 and
+Ed25519 for JWT only.
+
+**AN EXTERNAL CHAIN IS STORED WITH ITS ROOT**, where the issued convention
+leaves this service's Root out: a foreign root is held nowhere else, and the
+revocation check needs every issuer. That is also why
+`saml_assertion_grant.js` now hands the managed certificate's CHAIN to the
+revocation check (threaded through `clientConfigOf()`'s new
+`saml_assertion_certificate_chain` for §2.2); the JWT side already carried it
+in the JWK's `x5c`.
+
+**THE RECORD IS THE ISSUE'S SHAPE WITH AN EMPTY PRIVATE KEY**, so one table
+writes both and the empty private key clears the one an earlier issue left —
+an entry holding a key for a certificate it does not match would go on handing
+that key out. `oauthAssertionKeySource` / `oauthSamlAssertionKeySource` record
+the provenance (`KEY_SOURCES`: `issued`, `uploaded-realm-ca`,
+`uploaded-external-ca`), and `applications.KEY_PAIR_ATTRIBUTES` is the one
+table naming which attribute holds which half per profile.
+
+**`applications.regenerateClientSecret()`** mints a secret the way a
+registration does and updates the stored registration document. **And
+`updateApplication()` no longer quotes a credential's value** into the audit
+summary, the log line and the reply: it did, for `oauthClientSecret` written
+through the console's generic Set, while the comment on the audit call said the
+value was kept out. `tests/application_credentials.js` pins all of it,
+eighteen mutants caught and one recorded as equivalent.
+
+## 3ab, CONTINUED: A PERSON'S RFC 7522 KEY PAIR, AND A CERTIFICATE IN PLACE OF EITHER (2026-09-13)
+
+Asked for as *the application's Credentials section, for users*, and it cost a
+reversal: `/admin/pki` refused an RFC 7522 key pair for a person
+(`STS-PKI-0108`, retired) because the SAML verifier read nothing off a person, and
+refused an upload for a person (`STS-PKI-0153`, retired) as *an operator
+registering a key a person never saw*. Both arguments were true of the code they
+described; the verifier reads a person now, and an upload carries no private key.
+
+* **A FOURTH ATTRIBUTE SET, `stsSamlAssertion*`** — Issuer, Certificate,
+  CertificateChain, a sealed PrivateKey, Thumbprint (the handle an XML Signature's
+  certificate is matched by), ExpiresAt, KeySource — sharing no name with
+  `stsAssertion*`, which gained `stsAssertionKeySource`.
+  `person_assertions.KEY_PAIR_ATTRIBUTES` is the table, in
+  `applications.KEY_PAIR_ATTRIBUTES`' shape. **`write()`, `clear()`, `issuerFor()`
+  and `subjectIsSelf()` take a profile and DEFAULT TO `jwt`**, which is what
+  every caller written before the set means. `/portal/signing-key` passes one
+  since 2026-09-13 — it issues and takes off either profile. `issuerFor(iss, 'saml')`
+  finds a person only while they hold a SAML key pair, which is the crossing,
+  made once as a lookup. `holders()` keeps its JWT members and nests `saml`.
+* **`pki.registerCertificate()` TAKES `subjectKind`** (the `kid` prefix, the
+  wording) and refuses, for a leaf THIS realm issued, the two registrations that
+  WIDEN whoever holds the key (`STS-PKI-0155`): for a person, a leaf naming
+  anybody else (another person's holder could assert as this one); for an
+  application, a leaf naming a person (that person would speak for others).
+  **One application's leaf for another stays allowed**, as uploads shipped — the
+  first version refused it too and broke Request 1's own job, which uploads a
+  donor application's certificate. A self-signed leaf for a person is refused
+  with no by-value alternative named, because a person has none.
+* `tests/person_credentials.js` pins it, fourteen mutants caught (two only after
+  the fixture asserted the issued private key WAS there and read the view while a
+  private key was held — a leak check over an entry holding no key proves
+  nothing).
+
+## 3ae. `used_assertions.js`: AN ASSERTION IS ACCEPTED ONCE, EVER (2026-09-13)
+
+Asked for as *a history of SAML assertions and JWTs submitted successfully for a
+grant or client authentication, each usable once ever, persistent, and kept only
+until it would have expired*. It replaced THREE replay caches — one each in
+`oauth-oidc/client_auth.js`, `assertion_grant.js` and `saml_assertion_grant.js`
+— and the module header lists the four ways those were not "once ever". Four
+decisions were asked of the owner before it was built and each took the
+recommended answer; they are the design.
+
+* **PERSISTENT IN EVERY STORE, IN BOTH MODES.** This is the one thing a request
+  writes that persists in development mode, and the reason is the reason
+  minted state does NOT: "development persists nothing it minted" rests on the
+  signing key being regenerated, so a restored token verifies against nothing.
+  An assertion is signed by the CLIENT's key, on its directory entry, which
+  every store keeps — so it verifies after a restart, and forgetting it was
+  spent is a replay. `memory` keeps it in the process and loses nothing a
+  restart would not also lose.
+* **A STORE OF ITS OWN, NOT A `realms.map({ persist })`.** The journal flushes
+  after the fact and converges through the change log, which is exactly the
+  window "once ever" cannot have. postgres holds `sts_used_assertions`, claimed
+  by one `INSERT … ON CONFLICT (realm, key) DO UPDATE … WHERE expires_at < now`
+  — a live row is never overwritten and an expired one is replaced, which is
+  "until it would have expired" read literally. ldif holds a file per realm,
+  written before the claim returns. The driver groups are tested for BY NAME
+  (`DATABASE_GROUP`, `SNAPSHOT_GROUP`), and a driver with neither is warned
+  about rather than trusted.
+* **ONE HISTORY FOR EVERY USE.** The key is SHA-256 over FORMAT, ISSUER and
+  IDENTIFIER — not the use — so a JWT that authenticated a client is refused as
+  a grant and the reverse. The format is in the key because a SAML `ID` and a
+  `jti` are two namespaces. `client_auth.js` keys by the client_id, which the
+  library has already required to equal `iss`, and the grant by `iss`, so both
+  reach one row; `tests/used_assertions.js` holds that as behaviour and as
+  source.
+* **SUCCESSFUL MEANS TOKENS WERE ISSUED.** A claim made with a `request` is
+  RESERVED and bound to `request.res`: `finish` with a 2xx makes it `spent`,
+  anything else — or `close` without `finish` — releases it. A reservation
+  refuses a racing replay exactly as a spent row does. Without a request (the
+  in-process tests, anything verifying outside HTTP) it is spent at once, which
+  is what every caller did before.
+
+**THREE PROPERTIES THAT ARE EASY TO BREAK:**
+
+* **THE CLAIM IS THE LAST CHECK OF THE DOCUMENT** in all three verifiers, so an
+  assertion refused for any other reason is not also used up. Moving it earlier
+  would make a bad `aud` or a lifetime refusal burn a good assertion's `jti`.
+* **A CRASH LEAVES A RESERVATION AND THAT IS THE SAFE DIRECTION.** A process
+  that dies before its response finishes neither confirms nor releases, so the
+  assertion is refused as used until it expires. A reservation that evaporated
+  would, on a crash after the tokens reached the client, be a replayable
+  assertion.
+* **THE STORE FAILING FAILS CLOSED** (`STS-OAUTH-0243`): an assertion this
+  service cannot prove unused is not one it accepts. The store's own message
+  goes to the log and never to the client.
+
+**AND IT FOUND A BUG IT DID NOT CAUSE.** In RFC 9700 mode the token endpoint
+verified a client assertion twice per request — policy, then observation — and
+with one cache that spent on the first, the second was a replay: the client was
+observed as unauthenticated. `client_auth.js`'s `verifiedOnce()` is the fix and
+`oauth-oidc/CLAUDE.md` 3i records it. It was not visible before because the old
+caches were each in one process and the refusal was an observation rather than a
+response.
+
+**THE CAP IS UNCHANGED IN MEANING AND NARROWER IN EFFECT**:
+`oauth2.assertionReplayCacheSize` is one count per realm now rather than one per
+cache, and a full history still refuses rather than forgets. On postgres the
+count is read in the claim's own statement and is not under a lock, so two
+claims at the edge can put a realm one or two over; the cap bounds a table, and
+a replay is what the key bounds.
+
+**It is drawn at `/admin/used-assertions` and `GET /admin-api/used-assertions`**,
+one function (`admin-core/admin_views.js`'s `usedAssertionsView()`, a PROMISE,
+because on postgres the history is a query), read-only on purpose: forgetting a
+row would make a still-valid assertion usable again.
+
+**Verified against a real PostgreSQL**, which no in-process test can do: the
+least-privilege role opening a store built by `postgres/schema.sql`, twenty-five
+concurrent claims of one assertion with exactly one accepted, a release deleting
+and a 2xx confirming, an expired row replaced, a second driver refusing a
+replay, the cap refusing the eleventh, and a version-3 database refused with
+`STS-STORE-0029` until `schema.sql` is run again. `tests/used_assertions.js`
+holds the in-process half — thirteen mutants: nine caught at the first round,
+two after the fixture was fixed (a restart check a later write had quietly
+passed, and no cross-verifier check), one by the source check (the grant keying
+by a prefixed issuer, which no in-process request reaches), and one equivalent
+(the restore's expiry filter, which the sweep every read runs makes
+unobservable) — and sections 14
+and 13 of `tests/vendored/sts_jwt_bearer_grant.js` and
+`sts_saml2_bearer_grant.js` the HTTP half, with four service mutants caught
+there.

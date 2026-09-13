@@ -99,6 +99,18 @@ const claimAttributes = require('../common/claim_attributes');
 const scimMap = require('../scim/scim_map');
 const groupClaims = require('../common/group_claims');
 const applications = require('../common/applications');
+// A PERSON's assertion key pairs, for the Credentials section of their own
+// page (2026-09-13). A library: it holds no store and registers no route.
+const personAssertions = require('../common/person_assertions');
+// Whether a private key written onto an entry is sealed at rest, which is
+// `persists()` and not `sealed()` — `person_assertions.js` argues why.
+const keystore = require('../common/keystore');
+// THE CERTIFICATE AUTHORITY, for the Credentials section of an application's
+// page: whether this realm can issue a key pair at all, and from what. A
+// LIBRARY (rule 3) — it registers no route — so requiring it here moves
+// nothing.
+const pki = require('../common/pki');
+const nodeCrypto = require('crypto');
 const appPermissions = require('../common/app_permissions');
 const consent = require('../common/consent');
 const roles = require('../common/roles');
@@ -112,6 +124,10 @@ const auditLog = require('../common/audit');
 // THE ERROR CODE TABLE. A leaf that requires nothing, so it cannot close a
 // cycle from here; `errorCodesView()` below is its one reader in this layer.
 const errorCodes = require('../common/error_codes');
+// THE USED-ASSERTION HISTORY (2026-09-13), for `/admin/used-assertions` and
+// `GET /admin-api/used-assertions`. A LIBRARY in `common/` that requires
+// nothing here, so the require moves no route and closes no cycle.
+const usedAssertions = require('../common/used_assertions');
 const delegation = require('../common/delegation');
 const krb5Principals = require('../kerberos/krb5_principals');
 // Stored Kerberos keys (2026-09-12), a plain require for the reason
@@ -1828,6 +1844,67 @@ function sessionsView(req) {
 // so that the one row saying the table is incomplete survives, and this is the
 // page somebody would look for it on.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE USED-ASSERTION HISTORY — every RFC 7523 JWT and RFC 7522 SAML assertion
+// this realm has accepted and that has not yet expired (2026-09-13).
+//
+// **A PROMISE, WHICH ALMOST NO VIEW HERE IS**, because on a postgres store the
+// history is not in this process at all: the database IS the history, so that
+// every process against it agrees, and reading it is a query. The page and the
+// operation both await this one function, so they cannot disagree about a
+// row.
+//
+// **IT IS READ-ONLY AND MUST STAY SO.** Forgetting a row would make that
+// assertion acceptable again while it is still valid, which is the one thing
+// the history exists to prevent; the only thing that removes a row is the
+// assertion expiring. `common/used_assertions.js` argues the rest.
+//
+// The page is clamped the way `pagingOf()` clamps every list here, and a page
+// asked for beyond the end is re-read at the last page rather than drawn empty
+// under a line saying rows matched.
+// ---------------------------------------------------------------------------
+function usedAssertionsView(query) {
+  log.debug("Entering usedAssertionsView().");
+  const q = query || {};
+  const filter = { q: String(q.q || '').trim(), format: String(q.format || ''),
+                   use: String(q.use || ''), state: String(q.state || '') };
+  const asked = pagingOf(q, Number.MAX_SAFE_INTEGER);
+  log.debug("Leaving usedAssertionsView().");
+  return usedAssertions.list(Object.assign({}, filter, {
+    limit: asked.perPage, offset: asked.offset
+  })).then(function (first) {
+    const paging = pagingOf(q, first.matched);
+    if (paging.offset === asked.offset) {
+      return { page: first, paging: paging };
+    }
+    return usedAssertions.list(Object.assign({}, filter, {
+      limit: paging.perPage, offset: paging.offset
+    })).then(function (again) {
+      return { page: again, paging: paging };
+    });
+  }).then(function (read) {
+    const summary = usedAssertions.summary();
+    const page = read.page;
+    const json = Object.assign({
+      store: summary.store,
+      persistent: summary.persistent,
+      atomicAcrossProcesses: summary.atomicAcrossProcesses,
+      storeNote: summary.why,
+      cap: summary.cap,
+      live: page.live,
+      matched: page.matched,
+      shown: page.rows.length,
+      filter: page.filter,
+      formats: usedAssertions.FORMATS,
+      uses: usedAssertions.USES,
+      states: usedAssertions.STATES,
+      rows: page.rows
+    }, pagingJson(read.paging));
+    return { json: json, rows: page.rows, paging: read.paging,
+             filter: page.filter, summary: summary, live: page.live };
+  });
+}
+
 function errorCodesView(query) {
   log.debug("Entering errorCodesView().");
   const wantedSubsystem = String(query.subsystem || '').trim().toUpperCase();
@@ -3994,11 +4071,13 @@ function applicationDetailJson(req, identifier) {
                                     noun: 'observed addresses' });
   const permissionState = applicationPermissionsState(req.query,
                                                       row.identifier);
+  const credentialsState = applicationCredentialsState(row);
   log.debug("Leaving applicationDetailJson().");
   return {
     row: row, attributeRows: attributeRows, paged: paged, paging: paging,
     observedPaged: observedPaged,
     permissionState: permissionState,
+    credentialsState: credentialsState,
     json: (function () {
     return Object.assign({ found: true }, row, {
         attributesShown: paged.shown,
@@ -4009,6 +4088,11 @@ function applicationDetailJson(req, identifier) {
         // fact about the entry.
         returnAddressesObservedShown: observedPaged.shown,
         returnAddressesObservedPaging: pagingJson(observedPaged.paging),
+        // THE CREDENTIALS SECTION, AS DATA (2026-09-13) — which key pair is
+        // managed per profile, where it came from, the chain, and the keys the
+        // party registered itself. No secret and no private key: see
+        // applicationCredentialsState().
+        credentials: credentialsState.json,
         // THE RESOLVED DELEGATED PERMISSIONS, because the page draws a section
         // of them and a reply that carried only the raw attribute would leave a
         // caller to compose `baseUri + name` for itself — which is the one
@@ -4030,6 +4114,290 @@ function applicationDetailJson(req, identifier) {
     });
     }())
   };
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S CREDENTIALS, IN ONE PLACE (2026-09-13).
+//
+// The client secret, and for each assertion profile the key pair this service
+// manages — issued here or a certificate uploaded in its place — beside the
+// keys the party registered itself. Every fact was already on the entry and in
+// the attribute table under it; what was missing is the READING: which
+// certificate, issued by whom, through what chain, expiring when, and whether
+// this service holds the private half. So this parses the certificates and
+// names the attributes from `applications.KEY_PAIR_ATTRIBUTES`, the one table
+// the writer (`admin-ui/pki_admin.js`) reads too.
+//
+// **THE JSON CARRIES NO SECRET AND NO PRIVATE KEY.** Both are already in the
+// reply's `fields`, opened, for a caller holding `admin:read` — that is the
+// registry's decision and this does not repeat it; a second copy of a
+// credential in one reply is one more place a log line or a screenshot picks
+// it up. The page reads the values from the state, which never leaves this
+// process as JSON.
+// ---------------------------------------------------------------------------
+function certificateSummary(pem) {
+  log.debug("Entering certificateSummary().");
+  try {
+    const cert = new nodeCrypto.X509Certificate(String(pem));
+    const notAfter = new Date(cert.validTo);
+    const summary = {
+      subject: String(cert.subject || '').split('\n').filter(Boolean)
+        .join(', '),
+      issuer: String(cert.issuer || '').split('\n').filter(Boolean)
+        .join(', '),
+      serialHex: String(cert.serialNumber || '').toLowerCase(),
+      notBefore: new Date(cert.validFrom).toISOString(),
+      notAfter: notAfter.toISOString(),
+      expired: notAfter.getTime() < Date.now(),
+      selfSigned: cert.subject === cert.issuer,
+      keyType: cert.publicKey.asymmetricKeyType,
+      thumbprint: nodeCrypto.createHash('sha256').update(cert.raw)
+        .digest('base64url')
+    };
+    log.debug("Leaving certificateSummary().");
+    return summary;
+  } catch (e) {
+    log.debug("Caught in certificateSummary(): " + ((e && e.message) || e));
+    // An attribute an `ldapmodify` reaches: reported as unreadable rather
+    // than dropped, so the section says what the entry holds.
+    log.debug("Leaving certificateSummary(). Unreadable.");
+    return { unreadable: String((e && e.message) || e) };
+  }
+}
+
+function pemCertificatesIn(value) {
+  log.debug("Entering pemCertificatesIn().");
+  const text = Array.isArray(value) ? value.join('\n') : String(value || '');
+  const blocks = text.match(
+      /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  log.debug("Leaving pemCertificatesIn(). " + blocks.length + " block(s).");
+  return blocks;
+}
+
+function registeredJwksKeys(value) {
+  log.debug("Entering registeredJwksKeys().");
+  if (!value) {
+    log.debug("Leaving registeredJwksKeys(). None.");
+    return { keys: [], problem: '' };
+  }
+  try {
+    const doc = typeof value === 'string' ? JSON.parse(value) : value;
+    const keys = (doc && Array.isArray(doc.keys) ? doc.keys : []).map(
+        function (jwk) {
+      return { kid: jwk.kid ? String(jwk.kid) : '', kty: String(jwk.kty || ''),
+               alg: jwk.alg ? String(jwk.alg) : '',
+               use: jwk.use ? String(jwk.use) : '',
+               certificate: Array.isArray(jwk.x5c) && jwk.x5c.length
+                 ? certificateSummary('-----BEGIN CERTIFICATE-----\n' +
+                                      String(jwk.x5c[0]) +
+                                      '\n-----END CERTIFICATE-----')
+                 : null };
+    });
+    log.debug("Leaving registeredJwksKeys(). " + keys.length + " key(s).");
+    return { keys: keys, problem: '' };
+  } catch (e) {
+    log.debug("Caught in registeredJwksKeys(): " + ((e && e.message) || e));
+    // The verifier reports the same thing when it reads it; the page says it
+    // before anybody has to find out that way.
+    log.debug("Leaving registeredJwksKeys(). Not JSON.");
+    return { keys: [], problem: 'not valid JSON: ' + e.message };
+  }
+}
+
+function applicationCredentialsState(row) {
+  log.debug("Entering applicationCredentialsState(). identifier=" +
+            (row && row.identifier));
+  const fields = (row && row.fields) || {};
+  const one = function (name) {
+    log.debug("Entering one().");
+    const value = name ? fields[name] : undefined;
+    log.debug("Leaving one().");
+    return Array.isArray(value) ? value.join('\n') : String(value || '');
+  };
+  const chainAvailable = pki.hasChain();
+  const described = chainAvailable ? pki.describe() : null;
+  const purposes = pki.PURPOSES.map(function (purpose) {
+    const names = applications.KEY_PAIR_ATTRIBUTES[purpose.id];
+    const certificatePem = one(names.certificate);
+    const privateKeyPem = one(names.privateKey);
+    const recorded = one(names.source);
+    const source = recorded ||
+      (privateKeyPem ? 'issued' : (certificatePem ? 'unrecorded' : ''));
+    const registeredText = one(names.registered);
+    return {
+      id: purpose.id,
+      label: purpose.label,
+      attributes: names,
+      held: !!(certificatePem || privateKeyPem),
+      source: source,
+      privateKeyHeld: !!privateKeyPem,
+      sealedAtRest: applications.isSealed((row.attributes || {})[
+        names.privateKey]),
+      certificate: certificatePem ? certificateSummary(certificatePem) : null,
+      certificatePem: certificatePem,
+      chain: pemCertificatesIn(one(names.chain)).map(certificateSummary),
+      handle: one(names.handle),
+      handleLabel: names.handleLabel,
+      issuers: [].concat(fields[names.issuer] || []).map(String),
+      registered: purpose.id === 'jwt'
+        ? Object.assign({ attribute: names.registered },
+                        registeredJwksKeys(registeredText))
+        : { attribute: names.registered,
+            certificates: pemCertificatesIn(registeredText)
+              .map(certificateSummary),
+            problem: registeredText && !pemCertificatesIn(registeredText).length
+              ? 'it holds no PEM certificate block' : '' }
+    };
+  });
+  // WHETHER THE TWO ASSERTION PROFILES ARE DRAWN AT ALL (2026-09-13). RFC
+  // 7523 and RFC 7522 are both used at the TOKEN ENDPOINT, so an application
+  // that has not been declared an OAuth 2.0 client or an OpenID Connect
+  // relying party — the two families whose identifier is a client_id — has no
+  // use for either section, and the page leaves them out. It is the
+  // DECLARATION (`appAllowedProtocol`) and not the recorded kinds, because
+  // that is the checkbox an operator ticks to say what the application is
+  // for. Hiding a section grants and removes nothing: a key pair already on
+  // the entry still verifies, and the page says so when one is there.
+  const declared = [].concat(row.allowedProtocols || []);
+  const oauthDeclared = declared.indexOf('oauth2') >= 0 ||
+                        declared.indexOf('oidc') >= 0;
+  const secret = one('oauthClientSecret');
+  const state = {
+    oauthDeclared: oauthDeclared,
+    clientSecret: {
+      held: !!secret,
+      value: secret,
+      authMethod: one('oauthTokenEndpointAuthMethod'),
+      registered: !!row.registered,
+      registrationAccessTokenHeld: !!one('appRegistrationAccessToken'),
+      registrationAccessToken: one('appRegistrationAccessToken')
+    },
+    purposes: purposes,
+    ca: {
+      available: chainAvailable,
+      keyAlg: described && described.keyAlg ? String(described.keyAlg) : '',
+      keyAlgorithms: pki.keyAlgorithms(),
+      leafLifetimeDays: pki.leafLifetimeDays()
+    },
+    sources: applications.KEY_SOURCES.slice()
+  };
+  state.json = {
+    clientSecret: { held: state.clientSecret.held,
+                    authMethod: state.clientSecret.authMethod,
+                    registered: state.clientSecret.registered,
+                    registrationAccessTokenHeld:
+                      state.clientSecret.registrationAccessTokenHeld },
+    keyPairs: purposes.map(function (p) {
+      return { purpose: p.id, label: p.label, held: p.held, source: p.source,
+               privateKeyHeld: p.privateKeyHeld, certificate: p.certificate,
+               chain: p.chain, handle: p.handle, handleLabel: p.handleLabel,
+               issuers: p.issuers, attributes: p.attributes,
+               registered: p.registered };
+    }),
+    caAvailable: chainAvailable,
+    oauthDeclared: oauthDeclared,
+    sources: state.sources
+  };
+  log.debug("Leaving applicationCredentialsState().");
+  return state;
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON'S KEY PAIRS, ON THEIR OWN PAGE (2026-09-13).
+//
+// The application's section above, for the other kind of holder: for each
+// assertion profile, the key pair on the person's own entry — issued here or a
+// certificate uploaded in its place — read into which certificate, issued by
+// whom, through what chain, and whether this service holds the private half.
+// `person_assertions.KEY_PAIR_ATTRIBUTES` names the attributes, which is the
+// table the writer uses.
+//
+// **THERE IS NO PRIVATE KEY IN THE STATE, EITHER HALF**, and that is a
+// difference from the application's which is the point rather than an
+// omission. An application's private key is readable through
+// `applications.view()`; a person's has no read door — it is handed over once,
+// by the issue — so this reports whether one is HELD and never what it is.
+// `recordFor()` opens the seal to answer that, and nothing opened leaves this
+// function.
+// ---------------------------------------------------------------------------
+function personCredentialsState(key) {
+  log.debug("Entering personCredentialsState(). key=" + key);
+  const storable = personAssertions.storable();
+  const record = storable ? personAssertions.recordFor(key) : null;
+  const chainAvailable = pki.hasChain();
+  const described = chainAvailable ? pki.describe() : null;
+  const labels = {};
+  pki.PURPOSES.forEach(function (purpose) {
+    labels[purpose.id] = purpose.label;
+  });
+  const purposes = personAssertions.PURPOSE_IDS.map(function (id) {
+    const names = personAssertions.KEY_PAIR_ATTRIBUTES[id];
+    const value = function (name) {
+      log.debug("Entering value().");
+      log.debug("Leaving value().");
+      return record && name ? String(record[name] || '') : '';
+    };
+    const certificatePem = value(names.certificate);
+    const privateKeyHeld = !!value(names.privateKey);
+    const held = !!(record && (id === 'saml' ? record.hasSamlKeyPair
+                                             : record.hasKeyPair));
+    const declared = record
+      ? (id === 'saml' ? record.samlIssuers : record.issuers) : [];
+    return {
+      id: id,
+      label: labels[id] || id,
+      attributes: { issuer: names.issuer, certificate: names.certificate,
+                    chain: names.chain, privateKey: names.privateKey,
+                    handle: names.handle, source: names.source,
+                    expiresAt: names.expiresAt, jwks: names.jwks },
+      held: held,
+      source: value(names.source) ||
+        (privateKeyHeld ? 'issued' : (certificatePem ? 'unrecorded' : '')),
+      privateKeyHeld: privateKeyHeld,
+      certificate: certificatePem ? certificateSummary(certificatePem) : null,
+      chain: pemCertificatesIn(value(names.chain)).map(certificateSummary),
+      handle: value(names.handle),
+      handleLabel: names.handleLabel,
+      expiresAt: value(names.expiresAt),
+      issuers: declared.slice(),
+      effectiveIssuers: record
+        ? (id === 'saml' ? record.samlEffectiveIssuers
+                         : record.effectiveIssuers).slice() : []
+    };
+  });
+  const state = {
+    storable: storable,
+    found: !!record,
+    username: record ? record.username : String(key || ''),
+    purposes: purposes,
+    ca: {
+      available: chainAvailable,
+      keyAlg: described && described.keyAlg ? String(described.keyAlg) : '',
+      keyAlgorithms: pki.keyAlgorithms(),
+      leafLifetimeDays: pki.leafLifetimeDays()
+    },
+    sealsAtRest: storable && keystore.persists(),
+    selfService: !!config.value('pki.personSelfService'),
+    sources: applications.KEY_SOURCES.slice()
+  };
+  state.json = {
+    storable: storable,
+    found: state.found,
+    keyPairs: purposes.map(function (p) {
+      return { purpose: p.id, label: p.label, held: p.held, source: p.source,
+               privateKeyHeld: p.privateKeyHeld, certificate: p.certificate,
+               chain: p.chain, handle: p.handle, handleLabel: p.handleLabel,
+               expiresAt: p.expiresAt, issuers: p.issuers,
+               effectiveIssuers: p.effectiveIssuers,
+               attributes: p.attributes };
+    }),
+    caAvailable: chainAvailable,
+    sealsAtRest: state.sealsAtRest,
+    selfService: state.selfService,
+    sources: state.sources
+  };
+  log.debug("Leaving personCredentialsState(). found=" + state.found);
+  return state;
 }
 
 // `?application=` means the drill-down.
@@ -4704,6 +5072,9 @@ function userDetailJson(req, key) {
   // for `?format=json`, where there is no button to draw and the answer is
   // still needed for the write half of `/admin-api/users`.
   const mfa = { json: mfaJson(key) };
+  // The assertion key pairs (2026-09-13), read once for the reason the two
+  // panels above are: the page and the reply must not disagree about one read.
+  const credentialsState = personCredentialsState(key);
 
   // Five lists on one page, each with its own page parameter and all of them
   // sharing `per` — see pagingOf() for why it is that way round.
@@ -4743,7 +5114,8 @@ function userDetailJson(req, key) {
     // forms posted `back=undefined`.
     params: params, back: back, valid: valid, expired: expired, directory:
                                                                   directory,
-    mfa: mfa, sessionPage: sessionPage, sessionTokenPages: sessionTokenPages,
+    mfa: mfa, credentialsState: credentialsState,
+    sessionPage: sessionPage, sessionTokenPages: sessionTokenPages,
     endedPage: endedPage, sessionlessPage: sessionlessPage, artifactPage:
                                                               artifactPage,
     json: (function () {
@@ -4778,7 +5150,11 @@ function userDetailJson(req, key) {
         // different answer from an entry that is not there — that one is an
         // object whose `found` is false and which says where it would have
         // been.
-        ldap: directory.json
+        ldap: directory.json,
+        // THE ASSERTION KEY PAIRS (2026-09-13) — `credentials`, the member
+        // name an application's drill-down uses for its own. No private key,
+        // for the reason personCredentialsState() gives.
+        credentials: credentialsState.json
     };
     }())
   };
@@ -5130,6 +5506,7 @@ module.exports = {
   ldapObjectJson: ldapObjectJson,
   mfaJson: mfaJson,
   userDetailJson: userDetailJson,
+  personCredentialsState: personCredentialsState,
   usersJson: usersJson,
   peopleRows: peopleRows,
   mergeFactors: mergeFactors,
@@ -5205,6 +5582,7 @@ module.exports = {
   sessionsView: sessionsView,
   auditView: auditView,
   errorCodesView: errorCodesView,
+  usedAssertionsView: usedAssertionsView,
   delegationView: delegationView,
   clusterSummary: clusterSummary,
   permissionGroupsView: permissionGroupsView,

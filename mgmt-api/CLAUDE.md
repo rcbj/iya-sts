@@ -1232,7 +1232,7 @@ with the word `revoke` in them and they do completely different things**:
 
 | Operation | What it changes |
 |---|---|
-| `revoke` | an application's DIRECTORY ENTRY — six attributes for `jwt`, five for `saml`. This service stops ACCEPTING what that key signs. The certificate still chains. |
+| `revoke` | an application's DIRECTORY ENTRY — seven attributes for `jwt`, six for `saml`. This service stops ACCEPTING what that key signs. The certificate still chains. |
 | `revoke-certificate` | an issuer's REVOCATION LIST. This service's CRL and OCSP responder say `revoked` for that serial. Nobody loses a key and nothing stops chaining for a party that does not check. |
 
 **THE OLDER NAME WAS KEPT AND THE NEW ONE WORKED AROUND IT**, which is the
@@ -1301,3 +1301,70 @@ doors. A caller that means nobody to hold anything sends `credential: "none"`;
 `sts_portal_totp.js` were changed to say so. A typed password on this door, and
 a generated one, meet the realm's password policy in product mode, and
 `set-password` does the same.
+
+## `upload-certificate` AND `regenerate-secret` (2026-09-13)
+
+Two operations for the Credentials section of an application's console page,
+in the same change as the page (rule 7):
+
+* `POST /admin-api/pki/upload-certificate` — on the PKI resource beside `issue`
+  and `revoke`, because it writes the same attributes through the same table
+  (`pki_admin.js`'s `PURPOSE_WRITES`) and a key pair should be taken off with
+  one act however it arrived. The chain rules are `common/pki.js`'s
+  `registerCertificate()`.
+* `POST /admin-api/applications/regenerate-secret` — on the applications
+  resource, because the secret is an application attribute and the mint is
+  `applications.regenerateClientSecret()`. **The reply is the one place this
+  act hands the value out**; the audit row names the attribute. It refuses
+  `sts-management-api` while `adminApi.clientSecret` pins that secret, because
+  every token for this API is minted with the setting and seeding never
+  rewrites an existing entry — regenerating it would be this API locking its
+  own bootstrap out wherever a secret is checked.
+
+`GET /admin-api/applications?application=` grew `credentials`, and no GET was
+added: the page is the application drill-down, which already had its operation.
+
+## `GET /admin-api/certificates` — THE CERTIFICATE DETAILS DIALOG, FOR A MACHINE (2026-09-13)
+
+One operation, two shapes, `?certificate=` deciding which — the arrangement
+`/permissions/groups` argues. Without it: every certificate this realm holds,
+one row per certificate with every place it appears, paged and filterable by
+`q`. With it: that certificate's every field and its trust chain, from
+`admin-core/certificate_views.js`, the same function the dialog on `/admin/pki`
+and `/admin/crypto-metadata` is drawn from. **No POST**: the dialog is a view
+and has no control.
+
+A fingerprint is looked up and never parsed from the request, so anything this
+realm does not hold is refused — `400` for a value that is not a SHA-256 (`STS-ADMIN-0640`),
+`404` for one not held here (`STS-ADMIN-0641`), `500` for one that could not be
+described. A certificate from another realm is reached under that realm's
+prefix, which is the realm boundary rather than an inconvenience.
+`tests/vendored/sts_admin_api_operations.js`'s `theCertificateDetailsAnswer()`
+drives both shapes, the colon spelling, and the refusal at the default realm's
+door of a certificate a throwaway realm holds.
+
+## `pqc` ON THE KEY LIST AND THE PKI KEY-PAIR ROWS (2026-09-13)
+
+`GET /admin-api/keys` rows and `GET /admin-api/pki`'s `issued` and `persons`
+rows carry `pqc` — `null` for a classical key, otherwise `{ kind, algorithm,
+label, family, standard }` with `kind` one of `pq`, `composite`, `kem` or
+`hybrid` — which is the answer the post-quantum icon on `/admin/keys` and
+`/admin/pki` is drawn from (`common/pqc_support.js`). It is in `KeyList`'s
+schema. No operation was added: the icon is a view of data both resources
+already carried. `sts_admin_api_operations.js`'s
+`theKeyListMarksPostQuantumKeys()` asserts every signing-key row's kind.
+
+## `target=person` ON `issue`, `upload-certificate` AND `revoke`, AND `credentials` ON A USER (2026-09-13)
+
+No new operation: the Credentials section of `/admin/users?user=` posts the same
+three PKI actions with `target=person`, so rule 7 is paid by three schema edits.
+`upload-certificate`'s `target` enum was `['application']` with
+`additionalProperties: false`, which would have REFUSED a person upload at the
+validator before the handler saw it; `issue` and `revoke` said a person refuses
+`purpose=saml` and that `revoke` ignores `purpose` for one, both now false. `GET
+/admin-api/users?user=` answers `credentials` — both profiles' key pairs, no
+private key — documented on `UserDetail` beside `ldap`.
+
+**A pre-existing mismatch noticed, not fixed**: `issue` documents `keyAlg` while
+`pkiAction()` reads `leafKeyAlg` (the console's field name), so the API's `keyAlg`
+is accepted by the schema and ignored.

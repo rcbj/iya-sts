@@ -74,7 +74,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const log = bunyan.createLogger({ name: 'service',
                                   level: process.env.LOG_LEVEL || 'info' });
 
-// The nine listeners, in the order the offsets are handed out. The NAME is the
+// The ten listeners, in the order the offsets are handed out. The NAME is the
 // environment variable this service reads for it — README.md's *Configuration*
 // table is the authority for these spellings, and a misspelt one is SILENT: it
 // is ignored and the listener takes its default port, which is the shared one.
@@ -87,7 +87,11 @@ const PORT_VARS = [
   'LDAP_PORT',
   'LDAPS_PORT',
   'STS_SPIFFE_WORKLOAD_PORT',
-  'STS_SPIFFE_SERVER_PORT'
+  'STS_SPIFFE_SERVER_PORT',
+  // The plain-HTTP revocation listener (2026-09-13). Last, so no offset above
+  // moved — `instance.ports` is read by NAME, and appending keeps a port that
+  // somebody noted from an earlier run where it was.
+  'PKI_HTTP_PORT'
 ];
 
 // The KDC is the one that binds UDP as well as TCP (RFC 4120 section 7.2.1),
@@ -272,7 +276,7 @@ function probe(url) {
 
 // ---------------------------------------------------------------------------
 // Start it, and do not return until it ANSWERS. `up` is a request that got a
-// response, not a process that was spawned: this service binds nine listeners
+// response, not a process that was spawned: this service binds ten listeners
 // and reads its store before the first of them, so "the child exists" and "the
 // service is ready" are seconds and several failure modes apart.
 // ---------------------------------------------------------------------------

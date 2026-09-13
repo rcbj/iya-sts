@@ -2850,19 +2850,21 @@ const SETTINGS = [
     label: 'Assertion replay cache size (per realm)',
     env: 'STS_OAUTH2_ASSERTION_REPLAY_CACHE_SIZE', type: 'int', dflt: 1000,
     min: 10, max: 1000000, runtime: true,
-    description: 'How many unexpired assertion identifiers each of the three ' +
-                 'replay caches remembers per trust realm — RFC 7523 client ' +
-                 'assertions, RFC 7523 authorization grants, and RFC 7522 ' +
-                 'SAML assertions, each its own cache. **A FULL CACHE ' +
-                 'REFUSES THE NEXT ASSERTION RATHER THAN FORGETTING A LIVE ' +
-                 'ONE**, and that is a change: until 2026-09-12 each dropped ' +
-                 'its oldest entry whether or not it had expired, which let ' +
-                 'a captured assertion be replayed as soon as a thousand ' +
-                 'newer ones had pushed it out. Expired entries are swept ' +
-                 'first, so the refusal is reached only by that many ' +
-                 'assertions being live at once — raise this, or shorten ' +
+    description: 'How many unexpired rows the USED-ASSERTION HISTORY holds ' +
+                 'per trust realm: every RFC 7523 JWT and RFC 7522 SAML ' +
+                 'assertion accepted, as client authentication or as a ' +
+                 'grant, in ONE history (it was three caches until ' +
+                 '2026-09-13). The history persists in the ldif and postgres ' +
+                 'stores in both modes, so this bounds a file or a table as ' +
+                 'well as memory. **A FULL HISTORY REFUSES THE NEXT ASSERTION ' +
+                 'RATHER THAN FORGETTING A LIVE ONE**: until 2026-09-12 the ' +
+                 'caches dropped their oldest entry whether or not it had ' +
+                 'expired, which let a captured assertion be replayed as soon ' +
+                 'as a thousand newer ones had pushed it out. Expired rows ' +
+                 'are swept first, so the refusal is reached only by that ' +
+                 'many assertions being live at once — raise this, or shorten ' +
                  'oauth2.jwtBearerMaxLifetimeS, rather than accept a replay ' +
-                 'window.' },
+                 'window. /admin/used-assertions lists what is held.' },
 
   { key: 'oauth2.dpopNonceRequired', group: 'OAuth 2.0 / OIDC',
     label: 'Require a DPoP server nonce',
@@ -3070,29 +3072,77 @@ const SETTINGS = [
                  'hours. An hour is long enough to be realistic and short ' +
                  'enough to be testable; raise it to find out what your ' +
                  'stack does with a stale list.' },
+  { key: 'pki.httpPort', group: 'PKI',
+    label: 'Plain-HTTP revocation listener port',
+    env: 'PKI_HTTP_PORT', type: 'port', dflt: 8082, runtime: false,
+    restartReason: 'the listener is bound when the process starts',
+    description: 'A second HTTP listener, PLAIN rather than TLS, that ' +
+                 'answers the revocation endpoints under `/pki/` and refuses ' +
+                 'every other path. Every certificate this service issues ' +
+                 'names it for its CRL, its OCSP responder and its issuer\'s ' +
+                 'certificate.\n\n**WHY PLAIN.** RFC 5280 section 8 says a ' +
+                 'CA SHOULD NOT put an https URI in an extension — a client ' +
+                 'that checks revocation before trusting a connection cannot ' +
+                 'fetch the answer over the connection it is checking — and ' +
+                 'RFC 5019 section 5 says an OCSP responder MUST support ' +
+                 'plain HTTP. Nothing it serves needs the transport: a CRL and ' +
+                 'an OCSP response are signed, and a CA certificate is used ' +
+                 'only if it chains to an anchor the client already holds.' +
+                 '\n\n0 binds nothing, and the addresses then name the main ' +
+                 'port in its own scheme instead.' },
   { key: 'pki.distributionBaseUrl', group: 'PKI',
     label: 'Base URL published in CRL and OCSP addresses',
     env: 'PKI_DISTRIBUTION_BASE_URL', type: 'string', dflt: '',
     runtime: true,
-    description: 'The HTTPS base that goes INSIDE certificates, in their ' +
+    description: 'The base that goes INSIDE certificates, in their ' +
                  'cRLDistributionPoints and authorityInfoAccess ' +
-                 'extensions.\n\n**IT CANNOT BE DERIVED FROM A REQUEST AND ' +
-                 'THAT IS WHY IT IS A SETTING.** A certificate is minted at ' +
-                 'startup, before any request exists, and it is a durable ' +
-                 'document — an address in it must not depend on which Host ' +
-                 'header happened to be on the request that triggered the ' +
-                 'issue. Empty means one built from `tls.hostnames`, ' +
-                 '`global.port` and `global.https`, which is right for every ' +
-                 'stack in this repository and wrong the moment this service ' +
-                 'is behind a name it does not know about.' },
+                 'extensions — `http://pki.example.com`, with no path.\n\n' +
+                 '**IT CANNOT BE DERIVED FROM A REQUEST AND THAT IS WHY IT IS ' +
+                 'A SETTING.** A certificate is minted at startup, before any ' +
+                 'request exists, and it is a durable document — an address ' +
+                 'in it must not depend on which Host header happened to be ' +
+                 'on the request that triggered the issue. Empty means ' +
+                 '`http://`, the first of `tls.hostnames`, and ' +
+                 '`pki.distributionPort` (or `pki.httpPort`) — or, where ' +
+                 '`pki.httpPort` is 0, the main port in its own scheme.\n\n' +
+                 '**A CONTAINER IS THE CASE THAT GETS THIS WRONG.** The ' +
+                 'listener inside it is on 8082 and the host publishes it ' +
+                 'somewhere else, and nothing inside the container can see ' +
+                 'the host side of that mapping. Every compose file in this ' +
+                 'repository therefore passes the published port as ' +
+                 '`PKI_DISTRIBUTION_PORT`, and a stack reached by a ' +
+                 'container name passes a whole base URL here.' },
+  { key: 'pki.distributionPort', group: 'PKI',
+    label: 'Port published in HTTP CRL and OCSP addresses',
+    env: 'PKI_DISTRIBUTION_PORT', type: 'port', dflt: 0, runtime: true,
+    description: 'The port in the CRL, OCSP and caIssuers addresses built ' +
+                 'when `pki.distributionBaseUrl` is empty. 0 (the default) ' +
+                 'means the port the listener those addresses name is bound ' +
+                 'to — `pki.httpPort`, or `global.port` where that is 0 — ' +
+                 'which is the wrong answer exactly when the service is ' +
+                 'reached through a port mapping, since a certificate is read ' +
+                 'from OUTSIDE it. A change reaches certificates issued ' +
+                 'afterwards and never one that exists.' },
   { key: 'pki.distributionLdapHost', group: 'PKI',
-    label: 'Host published in LDAP and LDAPS CRL addresses',
+    label: 'Host published in ldap:// CRL addresses',
     env: 'PKI_DISTRIBUTION_LDAP_HOST', type: 'string', dflt: '',
     runtime: true,
-    description: 'The host in the `ldap://` and `ldaps://` CRL distribution ' +
-                 'points. The ports come from `ldap.port` and ' +
-                 '`ldap.tlsPort`. Empty means the first of `tls.hostnames`, ' +
-                 'for `pki.distributionBaseUrl`\'s reason.' },
+    description: 'The host in the `ldap://` CRL distribution point; the ' +
+                 'port is `pki.distributionLdapPort`. Empty means the first ' +
+                 'of `tls.hostnames`, for `pki.distributionBaseUrl`\'s ' +
+                 'reason.\n\n**THERE IS NO `ldaps://` ADDRESS, AND THERE WAS ' +
+                 'ONE UNTIL 2026-09-13.** RFC 5280 section 8 says a CA SHOULD ' +
+                 'NOT put an ldaps URI in an extension, and RFC 4516 defines ' +
+                 'only the `ldap` scheme. The LDAPS listener is unaffected; ' +
+                 'what it serves is simply not an address a certificate ' +
+                 'names.' },
+  { key: 'pki.distributionLdapPort', group: 'PKI',
+    label: 'Port published in ldap:// CRL addresses',
+    env: 'PKI_DISTRIBUTION_LDAP_PORT', type: 'port', dflt: 0, runtime: true,
+    description: 'The port in the `ldap://` CRL distribution point. 0 (the ' +
+                 'default) means `ldap.port`. Set it to the host port when ' +
+                 'the directory is published through a port mapping, for ' +
+                 '`pki.distributionPort`\'s reason.' },
   { key: 'pki.publishCrlToDirectory', group: 'PKI',
     label: 'Publish every CRL into the embedded directory',
     env: 'PKI_PUBLISH_CRL_TO_DIRECTORY', type: 'bool', dflt: true,
@@ -3100,10 +3150,10 @@ const SETTINGS = [
     description: 'Write each authority\'s CRL into the embedded directory as ' +
                  '`certificateRevocationList;binary` on a ' +
                  '`cRLDistributionPoint` entry under `ou=crl`, so the ' +
-                 '`ldap://` and `ldaps://` addresses in every certificate ' +
-                 'this service issues actually resolve (RFC 4523 section ' +
-                 '4).\n\nOff, those two addresses are still WRITTEN into ' +
-                 'certificates and fetch nothing — which is a legitimate ' +
+                 '`ldap://` address in every certificate ' +
+                 'this service issues actually resolves (RFC 4523 section ' +
+                 '4).\n\nOff, that address is still WRITTEN into ' +
+                 'certificates and fetches nothing — which is a legitimate ' +
                  'thing to test a client against and is why it is a switch ' +
                  'rather than a consequence of the directory being there.' },
   { key: 'pki.autoBuild', group: 'PKI',
@@ -3200,8 +3250,9 @@ const SETTINGS = [
     label: 'Let a person issue their own signing key pair',
     env: 'STS_PKI_PERSON_SELF_SERVICE', type: 'bool', dflt: true,
     runtime: true,
-    description: 'Whether the Signing key page in the user portal offers to ' +
-                 'issue an RFC 7523 key pair to the person looking at it. ' +
+    description: 'Whether the Signing keys page in the user portal offers ' +
+                 'to issue an RFC 7523 or an RFC 7522 key pair to the ' +
+                 'person looking at it — one switch for both profiles. ' +
                  'The key may only assert about its own holder, so it is a ' +
                  'credential for an account they are already signed in to — ' +
                  'the same bar the password form and the security-key ' +

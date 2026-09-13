@@ -25,8 +25,11 @@
 //   * **THE STARTUP ORDER.** The hierarchy has to exist before a key is
 //     certified and before anything binds, and the only way to assert an
 //     ordering is to run it.
-//   * **WHAT IS NOT A LEAF, AND WHY.** Two families are deliberately outside
-//     the tree, and an absence is exactly what no request can report.
+//   * **WHAT IS NOT A LEAF, AND WHY.** Two families were deliberately outside
+//     the tree and neither is any more — the SPIFFE authority since
+//     2026-09-11 and the post-quantum keys since 2026-09-13, whose positive
+//     claim is `tests/pq_key_certification.js`. What is left here is the
+//     SVID register's deliberate emptiness.
 //   * **THE EDITING ACTS ARE FOUR DIFFERENT THINGS.** Reissue, renew, import
 //     and pin are easy to confuse and their consequences are not alike — a
 //     renewal must leave every key verifying and a reissue must not.
@@ -390,16 +393,22 @@ async function run(t) {
           'otherwise be an absence nobody could see');
 
   t.log.info('=== what is deliberately NOT a leaf of this tree ===');
-  // Said as an assertion rather than a comment, because an absence is the one
-  // thing no request can report and the page makes a claim about it.
-  const pq = pki.certificatesFor(REALM_A, 'jose').filter(function (one) {
-    return /ML-DSA|SLH-DSA/i.test(one.alg || '');
-  });
-  t.equal(pq.length, 0,
-          'the post-quantum keys are NOT certified — they come from ' +
-          'common/pq_jose.js, this service\'s own reading of those ' +
-          'constructions, and handing one to the vendored certificate ' +
-          'encoder is exactly the defect that independence exists to expose');
+  // **THE POST-QUANTUM KEYS WERE THE FIRST ENTRY ON THIS LIST AND ARE NOT ANY
+  // MORE (2026-09-13).** The assertion that stood here was:
+  //
+  //   certificatesFor(REALM_A, 'jose') holds no ML-DSA or SLH-DSA slot —
+  //     'the post-quantum keys are NOT certified — they come from
+  //      common/pq_jose.js, this service's own reading of those
+  //      constructions, and handing one to the vendored certificate encoder
+  //      is exactly the defect that independence exists to expose'
+  //
+  // It is not kept as an assertion about `hier-a`, because it would still
+  // pass and would mean nothing: that id is not a realm anybody created (see
+  // the fixture note above), so no post-quantum keys are ever made for it. The
+  // reversal kept the independence — only the PUBLIC key crosses, and a
+  // pq_jose.js signature is checked against the certificate under the vendored
+  // reading — and `tests/pq_key_certification.js` asserts all of it with a
+  // real realm.
   // **THE SPIFFE AUTHORITY USED TO BE THE SECOND ENTRY ON THIS LIST AND IS
   // NOT ANY MORE (2026-09-11).** The assertions that stood here were:
   //
@@ -431,6 +440,6 @@ module.exports = {
             'Issuing CA per use case: the shape, the realm boundary that ' +
             'moved down a tier when the Root was shared, every signing key ' +
             'as a leaf of it, the kid that does not move, the four editing ' +
-            'acts, and what is deliberately outside the tree',
+            'acts, and the SVID register that is deliberately empty',
   run: run
 };

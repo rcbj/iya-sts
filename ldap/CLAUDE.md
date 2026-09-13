@@ -2116,3 +2116,13 @@ design question rather than a hole.
 `tests/directory_read_security.js` holds all of it in process, including the
 filter oracle asked in both modes so the product-mode zero is a refusal, and was
 mutation-tested against thirteen mutants, all caught.
+
+## `stsSamlAssertion*`: A PERSON'S RFC 7522 KEY PAIR (2026-09-13)
+
+Seven more names in `OWN_NAMES` — Issuer, Certificate, CertificateChain,
+PrivateKey, Thumbprint, ExpiresAt, KeySource — plus `stsAssertionKeySource` on the
+JWT set, and `stssamlassertionprivatekey` in `SECRET_ATTRIBUTES`, so product mode
+neither returns it on a search, lets a filter see it, nor answers a compare against
+it. Nothing else here changed: the slot's `read()` walks
+`personAssertions.ATTRIBUTES`, which grew, and `write()` is one attribute at a time
+already. `common/CLAUDE.md` 3ab carries the design.

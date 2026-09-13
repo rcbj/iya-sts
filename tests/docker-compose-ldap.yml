@@ -45,6 +45,18 @@
 # **636 IS NOT PUBLISHED HERE.** No job drives LDAPS, and a port published for
 # nothing is a port that can collide. Add it beside this one when something
 # needs it, rather than now on the argument that it is symmetrical.
+# Certificates name no `ldaps://` address either — RFC 5280 section 8.
+#
+# ---------------------------------------------------------------------------
+# AND THE SERVICE IS TOLD THE HOST PORT, WHICH IS NOT OPTIONAL (2026-09-13).
+#
+# Every certificate names an `ldap://` CRL distribution point, built by the
+# service from INSIDE the container, where the directory is on 389. Published on
+# 11389, that URL names a port that answers nothing on the host — the same
+# defect the HTTP addresses had on 18081 — and
+# `tests/vendored/sts_pki_distribution_points.js` follows it from the host. So
+# the mapping and the address the certificates carry are set together, here,
+# from one variable.
 #
 # Compose format 2.4, matching the file it is layered over: a file with no
 # `version:` is the v1 format to docker-compose v1, and these two have to be
@@ -59,3 +71,7 @@ services:
       # service's 8081 mapping, which the launcher also chooses at run time, is
       # untouched by this file.
       - "${STS_LDAP_HOST_PORT:-11389}:389"
+    environment:
+      # MERGED by name into `docker-compose.yml`'s environment rather than
+      # replacing it, which is how compose layers a list of `NAME=value`.
+      - PKI_DISTRIBUTION_LDAP_PORT=${STS_LDAP_HOST_PORT:-11389}

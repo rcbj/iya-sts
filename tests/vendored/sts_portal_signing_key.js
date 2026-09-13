@@ -2,7 +2,8 @@
 //
 // ===========================================================================
 // /portal/signing-key: A PERSON ISSUING THEMSELVES AN RFC 7523 SIGNING KEY,
-// AND THEN USING IT.
+// AND THEN USING IT — and since 2026-09-13 an RFC 7522 one beside it, on a
+// set of its own that neither signs for the other nor comes off with it.
 //
 // `/admin/pki` could issue a person a key pair from 2026-09-11 and an operator
 // had to do it. This page is the person's own door onto the same act, and the
@@ -48,6 +49,9 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+// RFC 7522's signer is this suite's own XML Signature, for the reason the JWS
+// signer below is this file's own: see `saml_xmldsig.js`'s header.
+const samlSigner = require("./saml_xmldsig.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -75,6 +79,7 @@ base = String(base).replace(/\/+$/, "");
 var api = base + "/admin-api";
 var TOKEN_ENDPOINT = base + "/oauth2/token";
 var GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+var SAML_GRANT = "urn:ietf:params:oauth:grant-type:saml2-bearer";
 
 // Suffixed per run: the directory is append-only in practice, and two runs
 // against one long-lived mock must not see each other's people.
@@ -289,6 +294,28 @@ function privateKeyOn(text) {
   return found ? found[1] : "";
 }
 
+function thumbprintOn(text) {
+  log.debug("Entering thumbprintOn().");
+  const found =
+      String(text).match(/<th>Thumbprint<\/th><td><code>([^<]+)<\/code>/);
+  log.debug("Leaving thumbprintOn().");
+  return found ? found[1] : "";
+}
+
+// An RFC 7522 grant: an assertion built and signed by `saml_xmldsig.js`,
+// base64url-encoded, presented at the token endpoint.
+async function samlGrant(iss, sub, privateKeyPem) {
+  log.debug("Entering samlGrant().");
+  const built = samlSigner.buildAssertion({ issuer: iss, subject: sub,
+                                            audience: TOKEN_ENDPOINT,
+                                            recipient: TOKEN_ENDPOINT });
+  const r = await tokenRequest({ grant_type: SAML_GRANT,
+    assertion: samlSigner.b64u(samlSigner.sign(built, privateKeyPem, "", {})),
+    scope: "openid" });
+  log.debug("Leaving samlGrant().");
+  return r;
+}
+
 function kidOn(text) {
   log.debug("Entering kidOn().");
   const found =
@@ -383,20 +410,24 @@ async function test() {
         function () {
           assert.strictEqual(empty.status, 200,
             "it answered " + empty.status + " -> " + empty.location);
-          assert.ok(/You have no signing key/.test(empty.text),
-            "the page does not say the key is missing: " +
+          assert.ok(/You have no RFC 7523 signing key/.test(empty.text) &&
+                    /You have no RFC 7522 signing key/.test(empty.text),
+            "the page does not say either key is missing: " +
             String(empty.text).slice(0, 400));
         });
   check("and offers to issue one, with the CSRF token every form here carries",
         function () {
           assert.ok(/name="action" value="generate"/.test(empty.text),
             "there is no generate control on the page");
+          assert.ok(/name="purpose" value="jwt"/.test(empty.text) &&
+                    /name="purpose" value="saml"/.test(empty.text),
+            "the page does not offer one control per profile");
           assert.ok(csrfOf(empty.text), "the form carries no CSRF token");
         });
   check("and the account column marks it as the page being read, so it is a " +
         "page in this application rather than a URL somebody has to be told",
         function () {
-          assert.ok(/aria-current="page">Signing key</.test(empty.text),
+          assert.ok(/aria-current="page">Signing keys</.test(empty.text),
             "the navigation does not carry this page: " +
             (String(empty.text).match(/<nav[\s\S]*?<\/nav>/) || [""])[0]
               .slice(0, 400));
@@ -555,9 +586,21 @@ async function test() {
         "assertion that matters: a body parameter that wrote a key pair onto " +
         "somebody else's entry would be a takeover rather than a leak",
         function () {
-          const whole = JSON.stringify(theirs.body).toLowerCase();
-          assert.ok(whole.indexOf("stsassertionjwks") < 0,
-            OTHER + " has been given a signing key by " + OWNER + "'s post");
+          // READ OFF THE CREDENTIALS SECTION'S `held` FLAGS (2026-09-13).
+          // This used to search the reply for the attribute NAME, and the
+          // person page's Credentials section now lists every attribute
+          // name whether or not anything is held — so the search went red
+          // about an entry holding nothing.
+          assert.strictEqual(theirs.status, 200,
+            JSON.stringify(theirs.body).slice(0, 300));
+          const pairs = (((theirs.body || {}).credentials || {}).keyPairs ||
+                         []);
+          assert.ok(pairs.length === 2, "the reply carries no credentials: " +
+            JSON.stringify(theirs.body).slice(0, 300));
+          pairs.forEach(function (one) {
+            assert.ok(!one.held, OTHER + " has been given an " +
+              one.purpose + " signing key by " + OWNER + "'s post");
+          });
         });
 
   const replacedKid = kidOn(smuggled.text);
@@ -605,10 +648,153 @@ async function test() {
                   "an assertion signed with a key that was taken off");
         });
 
+  // -------------------------------------------------------------------------
+  // 8. RFC 7522: A SECOND KEY PAIR, ON A SET OF ITS OWN (2026-09-13).
+  // -------------------------------------------------------------------------
+  log.info("=== 8. an RFC 7522 key pair beside the RFC 7523 one ===");
+  const page8 = await b.go("GET", "/portal/signing-key");
+  const jwtAgain = await b.go("POST", "/portal/signing-key",
+                              formBody({ action: "generate", purpose: "jwt",
+                                         csrf_token: csrfOf(page8.text) }));
+  const jwtPem = privateKeyOn(jwtAgain.text);
+  const jwtKid = kidOn(jwtAgain.text);
+  const samlIssued = await b.go("POST", "/portal/signing-key",
+                                formBody({ action: "generate",
+                                           purpose: "saml",
+                                           csrf_token:
+                                             csrfOf(jwtAgain.text) }));
+  const samlPem = privateKeyOn(samlIssued.text);
+  const thumbprint = thumbprintOn(samlIssued.text);
+  check("**`purpose=saml` ISSUES AN RFC 7522 KEY PAIR** and the page that " +
+        "comes back carries its private key once, with SAML instructions " +
+        "rather than JWT ones", function () {
+          assert.strictEqual(samlIssued.status, 200,
+            "it answered " + samlIssued.status + " " +
+            String(samlIssued.text).slice(0, 300));
+          assert.ok(/BEGIN (RSA )?PRIVATE KEY/.test(samlPem),
+            "no private key block on the page");
+          assert.ok(/Save this RFC 7522 private key/.test(samlIssued.text) &&
+                    /saml2-bearer/.test(samlIssued.text),
+            "the one-time card does not describe the SAML grant");
+          assert.ok(jwtPem && samlPem !== jwtPem,
+            "the two profiles did not get two private keys");
+        });
+  check("and the page now shows BOTH: the JWT key by its kid and the SAML " +
+        "key by its certificate thumbprint", function () {
+          assert.ok(/^[A-Za-z0-9_-]{20,}$/.test(thumbprint),
+            "thumbprint=" + JSON.stringify(thumbprint));
+          assert.strictEqual(kidOn(samlIssued.text), jwtKid,
+            "the RFC 7523 key is not the one just issued: " +
+            kidOn(samlIssued.text));
+        });
+
+  // THE CERTIFICATE ON THE SAML CARD SAYS WHICH PROFILE IT WAS ISSUED FOR.
+  // `common/pki.js` puts RFC 7522's grant-type URN in the subjectAltName of
+  // an RFC 7522 leaf, so that a certificate read out of context names its
+  // profile — and nothing else here can tell a JWT leaf written onto the SAML
+  // attributes from a SAML one, since the verifier matches the certificate
+  // itself either way.
+  const samlCard = String(samlIssued.text).split('<h2 id="saml">')[1] || "";
+  const samlCert = (samlCard.match(
+    /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/) ||
+    [""])[0];
+  check("the certificate on the RFC 7522 card was issued FOR RFC 7522: its " +
+        "subjectAltName carries the saml2-bearer grant-type URN and names " +
+        "this person", function () {
+          assert.ok(samlCert, "no certificate on the SAML card");
+          const san = String(new nodeCrypto.X509Certificate(samlCert)
+            .subjectAltName || "");
+          assert.ok(/grant-type:saml2-bearer/.test(san),
+            "the SAML card's certificate has SAN " + san);
+          assert.ok(san.indexOf("urn:sts:person:" + OWNER) >= 0,
+            "the SAML card's certificate does not name " + OWNER + ": " + san);
+        });
+
+  const samlSelf = await samlGrant(OWNER, OWNER, samlPem);
+  check("**THE SAML PRIVATE KEY READ OFF THE PAGE OBTAINS AN ACCESS TOKEN** " +
+        "at /oauth2/token as its own holder", function () {
+          assert.strictEqual(samlSelf.status, 200,
+            JSON.stringify(samlSelf.body).slice(0, 400));
+          assert.strictEqual(claimsOf(samlSelf.body.access_token).username,
+                             OWNER);
+        });
+  const samlOther = await samlGrant(OWNER, OTHER, samlPem);
+  check("and obtains nothing as anybody else: a <Subject> naming another " +
+        "person is refused", function () {
+          refused(samlOther, "invalid_grant",
+                  "an RFC 7522 assertion about somebody else");
+        });
+  const samlWithJwtKey = await samlGrant(OWNER, OWNER, jwtPem);
+  const jwtWithSamlKey = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: "RS256", typ: "JWT", kid: jwtKid },
+      { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
+        exp: now() + 120, jti: jti() }, samlPem) });
+  check("**NEITHER KEY SIGNS FOR THE OTHER PROFILE** — a SAML assertion " +
+        "signed with the RFC 7523 key and a JWT signed with the RFC 7522 key " +
+        "are both refused", function () {
+          refused(samlWithJwtKey, "invalid_grant",
+                  "a SAML assertion signed with the JWT key");
+          refused(jwtWithSamlKey, "invalid_grant",
+                  "a JWT signed with the SAML key");
+        });
+  const afterSaml = await b.go("GET", "/portal/signing-key");
+  check("the SAML private key is not on the page again either", function () {
+    assert.strictEqual(privateKeyOn(afterSaml.text), "",
+      "a private key block is still on the page");
+    assert.strictEqual(thumbprintOn(afterSaml.text), thumbprint);
+  });
+
+  const badPurpose = await b.go("POST", "/portal/signing-key",
+                                formBody({ action: "generate",
+                                           purpose: "kerberos",
+                                           csrf_token:
+                                             csrfOf(afterSaml.text) }));
+  check("a profile this page does not know is refused 400 at the form's " +
+        "shape, and issues nothing", function () {
+          assert.strictEqual(badPurpose.status, 400,
+            "it answered " + badPurpose.status);
+          assert.strictEqual(privateKeyOn(badPurpose.text), "",
+            "a key came back for an unknown profile");
+        });
+
+  const samlRemoved = await b.go("POST", "/portal/signing-key",
+                                 formBody({ action: "remove", purpose: "saml",
+                                            csrf_token:
+                                              csrfOf(afterSaml.text) }));
+  const samlGone = await samlGrant(OWNER, OWNER, samlPem);
+  const jwtStill = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: "RS256", typ: "JWT", kid: jwtKid },
+      { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
+        exp: now() + 120, jti: jti() }, jwtPem) });
+  check("**TAKING THE RFC 7522 KEY OFF LEAVES THE RFC 7523 ONE WORKING** — " +
+        "the SAML key is refused from that moment and the JWT key still " +
+        "obtains a token", function () {
+          assert.strictEqual(samlRemoved.status, 303,
+            "the remove answered " + samlRemoved.status);
+          assert.ok(/RFC%207522/.test(samlRemoved.location),
+            "the message does not name the profile: " + samlRemoved.location);
+          refused(samlGone, "invalid_grant",
+                  "an assertion signed with the SAML key taken off");
+          assert.strictEqual(jwtStill.status, 200,
+            JSON.stringify(jwtStill.body).slice(0, 300));
+        });
+  const pageAfter = await b.go("GET", "/portal/signing-key");
+  const nothingLeft = await b.go("POST", "/portal/signing-key",
+                                 formBody({ action: "remove", purpose: "saml",
+                                            csrf_token:
+                                              csrfOf(pageAfter.text) }));
+  check("and a second SAML remove is refused 400 naming the profile, while " +
+        "the page still shows the RFC 7523 key", function () {
+          assert.strictEqual(nothingLeft.status, 400);
+          assert.ok(/no RFC 7522 signing key/.test(nothingLeft.text));
+          assert.strictEqual(kidOn(nothingLeft.text), jwtKid);
+          assert.strictEqual(thumbprintOn(nothingLeft.text), "");
+        });
+
   // A FLOOR ON THE CHECK COUNT, for `sts_roles.js`'s reason: a section that
   // stops being called takes its assertions with it and the run still says
   // "passed", which is the one failure a suite cannot report about itself.
-  assert.ok(checks >= 17,
+  assert.ok(checks >= 31,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
@@ -623,7 +809,9 @@ program
       "it obtains an access token as them at /oauth2/token and obtains " +
       "nothing as anybody else, it never appears again, a post with no CSRF " +
       "token is refused, a username in the body changes nothing, generating " +
-      "replaces and taking it off stops it being accepted.")
+      "replaces and taking it off stops it being accepted; and the same " +
+      "for an RFC 7522 key pair beside it, which signs no JWT, is signed " +
+      "for by no JWT key, and comes off alone.")
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))
   .parse(process.argv);

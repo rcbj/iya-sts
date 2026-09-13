@@ -366,6 +366,17 @@ const JOBS = [
   // assertion about its structure would still pass; and that the console's
   // two controls reach the register at all.
   { file: 'sts_pki_revocation.js',       browser: false, local: true },
+  // EVERY REVOCATION ADDRESS EVERY CERTIFICATE NAMES, FOLLOWED AS WRITTEN, IN
+  // EVERY TRUST REALM (2026-09-13). `local: true` on `tests/CLAUDE.md`'s third
+  // kind: whether an address inside a certificate answers from where the
+  // runner stands is decided by how the LAUNCHER published this stack's ports
+  // and told the service which ones it got — `PKI_DISTRIBUTION_PORT`,
+  // `PKI_DISTRIBUTION_LDAP_PORT` or a whole `PKI_DISTRIBUTION_BASE_URL` — and
+  // no copy over there could hold that. The job beside it built its paths by
+  // hand and was green while every certificate named a port nothing answered
+  // on; this one rewrites nothing, and holds each CRL, OCSP answer and
+  // caIssuers certificate to RFC 5280, RFC 4516/4523, RFC 5019 and RFC 6960.
+  { file: 'sts_pki_distribution_points.js', browser: false, local: true },
   // THE POSTGRESQL METRICS PAGE (2026-09-11). `local: true` on the first of
   // `tests/CLAUDE.md`'s two questions — it drives `/admin/database` and
   // `/admin-api/database`, and the tree that adds a page to that console is
@@ -420,6 +431,21 @@ const JOBS = [
   // filling.
   { file: 'sts_portal_backup_keys.js',   browser: false, local: true },
   { file: 'sts_pki_workbench.js',        browser: false, local: true },
+  // AN APPLICATION'S CREDENTIALS (2026-09-13): its key pair replaced by an
+  // issue from this realm's CA or by an uploaded certificate — an external
+  // authority's with its full chain — and its client secret regenerated.
+  // `local: true` on the first of `tests/CLAUDE.md`'s questions: the controls
+  // are this console's and their operations this API's, and the assertion
+  // spans those doors and `/oauth2/token` — the replaced key refused, the
+  // application's own accepted, the old secret refused in RFC 9700 mode.
+  { file: 'sts_application_credentials.js', browser: false, local: true },
+  // A PERSON'S RFC 7523 AND RFC 7522 KEY PAIRS (2026-09-13), the same
+  // arrangement for the Credentials section of `/admin/users?user=`: issued
+  // and uploaded through `/admin-api/pki` with `target=person`, and used at
+  // `/oauth2/token` — a person's SAML assertion about themselves accepted and
+  // about somebody else refused, the replaced key refused, the held key
+  // accepted, one profile taken off leaving the other.
+  { file: 'sts_user_credentials.js',     browser: false, local: true },
   { file: 'sts_roles.js',                browser: false, local: true },
   { file: 'sts_roles_builtin.js',        browser: false, local: true },
   { file: 'sts_saml11.js',               browser: false },

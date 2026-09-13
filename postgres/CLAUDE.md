@@ -20,10 +20,21 @@ TABLE`**, because `persistence/persistence_postgres.js` ran its whole schema on
 every `open()` — and in this stack that role was the cluster's bootstrap
 superuser. A mock identity service that can create a table can also drop one.
 
-So there are two roles now. `sts` owns the six tables; `sts_app` holds
+So there are two roles now. `sts` owns the tables — seven since 2026-09-13,
+when `sts_used_assertions` joined them; `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.
+
+**A DATABASE BUILT BEFORE 2026-09-13 HAS NO `sts_used_assertions`, AND THE
+SERVICE WILL NOT START AGAINST IT WITH `sts_app`** — the driver probes, finds the
+table missing, cannot `CREATE` it, and refuses with `STS-STORE-0029` naming this
+file. Running `schema.sql` again as the owner is the upgrade: every statement in
+it is `IF NOT EXISTS` or re-runnable, its `GRANT … ON ALL TABLES` covers the new
+table, and it writes schema version 4 beside the 3 already there. That was
+checked against a real version-3 database rather than reasoned about.
+`persistence/CLAUDE.md` and `common/used_assertions.js` argue why the history
+is a table of its own rather than a handle in `sts_minted`.
 
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that

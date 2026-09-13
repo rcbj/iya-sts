@@ -160,8 +160,9 @@ const DATA_CLASSES = [
   },
   {
     label: 'person-private-key',
-    what: 'The assertion signing key pair `/admin/pki` issues to a PERSON — ' +
-          '`stsAssertionPrivateKey` (2026-09-11)',
+    what: 'The assertion signing key pairs `/admin/pki` issues to a PERSON — ' +
+          '`stsAssertionPrivateKey` (2026-09-11) and, for RFC 7522, ' +
+          '`stsSamlAssertionPrivateKey` (2026-09-13)',
     where: 'an attribute on that person’s own entry under `ou=users`',
     sealed: true,
     why: 'The same mechanism as the application’s above and deliberately not ' +

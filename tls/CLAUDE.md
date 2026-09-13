@@ -357,6 +357,23 @@ LDAPS on 636 keeps serving the FIRST certificate, which is the RSA one unless
 the setting says otherwise: no LDAP client in reach speaks ML-DSA, and the
 point of that listener is that one anchor covers 8443, 9443 and 636.
 
+**AND THE ML-DSA CERTIFICATE IS A LEAF OF THE TLS ISSUING CA TOO, SINCE
+2026-09-13.** It was the one key pair on these sockets still self-signed after
+the RSA certificate came under the Root, so a post-quantum client that OpenSSL
+handed it had to pin it while a classical client on the same port trusted the
+anchor. Each ML-DSA certificate is registered with `common/pki.js` beside the
+RSA one — slot `server:<algorithm>`, `digitalSignature` alone, the same
+subjectAltName through `serverCertificateExtensions()` — and adopted through the
+same `takeIssuedCertificate()`, so the two cannot disagree about what adopting a
+certificate involves. **The KEY is still made by node's OpenSSL** in
+`makeMlDsaServerCertificate()`, and what `pki.js` is handed is the SPKI that
+same OpenSSL exports: the Issuing CA signs, and nothing asks the vendored
+encoder to sign with an ML-DSA key. `reconcileWithHierarchy()` checks every
+certificate this process had certified rather than the first, because a
+rebuilt Root strands an ML-DSA leaf exactly as it strands the RSA one.
+`serverCertificateChains()` is the public view of all of them, and
+`tests/pq_key_certification.js` section F pins it on node 24.
+
 ## THE LISTENER CERTIFICATE IS ISSUED BY THIS SERVICE'S OWN ROOT (2026-09-11)
 
 It was SELF-SIGNED for this module's whole life, and that shaped everything

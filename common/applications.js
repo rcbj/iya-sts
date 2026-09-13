@@ -1135,6 +1135,22 @@ const SCHEMA = {
             'refuses one is the certificate failing to build a path, which ' +
             'is checked where the chain is checked. Drawn on /admin/pki so ' +
             'that an operator can see what is about to stop working.' },
+    { name: 'oauthAssertionKeySource', kind: 'single',
+      from: '/admin/pki, or the application\'s own page',
+      what: 'WHERE THE RFC 7523 KEY PAIR ABOVE CAME FROM, and therefore who ' +
+            'holds its private half. `issued` — generated here and signed by ' +
+            'this realm\'s Issuing CA, the private key on ' +
+            '`oauthAssertionPrivateKey`. `uploaded-realm-ca` — a certificate ' +
+            'this realm\'s own certificate authority issued, uploaded in ' +
+            'place of a generated pair. `uploaded-external-ca` — a ' +
+            'certificate from another authority, uploaded with its whole ' +
+            'chain up to a self-signed root, every link verified. For both ' +
+            'uploaded values the APPLICATION holds the private key and this ' +
+            'service never has.\n\nA fact about what was done and not a ' +
+            'policy: no verifier reads it, and an entry written before it ' +
+            'existed carries none — the console reads a sealed private key ' +
+            'as `issued` there, which is the only thing that could have put ' +
+            'one on the entry.' },
     // -------------------------------------------------------------------
     // RFC 7522 — THE SAML 2.0 PROFILE OF THE SAME FRAMEWORK (2026-09-11).
     // SEVEN MORE ATTRIBUTES, AND THE WHOLE POINT OF THEM IS THAT THEY ARE
@@ -1240,6 +1256,14 @@ const SCHEMA = {
             'exactly as `oauthAssertionExpiresAt` is: nothing here refuses ' +
             'an assertion because this date has passed. Drawn on /admin/pki ' +
             'so that an operator can see what is about to stop working.' },
+    { name: 'oauthSamlAssertionKeySource', kind: 'single',
+      from: '/admin/pki, or the application\'s own page',
+      what: 'Where the RFC 7522 key pair above came from, in the vocabulary ' +
+            '`oauthAssertionKeySource` uses and for its reason: `issued`, ' +
+            '`uploaded-realm-ca` or `uploaded-external-ca`. It is a SEPARATE ' +
+            'attribute from the JWT one because the two key pairs are ' +
+            'separate — one may be issued here while the other is somebody ' +
+            'else\'s certificate.' },
     { name: 'oauthTlsClientAuthSubjectDn', kind: 'single', from: 'by hand',
       identifier: true,
       identifierName: 'subject DN',
@@ -2304,6 +2328,12 @@ const EDITABLE = {
   oauthAssertionPrivateKey: 'set',
   oauthAssertionKid: 'set',
   oauthAssertionExpiresAt: 'set',
+  // WHERE THE KEY PAIR CAME FROM (2026-09-13) — issued here, or a certificate
+  // uploaded in its place. `set` for the six's reason, and in this table at
+  // all because `admin-ui/pki_admin.js` writes it through updateApplication()
+  // beside them; KEY_SOURCES below is the closed vocabulary it is checked
+  // against.
+  oauthAssertionKeySource: 'set',
   // RFC 7522's seven, the same two kinds for the same two reasons: the
   // declaration accumulates and the five the PKI page writes each hold ONE
   // answer. The REGISTERED certificate is `set` and not `multi` because
@@ -2317,6 +2347,7 @@ const EDITABLE = {
   oauthSamlAssertionPrivateKey: 'set',
   oauthSamlAssertionThumbprint: 'set',
   oauthSamlAssertionExpiresAt: 'set',
+  oauthSamlAssertionKeySource: 'set',
   oauthTlsClientAuthSubjectDn: 'set',
   oauthTlsClientCertificateThumbprint: 'set',
   oauthConfidential: 'set',
@@ -2968,6 +2999,53 @@ function sealLabelOf(name) {
 // directory and not through here.
 // ---------------------------------------------------------------------------
 const WITHHELD_FIELDS = ['krb5ServiceKeys'];
+
+// ---------------------------------------------------------------------------
+// WHERE A MANAGED KEY PAIR CAME FROM (2026-09-13) — the closed vocabulary of
+// `oauthAssertionKeySource` and `oauthSamlAssertionKeySource`. A table rather
+// than a check at the one writer, because `updateApplication()` is the door
+// the console's generic Set and `POST /admin-api/applications/set` go through
+// too, and a value this table does not hold would be a page drawing a
+// provenance nothing in this service produces.
+// ---------------------------------------------------------------------------
+const KEY_SOURCES = ['issued', 'uploaded-realm-ca', 'uploaded-external-ca'];
+
+// ---------------------------------------------------------------------------
+// WHICH ATTRIBUTE HOLDS WHICH HALF OF A MANAGED KEY PAIR, PER PROFILE
+// (2026-09-13). The two sets share no name — the RFC 7522 block in SCHEMA
+// argues why — and three modules have to agree on them: `admin-ui/pki_admin.js`
+// writes them, the application page and `GET /admin-api/applications` read
+// them, and `/admin/pki` lists them. This module owns the schema, so it owns
+// the answer; a second copy in any of the three is the one that would go
+// stale when an attribute is added.
+// ---------------------------------------------------------------------------
+const KEY_PAIR_ATTRIBUTES = {
+  jwt: { issuer: 'oauthAssertionIssuer',
+         certificate: 'oauthAssertionCertificate',
+         chain: 'oauthAssertionCertificateChain',
+         privateKey: 'oauthAssertionPrivateKey',
+         handle: 'oauthAssertionKid', handleLabel: 'kid',
+         expires: 'oauthAssertionExpiresAt',
+         source: 'oauthAssertionKeySource',
+         jwks: 'oauthAssertionJwks',
+         // What the party registered ITSELF, by value, beside the managed pair.
+         registered: 'oauthJwks' },
+  saml: { issuer: 'oauthSamlAssertionIssuer',
+          certificate: 'oauthSamlAssertionCertificate',
+          chain: 'oauthSamlAssertionCertificateChain',
+          privateKey: 'oauthSamlAssertionPrivateKey',
+          handle: 'oauthSamlAssertionThumbprint', handleLabel: 'thumbprint',
+          expires: 'oauthSamlAssertionExpiresAt',
+          source: 'oauthSamlAssertionKeySource',
+          jwks: '',
+          registered: 'oauthSamlAssertionSigningCertificate' }
+};
+// Derived rather than written out, from the table above.
+const KEY_SOURCE_ATTRIBUTES = Object.keys(KEY_PAIR_ATTRIBUTES).map(
+    function (id) {
+  return KEY_PAIR_ATTRIBUTES[id].source;
+});
+
 
 function withheldSentence(value) {
   log.debug("Entering withheldSentence().");
@@ -4301,6 +4379,12 @@ function clientConfigOf(identifier) {
     saml_assertion_certificate:
       fields.oauthSamlAssertionCertificate === undefined
       ? '' : String(fields.oauthSamlAssertionCertificate),
+    // The chain above it (2026-09-13): for an external authority's
+    // certificate uploaded in place of an issued one, the issuers are held
+    // nowhere else, and the revocation check needs them to verify a list.
+    saml_assertion_certificate_chain:
+      fields.oauthSamlAssertionCertificateChain === undefined
+      ? '' : String(fields.oauthSamlAssertionCertificateChain),
     tls_client_auth_subject_dn: fields.oauthTlsClientAuthSubjectDn === undefined
       ? '' : String(fields.oauthTlsClientAuthSubjectDn),
     certificate_thumbprint:
@@ -4765,6 +4849,14 @@ function updateApplication(identifier, change) {
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0053');
     }
   }
+  if (KEY_SOURCE_ATTRIBUTES.indexOf(attribute) >= 0 && mode === 'set' &&
+      value && KEY_SOURCES.indexOf(value) < 0) {
+    log.debug("Leaving updateApplication(). Not a key source.");
+    return errorCodes.mark({ ok: false, errors: ['"' + value + '" is not a ' +
+                             'key source. `' + attribute + '` records where ' +
+                             'a key pair came from and holds one of ' +
+                             KEY_SOURCES.join(', ') + '.'] }, 'STS-REG-0060');
+  }
   if (attribute === 'appHomePageUrl' && mode === 'set' && value) {
     const problem = homePageProblem(value);
     if (problem) {
@@ -4956,8 +5048,16 @@ function updateApplication(identifier, change) {
       delete record.fields[attribute];
       changed = true;
     }
-    what = value ? attribute + ' is now "' + value + '"' : attribute + ' was ' +
-        'cleared';
+    // A CREDENTIAL'S VALUE IS NEVER QUOTED (2026-09-13). `what` goes into the
+    // audit row's summary, the log line below and the reply, and the comment
+    // on the audit call already says the value is kept out of the DETAIL
+    // because two of these attributes are credentials — while this sentence
+    // put it back into the summary beside it. So a secret set from the
+    // console landed in the audit ring and the service log in the clear.
+    what = !value ? attribute + ' was cleared'
+      : (row.sensitive || row.secret)
+        ? attribute + ' was set (a credential; its value is not repeated here)'
+        : attribute + ' is now "' + value + '"';
   } else if (mode === 'add') {
     const before = valuesOf(record.fields[attribute]);
     changed = setField(record, attribute, value);
@@ -5045,6 +5145,114 @@ function updateApplication(identifier, change) {
   return { ok: true, changed: true,
            application: viewAfterWrite(identifier, record),
            message: what + '.' };
+}
+
+// ---------------------------------------------------------------------------
+// A NEW CLIENT SECRET, MINTED HERE (2026-09-13).
+//
+// The console's Set could always write `oauthClientSecret`, but only with a
+// value somebody TYPED — and a secret an operator makes up is the weakest one
+// this service ever holds. This mints it the way `POST /oauth2/register` does,
+// at `oauth2.registeredSecretBytes`, and REPLACES what is there: the old
+// secret stops authenticating at the token endpoint on the very next request,
+// wherever that endpoint checks a secret at all (RFC 9700 mode, or product
+// mode).
+//
+// **THE REPLY CARRIES THE NEW SECRET, AND NOTHING ELSE DOES.** The audit row
+// names the attribute and not the value, the log line says it was regenerated,
+// and the registration document is updated in place so that RFC 7592's read
+// returns the secret a client now needs. `client_secret_expires_at` is
+// recomputed from `oauth2.registeredSecretLifetimeS` where the document
+// carries one, because a secret minted now with an expiry counted from the
+// original registration would be published as already partly spent.
+//
+// It is here rather than in the console's action for the reason every write
+// in this registry is: an `ldapmodify`, the console and the management API are
+// three doors onto one entry, and minting in one of them would be a second
+// definition of what a client secret looks like.
+// ---------------------------------------------------------------------------
+function regenerateClientSecret(identifier, options) {
+  log.debug("Entering regenerateClientSecret(). identifier=" + identifier);
+  const opts = options || {};
+  const loaded = load(identifier);
+  if (!loaded.known) {
+    log.debug("Leaving regenerateClientSecret(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+                                                 'called "' + identifier +
+                                                 '" in this registry.'] },
+                           'STS-REG-0021');
+  }
+  // THE MANAGEMENT API'S OWN CLIENT, WHILE ITS SECRET IS PINNED. Seeding
+  // writes `adminApi.clientSecret` onto a FRESH entry and never over an
+  // existing one, so a secret regenerated here would go on disagreeing with
+  // the setting every launcher and deployment mints its API token with — and
+  // wherever a secret is checked, nobody could obtain one. The setting is the
+  // one place that secret is decided; this refuses rather than making a
+  // second.
+  if (String(identifier) === 'sts-management-api' &&
+      String(config.value('adminApi.clientSecret') || '')) {
+    log.debug("Leaving regenerateClientSecret(). The secret is pinned.");
+    return errorCodes.mark({ ok: false, errors: ['The client secret of ' +
+                             '"sts-management-api" is pinned by the ' +
+                             'adminApi.clientSecret setting, which is what ' +
+                             'every token for /admin-api is minted with. ' +
+                             'Regenerating it here would leave the entry and ' +
+                             'the setting disagreeing, and the management ' +
+                             'API unreachable wherever the secret is ' +
+                             'checked. Change the setting instead.'] },
+                           'STS-REG-0061');
+  }
+  const record = loaded.record;
+  const bytes = Number(config.value('oauth2.registeredSecretBytes')) || 24;
+  const secret = randomId(bytes);
+  const replaced = !!record.fields.oauthClientSecret;
+  setField(record, 'oauthClientSecret', secret);
+  if (record.fields.appRegistrationJson) {
+    try {
+      const document = JSON.parse(record.fields.appRegistrationJson);
+      document.client_secret = secret;
+      if (Object.prototype.hasOwnProperty.call(document,
+                                               'client_secret_expires_at')) {
+        const seconds = Number(
+            config.value('oauth2.registeredSecretLifetimeS'));
+        document.client_secret_expires_at = isFinite(seconds) && seconds > 0
+          ? nowSec() + Math.floor(seconds) : 0;
+      }
+      setField(record, 'appRegistrationJson', JSON.stringify(document));
+    } catch (e) {
+      log.debug("Caught in regenerateClientSecret(): " +
+                ((e && e.message) || e));
+      // A hand-edited document that no longer parses: the attribute is what
+      // the checks read and it is written above, and registrationOf() already
+      // rebuilds a document it cannot parse from the attributes beside it.
+      log.warn(errorCodes.tag('STS-REG-0024') + 'applications: ' +
+               'appRegistrationJson on "' + identifier + '" is not valid ' +
+               'JSON, so the new client secret is on the attribute and not ' +
+               'in the stored document. ' + e.message);
+    }
+  }
+  record.lastAt = record.lastAt || Date.now();
+  save(record);
+  audit.audit({
+    action: 'application.update', actor: opts.actor || '',
+    protocol: 'console', channel: 'internal', target: String(identifier),
+    summary: 'Application "' + identifier + '": the client secret was ' +
+             (replaced ? 'regenerated' : 'generated'),
+    // The attribute and never the value — see updateApplication()'s row.
+    detail: { identifier: String(identifier), attribute: 'oauthClientSecret',
+              mode: 'regenerate', replaced: replaced }
+  });
+  log.info('applications: "' + identifier + '" — the client secret was ' +
+           (replaced ? 'regenerated' : 'generated') + '.');
+  log.debug("Leaving regenerateClientSecret().");
+  return { ok: true, changed: true, replaced: replaced, clientSecret: secret,
+           application: viewAfterWrite(identifier, record),
+           message: (replaced
+             ? 'A new client secret replaced the old one, which stops ' +
+               'authenticating at the token endpoint now.'
+             : 'A client secret was generated.') + ' It is ' + bytes +
+             ' random bytes, base64url, minted the way a registration mints ' +
+             'one.' };
 }
 
 // ---------------------------------------------------------------------------
@@ -6580,6 +6788,10 @@ module.exports = {
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,
   updateApplication: updateApplication,
+  regenerateClientSecret: regenerateClientSecret,
+  KEY_SOURCES: KEY_SOURCES,
+  KEY_SOURCE_ATTRIBUTES: KEY_SOURCE_ATTRIBUTES,
+  KEY_PAIR_ATTRIBUTES: KEY_PAIR_ATTRIBUTES,
   // THE PROVENANCE OF A RETURN ADDRESS (2026-09-12). `returnAddressesOf()` is
   // the one decision every return-address check asks — both SAML profiles,
   // WS-Federation and `clientConfigOf()` — and the two actions are what an

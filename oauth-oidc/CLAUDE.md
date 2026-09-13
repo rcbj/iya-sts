@@ -343,6 +343,19 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    overwrite keys a client registered, and a client holding both was given both
    deliberately.
 
+   **A CLIENT ASSERTION IS VERIFIED ONCE PER REQUEST (2026-09-13)**, and that
+   was a live bug rather than a tidiness. The token endpoint asks this file
+   twice about one request — `oauth2_bcp.js`'s `checkClientAuthentication()` in
+   RFC 9700 mode, then `observeClientAuthentication()` in every mode — and each
+   used to spend the `jti`, so the second met a replay of the request's own
+   document: the client was OBSERVED as unauthenticated, a role requiring
+   `ALL_AUTHENTICATED_APPLICATIONS` refused it, and product mode's
+   `requiresClientSecret()` would have refused it `invalid_client`.
+   `verifiedOnce()` keeps the promise for a document on the request object under
+   a Symbol, keyed by method, client, type and the document itself.
+   `tests/vendored/sts_jwt_bearer_grant.js` section 14 is the over-HTTP proof and
+   was mutation-tested by removing it.
+
    **AND AN ASSERTION MAY ARRIVE ENCRYPTED**, which is RFC 7523 section 3 claim
    10 and reaches BOTH parameters. It is unwrapped by
    `assertion_grant.unwrapAssertion()` — one function for both halves of the
@@ -504,7 +517,8 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    CLIENT AUTHENTICATION — `client_assertion`, the assertion says who is
    CALLING, `client_auth.js` has done it since 2026-08-26. Section 2.1 is an
    AUTHORIZATION GRANT — `assertion`, the assertion says who the token is FOR.
-   They share a format, a claim set and a replay cache and nothing else: in the
+   They share a format, a claim set and — since 2026-09-13 — one
+   used-assertion history, and nothing else: in the
    first the `sub` MUST be the client, and in the second the `sub` is a PERSON
    and being the client is the degenerate case. **Reading one file and
    concluding the other is covered is exactly the mistake this service had
@@ -520,12 +534,32 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    sign*, which is the shape of duplication `crypto.js` was written to end one
    layer down.
 
-   **A SECOND REPLAY CACHE BESIDE `client_auth.js`'s, DELIBERATELY.** A document
-   used to authenticate a client and a document used to authorize an issuance
-   are two different credentials, they are keyed differently (by client, and by
-   issuer), and sharing one cache would mean an assertion presented as a client
-   credential silently spending the jti of an authorization grant from the same
-   party. Two caches cannot do that.
+   ~~**A SECOND REPLAY CACHE BESIDE `client_auth.js`'s, DELIBERATELY.**~~ —
+   **REVERSED 2026-09-13, AT THE OWNER'S ASK: ONE HISTORY, AND AN ASSERTION IS
+   ACCEPTED ONCE EVER.** It read: *a document used to authenticate a client and
+   a document used to authorize an issuance are two different credentials, they
+   are keyed differently (by client, and by issuer), and sharing one cache would
+   mean an assertion presented as a client credential silently spending the jti
+   of an authorization grant from the same party.* The argument did not survive
+   the rule it was for. A `jti` is the ISSUER's name for ONE document (RFC 7519
+   section 4.1.7), and a client assertion's issuer IS the client — so keying
+   both uses by issuer and `jti` spends exactly one document, and the case the
+   old paragraph feared is one issuer reusing a `jti` across two documents,
+   which is already a broken issuer. The case it PERMITTED was one JWT spent as
+   a client credential and then again as a grant, which is a JWT used twice.
+
+   `common/used_assertions.js` is the history, and three things came with it
+   that each of the old caches lacked: it **persists in every store with one, in
+   both modes** (the key that verifies an assertion is the client's and survives
+   a restart, so forgetting at a restart was a replay), it is **claimed
+   atomically on postgres** (a journalled cache converged, so a second worker
+   accepted a replay for up to `persistence.pollInterval`), and an assertion is
+   **spent only when tokens are issued** — reserved while its token request is
+   answered, confirmed on a 2xx and released otherwise, through the response's
+   own `finish`, which is why both grant branches in `oauth2.js` and
+   `client_auth.verify()` pass the request down. The claim is the LAST check of
+   the document in every verifier, so a refusal for any other reason is not
+   also a use.
 
    **`jti` IS REQUIRED WHERE THE RFC SAYS OPTIONAL**, and that is §3's own last
    paragraph read literally: it says an authorization server MAY reject a reused
@@ -587,6 +621,26 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    what makes the certificate authority worth having: a party issued a key pair
    can present its certificate instead of registering a JWKS.
 
+   **AND EVERY SIGNER CERTIFICATE'S WHOLE CHAIN IS VALIDATED WHERE THE SIGNATURE
+   IS (2026-09-13)**, in this file, in `client_auth.js` and in 3z's file, in
+   both modes. Two holes closed together. The `x5c` header's path check
+   (`pki.verifyLeaf()`) walked signatures and never asked who was ENTITLED to
+   sign each link, so any issued leaf — a person's from `/portal/signing-key`
+   included — could sign a certificate of its own, present it under itself, and
+   assert about anybody; it now refuses a non-CA issuer (`STS-PKI-0158`) and a
+   CA as the signer (`0159`), and `keyFromChain()` keeps those two codes rather
+   than calling the path one that "does not chain here". And a REGISTERED key's
+   certificate had its chain checked when it was registered and never again; now
+   `pki.verifySignerChain()` runs after the signature verifies and BEFORE the
+   revocation check, on the key that verified: the certificate must hold that
+   key (RFC 7517 section 4.7, `0160`), and the path must be valid at that moment
+   and end in this realm or at a self-signed root registered with it (`0156`,
+   `0157`). `common/CLAUDE.md` 3w argues the three anchors. **A bare key is not
+   asked** — there is no certificate — and the verdict's `keyChain` is null for
+   it. The chain check passes `revocation: false` to `verifyLeaf()` so that a
+   revoked registered certificate is still reported by the registered door as
+   `STS-PKI-0129`.
+
    **THE SCOPE IS NARROWED AND NEVER WIDENED** (RFC 7521 section 4.1). An
    assertion naming a `scope` is the issuer saying what this grant is for; where
    it names none, the request decides. A `cnf` is CARRIED AND REPORTED and never
@@ -640,8 +694,8 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    THE DESIGN THIS FILE EXISTS TO ENFORCE.** `common/applications.js` declares
    two attribute sets that SHARE NO NAME — `oauthAssertion*` and
    `oauthSamlAssertion*` — and no code path crosses them. `common/pki.js`
-   issues into one or the other by `purpose`, and `/admin/pki` writes six
-   attributes for the JWT profile and five for the SAML one (no JWKS: SAML has
+   issues into one or the other by `purpose`, and `/admin/pki` writes seven
+   attributes for the JWT profile and six for the SAML one (no JWKS: SAML has
    none, and what a party registers for that profile IS a certificate).
 
    **SO A BARE CERTIFICATE PATH IS NOT ENOUGH HERE, AND THIS IS THE ONE PLACE
@@ -658,6 +712,18 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    Nothing is lost: 3x's chain path exists because a JWKS is the thing a client
    registers and a certificate is the awkward case, and here the thing
    registered IS a certificate.
+
+   **THE REGISTERED CERTIFICATE'S OWN CHAIN IS VALIDATED AT EVERY USE
+   (2026-09-13)** — `pki.verifySignerChain()`, after the XML Signature verifies
+   and before revocation, which is 3x's paragraph for this profile. Being
+   registered is what makes a certificate a CANDIDATE; its chain holding is what
+   makes the signature count. An issued or uploaded certificate brings its
+   stored chain; one registered BY VALUE on
+   `oauthSamlAssertionSigningCertificate` offers the other PEM blocks in the
+   same value as candidate issuers (`siblings` on the candidate), because that
+   one attribute is the only place its issuers can be registered — a
+   CA-issued certificate there with nothing beside it is refused as incomplete,
+   and a self-signed one is pinned. The verdict carries `certificateChain`.
 
    **THE THREE ITEMS OF SECTION 3 WHOSE LENIENT READING IS THE USUAL BUG**, all
    three asserted in `tests/saml_assertion_grant.js` because each of them looks
@@ -1515,6 +1581,8 @@ and is worth knowing about: it is derived from the username, so an account
 deleted and re-created under the same name is the same subject everywhere.
 
 **THE THREE ASSERTION REPLAY CACHES REFUSE WHEN FULL; THEY NO LONGER FORGET.**
+(They are ONE history since 2026-09-13 — `common/used_assertions.js` — and the
+rule below moved into it unchanged, as one count per realm rather than three.)
 `client_auth.js`, `assertion_grant.js` and `saml_assertion_grant.js` each
 dropped their oldest entry at a thousand whether or not it had expired — "a
 forgotten jti is a check not made", which is the right trade for a cache that
@@ -1559,3 +1627,24 @@ client subject) and the `urn:sts:application:` / `urn:sts:person:`
 certificate SANs are identifiers already inside issued tokens and certificates;
 renaming them is a migration, not a setting.
 
+
+## 3z, CONTINUED: A PERSON AS AN RFC 7522 ISSUER (2026-09-13)
+
+`saml_assertion_grant.js` answered only for applications: `issuerEntry()` read
+`oauthSamlAssertionIssuer` and an application's own identifier. It asks
+`person_assertions.issuerFor(iss, 'saml')` now, **after every application
+declaration and before an application's own identifier** — `assertion_grant.js`'s
+order, for its reason. A person is an issuer here only while they hold an RFC 7522
+key pair (`stsSamlAssertion*`); what comes back carries `kind: 'person'` and the
+person's certificate **mapped into the section 2.2 shape** `certificatesForParty()`
+already reads (`oauthSamlAssertionCertificate` + chain), so the reader that refuses
+to cross into the RFC 7523 set is the one reading it and a person's JWT key cannot
+sign a SAML assertion. A person has no registered-by-value certificate.
+
+**Below the signature, a `<Subject>` that is not that person is refused
+`STS-OAUTH-0242`** — `subjectIsSelf(record, subject, 'saml')`, the username or the
+SAML declaration. The verdict carries `issuerKind` and `person` like the JWT
+grant's, and `oauth2.js` writes the authentication note and the delegation row as
+*a person presenting themselves* rather than as a third party vouching.
+`tests/person_credentials.js` holds it in process and
+`tests/vendored/sts_user_credentials.js` at `/oauth2/token`.

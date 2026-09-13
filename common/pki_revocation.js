@@ -407,7 +407,7 @@ function describeEntry(one) {
 }
 
 // ---------------------------------------------------------------------------
-// WHERE THE LISTS AND THE RESPONDERS ARE, IN THREE SCHEMES.
+// WHERE THE LISTS AND THE RESPONDERS ARE, IN TWO SCHEMES.
 //
 // **THE URL IS BUILT FROM CONFIGURATION AND NOT FROM A REQUEST, AND IT HAS TO
 // BE.** These addresses go INSIDE certificates, and a certificate is minted at
@@ -416,22 +416,59 @@ function describeEntry(one) {
 // the address in it must not depend on which Host header happened to be on the
 // request that triggered the issue.
 //
-// All three schemes are published for every CA, because the request asked for
-// all three and because a client that can reach one and not another is exactly
-// what a debugging tool should let somebody discover.
+// **TWO SCHEMES, http AND ldap, SINCE 2026-09-13 — IT WAS THREE, AND https
+// RATHER THAN http.** RFC 5280 section 8: *CAs SHOULD NOT include URIs that
+// specify https, ldaps, or similar schemes in extensions*, because a relying
+// party that checks revocation before it trusts a connection cannot fetch the
+// answer over the connection it is checking — and the main port's own TLS
+// certificate named its OCSP responder on that very listener. RFC 5019
+// section 5 adds that an OCSP responder MUST support plain HTTP, and RFC 4516
+// defines the `ldap` scheme and no other. So the http addresses name
+// `pki.httpPort`, a plain listener that answers `/pki/` and nothing else
+// (pki/pki_service.js), and `ldaps://` is not written at all; the LDAPS
+// listener still serves the same entries to anybody who asks it directly.
+//
+// **AND THE PORT IS THE ONE A CLIENT DIALS, WHICH IS NOT ALWAYS THE ONE THE
+// LISTENER BOUND (2026-09-13).** This read `global.port` unconditionally, so a
+// container listening on 8081 and published on host port 18081 put `:8081` in
+// every certificate it issued — an address that answered nothing from where
+// the certificate was read. Nothing inside a container can see the host side
+// of its port mapping, so it is TOLD: `pki.distributionBaseUrl` whole, or
+// `pki.distributionPort` beside the derived host. Every compose file here
+// passes one of those.
 // ---------------------------------------------------------------------------
 function httpBase() {
   log.debug("Entering httpBase().");
   const set = String(config.value('pki.distributionBaseUrl') || '').trim();
   if (set) {
-    log.debug("Leaving httpBase().");
+    log.debug("Leaving httpBase(). pki.distributionBaseUrl");
     return set.replace(/\/+$/, '');
   }
   const host = (config.value('tls.hostnames') || ['localhost'])[0] ||
                'localhost';
+  if (Number(config.value('pki.httpPort')) > 0) {
+    log.debug("Leaving httpBase(). The plain-HTTP revocation listener.");
+    return 'http://' + host + ':' +
+           publishedPort('pki.distributionPort', 'pki.httpPort');
+  }
+  // No plain listener: the main port, in the scheme it answers in. That is
+  // an https address whenever `global.https` is on, which section 8 advises
+  // against — and it is still better than naming a port nothing is bound to.
   const scheme = config.value('global.https') ? 'https' : 'http';
-  log.debug("Leaving httpBase().");
-  return scheme + '://' + host + ':' + config.value('global.port');
+  log.debug("Leaving httpBase(). The main port.");
+  return scheme + '://' + host + ':' +
+         publishedPort('pki.distributionPort', 'global.port');
+}
+
+// A published port, or the listener's own where none was named. `port` is 0
+// for "not set" and 0 is never a port anybody can dial, so it is the one value
+// the fallback may treat as absent — the `0 || n` rule in the root CLAUDE.md is
+// about settings where 0 is legal, and here it is not.
+function publishedPort(settingKey, listenerKey) {
+  log.debug("Entering publishedPort().");
+  const named = Number(config.value(settingKey));
+  log.debug("Leaving publishedPort().");
+  return named > 0 ? named : config.value(listenerKey);
 }
 
 function ldapHost() {
@@ -494,10 +531,9 @@ function distributionPoints(scopeId, caId) {
   log.debug("Leaving distributionPoints().");
   return {
     http: httpBase() + '/pki/crl/' + file + '.crl',
-    ldap: 'ldap://' + ldapHost() + ':' + config.value('ldap.port') + '/' +
+    ldap: 'ldap://' + ldapHost() + ':' +
+          publishedPort('pki.distributionLdapPort', 'ldap.port') + '/' +
           encodeURI(dn) + '?certificateRevocationList;binary',
-    ldaps: 'ldaps://' + ldapHost() + ':' + config.value('ldap.tlsPort') + '/' +
-           encodeURI(dn) + '?certificateRevocationList;binary',
     ocsp: httpBase() + '/pki/ocsp/' + file,
     caIssuers: httpBase() + '/pki/ca/' + file + '.cer',
     dn: dn
@@ -507,11 +543,35 @@ function distributionPoints(scopeId, caId) {
 // Where a CRL lives in the embedded directory. A container per scope under
 // that realm's own subtree, because a CRL belongs to the realm whose authority
 // signed it — exactly as `ou=applications` does.
+//
+// **THE TWO STARRED SCOPES GET AN `ou` OF THEIR OWN, AND FOR TWO DAYS THEY DID
+// NOT (2026-09-13).** Both live in the DEFAULT realm's subtree, because they
+// belong to no realm and that is the one subtree every process has — and the
+// DN was `cn=<ca>,ou=crl,<default base>` for all three. So the PROCESS branch's
+// Intermediate and the default realm's Intermediate, two authorities with two
+// keys and two lists, were published to ONE entry, and whichever was written
+// last was what the `ldap://` distribution points in BOTH
+// authorities' certificates fetched. A relying party following one got a CRL
+// signed by a different issuer, which it must reject (RFC 5280 section 6.3.3
+// (b)) — so an LDAP revocation check of every TLS certificate this service
+// serves failed, with nothing wrong on the HTTP path to compare it with.
+//
+// **THIS IS THE ONE DN BUILDER.** `ldap/ldap_server.js`'s `publishCrl()` writes
+// to the DN this function answers rather than composing its own, because two
+// builders is how the certificate's address and the entry's address came to
+// agree while both being wrong.
 function crlDn(scopeId, caId) {
   log.debug("Entering crlDn().");
   const base = directoryBaseFor(scopeId);
+  const id = String(scopeId);
+  let branch = '';
+  if (id === pki.SERVICE_SCOPE) {
+    branch = 'ou=service,';
+  } else if (id === pki.PROCESS_SCOPE) {
+    branch = 'ou=process,';
+  }
   log.debug("Leaving crlDn().");
-  return 'cn=' + String(caId) + ',ou=crl,' + base;
+  return 'cn=' + String(caId) + ',' + branch + 'ou=crl,' + base;
 }
 
 // The directory slot, filled by `ldap/ldap_server.js` at its require time. It
@@ -529,7 +589,7 @@ function setDirectory(hooks) {
               'was offered without both publishCrl() and baseDnFor(). It was ' +
               'REFUSED WHOLE — a half-filled slot would leave the CRLs ' +
               'published over HTTP and silently absent from LDAP, which is ' +
-              'the one failure a reader checking three schemes would not ' +
+              'the one failure a reader checking both schemes would not ' +
               'think to look for.');
     log.debug('Leaving setDirectory(). Refused.');
     return false;
@@ -698,11 +758,56 @@ async function importSigningKey(tier) {
 // `Math.max(60, …)`, which silently turned every value from 1 to 59 — all of
 // them accepted by `config.js` and drawn on the settings form as in force —
 // into an hour. The cases that setting exists for are exactly the short ones.
+// ---------------------------------------------------------------------------
+// TIMES ARE WHOLE SECONDS, AND A CRL's ARE UTCTime UNTIL 2050 (2026-09-13).
+//
+// **A JavaScript `Date` carries milliseconds and asn1js WRITES them**, so an
+// OCSP answer's `producedAt`, `thisUpdate` and `nextUpdate` went out as
+// `20260913102536.003Z`. That is not DER: X.690 section 11.7 says a fraction
+// omits trailing zeros, and RFC 5019 section 2.2.4 says an OCSP GeneralizedTime
+// MUST NOT carry a fraction at all. OpenSSL reads it anyway, which is how it
+// survived; stricter parsers refuse it. The CRL's revocation dates said
+// `10:22:37` for a revocation the OCSP answer called `10:22:37.862`, which is
+// the same instant stated two ways by one service.
+//
+// And RFC 5280 section 5.1.2.4 requires UTCTime through 2049 and
+// GeneralizedTime from 2050. `type: 0` was written unconditionally, which is
+// right until a CRL's nextUpdate crosses the century boundary — at which point
+// UTCTime cannot express it at all.
+// ---------------------------------------------------------------------------
+function wholeSeconds(value) {
+  log.debug("Entering wholeSeconds().");
+  const ms = new Date(value).getTime();
+  log.debug("Leaving wholeSeconds().");
+  return new Date(Math.floor(ms / 1000) * 1000);
+}
+
+function crlTime(value) {
+  log.debug("Entering crlTime().");
+  const date = wholeSeconds(value);
+  log.debug("Leaving crlTime().");
+  return new pkijs.Time({ type: date.getUTCFullYear() < 2050 ? 0 : 1,
+                          value: date });
+}
+
 function crlLifetimeMs() {
   log.debug("Entering crlLifetimeMs().");
   const minutes = Number(config.value('pki.crlLifetimeMinutes'));
   log.debug("Leaving crlLifetimeMs().");
   return Math.max(1, Number.isFinite(minutes) ? minutes : 60) * 60000;
+}
+
+// The last CRL number this process signed, per authority. See `buildCrl()`.
+const lastCrlNumbers = new Map();
+
+function crlNumberAt(scopeId, caId, whenMs) {
+  log.debug("Entering crlNumberAt().");
+  const key = String(scopeId) + '/' + String(caId);
+  const previous = lastCrlNumbers.get(key) || 0;
+  const number = Math.max(Math.floor(whenMs), previous + 1);
+  lastCrlNumbers.set(key, number);
+  log.debug("Leaving crlNumberAt().");
+  return number;
 }
 
 async function buildCrl(scopeId, caId) {
@@ -719,11 +824,9 @@ async function buildCrl(scopeId, caId) {
   const crl = new pkijs.CertificateRevocationList();
   crl.version = 1;                       // v2, which is what an extension needs
   crl.issuer = issuerCert.subject;
-  const now = new Date();
-  crl.thisUpdate = new pkijs.Time({ type: 0, value: now });
-  crl.nextUpdate = new pkijs.Time({ type: 0,
-                                    value: new Date(now.getTime() +
-                                                    crlLifetimeMs()) });
+  const now = wholeSeconds(Date.now());
+  crl.thisUpdate = crlTime(now);
+  crl.nextUpdate = crlTime(now.getTime() + crlLifetimeMs());
 
   const entries = listFor(scopeId, caId);
   if (entries.length) {
@@ -732,9 +835,7 @@ async function buildCrl(scopeId, caId) {
       revoked.userCertificate = new asn1js.Integer({
         valueHex: serialBytes(one.serialHex)
       });
-      revoked.revocationDate = new pkijs.Time({ type: 0,
-                                                value: new Date(
-                                                    one.revokedAt) });
+      revoked.revocationDate = crlTime(one.revokedAt);
       // THE REASON CODE, OMITTED FOR `unspecified` — see the REASONS table.
       if (one.reasonCode) {
         revoked.crlEntryExtensions = new pkijs.Extensions({
@@ -759,7 +860,21 @@ async function buildCrl(scopeId, caId) {
   //   * `authorityKeyIdentifier` (2.5.29.35) is how it finds the certificate
   //     that signed this list when several share a subject — which is exactly
   //     what happens here every time an authority is reissued.
-  const number = ((rowFor(scopeId) || {}).crlNumbers || {})[String(caId)] || 0;
+  //
+  // **THE NUMBER CHANGES WITH EVERY SIGNING, AND UNTIL 2026-09-13 IT DID NOT.**
+  // It was read from the register, which moved only on a revoke or a release —
+  // and this function signs a NEW list, with a new `thisUpdate`, on every
+  // fetch. RFC 5280 section 5.2.3 is explicit: *if the thisUpdate … in the two
+  // CRLs are not identical, the CRL numbers MUST be different.* Two fetches two
+  // seconds apart came back as two documents both calling themselves number 3.
+  //
+  // So it is `crlNumberAt()`: the signing instant in milliseconds, forced
+  // above anything this process has already used for that authority. That is
+  // monotonic with no coordination — which a counter in the shared register
+  // would need, since several processes sign lists for one authority at once
+  // — and it can never go below a number the register-based scheme issued,
+  // because that one counted revocations and this one counts milliseconds.
+  const number = crlNumberAt(scopeId, caId, Date.now());
   const extensions = [
     new pkijs.Extension({
       extnID: '2.5.29.20', critical: false,
@@ -768,19 +883,31 @@ async function buildCrl(scopeId, caId) {
   ];
   const akid = issuerCert.extensions && issuerCert.extensions.filter(
     function (one) { return one.extnID === '2.5.29.14'; })[0];
-  if (akid) {
-    // The ISSUER's subjectKeyIdentifier becomes this list's
-    // authorityKeyIdentifier, which is the same value read from the other end.
-    extensions.push(new pkijs.Extension({
-      extnID: '2.5.29.35', critical: false,
-      extnValue: new asn1js.Sequence({
-        value: [new asn1js.Primitive({
-          idBlock: { tagClass: 3, tagNumber: 0 },
-          valueHex: akid.parsedValue.valueBlock.valueHexView
-        })]
-      }).toBER(false)
-    }));
-  }
+  // The ISSUER's subjectKeyIdentifier becomes this list's
+  // authorityKeyIdentifier, which is the same value read from the other end.
+  //
+  // **AND WHERE THE ISSUER HAS NONE, THE IDENTIFIER IS COMPUTED — IT WAS
+  // OMITTED.** RFC 5280 section 5.2.1: *conforming CRL issuers MUST use the key
+  // identifier method, and MUST include this extension in all CRLs issued.* A
+  // hierarchy built here always carries an SKI, but an authority brought in
+  // through `importCa()` need not, and its lists silently lost the one
+  // extension that lets a validator find their signer. Section 4.2.1.2's first
+  // method is the SHA-1 of the subjectPublicKey BIT STRING's value, which is
+  // what an SKI conventionally is.
+  const keyIdentifier = akid
+    ? Buffer.from(akid.parsedValue.valueBlock.valueHexView)
+    : nodeCrypto.createHash('sha1').update(Buffer.from(
+      issuerCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock
+        .valueHexView)).digest();
+  extensions.push(new pkijs.Extension({
+    extnID: '2.5.29.35', critical: false,
+    extnValue: new asn1js.Sequence({
+      value: [new asn1js.Primitive({
+        idBlock: { tagClass: 3, tagNumber: 0 },
+        valueHex: keyIdentifier
+      })]
+    }).toBER(false)
+  }));
   crl.crlExtensions = new pkijs.Extensions({ extensions: extensions });
 
   try {
@@ -883,10 +1010,94 @@ async function publishAll(scopeIds) {
   return done;
 }
 
+// ---------------------------------------------------------------------------
+// AND KEEP THEM CURRENT, WHICH NOTHING DID UNTIL 2026-09-13.
+//
+// A CRL says when it stops being fresh (`nextUpdate`, `pki.crlLifetimeMinutes`
+// after it was signed), and RFC 5280 section 6.3.3 tells a relying party that
+// a list past its `nextUpdate` does not settle anything. The HTTP distribution
+// point signs a new one on every fetch, so it was always current; the
+// DIRECTORY copy was written at startup and on a revocation and never again.
+// **So an hour after start every `ldap://` distribution point
+// in every certificate this service issues served an EXPIRED list**, and a
+// branch built after startup — every realm created at runtime — had no entry
+// at all until something on it was revoked. Nothing failed here; the failure
+// is a relying party's, much later, reported as a revocation check it could
+// not complete.
+//
+// Two mechanisms, and they are two because they answer two different events:
+//
+//   * **`publishScopeSoon()`**, called by `pki.js`'s `saveRow()` — the one
+//     funnel every change to a branch goes through — so a branch built,
+//     rebuilt or reissued is in the directory before anybody could have read
+//     a certificate naming it. Coalesced per scope, because one build is
+//     several saves.
+//   * **`keepDirectoryCurrent()`**, a timer at half the lifetime, so a list is
+//     replaced long before its `nextUpdate` whatever happened to the branch.
+//     Half rather than just under the whole, so a relying party that fetched
+//     a moment before the refresh still holds a list with time left on it.
+//
+// **THE TIMER IS UNREFERENCED** for the reason `keystore.js`'s purge timer is:
+// a process holding nothing else must be able to exit, and `npm test` must not
+// hang for half an hour because a module it required meant to refresh a CRL.
+// ---------------------------------------------------------------------------
+const scopesToPublish = new Map();
+
+function publishScopeSoon(scopeId) {
+  log.debug("Entering publishScopeSoon().");
+  const id = String(scopeId === undefined || scopeId === null ? '' : scopeId);
+  if (!directory || scopesToPublish.has(id)) {
+    log.debug("Leaving publishScopeSoon(). Nothing to do.");
+    return;
+  }
+  const timer = setTimeout(function () {
+    scopesToPublish.delete(id);
+    // The Root belongs to every scope's `authorities()` answer, so the
+    // SERVICE scope itself is published by naming no branch at all.
+    publishAll(id === pki.SERVICE_SCOPE ? [] : [id]).catch(function (e) {
+      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the CRLs ' +
+                'of the "' + (id || 'default') + '" scope could not be ' +
+                'published into the directory: ' + ((e && e.message) || e));
+    });
+  }, 50);
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+  scopesToPublish.set(id, timer);
+  log.debug("Leaving publishScopeSoon(). Scheduled.");
+}
+
+let refresher = null;
+
+function keepDirectoryCurrent() {
+  log.debug("Entering keepDirectoryCurrent().");
+  if (refresher || !directory) {
+    log.debug("Leaving keepDirectoryCurrent(). Already running, or no " +
+              "directory in this process.");
+    return false;
+  }
+  const every = Math.max(60000, Math.floor(crlLifetimeMs() / 2));
+  refresher = setInterval(function () {
+    publishAll(pki.knownScopes()).catch(function (e) {
+      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the ' +
+                'directory copies of the CRLs could not be refreshed: ' +
+                ((e && e.message) || e) + '. An ldap:// distribution point ' +
+                'will serve a list past its nextUpdate.');
+    });
+  }, every);
+  if (typeof refresher.unref === 'function') {
+    refresher.unref();
+  }
+  log.debug("Leaving keepDirectoryCurrent(). Every " + every + "ms.");
+  return true;
+}
+
 module.exports.buildCrl = buildCrl;
 module.exports.serialBytes = serialBytes;
 module.exports.publishSoon = publishSoon;
 module.exports.publishAll = publishAll;
+module.exports.publishScopeSoon = publishScopeSoon;
+module.exports.keepDirectoryCurrent = keepDirectoryCurrent;
 
 // ===========================================================================
 // THE OCSP RESPONDER — RFC 6960.
@@ -960,6 +1171,23 @@ function bareResponse(status) {
   return Buffer.from(response.toSchema(true).toBER(false));
 }
 
+// How many octets a request's nonce is. RFC 8954 section 2.1 makes the
+// extension value the DER of `Nonce ::= OCTET STRING (SIZE(1..32))`; a client
+// that put the raw octets in without the inner OCTET STRING is answered on
+// the size of what it sent, rather than refused for the wrapping.
+function nonceSize(extension) {
+  log.debug("Entering nonceSize().");
+  const bytes = extension.extnValue.valueBlock.valueHexView;
+  const parsed = asn1js.fromBER(bytes.slice().buffer);
+  if (parsed.offset === bytes.byteLength &&
+      parsed.result instanceof asn1js.OctetString) {
+    log.debug("Leaving nonceSize().");
+    return parsed.result.valueBlock.valueHexView.byteLength;
+  }
+  log.debug("Leaving nonceSize(). Not wrapped in an OCTET STRING.");
+  return bytes.byteLength;
+}
+
 async function answerOcsp(scopeId, caId, requestDer) {
   log.debug('Entering answerOcsp(). scope=' + scopeId + ' ca=' + caId);
   const authority = authorityFor(scopeId, caId);
@@ -985,7 +1213,29 @@ async function answerOcsp(scopeId, caId, requestDer) {
   const tier = authority.tier;
   const issuerCert = pkijs.Certificate.fromBER(derFromPem(tier.certificatePem));
   const wanted = (request.tbsRequest.requestList || []);
-  const now = new Date();
+  // ---------------------------------------------------------------------
+  // THE NONCE'S SIZE IS CHECKED BEFORE ANYTHING IS ANSWERED (RFC 8954).
+  //
+  // Section 2.1: *a server MUST reject any OCSP request that has a nonce …
+  // of either 0 octets or more than 32 octets with the malformedRequest
+  // OCSPResponseStatus.* It was echoed whatever its size, so a request
+  // carrying a megabyte-shaped nonce (bounded only by the endpoint's 64KB
+  // cap) got it signed back, and an empty one got an empty one.
+  // ---------------------------------------------------------------------
+  const asked = request.tbsRequest.requestExtensions || [];
+  const nonce = asked.filter(function (one) {
+    return one.extnID === '1.3.6.1.5.5.7.48.1.2';
+  })[0];
+  if (nonce) {
+    const size = nonceSize(nonce);
+    if (size < 1 || size > 32) {
+      log.debug('Leaving answerOcsp(). A nonce of ' + size + ' octet(s).');
+      return errorCodes.mark({ ok: true, der: bareResponse(1),
+                               status: 'malformedRequest' }, 'STS-PKI-0132');
+    }
+  }
+  // WHOLE SECONDS — see `wholeSeconds()`.
+  const now = wholeSeconds(Date.now());
   const responses = [];
   const reported = [];
   for (let i = 0; i < wanted.length; i++) {
@@ -993,7 +1243,7 @@ async function answerOcsp(scopeId, caId, requestDer) {
     const single = new pkijs.SingleResponse();
     single.certID = certId;
     single.thisUpdate = now;
-    single.nextUpdate = new Date(now.getTime() + crlLifetimeMs());
+    single.nextUpdate = wholeSeconds(now.getTime() + crlLifetimeMs());
     const mine = await certIdMatches(certId, issuerCert);
     const serial = serialOf(certId);
     if (!mine) {
@@ -1013,7 +1263,7 @@ async function answerOcsp(scopeId, caId, requestDer) {
       const info = new asn1js.Constructed({
         idBlock: { tagClass: 3, tagNumber: 1 },
         value: [new asn1js.GeneralizedTime({
-          valueDate: new Date(revoked.revokedAt)
+          valueDate: wholeSeconds(revoked.revokedAt)
         })]
       });
       if (revoked.reasonCode) {
@@ -1047,8 +1297,37 @@ async function answerOcsp(scopeId, caId, requestDer) {
     responses.push(single);
   }
 
+  // ---------------------------------------------------------------------
+  // **NOT ONE OF THESE IS THIS AUTHORITY'S CERTIFICATE: `unauthorized`.**
+  //
+  // It answered a SIGNED `unknown` for each, which a client cannot verify:
+  // RFC 6960 section 2.2 says the signing key MUST belong to the CA that
+  // issued the certificate in question (or a responder that CA delegated
+  // to), and this CA issued none of them — so OpenSSL reports *missing
+  // ocspsigning usage* about an answer nobody could ever have trusted.
+  // Section 2.3 and RFC 5019 section 2.2.3 name the answer for a responder
+  // that is not authoritative: `unauthorized`, unsigned. A request that
+  // mixes this authority's certificates with somebody else's still gets
+  // `unknown` for the stranger beside a real answer for the rest.
+  // ---------------------------------------------------------------------
+  if (wanted.length && reported.every(function (one) {
+    return one.why === 'another issuer';
+  })) {
+    log.debug('Leaving answerOcsp(). Nothing asked about is ours.');
+    return errorCodes.mark({ ok: true, der: bareResponse(6),
+                             status: 'unauthorized' }, 'STS-PKI-0133');
+  }
+
   const basic = new pkijs.BasicOCSPResponse();
-  basic.tbsResponseData.responderID = issuerCert.subject;
+  // **byKey, where it was byName** (RFC 6960 section 4.2.2.3, RFC 5019
+  // section 2.2.2 SHOULD): the SHA-1 of the responder's public key. A name is
+  // not unique across a rebuild — every reissued authority here keeps its
+  // subject — and a key hash is.
+  basic.tbsResponseData.responderID = new asn1js.OctetString({
+    valueHex: nodeCrypto.createHash('sha1').update(Buffer.from(
+      issuerCert.subjectPublicKeyInfo.subjectPublicKey.valueBlock
+        .valueHexView)).digest()
+  });
   basic.tbsResponseData.producedAt = now;
   basic.tbsResponseData.responses = responses;
   // ---------------------------------------------------------------------
@@ -1065,10 +1344,6 @@ async function answerOcsp(scopeId, caId, requestDer) {
   // would match nothing the requester sent and is worse than none at all.
   // A request without one gets a response without one, which is correct.
   // ---------------------------------------------------------------------
-  const asked = request.tbsRequest.requestExtensions || [];
-  const nonce = asked.filter(function (one) {
-    return one.extnID === '1.3.6.1.5.5.7.48.1.2';
-  })[0];
   if (nonce) {
     basic.tbsResponseData.responseExtensions = [new pkijs.Extension({
       extnID: '1.3.6.1.5.5.7.48.1.2',
@@ -1100,7 +1375,13 @@ async function answerOcsp(scopeId, caId, requestDer) {
   });
   const der = Buffer.from(response.toSchema(true).toBER(false));
   log.debug('Leaving answerOcsp(). ' + reported.length + ' answer(s).');
-  return { ok: true, der: der, status: 'successful', answers: reported };
+  return { ok: true, der: der, status: 'successful', answers: reported,
+           // For `pki/pki_service.js`'s RFC 5019 section 6.2 cache headers,
+           // which are computed from the same instants the response carries.
+           thisUpdate: now.toISOString(),
+           nextUpdate: wholeSeconds(now.getTime() +
+                                    crlLifetimeMs()).toISOString(),
+           nonce: !!nonce };
 }
 
 // Did this authority issue that serial? The certificate register knows the

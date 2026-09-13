@@ -104,7 +104,8 @@
 //   item 6   both NotOnOrAfter instants with the configured skew; a
 //            `<SubjectConfirmation>` that has expired is DISCARDED and the
 //            others still considered, which is the item's own distinction and
-//            not a leniency; and the replay cache, on the assertion's `ID`
+//            not a leniency; and the used-assertion history, on the
+//            assertion's `Issuer` and `ID`
 //   item 7   `<AuthnStatement>` — carried and REPORTED, never required. The
 //            item is a SHOULD in both directions
 //   item 8   `<AttributeStatement>` — every attribute is carried onto the
@@ -121,7 +122,8 @@
 //
 // ---------------------------------------------------------------------------
 // A LIBRARY (rule 3). It registers no route. It requires `helpers.js`,
-// `config.js`, `applications.js`, `common/crypto.js` and `common/realms.js` —
+// `config.js`, `applications.js`, `common/crypto.js` and
+// `common/used_assertions.js` —
 // none of which requires it back — and it is required by `oauth2.js` (9) and
 // by `client_auth.js`. **IT DOES NOT REQUIRE `assertion_grant.js` AND MUST
 // NOT**: the two share a framework and no code, and a require between them
@@ -129,12 +131,20 @@
 // ===========================================================================
 
 const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
-const realms = require('../common/realms');
 const stsCrypto = require('../common/crypto');
 const applications = require('../common/applications');
+// A PERSON's RFC 7522 key pair (2026-09-13). A library holding no store; the
+// directory reaches it through a slot `ldap/ldap_server.js` fills, so this
+// require moves no route.
+const personAssertions = require('../common/person_assertions');
 // A library (rule 3): the revocation check the REGISTERED certificate gets when
 // it verifies an assertion.
 const revocationStatus = require('../common/revocation_status');
+// A LEAF (rule 3w): the WHOLE CHAIN of the registered certificate that verified
+// an assertion, validated at that moment (2026-09-13), and the registry its
+// refusal's code is read from. Neither requires this module back.
+const pki = require('../common/pki');
+const errorCodes = require('../common/error_codes');
 const config = require('../common/config');
 const { log, STS } = require('../common/helpers');
 
@@ -161,56 +171,29 @@ const KNOWN_CONDITIONS = ['AudienceRestriction', 'OneTimeUse',
                           'ProxyRestriction'];
 
 // ---------------------------------------------------------------------------
-// THE REPLAY CACHE. Per trust realm, like every other store here.
+// THE USED-ASSERTION HISTORY (2026-09-13). Item 6 lets a server keep the set of
+// used `ID` values; this service keeps them in `common/used_assertions.js`,
+// which the two RFC 7523 halves spend against too.
 //
-// **IT IS A THIRD CACHE, beside `client_auth.js`'s and
-// `assertion_grant.js`'s**, and the argument for the second one is the
-// argument for this one: a document used to authenticate a client and a
-// document used to authorize an issuance are two different credentials. What
-// is new here is that the identifier is an XML `ID` attribute rather than a
-// `jti`, and the two namespaces have no reason to be disjoint — a SAML
-// assertion whose ID happened to equal somebody's jti would otherwise spend
-// it.
+// **IT WAS A THIRD CACHE HERE**, and two of the reasons for that survive inside
+// the one history rather than being lost to it. The identifier is an XML `ID`
+// rather than a `jti`, and the two namespaces have no reason to be disjoint —
+// so the FORMAT is part of the history's key, and a SAML assertion whose ID
+// happened to equal somebody's jti spends nothing of theirs. And BOTH SECTIONS
+// SHARE ONE ENTRY, which this file always did: the two RFC 7522 sections are
+// verified by one function against one registered certificate set, so an
+// assertion that would authenticate a client would also grant for it, and
+// remembering it once is what stops one document being spent under two
+// parameter names. What is new is that a SAML assertion is now spent once
+// across a restart, across every process against one store, and only when the
+// request it was presented on issued tokens — the module argues all three.
 //
-// BOTH SECTIONS SHARE THIS ONE, which is the opposite of the arrangement next
-// door, and it is deliberate: the two RFC 7522 sections are verified by ONE
-// function against ONE registered certificate set, so an assertion that would
-// authenticate a client would also grant for it, and remembering it once is
-// what stops the same document being spent twice under two parameter names.
+// **A FULL HISTORY REFUSES; IT NEVER FORGETS** — the 2026-09-12 rule, moved with
+// it unchanged: dropping the oldest let a thousand fresh assertions buy a replay
+// of an older one still inside its NotOnOrAfter. The cap is
+// `oauth2.assertionReplayCacheSize`, one count per realm.
 // ---------------------------------------------------------------------------
-//
-// **A FULL CACHE REFUSES; IT NO LONGER FORGETS (2026-09-12, every mode)** —
-// the same change the two JWT caches took, for their reason: dropping the
-// oldest entry at a thousand, expired or not, let a thousand fresh assertions
-// buy a replay of an older one still inside its NotOnOrAfter. The cap is
-// `oauth2.assertionReplayCacheSize`; `MAX_ASSERTIONS` is its default.
-// ---------------------------------------------------------------------------
-const MAX_ASSERTIONS = 1000;
-const seenAssertions = realms.map({ persist: 'saml_assertion_grant.seen' });
-
-function maxAssertions() {
-  log.debug("Entering maxAssertions().");
-  const count = Number(config.value('oauth2.assertionReplayCacheSize'));
-  log.debug("Leaving maxAssertions().");
-  return isFinite(count) && count > 0 ? Math.floor(count) : MAX_ASSERTIONS;
-}
-
-// Sweeps what has expired and answers whether there is room for one more. It
-// never deletes an unexpired entry.
-function forgetStaleAssertions() {
-  log.debug('Entering forgetStaleAssertions().');
-  const now = Date.now();
-  seenAssertions.forEach(function (forgetAt, key) {
-    if (forgetAt < now) {
-      seenAssertions.delete(key);
-    }
-  });
-  const room = seenAssertions.size < maxAssertions();
-  log.debug('Leaving forgetStaleAssertions(). ' + seenAssertions.size + ' ' +
-      'live; ' +
-            (room ? 'room for another.' : 'FULL.'));
-  return room;
-}
+const usedAssertions = require('../common/used_assertions');
 
 function skewSeconds() {
   log.debug("Entering skewSeconds().");
@@ -610,7 +593,27 @@ function certificatesForParty(fields) {
         problems.push(pair[0] + ': a certificate in it could not be read');
         return;
       }
-      found.push({ pem: pem, source: pair[1], thumbprint: thumbprint });
+      // THE MANAGED CERTIFICATE TRAVELS WITH ITS CHAIN (2026-09-13). One
+      // uploaded from an external certificate authority has issuers held
+      // nowhere else in this service, and the revocation check below needs
+      // them to verify any list that could revoke it.
+      const chainRaw = pair[1] === 'issued' && fields
+        ? fields.oauthSamlAssertionCertificateChain : '';
+      found.push({ pem: pem, source: pair[1], thumbprint: thumbprint,
+                   chain: Array.isArray(chainRaw) ? chainRaw.join('\n')
+                                                  : String(chainRaw || ''),
+                   // THE OTHER BLOCKS IN THE SAME VALUE (2026-09-13). A
+                   // certificate registered by value that is not self-signed
+                   // is validated to a self-signed root at every use, and the
+                   // only place its issuers can be registered is beside it in
+                   // this one attribute. They are CANDIDATE ISSUERS only: the
+                   // path is built by issuer and signature, so a second leaf
+                   // held for a rotation is never mistaken for one.
+                   siblings: pair[1] === 'registered'
+                     ? blocks.filter(function (other) {
+                       return other !== pem;
+                     })
+                     : [] });
     });
   });
   log.debug('Leaving certificatesForParty(). ' + found.length + ' ' +
@@ -624,6 +627,17 @@ function certificatesForParty(fields) {
 // an assertion a client issues about itself names its own client_id, and
 // asking an operator to write that down twice would be a configuration step
 // with no decision in it.
+//
+// **OR A PERSON, SINCE 2026-09-13**, asked after every application declaration
+// and before an application's own identifier — `assertion_grant.js`'s order,
+// for its reason: every declaration in the realm first, then the two ways a
+// party is found by its own name. A person is an issuer here only while they
+// hold an RFC 7522 key pair of their own (`stsSamlAssertion*`), and what comes
+// back carries `kind: 'person'` so `verify()` can hold them to asserting about
+// themselves. **Their certificate is handed to `certificatesForParty()` in the
+// shape section 2.2 already uses**, the managed-certificate slot and its chain
+// — a person has no registered-by-value certificate — so the reader that
+// refuses to cross into the RFC 7523 set is the same one reading this.
 function issuerEntry(iss) {
   log.debug('Entering issuerEntry(). iss=' + iss);
   // RFC 7522 section 3 item 1: Simple String Comparison, RFC 3986 section
@@ -644,20 +658,35 @@ function issuerEntry(iss) {
     if (values.indexOf(wanted) >= 0) {
       log.debug('Leaving issuerEntry(). Declared by ' + all[i].identifier +
                 '.');
-      return { identifier: all[i].identifier, fields: fields, declared: true };
+      return { identifier: all[i].identifier, fields: fields, declared: true,
+               kind: 'application' };
     }
+  }
+  const person = personAssertions.issuerFor(wanted, 'saml');
+  if (person) {
+    log.debug('Leaving issuerEntry(). A person: ' + person.identifier + '.');
+    return { identifier: person.identifier,
+             fields: {
+               oauthSamlAssertionCertificate:
+                 person.record.stsSamlAssertionCertificate,
+               oauthSamlAssertionCertificateChain:
+                 person.record.stsSamlAssertionCertificateChain
+             },
+             declared: person.declared, kind: 'person',
+             person: person.record };
   }
   const byClientId = applications.forClientId(wanted);
   if (byClientId) {
     log.debug('Leaving issuerEntry(). It is a client_id.');
     return { identifier: byClientId.identifier,
-             fields: byClientId.fields || {}, declared: false };
+             fields: byClientId.fields || {}, declared: false,
+             kind: 'application' };
   }
   const byIdentifier = applications.get(wanted);
   if (byIdentifier) {
     log.debug('Leaving issuerEntry(). It is an application identifier.');
     return { identifier: wanted, fields: byIdentifier.fields || {},
-             declared: false };
+             declared: false, kind: 'application' };
   }
   log.debug('Leaving issuerEntry(). Nobody has declared it.');
   return null;
@@ -772,7 +801,8 @@ async function verify(opts) {
     // the request and the certificates are that client's.
     const read2 = certificatesForParty({
       oauthSamlAssertionSigningCertificate: options.registeredCertificate || '',
-      oauthSamlAssertionCertificate: options.issuedCertificate || ''
+      oauthSamlAssertionCertificate: options.issuedCertificate || '',
+      oauthSamlAssertionCertificateChain: options.issuedCertificateChain || ''
     });
     certificates = read2.certificates;
     problems = read2.problems;
@@ -793,7 +823,8 @@ async function verify(opts) {
       log.debug('Leaving verify(). Nobody has declared that issuer.');
       return refuse('STS-OAUTH-0062', 'no application in this realm is ' +
                     'registered to issue SAML 2.0 assertions as ' +
-                    '"' + iss + '". This grant cannot be ' +
+                    '"' + iss + '", and nobody holding an RFC 7522 key pair ' +
+                    'of their own answers to that name. This grant cannot be ' +
                     'permissive: an assertion IS the whole authorization — ' +
                     'there is no browser, no password and no consent step in ' +
                     'it — so accepting one from anybody would mean anybody ' +
@@ -891,6 +922,38 @@ async function verify(opts) {
                   '" for RFC 7522: ' + lastWhy + '.');
   }
 
+  // --- the registered certificate's WHOLE CHAIN, now that it has been used --
+  // (2026-09-13.) The signature verified against a certificate somebody
+  // registered, and that is evidence only while the certificate's chain holds:
+  // every link verifying and in date, every issuer a CA permitted to sign, the
+  // certificate itself a leaf that may sign, and the path ending in this realm
+  // or at the self-signed root registered with it — or the certificate being
+  // self-signed and therefore its own whole chain. It was checked when it was
+  // registered and never again until this date, so an expired certificate or a
+  // replaced Root went on signing assertions. `pki.verifySignerChain()` argues
+  // the three anchors; the refusal is in both modes, for the registered-issuer
+  // refusal's reason above.
+  const certificateChain = await pki.verifySignerChain(undefined, {
+    certificate: usedCertificate.pem,
+    chain: usedCertificate.source === 'issued'
+      ? usedCertificate.chain || ''
+      : usedCertificate.siblings || [],
+    source: 'the ' + usedCertificate.source + ' RFC 7522 certificate for "' +
+            (asClient ? options.clientId : iss) + '"'
+  });
+  if (!certificateChain.ok) {
+    log.warn('saml_assertion_grant: the certificate that verified an ' +
+             'assertion from "' + (asClient ? options.clientId : iss) +
+             '" has a chain that does not hold: ' + certificateChain.why);
+    log.debug('Leaving verify(). The registered certificate\'s chain is ' +
+              'refused.');
+    return refuse(errorCodes.codeOf(certificateChain) || 'STS-PKI-0157',
+                  'the certificate registered against "' +
+                  (asClient ? options.clientId : iss) + '" that verified ' +
+                  'this assertion does not have a valid trust chain: ' +
+                  certificateChain.why);
+  }
+
   // --- the registered certificate that verified it, checked for revocation --
   // It is a certificate an operator registered or this service issued, and it
   // has just been USED. Checked as a presented one is — the register for one
@@ -899,6 +962,7 @@ async function verify(opts) {
   // is remembered. Asynchronous, because `verify()` is.
   const certificateRevocation = await revocationStatus.registeredVerdictFor({
     certificate: usedCertificate.pem,
+    chain: usedCertificate.chain || '',
     source: 'the ' + usedCertificate.source + ' RFC 7522 certificate for "' +
             (asClient ? options.clientId : iss) + '"'
   });
@@ -999,6 +1063,29 @@ async function verify(opts) {
                     : parsed.hasSubject
                       ? '. This one has a <Subject> with no <NameID> in it'
                       : '') + '.');
+  }
+  // A PERSON MAY ONLY ASSERT ABOUT THEMSELVES (2026-09-13), which is the
+  // refusal `common/person_assertions.js` exists for, made for this profile.
+  // The certificate is registered on ONE PERSON's entry, so it says who THEY
+  // are; reading it as an authority over other people would give anybody who
+  // holds a key pair on their own entry a token as anybody in the realm. It is
+  // below the signature, as every check on a claim is: a <Subject> is worth
+  // nothing until something has vouched for it.
+  if (party && party.kind === 'person' &&
+      !personAssertions.subjectIsSelf(party.person, parsed.subject, 'saml')) {
+    log.warn('saml_assertion_grant: "' + iss + '" is a person in this realm ' +
+             'and the assertion they signed names "' + parsed.subject + '" ' +
+             'as its Subject. Refused: a person\'s key says who THEY are.');
+    log.debug('Leaving verify(). A person asserted about somebody else.');
+    return refuse('STS-OAUTH-0242', '"' + iss + '" is a PERSON in this ' +
+                  'realm, ' +
+                  'and a person\'s assertion may only be about themselves — ' +
+                  'this one names "' + parsed.subject + '" as its <Subject>. ' +
+                  'A key pair on one person\'s entry is that person\'s ' +
+                  'credential rather than permission to speak for others. A ' +
+                  'party that may assert about other people is an ' +
+                  'APPLICATION with the issuer declared on it as ' +
+                  '`oauthSamlAssertionIssuer`.');
   }
   if (asClient && parsed.subject !== String(options.clientId)) {
     log.debug("Leaving verify().");
@@ -1158,22 +1245,34 @@ async function verify(opts) {
                   'ID cannot be remembered, so accepting one means accepting ' +
                   'a bearer credential this service has no way to spend.');
   }
-  const room = forgetStaleAssertions();
-  const key = iss + ':' + parsed.id;
-  if (seenAssertions.has(key)) {
+  // The LAST refusal of the document itself — nothing below this refuses — so
+  // an assertion refused for any other reason is not also used up.
+  const spent = await usedAssertions.claim({
+    format: 'saml',
+    use: asClient ? 'client-authentication' : 'authorization-grant',
+    issuer: iss, identifier: parsed.id,
+    // Section 2.2's client, or the client making a section 2.1 token request
+    // where it named itself. Recorded for the console; not part of the key.
+    clientId: String(options.clientId || options.requestingClientId || ''),
+    subject: parsed.subject,
+    expiresAt: expiresAt + skewMs,
+    request: options.request
+  });
+  if (!spent.ok && spent.reason === 'replay') {
     log.warn('saml_assertion_grant: "' + iss + '" replayed the assertion ID ' +
              parsed.id + '. A signed assertion is a credential until it ' +
              'expires, so a second use of one is refused.');
     log.debug('Leaving verify(). The ID was replayed.');
-    return refuse('STS-OAUTH-0082', 'this assertion has been used already. ' +
+    return refuse('STS-OAUTH-0082', 'this assertion has been used already' +
+                  usedAssertions.usedAs(spent.existing) + '. ' +
                   'Its ID is remembered until it expires, because a signed ' +
                   'assertion captured off the wire is a credential until ' +
                   'then. Mint a fresh one per request.');
   }
-  if (!room) {
-    log.warn('saml_assertion_grant: the replay cache for this realm is full ' +
-             'of unexpired assertions (oauth2.assertionReplayCacheSize = ' +
-             maxAssertions() + '), so a new assertion from "' + iss + '" is ' +
+  if (!spent.ok && spent.reason === 'full') {
+    log.warn('saml_assertion_grant: the used-assertion history for this ' +
+             'realm is full of unexpired rows (oauth2.assertionReplayCacheSize ' +
+             '= ' + spent.cap + '), so a new assertion from "' + iss + '" is ' +
              'REFUSED rather than a live one being forgotten.');
     log.debug('Leaving verify(). The replay cache is full.');
     return refuse('STS-OAUTH-0083', 'this authorization server is holding as ' +
@@ -1182,7 +1281,13 @@ async function verify(opts) {
                   'not forget one that could still be replayed in order to ' +
                   'accept yours. Retry shortly.');
   }
-  seenAssertions.set(key, expiresAt + skewMs);
+  if (!spent.ok) {
+    log.debug('Leaving verify(). The history could not be asked.');
+    return refuse('STS-OAUTH-0243', 'this assertion verified, and this ' +
+                  'authorization server could not record that it has been ' +
+                  'used, so it is refused rather than accepted unrecorded. ' +
+                  'Retry with a fresh assertion.');
+  }
 
   // --- RFC 7521 section 4.1: the requested scope ----------------------------
   // NARROWED AND NEVER WIDENED, which is the JWT profile's rule and is RFC
@@ -1230,7 +1335,14 @@ async function verify(opts) {
     issuer: iss,
     subject: parsed.subject,
     nameIdFormat: parsed.nameIdFormat,
-    application: party ? party.identifier : (options.clientId || ''),
+    application: party ? (party.kind === 'person' ? '' : party.identifier)
+                       : (options.clientId || ''),
+    // WHICH KIND OF PARTY SIGNED IT, as `assertion_grant.js` reports it, so
+    // the token endpoint and `/admin/delegation` can say a person presented
+    // themselves rather than drawing them as a third party vouching for one.
+    issuerKind: party ? (party.kind || 'application')
+                      : (asClient ? 'application' : ''),
+    person: party && party.kind === 'person' ? party.identifier : '',
     declared: !!(party && party.declared),
     id: parsed.id,
     scope: scope,
@@ -1254,6 +1366,9 @@ async function verify(opts) {
     canonicalization: verified.canonicalization || '',
     certificateSource: usedCertificate.source,
     certificateThumbprint: usedCertificate.thumbprint,
+    // What the chain was validated to: `realm`, `registered-root` or `pinned`.
+    certificateChain: { anchor: certificateChain.anchor,
+                        path: certificateChain.path || [] },
     certificateRevocation: { status: certificateRevocation.status,
                              policy: certificateRevocation.policy || '',
                              why: certificateRevocation.why },
@@ -1307,10 +1422,11 @@ module.exports = {
   certificatesForParty: certificatesForParty,
   verify: verify,
   extraClaimsFrom: extraClaimsFrom,
-  // For the pages that report how many assertions are being remembered.
+  // For the pages that report how many assertions are being remembered: the
+  // realm's used-assertion history, shared with both RFC 7523 halves.
   assertionsRemembered: function () {
     log.debug("Entering assertionsRemembered().");
     log.debug("Leaving assertionsRemembered().");
-    return seenAssertions.size;
+    return usedAssertions.summary().live;
   }
 };

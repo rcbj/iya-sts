@@ -343,6 +343,9 @@ COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}" -f "${LDAP_COMPOSE_FILE}")
 # Chosen at run time like the other two, so that two runs on one machine do not
 # collide with each other and neither collides with a real directory on 389.
 STS_LDAP_HOST_PORT=""
+# The plain-HTTP revocation listener's host port (2026-09-13), for the same two
+# reasons. See composeUp().
+STS_PKI_HOST_PORT=""
 # Overridable so that two runs on one machine (a CI agent with two workspaces)
 # do not share a project — compose scopes containers, networks and volumes by
 # it, so two runs sharing one would tear down each other's stack.
@@ -970,6 +973,23 @@ composeUp()
     echo "No free host port could be found above 11389 for the LDAP socket."
     return 1
   fi
+
+  # THE PLAIN-HTTP REVOCATION LISTENER (2026-09-13). Every certificate the
+  # service issues names it for its CRL, its OCSP responder and its issuer's
+  # certificate, and `sts_pki_distribution_points` follows those addresses from
+  # this host EXACTLY AS WRITTEN — so it is published on a free port like the
+  # three above, and docker-compose.yml hands the same number to the service as
+  # PKI_DISTRIBUTION_PORT, which is how the address inside a certificate comes
+  # to be the address this mapping made. Searched from ONE ABOVE the service's
+  # own port: freePort() binds nothing, so two searches started at 18081 and
+  # 18082 would both answer 18082 whenever 18081 was taken.
+  STS_PKI_HOST_PORT="$(freePort "$((STS_HOST_PORT + 1))")"
+  if [ -z "${STS_PKI_HOST_PORT}" ];
+  then
+    echo "No free host port could be found above ${STS_HOST_PORT} for the"
+    echo "plain-HTTP revocation listener."
+    return 1
+  fi
   # INSIDE THE RUN'S OWN REPORT DIRECTORY rather than /tmp, so that a private
   # key this script generates lives beside the run that needed it and goes when
   # somebody clears the reports. It has to be an ABSOLUTE path: compose
@@ -1048,6 +1068,12 @@ composeUp()
     # the socket on 11389 whatever port this launcher picked and told the job
     # about.
     "STS_LDAP_HOST_PORT=${STS_LDAP_HOST_PORT}"
+    # AND THE REVOCATION LISTENER'S, which docker-compose.yml publishes and
+    # passes to the service as PKI_DISTRIBUTION_PORT. Named here for the
+    # reason the line above is: under sudo an exported variable reaches compose
+    # as unset, and the default would put every certificate's address on a
+    # port this launcher did not choose.
+    "STS_PKI_HOST_PORT=${STS_PKI_HOST_PORT}"
     "STS_CONTAINER_NAME=${STS_TEST_CONTAINER}"
     # THE NETWORK AND THE ADDRESSES IN IT, chosen above. Named here for the
     # reason every other variable in this array is: a compose file default is
