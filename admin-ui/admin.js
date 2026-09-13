@@ -88,6 +88,208 @@ const { log, xmlEscape, baseUrlOf, parseBody, b64uDecode, userFor,
         // applicationsAction() — which is built from its own table now rather
         // than typed, because a typed one was short by an action.
         numberWord } = require('../common/helpers');
+// The error-code registry. A leaf: it records which failure condition a
+// response reports, on the response object and never in its bytes.
+const errorCodes = require('../common/error_codes');
+
+// ---------------------------------------------------------------------------
+// THE ACTION LAYER (2026-09-12), AND WHY THESE NAMES ARE STILL IN SCOPE HERE.
+//
+// Thirty-one actions, the tables they dispatch on and the pure helpers they
+// share moved to `admin-core/admin_actions.js` — see that file's header for
+// what may be in it and what may not. `mgmt-api/admin_api.js` requires it too,
+// and no longer requires this module for them, which is the whole point: the
+// surface a machine drives is no longer downstream of the surface a person
+// reads.
+//
+// **THEY ARE ALIASED BACK RATHER THAN REWRITTEN AT EVERY CALL SITE**, and
+// that is a deliberate choice about what a reviewer has to check. This file
+// calls these names several hundred times — from the routes, from the views
+// that draw the buttons an action dispatches on, and from each other. Turning
+// each into `adminActions.x` would have made the move a diff nobody could
+// read, in which a behaviour change and a rename look identical. Here the
+// move is a deletion and one block, and every remaining line of this file is
+// untouched.
+// ---------------------------------------------------------------------------
+const adminActions = require('../admin-core/admin_actions');
+
+// ---------------------------------------------------------------------------
+// AND THE READ HALF (2026-09-12), on the same terms.
+//
+// Thirty-seven functions that answer a question and reach no markup at all —
+// `scimJson()`, `realmsJson()`, `cryptoView()`, the six XACML views and the
+// rest — moved to `admin-core/admin_views.js`. They needed no surgery: they
+// were already pure, so they travelled exactly as the actions did.
+//
+// **WHAT DID NOT GO IS THE POINT OF THE LINE.** Every view that builds HTML
+// stayed, because `{ json, inner }` computed in one pass is the strongest
+// form of rule 7 there is and splitting it is bespoke work on interleaved
+// code. And so did this console's own STRUCTURE — `consoleJson()`,
+// `configJson()`, `settingsGroupsFor()`, `protocolSettingsJsonFor()` and
+// `configSettingsJson()` — which is pure and still belongs here: a caller
+// asking which pages this console has is asking the console about itself.
+// ---------------------------------------------------------------------------
+const adminViews = require('../admin-core/admin_views');
+const pagingOf = adminViews.pagingOf;
+const pagingJson = adminViews.pagingJson;
+const pagedRows = adminViews.pagedRows;
+const tokensView = adminViews.tokensView;
+const sessionProtocolsIn = adminViews.sessionProtocolsIn;
+const sessionsView = adminViews.sessionsView;
+const DEFAULT_PER_PAGE = adminViews.DEFAULT_PER_PAGE;
+const DELEGATION_PER_PAGE = adminViews.DELEGATION_PER_PAGE;
+const MAX_ROWS = adminViews.MAX_ROWS;
+const auditView = adminViews.auditView;
+const errorCodesView = adminViews.errorCodesView;
+const delegationView = adminViews.delegationView;
+const clusterSummary = adminViews.clusterSummary;
+const permissionGroupsView = adminViews.permissionGroupsView;
+const queryOne = adminViews.queryOne;
+const chooserMatches = adminViews.chooserMatches;
+const claimsRequestPreview = adminViews.claimsRequestPreview;
+const claimsRequestJson = adminViews.claimsRequestJson;
+const userinfoClaimsJson = adminViews.userinfoClaimsJson;
+const signalsJson = adminViews.signalsJson;
+const signalsState = adminViews.signalsState;
+const ssfJson = adminViews.ssfJson;
+const caepJson = adminViews.caepJson;
+const caepSessionsState = adminViews.caepSessionsState;
+const caepApplicationsState = adminViews.caepApplicationsState;
+const caepSessionsJson = adminViews.caepSessionsJson;
+const riscJson = adminViews.riscJson;
+const riscAccountsState = adminViews.riscAccountsState;
+const riscApplicationsState = adminViews.riscApplicationsState;
+const riscAccountsJson = adminViews.riscAccountsJson;
+const spiffeListeners = adminViews.spiffeListeners;
+const spiffeJson = adminViews.spiffeJson;
+const spiffeEntriesJson = adminViews.spiffeEntriesJson;
+const spiffeAgentsJson = adminViews.spiffeAgentsJson;
+const spiffeSelectorText = adminViews.spiffeSelectorText;
+const newUserContainer = adminViews.newUserContainer;
+const CREDENTIAL_CHOICES = adminViews.CREDENTIAL_CHOICES;
+const knownUserKeys = adminViews.knownUserKeys;
+const saml2ServiceProviders = adminViews.saml2ServiceProviders;
+const saml2Facts = adminViews.saml2Facts;
+const valuesFor = adminViews.valuesFor;
+const saml11RelyingParties = adminViews.saml11RelyingParties;
+const saml11Facts = adminViews.saml11Facts;
+const asDriftRows = adminViews.asDriftRows;
+const asTruthRequest = adminViews.asTruthRequest;
+const pageParamsOf = adminViews.pageParamsOf;
+const NOT_A_VIEW = adminViews.NOT_A_VIEW;
+const applicationPermissionsState = adminViews.applicationPermissionsState;
+const federationRow = adminViews.federationRow;
+const peopleRows = adminViews.peopleRows;
+const mergeFactors = adminViews.mergeFactors;
+const queryWith = adminViews.queryWith;
+const DEFAULT_BLOCKS_PER_PAGE = adminViews.DEFAULT_BLOCKS_PER_PAGE;
+const sessionRowsFor = adminViews.sessionRowsFor;
+const tokensBySession = adminViews.tokensBySession;
+const logoutInventoryFor = adminViews.logoutInventoryFor;
+const logoutFamilies = adminViews.logoutFamilies;
+
+const claimSetsJson = adminViews.claimSetsJson;
+const claimsJson = adminViews.claimsJson;
+const claimsPreviewUser = adminViews.claimsPreviewUser;
+const claimsRequestParameter = adminViews.claimsRequestParameter;
+const consentView = adminViews.consentView;
+const consoleRpSession = adminViews.consoleRpSession;
+const cryptoView = adminViews.cryptoView;
+const directoryPageJson = adminViews.directoryPageJson;
+const gateStateFor = adminViews.gateStateFor;
+const keysExport = adminViews.keysExport;
+const keysView = adminViews.keysView;
+const metricsJson = adminViews.metricsJson;
+const permissionsView = adminViews.permissionsView;
+const realmJson = adminViews.realmJson;
+const realmRootUrl = adminViews.realmRootUrl;
+const realmSettingRows = adminViews.realmSettingRows;
+const realmsJson = adminViews.realmsJson;
+const rolesPreview = adminViews.rolesPreview;
+const rolesRegister = adminViews.rolesRegister;
+const rolesView = adminViews.rolesView;
+const samlAssertionSeconds = adminViews.samlAssertionSeconds;
+const samlAssertionsJson = adminViews.samlAssertionsJson;
+const samlAttributesJson = adminViews.samlAttributesJson;
+const scimJson = adminViews.scimJson;
+const scimMappingRow = adminViews.scimMappingRow;
+const scimMonitorJson = adminViews.scimMonitorJson;
+const signOnSessionRows = adminViews.signOnSessionRows;
+const tokenLifetimesJson = adminViews.tokenLifetimesJson;
+const tokenSetView = adminViews.tokenSetView;
+const vcJson = adminViews.vcJson;
+const vcPreviewUser = adminViews.vcPreviewUser;
+const vpConfigJson = adminViews.vpConfigJson;
+const xacmlDecideView = adminViews.xacmlDecideView;
+const xacmlEditorView = adminViews.xacmlEditorView;
+const xacmlMonitorView = adminViews.xacmlMonitorView;
+const xacmlPepsView = adminViews.xacmlPepsView;
+const xacmlPoliciesView = adminViews.xacmlPoliciesView;
+const xacmlView = adminViews.xacmlView;
+
+const APPLICATION_ACTIONS = adminActions.APPLICATION_ACTIONS;
+const CONSENT_ACTIONS = adminActions.CONSENT_ACTIONS;
+const FIELD_PREFIX = adminActions.FIELD_PREFIX;
+const FORM_FURNITURE = adminActions.FORM_FURNITURE;
+const MFA_ACTIONS = adminActions.MFA_ACTIONS;
+const PERMISSION_ACTIONS = adminActions.PERMISSION_ACTIONS;
+const ROLE_ACTIONS = adminActions.ROLE_ACTIONS;
+const ROLE_MEMBER_KINDS = adminActions.ROLE_MEMBER_KINDS;
+const SAML11_RP_KIND = adminActions.SAML11_RP_KIND;
+const SAML2_SP_KIND = adminActions.SAML2_SP_KIND;
+const SAML_ASSERTION_KEYS = adminActions.SAML_ASSERTION_KEYS;
+const SAML_ASSERTION_SETTINGS = adminActions.SAML_ASSERTION_SETTINGS;
+const SIGNALS_CONSOLE_ACTIONS = adminActions.SIGNALS_CONSOLE_ACTIONS;
+const SPIFFE_AGENT_ACTIONS = adminActions.SPIFFE_AGENT_ACTIONS;
+const SPIFFE_ENTRY_ACTIONS = adminActions.SPIFFE_ENTRY_ACTIONS;
+const SPIFFE_FIELD_ATTRIBUTES = adminActions.SPIFFE_FIELD_ATTRIBUTES;
+const TOKEN_LIFETIME_KEYS = adminActions.TOKEN_LIFETIME_KEYS;
+const USERS_ACTIONS = adminActions.USERS_ACTIONS;
+const USER_FIELD_PREFIX = adminActions.USER_FIELD_PREFIX;
+const applicationFieldsFrom = adminActions.applicationFieldsFrom;
+const applicationsAction = adminActions.applicationsAction;
+const asAction = adminActions.asAction;
+const caepAction = adminActions.caepAction;
+const claimsAction = adminActions.claimsAction;
+const configAction = adminActions.configAction;
+const configKnows = adminActions.configKnows;
+const configSettingFor = adminActions.configSettingFor;
+const consentAction = adminActions.consentAction;
+const federationAction = adminActions.federationAction;
+const fieldToAttribute = adminActions.fieldToAttribute;
+const groupsAction = adminActions.groupsAction;
+const jtiFrom = adminActions.jtiFrom;
+const logoutAction = adminActions.logoutAction;
+const mfaAction = adminActions.mfaAction;
+const noXacml = adminActions.noXacml;
+const permissionsAction = adminActions.permissionsAction;
+const rbacAction = adminActions.rbacAction;
+const realmsAction = adminActions.realmsAction;
+const riscAction = adminActions.riscAction;
+const roleMemberKindOf = adminActions.roleMemberKindOf;
+const rolesAction = adminActions.rolesAction;
+const saml11Action = adminActions.saml11Action;
+const saml2Action = adminActions.saml2Action;
+const samlAssertionRowFor = adminActions.samlAssertionRowFor;
+const samlAssertionsAction = adminActions.samlAssertionsAction;
+const sessionsAction = adminActions.sessionsAction;
+const signalsAction = adminActions.signalsAction;
+const spiffeAgentsAction = adminActions.spiffeAgentsAction;
+const spiffeCommaList = adminActions.spiffeCommaList;
+const spiffeEntriesAction = adminActions.spiffeEntriesAction;
+const spiffeUnknownAction = adminActions.spiffeUnknownAction;
+const spiffeAction = adminActions.spiffeAction;
+const SPIFFE_ACTIONS = adminActions.SPIFFE_ACTIONS;
+const ssfAction = adminActions.ssfAction;
+const sweepText = adminActions.sweepText;
+const tokenAction = adminActions.tokenAction;
+const tokenLifetimesAction = adminActions.tokenLifetimesAction;
+const truthy = adminActions.truthy;
+const userFieldsFrom = adminActions.userFieldsFrom;
+const usersAction = adminActions.usersAction;
+const vcAction = adminActions.vcAction;
+const vpConfigAction = adminActions.vpConfigAction;
+const xacmlAction = adminActions.xacmlAction;
 const config = require('../common/config');
 // The credential lifecycle, for the activation link the users page issues. A
 // LEAF (rule 3): it registers no route and requires nothing here.
@@ -471,49 +673,9 @@ const vz = validation.z;
 //
 // See the slot itself, further down, beside the other five.
 
-// How many rows of a list a page will draw. A cap is needed — 5,000 token rows is
-// a page no browser enjoys — and what it hid is always stated underneath, because a
-// truncated table that does not say it was truncated reads as the whole truth.
-//
-// On the tokens page this is now the ceiling on ONE PAGE rather than on the whole
-// list: everything held is reachable by paging, so nothing is hidden any more. The
-// cap stays because the reason for it never went away — `?per=` is a number a caller
-// types, and without a ceiling `?per=5000` is the page the cap existed to prevent.
-const MAX_ROWS = 300;
 
-// Rows per page when nobody said. Small enough that the table is the first thing on
-// screen rather than the last, and the paging controls above and below it say what
-// the rest of the list is.
-const DEFAULT_PER_PAGE = 50;
 
-// Rows per page for a list whose ROW IS A TABLE. There is one of those — the session
-// blocks on the users drill-down, where each row of the list is a session heading, a
-// facts table and a token table under it — and giving it DEFAULT_PER_PAGE would put
-// fifty tables on one page, each of which is itself paged at fifty rows. The list
-// pages get away with one number because a row there is a row.
-//
-// `?per=` still overrides it, for the same reason it overrides everything else: a
-// number somebody typed is a number they meant.
-const DEFAULT_BLOCKS_PER_PAGE = 5;
 
-// Rows per page for EVERY list on /admin/delegation, which is the one page here
-// that carries seven of them at once.
-//
-// It is a tenth of DEFAULT_PER_PAGE and that is the point rather than a tuning
-// choice. The other pages in this console are ONE list under one heading, where
-// fifty rows is a table somebody scrolls; this page is seven — the acts, the
-// chains, the permissions a resource exposes, the grants between two
-// applications, the two Kerberos policy tables and the mechanism catalogue —
-// with several screens of prose between them, so fifty rows apiece is a
-// document tens of thousands of pixels long in which the seventh heading is
-// unreachable by anything but the scrollbar. Ten keeps every section's control
-// within a screen of its heading, which is what makes the page navigable at
-// all; everything above ten is one click away and the control says how much.
-//
-// `?per=` still overrides it for all seven together, exactly as it does on the
-// drill-downs, and perPageOptions() offers this value because it offers
-// whatever is in force. A number somebody typed is a number they meant.
-const DELEGATION_PER_PAGE = 10;
 
 // How many subjects the metrics page names in one "Who" cell before it says how
 // many more there are. A separate cap from MAX_ROWS because it bounds a cell rather
@@ -1082,6 +1244,21 @@ const SECTIONS = [
       // the question it answers, and these two answer *what does the
       // mechanism do*.
       // ---------------------------------------------------------------
+      // GNAP (RFC 9635 + RFC 9767), 2026-09-12. A FLAT item rather than a
+      // group: its one Protocols page carries the settings, the endpoints, the
+      // authorization server capabilities, the grants and the resource sets,
+      // and the traffic page is filed under Monitoring by the question it
+      // answers. Both are drawn by gnap/gnap_admin.js.
+      { path: '/admin/gnap', label: 'GNAP',
+        blurb: 'The Grant Negotiation and Authorization Protocol (RFC 9635) and ' +
+               'its resource server connections (RFC 9767): one authorization ' +
+               'server per trust realm and per named authorization server. The ' +
+               'endpoints, what each authorization server offers, the five ' +
+               'token formats and their verification material, the grants it ' +
+               'is holding, the resource sets registered with it, and the ' +
+               '<code>gnap.*</code> settings. <strong>A key proof is verified ' +
+               'in every mode</strong> &mdash; what is mode-gated is whether a ' +
+               'proved key nobody registered is admitted.' },
       { path: '/admin/totp', label: 'TOTP MFA',
         blurb: 'An authenticator app as a second factor &mdash; RFC 6238 ' +
                'over RFC 4226 &mdash; and the eight parameters the ' +
@@ -1142,6 +1319,20 @@ const SECTIONS = [
                'presented at <code>/authn/spnego</code> may start a browser ' +
                'session at all. Most of them are restart-only: the principal ' +
                'database is built from them when the process starts.' },
+      // THE STORED KERBEROS KEYS (2026-09-12), directly beneath the settings
+      // page and ungrouped, for `/admin/tls/trust`'s reason: a `Kerberos` group
+      // heading over `Kerberos` would say the label twice. It is under
+      // Protocols and not Directory because the question it answers is what
+      // the KDC holds a key for, which is configuration of that protocol —
+      // even though both halves of the store are directory entries.
+      { path: '/admin/kerberos/principals', label: 'Kerberos principals',
+        blurb: 'Who this KDC holds a stored long-term key for: the directory ' +
+               'people whose keys were derived from their own password (product ' +
+               'mode) with the kvno and enctypes and whether the keys still match ' +
+               'the password, and the SERVICE principals an operator created here ' +
+               'with a random key. A create or a rotate hands over an MIT keytab ' +
+               'ONCE; no page ever shows a key. Delete and clear controls need ' +
+               'Admin Write.' },
       { path: '/admin/ldap', label: 'LDAP / LDAPS',
         blurb: 'The embedded directory\'s two raw sockets and the store ' +
                'behind them: the ports, the base DN every realm\'s subtree ' +
@@ -1209,7 +1400,18 @@ const SECTIONS = [
                'carries are settings here; whether the MAIN port is HTTPS too ' +
                'is <code>global.https</code> on ' +
                '<a href="/admin/config">Configuration</a>, because it is a ' +
-               'fact about the process rather than about these listeners.' }
+               'fact about the process rather than about these listeners.' },
+      // Beside the listeners it configures, and UNGROUPED: a `TLS` heading
+      // over `TLS / mutual TLS` would say the label twice.
+      { path: '/admin/tls/trust', label: 'Client-certificate truststore',
+        blurb: 'Every anchor 8443, 9443, LDAPS 636 and the main port verify ' +
+               'a client certificate against — which, since a verified ' +
+               'certificate is an identity here, is the list of whose ' +
+               'certificates this service believes. Each row says whether it ' +
+               'came from <code>tls.trustAnchorsFile</code> or was added while ' +
+               'the process was running; add PEM certificates or remove one ' +
+               'row at a time, in either mode. Nothing here is persisted, and ' +
+               'there is deliberately no button that empties it.' }
     ] },
   { title: 'Directory',
     what: 'The embedded LDAP directory, and the identities this service has ' +
@@ -1328,6 +1530,37 @@ const SECTIONS = [
                'refusing would remove a test case rather than add one — but ' +
                'the redirect URIs and the secret beside it are what RFC 9700 ' +
                'mode judges the next request against.' },
+      // -------------------------------------------------------------------
+      // POLICIES (2026-09-12), asked for by rcbj as *Directory → Policies*,
+      // with the password policy as the first kind of policy it configures.
+      //
+      // **IT IS IN DIRECTORY BECAUSE ITS STORE IS**: the profile is an entry
+      // under `ou=passwordPolicies` in this realm's directory, like every
+      // other page in this section draws a container. It is a DESTINATION
+      // rather than a drill-down — nothing else in the console leads to it
+      // as a next step — which is the test the two `/new` pages failed.
+      //
+      // **THE LABEL IS SHARED WITH `/admin/xacml/policies` AND
+      // `/admin/ldap/policies`**, and the blurb says the difference on the
+      // Overview page rather than leaving it to a reader: those draw
+      // `ou=policies`, which holds documents a PDP evaluates, and this draws
+      // profiles `credentials.setPassword()` checks. Different sections,
+      // different containers; the label is the one rcbj asked for.
+      // -------------------------------------------------------------------
+      { path: '/admin/policies', label: 'Policies',
+        blurb: 'The rules this realm holds a CREDENTIAL to, starting with the ' +
+               '<strong>password policy</strong>: a minimum length, how many ' +
+               'previous passwords may not be reused, how many symbols, and ' +
+               'whether an uppercase letter and a number are required — the ' +
+               '<em>default profile</em>, stored as <code>cn=default,' +
+               'ou=passwordPolicies</code> in this realm\'s directory. ' +
+               '<strong>Enforced in product mode</strong>, at every door that ' +
+               'sets a password: the console, <code>/admin-api</code>, the ' +
+               'user portal, an activation link and an LDAP modify. A ' +
+               'generated password is drawn to satisfy it in both modes. It ' +
+               'is not the XACML policy repository, which is ' +
+               '<a href="/admin/xacml/policies">Protocols → XACML → ' +
+               'Policies</a>.' },
       // -------------------------------------------------------------------
       // `/admin/applications/new` HAS NO ROW HERE EITHER, and it is the
       // second page to leave this table on 2026-09-06. The rule and the three
@@ -1638,6 +1871,17 @@ const SECTIONS = [
                'refusal is the <a href="/admin/audit">audit log</a>, and the ' +
                'policies these decisions are made with are under ' +
                '<a href="/admin/xacml">Protocols</a>.' },
+      // GNAP's traffic, filed here beside XACML's for the same reason: what the
+      // applications using it have DONE is a monitoring question, and the
+      // configuration is on Protocols -> GNAP.
+      { path: '/admin/gnap/monitor', label: 'GNAP grants',
+        blurb: 'Every application that uses GNAP &mdash; client instances and ' +
+               'resource servers, declared or seen &mdash; with what each has ' +
+               'done since the process started: grants requested, approved and ' +
+               'denied, tokens issued by format, rotations, revocations, failed ' +
+               'key proofs, introspections and registrations, and the GNAP error ' +
+               'codes it was answered with. No reset: the durable record is the ' +
+               'Audit log.' },
       // AFTER THE XACML MONITOR AND BEFORE SIGN-OUT, and the pair either
       // side is the argument again: the page above it counts authorization
       // DECISIONS and this one counts PROVISIONING CALLS, and both are the
@@ -1781,6 +2025,39 @@ const SECTIONS = [
                'the key-encryption key is a deployment act, and a ' +
                'decrypt-this button would be the one door onto material no ' +
                'door is supposed to have.' },
+      // AFTER Encryption and before the audit log, and the order is this
+      // section's widening-detail argument once more: Encryption is what this
+      // service seals and with which key, and this is where that key CAME
+      // FROM and what the thing holding it is doing. It is the last page here
+      // whose subject is a system somebody else is running.
+      //
+      // **IT IS NOT A SECOND HALF OF `/admin/config`'s Key material group**,
+      // which is the filing question somebody will ask: those rows say what
+      // this service is CONFIGURED to read and where, and read identically on
+      // a service that started a second ago. Everything on this page can be
+      // broken while every one of them is right.
+      { path: '/admin/secrets', label: 'Secret store',
+        blurb: 'Where this service\'s two primordial secrets come from ' +
+               '&mdash; the key-encryption key everything it seals is sealed ' +
+               'under, and the database password &mdash; whether this ' +
+               'process actually read them, and what the store at the other ' +
+               'end is doing. For a mounted file that is its path, mode, ' +
+               'owner and mtime, and which members are in it if it holds ' +
+               'JSON. For HashiCorp Vault or OpenBao it is the whole state ' +
+               'the store will publish: initialised, sealed or unsealed, the ' +
+               'seal type, the version and build, the cluster and its ' +
+               'leader, the certificate this service authenticates with and ' +
+               'when it expires, the policies the token it got carries, ' +
+               '<strong>what that identity may actually do asked of the ' +
+               'store rather than quoted from a policy file</strong>, and ' +
+               'every version of the secret the store has kept. For AWS, GCP ' +
+               'and Azure it is the metadata each of them publishes &mdash; ' +
+               'rotation, the KMS key, version states and staging labels ' +
+               '&mdash; through a DESCRIBE rather than a get. <strong>No ' +
+               'secret value appears on it, no probe fetches one, and it has ' +
+               'no control</strong>: no reveal, no rotate, no test-read. A ' +
+               'probe refused with 403 is usually the read-only policy ' +
+               'working and is drawn as a row saying so.' },
       { path: '/admin/audit', label: 'Audit log',
         blurb: 'What this service was ASKED to do, in the order it was ' +
                'asked, newest first. Every other page here is state; this ' +
@@ -1789,7 +2066,23 @@ const SECTIONS = [
                'created at 14:02 and deleted at 14:03 by somebody bound as ' +
                '<code>uid=carol</code> over LDAPS. It is a ring with a ' +
                'settable cap, so the oldest rows are dropped rather than ' +
-               'kept forever.' }
+               'kept forever.' },
+      // THE ERROR CODES (2026-09-12), filed under Monitoring and beside the
+      // audit log, by the question it answers rather than by what it lists.
+      // A reader arrives here holding a code off an audit row or a log line
+      // and wanting to know what failed — and the one column only a running
+      // service can draw, how often this realm's held rows carry each code, is
+      // an account of what this service has DONE. A catalogue with no such
+      // column would belong in the documentation, which is where the rest of
+      // this table is published (`docs/error-codes.md`).
+      { path: '/admin/error-codes', label: 'Error codes',
+        blurb: 'Every way this service can fail or refuse, by subsystem, ' +
+               'with what the client is told instead and how many rows in ' +
+               'the audit log carry each code right now. A code is an ' +
+               'operator\'s name for a condition: it is on the audit row and ' +
+               'in the log line, and <strong>it is never sent to a ' +
+               'client</strong>, so a protocol\'s own errors are exactly ' +
+               'what they always were.' }
     ] },
   { title: 'Server configuration',
     what: 'What this service is set up with, and who may change it.',
@@ -2142,6 +2435,7 @@ const SETTING_HOMES = [
   // row here". It has thirteen since 2026-09-10 — every parameter of the
   // ceremony, which had been literals in a string in `authn/authn.js`.
   { group: 'TOTP MFA', pages: ['/admin/totp'] },
+  { group: 'GNAP', pages: ['/admin/gnap'] },
   { group: 'WebAuthn', pages: ['/admin/webauthn'] },
   // THE THIRD (2026-09-10), and it is a mechanism like the two above it rather
   // than a policy about them — which is why it gets a group and a page of its
@@ -2210,7 +2504,7 @@ function checkSettingHomes() {
   });
 
   problems.forEach(function (problem) {
-    log.error('admin console: ' + problem);
+    log.error(errorCodes.tag('STS-ADMIN-0015') + 'admin console: ' + problem);
   });
   log.debug("Leaving checkSettingHomes(). " + problems.length + " problem(s).");
   return problems;
@@ -2277,10 +2571,14 @@ const LIST_PARAMS = {
   // re-ask it on every write and put a stale answer above the table. The same
   // reasoning NOT_A_VIEW applies to `notice` and `error`.
   '/admin/roles': ['q', 'per', 'page'],
+  '/admin/policies': ['per', 'page'],
   '/admin/applications': ['q', 'kind', 'per', 'page'],
   '/admin/saml2': ['q', 'per', 'page'],
   '/admin/saml11': ['q', 'per', 'page'],
   '/admin/authorization-servers': ['per', 'page'],
+  // GNAP's two lists and the grant state filter (gnap/gnap_admin.js).
+  '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage'],
+  '/admin/gnap/monitor': ['per', 'page'],
   '/admin/spiffe/entries': ['q', 'origin', 'per', 'page'],
   '/admin/spiffe/agents': ['q', 'per', 'page'],
   '/admin/rbac': ['q', 'role', 'per', 'page'],
@@ -2329,6 +2627,13 @@ const LIST_PARAMS = {
   // read what came back and pressed Clear should not be returned to an
   // unfiltered page 1 of a list that is now empty for two different reasons.
   '/admin/signals': ['sigq', 'per', 'receivedPage'],
+  // The truststore's one list (2026-09-12). Spent by the Remove button's
+  // `back`, so removing the last row on page 3 lands on page 3 — clamped to the
+  // last page there is — rather than on page 1.
+  '/admin/tls/trust': ['per', 'page'],
+  // The Kerberos principals' two lists (2026-09-12), paged separately and
+  // sharing one `per`. Spent by every row button's `back`.
+  '/admin/kerberos/principals': ['per', 'peoplePage', 'servicesPage'],
   '/admin/logout': ['family', 'per', 'page'],
   '/admin/realms': ['per', 'page'],
   '/admin/federation': ['q', 'role', 'per', 'page'],
@@ -4001,85 +4306,7 @@ function page(title, active, inner, up, gate, req) {
   return html;
 }
 
-// Both response shapes for a page, chosen by ?format=json. `no-store` on all of
-// them: they describe live state, and a cached metrics page is a wrong one.
-// `up`, when given, is what upTo() returned for the section this page hangs
-// under. Only a drill-down passes it; a section's own list page does not, and the
-// JSON answer ignores it either way — a way back up is a property of a page a
-// person is reading, and a caller of ?format=json has the URL it asked for.
-// ---------------------------------------------------------------------------
-// THE CSRF TOKEN GOES INTO EVERY POST FORM THIS SHELL DRAWS (2026-09-06).
-// OWASP A01/A08.
-//
-// **AT THE SHELL AND NOT AT EACH FORM, DELIBERATELY.** This console builds
-// something like a hundred and forty forms as inline strings across sixty
-// pages, and a scheme that required each author to remember a hidden field is a
-// scheme that is one page away from being incomplete for ever — silently, since
-// a missing token looks exactly like a page that works. Adding it HERE means a
-// page written tomorrow is protected by having been drawn at all.
-//
-// It is a string rewrite, which is the part worth being uncomfortable about,
-// and it is narrow on purpose: it matches the opening tag of a form whose
-// method is post and inserts one input directly after it. It cannot match
-// anything else, because `<form` with `method="post"` is not a sequence that
-// occurs in prose here — and if it ever did, the worst outcome is a stray
-// hidden input in a paragraph rather than a missing control.
-//
-// **A PAGE DRAWN FOR SOMEBODY WITH NO SESSION GETS NO TOKEN AND NEEDS NONE**:
-// `checkCsrf()` passes a request with no session, because there is nothing to
-// forge on behalf of an anonymous caller. See websecurity.js.
-// ---------------------------------------------------------------------------
-// THE FIELDS EVERY FORM ON THIS CONSOLE CARRIES THAT ARE NOT SETTINGS.
-//
-// Several action handlers refuse a field they do not recognise BY NAME rather
-// than ignoring it, which is the right behaviour and is why this table has to
-// exist: `action` has always been furniture, and since 2026-09-06 so is
-// `csrf_token`, which `withCsrf()` puts into every POST form this shell draws.
-// Without this the token — added to protect those forms — was refused BY them,
-// and the failure read as though the caller had misspelt a setting.
-//
-// `back` and `from` are here for the same reason: they are how a form says
-// where the reader was, and a handler that treated them as settings would
-// refuse every button that keeps somebody's place.
-const FORM_FURNITURE = {
-  action: true,
-  csrf_token: true,
-  back: true,
-  from: true
-};
 
-// ---------------------------------------------------------------------------
-// THE SESSION THIS CONSOLE READS (2026-09-06), AND IT IS NO LONGER THE SIGN-ON
-// SESSION.
-//
-// This console is a RELYING PARTY of this service's own authorization server:
-// it holds a session of its own, established from an ID Token, in its own
-// cookie. `authn.js`'s `consoleSession()` reads the SIGN-ON session — what a
-// person has with the identity provider — and the two are different facts with
-// different lifetimes, which is the whole reason this move was worth making.
-//
-// **THE RETURN SHAPE IS `consoleSession()`'s ON PURPOSE.** Every caller in this
-// file wants `{ session, realm, foreign }` and none of them cares which of the
-// two it is looking at; keeping the shape is what made this a change to one
-// function rather than to seventy pages. `foreign` is now always false — a
-// relying-party session belongs to the surface that minted it and there is no
-// realm to be foreign to — and the member is kept because the banner reads it.
-//
-// The realm is the DEFAULT one whatever realm is being read, which is the rule
-// this console has had since realms existed and is unchanged: the roster is the
-// default realm's `ou=groups`, so a session minted in `acme` must not open this
-// console. `oidc_rp.js` runs the console's whole flow in that realm for exactly
-// that reason.
-// ---------------------------------------------------------------------------
-function consoleRpSession(req) {
-  log.debug("Entering consoleRpSession().");
-  const session = oidcRp.sessionFor(req, 'admin');
-  log.debug("Leaving consoleRpSession(). " +
-            (session ? "Signed in as " + session.user.username + "." : "None."));
-  return session
-    ? { session: session, realm: realms.DEFAULT_REALM, foreign: false }
-    : null;
-}
 
 // THE SIGN-ON SESSION BEHIND IT, for reporting only. The gate does not read
 // this and must not: what lets somebody into this console is the console's own
@@ -4118,10 +4345,24 @@ function respond(req, res, json, title, active, html, up) {
 // the POST on refresh, which for "revoke everything" is a surprise.
 function respondToAction(req, res, target, result) {
   log.debug("Entering respondToAction(). ok=" + result.ok);
+  // A REFUSED ACTION IS A FAILURE, whether it is answered as a 400 or as a 303
+  // carrying `error=`. The code is the action's own where it named one, then a
+  // more specific one this file already marked, then the generic refusal.
+  if (!result.ok) {
+    errorCodes.mark(res, result.errorCode || errorCodes.codeOf(result) ||
+                          errorCodes.codeOf(res) || 'STS-ADMIN-0012');
+  }
   const type = String(req.headers['content-type'] || '');
   if (/json/i.test(type)) {
+    // `errorCode` is taken OFF the reply: a code is recorded, never returned.
+    // A result without one serialises byte for byte as it always did.
+    let reply = result;
+    if (result && Object.prototype.hasOwnProperty.call(result, 'errorCode')) {
+      reply = Object.assign({}, result);
+      delete reply.errorCode;
+    }
     res.status(result.ok ? 200 : 400).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify(result, null, 2));
+       .send(JSON.stringify(reply, null, 2));
     log.debug("Leaving respondToAction(). Answered JSON.");
     return;
   }
@@ -4215,56 +4456,6 @@ function respondToAction(req, res, target, result) {
 // four doors can grant it.
 // ---------------------------------------------------------------------------
 
-// Everything the banner and the guard both need, worked out ONCE per request.
-//
-// Both were written separately at first and disagreed within the hour: the guard
-// let somebody through on the empty-roster rule and the banner, asking again,
-// found a roster that a concurrent grant had just filled — so the page said
-// "signed in, holding no role" above a console it had just allowed. One function,
-// one answer.
-function gateStateFor(req) {
-  log.debug("Entering gateStateFor().");
-  // THE MODE, since 2026-09-06, where this read `admin.authRequired`. That
-  // setting is gone: "is authentication required here" had four answers across
-  // this service and now has one. See common/mode.js.
-  const enforced = mode.gatesConsole();
-  // THE DEFAULT REALM'S SESSION, whichever realm is being read, and only here —
-  // see the require at the top of this file for why the console asks the
-  // question that way and why no other module may.
-  const found = consoleRpSession(req);
-  const session = found ? found.session : null;
-  const username = session ? session.user.username : '';
-  const held = rbac.rolesOf(username);
-  const state = {
-    enforced: enforced,
-    available: rbac.available(),
-    session: session,
-    username: username,
-    readGroup: config.value('admin.readGroup'),
-    writeGroup: config.value('admin.writeGroup'),
-    // With the gate OFF everybody may do everything, which is what this console
-    // did before any of this existed. Said as `true` here rather than checked
-    // separately at each call site, so a caller cannot ask "may they write" and
-    // get an answer that ignores the setting.
-    // WHICH REALM'S MAP HOLDS THE SESSION, and whether that is the realm being
-    // read. Carried on the state rather than worked out again in the banner,
-    // for the reason the whole of this function exists: two answers to one
-    // question drift within the hour. `sessionRealm` is null when nobody is
-    // signed in, and `foreignSession` is false in a service with no realms —
-    // which is what keeps every banner in that service the sentence it was.
-    sessionRealm: found ? found.realm : null,
-    foreignSession: !!(found && found.foreign),
-    read: enforced ? held.read : true,
-    write: enforced ? held.write : true,
-    roles: enforced ? held.roles : rbac.ROLE_IDS.slice(0),
-    open: enforced && held.open,
-    closed: enforced && held.empty && !held.open && !held.roles.length,
-    empty: held.empty
-  };
-  log.debug("Leaving gateStateFor(). enforced=" + enforced + ", read=" + state.read +
-            ", write=" + state.write + ".");
-  return state;
-}
 
 // Does this caller want JSON rather than a page? See the header for why the
 // question matters more than it looks.
@@ -4398,15 +4589,30 @@ function sendToConsoleSignIn(req, res) {
     fallback: '/admin'
   });
   if (!started.ok) {
-    // The client entry is gone or has no secret — `oidc_rp.js` says which. It
-    // is a refusal with a reason rather than a redirect to a flow that cannot
-    // complete, and it names `/admin-api`, which is not gated and is the way
-    // back in when this console cannot be reached.
+    // THREE REASONS REACH HERE, AND THE SENTENCE A READER NEEDS DIFFERS. The
+    // client entry is gone, or has no secret — or, since 2026-09-12, product
+    // mode refused to start a flow at an address the entry does not carry,
+    // because a callback is no longer LEARNT from a request's Host header
+    // there. `oidc_rp.js` says which in `why`. What used to follow every one of
+    // them — "/admin-api is not gated" — is true only in development, where
+    // that API takes no token at all; saying it in product would be pointing
+    // somebody locked out at a door that is also locked.
+    const unregistered = started.reason === 'unregistered-address';
+    const wayBack = unregistered
+      ? ' Set global.publicBaseUrl to the address this console is reached at, ' +
+        'or add that address\'s /admin/callback to the sts-admin-console ' +
+        'application\'s oauthRedirectUri.'
+      : (mode.gatesManagementApi()
+          ? ' Until it is fixed, /admin-api can do everything this console can, ' +
+            'with an access token carrying admin:write.'
+          : ' Until it is fixed, /admin-api is not gated and can do everything ' +
+            'this console can.');
+    errorCodes.mark(res, unregistered ? 'STS-ADMIN-0002' : 'STS-ADMIN-0001');
     refuse(req, res, 503, 'temporarily_unavailable',
            'This console cannot sign anybody in.',
-           started.why + ' Until it is fixed, /admin-api is not gated and can ' +
-           'do everything this console can.',
-           { needed: 'client', signIn: '', signInRealm: realms.DEFAULT_ID });
+           started.why + wayBack,
+           { needed: unregistered ? 'address' : 'client', signIn: '',
+             signInRealm: realms.DEFAULT_ID });
   }
   log.debug("Leaving sendToConsoleSignIn(). " +
             (started.ok ? "Sent to the authorization endpoint." : "Refused."));
@@ -4501,6 +4707,7 @@ app.use('/admin', function (req, res, next) {
 
   if (!state.session) {
     if (wantsJson(req)) {
+      errorCodes.mark(res, 'STS-ADMIN-0003');
       refuse(req, res, 401, 'login_required',
              'Sign in first.',
              'This console needs a browser sign-on session from the DEFAULT ' +
@@ -4526,6 +4733,7 @@ app.use('/admin', function (req, res, next) {
       log.debug("Leaving the admin console gate. Sent to the sign-in screen.");
       return;
     }
+    errorCodes.mark(res, 'STS-ADMIN-0003');
     refuse(req, res, 401, 'login_required', 'Sign in first.',
            'This form needs a browser sign-on session and this request carries none — ' +
            'the session it was posted with has probably expired.',
@@ -4591,6 +4799,7 @@ app.use('/admin', function (req, res, next) {
     if (!token.ok) {
       log.warn('admin console: a sign-out was refused on CSRF (' +
                token.reason + '), signed in as ' + state.username + '.');
+      errorCodes.mark(res, 'STS-ADMIN-0004');
       refuse(req, res, 403, 'csrf', 'That form did not come from this console.',
              token.detail,
              { html: note('The ordinary cause is a page left open across a ' +
@@ -4633,6 +4842,7 @@ app.use('/admin', function (req, res, next) {
         log.warn('admin console: a ' + req.method + ' to ' +
                  (req.originalUrl || req.url) + ' was refused on CSRF (' +
                  token.reason + '), signed in as ' + state.username + '.');
+        errorCodes.mark(res, 'STS-ADMIN-0005');
         refuse(req, res, 403, 'csrf',
                'That form did not come from this console.',
                token.detail,
@@ -4682,6 +4892,7 @@ app.use('/admin', function (req, res, next) {
       log.info('admin console: the access policy refused ' + req.method + ' ' +
                (req.originalUrl || req.url) + ' for ' + state.username + '. ' +
                policy.why);
+      errorCodes.mark(res, 'STS-ADMIN-0006');
       refuse(req, res, 403, 'policy_denied',
              'The access policy does not permit this.',
              policy.why,
@@ -4704,6 +4915,7 @@ app.use('/admin', function (req, res, next) {
 
   const group = needsWrite ? state.writeGroup : state.readGroup;
   const role = rbac.roleFor(needsWrite ? 'write' : 'read');
+  errorCodes.mark(res, needsWrite ? 'STS-ADMIN-0008' : 'STS-ADMIN-0007');
   refuse(req, res, 403, 'insufficient_role',
          'You are signed in and that is not enough.',
          'Signed in as ' + state.username + ', holding ' +
@@ -5652,125 +5864,10 @@ const COLUMN_LEGEND =
     'the same set of revoked <code>jti</code>s <code>/oauth2/revoke</code> writes to</td>' +
     '<td colspan="2">there is none, and there is nothing it could do — see above</td></tr></table>';
 
-// ---------------------------------------------------------------------------
-// Paging.
-//
-// There is no script on these pages — `script-src 'none'`, see the shell above — so
-// paging is links and a query parameter and nothing else. That is also why every
-// number is settled server-side before the markup is built: a page that renders
-// "page 4 of 2" and leaves the browser to sort it out has nothing to sort it out
-// with.
-//
-// Both parameters are read defensively. `?page=abc`, `?page=-3` and `?page=999` all
-// have to land somewhere sensible, because they arrive from hand-edited URLs and
-// from a stale bookmark taken when the list was longer — a revocation sweep can
-// shorten it between two clicks, and an out-of-range page must be the last page
-// rather than an empty table that reads as "nothing matched".
-//
-// ONE PAGE CAN HOLD SEVERAL LISTS, and that is what `options.name` is for. The three
-// list views have one list each and read the bare `page`, which is what they have
-// always done and what every bookmark and every caller of the management API already
-// says. The two DRILL-DOWNS have five and two: a users page holds its sessions, the
-// tokens under each of them, the tokens on ended sessions, the tokens on no session
-// and the artifacts, and a group page holds its members and the entries claiming it.
-// A single `page` cannot serve those — clicking "next" under the artifacts would
-// silently advance the sessions above it — so each list gets a page parameter named
-// after itself and `per` stays shared, because "rows per table" is one choice a
-// reader makes for the whole page rather than seven.
-//
-// `per` is shared for a second reason worth stating: it is the parameter with the
-// cap on it, and one capped parameter is one place the cap can be got right.
-// ---------------------------------------------------------------------------
-function pagingOf(query, total, options) {
-  const opts = options || {};
-  const param = opts.name ? opts.name + 'Page' : 'page';
-  log.debug("Entering pagingOf(). total=" + total + ", param=" + param);
-  const askedPer = parseInt(String(query.per || ''), 10);
-  const perPage = (isFinite(askedPer) && askedPer > 0)
-    ? Math.min(askedPer, MAX_ROWS)
-    : (opts.defaultPer || DEFAULT_PER_PAGE);
-  // At least one page even when nothing matched, so "page 1 of 1" is what an empty
-  // list says rather than "page 1 of 0".
-  const pages = Math.max(1, Math.ceil(total / perPage));
-  const askedPage = parseInt(String(query[param] || ''), 10);
-  const page = Math.min(Math.max(isFinite(askedPage) ? askedPage : 1, 1), pages);
-  const offset = (page - 1) * perPage;
-  log.debug("Leaving pagingOf(). page=" + page + " of " + pages + ", perPage=" + perPage + ".");
-  return {
-    page: page, perPage: perPage, pages: pages, offset: offset, total: total,
-    // 1-based and inclusive, for the "rows 51–100 of 312" line. Zero and zero when
-    // nothing matched, which is what the line then has to say.
-    firstRow: total ? offset + 1 : 0,
-    lastRow: Math.min(offset + perPage, total),
-    // Which query parameter this list moves on, carried on the result rather than
-    // passed to pageNavPair() a second time: the one place that decides the name is the
-    // one place that builds the links, so a control cannot come to page a list other
-    // than the one it is drawn under.
-    param: param,
-    // What a row of this list IS, for the summary line. Seven controls on one page
-    // all saying "rows" would leave the reader counting tables to work out which
-    // number belongs to which.
-    noun: opts.noun || 'rows'
-  };
-}
 
-// The paging members of a reply, for a page that carries more than one list and
-// therefore cannot put them at the top level the way the three list views do.
-// Same names one level down, deliberately: a caller that has learned to walk
-// `page`/`pages` on /admin-api/tokens reads `sessionsPaging.page` without being
-// told anything new. `total` is here and not up there because up there it is
-// `matched`, which is the count AFTER a filter — there is no filter on a
-// drill-down's lists, so the honest name for the number is the plain one.
-function pagingJson(pg) {
-  return {
-    page: pg.page, pages: pg.pages, perPage: pg.perPage,
-    firstRow: pg.firstRow, lastRow: pg.lastRow, total: pg.total
-  };
-}
 
-// The slice, with the paging that produced it. Written once because seven lists
-// across the two drill-downs do exactly this and a hand-written eighth would be the
-// one that forgets to slice.
-function pagedRows(query, rows, options) {
-  const pg = pagingOf(query, rows.length, options);
-  return { paging: pg, shown: rows.slice(pg.offset, pg.offset + pg.perPage) };
-}
 
-// The parameters every control on a drill-down has to carry.
-//
-// The list views name theirs one by one, and they can: their parameter set is the
-// filter form beside them and it is written down two lines above the call. A
-// drill-down's is not written down anywhere — one of its lists has a page parameter
-// PER SESSION BLOCK, so the set depends on what the reader has been clicking — and
-// listing the ones that exist today is how paging the artifacts comes to reset the
-// members six months from now. So the current query is carried through whole and
-// each control overrides its own key.
-//
-// Three things are dropped and each for its own reason. `format`, for the reason the
-// tokens page gives about its own links: JSON has no page to click, so a nav link
-// carrying it would answer a click with a download. And `notice` and `error`, which
-// are the message a revoke's redirect brought back — they belong to the act that has
-// just happened and not to the view, so carrying them would leave "Revoked …" at the
-// top of every page the reader clicked to afterwards, and would put a stale one in
-// the `back` field of the next revoke, which answers with two.
-const NOT_A_VIEW = ['format', 'notice', 'error'];
 
-function pageParamsOf(query) {
-  log.debug("Entering pageParamsOf().");
-  const out = {};
-  Object.keys(query || {}).forEach(function (key) {
-    if (NOT_A_VIEW.indexOf(key) >= 0) {
-      return;
-    }
-    // Express hands back an array when a parameter is repeated. The first is taken
-    // rather than String()'d, because String(['2','5']) is "2,5" — a page number
-    // nothing can parse, silently reached by a link somebody clicked twice.
-    const value = Array.isArray(query[key]) ? query[key][0] : query[key];
-    out[key] = value == null ? '' : String(value);
-  });
-  log.debug("Leaving pageParamsOf(). " + Object.keys(out).length + " parameter(s).");
-  return out;
-}
 
 // ---------------------------------------------------------------------------
 // A ONE-BOX SEARCH OVER ONE SECTION OF A PAGE THAT CARRIES SEVERAL.
@@ -5907,23 +6004,6 @@ function filterOnly(view) {
   return out;
 }
 
-// A query string built from what the caller is already looking at plus an override.
-// Every paging link goes through this, because a "next" that dropped `?kind=` would
-// be page 2 of a different list — the bug this exists to make impossible rather than
-// merely avoidable. Empty values are omitted so the URL of the unfiltered first page
-// is the bare path.
-function queryWith(params, overrides) {
-  const merged = Object.assign({}, params, overrides);
-  const parts = [];
-  Object.keys(merged).forEach(function (key) {
-    const value = merged[key];
-    if (value === '' || value === null || value === undefined) {
-      return;
-    }
-    parts.push(encodeURIComponent(key) + '=' + encodeURIComponent(String(value)));
-  });
-  return parts.length ? '?' + parts.join('&') : '';
-}
 
 // The paging control. Drawn above and below the table both, because the reason to
 // want the next page is usually that you have just read to the bottom of this one.
@@ -6262,6 +6342,7 @@ app.use('/admin', function (req, res, next) {
     // The console answers a person in a browser, so the refusal is a page in
     // this console's own shell rather than a JSON body nobody here would see.
     // 400 and never 403: nothing was refused about WHO is asking.
+    errorCodes.mark(res, 'STS-ADMIN-0009');
     res.status(400).type('text/html').send(page('Bad request', null,
       '<div class="card"><h2>Bad request</h2><p>' + esc(asked.detail) +
       '</p></div>', null, null, req));
@@ -6313,6 +6394,8 @@ app.get('/admin/callback', function (req, res) {
              'sts-admin-console</a> under <code>ou=applications</code>. If it ' +
              'has been deleted or edited — its redirect URI, its secret — this ' +
              'is where that shows up.');
+      errorCodes.mark(res, answer.errorCode || errorCodes.codeOf(answer) ||
+                          errorCodes.codeOf(res) || 'STS-ADMIN-0010');
       res.status(400).type('text/html').set('Cache-Control', 'no-store')
          .send(page('Signing in did not complete', '', inner, null,
                     gateStateFor(req), req));
@@ -6331,7 +6414,9 @@ app.get('/admin/callback', function (req, res) {
     // A rejection here is a bug in this repository rather than anything a
     // request can cause — `handleCallback()` resolves its refusals — so it is
     // reported as one rather than swallowed into a generic failure.
-    log.error("The admin console's OIDC callback threw: " + (e.stack || e.message));
+    log.error(errorCodes.tag('STS-ADMIN-0011') +
+              "The admin console's OIDC callback threw: " + (e.stack || e.message));
+    errorCodes.mark(res, 'STS-ADMIN-0011');
     res.status(500).type('text/html').set('Cache-Control', 'no-store')
        .send(page('Signing in did not complete', '',
                   '<div class="err"><strong>Signing in did not complete.</strong> ' +
@@ -6612,34 +6697,6 @@ app.get('/admin', function (req, res) {
 // GET /admin/metrics
 // ---------------------------------------------------------------------------
 
-// The browser sign-on sessions, as rows. Expired ones are still in the map until
-// something reads them (sessionOf() drops one when it finds it stale), so the state
-// is computed here rather than assumed — otherwise the console would report a
-// session that no request would honour.
-function signOnSessionRows() {
-  log.debug("Entering signOnSessionRows().");
-  const nowMs = Date.now();
-  const rows = [];
-  sessions.forEach(function (session, id) {
-    rows.push({
-      id: id,
-      username: (session.user && session.user.username) || '',
-      sub: (session.user && session.user.sub) || '',
-      amr: (session.amr || []).join(', '),
-      acr: session.acr || '',
-      authTime: (session.authTime || 0) * 1000,
-      expires: session.expires || 0,
-      expired: !!session.expires && session.expires <= nowMs,
-      // Which WS-Federation relying parties this session signed into. It is the
-      // list wsignout1.0 has to fan out to, and seeing it is the only way to know
-      // in advance what a sign-out is about to do.
-      wsfedRealms: Object.keys(session.wsfedRealms || {})
-    });
-  });
-  rows.sort(function (a, b) { return b.authTime - a.authTime; });
-  log.debug("Leaving signOnSessionRows(). " + rows.length + " session(s).");
-  return rows;
-}
 
 function callTable(snap) {
   log.debug("Entering callTable().");
@@ -6707,24 +6764,6 @@ function artifactKindTable(snap) {
     '</table>';
 }
 
-// The metrics reply: the whole snapshot, with the sign-on sessions beside it.
-// The snapshot's own keys are at the TOP LEVEL of it rather than under a
-// `snapshot` member, which is what /admin/metrics?format=json has always
-// answered and what the parent project's tests read — so the route below uses
-// this object for the markup too rather than taking a second snapshot a few
-// microseconds later.
-function metricsJson() {
-  log.debug("Entering metricsJson().");
-  const snap = stats.snapshot();
-  const signOn = signOnSessionRows();
-  const live = signOn.filter(function (s) { return !s.expired; });
-  const json = Object.assign({}, snap, {
-    startedAtIso: new Date(snap.startedAt).toISOString(),
-    signOnSessions: { held: signOn.length, active: live.length, rows: signOn }
-  });
-  log.debug("Leaving metricsJson(). " + signOn.length + " sign-on session(s).");
-  return json;
-}
 
 app.get('/admin/metrics', function (req, res) {
   log.debug("Entering the admin metrics page.");
@@ -6739,7 +6778,7 @@ app.get('/admin/metrics', function (req, res) {
   // characters of base64url with not one place in it a browser will break a line.
   // Emitted as plain text that made the cell's minimum width wider than the card,
   // so the table overflowed and took the OAuth 2.0 / OIDC row's column with it,
-  // even though `urn:sts-mock:user:alice` is short and never the problem. So each
+  // even though `urn:sts:user:alice` is short and never the problem. So each
   // subject is drawn the way the tokens page draws a jti — shortened, with the
   // whole string in the title so it is still recoverable by hovering — and inside
   // <code>, which the stylesheet already lets break mid-string.
@@ -6814,7 +6853,7 @@ app.get('/admin/metrics', function (req, res) {
     '<h2>Sessions, counted both ways</h2>' +
     note('The two numbers mean different things and disagree on purpose. A ' +
     '<strong>sign-on session</strong> is a real one: a browser holding the ' +
-    '<code>sts_mock_session</code> cookie, shared between the OAuth 2.0 / OIDC login screen and ' +
+    '<code>sts_session</code> cookie, shared between the OAuth 2.0 / OIDC login screen and ' +
     'WS-Federation, which is what makes single sign-on across the two work. An ' +
     '<strong>artifact-derived session</strong> is an inference: a subject that holds at least one ' +
     'artifact from that protocol family which is still valid. A <code>client_credentials</code> ' +
@@ -6846,292 +6885,7 @@ app.get('/admin/metrics', function (req, res) {
 // GET /admin/tokens, POST /admin/tokens
 // ---------------------------------------------------------------------------
 
-// The jti a caller named, from whichever of the two forms they used. A jti is
-// accepted directly, and so is a whole token — because the thing somebody has in
-// their hand when they want to invalidate it is the token, not its jti.
-//
-// The token's SIGNATURE IS NOT VERIFIED here, and that is safe rather than sloppy:
-// the only thing read out of it is the jti, which is then looked up in this
-// service's own registry. A forged token yields a jti this service never issued, and
-// revoking a jti that was never issued invalidates nothing. RFC 7009's endpoint does
-// verify, because there the token is the credential being presented; here it is
-// merely a way of typing a jti that is 22 characters long.
-function jtiFrom(target) {
-  log.debug("Entering jtiFrom().");
-  const text = String(target || '').trim();
-  if (!text) {
-    log.debug("Leaving jtiFrom(). Nothing was given.");
-    return { jti: '', how: 'nothing was given' };
-  }
-  const parts = text.split('.');
-  if (parts.length !== 3) {
-    log.debug("Leaving jtiFrom(). Treating it as a jti.");
-    return { jti: text, how: 'read as a jti' };
-  }
-  try {
-    const claims = JSON.parse(b64uDecode(parts[1]).toString('utf8'));
-    log.debug("Leaving jtiFrom(). Read the jti out of a JWT.");
-    return { jti: String(claims.jti || ''), how: 'read out of the JWT payload without verifying it',
-             claims: claims };
-  } catch (e) {
-    // Three dot-separated parts that are not a JWT. Fall back to treating the whole
-    // string as a jti rather than refusing: it costs nothing and a jti containing
-    // two dots is not forbidden anywhere.
-    log.debug("Leaving jtiFrom(). It has three parts but is not a JWT: " + e.message);
-    return { jti: text, how: 'read as a jti (it looked like a JWT but did not decode)' };
-  }
-}
 
-function tokenAction(body) {
-  log.debug("Entering tokenAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-
-  if (action === 'revoke' || action === 'restore') {
-    const found = jtiFrom(body.target || body.jti || body.token);
-    if (!found.jti) {
-      log.debug("Leaving tokenAction(). No jti was given.");
-      return { ok: false, errors: ['Give a jti, or paste the whole token and the jti will be read ' +
-                                   'out of it.'] };
-    }
-    if (action === 'restore') {
-      const was = stats.restore(found.jti);
-      log.debug("Leaving tokenAction(). Restored.");
-      return { ok: true, jti: found.jti,
-               message: was ? 'The token with jti ' + found.jti + ' is no longer revoked (NON-SPEC — ' +
-                              'a real authorization server cannot undo a revocation).'
-                            : 'The token with jti ' + found.jti + ' was not revoked, so nothing changed.' };
-    }
-    const first = stats.revoke(found.jti, 'the admin console');
-    log.debug("Leaving tokenAction(). Revoked.");
-    return { ok: true, jti: found.jti,
-             message: (first ? 'Revoked ' : 'Already revoked: ') + found.jti + ' (' + found.how +
-                      '). Introspection now reports it inactive, UserInfo refuses it, and it will ' +
-                      'not refresh.' };
-  }
-
-  // ONE ASSERTION, TICKET OR SVID — this service's own position on a credential
-  // it cannot recall.
-  //
-  // **IT CHANGES NOTHING OUT THERE AND THE MESSAGE SAYS SO, EVERY TIME.** That
-  // sentence is the whole reason this action can exist without being a lie: a
-  // relying party validates a SAML assertion's signature and its Conditions and
-  // asks nobody; a Kerberos service decrypts a ticket with a key it already
-  // has; an X509-SVID chains to a bundle. None of them will ever ask this
-  // service, so the credential goes on working until it expires.
-  //
-  // What the mark buys is the three things that CAN carry it: a global logout
-  // that reports what it disowned, a CAEP Security Event Token to a receiver
-  // that subscribed, and SAML Single Logout for an assertion that came from a
-  // browser profile. A WS-Trust assertion has neither channel and the mark is
-  // all there is — which is exactly why it is worth having.
-  //
-  // Addressed by `artifact` (the row handle) rather than by the protocol's own
-  // identifier, because a Kerberos ticket has none at all.
-  if (action === 'revoke-artifact' || action === 'restore-artifact') {
-    const handle = String(body.artifact || body.key || '').trim();
-    if (!handle) {
-      log.debug("Leaving tokenAction(). No artifact was named.");
-      return { ok: false, errors: ['Name the credential in `artifact`, as the `key` on every ' +
-                                   'row of GET /admin-api/tokens gives it. It is this ' +
-                                   'service\'s own handle rather than the protocol\'s, ' +
-                                   'because a Kerberos ticket carries no identifier anybody ' +
-                                   'can quote.'] };
-    }
-    const record = stats.artifactByKey(handle);
-    if (!record) {
-      log.debug("Leaving tokenAction(). No such artifact.");
-      return { ok: false, errors: ['Nothing here is called "' + handle + '" any more. Either ' +
-                                   'it was never a credential in this register, or it has ' +
-                                   'been forgotten to the cap since the page naming it was ' +
-                                   'drawn — at which point this service has no position on ' +
-                                   'it left to state.'] };
-    }
-    const notReached = ' THE HOLDER HAS NOT BEEN TOLD and cannot be by this action: nothing ' +
-      'consults this service when a ' + record.kind + ' is presented, so it goes on working ' +
-      'until it expires. What this buys is that a global logout can report it, that CAEP can ' +
-      'transmit it to a receiver that subscribed, and that SAML Single Logout can carry it ' +
-      'for an assertion issued through a browser profile.';
-    if (action === 'restore-artifact') {
-      const was = stats.restoreArtifact(record);
-      log.debug("Leaving tokenAction(). Restored an artifact.");
-      return { ok: true, artifact: handle, kind: record.kind,
-               message: was
-                 ? 'This service no longer disowns the ' + record.kind + ' ' +
-                   (record.id || '(no identifier)') + '. NON-SPEC, like every restore here.'
-                 : 'The ' + record.kind + ' was not revoked, so nothing changed.' };
-    }
-    const first = stats.revokeArtifact(record, 'the admin console');
-    log.debug("Leaving tokenAction(). Revoked an artifact.");
-    return { ok: true, artifact: handle, kind: record.kind,
-             revocationReach: 'record-only',
-             message: (first ? 'Marked revoked: ' : 'Already revoked: ') + record.kind + ' ' +
-                      (record.id || '(no identifier)') + '.' + notReached };
-  }
-
-  // ONE SET, IN ONE ACT — the button the tokens table draws on a grouped row.
-  //
-  // It is NOT a new kind of revocation and does not write anywhere new: each
-  // revocable member goes through stats.revoke() exactly as its own button would
-  // send it, into the same set of revoked jtis RFC 7009's /oauth2/revoke writes
-  // to. What it saves is three clicks and, more to the point, the mistake of
-  // revoking two of the three and believing the grant is dead — a refresh token
-  // left behind mints a new access token, which is the whole reason a set is
-  // worth being a row.
-  //
-  // THE MEMBERS ARE RE-READ HERE and never taken from the form, which is the
-  // same rule terminate() follows and for the same reason: a page can be posted
-  // an hour after it was drawn, and acting on the list it drew would revoke a
-  // jti that has since been forgotten to the cap while missing one issued since.
-  // The form carries the set KEY and nothing else.
-  if (action === 'revoke-set' || action === 'restore-set') {
-    const setKey = String(body.set || body.setKey || '').trim();
-    if (!setKey) {
-      log.debug("Leaving tokenAction(). No set was given.");
-      return { ok: false, errors: ['Give a set, as the `setKey` on every row of ' +
-                                   'GET /admin-api/tokens names it.'] };
-    }
-    const set = stats.issuedSetByKey(setKey);
-    if (!set) {
-      log.debug("Leaving tokenAction(). No such set.");
-      return { ok: false, errors: ['Nothing here is called "' + setKey + '" any more. ' +
-                                   'Either it was never a set, or it has been forgotten ' +
-                                   'to the cap since the page this button is on was ' +
-                                   'drawn — the registry holds at most ' +
-                                   stats.MAX_TOKENS + ' tokens.'] };
-    }
-    const revocable = set.members.filter(function (member) { return member.revocable; });
-    if (!revocable.length) {
-      // A REFUSAL RATHER THAN A SUCCESS THAT DID NOTHING. It is a narrower case
-      // than it was before 2026-09-05, when it covered every assertion, ticket
-      // and SVID: those are revocable now — in this service's own record, which
-      // is a different claim from being honoured and is why `revocationReach`
-      // exists. What is left here is a set holding only credentials with NO
-      // HANDLE TO ACT ON, which is the signed UserInfo response and the OID4VP
-      // Request Object: no jti, nothing to name.
-      log.debug("Leaving tokenAction(). Nothing in the set can be revoked.");
-      return { ok: false, setKey: setKey, errors: [
-        'Nothing in this set can be revoked. It holds ' + set.kinds.join(', ') +
-        ', and none of those carries an identifier to act on — a signed ' +
-        'UserInfo response has no jti, and the WS-Trust JWT is signed directly ' +
-        'rather than through signJwt(). There is nothing to name in a ' +
-        'revocation.'] };
-    }
-    // EACH MEMBER THROUGH ITS OWN MECHANISM, decided by `revocationReach` and
-    // never by the family: a JWT goes into the revoked-jti set that
-    // /oauth2/revoke writes to, and an assertion, ticket or SVID is marked in
-    // this service's own record and reaches nobody. A set can hold both — a
-    // WS-Federation sign-in produces an ID Token AND a SAML assertion — so
-    // this cannot be one branch taken once for the whole set.
-    let changed = 0;
-    let reached = 0;
-    let recordOnly = 0;
-    revocable.forEach(function (member) {
-      let moved;
-      if (member.revocationReach === 'record-only') {
-        recordOnly += 1;
-        const record = stats.artifactByKey(member.key);
-        moved = action === 'restore-set'
-          ? stats.restoreArtifact(record)
-          : stats.revokeArtifact(record, 'the admin console (the whole set ' + setKey + ')');
-      } else {
-        reached += 1;
-        moved = action === 'restore-set'
-          ? stats.restore(member.jti)
-          : stats.revoke(member.jti, 'the admin console (the whole set ' + setKey + ')');
-      }
-      if (moved) changed += 1;
-    });
-    const verb = action === 'restore-set' ? 'restored' : 'revoked';
-    log.debug("Leaving tokenAction(). " + verb + " " + changed + " of " +
-              revocable.length + " in a set.");
-    return { ok: true, setKey: setKey, set: setKey,
-             revocable: revocable.length,
-             revoked: action === 'restore-set' ? 0 : changed,
-             restored: action === 'restore-set' ? changed : 0,
-             // HOW MUCH OF THIS ACT ANYBODY OUTSIDE WILL NOTICE, reported as
-             // two numbers rather than folded into one: the caller is entitled
-             // to know that three of the four credentials it just revoked go on
-             // working, and a single count would have hidden it.
-             reachedProtocol: reached, recordOnly: recordOnly,
-             kinds: revocable.map(function (member) { return member.kind; }),
-             message: (changed
-               ? (action === 'restore-set' ? 'Restored ' : 'Revoked ') + changed
-               : 'Nothing changed: all ' + revocable.length + ' were already ' + verb) +
-               ' of the ' + revocable.length + ' revocable credential(s) in this set (' +
-               revocable.map(function (member) { return member.kind; }).join(', ') + ')' +
-               (set.size > revocable.length
-                 ? '. The other ' + (set.size - revocable.length) +
-                   ' carry no identifier to act on and were left alone.'
-                 : '.') +
-               (recordOnly
-                 ? ' ' + recordOnly + ' of them was marked IN THIS SERVICE\'S RECORD ONLY ' +
-                   '— nothing consults this service when an assertion, a ticket or an SVID ' +
-                   'is presented, so those go on working out there until they expire.'
-                 : '') };
-  }
-
-  if (action === 'revoke-kind') {
-    const kind = String(body.kind || '');
-    if (stats.REVOCABLE_KINDS.indexOf(kind) < 0) {
-      log.debug("Leaving tokenAction(). Not a revocable kind.");
-      return { ok: false, errors: ['"' + kind + '" is not a kind that can be revoked. The three are: ' +
-                                   stats.REVOCABLE_KINDS.join(', ') + '.'] };
-    }
-    const count = stats.revokeWhere(function (record) { return record.kind === kind; },
-                                    'the admin console (every ' + kind + ')');
-    log.debug("Leaving tokenAction(). Revoked " + count + " by kind.");
-    return { ok: true, revoked: count, message: 'Revoked ' + count + ' ' + kind + '(s).' };
-  }
-
-  if (action === 'revoke-subject') {
-    const subject = String(body.subject || '').trim();
-    if (!subject) {
-      log.debug("Leaving tokenAction(). No subject was given.");
-      return { ok: false, errors: ['Give a subject or a username.'] };
-    }
-    const count = stats.revokeWhere(function (record) {
-      return record.sub === subject || record.username === subject;
-    }, 'the admin console (everything for ' + subject + ')');
-    log.debug("Leaving tokenAction(). Revoked " + count + " for a subject.");
-    return { ok: true, revoked: count,
-             message: 'Revoked ' + count + ' token(s) for ' + subject + '.' };
-  }
-
-  // The users page's button. It is not the same thing as revoke-subject above, and
-  // the difference is the reason it exists: that one matches a `sub` or a `username`
-  // EXACTLY, which is what somebody typing into the box on the tokens page means,
-  // while a user on the users page is an identity that has been seen under several
-  // spellings — `alice`, `urn:sts-mock:user:alice`, `alice@STS.MOCK`. Revoking "for
-  // alice" from that page has to mean all of them, or the page would offer a button
-  // that visibly missed half of its own table.
-  if (action === 'revoke-user') {
-    const key = String(body.user || '').trim();
-    if (!key) {
-      log.debug("Leaving tokenAction(). No user was given.");
-      return { ok: false, errors: ['Give a user, as the users page names them.'] };
-    }
-    const count = stats.revokeWhere(function (record) {
-      return stats.identityKeyOf(record.username || record.sub) === key;
-    }, 'the admin console (everything for the user ' + key + ')');
-    log.debug("Leaving tokenAction(). Revoked " + count + " for a user.");
-    return { ok: true, revoked: count, user: key,
-             message: 'Revoked ' + count + ' token(s) for ' + key + ' — every spelling of that ' +
-                      'identity, not just the one the row showed.' };
-  }
-
-  if (action === 'revoke-all') {
-    const count = stats.revokeWhere(function () { return true; }, 'the admin console (everything)');
-    log.debug("Leaving tokenAction(). Revoked everything: " + count + ".");
-    return { ok: true, revoked: count,
-             message: 'Revoked ' + count + ' token(s) — every access token, ID Token and refresh ' +
-                      'token this service has issued and still remembers.' };
-  }
-
-  log.debug("Leaving tokenAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The ten are: revoke, restore, ' +
-                               'revoke-artifact, restore-artifact, revoke-set, restore-set, ' +
-                               'revoke-kind, revoke-subject, revoke-user, revoke-all.'] };
-}
 
 // Where a form POST sends the browser back to. Revoking the token on page 4 and
 // landing on page 1 of an unfiltered list is the paging bug everybody has met, so
@@ -7252,151 +7006,6 @@ app.post('/admin/tokens', function (req, res) {
   log.debug("Leaving the admin token action endpoint.");
 });
 
-// The filtered, paged token list and the reply built from it. The WHOLE view
-// rather than only its JSON, because the markup below needs every intermediate
-// step of it — and a second walk of the same list a few lines later is how a
-// table and the JSON beside it come to disagree about a revocation that
-// happened in between.
-function tokensView(query) {
-  log.debug("Entering tokensView().");
-  const wantedFamily = String(query.family || '');
-  const wantedKind = String(query.kind || '');
-  const wantedState = String(query.state || '');
-  // WHICH SESSION A CREDENTIAL WAS ISSUED ON (2026-09-04). Every row of
-  // /admin/sessions links here with it set, because "what came out of this
-  // session" was a question this table held the answer to and could not be
-  // asked. It is an EXACT match on the session id and not a search: the id is
-  // what a token records, and a substring of one is not a session.
-  //
-  // A credential with NO session behind it — the two direct grants, a
-  // pre-authorized code, a token exchange, every assertion and every ticket —
-  // is therefore filtered out rather than shown, which is right: it was not
-  // issued on that session, and the empty answer is the honest one for a
-  // session nothing was issued on.
-  const wantedSession = String(query.session || '');
-  // Not tokenList(), and since 2026-09-05 not issuedList() either: this page
-  // lists what came back in ONE REPLY. Every JWT, every SAML assertion (whether
-  // WS-Trust or WS-Federation issued it), every Kerberos ticket and every SVID is
-  // still here — grouped where the protocol grouped them, which is OAuth 2.0 and
-  // OIDC and nowhere else. See issuedSetRow() above for the argument, and
-  // stats.issuedSets() for the grouping, which is decided by a set id the ISSUER
-  // stated rather than by anything this file could infer from these rows.
-  const all = stats.issuedSets();
-  // EVERY FILTER MATCHES A SET WHEN ANY MEMBER MATCHES, and that is the one thing
-  // about this page a reader has to be told rather than left to work out. Asking
-  // for `kind=id_token` answers with the SETS that contain an ID Token — showing
-  // the access token and the refresh token beside it, which is the reply that ID
-  // Token arrived in and the thing somebody filtering for it is looking at. A
-  // filter that hid the neighbours would be the old per-credential table wearing
-  // this one's clothes, and the note under the form says so on the page.
-  //
-  // `family` and `session` are per-set facts in practice — every member of a set
-  // shares them — but they are asked of the members for the same reason, so that
-  // one rule covers all four and a family that starts grouping later needs no
-  // second one.
-  const matches = function (set, test) {
-    return set.members.some(test);
-  };
-  const filtered = all.filter(function (set) {
-    if (wantedFamily && !matches(set, function (r) { return r.family === wantedFamily; })) return false;
-    if (wantedKind && !matches(set, function (r) { return r.kind === wantedKind; })) return false;
-    if (wantedState && !matches(set, function (r) { return r.state === wantedState; })) return false;
-    if (wantedSession &&
-        !matches(set, function (r) { return String(r.sessionId || '') === wantedSession; })) return false;
-    return true;
-  });
-  // Filter first, then page: paging a list and then filtering it would give a page 2
-  // whose length depends on what page 1 happened to contain.
-  //
-  // PAGED BY SET AND NOT BY CREDENTIAL, which is what makes a page of this table a
-  // whole number of replies. Twenty rows is now twenty issuances and somewhere
-  // between twenty and sixty credentials, and the line under the table says both —
-  // paging by credential would put the access token of one reply at the bottom of
-  // page 1 and its refresh token at the top of page 2, which is precisely the
-  // reassembly-by-eye this change exists to remove.
-  const paging = pagingOf(query, filtered.length);
-  const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
-  // How much of each family is held, for the line under the table. Counted in
-  // CREDENTIALS rather than sets, because "612 JWTs" is the figure the metrics
-  // page prints and two pages of one console disagreeing about how much has been
-  // issued is worse than this line being in different units from the one above
-  // it — which it says. Counted from this list rather than taken from the
-  // snapshot, because the snapshot's artifact count includes the OID4VCI
-  // credentials this page does not list.
-  const heldByFamily = {};
-  let heldCredentials = 0;
-  all.forEach(function (set) {
-    set.members.forEach(function (record) {
-      heldByFamily[record.family] = (heldByFamily[record.family] || 0) + 1;
-      heldCredentials += 1;
-    });
-  });
-  const countMembers = function (sets) {
-    return sets.reduce(function (n, set) { return n + set.size; }, 0);
-  };
-  const matchedCredentials = countMembers(filtered);
-  const shownCredentials = countMembers(shown);
-  // The flatten of what this page holds, in the order the table draws it: each
-  // set's members in issuance order, sets newest first. It is DERIVED from
-  // `shown` rather than filtered again out of issuedList(), which is the whole
-  // reason the two can be published side by side — a second walk of the register
-  // is how a table and the JSON beside it come to disagree about a revocation
-  // that happened in between.
-  const shownRecords = shown.reduce(function (out, set) {
-    return out.concat(set.members);
-  }, []);
-  log.debug("Leaving tokensView(). " + shown.length + " set(s) of " +
-            filtered.length + ", holding " + shownCredentials + " credential(s).");
-  return {
-    wantedFamily: wantedFamily, wantedKind: wantedKind,
-    wantedState: wantedState, wantedSession: wantedSession,
-    all: all, filtered: filtered, paging: paging, shown: shown,
-    heldByFamily: heldByFamily, heldCredentials: heldCredentials,
-    matchedCredentials: matchedCredentials, shownCredentials: shownCredentials,
-    json: {
-      // IN CREDENTIALS. `held` has meant this since the day the page had a
-      // total on it, and a resource that quietly changed its unit under a name
-      // nobody had to re-read would be the worst kind of breaking change — so
-      // the SET counts are new members beside it rather than a new meaning for
-      // an old one.
-      held: heldCredentials,
-      heldSets: all.length,
-      // IN SETS, both of them, because sets are what this resource now lists
-      // and what its paging counts. The credential figures are beside them.
-      matched: filtered.length, matchedCredentials: matchedCredentials,
-      shown: shown.length, shownCredentials: shownCredentials,
-      heldByFamily: stats.ISSUED_FAMILIES.reduce(function (out, entry) {
-        out[entry.family] = heldByFamily[entry.family] || 0;
-        return out;
-      }, {}),
-      filter: { family: wantedFamily || null, kind: wantedKind || null,
-                state: wantedState || null, session: wantedSession || null },
-      // The clamped values, not what was asked for: `?page=999` on a two-page
-      // list reports page 2, which is the page whose rows are in the reply.
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      families: stats.ISSUED_FAMILIES,
-      revocableKinds: stats.REVOCABLE_KINDS,
-      revokedCount: stats.revokedCount(),
-      // WHAT THIS RESOURCE LISTS SINCE 2026-09-05: one entry per issuance,
-      // each carrying its members. A caller that wants the credentials
-      // ungrouped has `issued` below and need not walk two levels.
-      sets: shown,
-      // `issued` rather than `tokens`, because the array is no longer only
-      // tokens and a key that says otherwise is the kind of thing a test
-      // asserts against once and then trusts. Nothing outside this repository
-      // read the old name.
-      //
-      // IT IS THE FLATTEN OF `sets` AND NOT A SECOND LIST. Same rows, same
-      // order, ungrouped — so every caller written against the per-credential
-      // shape still reads what it read, and the two cannot come to disagree
-      // because one is built out of the other. What DID change under it is the
-      // paging: a page is now a whole number of sets, so this array is between
-      // `perPage` and three times it rather than exactly `perPage`.
-      issued: shownRecords
-    }
-  };
-}
 
 // ---------------------------------------------------------------------------
 // MONITORING -> SESSIONS. EVERY SESSION THIS SERVICE IS HOLDING RIGHT NOW.
@@ -7435,23 +7044,6 @@ function tokensView(query) {
 // it is on, and the row says so rather than the button quietly doing it.
 // ---------------------------------------------------------------------------
 
-// The protocols this list can hold, for the filter. Built from the rows
-// themselves rather than written down, because the set depends on what people
-// have signed in THROUGH — `session.via` is a federation relationship's name on
-// a federated sign-in — and a hand-written list would be a select with entries
-// that match nothing beside sign-ins it cannot name.
-function sessionProtocolsIn(rows) {
-  log.debug("Entering sessionProtocolsIn().");
-  const out = [];
-  rows.forEach(function (row) {
-    if (row.protocol && out.indexOf(row.protocol) < 0) {
-      out.push(row.protocol);
-    }
-  });
-  out.sort();
-  log.debug("Leaving sessionProtocolsIn(). " + out.length + " protocol(s).");
-  return out;
-}
 
 // WHEN THIS SESSION ENDS, AND HOW THAT IS WORKED OUT. Three answers rather than
 // one, because the three kinds are genuinely different and a column that showed
@@ -7539,90 +7131,6 @@ function sessionRow(row, nowMs, canWrite, back) {
   return out;
 }
 
-// One route, two answers, and the choice is here rather than in the route so
-// that GET /admin-api/sessions makes the same one — the rule every view in this
-// file follows, and the reason the management API cannot come to disagree with
-// the page about who is signed in.
-function sessionsView(req) {
-  log.debug("Entering sessionsView().");
-  const query = req.query || {};
-  if (!logoutReader) {
-    log.debug("Leaving sessionsView(). No logout reader.");
-    return { installed: false, all: [], protocols: [], shown: [], paging: null,
-             wantedText: '', wantedProtocol: '',
-             json: { installed: false, held: 0, matched: 0, shown: 0,
-                     sessions: [],
-                     note: 'logout/logout.js is not loaded in this process, ' +
-                           'so there is no reader for what is live.' } };
-  }
-  const all = logoutReader.liveSessions();
-  const wantedText = queryOne(query, 'q').trim();
-  const wantedProtocol = queryOne(query, 'protocol').trim();
-  // Filter first, then page — pagingOf()'s rule, and for its reason.
-  const filtered = all.filter(function (row) {
-    if (wantedProtocol && row.protocol !== wantedProtocol) return false;
-    return chooserMatches([row.username, row.sub, row.handle, row.key,
-                           row.kind, row.protocol], wantedText);
-  });
-  const paging = pagingOf(query, filtered.length, { noun: 'sessions' });
-  const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
-  const byKind = {};
-  all.forEach(function (row) {
-    byKind[row.family] = (byKind[row.family] || 0) + 1;
-  });
-  // THE UNAUTHENTICATED ONES, AS A LIST OF THEIR OWN (2026-09-05).
-  //
-  // NOT FILTERED AND NOT PAGED, deliberately, where the table above it is
-  // both. The two lists answer different questions: the main one is *what is
-  // live*, which is long and needs narrowing, and this one is *is anybody in
-  // here without having signed in*, which is a question about the whole
-  // service and would be answered wrongly by a filter somebody had left set.
-  // A search box that could hide one of these rows would make the section
-  // worse than not having it.
-  //
-  // It is a SECTION rather than a column on the table above because the answer
-  // is almost always "none", and a column that is the same on every row for
-  // weeks at a time stops being read. A section that is empty says so in one
-  // line and a section with rows in it is the thing somebody notices.
-  const unauthenticated = all.filter(function (row) {
-    return row.authenticated === false;
-  });
-  log.debug("Leaving sessionsView(). " + shown.length + " row(s) of " +
-            filtered.length + " (" + all.length + " live).");
-  return {
-    installed: true, all: all, filtered: filtered, shown: shown,
-    paging: paging, byKind: byKind, unauthenticated: unauthenticated,
-    protocols: sessionProtocolsIn(all),
-    wantedText: wantedText, wantedProtocol: wantedProtocol,
-    json: {
-      installed: true,
-      held: all.length, matched: filtered.length, shown: shown.length,
-      heldByKind: byKind,
-      // Rule 7: the page grew a section, so the API grew the same answer. The
-      // COUNT and the ROWS both, because "are there any" and "which ones" are
-      // the two things a caller asks and deriving the first from the second
-      // would make an empty list and an absent field look alike.
-      unauthenticatedHeld: unauthenticated.length,
-      unauthenticatedSessions: unauthenticated.map(function (row) {
-        return { id: row.id, family: row.family, username: row.username,
-                 sub: row.sub, protocol: row.protocol, sessionId: row.sessionId,
-                 startedAt: row.startedAt, expiresAt: row.expiresAt,
-                 carries: row.carries, key: row.key };
-      }),
-      filter: { q: wantedText || null, protocol: wantedProtocol || null },
-      // The clamped values, not what was asked for: `?page=999` on a two-page
-      // list reports page 2, which is the page whose rows are in the reply.
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      at: Date.now(),
-      // The rules, once, beside the rows rather than repeated on each of them:
-      // a caller reading `expiresAt` needs to know which of the three arithmetics
-      // produced it, and every row already says which family it is.
-      expiryRules: logoutReader.SESSION_EXPIRY_RULES || {},
-      sessions: shown
-    }
-  };
-}
 
 app.get('/admin/sessions', function (req, res) {
   log.debug("Entering the admin sessions page.");
@@ -7703,9 +7211,11 @@ app.get('/admin/sessions', function (req, res) {
     '<li><strong>The browser sign-on session</strong> &mdash; the cookie from ' +
     '<code>/authn/login</code>, which OAuth 2.0 / OIDC, WS-Federation, SAML ' +
     '2.0, SAML 1.1 and this console all read. It expires at an ABSOLUTE ' +
-    'instant fixed when it was created and <strong>using it does not extend ' +
-    'it</strong>: there is no idle timeout here, so a session in constant use ' +
-    'dies at the same moment as one nobody has touched. The <em>Carries</em> ' +
+    'instant fixed when it was created (<code>authn.sessionLifetimeS</code>) ' +
+    'and <strong>using it does not extend it</strong>. An idle timeout ' +
+    '(<code>authn.sessionIdleTimeoutS</code>) ends it earlier when it goes ' +
+    'unused; it is off by default, and then a session in constant use dies at ' +
+    'the same moment as one nobody has touched. The <em>Carries</em> ' +
     'column is what has signed in ON it, which is what makes ending one reach ' +
     'further than it looks.</li>' +
     '<li><strong>The Kerberos ticket-granting ticket</strong> &mdash; a TGT ' +
@@ -7851,69 +7361,6 @@ app.get('/admin/sessions', function (req, res) {
   log.debug("Leaving the admin sessions page.");
 });
 
-// THE ONE ACTION, AND IT IS `logout.terminate()` WITH A SELECTION OF ONE.
-//
-// Not a second implementation of what ending a session means: that function
-// re-collects from every family, ends what was named, writes the one audit row
-// for the act and reports what it could not end and why — all of which a
-// hand-written revoke here would have had to reproduce and would have
-// reproduced differently. `/admin/sessions` is a VIEW of that model with a
-// button on it.
-//
-// The `key` comes off the row rather than out of a name box, because
-// terminate() is keyed on an identity and the row already knows which one; a
-// posted key that names nobody simply ends nothing, and says so.
-function sessionsAction(body, opts) {
-  log.debug("Entering sessionsAction().");
-  if (!logoutReader) {
-    log.debug("Leaving sessionsAction(). No logout reader.");
-    return { ok: false, errors: [
-      'logout/logout.js is not loaded in this process, so there is nothing ' +
-      'to end.'] };
-  }
-  const asked = body || {};
-  const action = String(asked.action || '');
-  if (action !== 'revoke') {
-    log.debug("Leaving sessionsAction(). Unknown action.");
-    return { ok: false, errors: ['Unknown action "' + action +
-      '". There is one: revoke.'] };
-  }
-  const key = String(asked.key || '').trim();
-  const selected = String(asked.select || '').trim();
-  if (!key || !selected) {
-    log.debug("Leaving sessionsAction(). Nothing named.");
-    return { ok: false, errors: [
-      'Both "key" (whose session it is) and "select" (the session id, in the ' +
-      'form the sessions list gives it — "session:…", "ldap:…" or ' +
-      '"krb5:…@REALM") are needed. GET /admin-api/sessions carries both on ' +
-      'every row.'] };
-  }
-  const result = logoutReader.terminate(key, [selected], {
-    actor: (opts && opts.actor) || '',
-    by: (opts && opts.by) || 'the sessions page',
-    channel: 'http'
-  });
-  // terminate() reports per row. One row was named, so its sentence IS the
-  // answer — and a refusal (a Kerberos row while logout.kerberosSignOut is
-  // off, a stale id from a page drawn a minute ago) has to come back as a
-  // refusal rather than as a success that did nothing.
-  const done = (result.terminated || []).length;
-  const unknown = (result.unknown || []).length;
-  const said = []
-    .concat((result.terminated || []).map(function (one) { return one.message; }))
-    .concat((result.skipped || []).map(function (one) { return one.message; }))
-    .join(' ');
-  if (done) {
-    log.debug("Leaving sessionsAction(). Ended.");
-    return { ok: true, message: said || 'the session was ended', result: result };
-  }
-  log.debug("Leaving sessionsAction(). Nothing was ended.");
-  return { ok: false, result: result, errors: [
-    said || (unknown
-      ? 'Nothing here is called "' + selected + '" any more. It had already ' +
-        'ended, or the list this button came from was drawn before it did.'
-      : 'Nothing was ended.') ] };
-}
 
 app.post('/admin/sessions', function (req, res) {
   log.debug("Entering the admin sessions action endpoint.");
@@ -8069,7 +7516,7 @@ app.get('/admin/tokens', function (req, res) {
       '<input type="hidden" name="action" value="revoke-subject">' +
       '<input type="hidden" name="back" value="' + esc(backFilter) + '">' +
       '<div class="formrow"><label for="subject">Everything for one subject or username</label>' +
-      '<input type="text" id="subject" name="subject" size="40" placeholder="alice, or urn:sts-mock:user:alice">' +
+      '<input type="text" id="subject" name="subject" size="40" placeholder="alice, or urn:sts:user:alice">' +
       '<button class="danger">Revoke</button></div></form>' +
 
     '<h2>What has been issued</h2>' +
@@ -8175,56 +7622,6 @@ app.get('/admin/tokens', function (req, res) {
   log.debug("Leaving the admin tokens page.");
 });
 
-// ---------------------------------------------------------------------------
-// GET /admin/tokens/set?id=… — THE CREDENTIALS THAT CAME BACK IN ONE REPLY.
-//
-// **THE TOKENS PAGE'S SECOND DRILL-DOWN, AND IT IS THE OLD TABLE SCOPED TO ONE
-// ISSUANCE.** Since 2026-09-05 that list draws a row per reply rather than a row
-// per credential, which is what the reader wants nineteen times out of twenty
-// and exactly wrong the twentieth: when somebody is chasing ONE token they need
-// its own jti, its own expiry and its own button back. So the members are drawn
-// here by `issuedRow()` — the very function the list used to call — and the
-// column legend on the list describes this table without a word changing.
-//
-// It hangs under /admin/tokens the way /admin/tokens/credential does and for the
-// same reasons: no `NAV` row, `active` is '/admin/tokens', and `up` carries the
-// filter and the page the reader left, so the trail reads `Tokens › One issuance`
-// and the way back is the row they clicked on.
-//
-// **IT IS ADDRESSED BY `setKey` AND NOT BY THE SET ID**, and the difference
-// matters for exactly one case. A grouped set's key is `set:<id>`; a set of one
-// has no id at all and its key is `one:<this service's own row handle>`. The
-// list only ever links here from a group — for one credential this page would be
-// a click that added nothing, so those rows still open the lineage directly —
-// but the KEY space covers both, so `GET /admin-api/tokens/set` can open any row
-// of that table and a test need not know which kind it has in its hand.
-// ---------------------------------------------------------------------------
-function tokenSetView(query) {
-  log.debug("Entering tokenSetView().");
-  const asked = String((query && query.id) || '').trim();
-  const set = asked ? stats.issuedSetByKey(asked) : null;
-  log.debug("Leaving tokenSetView(). " + (set ? set.size + " member(s)." : "No such set."));
-  return {
-    asked: asked,
-    set: set,
-    json: {
-      // The key that was ASKED FOR, echoed even when nothing holds it, because
-      // a caller walking a list it drew a minute ago needs to know which of its
-      // keys came back empty and not merely that one did.
-      setKey: asked || null,
-      // Null rather than an empty object for a set nothing holds — which is the
-      // ORDINARY answer for one forgotten to the cap, not an error — and the
-      // sentence beside it says which of the two happened.
-      set: set,
-      found: !!set,
-      why: set ? null : (asked
-        ? 'Nothing here is called "' + asked + '". Either it was never a set, or ' +
-          'it has been forgotten to the cap since the list naming it was drawn.'
-        : 'Name a set. Every grouped row of GET /admin-api/tokens carries its ' +
-          '`setKey`, and so does every row of `sets`.')
-    }
-  };
-}
 
 app.get('/admin/tokens/set', function (req, res) {
   log.debug("Entering the admin token set page.");
@@ -8707,83 +8104,6 @@ app.get('/admin/tokens/credential', function (req, res) {
 // audit log stands. It is stated instead, and `?category=` reads past it.
 // ---------------------------------------------------------------------------
 
-// Everything the page and the API both need out of one query string. Written as
-// a view function for the reason the comment above consoleJson() gives: this
-// console and /admin-api are two callers, and two hand-built copies of the same
-// filtering would be two answers that each look right alone.
-function auditView(query) {
-  log.debug("Entering auditView().");
-  const wantedCategory = String(query.category || '');
-  const wantedAction = String(query.action || '');
-  const wantedOutcome = String(query.outcome || '');
-  const wantedActor = String(query.actor || '');
-  const wantedText = String(query.q || '');
-  const all = auditLog.list();
-  const needle = wantedText.toLowerCase();
-  const actorNeedle = wantedActor.toLowerCase();
-  const filtered = all.filter(function (row) {
-    if (wantedCategory && row.category !== wantedCategory) return false;
-    if (wantedAction && row.action !== wantedAction) return false;
-    if (wantedOutcome && row.outcome !== wantedOutcome) return false;
-    // Substring rather than equality, and case-insensitively, because the actor
-    // on a directory row may be the console key (`alice`) while the one on a
-    // Kerberos row arrived as `alice@STS.MOCK` — the collapse to one key is done
-    // where an identity is normalised and cannot be done for a row whose actor
-    // is a bind DN. A substring finds the person either way.
-    if (actorNeedle && (row.actor + ' ' + row.actorForm).toLowerCase()
-                         .indexOf(actorNeedle) < 0) return false;
-    // One free-text box over the three columns somebody would look in. The
-    // summary alone would miss a DN that only appears in `target`, and a box
-    // that silently searched one column while the reader assumed three is worse
-    // than no box.
-    if (needle && (row.summary + ' ' + row.target + ' ' + row.action)
-                    .toLowerCase().indexOf(needle) < 0) return false;
-    return true;
-  });
-  // Filter first, then page — the same order the tokens page uses and for the
-  // same reason: paging a list and then filtering it gives a page 2 whose length
-  // depends on what page 1 happened to hold.
-  const paging = pagingOf(query, filtered.length);
-  const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
-  const summary = auditLog.summary();
-  log.debug("Leaving auditView(). " + shown.length + " row(s) of " +
-            filtered.length + ".");
-  return {
-    wantedCategory: wantedCategory, wantedAction: wantedAction,
-    wantedOutcome: wantedOutcome, wantedActor: wantedActor,
-    wantedText: wantedText,
-    all: all, filtered: filtered, paging: paging, shown: shown,
-    summary: summary,
-    json: {
-      held: summary.held,
-      // Everything ever recorded and everything dropped, both, because `held`
-      // alone reads as "this is all there was" the moment the cap has bitten.
-      recorded: summary.recorded, dropped: summary.dropped,
-      maxEvents: summary.maxEvents, protocolCalls: summary.protocolCalls,
-      matched: filtered.length, shown: shown.length,
-      // The lowest and highest sequence numbers still held. A caller polling
-      // this endpoint uses them rather than a timestamp: `seq` is monotonic and
-      // never reused, so "everything after 4,102" is exact, and a gap between
-      // the last seq you saw and `oldestSeq` is precisely how many events you
-      // missed.
-      oldestSeq: summary.oldestSeq, newestSeq: summary.newestSeq,
-      byCategory: summary.byCategory, byOutcome: summary.byOutcome,
-      byAction: summary.byAction,
-      filter: { category: wantedCategory || null, action: wantedAction || null,
-                outcome: wantedOutcome || null, actor: wantedActor || null,
-                q: wantedText || null },
-      // The clamped values, not what was asked for: `?page=999` on a two-page
-      // list reports page 2, which is the page whose rows are in the reply.
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      // The vocabulary, off the data rather than out of a list in a test: what
-      // the `category`, `action` and `outcome` filters take.
-      categories: auditLog.CATEGORIES, actions: auditLog.ACTIONS,
-      outcomes: auditLog.OUTCOMES,
-      events: shown
-    }
-  };
-}
 
 // The outcome, in the same three colours the token states use — so that a page
 // somebody has learned to skim once reads the same way here. `refused` is amber
@@ -8842,7 +8162,10 @@ function auditRow(row, known) {
     '<td>' + esc(whenText(row.at)) + '</td>' +
     '<td>' + esc(row.category) + '</td>' +
     '<td><code>' + esc(row.action) + '</code></td>' +
-    '<td>' + outcomeCell(row.outcome) + '</td>' +
+    '<td>' + outcomeCell(row.outcome) +
+      (row.errorCode ? '<br><a href="/admin/audit?code=' +
+                       encodeURIComponent(row.errorCode) + '"><code>' +
+                       esc(row.errorCode) + '</code></a>' : '') + '</td>' +
     '<td class="who">' + auditActorCell(row, known) + '</td>' +
     '<td class="who">' + (row.target ? '<code>' + esc(row.target) + '</code>'
                                      : '<span class="state-none">—</span>') +
@@ -8884,26 +8207,7 @@ function auditRow(row, known) {
 // operator looking at a load generator's identity may have five hundred rows.
 // ---------------------------------------------------------------------------
 
-// Answered as an empty inventory rather than null when the slot is unfilled, so
-// the page renders its own explanation instead of every caller guarding. Same
-// shape spiffeListeners() uses one screen up.
-function logoutInventoryFor(key) {
-  log.debug("Entering logoutInventoryFor(). key=" + key);
-  if (!logoutReader) {
-    log.debug("Leaving logoutInventoryFor(). No logout reader is installed.");
-    return null;
-  }
-  const inventory = logoutReader.inventoryFor(key, '');
-  log.debug("Leaving logoutInventoryFor(). " + inventory.total + " row(s).");
-  return inventory;
-}
 
-// The families, for the summary table and for the filter. Read off the slot so
-// that a family added to logout.js appears here with no edit — the reason the
-// prose lives over there and not in this file.
-function logoutFamilies() {
-  return logoutReader ? logoutReader.FAMILIES : [];
-}
 
 function logoutNoReaderNote() {
   return '<div class="err"><strong>The logout module is not loaded in this process.</strong> ' +
@@ -8950,106 +8254,13 @@ function logoutRowHtml(row, canWrite, back) {
     '<td>' + button + '</td></tr>';
 }
 
-// The action behind every control on this page, and behind
-// POST /admin-api/logout/{action}. Four of them, and the two NON-SPEC ones are
-// labelled as such wherever they appear — see the header.
-function logoutAction(body) {
-  log.debug("Entering logoutAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const user = String(body.user || body.username || '').trim();
-  if (!logoutReader) {
-    log.debug("Leaving logoutAction(). No logout reader is installed.");
-    return { ok: false, errors: ['The logout module is not loaded in this process, so there is ' +
-                                 'nothing to end. See /admin/logout, which says why.'] };
-  }
-  if (!user) {
-    log.debug("Leaving logoutAction(). No user was named.");
-    return { ok: false, errors: ['Name the identity to act on in `user`. This page always acts ' +
-                                 'on somebody by name — it is the operator\'s door, and ' +
-                                 '/logout is the one that defaults to whoever is signed in.'] };
-  }
-  const key = stats.identityKeyOf(user);
-
-  if (action === 'global') {
-    const result = logoutReader.terminate(key, [], {
-      actor: user, channel: 'console', by: 'the admin console at /admin/logout'
-    });
-    log.debug("Leaving logoutAction(). A global logout ended " + result.terminated.length + ".");
-    return { ok: true, result: result, message: result.message +
-             ' The relying parties that had to be NOTIFIED cannot be reached from here: a ' +
-             'front-channel notification is an iframe in the signed-out person\'s browser, ' +
-             'and this console is not that browser. /logout is where those load.' };
-  }
-
-  if (action === 'end') {
-    const raw = body.select === undefined ? [] : body.select;
-    const selection = (Array.isArray(raw) ? raw : [raw]).filter(Boolean).map(String);
-    if (!selection.length) {
-      // Deliberately NOT treated as a global logout here, which is the one
-      // place this console departs from /logout's default. A form posting an
-      // empty selection is a reader who ticked nothing and pressed a button; a
-      // POST to /logout with an empty body is a caller who asked for
-      // everything. Same absence, opposite intent, and the difference is which
-      // door it arrived at.
-      log.debug("Leaving logoutAction(). Nothing was selected.");
-      return { ok: false, errors: ['Nothing was selected. Use the global logout button to end ' +
-                                   'everything — this action ends only what it is given, so ' +
-                                   'that an empty form cannot sign somebody out of everything ' +
-                                   'by accident.'] };
-    }
-    const result = logoutReader.terminate(key, selection, {
-      actor: user, channel: 'console', by: 'the admin console at /admin/logout'
-    });
-    log.debug("Leaving logoutAction(). Ended " + result.terminated.length + ".");
-    return { ok: true, result: result, message: result.message };
-  }
-
-  if (action === 'restore-token') {
-    // NON-SPEC, and it is /admin/tokens' restore reached from here rather than a
-    // second one: stats.restore() is the same function against the same set.
-    // `jtiFrom()` answers an OBJECT — `{ jti, how }` — because it also accepts
-    // a whole JWT and has to say where the jti came from. This read the object
-    // itself as the jti: `stats.restore()` was handed one and matched nothing,
-    // so the action ALWAYS reported "was not revoked, so nothing changed" and
-    // put `[object Object]` in the sentence where the jti belongs. It is the
-    // same call tokenAction() makes two hundred lines up, where it is spelt
-    // `found.jti`, which is what makes /admin/tokens' restore work and this
-    // one not.
-    const found = jtiFrom(String(body.jti || body.target || ''));
-    if (!found.jti) {
-      return { ok: false, errors: ['Name the token to restore in `jti`.'] };
-    }
-    const was = stats.restore(found.jti);
-    return { ok: true, jti: found.jti,
-             message: 'NON-SPEC: the token with jti ' + found.jti +
-             (was ? ' is no longer revoked.' : ' was not revoked, so nothing changed.') +
-             ' No authorization server could offer this — RFC 7009 has no such operation and a ' +
-             'resource server may already have cached the refusal.' };
-  }
-
-  if (action === 'restore-kerberos') {
-    // NON-SPEC in the same sense and for the same reason: it is what makes a
-    // sign-out something a person can experiment with rather than restart out of.
-    const was = krb5Principals.clearSignOut([key], krb5Principals.REALM);
-    return { ok: true, message: 'NON-SPEC: the sign-out instant on ' + key + '@' +
-             krb5Principals.REALM +
-             (was ? ' (' + was.toISOString() + ') is cleared, so tickets issued before it are ' +
-                    'accepted again.'
-                  : ' was not set, so nothing changed.') +
-             ' A real KDC has no such operation; a fresh AS-REQ is the supported way back and ' +
-             'clears it too.' };
-  }
-
-  log.debug("Leaving logoutAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". There are four: global, end, ' +
-                               'restore-token, restore-kerberos.'] };
-}
 
 // One route, two answers, and the choice is here rather than in the route so
 // that /admin-api/logout makes the same one — the rule every view in this file
 // follows.
 function logoutView(req) {
   log.debug("Entering logoutView().");
+  const view = adminViews.logoutJson(req);
   const wantedUser = String(req.query.user || '').trim();
   const gate = gateStateFor(req);
   const params = pageParamsOf(req.query);
@@ -9099,29 +8310,13 @@ function logoutView(req) {
              inner: inner, title: 'Sign-out' };
   }
 
-  const key = stats.identityKeyOf(wantedUser);
-  const inventory = logoutInventoryFor(key);
-  if (!inventory) {
-    log.debug("Leaving logoutView(). No logout reader.");
-    return { json: { user: wantedUser, known: false, error: 'no logout reader is installed' },
-             inner: messagesOf(req) + logoutNoReaderNote(), title: 'Sign-out',
-             up: upTo('/admin/logout', wantedUser, listViewOf('/admin/logout', req.query)) };
-  }
-
-  // Flattened, because this table filters and pages ACROSS families — see the
-  // header. The family's own prose stays on the summary above it.
-  const all = [];
-  inventory.families.forEach(function (family) {
-    family.rows.forEach(function (r) {
-      all.push(Object.assign({ user: wantedUser, familyLabel: family.label }, r));
-    });
-  });
-  const wantedFamily = String(req.query.family || '').trim();
-  const filtered = wantedFamily
-    ? all.filter(function (r) { return r.family === wantedFamily; }) : all;
-  const pg = pagedRows(req.query, filtered, { name: 'page', noun: 'live items' });
-  const canWrite = gate.write;
-
+  const key = view.key;
+  const inventory = view.inventory;
+  const all = view.all;
+  const wantedFamily = view.wantedFamily;
+  const filtered = view.filtered;
+  const pg = view.pg;
+  const canWrite = view.canWrite;
   const summary = '<table><thead><tr><th>Family</th><th>Live</th><th>Endable</th>' +
     '<th>Protocol</th></tr></thead><tbody>' +
     inventory.families.map(function (family) {
@@ -9187,8 +8382,7 @@ function logoutView(req) {
 
   log.debug("Leaving logoutView(). " + inventory.total + " live item(s).");
   return {
-    json: Object.assign({ user: wantedUser, known: true, canWrite: canWrite },
-                        inventory, { rows: pg.shown, paging: pagingJson(pg.paging) }),
+    json: view.json,
     inner: inner,
     title: 'Sign-out — ' + wantedUser,
     up: upTo('/admin/logout', wantedUser, listViewOf('/admin/logout', req.query))
@@ -9237,7 +8431,7 @@ app.get('/admin/audit', function (req, res) {
   // "next" that dropped the filter would be page 2 of a different list.
   const filterParams = { category: view.wantedCategory, action: view.wantedAction,
                          outcome: view.wantedOutcome, actor: view.wantedActor,
-                         q: view.wantedText,
+                         q: view.wantedText, code: view.wantedCode,
                          per: req.query.per ? paging.perPage : '' };
   const nav = pageNavPair('/admin/audit', filterParams, paging);
 
@@ -9280,7 +8474,7 @@ app.get('/admin/audit', function (req, res) {
   const perOptions = perPageOptions(paging.perPage);
 
   const filtering = view.wantedCategory || view.wantedAction || view.wantedOutcome ||
-                    view.wantedActor || view.wantedText;
+                    view.wantedActor || view.wantedText || view.wantedCode;
 
   const inner = messagesOf(req) +
     '<div class="tiles">' +
@@ -9346,6 +8540,9 @@ app.get('/admin/audit', function (req, res) {
       '<label for="q">Text</label>' +
       '<input type="text" id="q" name="q" size="30" value="' + esc(view.wantedText) +
         '" placeholder="a DN, a path, anything in the summary">' +
+      '<label for="code">Error code</label>' +
+      '<input type="text" id="code" name="code" size="16" value="' +
+        esc(view.wantedCode) + '" placeholder="STS-OAUTH">' +
       '<button class="secondary">Filter</button>' +
       (filtering ? ' <a href="/admin/audit">clear</a>' : '') +
     '</div></form>' +
@@ -9354,7 +8551,12 @@ app.get('/admin/audit', function (req, res) {
     'then means. Actor matches a substring of either spelling of the name, because the ' +
     'actor on a directory row is a bind DN and the one on a Kerberos row is ' +
     '<code>alice@REALM</code>; the collapse to a single key can only be done where an ' +
-    'identity is normalised.') +
+    'identity is normalised. Error code matches the front of a code, so ' +
+    '<code>STS-OAUTH</code> is every OAuth failure and a whole code is ' +
+    'one condition; every refused or failed request carries one, listed on the ' +
+    '<em>Error codes</em> page of the documentation. A code is recorded here and in ' +
+    'the service log and is never sent to the client; ' +
+    '<a href="/admin/error-codes">Error codes</a> says what each one means.') +
     nav.head +
     '<table><tr><th class="num">#</th><th>When</th><th>Category</th><th>Action</th>' +
     '<th>Outcome</th><th>Actor</th><th>Target</th><th>What happened</th><th>Detail</th></tr>' +
@@ -9448,6 +8650,141 @@ app.get('/admin/audit', function (req, res) {
           { settings: configSettingsJson('/admin/audit') }),
           'Audit log', '/admin/audit', inner);
   log.debug("Leaving the admin audit page.");
+});
+
+// ---------------------------------------------------------------------------
+// GET /admin/error-codes — THE ERROR CODE TABLE, AND WHICH OF IT IS HAPPENING.
+//
+// Drawn from `adminViews.errorCodesView()`, which `GET /admin-api/error-codes`
+// answers from too, so the page and the operation cannot disagree about a
+// count. There is no control on it: the table is source, and changing what a
+// code means at runtime would make every alert rule written against it a
+// statement about a different condition.
+// ---------------------------------------------------------------------------
+app.get('/admin/error-codes', function (req, res) {
+  log.debug("Entering the admin error codes page.");
+  const view = errorCodesView(req.query);
+  const json = view.json;
+  const paging = view.paging;
+  const filterParams = { subsystem: view.wantedSubsystem, q: view.wantedText,
+                         seen: view.wantedSeen ? '1' : '',
+                         per: req.query.per ? paging.perPage : '' };
+  const nav = pageNavPair('/admin/error-codes', filterParams, paging);
+
+  const subsystemOptions = '<option value=""' + (view.wantedSubsystem ? '' : ' selected') +
+    '>every subsystem</option>' +
+    view.subsystems.map(function (sub) {
+      return '<option value="' + esc(sub.id) + '"' +
+             (sub.id === view.wantedSubsystem ? ' selected' : '') + '>' +
+             esc(sub.prefix + ' — ' + sub.label) + ' (' + sub.codes + ')</option>';
+    }).join('');
+
+  const subsystemRows = view.subsystems.map(function (sub) {
+    return '<tr><td><a href="/admin/error-codes?subsystem=' +
+           encodeURIComponent(sub.id) + '"><code>' + esc(sub.prefix) + '</code></a></td>' +
+           '<td>' + esc(sub.label) + '</td>' +
+           '<td class="num">' + esc(sub.codes) + '</td>' +
+           '<td class="num">' + (sub.seen
+             ? '<a href="/admin/audit?code=' + encodeURIComponent(sub.prefix) + '">' +
+               esc(sub.seen) + '</a>'
+             : '<span class="state-none">0</span>') + '</td>' +
+           '<td class="who">' + esc(sub.where) + '</td></tr>';
+  }).join('');
+
+  const codeRows = view.shown.map(function (row) {
+    return '<tr id="' + esc(row.code) + '">' +
+      '<td><code>' + esc(row.code) + '</code>' +
+        (row.retired ? '<br><span class="state-none">retired</span>' : '') + '</td>' +
+      '<td>' + esc(row.summary) + '</td>' +
+      '<td>' + (row.spec ? esc(row.spec) : '<span class="state-none">—</span>') + '</td>' +
+      '<td class="num">' + (row.seen
+        ? '<a href="/admin/audit?code=' + encodeURIComponent(row.code) + '">' +
+          esc(row.seen) + '</a><br><span class="state-none">last ' +
+          esc(whenText(row.lastSeenAt)) + '</span>'
+        : '<span class="state-none">0</span>') + '</td>' +
+      '</tr>';
+  }).join('');
+
+  const unregistered = view.unregisteredSeen.length
+    ? '<h3>Codes on audit rows that the table does not hold</h3>' +
+      note('These were recorded as given rather than dropped, so that the row ' +
+      'saying the table is incomplete survives. Each one is a failure site whose ' +
+      'code was never added to <code>common/error_codes.js</code>.') +
+      '<table><tr><th>Code</th><th class="num">Rows</th></tr>' +
+      view.unregisteredSeen.map(function (u) {
+        return '<tr><td><a href="/admin/audit?code=' + encodeURIComponent(u.code) +
+               '"><code>' + esc(u.code) + '</code></a></td><td class="num">' +
+               esc(u.seen) + '</td></tr>';
+      }).join('') + '</table>'
+    : '';
+
+  const filtering = view.wantedSubsystem || view.wantedText || view.wantedSeen;
+
+  const inner = messagesOf(req) +
+    '<div class="tiles">' +
+      tile(json.registered, 'codes') +
+      tile(json.subsystemCount, 'subsystems') +
+      tile(json.distinctCodesSeen, 'codes on held audit rows') +
+      tile(json.auditRowsWithCode, 'audit rows with a code') +
+      tile(json.unregisteredSeen.length, 'unregistered codes seen') +
+    '</div>' +
+
+    note('Every way this service can fail or refuse has a code of the form ' +
+    '<code>STS-&lt;SUBSYSTEM&gt;-&lt;NNNN&gt;</code>. It is recorded on the audit row ' +
+    'for the event and at the front of the service\'s log line, and <strong>it is ' +
+    'never sent to a client</strong> — not in a body, a header or a redirect. Each ' +
+    'protocol here already defines how it reports an error, and a client under test ' +
+    'must see exactly that: the <em>Client sees</em> column says what it is sent, and ' +
+    'the code changes nothing about it.') +
+
+    note('<strong>Seen</strong> counts the rows <a href="/admin/audit">the audit ' +
+    'log</a> holds in this realm right now (' + esc(json.auditRowsHeld) + '), so it ' +
+    'falls as that log\'s cap discards the oldest, and it is zero for a failure ' +
+    'recorded only as a log line — one that stops the service starting, and ' +
+    'everything the remote PEP container records, since that container has no audit ' +
+    'log of its own. A zero here is not "never happens".') +
+
+    note('<code>STS-HTTP-0002</code> and <code>STS-HTTP-0003</code> are what the HTTP ' +
+    'call log records for a 4xx or 5xx response no handler gave a more specific ' +
+    'code. <strong>A row carrying either names a failure site that is missing its ' +
+    'own code.</strong> <code>STS-HTTP-0001</code> is an unrouted path, which is an ' +
+    'ordinary outcome.') +
+
+    '<h2>Subsystems</h2>' +
+    '<table><tr><th>Prefix</th><th>Subsystem</th><th class="num">Codes</th>' +
+    '<th class="num">Seen</th><th>Raised from</th></tr>' + subsystemRows + '</table>' +
+
+    '<h2>Codes</h2>' +
+    '<form method="get" action="/admin/error-codes"><div class="formrow">' +
+      '<label for="subsystem">Subsystem</label><select id="subsystem" name="subsystem">' +
+        subsystemOptions + '</select>' +
+      '<label for="q">Text</label>' +
+      '<input type="text" id="q" name="q" size="30" value="' + esc(view.wantedText) +
+        '" placeholder="a code, a word, invalid_grant">' +
+      '<label for="seen"><input type="checkbox" id="seen" name="seen" value="1"' +
+        (view.wantedSeen ? ' checked' : '') + '> only codes on held rows</label>' +
+      '<label for="per">Per page</label><select id="per" name="per">' +
+        perPageOptions(paging.perPage) + '</select>' +
+      '<button class="secondary">Filter</button>' +
+      (filtering ? ' <a href="/admin/error-codes">clear</a>' : '') +
+    '</div></form>' +
+    nav.head +
+    '<table><tr><th>Code</th><th>What failed</th><th>Client sees</th>' +
+    '<th class="num">Seen</th></tr>' +
+    (codeRows || '<tr><td colspan="4">Nothing matches.</td></tr>') + '</table>' +
+    nav.foot +
+    unregistered +
+
+    note('The table is <code>common/error_codes.js</code> and this page has no control: ' +
+    'a code is never renumbered or reused, because it ends up in alert rules and saved ' +
+    'searches, and a condition that stops existing keeps its row marked retired. The ' +
+    'same table is published as <code>docs/error-codes.md</code>, generated from the ' +
+    'source, and this list is at <code>GET /admin-api/error-codes</code> with the same ' +
+    'parameters. Paging is <code>?page=</code> and <code>?per=</code> (at most ' +
+    MAX_ROWS + ' rows a page).');
+
+  respond(req, res, json, 'Error codes', '/admin/error-codes', inner);
+  log.debug("Leaving the admin error codes page.");
 });
 
 // ---------------------------------------------------------------------------
@@ -9694,145 +9031,6 @@ function policyAccountRow(account) {
     '</tr>';
 }
 
-// The whole view, filtered and paged, for the page AND for
-// GET /admin-api/delegation. One function for the reason the block above
-// consoleJson() gives: the filtering and the paging are work both need, and two
-// copies of it would be two answers that each looked right alone.
-function delegationView(query) {
-  log.debug("Entering delegationView().");
-  const wantedType = String(query.type || '');
-  const wantedMode = String(query.mode || '');
-  const wantedOutcome = String(query.outcome || '');
-  const wantedProtocol = String(query.protocol || '');
-  const wantedText = String(query.q || '');
-  const all = delegation.list();
-  const needle = wantedText.toLowerCase();
-  const filtered = all.filter(function (row) {
-    if (wantedType && row.type !== wantedType) return false;
-    if (wantedMode && row.mode !== wantedMode) return false;
-    if (wantedOutcome && row.outcome !== wantedOutcome) return false;
-    if (wantedProtocol && row.protocol !== wantedProtocol) return false;
-    // One free-text box over every party of the chain and both explanations,
-    // because the question a reader arrives with names ONE of them — a person,
-    // an SPN, an attribute — and does not know which column it will be in. A
-    // box that silently searched one column while the reader assumed six is
-    // worse than no box.
-    if (needle) {
-      const hay = [row.initial.key, row.initial.presented, row.initial.application,
-                   row.intermediary.key, row.intermediary.presented,
-                   row.intermediary.application,
-                   row.target.key, row.target.presented, row.target.application,
-                   row.authorizedBy, row.reason, row.note]
-                    .join(' ').toLowerCase();
-      if (hay.indexOf(needle) < 0) return false;
-    }
-    return true;
-  });
-  // Filter first, then page — the same order the tokens and audit pages use and
-  // for the same reason: paging a list and then filtering it gives a page 2
-  // whose length depends on what page 1 happened to hold.
-  // DELEGATION_PER_PAGE rather than the console-wide fifty, and it is passed
-  // HERE rather than at the page, so that `GET /admin-api/delegation` and the
-  // page it mirrors agree about what one page of acts is. A caller walking the
-  // API with `?page=` and a reader clicking `next ›` must not be reading two
-  // different pagings of one list.
-  const paging = pagingOf(query, filtered.length,
-                          { noun: 'acts', defaultPer: DELEGATION_PER_PAGE });
-  const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
-  const summary = delegation.summary();
-  // The chains of what MATCHED rather than of everything held: a reader who has
-  // filtered to one person wants that person's chains, and a count that ignored
-  // the filter would disagree with the table under it.
-  const chains = delegation.chainList(filtered);
-  // THE PICTURE'S MODEL, BUILT HERE AND NOT IN THE ROUTE THAT DRAWS IT, for the
-  // reason the whole of this function exists: /admin/delegation/map, this page's
-  // ?format=json and GET /admin-api/delegation must all be describing the same
-  // graph, and three calls to delegation.graph() with three ideas about which
-  // acts to pass it would be three answers that each looked right alone. Of the
-  // matched acts rather than the paged ones — a diagram of one page of a list is
-  // a diagram of the pagination.
-  const graph = delegation.graph(filtered);
-  // EVERY APPLICATION AMONG THE MATCHED ACTS, in whatever role it played. It
-  // follows the filter for the same reason `chains` does — a reader who has
-  // narrowed to one person wants that person's applications — and there is one
-  // consequence worth stating rather than leaving to be met: the PAGE this
-  // chooser opens is not filtered. `/admin/delegation/application` shows
-  // everything that application has ever been part of, because "what exists
-  // because of this thing" is not a question a half-answer is useful for. The
-  // chooser says so.
-  const applicationsInvolved = delegation.applicationList(filtered);
-  const policy = krb5Principals.delegationPolicy();
-  log.debug("Leaving delegationView(). " + shown.length + " act(s) of " +
-            filtered.length + ", " + chains.length + " chain(s).");
-  return {
-    wantedType: wantedType, wantedMode: wantedMode, wantedOutcome: wantedOutcome,
-    wantedProtocol: wantedProtocol, wantedText: wantedText,
-    all: all, filtered: filtered, paging: paging, shown: shown,
-    summary: summary, chains: chains, graph: graph, policy: policy,
-    applications: applicationsInvolved,
-    json: {
-      held: summary.held,
-      // AND HOW MANY PROCESSES THAT IS, beside how many of them are this
-      // one's. `held` is a fan-in across every request worker since
-      // 2026-09-11; a client that compared it with `recorded` below without
-      // these two would have no way to see why the second is smaller.
-      heldHere: summary.heldHere, processes: summary.processes,
-      // Everything ever recorded and everything dropped, both, because `held`
-      // alone reads as "this is all there was" the moment the cap has bitten.
-      // BY THIS PROCESS — see the store's own comment: there is no counter
-      // store to fan in and inventing one to make the numbers match would be a
-      // store nothing else reads.
-      recorded: summary.recorded, dropped: summary.dropped,
-      maxRecords: summary.maxRecords,
-      matched: filtered.length, shown: shown.length,
-      // The lowest and highest sequence numbers still held. A caller polling
-      // this endpoint uses them rather than a timestamp, for the reason
-      // /admin-api/audit gives: `seq` is monotonic and never reused, so
-      // "everything after 41" is exact.
-      oldestSeq: summary.oldestSeq, newestSeq: summary.newestSeq,
-      byType: summary.byType, byMode: summary.byMode,
-      byOutcome: summary.byOutcome, byProtocol: summary.byProtocol,
-      filter: { type: wantedType || null, mode: wantedMode || null,
-                outcome: wantedOutcome || null, protocol: wantedProtocol || null,
-                q: wantedText || null },
-      // The clamped values, not what was asked for: `?page=999` on a two-page
-      // list reports page 2, which is the page whose rows are in the reply.
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      // The vocabulary, off the store rather than out of a list here: what the
-      // `type`, `mode` and `outcome` filters take, and what each of them means.
-      // A mechanism cannot be recordable and unfilterable, nor offered and
-      // never occur.
-      types: delegation.TYPES, modes: delegation.MODES,
-      outcomes: delegation.OUTCOMES, roles: delegation.ROLES,
-      acts: shown,
-      // The DISTINCT chains among what matched — one entry per (type, initial,
-      // intermediary, target) — which is what the visualisation will be drawn
-      // from and is already the more useful answer for a caller asking "what
-      // talks to what".
-      chains: chains,
-      // THE APPLICATIONS among what matched, in whatever role each played, with
-      // the counts the chooser on the page is built from. It is a strictly
-      // different question from `chains` and cannot be derived from one: an
-      // application is keyed on its IDENTIFIER — see applicationList() in
-      // delegation.js — and a chain names three parties, one of which routinely
-      // carries an application identifier that is not its identity.
-      applications: applicationsInvolved,
-      // THE PICTURE, as a graph. The nodes and edges /admin/delegation/map
-      // draws, with the credentials folded onto each edge and the list of what
-      // was issued — so a test can assert what that page shows without parsing
-      // an SVG, which is the only way a drawing can be kept honest from outside.
-      // It is a strictly different shape from `chains` and not a second copy of
-      // it: a chain has three parties and therefore up to TWO edges, and the
-      // boxes are SHARED between chains, which is the whole reason to draw one.
-      graph: graph,
-      // The configured policy: who MAY delegate to whom, and the account flags
-      // that decide what delegation can do to somebody. Kerberos only, because
-      // it is the only family here that polices this at all.
-      policy: policy
-    }
-  };
-}
 
 // ---------------------------------------------------------------------------
 // THE CONFIGURED HALF OF /admin/delegation: DELEGATED PERMISSIONS.
@@ -9890,114 +9088,8 @@ function delegationView(query) {
 // controls is unchanged. What moved is where one control is DRAWN.
 // ---------------------------------------------------------------------------
 
-// BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
-// APPLICATION_ACTIONS gives at its own site: this repository's own
-// tests/vendored/admin_api.js READS the refusal sentence to check that every
-// console action has an /admin-api operation, so a list that is short by one is
-// a list that turns the parity check off for that action.
-const PERMISSION_ACTIONS = ['set-permission-base', 'define-permission',
-                            'remove-permission', 'grant-permission',
-                            'revoke-permission'];
 
-function permissionsAction(body) {
-  log.debug("Entering permissionsAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const actor = String(body.actor || '');
-  const resource = String(body.resource || body.application || '').trim();
-  const client = String(body.client || body.application || '').trim();
 
-  // WHICH APPLICATION, ASKED ONCE FOR EACH SIDE. The two names are deliberately
-  // different — `resource` for the application that EXPOSES a permission and
-  // `client` for the one that HOLDS it — because this is the one feature here
-  // where a body naming the wrong one still succeeds and writes a grant onto
-  // the API instead of onto its caller. `application` is accepted for either as
-  // a convenience for a caller editing one entry, and the refusals below name
-  // the field that was missing rather than "an application".
-  const needsResource = ['set-permission-base', 'define-permission', 'remove-permission'];
-  const needsClient = ['grant-permission', 'revoke-permission'];
-  if (needsResource.indexOf(action) >= 0 && !resource) {
-    log.debug("Leaving permissionsAction(). No resource named.");
-    return { ok: false, errors: ['Which application exposes it? Send `resource` with the ' +
-                                 'identifier exactly as the registry holds it — this is the ' +
-                                 'application whose API the permission belongs to, not the ' +
-                                 'one that will ask for it.'] };
-  }
-  if (needsClient.indexOf(action) >= 0 && !client) {
-    log.debug("Leaving permissionsAction(). No client named.");
-    return { ok: false, errors: ['Which application holds it? Send `client` with the ' +
-                                 'identifier exactly as the registry holds it — this is the ' +
-                                 'application that will name the permission in a `scope`, ' +
-                                 'not the one that exposes it.'] };
-  }
-
-  if (action === 'set-permission-base') {
-    // The empty value is legal and CLEARS the base — see setBaseUri()'s message,
-    // which says what that does to the permissions still on the entry. It is
-    // the same convention every `set` on /admin/applications follows.
-    const result = appPermissions.setBaseUri(resource, String(body.baseUri === undefined
-      ? (body.value === undefined ? '' : body.value) : body.baseUri), actor);
-    log.debug("Leaving permissionsAction(). set-permission-base " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  if (action === 'define-permission') {
-    const result = appPermissions.definePermission(resource, String(body.name || ''),
-      String(body.description || ''), actor);
-    log.debug("Leaving permissionsAction(). define-permission " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  if (action === 'remove-permission') {
-    // BY NAME AND NOT BY THE RAW ATTRIBUTE VALUE, deliberately. The value on
-    // the entry is `name|description` and a form that posted it back would
-    // break the moment somebody edited the description in an LDAP client — so
-    // the name is the handle and `removePermission()` looks the raw value up.
-    const result = appPermissions.removePermission(resource, String(body.name || ''), actor);
-    log.debug("Leaving permissionsAction(). remove-permission " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  if (action === 'grant-permission') {
-    const result = appPermissions.grant(client, String(body.permission || ''), actor);
-    log.debug("Leaving permissionsAction(). grant-permission " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  if (action === 'revoke-permission') {
-    const result = appPermissions.revoke(client, String(body.permission || ''), actor);
-    log.debug("Leaving permissionsAction(). revoke-permission " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  log.debug("Leaving permissionsAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The ' +
-                               numberWord(PERMISSION_ACTIONS.length) + ' are: ' +
-                               PERMISSION_ACTIONS.join(', ') + '.'] };
-}
-
-// The register and its picture, in one place so that the page, `?format=json`
-// and `GET /admin-api/permissions` cannot come to disagree about what is in it —
-// the same property `delegationView()` gives the acts half.
-function permissionsView() {
-  log.debug("Entering permissionsView().");
-  const register = appPermissions.register();
-  const graph = appPermissions.graph(register.grants);
-  // THE GROUPINGS, off the register that has just been read rather than off a
-  // second walk of `ou=applications`. `appPermissions.clusters()` will do the
-  // walk itself when it is handed nothing, and every caller here has the answer
-  // in hand already — so passing it is what keeps the whole-register picture,
-  // the group list under it and `GET /admin-api/permissions` describing ONE
-  // reading of the registry rather than three taken a few milliseconds apart.
-  const groups = appPermissions.clusters(register);
-  log.debug("Leaving permissionsView(). " + register.counts.grants + " grant(s) in " +
-            groups.counts.clusters + " group(s).");
-  return { register: register, graph: graph, clusters: groups };
-}
 
 // One row of the permissions table: what a resource EXPOSES.
 // `options.readOnly` swaps the Remove form for a link to the page that has it,
@@ -11565,87 +10657,7 @@ app.get('/admin/delegation/allowed', function (req, res) {
   log.debug("Leaving the admin allowed-delegation picture.");
 });
 
-// One group as a REPLY carries: what it is and how big, and not the rows.
-//
-// The rows are on the group's own page and in its own `?format=json`. A list of
-// groups that carried every grant would repeat the whole register once per
-// group in the worst case — a caller asking *what is joined to what* would be
-// handed the answer to a question they did not ask, and the reply would grow
-// with the square of the register on exactly the service where that matters.
-function clusterSummary(group) {
-  return { key: group.key, members: group.members, counts: group.counts };
-}
 
-// THE GROUPINGS AS A REPLY, AND THE ONE FUNCTION BOTH DOORS ONTO THEM GO
-// THROUGH.
-//
-// `GET /admin-api/permissions/groups` calls it and so does
-// /admin/delegation/cluster's own `?format=json`, for the reason
-// `delegationView()` and `permissionsView()` both give: two hand-built copies
-// of one object is precisely the drift this console's own text keeps warning
-// about, and it is invisible — each looks right alone and neither ever sees the
-// other.
-//
-// `view` is an optional `permissionsView()` already in hand. The route has one
-// because it is drawing the page from it; the management API has not and this
-// function makes its own. Passing it is what keeps a page's markup and its JSON
-// describing ONE read of `ou=applications` rather than two taken a few
-// milliseconds apart — which on a register somebody is editing is the
-// difference between a table and a picture that agree and two that nearly do.
-//
-// **`application` DECIDES THE SHAPE and there is only one operation**, because
-// the two are the same question at two scales: without it, every group with its
-// counts and none of its rows; with it, the ONE group that application is in,
-// with its grants, its permissions and the graph the picture is drawn from.
-// An application this register has never heard of is `group: null` and a 200 —
-// having no permissions configured is the ordinary state of most entries in
-// the registry, and it is a fact rather than an error.
-function permissionGroupsView(query, view) {
-  log.debug("Entering permissionGroupsView().");
-  const permissions = view || permissionsView();
-  const groups = permissions.clusters;
-  const asked = queryOne(query, 'application').trim();
-
-  if (asked) {
-    const group = appPermissions.clusterFor(asked, groups);
-    // The SAME paging the page's own grants table uses, by the same name, so
-    // that a caller reading `?format=json` off a page they are looking at gets
-    // the rows they can see. `graph()` of an absent group is an empty graph
-    // rather than a null, because every caller of this member hands it to a
-    // renderer and a renderer takes a graph.
-    const grantPage = pagedRows(query, group ? group.grants : [],
-                                { name: 'groupGrants', noun: 'grants' });
-    const permissionPage = pagedRows(query, group ? group.permissions : [],
-                                     { name: 'groupPermissions',
-                                       noun: 'permissions' });
-    const answer = {
-      application: asked,
-      group: group ? clusterSummary(group) : null,
-      grants: grantPage.shown,
-      grantsPaging: pagingJson(grantPage.paging),
-      permissions: permissionPage.shown,
-      permissionsPaging: pagingJson(permissionPage.paging),
-      graph: appPermissions.graph(group ? group.grants : []),
-      counts: groups.counts
-    };
-    log.debug("Leaving permissionGroupsView(). " +
-              (group ? group.counts.applications + " application(s) in the group."
-                     : "Nothing configured names that."));
-    return answer;
-  }
-
-  const groupPage = pagedRows(query, groups.clusters,
-                              { name: 'groups', noun: 'groups' });
-  const answer = {
-    application: null,
-    groups: groupPage.shown.map(clusterSummary),
-    counts: groups.counts,
-    paging: pagingJson(groupPage.paging)
-  };
-  log.debug("Leaving permissionGroupsView(). " + groups.counts.clusters +
-            " group(s), " + groupPage.shown.length + " on this page.");
-  return answer;
-}
 
 // ---------------------------------------------------------------------------
 // GET /admin/delegation/cluster?application=… — ONE GROUP OF APPLICATIONS,
@@ -12628,32 +11640,7 @@ function delegationEdgeRow(edge, lookOf) {
 // ---------------------------------------------------------------------------
 const CHOOSER_HITS = 20;
 
-// One query parameter, first-wins. Express hands back an array when a parameter
-// is repeated, and String() on one is "a,b" — a search nothing matches, reached
-// by a link somebody clicked twice. The same rule pageParamsOf() applies.
-function queryOne(query, key) {
-  const raw = (query || {})[key];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return value === undefined || value === null ? '' : String(value);
-}
 
-// Does one catalogue entry match what was typed? Case-insensitive, and over
-// EVERY spelling the catalogue holds rather than the one it shows: an
-// application arrives as `HTTP/backend@EXAMPLE.COM` and as `HTTP/backend`, a
-// person as `alice`, as `alice@STS.MOCK` and as `urn:sts-mock:user:alice`, and
-// each chooser draws one of them. A reader searching for a name they pasted out
-// of the acts table four inches up the page is pasting the OTHER one about half
-// the time, and a search that answers "nothing matches" to a string printed on
-// the same page is worse than no search at all.
-function chooserMatches(names, wanted) {
-  if (!wanted) {
-    return true;
-  }
-  const needle = wanted.toLowerCase();
-  return (names || []).some(function (name) {
-    return String(name == null ? '' : name).toLowerCase().indexOf(needle) >= 0;
-  });
-}
 
 // THE SECTION SEARCHES, AS HIDDEN INPUTS FOR SOMEBODY ELSE'S FORM.
 //
@@ -14069,7 +13056,7 @@ app.get('/admin/delegation/application', function (req, res) {
 // (`delegation.js`'s `identityList()` header argues it). An application is
 // chosen by the identifier a protocol NAMED, because that is what a reader
 // recognises in a URL. A person has no such identifier: they arrive as `alice`,
-// as `alice@STS.MOCK` and as `urn:sts-mock:user:alice`, and the console has
+// as `alice@STS.MOCK` and as `urn:sts:user:alice`, and the console has
 // filed all three under one name — which is the name on /admin/users, on
 // /admin/audit and in the directory. Putting a spelling in the URL would make a
 // link from this console disagree with every other link in it. The route
@@ -14824,7 +13811,7 @@ app.get('/admin/delegation/user', function (req, res) {
 // here (an exchanged foreign token, a WS-Trust OnBehalfOf, a Kerberos S4U2Self) is
 // listed and marked as such, rather than being absent from a page whose whole job is
 // to answer "who has this service seen". And the identity is keyed on the local name,
-// so one row covers `alice`, `urn:sts-mock:user:alice` and `alice@STS.MOCK`, which is
+// so one row covers `alice`, `urn:sts:user:alice` and `alice@STS.MOCK`, which is
 // right on a mock where the name you type is who you are everywhere — and would be
 // wrong on a real system with two realms. The Realms column exists so that collapse
 // is visible.
@@ -14926,6 +13913,8 @@ let directoryReader = null;
 
 function setDirectoryReader(fn) {
   directoryReader = fn;
+  // AND THE READ LAYER, which needs it for the new-person answer.
+  adminViews.setDirectoryReader(fn);
   log.debug("A directory reader was installed; a user's page will now show that " +
             "user's LDAP entry.");
 }
@@ -14942,6 +13931,8 @@ let groupReader = null;
 
 function setGroupReader(fn) {
   groupReader = fn;
+  // AND THE READ LAYER, for the groups answer.
+  adminViews.setGroupReader(fn);
   log.debug("A group reader was installed; /admin/groups will now show the " +
             "directory's groups.");
 }
@@ -14970,19 +13961,13 @@ let spiffeReader = null;
 
 function setSpiffeReader(fn) {
   spiffeReader = fn;
+  // AND THE READ LAYER, which draws the three SPIFFE reports out of the same
+  // reader — see admin-core/admin_views.js.
+  adminViews.setSpiffeReader(fn);
   log.debug("A SPIFFE reader was installed; /admin/spiffe will now report " +
             "which gRPC listeners bound.");
 }
 
-// Answered with empty listeners rather than null when the slot is unfilled, so
-// every caller renders the same "nothing bound" table instead of each having to
-// guard. The bundle path falls back to the configured value, which is what that
-// module reads too — one setting, two readers, no third opinion.
-function spiffeListeners() {
-  const read = spiffeReader ? spiffeReader() : null;
-  return read || { workload: [], api: [],
-                   bundlePath: config.value('spiffe.bundlePath') };
-}
 
 // ---------------------------------------------------------------------------
 // AND THE SIXTH, WHICH IS THE PROTOCOL-INDEPENDENT LOGOUT.
@@ -15038,7 +14023,7 @@ function setCryptoReporter(reporter) {
     return !reporter || typeof reporter[name] !== 'function';
   });
   if (missing.length) {
-    log.error('admin: setCryptoReporter() was given something without ' +
+    log.error(errorCodes.tag('STS-ADMIN-0014') + 'admin: setCryptoReporter() was given something without ' +
               missing.join(', ') + ', and was ignored whole. ' +
               '/admin/keys and the two /admin-api crypto resources will say ' +
               'the reporter is not installed rather than half working.');
@@ -15046,50 +14031,14 @@ function setCryptoReporter(reporter) {
     return;
   }
   cryptoReporter = reporter;
+  // AND THE READ LAYER, which needs the same thing — see the header of
+  // admin-core/admin_views.js. Still one statement and one writer.
+  adminViews.setCryptoReporter(reporter);
   log.debug("Leaving setCryptoReporter(). Installed.");
 }
 
-// The crypto report as JSON, for `admin_api.js`. It calls exactly this, so the
-// API cannot compute an answer the console does not draw — which is what makes
-// "every /admin page has an /admin-api operation" a property of the code.
-function cryptoView(req) {
-  log.debug("Entering cryptoView().");
-  if (!cryptoReporter) {
-    log.debug("Leaving cryptoView(). No reporter.");
-    return null;
-  }
-  const report = cryptoReporter.report(baseUrlOf(req));
-  log.debug("Leaving cryptoView(). " +
-            ((report.families || []).length) + " identity service(s).");
-  return report;
-}
 
-// The key inventory, for admin_api.js. A LIST and never key material: the
-// export is the other function, so a caller that only wanted to know what this
-// process holds cannot be handed a private key by accident.
-function keysView(req) {
-  log.debug("Entering keysView().");
-  if (!cryptoReporter) {
-    log.debug("Leaving keysView(). No reporter.");
-    return null;
-  }
-  const report = cryptoReporter.keys(baseUrlOf(req));
-  log.debug("Leaving keysView(). " + ((report.keys || []).length) + " key(s).");
-  return report;
-}
 
-// The export, for admin_api.js. Returns the vendored exporter's own answer —
-// `{ok, files, status}` or `{ok: false, errors}` — and decides nothing, so the
-// API and the page cannot refuse different things.
-function keysExport(key, format, password) {
-  log.debug("Entering keysExport(). key=" + key + ", format=" + format);
-  if (!cryptoReporter) {
-    log.debug("Leaving keysExport(). No reporter.");
-    return null;
-  }
-  log.debug("Leaving keysExport().");
-  return cryptoReporter.exportKey(key, format, password);
-}
 
 // Does this request hold Admin Write? One caller today —
 // `crypto_metadata.js`'s key export, which is the one act in this console that
@@ -15120,7 +14069,7 @@ function setLogoutReader(reader) {
     // A warning and not a throw, for the reason admin_rbac.js's install has:
     // a console that will not start is worse than a console with one page that
     // says why it cannot answer.
-    log.warn('admin: a logout reader was offered that does not carry ' +
+    log.warn(errorCodes.tag('STS-ADMIN-0014') + 'admin: a logout reader was offered that does not carry ' +
              'inventoryFor(), terminate(), liveSessions() and FAMILIES. It is refused ' +
              'whole — a partial one would leave /admin/logout and /admin/sessions listing ' +
              'what is live and unable to end any of it, which is the worst of the two ' +
@@ -15128,6 +14077,14 @@ function setLogoutReader(reader) {
     return;
   }
   logoutReader = reader;
+  // AND THE ACTION LAYER, which needs the same object and is handed it
+  // from here rather than asking for it — see the header of
+  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // the ONLY place either is written, which is what keeps it one answer.
+  adminActions.setLogoutReader(reader);
+  // AND THE READ LAYER: sessionsView() reads what is live where
+  // sessionsAction() ends it, so both halves need this one.
+  adminViews.setLogoutReader(reader);
   log.debug("A logout reader was installed; /admin/logout will now list and end " +
             "live sessions across every protocol family.");
 }
@@ -15201,7 +14158,7 @@ function setXacmlPages(parts) {
     return typeof parts[name] === 'function';
   });
   if (!complete) {
-    log.warn('admin: a set of XACML page views was offered that does not ' +
+    log.warn(errorCodes.tag('STS-ADMIN-0014') + 'admin: a set of XACML page views was offered that does not ' +
              'carry all seven of ' + XACML_PAGE_PARTS.join(', ') + '. It is ' +
              'refused whole — a partial set would leave /admin-api able to ' +
              'read the policy repository and unable to change it, which ' +
@@ -15209,101 +14166,25 @@ function setXacmlPages(parts) {
     return;
   }
   xacmlPages = parts;
+  // AND THE READ LAYER, which needs the same thing — see the header of
+  // admin-core/admin_views.js. Still one statement and one writer.
+  adminViews.setXacmlPages(parts);
+  // AND THE ACTION LAYER. This is the one collaborator BOTH halves need — the
+  // actions dispatch on these pages and the views draw from them — so one
+  // statement here has THREE destinations: the variable above, and one in each
+  // half. Still exactly one writer, which is the only property that matters;
+  // see the header of admin-core/admin_actions.js.
+  adminActions.setXacmlPages(parts);
   log.debug('The XACML page views were installed; /admin-api mirrors them.');
 }
 
-function noXacml() {
-  return { xacml: false,
-           message: 'The XACML module is not loaded in this process, so ' +
-                    'there is no policy repository to report. ' +
-                    'xacml/xacml_admin.js fills this reader when it is ' +
-                    'required.' };
-}
 
-function xacmlView(req) {
-  log.debug('Entering xacmlView().');
-  const json = xacmlPages ? xacmlPages.overview(req) : noXacml();
-  log.debug('Leaving xacmlView().');
-  return json;
-}
 
-function xacmlPoliciesView(req) {
-  log.debug('Entering xacmlPoliciesView().');
-  const json = xacmlPages ? xacmlPages.policies(req) : noXacml();
-  log.debug('Leaving xacmlPoliciesView().');
-  return json;
-}
 
-function xacmlEditorView(req) {
-  log.debug('Entering xacmlEditorView().');
-  const json = xacmlPages
-    ? xacmlPages.editor(String((req.query || {}).policy || '')) : noXacml();
-  log.debug('Leaving xacmlEditorView().');
-  return json;
-}
 
-function xacmlPepsView(req) {
-  log.debug('Entering xacmlPepsView().');
-  const json = xacmlPages ? xacmlPages.peps(req) : noXacml();
-  log.debug('Leaving xacmlPepsView().');
-  return json;
-}
 
-function xacmlDecideView(req) {
-  log.debug('Entering xacmlDecideView().');
-  const json = xacmlPages ? xacmlPages.decide(req.query || {}) : noXacml();
-  log.debug('Leaving xacmlDecideView().');
-  return json;
-}
 
-// THE SEVENTH, and the only one of them that reports TRAFFIC rather than
-// configuration. It takes no argument at all — there is nothing to filter and
-// nothing to name — which is why it is the shortest of the seven and not a
-// sign that something was left out.
-function xacmlMonitorView(req) {
-  log.debug('Entering xacmlMonitorView().');
-  const json = xacmlPages ? xacmlPages.monitor() : noXacml();
-  log.debug('Leaving xacmlMonitorView().');
-  return json;
-}
 
-// ---------------------------------------------------------------------------
-// THE CONSOLE SHAPE AND THE API SHAPE ARE NOT THE SAME, AND THIS IS THE
-// BOUNDARY BETWEEN THEM.
-//
-// `xacml_admin.js`'s action functions answer `{ ok, why }` because that is what
-// `respondToAction()` draws on a console page. **EVERY OTHER ACTION RESOURCE ON
-// `/admin-api` ANSWERS `{ ok, errors: [...] }`** — ssf, permissions, realms,
-// spiffe — and `tests/vendored/sts_admin_api_operations.js` reads that array on
-// every one of them: it walks every documented POST resource, sends an unknown
-// action, and requires the refusal SENTENCE to name the actions, because
-// `admin_api.js`'s parity check reads that same sentence to find out what
-// actions a resource has. A resource answering `why` is invisible to both.
-//
-// So the conversion happens HERE, at the one function the management API calls
-// and the console does not — the console's own POST handlers call
-// `combinedAction()` directly. `why` is kept BESIDE `errors` rather than being
-// replaced, because a caller reading it is reading something true and a rename
-// would break it for nothing.
-//
-// It went unnoticed from phase three until phase five for the reason three
-// other XACML defects did: that job is this repository's OWN and had not been
-// run against the branch.
-// ---------------------------------------------------------------------------
-function xacmlAction(body) {
-  log.debug('Entering xacmlAction(). action=' + (body || {}).action);
-  if (!xacmlPages) {
-    log.debug('Leaving xacmlAction(). No XACML module.');
-    return { ok: false, errors: [noXacml().message] };
-  }
-  const result = xacmlPages.action(body);
-  if (!result.ok && !result.errors && result.why) {
-    log.debug('Leaving xacmlAction(). Refused.');
-    return Object.assign({}, result, { errors: [result.why] });
-  }
-  log.debug('Leaving xacmlAction(). ok=' + result.ok);
-  return result;
-}
 
 function xacmlActionNames() {
   return xacmlPages && xacmlPages.actionNames
@@ -15330,7 +14211,7 @@ function setDirectoryPages(views) {
   });
   if (!complete) {
     // A warning and not a throw, for the reason every other install here gives.
-    log.warn('admin: a set of directory page views was offered that does not ' +
+    log.warn(errorCodes.tag('STS-ADMIN-0014') + 'admin: a set of directory page views was offered that does not ' +
              'carry all eight of ' + DIRECTORY_PAGE_NAMES.join(', ') + '. It is ' +
              'refused whole — a partial set would leave some of /admin-api\'s ' +
              'directory operations answering as though no directory were ' +
@@ -15338,30 +14219,21 @@ function setDirectoryPages(views) {
     return;
   }
   directoryPages = views;
+  // AND THE READ LAYER, which needs the same thing — see the header of
+  // admin-core/admin_views.js. Still one statement and one writer.
+  adminViews.setDirectoryPages(views);
   log.debug('The eight directory page views were installed; /admin-api ' +
             'mirrors them.');
 }
 
-// What `mgmt-api/admin_api.js` calls. The `?format=json` half of each page,
-// which is the same object the page itself is built from.
-function directoryPageJson(name, req) {
-  log.debug('Entering directoryPageJson(). name=' + name);
-  if (!directoryPages) {
-    log.debug('Leaving directoryPageJson(). No directory is loaded.');
-    return { directory: false,
-             message: 'No LDAP directory is loaded in this process, so there ' +
-                      'is no store to report. ldap/ldap_server.js fills this ' +
-                      'reader when it is required.' };
-  }
-  const view = directoryPages[name](req);
-  log.debug('Leaving directoryPageJson().');
-  return view.json;
-}
 
 let scimReader = null;
 
 function setScimReader(fn) {
   scimReader = fn;
+  // AND THE READ LAYER, which needs the same thing — see the header of
+  // admin-core/admin_views.js. Still one statement and one writer.
+  adminViews.setScimReader(fn);
   log.debug("A SCIM reader was installed; /admin/scim will now describe the " +
             "SCIM 2.0 endpoints.");
 }
@@ -15382,6 +14254,13 @@ let directoryWriter = null;
 
 function setDirectoryWriter(fn) {
   directoryWriter = fn;
+  // AND THE READ LAYER, which needs it for the new-person answer.
+  adminViews.setDirectoryWriter(fn);
+  // AND THE ACTION LAYER, which needs the same object and is handed it
+  // from here rather than asking for it — see the header of
+  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // the ONLY place either is written, which is what keeps it one answer.
+  adminActions.setDirectoryWriter(fn);
   log.debug("A directory writer was installed; /admin/users can now create a " +
             "person in the directory.");
 }
@@ -15431,7 +14310,7 @@ function setGroupWriter(fns) {
     // REFUSED RATHER THAN HALF-INSTALLED, and the warning names what was
     // missing: "the groups page cannot create a group" with no further detail
     // is the kind of message that costs an hour.
-    log.error("admin: the group writer slot was offered an object missing " +
+    log.error(errorCodes.tag('STS-ADMIN-0014') + "admin: the group writer slot was offered an object missing " +
               missing.join(', ') + ". It is NOT installed — /admin/groups and " +
               "POST /admin-api/groups will report that no directory is " +
               "loaded, which is true of the writes and not of the reads " +
@@ -15440,6 +14319,13 @@ function setGroupWriter(fns) {
     return;
   }
   groupWriter = given;
+  // AND THE READ LAYER, for the groups answer.
+  adminViews.setGroupWriter(given);
+  // AND THE ACTION LAYER, which needs the same object and is handed it
+  // from here rather than asking for it — see the header of
+  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // the ONLY place either is written, which is what keeps it one answer.
+  adminActions.setGroupWriter(given);
   log.debug("Leaving setGroupWriter(). /admin/groups can now create a group " +
             "and add a member to one.");
 }
@@ -15523,7 +14409,7 @@ function ldapObjectSection(row, key) {
     return {
       html: heading + listener +
         note(intro + ' ' + because) + alsoNamed + link,
-      json: info
+      json: adminViews.ldapObjectJson(key)
     };
   }
 
@@ -15557,51 +14443,10 @@ function ldapObjectSection(row, key) {
 
   log.debug("Leaving ldapObjectSection(). " + Object.keys(entry.attributes).length +
             " attribute(s) dumped.");
-  return { html: html, json: info };
+  return { html: html, json: adminViews.ldapObjectJson(key) };
 }
 
-// The live sign-on sessions belonging to one user. Sessions are keyed by an opaque
-// id and hold a user object, so the match is on the identity rather than the string:
-// the session says `alice` and the tokens say `urn:sts-mock:user:alice`, and these
-// have to end up on the same page.
-function sessionRowsFor(key) {
-  log.debug("Entering sessionRowsFor(). key=" + key);
-  const rows = signOnSessionRows().filter(function (session) {
-    return stats.identityKeyOf(session.username || session.sub) === key;
-  });
-  log.debug("Leaving sessionRowsFor(). " + rows.length + " session(s).");
-  return rows;
-}
 
-// The tokens of one user, split by the session they were issued on.
-//
-// Three buckets, and the third is the one worth explaining. A token whose record
-// names a session that is no longer held is not an error: sessions expire and are
-// swept, and the token outlives the sign-on it came from — that is exactly the state
-// an OIDC client is in when its ID Token still verifies and the browser would be
-// asked to sign in again. Showing those under "no session" would say something false
-// about how they were issued.
-function tokensBySession(tokens, sessionRows) {
-  log.debug("Entering tokensBySession(). " + tokens.length + " token(s).");
-  const held = {};
-  sessionRows.forEach(function (session) { held[session.id] = []; });
-  const ended = [];
-  const sessionless = [];
-  tokens.forEach(function (record) {
-    if (!record.sessionId) {
-      sessionless.push(record);
-      return;
-    }
-    if (held[record.sessionId]) {
-      held[record.sessionId].push(record);
-      return;
-    }
-    ended.push(record);
-  });
-  log.debug("Leaving tokensBySession(). " + Object.keys(held).length + " session(s), " +
-            ended.length + " on an ended session, " + sessionless.length + " with none.");
-  return { held: held, ended: ended, sessionless: sessionless };
-}
 
 // One user's tokens as a table. The columns are the ones that differ WITHIN a user:
 // their name and subject are the same on every row by construction and are stated
@@ -16088,141 +14933,40 @@ function mfaSection(row, key, state, back) {
             " key(s).");
   return {
     html: html,
-    json: {
-      // The mechanisms as the credential store answers them, minus the public
-      // keys — a JWK per credential is several hundred bytes of no use to a
-      // caller asking who holds what, and this reply is already the largest on
-      // the console.
-      password: mech.password,
-      usable: mech.usable,
-      activated: mech.activated,
-      mfaRequired: mech.mfaRequired,
-      secondFactor: mech.secondFactor || null,
-      totp: mech.totp,
-      totpUsable: mech.totpUsable,
-      totpDetail: mech.totpDetail,
-      // THE RECOVERY CODES AS A STATUS AND NEVER AS CODES — see the block
-      // above. `credentials.backupCodeStatus()` is what fills it and it
-      // carries none, so there is no shape of this reply in which a caller
-      // holding `admin:read` is handed a working second factor.
-      backupCodes: mech.backupCodes,
-      keys: (mech.keys || []).map(function (one) {
-        return { credentialId: one.credentialId, role: one.role,
-                 label: one.label || null, signCount: one.signCount || 0,
-                 enrolledAt: one.enrolledAt || 0 };
-      }),
-      primaryKeys: mech.primaryKeys,
-      mfaKeys: mech.mfaKeys,
-      // WHAT THE REALM ALLOWS, beside what the person holds, because the two
-      // together are the answer to "why can they not enrol one" — and a caller
-      // that had to fetch /admin-api/webauthn as well would be reading a
-      // second request's answer against this one's.
-      policy: { totpEnabled: totpLive.enabled,
-                backupCodesEnabled: recoveryLive.enabled,
-                backupCodesCount: recoveryLive.count,
-                webauthnEnabled: keyLive.enabled,
-                primaryAllowed: keyLive.primaryAllowed,
-                mfaAllowed: keyLive.mfaAllowed,
-                maxKeysPerPerson: keyLive.maxKeysPerPerson }
-    }
+    // ONE SOURCE for what this panel says (2026-09-12): the layer builds it,
+    // this draws it. See admin-core/admin_views.js.
+    json: adminViews.mfaJson(key)
   };
 }
 
 function userDetailPage(req, key) {
   log.debug("Entering userDetailPage(). key=" + key);
-  let detail = stats.userDetail(key);
-  if (!detail) {
-    // ---------------------------------------------------------------------
-    // A PERSON THE DIRECTORY HOLDS AND THE REGISTRY DOES NOT (2026-09-10).
-    //
-    // **THE LIST ABOVE STARTED LISTING THEM ON THIS DAY** — see peopleRows()
-    // — and until this branch existed, clicking one landed on *nothing here
-    // has authenticated as alice*. That is a true sentence and a useless
-    // page: it is exactly the person whose second factor an operator has come
-    // to look at, and both Clear buttons are on this page.
-    //
-    // So the registry's absence is filled with a blank record rather than
-    // treated as a missing person. Every section below reads `detail.tokens`,
-    // `detail.artifacts` and the row's counted arrays, and every one of them
-    // is legitimately empty here: this identity has never signed in, so it
-    // holds no session and nothing has been issued to it. The DIRECTORY and
-    // SECOND FACTOR sections are the two that have something to say, and they
-    // are the two that were unreachable.
-    // ---------------------------------------------------------------------
-    const inDirectory = !!(directoryReader && directoryReader(key).found);
-    if (!inDirectory) {
-      log.debug("Leaving userDetailPage(). No such user, and no entry either.");
-      return null;
-    }
-    detail = {
-      user: { key: key, name: key, forms: [], realms: [], protocols: [],
-              authentications: 0, firstAt: 0, lastAt: 0, isClient: false,
-              authenticated: false, knownBy: 'directory', events: [],
-              eventsForgotten: 0,
-              tokens: { issued: 0, valid: 0, expired: 0, revoked: 0, other: 0 },
-              artifactKinds: [], artifacts: 0, lastActivityAt: 0 },
-      tokens: [], artifacts: []
-    };
-    log.debug("userDetailPage(). Directory-only: a blank registry record.");
+  const view = adminViews.userDetailJson(req, key);
+  if (!view) {
+    log.debug("Leaving userDetailPage(). Nothing known.");
+    return null;
   }
-  const row = detail.user;
-  const sessionRows = sessionRowsFor(key);
-  const live = sessionRows.filter(function (s) { return !s.expired; });
-  const split = tokensBySession(detail.tokens, sessionRows);
-  // Where a revoke button on this page returns to: this user's page, which is the
-  // only sensible answer — the reader is looking at one person and wants to see the
-  // effect on that person. It carries the whole query and not just the name, so the
-  // answer is the page of the table the button was on rather than the first page of
-  // all five; backTo() picks the page parameters back out by shape.
-  //
-  // `params` is the whole current query carried through, and every control on this
-  // page rides on it, so moving one of the five lists leaves the other four where
-  // they are. See pageParamsOf() for why it is carried rather than listed.
-  const params = pageParamsOf(req.query);
-  const back = queryWith(params, {});
-  const valid = detail.tokens.filter(function (t) { return t.state === 'valid'; }).length;
-  // Counted beside `valid` because "issued" minus "valid" is not "expired" — a
-  // revoked token, one not yet valid and one with no expiry stated all sit in
-  // that difference, and a reader doing the subtraction gets the wrong answer
-  // silently. It is its own tile for the same reason the users table grew its
-  // own column: a token running out of time is the ordinary end of a token and
-  // the first thing to check when a client starts being refused.
-  const expired = detail.tokens.filter(function (t) { return t.state === 'expired'; }).length;
-  // Read before the markup is assembled rather than inside it, because it is also
-  // one of the keys of the JSON view below and reading it twice could show a page
-  // and a JSON body that disagree about a directory another request just changed.
-  const directory = ldapObjectSection(row, key);
-  // The second factors, on the same terms and for the same reason (2026-09-10).
-  // `gateStateFor()` decides whether the two removals are drawn at all; it is
-  // read HERE rather than inside the section because the section is also called
-  // for `?format=json`, where there is no button to draw and the answer is
-  // still needed for the write half of `/admin-api/users`.
-  const mfa = mfaSection(row, key, gateStateFor(req), back);
-
-  // Five lists on one page, each with its own page parameter and all of them sharing
-  // `per` — see pagingOf() for why it is that way round.
-  //
-  // What is deliberately NOT paged here: the names this identity has been seen under,
-  // the protocols it authenticated through, and the authentication events. The first
-  // two are bounded by how many spellings and protocols exist, and the third is
-  // capped at stats.MAX_EVENTS_PER_USER — fifty — by the registry itself, which is
-  // the note authenticationTable() already prints. Paging a list that cannot exceed
-  // fifty would buy a control nobody will see, and it would cost something real: all
-  // three live on `row`, which goes out whole as this reply's `user`, so slicing them
-  // for the table would either corrupt that object or duplicate it, and leaving the
-  // JSON whole while the table paged is the console-and-API disagreement this file
-  // keeps warning about.
-  const sessionPage = pagedRows(req.query, sessionRows,
-    { name: 'sessions', noun: 'sessions', defaultPer: DEFAULT_BLOCKS_PER_PAGE });
+  const detail = view.detail;
+  const row = view.row;
+  const sessionRows = view.sessionRows;
+  const live = view.live;
+  const split = view.split;
+  const params = view.params;
+  const back = view.back;
+  const valid = view.valid;
+  const expired = view.expired;
+  const directory = view.directory;
+  const mfa = view.mfa;
+  const sessionPage = view.sessionPage;
+  const sessionTokenPages = view.sessionTokenPages;
+  const endedPage = view.endedPage;
+  const sessionlessPage = view.sessionlessPage;
+  const artifactPage = view.artifactPage;
   const sessionsNav = pageNavPair('/admin/users', params, sessionPage.paging);
   // The token paging of each session that is on this page of sessions, kept beside
   // the block rather than recomputed for the JSON below: two calls with the same
   // arguments would be two chances for the page and the reply to disagree about
   // which tokens a reader is looking at.
-  const sessionTokenPages = sessionPage.shown.map(function (session) {
-    return pagedRows(req.query, split.held[session.id] || [],
-                     { name: 'session-' + session.id, noun: 'tokens' });
-  });
   const sessionBlocks = sessionPage.shown.map(function (session, index) {
     return sessionBlock(session, sessionTokenPages[index], back, params);
   }).join('');
@@ -16233,14 +14977,8 @@ function userDetailPage(req, key) {
   // caller reading `tokensWithNoSession` in the reply had to be told separately that
   // the parameter moving it was called something else, which is the sort of thing a
   // document gets right and a client author never finds.
-  const endedPage = pagedRows(req.query, split.ended,
-                              { name: 'tokensOnEndedSessions', noun: 'tokens' });
   const endedNav = pageNavPair('/admin/users', params, endedPage.paging);
-  const sessionlessPage = pagedRows(req.query, split.sessionless,
-                                    { name: 'tokensWithNoSession', noun: 'tokens' });
   const sessionlessNav = pageNavPair('/admin/users', params, sessionlessPage.paging);
-  const artifactPage = pagedRows(req.query, detail.artifacts,
-                                 { name: 'artifacts', noun: 'artifacts' });
   const artifactNav = pageNavPair('/admin/users', params, artifactPage.paging);
 
   const inner = messagesOf(req) +
@@ -16313,7 +15051,7 @@ function userDetailPage(req, key) {
 
     '<h2>Sessions, and what was issued on each</h2>' +
     note('A <strong>sign-on session</strong> is a browser holding the ' +
-    '<code>sts_mock_session</code> cookie, shared between the OAuth 2.0 / OIDC login screen and ' +
+    '<code>sts_session</code> cookie, shared between the OAuth 2.0 / OIDC login screen and ' +
     'WS-Federation. A token is placed under a session because the issuance said so — no token ' +
     'this service issues carries a session identifier, and OIDC\'s <code>sid</code> claim is for ' +
     'front-channel logout, so inventing one to make this page easier would change what every ' +
@@ -16439,205 +15177,11 @@ function userDetailPage(req, key) {
             " token(s) held.");
   return {
     inner: inner,
-    json: {
-      user: row,
-      // WHAT THEY CAN SIGN IN WITH, and what they are asked for as a second
-      // factor (2026-09-10). It is `factors` here and on every row of the
-      // list, so a caller reads one member name whichever view it fetched.
-      factors: mfa.json,
-      // Every array here is THE PAGE, not the whole list, exactly as `users` is on
-      // the list view — and every one of them is answered by a `*Paging` object
-      // carrying the same member names one level down, so a caller walks a
-      // drill-down's five lists the way it already walks the three flat ones. A
-      // session's own tokens are paged too and its paging travels with it, because
-      // there is one such list per session and no top-level place to put five of
-      // them that would still say which was which.
-      sessions: sessionPage.shown.map(function (session, index) {
-        return Object.assign({}, session, {
-          tokens: sessionTokenPages[index].shown,
-          tokensPaging: pagingJson(sessionTokenPages[index].paging)
-        });
-      }),
-      sessionsPaging: pagingJson(sessionPage.paging),
-      tokensOnEndedSessions: endedPage.shown,
-      tokensOnEndedSessionsPaging: pagingJson(endedPage.paging),
-      tokensWithNoSession: sessionlessPage.shown,
-      tokensWithNoSessionPaging: pagingJson(sessionlessPage.paging),
-      artifacts: artifactPage.shown,
-      artifactsPaging: pagingJson(artifactPage.paging),
-      // null when no directory is loaded in this process, which is a different
-      // answer from an entry that is not there — that one is an object whose
-      // `found` is false and which says where it would have been.
-      ldap: directory.json
-    }
+    json: view.json
   };
 }
 
-// The list. Filtered by a name fragment and by protocol, and paged with the same
-// controls the tokens page uses.
-// ===========================================================================
-// EVERYBODY THIS REALM KNOWS ABOUT, AND WHAT EACH OF THEM CAN SIGN IN WITH
-// (2026-09-10).
-//
-// **THIS PAGE'S POPULATION WIDENED ON THE DAY `/admin/mfa` WAS TAKEN AWAY.**
-// It was `stats.userRows()` — identities this service has SEEN — and its own
-// lead paragraph said so. `/admin/mfa` drew a different population: the union
-// of that with this realm's DIRECTORY people, because the question it answered
-// was *who holds no second factor* and the people most likely to hold none are
-// exactly the ones who have never signed in.
-//
-// Folding that roster into this page without widening the population would
-// have answered that question wrongly and quietly. So this function is the
-// union, and the page says which side of it each row came from.
-//
-// ---------------------------------------------------------------------------
-// THE GAP IS SMALLER THAN IT LOOKS AND IT IS NOT ZERO, WHICH IS WHY THIS IS
-// NOT A ONE-LINE CHANGE.
-//
-// Most directory people are ALREADY on `stats.userRows()`: every door that
-// creates one — the console, `POST /admin-api/users/create`, a SCIM create, an
-// LDAP add, a restore from the persistence store — calls
-// `stats.noteKnownIdentity()`, which is what put `knownBy` on a row. So on a
-// small service the union adds nothing at all.
-//
-// **THE REGISTRY IS CAPPED AT `stats.MAX_USERS` AND THE DIRECTORY IS NOT.**
-// Two thousand against `ldap.maxEntries`, so a realm with five thousand people
-// has at most two thousand of them here — and the three thousand missing are
-// invisible on every console page that asks a question about people. That is
-// the case this union exists for, and it is the case a bulk load produces.
-//
-// ---------------------------------------------------------------------------
-// KEYED BY THE IDENTITY KEY AND NOT BY THE NAME.
-//
-// `credentials.secondFactorHolders()` dedupes case-insensitively on the raw
-// name; this page's whole premise is that ONE ROW IS ONE LOCAL NAME ACROSS
-// EVERY PROTOCOL, which is `stats.identityKeyOf()`. Two spellings that reach
-// the same identity key have to fold into one row here or the warning at the
-// top of the table stops being true. Where they do fold, the factor facts are
-// UNIONED rather than one of them winning: holding a key under one spelling
-// and an app under another is holding both.
-// ===========================================================================
-function peopleRows() {
-  log.debug("Entering peopleRows().");
-  const seen = stats.userRows();
-  const byKey = new Map();
-  seen.forEach(function (row) {
-    // `factors` is filled below. Declared here so that every row has the member
-    // whether or not the credential store answered — a page that read
-    // `row.factors.totp` off a row that had none would throw on the one
-    // deployment with no directory, which is the deployment least able to
-    // report it.
-    row.factors = null;
-    row.inDirectory = false;
-    byKey.set(row.key, row);
-  });
 
-  const holders = credentials.secondFactorHolders(seen.map(function (row) {
-    return row.key;
-  }));
-
-  holders.rows.forEach(function (holder) {
-    const key = stats.identityKeyOf(holder.username);
-    if (!key) return;
-    let row = byKey.get(key);
-    if (!row) {
-      // A DIRECTORY PERSON THIS SERVICE HAS NEVER SEEN. Synthesised with the
-      // same shape `blankUserRow()` produces, because every cell of this table
-      // and every member of the JSON reply reads it — a row missing `tokens`
-      // would be a column that throws rather than a column that says nothing.
-      // **THE SHAPE `userRows()` RETURNS AND NOT THE ONE `blankUserRow()`
-      // BUILDS.** Those differ: the registry counts forms, realms, protocols
-      // and artifact kinds in OBJECTS and converts every one of them to an
-      // ARRAY on the way out. A row synthesised from the blank shape reaches
-      // this page with `row.realms.map is not a function` — which is what the
-      // first version of this did, on the one row type nothing else produces.
-      row = { key: key, name: holder.username, forms: [], realms: [],
-              protocols: [], authentications: 0, firstAt: 0, lastAt: 0,
-              isClient: false, authenticated: false, knownBy: 'directory',
-              events: [], eventsForgotten: 0,
-              tokens: { issued: 0, valid: 0, expired: 0, revoked: 0, other: 0 },
-              artifactKinds: [], artifacts: 0, lastActivityAt: 0,
-              factors: null, inDirectory: false };
-      byKey.set(key, row);
-    }
-    row.inDirectory = row.inDirectory || !!holder.inDirectory;
-    row.factors = mergeFactors(row.factors, holder);
-  });
-
-  const rows = Array.from(byKey.values());
-  rows.sort(function (a, b) {
-    return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 : 1;
-  });
-  log.debug("Leaving peopleRows(). " + rows.length + " person/people, " +
-            holders.scanned + " scanned in the directory.");
-  return { rows: rows, store: holders.store, scanned: holders.scanned,
-           capped: holders.capped, limit: holders.limit,
-           registryCap: stats.MAX_USERS };
-}
-
-// TWO SPELLINGS THAT FOLD INTO ONE ROW HOLD THE UNION OF WHAT EACH HELD. Taking
-// the first would answer "no second factor" for somebody who has one under
-// their other name, which is the wrong answer in the direction that matters:
-// this table is read to find people who are NOT protected.
-function mergeFactors(into, holder) {
-  if (!into) {
-    return {
-      password: !!holder.password,
-      primaryKeys: holder.primaryKeys || 0,
-      mfaKeys: holder.mfaKeys || 0,
-      totp: !!holder.totp,
-      totpUsable: !!holder.totpUsable,
-      totpDetail: holder.totpDetail || null,
-      mfaRequired: !!holder.mfaRequired,
-      secondFactor: holder.secondFactor || '',
-      usable: !!holder.usable,
-      // **THE RECOVERY CODES (2026-09-11), AND THIS FUNCTION IS WHERE THEY
-      // WERE BEING LOST.** `credentials.secondFactorHolders()` has always put
-      // a `backupCodes` member on every row, and this merge built an explicit
-      // shape without it — so the counts reached neither `/admin/users` nor
-      // `GET /admin-api/mfa`, and an operator could see that somebody held an
-      // authenticator and not that they had used nine of their ten ways back.
-      //
-      // Counts and never codes: `backupCodeStatus()` is what the member is
-      // built from and it carries none.
-      backupCodes: holder.backupCodes || null,
-      recoveryAdvised: !!holder.recoveryAdvised
-    };
-  }
-  into.password = into.password || !!holder.password;
-  into.primaryKeys += (holder.primaryKeys || 0);
-  into.mfaKeys += (holder.mfaKeys || 0);
-  // `totpUsable` is only meaningful where `totp` is, so the two move together —
-  // an enrolment this process cannot read must not be reported as absent, which
-  // would sign somebody in on one factor.
-  if (holder.totp && !into.totp) {
-    into.totp = true;
-    into.totpUsable = !!holder.totpUsable;
-    into.totpDetail = holder.totpDetail || null;
-  }
-  into.mfaRequired = into.mfaRequired || !!holder.mfaRequired;
-  into.usable = into.usable || !!holder.usable;
-  // **A SET FOUND UNDER EITHER SPELLING WINS, WHICH IS `totp`'s RULE ABOVE
-  // AND FOR ITS REASON.** This table is read to find people who are NOT
-  // protected, so taking the first row's answer would report "no recovery
-  // codes" for somebody who holds a set under their other name — the wrong
-  // answer in the direction that matters.
-  if (holder.backupCodes && holder.backupCodes.present && !(into.backupCodes &&
-      into.backupCodes.present)) {
-    into.backupCodes = holder.backupCodes;
-  } else if (!into.backupCodes) {
-    into.backupCodes = holder.backupCodes || null;
-  }
-  // **AND THE ADVICE IS THE OTHER WAY ROUND: ALL OF THEM MUST WANT IT.** It is
-  // true of somebody with a second factor and no set, so a spelling that holds
-  // the set makes it false for the person — the union of two rows must not
-  // tell an operator to chase somebody who is already covered.
-  into.recoveryAdvised = (into.recoveryAdvised || !!holder.recoveryAdvised) &&
-                         !(into.backupCodes && into.backupCodes.present);
-  into.secondFactor = into.mfaKeys > 0 ? 'webauthn'
-                    : (into.totp ? 'totp' : '');
-  return into;
-}
 
 // WHERE THIS ROW CAME FROM. Two sources and three answers, and the third —
 // both — is the ordinary one: nearly every door that creates a directory entry
@@ -16729,52 +15273,19 @@ function secondFactorCell(factors) {
 
 function usersListPage(req) {
   log.debug("Entering usersListPage().");
-  const wantedText = String(req.query.q || '').trim();
-  const wantedProtocol = String(req.query.protocol || '');
-  // THE UNION, not `stats.userRows()` — see peopleRows(). The registry is
-  // capped at two thousand and the directory is not, so on a realm that has
-  // been bulk loaded this is the difference between a page that answers *who
-  // holds no second factor* and one that answers it for the first two thousand
-  // people it happens to remember.
-  const population = peopleRows();
-  const all = population.rows;
-  // The second-factor filter, which arrived with the roster on 2026-09-10. It
-  // is `factor` rather than `mfa` because that is the name `/admin/mfa` used
-  // and a link somebody bookmarked should keep working against the page that
-  // absorbed it — the same courtesy `listViewFromBack()` extends to a filter
-  // carried across a form.
-  const wantedFactor = String(req.query.factor || '');
-  // Every protocol any known user authenticated through, for the filter. Read off the
-  // data rather than written down, so a protocol that starts recording authentications
-  // appears in the dropdown by itself and one that never has cannot offer a filter
-  // that matches nothing.
-  const protocolsSeen = {};
-  all.forEach(function (row) {
-    row.protocols.forEach(function (family) { protocolsSeen[family.protocol] = true; });
-  });
-  const filtered = all.filter(function (row) {
-    if (wantedText && row.key.toLowerCase().indexOf(wantedText.toLowerCase()) < 0) return false;
-    if (wantedProtocol && !row.protocols.some(function (f) { return f.protocol === wantedProtocol; })) {
-      return false;
-    }
-    // `factors` is null where no credential store answered at all. Such a row
-    // matches NO factor filter rather than matching `none`, because "this
-    // service cannot tell" and "this person holds none" are different answers
-    // and the second one is the dangerous one to guess.
-    const factors = row.factors;
-    if (wantedFactor === 'totp' && !(factors && factors.totp)) return false;
-    if (wantedFactor === 'key' && !(factors && factors.mfaKeys > 0)) return false;
-    if (wantedFactor === 'any' && !(factors && factors.mfaRequired)) return false;
-    if (wantedFactor === 'none' && !(factors && !factors.mfaRequired)) return false;
-    if (wantedFactor === 'unreadable' &&
-        !(factors && factors.totp && !factors.totpUsable)) return false;
-    return true;
-  });
-  const paging = pagingOf(req.query, filtered.length);
-  const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
-  const filterParams = { q: wantedText, protocol: wantedProtocol,
-                         factor: wantedFactor,
-                         per: req.query.per ? paging.perPage : '' };
+  const view = adminViews.usersListJson(req);
+  const wantedText = view.wantedText;
+  const wantedProtocol = view.wantedProtocol;
+  const population = view.population;
+  const all = view.all;
+  const wantedFactor = view.wantedFactor;
+  const protocolsSeen = view.protocolsSeen;
+  const filtered = view.filtered;
+  const paging = view.paging;
+  const shown = view.shown;
+  const filterParams = view.filterParams;
+  const authenticatedHere = view.authenticatedHere;
+  const factorCounts = view.factorCounts;
   const nav = pageNavPair('/admin/users', filterParams, paging);
 
   // Sessions are counted per user here rather than fetched per row inside the loop:
@@ -16799,7 +15310,7 @@ function usersListPage(req) {
     // in it a browser will break a line, so drawn in full it sets this cell's
     // minimum width and pushes every column after it off the card — including
     // the rows of people whose names are three letters long. 40 keeps
-    // `urn:sts-mock:user:alice` and an ordinary DID whole; shortened() puts the
+    // `urn:sts:user:alice` and an ordinary DID whole; shortened() puts the
     // rest in the title attribute, so nothing is lost, only hidden.
     // THREE CELLS ARRIVED ON 2026-09-10 WITH THE ROSTER `/admin/mfa` USED TO
     // DRAW: where the row came from, what the person can sign in WITH, and
@@ -16840,31 +15351,10 @@ function usersListPage(req) {
   }).join('');
   const perOptions = perPageOptions(paging.perPage);
 
-  const authenticatedHere = all.filter(function (row) { return row.authenticated; }).length;
   // THE SECOND-FACTOR COUNTS (2026-09-10), over the WHOLE population rather
   // than the page — which is why peopleRows() scans rather than reading the
   // rows being shown. A tile that counted one page of twenty would answer a
   // question nobody asked.
-  const factorCounts = {
-    withSecond: all.filter(function (r) { return r.factors && r.factors.mfaRequired; }).length,
-    withTotp: all.filter(function (r) { return r.factors && r.factors.totp; }).length,
-    withKeys: all.filter(function (r) { return r.factors && r.factors.mfaKeys > 0; }).length,
-    primaryKeys: all.filter(function (r) { return r.factors && r.factors.primaryKeys > 0; }).length,
-    passwordOnly: all.filter(function (r) {
-      return r.factors && r.factors.password && !r.factors.mfaRequired;
-    }).length,
-    unreadable: all.filter(function (r) {
-      return r.factors && r.factors.totp && !r.factors.totpUsable;
-    }).length,
-    // NOBODY CAN SIGN IN AS THEM. A person with an entry and no password and
-    // no primary key — the ordinary state of somebody provisioned and not yet
-    // activated, and the state an activation link exists to end. It is counted
-    // beside the second-factor tiles because it is the OTHER question an
-    // operator brings to a roster of people.
-    noCredential: all.filter(function (r) {
-      return r.factors && !r.factors.usable && !r.isClient;
-    }).length
-  };
   const inner = messagesOf(req) +
     '<div class="tiles">' +
       tile(all.length, 'people and identities') +
@@ -16939,7 +15429,7 @@ function usersListPage(req) {
     '<a href="/admin/spiffe">SPIFFE</a>.') +
     warn('<strong>One row is one local name, across every protocol.</strong> The same ' +
     'person arrives here as <code>alice</code> at the login screen, ' +
-    '<code>urn:sts-mock:user:alice</code> in every token and <code>alice@STS.MOCK</code> as a ' +
+    '<code>urn:sts:user:alice</code> in every token and <code>alice@STS.MOCK</code> as a ' +
     'Kerberos principal, and showing three rows for that would be a worse answer than one — the ' +
     'premise of this service is that the name you type is who you are in every protocol at once. ' +
     'What it costs: two different people called <code>alice</code> in two Kerberos realms are one ' +
@@ -17053,528 +15543,15 @@ function usersListPage(req) {
   log.debug("Leaving usersListPage(). " + shown.length + " row(s) drawn.");
   return {
     inner: inner,
-    json: {
-      known: all.length, matched: filtered.length, shown: shown.length,
-      authenticatedHere: authenticatedHere,
-      // THE SECOND-FACTOR ROSTER, HERE RATHER THAN ON A RESOURCE OF ITS OWN
-      // (2026-09-10). `GET /admin-api/mfa` answers out of this same view, so
-      // there is one tally and the console and the API cannot disagree about
-      // how many people hold a second factor. Each row carries its own
-      // `factors` object; these are the counts over the whole population.
-      factors: factorCounts,
-      // WHICH POPULATION THIS IS, so a caller reading `known` knows what it
-      // counted. `capped` is the one to check on a bulk-loaded realm: past it
-      // the credential columns are absent rather than false.
-      store: population.store, scanned: population.scanned,
-      capped: population.capped, scanLimit: population.limit,
-      registryCap: population.registryCap,
-      filter: { q: wantedText || null, protocol: wantedProtocol || null,
-                factor: wantedFactor || null },
-      protocols: Object.keys(protocolsSeen).sort(),
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      users: shown
-    }
+    json: view.json
   };
 }
 
-// ---------------------------------------------------------------------------
-// THE ATTRIBUTES A CREATE CARRIES, IN THE TWO SPELLINGS THIS ACTION IS REACHED
-// IN. The same shape `applicationFieldsFrom()` has one section down, and the
-// same argument: the console's form posts one flat `field.<attribute>` per box
-// and a JSON caller of `POST /admin-api/users/create` sends one `attributes`
-// object, and two doors onto one action must not be two readings of what was
-// sent.
-//
-// **IT VALIDATES NOTHING AND THAT IS THE POINT.** Which names are a person's
-// attributes is `ldap_server.js`'s `personAttributesFrom()`, over
-// `vc_claims.js`'s catalogue — the same place an `ldapadd` and a SCIM create
-// are answered from. A check here would be a second opinion, and the one that
-// said yes would be the one that produced the entry nothing else expects.
-//
-// **NO SPLIT ON NEWLINES**, which is where this differs from the applications
-// version beside it and is worth saying rather than leaving as an apparent
-// omission: every one of these attributes is a single-valued fact about a
-// person — a given name, a postal code, a date of birth — so the whole value
-// is the value, and a `postalAddress` legitimately containing a `$` separator
-// would be cut into pieces by anything cleverer.
-// ---------------------------------------------------------------------------
-const USER_FIELD_PREFIX = 'field.';
-
-function userFieldsFrom(body) {
-  log.debug("Entering userFieldsFrom().");
-  const fields = {};
-  // A JSON body's own `attributes` object first, so a caller sending both gets
-  // the flat fields merged OVER it rather than one of the two silently winning.
-  const given = (body && typeof body.attributes === 'object' && body.attributes) || {};
-  Object.keys(given).forEach(function (name) { fields[name] = given[name]; });
-  Object.keys(body || {}).forEach(function (key) {
-    if (key.indexOf(USER_FIELD_PREFIX) !== 0) {
-      return;
-    }
-    const name = key.slice(USER_FIELD_PREFIX.length);
-    if (!name) {
-      return;
-    }
-    const value = String(body[key] === undefined ? '' : body[key]).trim();
-    // AN EMPTY BOX IS NOT A VALUE. Every field on that form is drawn whether or
-    // not it was filled in, so a create posts twenty-five of them and typically
-    // means four — and "no value is recorded" is the promise the page makes.
-    if (value !== '') {
-      fields[name] = value;
-    }
-  });
-  log.debug("Leaving userFieldsFrom(). " + Object.keys(fields).length + " field(s).");
-  return fields;
-}
-
-// A form's yes. Checkboxes post `on`, this console's own hidden fields post
-// `yes` or `no`, and a JSON caller sends a real boolean — so all three are read
-// here rather than at the three call sites. Anything else is false, including
-// the empty string an unfilled hidden field posts.
-function truthy(value) {
-  if (value === true) return true;
-  const text = String(value === undefined || value === null ? '' : value)
-                 .trim().toLowerCase();
-  return text === 'true' || text === 'yes' || text === 'on' || text === '1';
-}
-
-// ---------------------------------------------------------------------------
-// THE ONE THING THIS PAGE CAN CHANGE.
-//
-// Everything else on /admin/users is a report: who has authenticated, what they
-// were issued, what the directory holds about them. This creates a person in the
-// directory, and it is here rather than on /admin/groups or /admin/ldap/directory because this is
-// the page a reader is on when they discover that somebody is missing.
-//
-// IT DECIDES NOTHING. Every rule about what a username may be, and the refusal
-// of one that already exists, is in ldap_server.js's createUser() — reached
-// through the slot above. This function reads the form and phrases the answer,
-// which is the same split /admin/applications keeps with applications.js and the
-// reason POST /admin-api/users/create can call straight into this without a
-// second reading of any of it.
-//
-// WHAT IT DOES NOT DO is make the person appear in the list on this page. That
-// list is identities this service has SEEN authenticate; the entry is in the
-// DIRECTORY. The two are different questions — it is the same distinction
-// /admin/groups draws when it marks a member "never here" — and the message says
-// so outright, because an operator who created a user and could not find them in
-// the table above would reasonably conclude the button was broken.
-// ---------------------------------------------------------------------------
-// The actions this resource accepts, built from the switch below rather than
-// typed — the same arrangement MFA_ACTIONS had on the page this absorbed, and
-// for the same reason: `tests/vendored/sts_admin_api_operations.js` reads the
-// refusal sentence to discover what to check for, so a list that is short by
-// one turns the parity check off for that action.
-const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
-                       'clear-totp', 'clear-key', 'clear-backup-codes'];
-
-function usersAction(body, context) {
-  log.debug("Entering usersAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  // WHO IS DOING IT, for the audit rows the two clears write. Read from the
-  // caller rather than from a cookie in here, because the management API calls
-  // this same function with an actor of its own — a function that reached for a
-  // session would only work from one of the two doors. `via` is the door.
-  const ctx = { via: (context || {}).via || 'console',
-                actor: (context || {}).actor || String(body.actor || '') };
-
-  // ISSUE AN ACTIVATION LINK (2026-09-06). How somebody provisioned through
-  // /admin-api, SCIM or an LDAP add comes to have a way in.
-  //
-  // **THE LINK IS RETURNED ONCE AND NEVER AGAIN**, like the bootstrap password
-  // and a client secret, because what is stored is a hash — this service cannot
-  // produce it a second time, only replace it. Issuing again invalidates the
-  // previous one, which is also how a link that expired or was never delivered
-  // is replaced.
-  //
-  // It is an ADMIN act rather than a self-service one, deliberately. There is
-  // no mail channel here, so a self-service "send me a link" form would have to
-  // show the link on screen — handing any visitor an activation link for any
-  // unactivated account, which is an account takeover with a username as the
-  // only input.
-  if (action === 'issue-activation') {
-    const who = String(body.user || body.username || '').trim();
-    if (!who) {
-      log.debug("Leaving tokenAction(). No user was named.");
-      return { ok: false, errors: ['Name the person to issue an activation ' +
-                                   'link for.'] };
-    }
-    const issued = credentials.issueActivation(who);
-    if (!issued.ok) {
-      log.debug("Leaving tokenAction(). The activation link was refused.");
-      return issued;
-    }
-    auditLog.record({
-      category: 'authentication', action: 'activation.issued',
-      actor: (body.actor || ''), target: who, outcome: 'success',
-      summary: 'an activation link was issued for ' + who,
-      detail: { expiresAt: issued.expiresAt }
-    });
-    return { ok: true, username: who, expiresAt: issued.expiresAt,
-             // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE PERSON'S BROWSER.
-             activationUrl: '/portal/activate?user=' +
-                            encodeURIComponent(who) + '&token=' +
-                            encodeURIComponent(issued.token),
-             message: 'An activation link for ' + who + ' is valid until ' +
-                      issued.expiresAt + '. IT IS SHOWN ONCE — this service ' +
-                      'stores only a hash and cannot produce it again. Send it ' +
-                      'to them by whatever channel you already use; anybody ' +
-                      'who has it can complete the account setup, so treat it ' +
-                      'as the credential it is. Issuing another invalidates ' +
-                      'this one.' };
-  }
 
 
-  // ---------------------------------------------------------------------
-  // THE TWO SECOND-FACTOR REMOVALS (2026-09-10). THEY WERE `POST /admin/mfa`.
-  //
-  // They are here rather than on a resource of their own because the buttons
-  // are here: the roster moved onto this page's columns and the per-person
-  // detail onto this page's drill-down, and an action resource whose page no
-  // longer exists is exactly the console/API drift rule 7 is written against.
-  //
-  // **THEY ARE NOT THE SAME ACT AND THE DIFFERENCE IS WHICH ONE CAN LOCK
-  // SOMEBODY OUT.** Clearing an authenticator app cannot: a one-time code is
-  // never a primary credential here, so it drops the account to one factor and
-  // never to none. Removing a KEY can — it may be the only credential on the
-  // account — which is why it goes through `credentials.removeKey()` rather
-  // than a write of its own: that function is where the last-way-in refusal
-  // lives, and an operator must not be able to do what the person themselves
-  // is stopped from doing.
-  //
-  // **THERE IS NO ENROL BESIDE THEM AND THERE CANNOT BE.** Enrolling an
-  // authenticator means being shown a shared secret, and an administrative
-  // door that handed one out would mint a working second factor for any
-  // account. A WebAuthn ceremony happens in the person's own browser against
-  // their own authenticator, and this console is not that browser. Both are
-  // `/portal`, or an activation link, which is itself a credential.
-  // ---------------------------------------------------------------------
-  if (action === 'clear-totp') {
-    const who = String(body.user || body.username || '').trim();
-    if (!who) {
-      log.debug("Leaving usersAction(). No person named.");
-      return { ok: false, errors: ['Name the person whose authenticator app ' +
-                                   'is being cleared.'] };
-    }
-    const result = credentials.removeTotp(who);
-    auditLog.record({
-      category: 'authentication', action: 'admin.mfa.totp.cleared',
-      actor: ctx.actor, target: who, outcome: result.ok ? 'success' : 'failure',
-      summary: (result.ok ? 'cleared' : 'could not clear') +
-               ' the authenticator app enrolment for ' + who,
-      detail: { username: who, via: ctx.via,
-                errors: result.ok ? undefined : (result.errors || []) }
-    });
-    if (result.ok) {
-      log.info('admin: the authenticator app for "' + who + '" was cleared by ' +
-               (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). That ' +
-               'account is down to one factor and they can enrol again from ' +
-               '/portal/mfa.');
-    }
-    log.debug("Leaving usersAction(). clear-totp " + (result.ok ? "ok." : "refused."));
-    return result;
-  }
 
-  // ---------------------------------------------------------------------
-  // THE THIRD REMOVAL (2026-09-10), AND IT STOPPED BEING AN ISSUING CONTROL ON
-  // 2026-09-11.
-  //
-  // Clearing an authenticator app or a key takes a factor AWAY and that is all
-  // it does. Clearing the recovery codes used to do something else as well:
-  // it **re-armed the automatic issue**, because `ensureBackupCodes()` did
-  // nothing while a set existed, so the next second factor the person enrolled
-  // issued a new one. That was the whole path to a second set and it was
-  // deliberately an operator's act.
-  //
-  // **THAT PATH IS GONE AND SO IS THE ARGUMENT FOR IT BEING AN OPERATOR'S.**
-  // A person generates their own set from `/portal/mfa` now, as often as they
-  // like, because there is no way to SEE a set they already have — so a
-  // Replace control is the only answer to having lost one. This button is
-  // therefore a plain removal again: it takes the way back away and nothing
-  // re-arms.
-  //
-  // **IT IS KEPT BECAUSE THE OTHER REASON FOR IT NEVER WENT AWAY**: a set this
-  // process cannot read, or one an operator has reason to believe has been
-  // copied, is an operator's to remove — and unlike the person, an operator
-  // can do it without being shown ten new strings.
-  //
-  // **IT CANNOT LOCK ANYBODY OUT** — a recovery code is never a way in on its
-  // own, so the account keeps whatever it had. What it removes is the thing
-  // that stops a lost phone being final, which is why it is audited like the
-  // other two and why the button says so.
-  // ---------------------------------------------------------------------
-  if (action === 'clear-backup-codes') {
-    const who = String(body.user || body.username || '').trim();
-    if (!who) {
-      log.debug("Leaving usersAction(). No person named.");
-      return { ok: false, errors: ['Name the person whose recovery codes are ' +
-                                   'being cleared.'] };
-    }
-    const result = credentials.removeBackupCodes(who);
-    auditLog.record({
-      category: 'authentication', action: 'admin.mfa.backup-codes.cleared',
-      actor: ctx.actor, target: who, outcome: result.ok ? 'success' : 'failure',
-      summary: (result.ok ? 'cleared' : 'could not clear') +
-               ' the recovery codes for ' + who,
-      detail: { username: who, via: ctx.via,
-                errors: result.ok ? undefined : (result.errors || []) }
-    });
-    if (result.ok) {
-      log.info('admin: the recovery codes for "' + who + '" were cleared by ' +
-               (ctx.actor || 'an unnamed caller') + ' (' + ctx.via + '). The ' +
-               'next second factor they enrol issues a new set.');
-    }
-    log.debug("Leaving usersAction(). clear-backup-codes " +
-              (result.ok ? "ok." : "refused."));
-    return result;
-  }
 
-  if (action === 'clear-key') {
-    const who = String(body.user || body.username || '').trim();
-    if (!who) {
-      log.debug("Leaving usersAction(). No person named.");
-      return { ok: false, errors: ['Name the person whose security key is ' +
-                                   'being removed.'] };
-    }
-    // THROUGH `removeKey()` AND NOT A WRITE OF ITS OWN — see the header: that
-    // function carries the refusal that matters.
-    const result = credentials.removeKey(who, String(body.credentialId || ''));
-    auditLog.record({
-      category: 'authentication', action: 'admin.mfa.key.cleared',
-      actor: ctx.actor, target: who, outcome: result.ok ? 'success' : 'failure',
-      summary: (result.ok ? 'removed' : 'could not remove') +
-               ' a security key for ' + who,
-      detail: { username: who, via: ctx.via,
-                credentialId: String(body.credentialId || ''),
-                errors: result.ok ? undefined : (result.errors || []) }
-    });
-    log.debug("Leaving usersAction(). clear-key " + (result.ok ? "ok." : "refused."));
-    return result;
-  }
 
-  // SET A PASSWORD ON SOMEBODY WHO IS ALREADY HERE (2026-09-06).
-  //
-  // **IT EXISTED IN PROSE BEFORE IT EXISTED IN CODE**, which is the reason it
-  // is here rather than only inside `create` below: `credentials.js` names
-  // `POST /admin-api/users/set-password` twice — in the sentence a refused
-  // sign-in gets, and in the product-mode bootstrap banner that tells an
-  // operator to change the generated password — and no such operation was ever
-  // written. Somebody following either instruction got a 404 naming an
-  // endpoint this service documents.
-  //
-  // It is `credentials.setPassword()` and nothing else: hashed there, never
-  // here, and never written as an attribute — which is also why `userPassword`
-  // is refused by the attribute door on `create`.
-  if (action === 'set-password') {
-    const who = String(body.user || body.username || '').trim();
-    if (!who) {
-      log.debug("Leaving usersAction(). No user was named.");
-      return { ok: false, errors: ['Name the person whose password to set.'] };
-    }
-    const wanted = String(body.password || '');
-    const generate = truthy(body.generate);
-    if (!wanted && !generate) {
-      log.debug("Leaving usersAction(). No password.");
-      return { ok: false, errors: ['Send `password` with the password to set, ' +
-                                   'or `generate` to have one made up and ' +
-                                   'returned once.'] };
-    }
-    // A CONFIRMATION IS CHECKED WHERE ONE WAS SENT AND NOT REQUIRED. The
-    // console's form always sends it, because a mistyped password nobody can
-    // read back is a locked-out person; an API caller sending one value has
-    // nothing to mistype against.
-    if (!generate && body.passwordConfirm !== undefined &&
-        String(body.passwordConfirm) !== wanted) {
-      log.debug("Leaving usersAction(). The two passwords differ.");
-      return { ok: false, errors: ['The two passwords do not match. Nothing ' +
-                                   'was changed.'] };
-    }
-    const password = generate ? credentials.generatePassword() : wanted;
-    const set = credentials.setPassword(who, password);
-    if (!set.ok) {
-      log.debug("Leaving usersAction(). The password was refused.");
-      return set;
-    }
-    auditLog.record({
-      category: 'authentication', action: 'password.set',
-      actor: (body.actor || ''), target: who, outcome: 'success',
-      summary: 'a password was set for ' + who + ' by an administrator',
-      // NO PASSWORD AND NO HASH IN THE AUDIT ROW, generated or typed. The row
-      // records that it happened and by which door; the value existed in one
-      // response and in one log line's absence.
-      detail: { generated: generate }
-    });
-    return { ok: true, username: who, generated: generate,
-             // ONLY WHERE IT WAS GENERATED. Echoing a password the caller
-             // already holds back to them buys nothing and puts it in a second
-             // place — a proxy log, a browser history, a test fixture.
-             password: generate ? password : undefined,
-             message: generate
-               ? 'A password for ' + who + ' has been generated and set. IT IS ' +
-                 'SHOWN ONCE — this service stores a scrypt hash and cannot ' +
-                 'produce it again, only replace it.'
-               : 'The password for ' + who + ' is set. It is stored as a hash ' +
-                 'and cannot be shown again.' };
-  }
-
-  if (action === 'create') {
-    if (!directoryWriter) {
-      log.debug("Leaving usersAction(). No directory is loaded.");
-      return { ok: false, errors: ['No LDAP directory is loaded in this process, so there is ' +
-                                   'nowhere to put a person. The rest of this page is ' +
-                                   'unaffected — it reports what this service has seen, which ' +
-                                   'does not come from the directory.'] };
-    }
-    const username = String(body.username || body.user || '').trim();
-    // WHAT THE OPERATOR TYPED, AND WHETHER TO MAKE UP THE REST.
-    //
-    // **`invent` DEFAULTS TO TRUE AND THAT IS BACKWARDS COMPATIBILITY RATHER
-    // THAN A PREFERENCE.** Every caller that predates /admin/users/new — the
-    // list page's own row, `POST /admin-api/users/create`, a test — asked for
-    // a person and got the invented one, and the API's published description
-    // still promises it. The new page sends `invent=no` explicitly, which is
-    // the whole of how "no value is recorded" is expressed.
-    const typed = userFieldsFrom(body);
-    const invent = body.invent === undefined ? true : truthy(body.invent);
-    const result = directoryWriter(username, {
-      origin: 'console',
-      note: String(body.note || '').trim() ||
-            'created by hand on the admin console rather than by authenticating',
-      channel: 'console',
-      attributes: typed,
-      invent: invent
-    });
-    if (!result.ok) {
-      log.debug("Leaving usersAction(). create refused.");
-      return result;
-    }
-    // ------------------------------------------------------------------
-    // AND THE CREDENTIAL, WHICH IS A SECOND ACT ON A PERSON WHO NOW EXISTS.
-    //
-    // **THE ORDER IS LOAD-BEARING AND SO IS THE FAILURE MODE.** A password can
-    // only be written onto an entry, so the entry has to be there first — and
-    // that means a create whose credential step fails has ALREADY put somebody
-    // in the directory. It is reported as a SUCCESS carrying a loud failure
-    // rather than as a failure, because answering `ok: false` would send an
-    // operator to press Create again and meet "that username is taken", which
-    // is the least informative true sentence available.
-    //
-    // Four modes and `none` is the default, because that is what this door did
-    // before there were any: this service checks no password in development,
-    // so a person with none is an ordinary and useful thing to create.
-    // ------------------------------------------------------------------
-    const credential = String(body.credential || 'none').trim() || 'none';
-    const answer = { ok: true, dn: result.dn, username: result.username,
-                     entry: result.entry, typed: result.typed || [],
-                     invented: !!result.invented, credential: credential };
-    let credentialSaid = '';
-    if (credential === 'password' || credential === 'generate') {
-      const generated = credential === 'generate';
-      if (!generated && String(body.password || '') === '') {
-        answer.credentialError = 'No password was sent, so none was set.';
-      } else if (!generated && body.passwordConfirm !== undefined &&
-                 String(body.passwordConfirm) !== String(body.password || '')) {
-        answer.credentialError = 'The two passwords do not match, so none was set.';
-      } else {
-        const password = generated ? credentials.generatePassword()
-                                   : String(body.password || '');
-        const set = credentials.setPassword(result.username, password);
-        if (!set.ok) {
-          answer.credentialError = (set.errors || []).join(' ');
-        } else {
-          auditLog.record({
-            category: 'authentication', action: 'password.set',
-            actor: (body.actor || ''), target: result.username, outcome: 'success',
-            summary: 'a password was set for ' + result.username +
-                     ' as they were created',
-            detail: { generated: generated }
-          });
-          answer.passwordSet = true;
-          answer.generated = generated;
-          if (generated) {
-            // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE HASH.
-            answer.password = password;
-            credentialSaid = ' A password has been GENERATED for them and is ' +
-              'shown once: this service stores a scrypt hash and cannot ' +
-              'produce it again, only replace it.';
-          } else {
-            credentialSaid = ' The password you typed is set, stored as a ' +
-              'scrypt hash, and cannot be shown again by anybody including ' +
-              'this console.';
-          }
-        }
-      }
-    } else if (credential === 'activation') {
-      const issued = credentials.issueActivation(result.username);
-      if (!issued.ok) {
-        answer.credentialError = (issued.errors || []).join(' ');
-      } else {
-        auditLog.record({
-          category: 'authentication', action: 'activation.issued',
-          actor: (body.actor || ''), target: result.username, outcome: 'success',
-          summary: 'an activation link was issued for ' + result.username +
-                   ' as they were created',
-          detail: { expiresAt: issued.expiresAt }
-        });
-        answer.activationUrl = '/portal/activate?user=' +
-                               encodeURIComponent(result.username) + '&token=' +
-                               encodeURIComponent(issued.token);
-        answer.expiresAt = issued.expiresAt;
-        credentialSaid = ' They have NO credential and an activation link ' +
-          'instead, valid until ' + issued.expiresAt + ' and shown once. They ' +
-          'choose a password, a security key or both at it; nothing about ' +
-          'this account is decided until they do.';
-      }
-    } else if (credential !== 'none') {
-      answer.credentialError = 'Unknown credential option "' + credential +
-        '". The four are: none, password, generate, activation. Nothing was set.';
-    }
-    if (answer.credentialError) {
-      credentialSaid = ' THE PERSON EXISTS AND HAS NO CREDENTIAL: ' +
-        answer.credentialError + ' Set one from their row on Users rather ' +
-        'than creating them again — the name is taken now, by this entry.';
-    }
-    log.debug("Leaving usersAction(). Created " + result.dn + ".");
-    answer.message = result.dn + ' now exists in the directory' +
-      (result.invented
-        ? ', with the invented person behind that name written onto it — so a ' +
-          'credential issued for ' + result.username + ' and an ldapsearch for ' +
-          'that entry say the same thing.'
-        : ', carrying ' + (answer.typed.length
-            ? 'the ' + answer.typed.length + ' attribute(s) you typed and nothing else'
-            : 'no attributes at all beyond its object classes and its uid') +
-          '. Nothing was invented for it.') +
-      credentialSaid +
-      ' They will NOT appear in the table on the Users page until they ' +
-      'authenticate somewhere: that list is who this service has seen, and ' +
-      'the entry is what the directory HOLDS.';
-    return answer;
-  }
-
-  log.debug("Leaving usersAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The ' +
-                               numberWord(USERS_ACTIONS.length) + ' are: ' +
-                               USERS_ACTIONS.join(', ') + '.'] };
-}
-
-// One route, three answers, and the choice between them is here rather than in
-// the route so that /admin-api/users makes the same one. `known: false` is the
-// third and it is not a 404 — see the comment inside it.
-// WHERE A USER CREATED ON THIS PAGE LANDS, in the realm the page is being read
-// in. `directoryReader('')` is the same slot the drill-down uses, asked with no
-// name: it answers about the DIRECTORY rather than about a person, which is
-// what a note above an empty form has to do.
-function newUserContainer() {
-  log.debug("Entering newUserContainer().");
-  if (!directoryReader) {
-    log.debug("Leaving newUserContainer(). No directory is loaded.");
-    return 'ou=users,' + config.value('ldap.baseDn');
-  }
-  const info = directoryReader('');
-  log.debug("Leaving newUserContainer(). " + info.usersDn);
-  return info.usersDn;
-}
 
 function usersView(req) {
   log.debug("Entering usersView().");
@@ -17770,43 +15747,6 @@ function personFieldRow(row, values) {
     '<td class="sub">' + esc(row.schema) + '</td></tr>';
 }
 
-// The credential choice, as four radios. A RADIO GROUP rather than a select for
-// once, because each option needs a paragraph beside it: what an operator is
-// choosing between here is not four values of one thing but four different
-// stories about how this person first gets in, and three of them have a
-// consequence that cannot be undone from this console.
-const CREDENTIAL_CHOICES = [
-  { id: 'none', label: 'No credential at all',
-    what: 'The entry exists and nothing is set on it. <strong>In development ' +
-          'mode this is enough to sign in</strong> — no password is checked ' +
-          'anywhere in this service — so it is the right choice for a test ' +
-          'subject and the default. In PRODUCT mode a person with no ' +
-          'credential cannot sign in at all, and the way to give them one ' +
-          'afterwards is an activation link.' },
-  { id: 'password', label: 'A password I type',
-    what: 'Hashed with scrypt by <code>credentials.js</code> and written to ' +
-          '<code>userPassword</code> on the entry. <strong>It is never shown ' +
-          'again by anything</strong>, including this console and an ' +
-          '<code>ldapsearch</code>, because what is stored is the hash. Typed ' +
-          'twice, because a mistyped password that nobody can read back is a ' +
-          'person who cannot sign in and nobody who can say why.' },
-  { id: 'generate', label: 'A password generated for me',
-    what: '32 bytes of <code>randomBytes</code>, base64url, set the same way ' +
-          'and <strong>shown to you exactly once</strong> on the page that ' +
-          'comes back. This service cannot produce it a second time — only ' +
-          'replace it. It is the same generator the product-mode bootstrap ' +
-          'account uses.' },
-  { id: 'activation', label: 'No credential, and an activation link',
-    what: 'The person holds nothing, and you are given a single-use, ' +
-          'time-limited URL <strong>once</strong> to send them by whatever ' +
-          'channel you already use. At it they choose a password, a security ' +
-          'key, or both. <strong>Anybody holding that link can complete this ' +
-          'account</strong>, so it is a credential and is treated as one: ' +
-          'this service stores only a hash of it, issuing another invalidates ' +
-          'the first, and it is spent when the setup FINISHES rather than when ' +
-          'the link is opened — a link burned by a mail scanner would strand ' +
-          'the person it was for.' }
-];
 
 function credentialChoiceRow(choice, chosen) {
   const id = 'cred-' + choice.id;
@@ -17821,11 +15761,19 @@ function credentialChoiceRow(choice, chosen) {
 // fields because of one bad username.
 function newUserPage(req, prefill) {
   log.debug("Entering newUserPage().");
+  // ONE COMPUTATION, TWO RENDERINGS (2026-09-12) — see
+  // admin-core/admin_views.js. The attribute catalogue below is the one this
+  // form draws its boxes from AND the one /admin-api publishes.
+  //
+  // `prefill` goes WITH the request, because it is what was posted and
+  // refused: the answer describes the form as it will be drawn, boxes filled,
+  // and a json half that ignored it would describe a form nobody is looking at.
+  const json = adminViews.newUserJson(req, prefill);
   const given = prefill || {};
   const values = given.fields || {};
   const username = String(given.username === undefined
     ? (req.query.user || '') : given.username).trim();
-  const credential = String(given.credential || 'none');
+  const credential = String(given.credential || adminViews.DEFAULT_CREDENTIAL);
   const realm = realms.current();
   const container = directoryReader ? newUserContainer() : null;
   const fields = vcClaims.personFields();
@@ -17847,11 +15795,7 @@ function newUserPage(req, prefill) {
         'fault — every other page is unaffected, and <a href="/admin/users">' +
         'Users</a> still reports what this service has SEEN, which does not ' +
         'come from the directory.'),
-      json: { directory: false, container: null,
-              realm: { id: realms.currentId(), name: realm ? realm.name : '' },
-              fields: [], credentials: CREDENTIAL_CHOICES.map(function (one) {
-                return { id: one.id, label: one.label };
-              }) }
+      json: json
     };
   }
 
@@ -17923,9 +15867,14 @@ function newUserPage(req, prefill) {
     '</div>' +
     note('Read ONLY when <em>A password I type</em> is chosen above; ignored otherwise, ' +
     'so a value left in these boxes cannot become a credential nobody meant to set. The two ' +
-    'must match. <strong>There is no strength rule and that is deliberate</strong> — this ' +
-    'service checks no password in development mode, so a rule here would refuse a value that ' +
-    'is about to be accepted by every door in the service, which is a worse lie than no rule.') +
+    'must match. <strong>It must meet this realm\'s <a href="/admin/policies">password ' +
+    'policy</a>' + (json.passwordPolicy && json.passwordPolicy.enforced
+      ? '</strong>, which is enforced here: ' + esc(json.passwordPolicy.rules.join('; ')) + '.'
+      : ' in product mode</strong>, and this realm is in development mode, where no password ' +
+        'is checked at any door — so the rule is not applied to what you type here. A ' +
+        '<em>generated</em> password meets it in both modes.') +
+    ' If the password is refused the person is still created, with no credential, and the ' +
+    'page says why.') +
 
     '<h2>What is known about them</h2>' +
     note('Every attribute a person in this directory can carry, which is the same ' +
@@ -18027,29 +15976,7 @@ function newUserPage(req, prefill) {
   log.debug("Leaving newUserPage(). " + fields.length + " field(s) offered.");
   return {
     inner: inner,
-    json: {
-      directory: true,
-      container: container,
-      realm: { id: realms.currentId(), name: realm ? realm.name : '' },
-      mode: mode.current(),
-      // WHETHER THE BUTTON IS THERE, published rather than left to be inferred
-      // from `mode`: a caller of GET /admin-api/users/new reading this document
-      // to find out what the console offers should not have to know which
-      // predicate in mode.js decides it.
-      offersExampleData: development,
-      // THE FIELDS THIS FORM DRAWS, in the order it draws them, each with the
-      // attribute name a create takes and the claim it reaches. A caller reads
-      // this to learn what may go in `attributes` on a create — the same
-      // catalogue `createUser()` checks against, so the document cannot offer a
-      // field the writer has never heard of, nor the other way round.
-      fields: fields.map(function (row) {
-        return { attribute: row.ldap, label: row.label, schema: row.schema,
-                 claim: row.claim.slice(0), invented: !!row.from };
-      }),
-      credentials: CREDENTIAL_CHOICES.map(function (one) {
-        return { id: one.id, label: one.label };
-      })
-    }
+    json: json
   };
 }
 
@@ -18244,6 +16171,7 @@ app.post('/admin/users/new', function (req, res) {
                                  'convenience and this service is running as ' +
                                  'a product (global.mode=product), so nothing ' +
                                  'was filled in. Type what you know.'] };
+      errorCodes.mark(res, 'STS-ADMIN-0016');
       if (wantsJson) {
         respondToAction(req, res, '/admin/users/new', refusal);
         log.debug("Leaving the admin new-user action endpoint. Fill refused.");
@@ -18257,6 +16185,7 @@ app.post('/admin/users/new', function (req, res) {
       return;
     }
     if (!posted.username.trim()) {
+      errorCodes.mark(res, 'STS-ADMIN-0017');
       const view = newUserPage(req, posted);
       respond(req, res, Object.assign({ filled: false }, view.json), 'New user',
               '/admin/users',
@@ -18291,6 +16220,7 @@ app.post('/admin/users/new', function (req, res) {
     const refusal = { ok: false,
                       errors: ['Unknown action "' + String(action).slice(0, 64) +
                                '". This page does two: create, fill.'] };
+    errorCodes.mark(res, 'STS-ADMIN-0018');
     if (wantsJson) {
       respondToAction(req, res, '/admin/users/new', refusal);
     } else {
@@ -18320,6 +16250,7 @@ app.post('/admin/users/new', function (req, res) {
     // BACK ONTO THE FORM WITH EVERYTHING STILL IN IT. A redirect would lose
     // twenty-five boxes because a username had a comma in it, which is how a
     // screen teaches people not to use it.
+    errorCodes.mark(res, result.errorCode || errorCodes.codeOf(result) || 'STS-ADMIN-0012');
     const view = newUserPage(req, posted);
     respond(req, res, Object.assign({ created: false, errors: result.errors || [] },
                                     view.json),
@@ -18386,26 +16317,6 @@ function groupRuleCell(rule) {
   return '<span title="' + esc(rendered.title) + '">' + esc(rendered.label) + '</span>';
 }
 
-// THE TWO LISTS ARE DIFFERENT QUESTIONS, and this is where that shows.
-//
-// The directory holds an entry for anybody somebody wrote one for — the three it
-// seeds at startup, and whatever a client has added since. The users page holds
-// everybody who has actually presented a credential to this service. `alice` is
-// in the directory from the moment the process starts and is on the users page
-// only once somebody signs in as her, so a member row that always linked there
-// would usually land on "nothing here has authenticated as alice", which reads
-// as a broken link rather than as the fact it is.
-//
-// So the console's own user registry is consulted, and a member it does not know
-// is named without a link and with the reason. Reading it once per page rather
-// than once per row is deliberate: userRows() walks the whole registry.
-function knownUserKeys() {
-  const known = {};
-  stats.userRows().forEach(function (row) {
-    known[row.key] = true;
-  });
-  return known;
-}
 
 // A member's link. To the group page when the member is itself a group, so
 // nesting can be walked; to the users page when this console has actually seen
@@ -18502,23 +16413,16 @@ const GROUPS_LINKS =
 // The list.
 function groupsListPage(req) {
   log.debug("Entering groupsListPage().");
-  const info = groupReader('');
-  const wantedText = String(req.query.q || '').trim();
-  const needle = wantedText.toLowerCase();
-  const filtered = info.groups.filter(function (group) {
-    if (!needle) {
-      return true;
-    }
-    // The DN and the cn both, because a person looking for a group has one or the
-    // other in mind and which one depends on whether they came from an LDAP client
-    // or from this console.
-    return group.dn.toLowerCase().indexOf(needle) >= 0 ||
-           String(group.cn).toLowerCase().indexOf(needle) >= 0;
-  });
-  const paging = pagingOf(req.query, filtered.length);
-  const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
-  const filterParams = { q: wantedText || '',
-                         per: req.query.per ? paging.perPage : '' };
+  const view = adminViews.groupsListJson(req);
+  const info = view.info;
+  const wantedText = view.wantedText;
+  const needle = view.needle;
+  const filtered = view.filtered;
+  const paging = view.paging;
+  const shown = view.shown;
+  const filterParams = view.filterParams;
+  const totalMembers = view.totalMembers;
+  const totalDangling = view.totalDangling;
   const nav = pageNavPair('/admin/groups', filterParams, paging);
 
   const listView = listViewOf('/admin/groups', req.query);
@@ -18550,8 +16454,6 @@ function groupsListPage(req) {
       '<td><code>' + esc(group.modifiedAt) + '</code></td></tr>';
   }).join('');
 
-  const totalMembers = info.groups.reduce(function (n, g) { return n + g.memberCount; }, 0);
-  const totalDangling = info.groups.reduce(function (n, g) { return n + g.danglingCount; }, 0);
 
   const inner = messagesOf(req) +
     directoryListenerWarning(info, GROUPS_SUBJECT) +
@@ -18658,32 +16560,15 @@ function groupsListPage(req) {
             info.groupCount + " group(s).");
   return {
     inner: inner,
-    json: {
-      groupCount: info.groupCount, matched: filtered.length, shown: shown.length,
-      // WHETHER THE TWO CONTROLS ARE THERE, on the JSON as well as on the page.
-      // A caller of /admin-api/groups that got a 400 saying "no directory is
-      // loaded" from the create beside it would otherwise have no way to tell
-      // that from a create it had got wrong.
-      canWrite: !!groupWriter,
-      membershipValues: totalMembers, dangling: totalDangling,
-      settings: configSettingsJson('/admin/groups'),
-      filter: { q: wantedText || null },
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      baseDn: info.baseDn, groupsDn: info.groupsDn, usersDn: info.usersDn,
-      port: info.port, listening: info.listening, listenError: info.listenError,
-      ldapsPort: info.ldapsPort, ldapsListening: info.ldapsListening,
-      groups: shown
-    }
+    json: view.json
   };
 }
 
 // One group: every attribute it has, and everybody in it.
 function groupDetailPage(req, wantedDn) {
   log.debug("Entering groupDetailPage(). dn=" + wantedDn);
-  const info = groupReader(wantedDn);
-  // The same href the trail's section crumb carries — see listViewOf(). Two ways
-  // back off one page that land in different places is worse than one.
+  const view = adminViews.groupDetailJson(req, wantedDn);
+  const info = view.info;
   const back = note('<a href="' +
     esc('/admin/groups' + queryWith(listViewOf('/admin/groups', req.query), {})) +
     '">Back to the groups</a>.');
@@ -18710,29 +16595,18 @@ function groupDetailPage(req, wantedDn) {
     return {
       inner: messagesOf(req) + directoryListenerWarning(info, GROUP_SUBJECT) +
         note(because) + back,
-      json: Object.assign({ found: false }, info)
+      json: view.json
     };
   }
 
-  const group = info.group;
-  const known = knownUserKeys();
-
-  // Two lists on this page and a page parameter each, sharing `per` — the same
-  // arrangement the users drill-down has, and for the same reason: one `page` would
-  // move both, and the two disagreements this page exists to show are read against
-  // each other, so advancing the members while the claimants jumped with them would
-  // be the one navigation that makes the page harder to read than no navigation.
-  //
-  // The counts above the tables — memberCount, presentCount, danglingCount — stay
-  // counts of the WHOLE list and are read off the directory rather than off the
-  // slice, because "seven members, five resolve" is the fact the page is for and
-  // "five members on this page" is not an answer to it.
-  const params = pageParamsOf(req.query);
-  const memberPage = pagedRows(req.query, group.members, { name: 'members', noun: 'members' });
+  const group = view.group;
+  const known = view.known;
+  const params = view.params;
+  const memberPage = view.memberPage;
+  const claimedPage = view.claimedPage;
+  const pagedGroup = view.pagedGroup;
   const membersNav = pageNavPair('/admin/groups', params, memberPage.paging);
-  const claimedPage = pagedRows(req.query, group.claimed, { name: 'claimed', noun: 'entries' });
   const claimedNav = pageNavPair('/admin/groups', params, claimedPage.paging);
-
   const memberRows = memberPage.shown.map(function (member) {
     const state = member.present
       ? '<span class="state-valid">in the directory</span>'
@@ -18888,138 +16762,9 @@ function groupDetailPage(req, wantedDn) {
   // go out as THE PAGE, like every other list here; the paging objects sit beside
   // `group` rather than inside it because they describe this reply and not the
   // directory entry, whose own counts are untouched next to them.
-  const pagedGroup = Object.assign({}, group, {
-    members: memberPage.shown, claimed: claimedPage.shown
-  });
-  return {
-    inner: inner,
-    json: Object.assign({ found: true }, info, {
-      canWrite: !!groupWriter,
-      group: pagedGroup,
-      membersPaging: pagingJson(memberPage.paging),
-      claimedPaging: pagingJson(claimedPage.paging)
-    })
-  };
+  return { inner: inner, json: view.json };
 }
 
-// Three answers again, and the first of them — no directory in this process —
-// is the one an API caller is most likely to meet and least likely to expect,
-// because it answers 200 with `directory: false` rather than failing.
-// ---------------------------------------------------------------------------
-// THE TWO THINGS THIS PAGE CAN CHANGE (2026-09-06).
-//
-// Everything else on /admin/groups is a report, exactly as everything else on
-// /admin/users was until `create` arrived there. These two are here for the
-// same reason that one is on that page: this is the page a reader is on when
-// they discover that a group is missing, or that somebody is not in one.
-//
-// **IT DECIDES NOTHING.** Every rule about what a group may be called, the
-// refusal of one that is already there, what a membership value points at and
-// the choice to write a dangling one rather than refuse it, are in
-// ldap_server.js's createGroup() and addGroupMember() — reached through the slot
-// above. This function reads the form and phrases the answer, which is the same
-// split usersAction() keeps with createUser() and the reason
-// POST /admin-api/groups/{action} can call straight into it without a second
-// reading of any of it.
-//
-// **WHAT IT DOES NOT DO is make the new group grant anything.** GROUPS_CAVEAT
-// says it on both halves of this page and it is worth repeating at the one
-// moment somebody has just made one: a group here changes what a directory
-// client sees and what a token SAYS, and changes nothing about what that token
-// can DO — with the two console roles as the only exceptions, and those are
-// granted on /admin/rbac rather than here.
-// ---------------------------------------------------------------------------
-function groupsAction(body) {
-  log.debug("Entering groupsAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-
-  if (!groupWriter) {
-    // ONE REFUSAL FOR BOTH ACTIONS, and it says which half of the page is
-    // affected: the reads above it are answered by a different slot, so a
-    // reader whose table is plainly full of groups needs telling that it is the
-    // WRITES that are absent rather than the directory.
-    log.debug("Leaving groupsAction(). No directory writer is installed.");
-    return { ok: false, errors: ['No LDAP directory is loaded in this process, ' +
-                                 'so there is nowhere to put a group. The rest ' +
-                                 'of this page is unaffected — if it is showing ' +
-                                 'you groups, they are being read through a ' +
-                                 'different slot and only the writes are ' +
-                                 'missing.'] };
-  }
-
-  if (action === 'create') {
-    const name = String(body.group || body.displayName || body.cn || '').trim();
-    // THE MEMBERS BOX IS SPLIT ON NEWLINES AND COMMAS, which is where this
-    // differs from userFieldsFrom() one section up and is worth saying rather
-    // than leaving as an apparent inconsistency: a person's attributes are
-    // single-valued facts and the whole value is the value, while `member` is
-    // multi-valued by definition and a textarea is how a form offers a list.
-    // A JSON caller sends a real array and it is taken as it stands.
-    const listed = Array.isArray(body.members)
-      ? body.members
-      : String(body.members === undefined ? '' : body.members)
-          .split(/[\r\n,]+/);
-    const members = listed.map(function (one) {
-      return String(one == null ? '' : one).trim();
-    }).filter(function (one) { return one !== ''; });
-    const result = groupWriter.createGroup(name, {
-      origin: 'console',
-      note: String(body.note || '').trim() ||
-            'created by hand on the admin console rather than by a directory client',
-      channel: 'console',
-      actor: String(body.actor || ''),
-      members: members
-    });
-    if (!result.ok) {
-      log.debug("Leaving groupsAction(). create refused.");
-      return result;
-    }
-    log.debug("Leaving groupsAction(). Created " + result.dn + ".");
-    return Object.assign({}, result, {
-      message: result.dn + ' now exists' +
-        (result.members.length
-          ? ', listing ' + result.members.length + ' member(s)'
-          : ' with no members at all — an empty groupOfNames is something a ' +
-            'real directory refuses (RFC 4519 makes `member` MUST) and this ' +
-            'one has no schema, so it is here because you asked for it') + '.' +
-        (result.dangling.length
-          ? ' ' + result.dangling.length + ' of those member value(s) name ' +
-            'nothing this directory holds and are written anyway: nothing here ' +
-            'does referential integrity, and the Dangling column above is ' +
-            'where they show up.'
-          : '') +
-        ' IT GRANTS NOTHING. No endpoint in this service checks a group, and ' +
-        'the only two that decide anything are the console roles on ' +
-        '/admin/rbac. What it does change is what a directory client sees and ' +
-        'what the groups claim in an issued token says.'
-    });
-  }
-
-  if (action === 'add-member') {
-    const group = String(body.group || '').trim();
-    const member = String(body.member || body.user || body.username || '').trim();
-    const result = groupWriter.addGroupMember(group, member, {
-      origin: 'console',
-      channel: 'console',
-      actor: String(body.actor || '')
-    });
-    if (!result.ok) {
-      log.debug("Leaving groupsAction(). add-member refused.");
-      return result;
-    }
-    log.debug("Leaving groupsAction(). " +
-              (result.changed ? "Added." : "Already a member."));
-    return result;
-  }
-
-  log.debug("Leaving groupsAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The two are: ' +
-                               'create, add-member. Removing a member is ' +
-                               '/admin/rbac for the two console roles, and an ' +
-                               'ldapmodify or a SCIM PATCH for every other ' +
-                               'group; deleting one is an ldapdelete or a SCIM ' +
-                               'DELETE.'] };
-}
 
 function groupsView(req) {
   log.debug("Entering groupsView().");
@@ -19112,226 +16857,9 @@ function kindCells(kinds) {
   }).join('<br>');
 }
 
-// ---------------------------------------------------------------------------
-// POST /admin/applications — the six actions.
-//
-// **The console is not a second door onto this registry**, and that is the whole
-// design of these: every one calls a function in `applications.js` which does
-// the same read-modify-write `seen()` does, through the same two conversions,
-// against the same `ou=applications` entries. The store stays one store; what is
-// added here is a set of controls in front of it. An `ldapmodify` and a form
-// post are the same act arriving by two routes, and both are visible to the
-// other immediately because nothing caches.
-//
-// **What may be changed is DECLARED and not DERIVED**, and that line is drawn in
-// `applications.js`'s EDITABLE table rather than here: redirect URIs, grant
-// types, scopes, the secret, whether the client is confidential — configuration,
-// which is what RFC 9700 mode reads — but never the counters, the sightings, the
-// kinds or the protocols, which are what happened. LDAP can still reach those;
-// the difference between offering an operation and merely not preventing it is
-// the point. This handler renders and decides nothing: it validates that an
-// action exists and hands the rest over, exactly as the console does for groups.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// THE ATTRIBUTE VALUES A CREATE CARRIES, IN THE TWO SPELLINGS THIS FUNCTION IS
-// REACHED IN.
-//
-// The console's form posts one flat field per attribute, named
-// `field.<attribute>`, with a multi-valued one holding its values on separate
-// lines in a textarea. A JSON caller of POST /admin-api/applications/create
-// sends one `fields` object instead, whose members are strings or arrays. Both
-// land here as the same object and `applications.normaliseFields()` is the one
-// place either is validated — the same arrangement `listField()` gives the
-// protocol checkboxes one field up, and for the same reason: two doors onto one
-// action must not be two readings of what was sent.
-//
-// **THE SPLIT IS ON NEWLINES AND DELIBERATELY NOT ON COMMAS OR SPACES.** A
-// redirect URI may legally contain both and may not contain a newline, so
-// splitting on anything else would cut one URI into two that each fail to match
-// — silently, and only in RFC 9700 mode, which is the worst possible place for
-// it to surface. `protocols` splits on spaces and commas because a family id is
-// a short lower-case word; these are URLs, DNs and URNs.
-//
-// The prefix is stripped rather than the whole body being scanned for schema
-// names, so a future field called `name` or `action` cannot be mistaken for an
-// attribute.
-// ---------------------------------------------------------------------------
-const FIELD_PREFIX = 'field.';
 
-function applicationFieldsFrom(body) {
-  log.debug("Entering applicationFieldsFrom().");
-  const fields = {};
-  // A JSON body's own `fields` object first, so a caller sending both gets the
-  // flat fields merged over it rather than one of the two silently winning.
-  const given = (body && typeof body.fields === 'object' && body.fields) || {};
-  Object.keys(given).forEach(function (name) { fields[name] = given[name]; });
-  Object.keys(body || {}).forEach(function (key) {
-    if (key.indexOf(FIELD_PREFIX) !== 0) {
-      return;
-    }
-    const name = key.slice(FIELD_PREFIX.length);
-    if (!name) {
-      return;
-    }
-    const values = String(body[key] === undefined ? '' : body[key])
-      .split(/\r?\n/)
-      .map(function (one) { return one.trim(); })
-      .filter(function (one) { return one !== ''; });
-    if (values.length) {
-      fields[name] = values;
-    }
-  });
-  log.debug("Leaving applicationFieldsFrom(). " + Object.keys(fields).length + " field(s).");
-  return fields;
-}
 
-// The actions this handler answers, in the order the switch below takes them.
-// It exists so that the refusal at the bottom of that switch can be BUILT from
-// it rather than typed beside it — see the comment there, and rule 7 in
-// ../mgmt-api/CLAUDE.md, which is the rule that sentence serves.
-const APPLICATION_ACTIONS = ['create', 'set', 'add', 'remove',
-                             'revoke-registration', 'refresh-metadata',
-                             'forget'];
 
-function applicationsAction(body, protocols) {
-  log.debug("Entering applicationsAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const identifier = String(body.application || '').trim();
-  const needsOne = ['set', 'add', 'remove', 'revoke-registration', 'forget'];
-  if (needsOne.indexOf(action) >= 0 && !identifier) {
-    log.debug("Leaving applicationsAction(). No application named.");
-    return { ok: false, errors: ['Which application? Send `application` with the identifier ' +
-                                 'exactly as this registry holds it — the client_id, wtrealm, ' +
-                                 'AppliesTo, entityID or service principal name.'] };
-  }
-
-  if (action === 'create') {
-    // THE DECLARED PROTOCOL FAMILIES ARRIVE AS A SECOND ARGUMENT rather than
-    // off `body`, and that is not ceremony — it is the same arrangement
-    // claimsAction() has and it exists for the same reason. A checkbox column
-    // is ONE FIELD REPEATED, and helpers.parseBody() builds a plain object, so
-    // `body.protocol` is whichever box happened to be ticked last and every
-    // other one is silently gone. listField() re-reads the raw body with
-    // getAll(); the two routes that reach this function both call it, so the
-    // console's form and a JSON body land here as the same list.
-    //
-    // The fallback to `body.protocols` is for a caller that did not go through
-    // either route — a test requiring this module — and it is what keeps the
-    // one-argument signature this function used to have working.
-    const asked = protocols === undefined
-      ? (body.protocols === undefined ? [] : body.protocols)
-      : protocols;
-    const result = applications.createApplication({
-      identifier: String(body.identifier || body.application || ''),
-      name: String(body.name || ''),
-      // STILL TAKEN, though no form offers it any more: saml2Action() and
-      // saml11Action() pass one when they register a service provider, and a
-      // JSON caller may. What went was the select that asked a person to guess.
-      kind: String(body.kind || ''),
-      protocols: asked,
-      fields: applicationFieldsFrom(body)
-    });
-    log.debug("Leaving applicationsAction(). create " + (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return result;
-    const declared = result.application.allowedProtocols || [];
-    return { ok: true, application: result.application,
-             message: '"' + result.application.identifier + '" is in the registry. It has ' +
-                      'authenticated nothing yet — the counters are zero and the entry says ' +
-                      'it was created by hand, so it cannot be mistaken for one that turned ' +
-                      'up once. ' +
-                      (declared.length
-                        ? 'It is DECLARED for ' + declared.join(', ') + ', which is a note on ' +
-                          'the entry and not a permission: nothing in this service reads it, ' +
-                          'and this application can still reach every other protocol here. '
-                        : 'No protocol family was declared for it, which changes nothing about ' +
-                          'what it may reach — the declaration is a record of intent. ') +
-                      (Object.keys(applicationFieldsFrom(body)).length
-                        ? 'The attributes given with it are on the entry now: a redirect URI ' +
-                          'among them is what RFC 9700 mode matches the next authorization ' +
-                          'request against, by exact string comparison, and the rest are ' +
-                          'recorded rather than checked.'
-                        : 'It carries no identifier and no redirect URI yet. Give it the ones ' +
-                          'it is allowed and RFC 9700 mode will judge it against them; without ' +
-                          'them a redirect_uri is judged against the oauth2.redirectUris ' +
-                          'setting instead.') };
-  }
-
-  if (action === 'set' || action === 'add' || action === 'remove') {
-    const result = applications.updateApplication(identifier, {
-      mode: action,
-      attribute: String(body.attribute || ''),
-      value: body.value === undefined ? '' : String(body.value)
-    });
-    log.debug("Leaving applicationsAction(). " + action + " " + (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  // ---------------------------------------------------------------------
-  // THE ONE ACTION HERE THAT IS ASYNCHRONOUS, and the only one in this console
-  // that makes an outbound request.
-  //
-  // It returns a PROMISE where every other action returns an object, which both
-  // dispatchers handle by checking for a `then`. That is a small ugliness and
-  // it is deliberately smaller than the alternatives: making every action async
-  // would put an `await` in front of forty call sites to serve one, and giving
-  // this one its own route would mean a second door onto the applications
-  // resource that the parity rule would then have to describe twice.
-  //
-  // WHY IT IS AN ACTION AND NOT PART OF ISSUING: sp_metadata.js's header argues
-  // it at length — an assertion that had to wait on somebody else's web server
-  // makes every sign-in as reliable as that server. This writes the certificate
-  // onto the entry and issuing reads the entry.
-  if (action === 'refresh-metadata') {
-    log.debug("Leaving applicationsAction(). Fetching metadata for " + identifier + ".");
-    return spMetadata.refresh(identifier);
-  }
-
-  if (action === 'revoke-registration') {
-    // Not a delete: the entry stays and its history with it. This is RFC 7592's
-    // delete reached from the console instead of from the client that holds the
-    // registration access token — the same function, so the outcome is the same
-    // one and not a second reading of what "unregistered" means.
-    const before = applications.get(identifier);
-    if (!before) {
-      return { ok: false, errors: ['There is no application called "' + identifier + '" here.'] };
-    }
-    if (!before.registered) {
-      return { ok: false, errors: ['"' + identifier + '" has no registration to revoke. It is ' +
-                                   'a client_id this service has seen rather than one that ' +
-                                   'went through POST /oauth2/register, which RFC 9700 mode ' +
-                                   'already treats as public.'] };
-    }
-    applications.forgetRegistration(identifier);
-    log.debug("Leaving applicationsAction(). The registration was revoked.");
-    return { ok: true, application: applications.get(identifier),
-             message: 'The RFC 7591 registration for "' + identifier + '" is gone, along with ' +
-                      'its client_secret and its registration access token. The ENTRY stays, ' +
-                      'with everything it had recorded — losing that this application was ever ' +
-                      'here because its registration was withdrawn would be losing the fact ' +
-                      'rather than the configuration. RFC 9700 mode now treats it as an ' +
-                      'unregistered, public client and judges its redirect_uri against the ' +
-                      'oauth2.redirectUris setting.' };
-  }
-
-  if (action === 'forget') {
-    const result = applications.deleteApplication(identifier);
-    log.debug("Leaving applicationsAction(). forget " + (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  log.debug("Leaving applicationsAction(). Unknown action.");
-  // THE LIST IS BUILT FROM THE SWITCH ABOVE RATHER THAN TYPED, and the reason
-  // is that it was typed and went stale: `refresh-metadata` was added on
-  // 2026-08-27 and this sentence still said "The six are" and named six. That
-  // is not a cosmetic drift — this repository's own tests/vendored/admin_api.js READS
-  // this sentence to check that every console action has an /admin-api
-  // operation, so an action missing from it is an action the parity check
-  // cannot see, and the API could lose the operation entirely with nothing
-  // failing. A generated list cannot be short by one.
-  return { ok: false, errors: ['Unknown action "' + action + '". The ' +
-                               numberWord(APPLICATION_ACTIONS.length) +
-                               ' are: ' + APPLICATION_ACTIONS.join(', ') + '.'] };
-}
 
 // WHERE A FINISHED APPLICATION ACTION LANDS. Extracted from the route on
 // 2026-08-27 when `refresh-metadata` became asynchronous and needed the same
@@ -19497,27 +17025,16 @@ function applicationAttributeNote(name, operational) {
 
 function applicationsListPage(req) {
   log.debug("Entering applicationsListPage().");
-  const all = applications.list();
-  const wantedText = String(req.query.q || '').trim();
-  const wantedKind = String(req.query.kind || '').trim();
-  const needle = wantedText.toLowerCase();
-  const filtered = all.filter(function (row) {
-    if (wantedKind && row.kinds.indexOf(wantedKind) < 0) {
-      return false;
-    }
-    if (!needle) {
-      return true;
-    }
-    // The identifier and the name both, because somebody looking for an
-    // application has one or the other in mind and which one depends on whether
-    // they came from a client's configuration or from this console.
-    return row.identifier.toLowerCase().indexOf(needle) >= 0 ||
-           String(row.name).toLowerCase().indexOf(needle) >= 0;
-  });
-  const paged = pagedRows(req.query, filtered, { noun: 'applications' });
-  const paging = paged.paging;
-  const filterParams = { q: wantedText || '', kind: wantedKind || '',
-                         per: req.query.per ? paging.perPage : '' };
+  const view = adminViews.applicationsListJson(req);
+  const all = view.all;
+  const wantedText = view.wantedText;
+  const wantedKind = view.wantedKind;
+  const needle = view.needle;
+  const filtered = view.filtered;
+  const paged = view.paged;
+  const paging = view.paging;
+  const filterParams = view.filterParams;
+  const registeredCount = view.registeredCount;
   const nav = pageNavPair('/admin/applications', filterParams, paging);
 
   const listView = listViewOf('/admin/applications', req.query);
@@ -19575,7 +17092,6 @@ function applicationsListPage(req) {
              esc(one.label) + ' (' + n + ')</option>';
     })).join('');
 
-  const registeredCount = all.filter(function (row) { return row.registered; }).length;
 
   const inner = messagesOf(req) +
     '<div class="tiles">' +
@@ -19659,7 +17175,7 @@ function applicationsListPage(req) {
     'The key is the identifier exactly as it arrived &mdash; not lower-cased and not ' +
     'namespaced by protocol &mdash; so an application appearing under one name in two ' +
     'protocols is one row with two kinds rather than two rows. That is the same rule that ' +
-    'makes <code>alice</code>, <code>urn:sts-mock:user:alice</code> and ' +
+    'makes <code>alice</code>, <code>urn:sts:user:alice</code> and ' +
     '<code>alice@REALM</code> one person on the users page.') +
     note('<strong>Sessions and Users are counts of CHANGES, not of distinct ' +
     'sets.</strong> The ids themselves are deliberately not kept on the entry &mdash; an ' +
@@ -19676,18 +17192,7 @@ function applicationsListPage(req) {
             filtered.length + " matched.");
   return {
     inner: inner,
-    json: {
-      applicationCount: all.length, matched: filtered.length, shown: paged.shown.length,
-      registered: registeredCount,
-      filter: { q: wantedText || null, kind: wantedKind || null },
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      container: applications.containerDn ? applications.containerDn() : null,
-      max: applications.maxApplications ? applications.maxApplications() : null,
-      kinds: applications.KINDS,
-      settings: configSettingsJson('/admin/applications'),
-      applications: paged.shown
-    }
+    json: view.json
   };
 }
 
@@ -19774,108 +17279,6 @@ function protocolFamilySection(row) {
     '</table>';
 }
 
-// ---------------------------------------------------------------------------
-// DELEGATED PERMISSIONS, ON THE APPLICATION'S OWN PAGE (2026-09-01).
-//
-// THE GRANT FORM LIVED ON /admin/delegation AND IT IS HERE NOW, and the reason
-// is the shape of the control rather than the length of that page.
-//
-// There it was two `<select>`s: every application in the registry beside every
-// permission anybody exposes, with the reader asked to get BOTH right. That is
-// the one write in this whole register where choosing the wrong option still
-// SUCCEEDS and stays plausible — a grant is a value on the CLIENT's entry, so
-// writing it to the resource instead produces a row that resolves in both
-// directions, reads correctly on the delegation page's own grants table, and
-// is wrong only at the token endpoint, later, to somebody else.
-// `tests/vendored/sts_delegated_permissions_example.js` asserts exactly that
-// pair of halves landing on the right entries, which is how much care the
-// distinction is worth.
-//
-// Here the first select does not exist: the client is the entry the reader is
-// standing on, and this page cannot be reached without having named it. A
-// control that could be half wrong became one that cannot be.
-//
-// **IT POSTS TO /admin/delegation AND THAT IS DELIBERATE.** A `grant-permission`
-// action on this page's own handler would mean a sixth entry in
-// APPLICATION_ACTIONS, and rule 7's parity check reads that list off the
-// handler's refusal sentence — so it would then want a
-// `POST /admin-api/applications/grant-permission` beside the
-// `POST /admin-api/permissions/grant-permission` that already exists, which is
-// two API operations for one write. Moving a FORM is not moving an ACTION.
-// The settings forms on twenty-one pages already do this: they are drawn where
-// the setting belongs and post to /admin/config, which sends the reader back
-// to the page the form was on. `from` is that field here, and
-// permissionsReturnTo() rebuilds the destination rather than echoing it, for
-// configReturnTo()'s reason.
-//
-// WHAT IS NOT OFFERED, and each for its own reason:
-//   * this application's OWN permissions — the token would be audienced to
-//     itself, which is what an ID Token already is, and app_permissions.js
-//     refuses it anyway. Offering an option whose only outcome is a refusal is
-//     a control that can only fail.
-//   * permissions it ALREADY holds — the second grant is a no-op and the
-//     sentence it comes back with says nothing the table above it does not.
-//   * permissions with no identifier — nothing can ever ask for one, so a
-//     grant of it is a value no request will match. The delegation page says
-//     which ones those are and why.
-//
-// The table above the form is the read-back and it is what makes this a
-// section rather than a stray button: a write whose result you cannot see on
-// the page that took it is a write you have to go somewhere else to trust.
-// ---------------------------------------------------------------------------
-// The two halves of ONE application's delegated permissions, and what may still
-// be granted to it — in a pure function for permissionsListState()'s reason:
-// the drill-down's `?format=json` has to report the same answer, and there is
-// no reading it back out of a string of markup.
-function applicationPermissionsState(query, identifier) {
-  log.debug("Entering applicationPermissionsState(). identifier=" + identifier);
-  const register = appPermissions.register();
-  // WHAT THIS APPLICATION HOLDS, off the same register the delegation page
-  // draws rather than off the entry's attribute — the attribute is the raw
-  // identifier and nothing else, and everything a reader needs beside it
-  // (which application exposes it, what the token will say, whether it has
-  // ever been asked for) is the resolution that module does.
-  const held = register.grants.filter(function (one) {
-    return one.client === identifier;
-  });
-  // AND WHAT IT EXPOSES, which is the other half of the same question and is
-  // read-only on that page: `Expose an API` and `Define a permission` stay on
-  // /admin/delegation, where the resource half of this feature is configured.
-  const exposes = register.permissions.filter(function (one) {
-    return one.resource === identifier;
-  });
-  const heldIds = held.map(function (one) { return one.permissionId; });
-  log.debug("Leaving applicationPermissionsState(). " + held.length +
-            " held, " + exposes.length + " exposed.");
-  return {
-    register: register,
-    held: held,
-    exposes: exposes,
-    // WHAT MAY STILL BE GRANTED. See the section's header for why each of the
-    // three exclusions is an exclusion rather than an option that refuses.
-    offerable: register.permissions.filter(function (one) {
-      return !!one.id && one.resource !== identifier && heldIds.indexOf(one.id) < 0;
-    }),
-    // BOTH TABLES ARE PAGED, at the same ten rows /admin/delegation uses and
-    // for the same reason: neither is bounded by anything — one client can be
-    // granted every permission in the registry, and one resource can expose any
-    // number — and that drill-down already carries the attribute table above
-    // them. They take page parameters of their own (`heldPage`, `exposedPage`)
-    // so that moving one moves neither the other nor the attributes, and they
-    // share the page's single `per` with the attribute table, which is the
-    // arrangement perPageForm()'s header describes.
-    //
-    // NEITHER IS IN LIST_PARAMS AND THAT IS DELIBERATE — `attributesPage` is
-    // not either. Those names are a DRILL-DOWN's own leaves; what LIST_PARAMS
-    // carries is the state of the LIST the page hangs under, and a page number
-    // from in here would be spent by /admin/applications, which has no such
-    // table.
-    heldPage: pagedRows(query, held,
-      { name: 'held', noun: 'permissions', defaultPer: DELEGATION_PER_PAGE }),
-    exposedPage: pagedRows(query, exposes,
-      { name: 'exposed', noun: 'permissions', defaultPer: DELEGATION_PER_PAGE })
-  };
-}
 
 function applicationPermissionsSection(req, row, carryBack) {
   log.debug("Entering applicationPermissionsSection(). identifier=" + row.identifier);
@@ -20062,35 +17465,97 @@ function applicationPermissionsSection(req, row, carryBack) {
     exposedNav.foot;
 }
 
+// ---------------------------------------------------------------------------
+// RETURN ADDRESSES A DEVELOPMENT-MODE REQUEST PUT ON THIS ENTRY (2026-09-12).
+//
+// A SAML ACS URL, a SAML 1.1 `shire`, a WS-Federation `wreply` or this
+// service's own learnt callback, written by a sighting and marked OBSERVED on
+// `appReturnAddressObserved`. Product mode refuses a marked address until it
+// is confirmed — `applications.returnAddressesOf()` is the rule — and this is
+// where an operator decides which way each one goes, BEFORE switching a realm
+// to product rather than after its first refused sign-in.
+//
+// **TWO FORMS PER ROW AND NOT ONE WITH TWO BUTTONS.** Two submit buttons in one
+// form would both have to be named `action`, and `form.elements.action` is then
+// a RadioNodeList whose `.value` is empty — which is how
+// `tests/vendored/sts_admin_console.js` finds a form, so the pair would read as
+// controls that reach nothing (the trap `/admin/users/new` met). Each form
+// names its verb in one hidden field, so it does one thing however submitted.
+//
+// Drawn only as markup here; the rows and their paging are
+// `adminViews.applicationDetailJson()`'s, so the table and
+// `GET /admin-api/applications?application=` are one computation.
+// ---------------------------------------------------------------------------
+function applicationObservedAddressesSection(req, view, carryBack) {
+  log.debug("Entering applicationObservedAddressesSection().");
+  const row = view.row;
+  const shown = view.observedPaged.shown;
+  const nav = pageNavPair('/admin/applications', pageParamsOf(req.query),
+                          view.observedPaged.paging);
+  const product = !mode.acceptsUnregisteredAddresses();
+  const rows = shown.map(function (one) {
+    function button(action, label, cls) {
+      return '<form method="post" action="/admin/applications">' + carryBack +
+        '<input type="hidden" name="action" value="' + action + '">' +
+        '<input type="hidden" name="application" value="' + esc(row.identifier) + '">' +
+        '<input type="hidden" name="attribute" value="' + esc(one.attribute) + '">' +
+        '<input type="hidden" name="value" value="' + esc(one.value) + '">' +
+        '<button type="submit"' + (cls ? ' class="' + cls + '"' : '') + '>' + label +
+        '</button></form>';
+    }
+    return '<tr><td><code>' + esc(one.attribute) + '</code></td>' +
+      '<td><code>' + esc(one.value) + '</code>' +
+      (one.held ? '' : '<div class="sub">no longer on the entry; only the mark is ' +
+                       'left</div>') + '</td>' +
+      '<td>' + (one.trusted
+        ? '<span class="state-valid">used &mdash; development believes it</span>'
+        : '<span class="state-revoked">refused &mdash; product withholds it</span>') +
+      '</td>' +
+      '<td>' + button('confirm-address', 'Confirm') +
+      button('discard-address', 'Discard', 'danger') + '</td></tr>';
+  }).join('');
+  const html = '<h2>Return addresses nobody registered</h2>' +
+    note('Each address below is on this entry because a request NAMED it while the ' +
+    'realm was in DEVELOPMENT mode, which believes any address and writes it down. ' +
+    '<strong>Product mode refuses every one of them</strong> exactly as it refuses an ' +
+    'address that is not on the entry at all' +
+    (product ? ' &mdash; and this realm is in product mode now' : '') + '. ' +
+    '<strong>Confirm</strong> an address that really is this application\'s: the mark ' +
+    'goes and the address stays. <strong>Discard</strong> one that is not: both go. ' +
+    'Adding the address with the form below confirms it too. Addresses recorded before ' +
+    'this service marked sightings carry no mark and cannot be told apart from ' +
+    'registered ones &mdash; review the return-address attributes in the table above ' +
+    'by hand before switching a realm to product.') +
+    nav.head +
+    '<table><tr><th>Attribute</th><th>Address</th><th>In this realm\'s mode</th>' +
+    '<th>Decide</th></tr>' +
+    (rows || '<tr><td colspan="4">Nothing on this entry is marked as observed.</td></tr>') +
+    '</table>' +
+    nav.foot;
+  log.debug("Leaving applicationObservedAddressesSection(). " + shown.length + " row(s).");
+  return html;
+}
+
 // The drill-down. Its one list is the ATTRIBUTE table, which is paged under a
 // name of its own (`attributesPage`) rather than the bare `page` — the
 // convention pagingOf()'s header describes for a view that holds more than the
 // list views do, and the shape to grow into when this page gains a second list.
 function applicationDetailPage(req, identifier) {
   log.debug("Entering applicationDetailPage(). identifier=" + identifier);
-  // THE LIST THE READER CAME FROM, carried on every form on this page as one
-  // opaque field. A form POST answers with a redirect, and a redirect built from
-  // the identifier alone lands back here with the list state gone — so the
-  // breadcrumb above would then offer the top of an unfiltered list to somebody
-  // who arrived from page 3 of a filter. It is one field rather than four because
-  // an action reads its own body by name, and `q` or `kind` loose in there is a
-  // field an action added later could pick up by accident. The handler REBUILDS a
-  // query from it through listViewOf()'s whitelist rather than echoing it, which
-  // is what backTo() does with the tokens page's and for the same reason: a
-  // redirect target taken out of a request body is an open redirect, and one
-  // carrying a newline is a header injection.
+  const view = adminViews.applicationDetailJson(req, identifier);
+  const row = view.row;
   const carryBack = '<input type="hidden" name="back" value="' +
     esc(queryWith(listViewOf('/admin/applications', req.query), {})) + '">';
-  const row = applications.get(identifier);
   if (!row) {
     log.debug("Leaving applicationDetailPage(). No such application.");
     return {
+      missing: true,
       inner: messagesOf(req) +
         '<p class="warn">No application called <code>' + esc(identifier) + '</code> is ' +
         'recorded here. That is not the same as one this service has refused: an entry ' +
         'appears the first time an identifier is ACCEPTED, so a client whose every request ' +
         'was turned away has none.</p>' + APPLICATIONS_LINKS,
-      json: { found: false, identifier: identifier }
+      json: view.json
     };
   }
   // EVERY attribute the entry carries, operational ones and entryDN included.
@@ -20099,36 +17564,9 @@ function applicationDetailPage(req, identifier) {
   // carries" — so objectClass, cn, appIdentifier, both timestamps and the DN
   // itself were all missing from the one table on this service whose whole job
   // is to be complete.
-  const attributeRows = Object.keys(row.attributes).sort().map(function (name) {
-    const value = row.attributes[name];
-    // ---------------------------------------------------------------------
-    // THE ONE ATTRIBUTE THIS TABLE DOES NOT SHOW AS THE ENTRY HOLDS IT.
-    //
-    // `oauthAssertionPrivateKey` is sealed at rest in product mode — see
-    // `common/applications.js`'s SEALED_FIELDS — so what the ENTRY carries is
-    // `$aesgcm$…` and what `row.fields` carries is the PEM, because that
-    // module opened it on the way out. This page shows the opened value and
-    // says the store holds it encrypted.
-    //
-    // **THAT IS A DECISION AND `/admin/ldap/applications` MAKES THE OPPOSITE
-    // ONE**, which is why it is argued here rather than done quietly: the seal
-    // protects the STORE — an ldapsearch on 389 where every bind succeeds, an
-    // ldif file, a postgres row, a backup of either — and not this console,
-    // which is behind a session and a role and is where an operator goes to
-    // collect a credential this service issued them. The directory page is
-    // headed "the registry as the directory sees it" and shows the ciphertext,
-    // because an opened value there would be a page lying about its subject.
-    // ---------------------------------------------------------------------
-    const opened = applications.isSealed(value) && row.fields
-      ? row.fields[name] : null;
-    const shown = opened && !applications.isSealed(opened) ? opened : value;
-    return { name: name, values: Array.isArray(shown) ? shown : [String(shown)],
-             sealedAtRest: shown !== value,
-             operational: (row.operational || []).indexOf(name) >= 0 };
-  });
-  const paged = pagedRows(req.query, attributeRows,
-                          { name: 'attributes', noun: 'attributes' });
-  const paging = paged.paging;
+  const attributeRows = view.attributeRows;
+  const paged = view.paged;
+  const paging = view.paging;
   const nav = pageNavPair('/admin/applications', pageParamsOf(req.query), paging);
 
   const attrHtml = paged.shown.map(function (attr) {
@@ -20213,6 +17651,8 @@ function applicationDetailPage(req, identifier) {
      'keeps no store of its own on purpose.</td></tr>') +
     '</table>' +
     nav.foot +
+
+    applicationObservedAddressesSection(req, view, carryBack) +
 
     '<h2>Change what it is allowed to do</h2>' +
     note('These write the same entry an <code>ldapmodify</code> writes, through the ' +
@@ -20336,35 +17776,11 @@ function applicationDetailPage(req, identifier) {
 
   // The same two lists the section above drew, for the reply. One pure
   // function, called twice with the same arguments — see its header.
-  const permissionState = applicationPermissionsState(req.query, row.identifier);
+  const permissionState = view.permissionState;
   log.debug("Leaving applicationDetailPage(). " + paged.shown.length +
             " attribute row(s), " + permissionState.held.length +
             " delegated permission(s) held.");
-  return {
-    inner: inner,
-    json: Object.assign({ found: true }, row, {
-      attributesShown: paged.shown,
-      attributesPaging: pagingJson(paging),
-      // THE RESOLVED DELEGATED PERMISSIONS, because the page draws a section
-      // of them and a reply that carried only the raw attribute would leave a
-      // caller to compose `baseUri + name` for itself — which is the one
-      // string in this feature that must not be worked out in two places.
-      // WHOLE, with the paging beside it rather than applied to it, for the
-      // reason /admin/delegation's own `allowed` member gives: the slicing is
-      // this page's layout and not a fact about the entry, and
-      // `GET /admin-api/permissions` answers with the same register under its
-      // own name.
-      delegatedPermissions: {
-        held: permissionState.held,
-        exposes: permissionState.exposes,
-        offerable: permissionState.offerable.map(function (one) {
-          return one.id;
-        }),
-        paging: { held: pagingJson(permissionState.heldPage.paging),
-                  exposes: pagingJson(permissionState.exposedPage.paging) }
-      }
-    })
-  };
+  return { inner: inner, json: view.json };
 }
 
 function applicationsView(req) {
@@ -20373,7 +17789,7 @@ function applicationsView(req) {
   if (wanted) {
     const detail = applicationDetailPage(req, wanted);
     log.debug("Leaving applicationsView(). The drill-down.");
-    return { json: detail.json, inner: detail.inner, title: 'Application ' + wanted,
+    return { missing: !!detail.missing, json: detail.json, inner: detail.inner, title: 'Application ' + wanted,
              up: upTo('/admin/applications', wanted,
                       listViewOf('/admin/applications', req.query)) };
   }
@@ -20385,6 +17801,9 @@ function applicationsView(req) {
 app.get('/admin/applications', function (req, res) {
   log.debug("Entering the admin applications page.");
   const view = applicationsView(req);
+  if (view.missing) {
+    errorCodes.mark(res, 'STS-ADMIN-0021');
+  }
   respond(req, res, view.json, view.title, '/admin/applications', view.inner, view.up);
   log.debug("Leaving the admin applications page. " + view.title + ".");
 });
@@ -20998,17 +18417,16 @@ const NEW_APPLICATION_NOTES =
 
 function newApplicationPage(req) {
   log.debug("Entering newApplicationPage().");
-  const container = applications.containerDn ? applications.containerDn() : null;
-  const max = applications.maxApplications ? applications.maxApplications() : null;
-  const held = applications.count();
+  // WHAT THIS PAGE SHOWS IS WHAT /admin-api ANSWERS (2026-09-12). These four
+  // facts used to be computed here and again, in the same shape, in the json
+  // half at the bottom of this function; they come off ONE call now, so the
+  // vocabulary this form offers cannot drift from the one that document
+  // publishes. admin-core/admin_views.js carries the rest of the argument.
+  const json = adminViews.newApplicationJson(req);
+  const container = json.container;
+  const max = json.max;
+  const held = json.applicationCount;
   const realm = realms.current();
-
-  // NO DIRECTORY IN THIS PROCESS. The form is left OUT rather than drawn and
-  // refused: `createApplication()` would answer with exactly this sentence, and
-  // a form whose only possible outcome is that message is a control that lies
-  // about what it does. It is the shape the groups page's own no-directory
-  // branch has, and for the same reason — the page exists, the directory does
-  // not, and those are different facts about this process.
   if (!container) {
     log.debug("Leaving newApplicationPage(). There is no directory.");
     return {
@@ -21018,10 +18436,7 @@ function newApplicationPage(req) {
         'form is not drawn. The applications registry has no store of its own on purpose &mdash; ' +
         'the directory IS the registry &mdash; so this is a build without ' +
         '<code>ldap/ldap_server.js</code> rather than a fault.</p>' + APPLICATIONS_LINKS,
-      json: { directory: false, container: null, max: null, applicationCount: held,
-              realm: { id: realms.currentId(), name: realm ? realm.name : '' },
-              kinds: applications.KINDS, protocols: applications.PROTOCOLS,
-              declarations: applications.declarationAttributes() }
+      json: json
     };
   }
 
@@ -21116,45 +18531,7 @@ function newApplicationPage(req) {
             " protocol family/families offered.");
   return {
     inner: inner,
-    json: {
-      directory: true,
-      container: container,
-      max: max,
-      applicationCount: held,
-      realm: { id: realms.currentId(), name: realm ? realm.name : '' },
-      // The two vocabularies this form is built from, published rather than
-      // described: a caller of POST /admin-api/applications/create reads these
-      // to learn what it may send, which is what stops a document and a form
-      // offering different sets. The `editable` list is what comes NEXT — the
-      // attributes a create cannot take and `set`/`add` can.
-      // `kinds` is still published and the form no longer offers it, which is
-      // not a contradiction: `createApplication()` still TAKES a kind — the two
-      // SAML register buttons pass one — so a caller of POST
-      // /admin-api/applications/create may send one and needs the vocabulary to
-      // send it from. What was removed is a person being asked to guess.
-      kinds: applications.KINDS,
-      protocols: applications.PROTOCOLS,
-      // THE FIELDS THIS FORM DRAWS, in the order it draws them: the identifier
-      // and redirect-URI attributes, deduped by attribute, each carrying the
-      // families it serves and whether it holds a list. A caller reads this to
-      // learn what may go in `fields` on a create, which is the same walk of
-      // the PROTOCOLS table the page itself renders — so the document cannot
-      // offer a field the form has never heard of, nor the other way round.
-      declarations: applications.declarationAttributes(),
-      editable: applications.editableAttributes().map(function (row) {
-        // `families` where the attribute has one, and ABSENT where it does not,
-        // so that a caller reading this document to learn what it may send is
-        // told about the one refusal it could otherwise only discover by being
-        // refused. An empty array here would have said "applies to no family",
-        // which is the opposite of what an absent member means.
-        const published = { name: row.name, mode: row.editable,
-                            sensitive: !!row.sensitive };
-        if (row.families && row.families.length) {
-          published.families = row.families.slice(0);
-        }
-        return published;
-      })
-    }
+    json: json
   };
 }
 
@@ -21228,72 +18605,8 @@ const AS_LINKS =
   'Provider Configuration</a> &middot; <a href="/admin/applications">the clients that read ' +
   'them</a></p>';
 
-function asDriftRows(id) {
-  // The document this service would publish for THIS profile if the profile
-  // said nothing — built from the same function the endpoints serve, so the
-  // comparison cannot go stale as that document grows members. `truthFor()`
-  // gives it a request-shaped object because asMetadata() derives every URL in
-  // it from the one the request arrived on.
-  return authorizationServers.driftOf(id, oauth2.asMetadata(asTruthRequest()));
-}
 
-// A request-shaped stand-in, so the document can be built outside a request.
-// The host is this service's own default, which is what /admin/config and
-// /admin/sts-metadata already assume when they name a URL: the console is being
-// read by somebody who reached this process, and the comparison is about
-// MEMBERS rather than about hostnames.
-function asTruthRequest() {
-  return {
-    protocol: config.value('global.https') ? 'https' : 'http',
-    get: function (name) {
-      return String(name).toLowerCase() === 'host'
-        ? 'localhost:' + config.value('global.port') : '';
-    },
-    query: {}
-  };
-}
 
-function asAction(body) {
-  log.debug("Entering asAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const id = String(body.profile || body.id || '').trim();
-
-  if (action === 'create') {
-    const result = authorizationServers.create({
-      id: id, label: String(body.label || ''), description: String(body.description || '')
-    });
-    log.debug("Leaving asAction(). create " + (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return result;
-    return { ok: true, profile: result.profile,
-             message: 'The "' + result.profile.id + '" authorization server is published at ' +
-                      result.profile.urls.oauth + ' and ' + result.profile.urls.oidc + '. It ' +
-                      'has no overrides yet, so both documents say exactly what this service ' +
-                      'says about itself — which is the right place to start from.' };
-  }
-  if (action === 'set') {
-    const result = authorizationServers.setMember(id, body.member, body.value);
-    log.debug("Leaving asAction(). set " + (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-  if (action === 'remove') {
-    const result = authorizationServers.removeMember(id, body.member);
-    log.debug("Leaving asAction(). remove " + (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-  if (action === 'reset') {
-    const result = authorizationServers.resetMember(id, body.member);
-    log.debug("Leaving asAction(). reset " + (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-  if (action === 'delete') {
-    const result = authorizationServers.remove(id);
-    log.debug("Leaving asAction(). delete " + (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-  log.debug("Leaving asAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The five are: create, set, ' +
-                               'remove, reset, delete.'] };
-}
 
 function asMemberOptions(selected) {
   return authorizationServers.GROUPS.map(function (group) {
@@ -21309,9 +18622,10 @@ function asMemberOptions(selected) {
 
 function asListPage(req) {
   log.debug("Entering asListPage().");
-  const all = authorizationServers.list();
-  const paged = pagedRows(req.query, all, { noun: 'authorization servers' });
-  const paging = paged.paging;
+  const view = adminViews.asListJson(req);
+  const all = view.all;
+  const paged = view.paged;
+  const paging = view.paging;
   const nav = pageNavPair('/admin/authorization-servers',
                       { per: req.query.per ? paging.perPage : '' }, paging);
 
@@ -21380,49 +18694,30 @@ function asListPage(req) {
   log.debug("Leaving asListPage(). " + paged.shown.length + " row(s).");
   return {
     inner: inner,
-    json: {
-      profileCount: all.length, shown: paged.shown.length,
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      members: authorizationServers.MEMBERS,
-      authorizationServers: paged.shown.map(function (row) {
-        return Object.assign({}, row, { drift: asDriftRows(row.id) });
-      })
-    }
+    json: view.json
   };
 }
 
 function asDetailPage(req, id) {
   log.debug("Entering asDetailPage(). id=" + id);
-  // THE LIST THE READER CAME FROM, carried on every form on this page as one
-  // opaque field. A form POST answers with a redirect, and a redirect built from
-  // the identifier alone lands back here with the list state gone — so the
-  // breadcrumb above would then offer the top of an unfiltered list to somebody
-  // who arrived from page 3 of a filter. It is one field rather than four because
-  // an action reads its own body by name, and `q` or `kind` loose in there is a
-  // field an action added later could pick up by accident. The handler REBUILDS a
-  // query from it through listViewOf()'s whitelist rather than echoing it, which
-  // is what backTo() does with the tokens page's and for the same reason: a
-  // redirect target taken out of a request body is an open redirect, and one
-  // carrying a newline is a header injection.
+  const view = adminViews.asDetailJson(req, id);
+  const profile = view.profile;
   const carryBack = '<input type="hidden" name="back" value="' +
     esc(queryWith(listViewOf('/admin/authorization-servers', req.query), {})) + '">';
-  const profile = authorizationServers.get(id);
   if (!profile) {
     log.debug("Leaving asDetailPage(). No such profile.");
     return {
+      missing: true,
       inner: messagesOf(req) +
         '<p class="warn">There is no authorization server profile called <code>' + esc(id) +
         '</code>. Its discovery URLs still answer &mdash; with the document this service ' +
         'builds and the issuer taken from the path &mdash; because an unconfigured path ' +
         'component has always been served that way rather than 404\'d.</p>' + AS_LINKS,
-      json: { found: false, id: id }
+      json: view.json
     };
   }
-  const drift = asDriftRows(id);
-  // The document this authorization server publishes, which is the same object
-  // its endpoints read their capabilities out of.
-  const capabilities = authorizationServers.capabilitiesOf(id, oauth2.asMetadata(asTruthRequest(), true));
+  const drift = view.drift;
+  const capabilities = view.capabilities;
   const memberRows = Object.keys(profile.overrides).sort().map(function (member) {
     const spec = authorizationServers.MEMBERS.filter(function (row) {
       return row.name === member;
@@ -21544,7 +18839,7 @@ function asDetailPage(req, id) {
     AS_CAVEAT + AS_LINKS;
 
   log.debug("Leaving asDetailPage(). " + drift.length + " drifting member(s).");
-  return { inner: inner, json: Object.assign({ found: true }, profile, { drift: drift }) };
+  return { inner: inner, json: view.json };
 }
 
 function authorizationServersView(req) {
@@ -21553,7 +18848,7 @@ function authorizationServersView(req) {
   if (wanted) {
     const detail = asDetailPage(req, wanted);
     log.debug("Leaving authorizationServersView(). The drill-down.");
-    return { json: detail.json, inner: detail.inner,
+    return { missing: !!detail.missing, json: detail.json, inner: detail.inner,
              title: 'Authorization server ' + wanted,
              up: upTo('/admin/authorization-servers', wanted,
                       listViewOf('/admin/authorization-servers', req.query)) };
@@ -21566,6 +18861,9 @@ function authorizationServersView(req) {
 app.get('/admin/authorization-servers', function (req, res) {
   log.debug("Entering the admin authorization servers page.");
   const view = authorizationServersView(req);
+  if (view.missing) {
+    errorCodes.mark(res, 'STS-ADMIN-0021');
+  }
   respond(req, res, view.json, view.title, '/admin/authorization-servers', view.inner,
           view.up);
   log.debug("Leaving the admin authorization servers page.");
@@ -21585,61 +18883,8 @@ app.post('/admin/authorization-servers', function (req, res) {
   log.debug("Leaving the admin authorization servers action endpoint.");
 });
 
-// ---------------------------------------------------------------------------
-// GET /admin/saml2, POST /admin/saml2 — THE SAML 2.0 IDENTITY PROVIDER.
-//
-// This page exists for ONE question that nothing else here can answer: WHICH
-// METADATA DOCUMENT DO I CONFIGURE THIS SERVICE PROVIDER FROM? The profile
-// publishes a document PER APPLICATION — a distinct identity provider entityID
-// and its own SSO, SLO and artifact endpoints, the way Okta and Ping do it — so
-// "the metadata URL" is not one URL, and somebody who has just been handed an
-// entityID has no way to derive the slug in its path by hand.
-//
-// **IT HOLDS NOTHING.** Every row on it comes out of the applications registry,
-// which is the embedded directory, and both of its writes go through
-// `applications.updateApplication()` — the same function `/admin/applications`
-// posts to and the same one an `ldapmodify` reaches. That is the one-store rule
-// this console follows everywhere it has been tempted otherwise: a page keeping
-// its own copy of a service provider's logout address would be a second answer
-// to "where does the LogoutResponse go" that the profile could not see.
-//
-// **WHY IT IS NOT JUST A FILTER ON /admin/applications**, which was the obvious
-// objection and is worth answering rather than leaving: that page reports what
-// an application IS and what it has DONE, in the vocabulary of eight protocols
-// at once. What a person configuring a service provider needs is four URLs, one
-// entityID, and the two settings that decide whether the assertion they are
-// about to receive is signed — none of which is a fact about the application at
-// all. Three of them are facts about THIS SERVICE. So the drill-down here links
-// to that page for the entry and does not reproduce it.
-// ---------------------------------------------------------------------------
-const SAML2_SP_KIND = 'saml2-service-provider';
 
-// Every application this profile has answered for. Read off the registry rather
-// than kept, so a service provider created by an `ldapadd` appears here with no
-// help from this file.
-function saml2ServiceProviders() {
-  log.debug("Entering saml2ServiceProviders().");
-  const rows = applications.list().filter(function (row) {
-    return row.kinds.indexOf(SAML2_SP_KIND) >= 0;
-  });
-  log.debug("Leaving saml2ServiceProviders(). " + rows.length + " service provider(s).");
-  return rows;
-}
 
-// One service provider's four URLs and its entityID, from the profile's own
-// functions. Never rebuilt here — see the require at the top of this file.
-function saml2Facts(base, identifier) {
-  const where = saml2.endpointsFor(base, identifier);
-  return {
-    identifier: identifier,
-    slug: saml2.slugOf(identifier),
-    idpEntityId: saml2.idpEntityIdFor(identifier),
-    metadataUrl: where.metadata,
-    ssoUrl: where.sso,
-    sloUrl: where.slo,
-    arsUrl: where.ars
-  };
-}
 
 // The settings that decide what a service provider receives are DRAWN ON THIS
 // PAGE, and until 2026-08-27 they were readings here with a link to
@@ -21657,22 +18902,17 @@ function saml2Facts(base, identifier) {
 
 function saml2ListPage(req) {
   log.debug("Entering saml2ListPage().");
-  const base = baseUrlOf(req);
-  const all = saml2ServiceProviders();
-  const needle = String(req.query.q || '').trim().toLowerCase();
-  const filtered = needle
-    ? all.filter(function (row) {
-        return row.identifier.toLowerCase().indexOf(needle) >= 0 ||
-               String(row.name).toLowerCase().indexOf(needle) >= 0;
-      })
-    : all;
-  const paged = pagedRows(req.query, filtered, { noun: 'service providers' });
-  const paging = paged.paging;
-  const filterParams = { q: String(req.query.q || '') || '',
-                         per: req.query.per ? paging.perPage : '' };
+  // ONE PASS OVER THE REGISTRY, TWO RENDERINGS — admin-core/admin_views.js.
+  const view = adminViews.saml2ListJson(req);
+  const base = view.base;
+  const all = view.all;
+  const needle = view.needle;
+  const filtered = view.filtered;
+  const paged = view.paged;
+  const paging = view.paging;
+  const filterParams = view.filterParams;
   const nav = pageNavPair('/admin/saml2', filterParams, paging);
   const listView = listViewOf('/admin/saml2', req.query);
-
   const rows = paged.shown.map(function (row) {
     const facts = saml2Facts(base, row.identifier);
     const href = '/admin/saml2' + queryWith(listView, { sp: row.identifier });
@@ -21744,59 +18984,23 @@ function saml2ListPage(req) {
             filtered.length + ".");
   return {
     inner: inner,
-    json: {
-      serviceProviders: paged.shown.map(function (row) {
-        return Object.assign(saml2Facts(base, row.identifier), {
-          name: row.name, authentications: row.authentications, sessions: row.sessions,
-          users: row.users, firstSeen: row.firstSeen, lastSeen: row.lastSeen,
-          assertionConsumerServices: valuesFor(row.fields.samlAssertionConsumerService),
-          singleLogoutServices: valuesFor(row.fields.samlSingleLogoutService),
-          nameIdFormats: valuesFor(row.fields.samlNameIdFormat),
-          responseBindings: valuesFor(row.fields.samlResponseBinding),
-          lastRequestSigned: row.fields.samlAuthnRequestSigned === 'TRUE'
-        });
-      }),
-      paging: paging,
-      unscopedMetadata: saml2Facts(base, '').metadataUrl,
-      // The settings this page now EDITS, in the shape every page that owns
-      // settings answers with: described rows carrying their source and
-      // whether they can be changed while the service runs. It was a flat
-      // key-to-value map while they were readings, which could say what a
-      // value was and not where it came from — the question a person asking
-      // about somebody else's deployment actually has.
-      settings: configSettingsJson('/admin/saml2'),
-      // Two numbers about the PROFILE rather than about any one service
-      // provider, and both are the kind of thing that is invisible until it is
-      // wrong: artifacts waiting to be resolved, and AuthnRequests held while a
-      // browser is at the sign-in screen. A count that never falls is a leak.
-      artifactsAwaitingResolution: saml2.artifactCount(),
-      requestsHeldForSignIn: saml2.pendingRequestCount()
-    }
+    json: view.json
   };
 }
 
-// An attribute's values as a plain array whatever the schema's `kind` is. The
-// registry hands back a string for a single-valued attribute and an array for a
-// multi-valued one, and a JSON reply that varied between the two shapes would be
-// one a caller has to test the type of.
-function valuesFor(value) {
-  if (value === undefined || value === null || value === '') {
-    return [];
-  }
-  return Array.isArray(value) ? value.slice(0) : [String(value)];
-}
 
 function saml2DetailPage(req, identifier) {
-  log.debug("Entering saml2DetailPage(). sp=" + identifier);
-  const base = baseUrlOf(req);
-  const facts = saml2Facts(base, identifier);
-  const row = applications.get(identifier);
+  log.debug("Entering saml2DetailPage(). identifier=" + identifier);
+  const view = adminViews.saml2DetailJson(req, identifier);
+  const base = view.base;
+  const facts = view.facts;
+  const row = view.row;
+  const fields = view.fields;
+  const acs = view.acs;
+  const slo = view.slo;
   const listView = listViewOf('/admin/saml2', req.query);
   const carryBack = '<input type="hidden" name="back" value="' +
     esc(queryWith(listView, {})) + '">';
-  const fields = (row && row.fields) || {};
-  const acs = valuesFor(fields.samlAssertionConsumerService);
-  const slo = valuesFor(fields.samlSingleLogoutService);
 
   const endpointRows = [
     ['entityID of the identity provider', facts.idpEntityId,
@@ -21906,74 +19110,10 @@ function saml2DetailPage(req, identifier) {
   log.debug("Leaving saml2DetailPage().");
   return {
     inner: inner,
-    json: Object.assign({ found: !!row }, facts, {
-      name: (row && row.name) || '',
-      authentications: (row && row.authentications) || 0,
-      assertionConsumerServices: acs,
-      singleLogoutServices: slo,
-      nameIdFormats: valuesFor(fields.samlNameIdFormat),
-      responseBindings: valuesFor(fields.samlResponseBinding),
-      lastRequestSigned: fields.samlAuthnRequestSigned === 'TRUE',
-      signingCertificate: fields.samlSigningCertificate || ''
-    })
+    json: view.json
   };
 }
 
-// The four writes. Every one of them goes through the applications registry —
-// see the header — so this function decides nothing except which attribute and
-// which mode, and the registry refuses an attribute that is derived rather than
-// declared without being asked twice.
-function saml2Action(body) {
-  log.debug("Entering saml2Action(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const identifier = String(body.sp || body.serviceProvider || '').trim();
-  if (!identifier) {
-    log.debug("Leaving saml2Action(). No service provider named.");
-    return { ok: false, errors: ['Name the service provider by its entityID, in `sp`.'] };
-  }
-
-  if (action === 'register') {
-    const result = applications.createApplication({
-      identifier: identifier, kind: SAML2_SP_KIND, protocol: 'SAML 2.0',
-      note: 'registered as a SAML 2.0 service provider from the admin console',
-      fields: { samlEntityId: identifier }
-    });
-    log.debug("Leaving saml2Action(). register " + (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return result;
-    return { ok: true, application: result.application,
-             message: 'Registered. Its identity provider metadata is at /saml2/metadata/' +
-                      encodeURIComponent(saml2.slugOf(identifier)) + ', and it would have been ' +
-                      'created by the first AuthnRequest or metadata fetch anyway — registering ' +
-                      'it early is what gives you a document to hand somebody now.' };
-  }
-  if (action === 'set-logout-service' || action === 'remove-logout-service') {
-    const result = applications.updateApplication(identifier, {
-      attribute: 'samlSingleLogoutService',
-      mode: action === 'set-logout-service' ? 'add' : 'remove',
-      value: String(body.value || '')
-    });
-    log.debug("Leaving saml2Action(). " + action + " " + (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-  if (action === 'set-signing-certificate') {
-    const result = applications.updateApplication(identifier, {
-      attribute: 'samlSigningCertificate', mode: 'set',
-      // Whitespace and any PEM armour stripped, because what the schema holds is
-      // base64 DER — which is what a ds:X509Certificate carries and what the
-      // metadata publishes. A PEM pasted in here would be stored as something no
-      // reader of that attribute expects, and nothing would say so until the day
-      // something tried to use it.
-      value: String(body.value || '').replace(/-----[^-]+-----/g, '').replace(/\s+/g, '')
-    });
-    log.debug("Leaving saml2Action(). set-signing-certificate " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-  log.debug("Leaving saml2Action(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The four are: register, ' +
-                               'set-logout-service, remove-logout-service, ' +
-                               'set-signing-certificate.'] };
-}
 
 function saml2View(req) {
   log.debug("Entering saml2View().");
@@ -22013,72 +19153,8 @@ app.post('/admin/saml2', function (req, res) {
   log.debug("Leaving the admin SAML 2.0 action endpoint.");
 });
 
-// ---------------------------------------------------------------------------
-// GET /admin/saml11, POST /admin/saml11 — THE SAML 1.1 IDENTITY PROVIDER.
-//
-// The same question /admin/saml2 exists for — WHICH METADATA DOCUMENT DO I
-// CONFIGURE THIS RELYING PARTY FROM — and a second question that page never has
-// to answer: **WHAT IS THIS RELYING PARTY CALLED?** SAML 1.1 has no request
-// message, so nothing in the protocol makes a relying party identify itself. The
-// profile takes the name from Shibboleth's `providerId` parameter, from the path
-// segment, or it GUESSES from the origin of the TARGET. A guessed audience is
-// the one thing on this page that is not a fact, and it is marked as such,
-// because an assertion whose audience is `https://app.example.com` when the
-// relying party expected `urn:example:app` fails inside a signature check with
-// nothing saying why.
-//
-// **IT IS A SEPARATE PAGE FROM /admin/saml2 AND THAT IS NOT SYMMETRY FOR ITS OWN
-// SAKE**, which was the obvious objection: half of what that page reports has no
-// spelling here. There is no Single Logout in SAML 1.1, so there is no logout
-// return address to declare and no `saml11.defaultSingleLogoutService` to fall
-// back to. There is no request, so there is no request signature to record and
-// no signing certificate to hold. What this page has instead is the artifact
-// profile's own state and an attribute authority the 2.0 profile does not offer.
-// One page with two modes would have been a page whose every row needed a
-// footnote.
-//
-// **IT HOLDS NOTHING**, like every page in this console: every row comes out of
-// the applications registry, which is the embedded directory, and its one write
-// goes through `applications.createApplication()` — the same function
-// /admin/applications posts to and the same one an `ldapadd` reaches.
-// ---------------------------------------------------------------------------
-const SAML11_RP_KIND = saml11.RP_KIND;
 
-// Every application this profile has answered for. Read off the registry rather
-// than kept, so a relying party created by an `ldapadd` appears here with no
-// help from this file.
-//
-// **THE KIND IS SHARED WITH WS-FEDERATION AND THAT IS DELIBERATE.**
-// `saml11-relying-party` is what a WS-Federation relying party handed a 1.1
-// assertion has always been recorded as, and a relying party that takes the same
-// assertion through the passive requestor profile and through Browser/POST is
-// ONE application with one audience. Giving the browser profiles a kind of their
-// own would have split one entry into two, which is the defect this repository
-// calls two spellings of one DN. The consequence to know when reading this list:
-// a row here may have arrived through /wsfed and never touched /saml11, which is
-// why the profiles column says what it has actually used.
-function saml11RelyingParties() {
-  log.debug("Entering saml11RelyingParties().");
-  const rows = applications.list().filter(function (row) {
-    return row.kinds.indexOf(SAML11_RP_KIND) >= 0;
-  });
-  log.debug("Leaving saml11RelyingParties(). " + rows.length + " relying party/parties.");
-  return rows;
-}
 
-// One relying party's three URLs and its providerID, from the profile's own
-// functions. Never rebuilt here — see the require at the top of this file.
-function saml11Facts(base, identifier) {
-  const where = saml11.endpointsFor(base, identifier);
-  return {
-    identifier: identifier,
-    slug: saml11.slugOf(identifier),
-    idpProviderId: saml11.providerIdFor(identifier),
-    metadataUrl: where.metadata,
-    ssoUrl: where.sso,
-    responderUrl: where.responder
-  };
-}
 
 // Which of the two browser profiles a recorded binding value names, in words. The
 // registry holds the profile URI, which is what the metadata publishes and what
@@ -22102,19 +19178,14 @@ function saml11ProfileLabel(value) {
 
 function saml11ListPage(req) {
   log.debug("Entering saml11ListPage().");
-  const base = baseUrlOf(req);
-  const all = saml11RelyingParties();
-  const needle = String(req.query.q || '').trim().toLowerCase();
-  const filtered = needle
-    ? all.filter(function (row) {
-        return row.identifier.toLowerCase().indexOf(needle) >= 0 ||
-               String(row.name).toLowerCase().indexOf(needle) >= 0;
-      })
-    : all;
-  const paged = pagedRows(req.query, filtered, { noun: 'relying parties' });
-  const paging = paged.paging;
-  const filterParams = { q: String(req.query.q || '') || '',
-                         per: req.query.per ? paging.perPage : '' };
+  const view = adminViews.saml11ListJson(req);
+  const base = view.base;
+  const all = view.all;
+  const needle = view.needle;
+  const filtered = view.filtered;
+  const paged = view.paged;
+  const paging = view.paging;
+  const filterParams = view.filterParams;
   const nav = pageNavPair('/admin/saml11', filterParams, paging);
   const listView = listViewOf('/admin/saml11', req.query);
 
@@ -22200,47 +19271,19 @@ function saml11ListPage(req) {
             filtered.length + ".");
   return {
     inner: inner,
-    json: {
-      relyingParties: paged.shown.map(function (row) {
-        return Object.assign(saml11Facts(base, row.identifier), {
-          name: row.name, authentications: row.authentications, sessions: row.sessions,
-          users: row.users, firstSeen: row.firstSeen, lastSeen: row.lastSeen,
-          assertionConsumerServices: valuesFor(row.fields.samlAssertionConsumerService),
-          nameIdFormats: valuesFor(row.fields.samlNameIdFormat),
-          profiles: valuesFor(row.fields.samlResponseBinding).filter(function (v) {
-            return v === saml11.PROFILE_POST || v === saml11.PROFILE_ARTIFACT;
-          })
-        });
-      }),
-      paging: paging,
-      unscopedMetadata: saml11Facts(base, '').metadataUrl,
-      // The shape every page that owns settings answers with. See the SAML
-      // 2.0 page's equivalent for why it is no longer a flat map.
-      settings: configSettingsJson('/admin/saml11'),
-      // Three numbers about the PROFILE rather than about any one relying party,
-      // and all three are the kind of thing that is invisible until it is wrong:
-      // artifacts minted and not yet resolved, assertions held for an
-      // AssertionIDReference, and flows held while a browser is at the sign-in
-      // screen. A count that never falls is a leak; the middle one is CAPPED
-      // rather than swept, so it is the one that should sit at its ceiling.
-      artifactsAwaitingResolution: saml11.artifactCount(),
-      assertionsHeldByReference: saml11.cachedAssertionCount(),
-      flowsHeldForSignIn: saml11.pendingFlowCount()
-    }
+    json: view.json
   };
 }
 
 function saml11DetailPage(req, identifier) {
-  log.debug("Entering saml11DetailPage(). rp=" + identifier);
-  const base = baseUrlOf(req);
-  const facts = saml11Facts(base, identifier);
-  const row = applications.get(identifier);
-  const fields = (row && row.fields) || {};
-  const acs = valuesFor(fields.samlAssertionConsumerService);
-  const profiles = valuesFor(fields.samlResponseBinding).filter(function (v) {
-    return v === saml11.PROFILE_POST || v === saml11.PROFILE_ARTIFACT;
-  });
-
+  log.debug("Entering saml11DetailPage(). identifier=" + identifier);
+  const view = adminViews.saml11DetailJson(req, identifier);
+  const base = view.base;
+  const facts = view.facts;
+  const row = view.row;
+  const fields = view.fields;
+  const acs = view.acs;
+  const profiles = view.profiles;
   const endpointRows = [
     ['providerID of the identity provider', facts.idpProviderId,
      config.value('saml11.perApplicationProviderId')
@@ -22329,50 +19372,10 @@ function saml11DetailPage(req, identifier) {
   log.debug("Leaving saml11DetailPage().");
   return {
     inner: inner,
-    json: Object.assign(facts, {
-      registered: !!row,
-      identifierLooksGuessed: looksGuessed,
-      name: row ? row.name : '',
-      authentications: row ? row.authentications : 0,
-      assertionConsumerServices: acs,
-      nameIdFormats: valuesFor(fields.samlNameIdFormat),
-      profiles: profiles
-    })
+    json: view.json
   };
 }
 
-// ONE action, where /admin/saml2 has four, and the three it does not have are
-// the three SAML 1.1 has no protocol for: a logout service to declare, a request
-// signature to record, and a signing certificate to hold it in.
-function saml11Action(body) {
-  log.debug("Entering saml11Action(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const identifier = String(body.rp || body.relyingParty || '').trim();
-  if (!identifier) {
-    log.debug("Leaving saml11Action(). No relying party named.");
-    return { ok: false, errors: ['Name the relying party by its identifier, in `rp`.'] };
-  }
-
-  if (action === 'register') {
-    const result = applications.createApplication({
-      identifier: identifier, kind: SAML11_RP_KIND, protocol: 'SAML 1.1',
-      note: 'registered as a SAML 1.1 relying party from the admin console',
-      fields: { samlEntityId: identifier }
-    });
-    log.debug("Leaving saml11Action(). register " + (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) {
-      return result;
-    }
-    return { ok: true, application: result.application,
-             message: 'Registered. Its identity provider metadata is at /saml11/metadata/' +
-                      encodeURIComponent(saml11.slugOf(identifier)) + ', and it would have been ' +
-                      'created by the first flow or metadata fetch anyway — registering it early ' +
-                      'is what gives you a document to hand somebody now, and a name to put in ' +
-                      'providerId so that nothing has to be guessed.' };
-  }
-  log.debug("Leaving saml11Action(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". There is one: register.'] };
-}
 
 function saml11View(req) {
   log.debug("Entering saml11View().");
@@ -22528,55 +19531,24 @@ function rbacClaimedMark(row) {
 
 function rbacListPage(req) {
   log.debug("Entering rbacListPage().");
-  const info = rbac.describe();
-  const state = gateStateFor(req);
-
-  // One row per grant, flattened out of the two rosters. Sorted by name and then
-  // by role so that somebody holding both is two adjacent rows rather than two
-  // rows a page apart.
-  const grants = [];
-  info.roles.forEach(function (role) {
-    role.members.forEach(function (member) {
-      grants.push({
-        username: member.username, role: role.role, roleLabel: role.label,
-        cn: role.cn, dn: role.dn, value: member.value, attribute: member.attribute,
-        holds: member.holds, memberDn: member.dn, present: member.present,
-        kind: member.kind, userKey: member.userKey
-      });
-    });
-  });
-  grants.sort(function (a, b) {
-    const an = String(a.username).toLowerCase();
-    const bn = String(b.username).toLowerCase();
-    if (an !== bn) {
-      return an < bn ? -1 : 1;
-    }
-    return a.role < b.role ? -1 : 1;
-  });
-
-  const wantedText = String(req.query.q || '').trim();
-  const needle = wantedText.toLowerCase();
-  const wantedRole = String(req.query.role || '').trim().toLowerCase();
-  const filtered = grants.filter(function (row) {
-    if (wantedRole && row.role !== wantedRole) {
-      return false;
-    }
-    if (!needle) {
-      return true;
-    }
-    return String(row.username).toLowerCase().indexOf(needle) >= 0 ||
-           String(row.value).toLowerCase().indexOf(needle) >= 0;
-  });
-
-  const paging = pagingOf(req.query, filtered.length, { noun: 'grants' });
-  const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
-  const filterParams = { q: wantedText || '', role: wantedRole || '',
-                         per: req.query.per ? paging.perPage : '' };
+  // ONE COMPUTATION, TWO RENDERINGS (2026-09-12) — admin-core/admin_views.js.
+  // Everything this page draws comes off this call, and so does what
+  // GET /admin-api/rbac answers.
+  const view = adminViews.rbacListJson(req);
+  const info = view.info;
+  const state = view.state;
+  const grants = view.grants;
+  const wantedText = view.wantedText;
+  const wantedRole = view.wantedRole;
+  const paging = view.paging;
+  const shown = view.shown;
+  const filterParams = view.filterParams;
+  const knownKeys = view.knownKeys;
+  const candidates = view.candidates;
   const nav = pageNavPair('/admin/rbac', filterParams, paging);
   const carryBack = '<input type="hidden" name="back" value="' +
     esc(queryWith(listViewOf('/admin/rbac', req.query), {})) + '">';
 
-  const knownKeys = knownUserKeys();
   const rows = shown.map(function (row) {
     return '<tr><td>' + rbacMemberCell(row, knownKeys) + rbacClaimedMark(row) + '</td>' +
       '<td>' + esc(row.roleLabel) + '</td>' +
@@ -22602,7 +19574,6 @@ function rbacListPage(req) {
   // directory is who has an entry; admin_rbac.js unions them, because a select
   // built from either alone would silently omit half the people somebody wants
   // to grant a role to.
-  const candidates = rbac.candidates(Object.keys(knownKeys));
   const options = candidates.map(function (row) {
     const where = row.inDirectory && row.seen ? 'directory, and has signed in'
       : (row.inDirectory ? 'in the directory' : 'has signed in');
@@ -22759,140 +19730,13 @@ function rbacListPage(req) {
             grants.length + " grant(s).");
   return {
     inner: inner,
-    json: {
-      enforced: info.enforced, openWhenEmpty: info.openWhenEmpty,
-      openToAnyone: info.openToAnyone, closedToEveryone: info.closedToEveryone,
-      available: info.available, groupsDn: info.groupsDn, usersDn: info.usersDn,
-      grantCount: info.grantCount, matched: filtered.length, shown: shown.length,
-      settings: configSettingsJson('/admin/rbac'),
-      filter: { q: wantedText || null, role: wantedRole || null },
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      // WHO IS ASKING, which is on the reply rather than only in the banner
-      // because a caller driving this over JSON has no banner and the answer to
-      // "why did that 403" is here.
-      you: { username: state.username, roles: state.roles,
-             read: state.read, write: state.write, viaEmptyRoster: state.open },
-      roles: info.roles,
-      grants: shown,
-      candidates: candidates
-    }
+    json: view.json
   };
 }
 
 
-// ---------------------------------------------------------------------------
-// WHAT `GET /admin-api/mfa` AND `POST /admin-api/mfa/:action` CALL NOW.
-//
-// **THE RESOURCE IS KEPT AND ITS PAGE IS GONE**, which is rule 7 read the way
-// round it is usually not. The rule says a console control owes an API
-// operation; it says nothing about an operation whose page moved, and deleting
-// a working one to tidy a table would be a regression dressed as consistency —
-// the same argument `mgmt-api/admin_api.js` makes about `GET
-// /admin-api/users/new`.
-//
-// **BOTH ANSWER OUT OF THE USERS VIEW**, so there is ONE tally. A second scan
-// of the credential store would be a second answer to how many people hold a
-// second factor, and the two would agree until the day they did not.
-//
-// The reply keeps its own SHAPE — a flat `people` array, one object per person,
-// exactly the members it always carried — because a caller that reads
-// `people[].mfaRequired` is not a caller that should have to learn this page
-// moved. `GET /admin-api/users` is where the rows carry `factors` instead.
-// ---------------------------------------------------------------------------
-function mfaView(req) {
-  log.debug("Entering mfaView().");
-  const list = usersListPage(req);
-  const people = (list.json.users || []).map(function (row) {
-    const f = row.factors || {};
-    return {
-      username: row.name,
-      inDirectory: !!row.inDirectory,
-      known: !!row.authenticated || row.knownBy !== 'directory',
-      // FALSE AND NOT NULL where no credential store answered, because every
-      // one of these was a boolean before this moved and a caller comparing
-      // with `=== false` must not start seeing `null`. `store` on the reply is
-      // where "this service could not tell" is said, and it always was.
-      password: !!f.password,
-      primaryKeys: f.primaryKeys || 0,
-      mfaKeys: f.mfaKeys || 0,
-      totp: !!f.totp,
-      totpUsable: !!f.totpUsable,
-      totpDetail: f.totpDetail || null,
-      mfaRequired: !!f.mfaRequired,
-      secondFactor: f.secondFactor || '',
-      usable: !!f.usable,
-      // **THE RECOVERY CODES, AS COUNTS AND NEVER AS CODES (2026-09-11).**
-      // `secondFactorHolders()` has always built this member and this mapping
-      // dropped it, so `/admin/users` drew "7 of 10 unused" for an operator
-      // and `GET /admin-api/mfa` answered about the same person without it —
-      // which is rule 7's drift in the direction that check cannot see, since
-      // the console side was never missing.
-      //
-      // `backupCodeStatus()` is what the whole member is built from and it
-      // carries no codes, which is what makes it safe to publish here: an
-      // operator reading this roster must never be handed a working second
-      // factor. `hashed` and `legacy` are on it so that a set written by an
-      // older build is visible as one rather than looking identical to a
-      // hashed set that simply has not been used.
-      backupCodes: f.backupCodes || null,
-      // And whether this person should be TOLD to generate a set, which is
-      // what replaced the automatic issue on 2026-09-11 and is therefore the
-      // number an operator now has to be able to see across a population.
-      recoveryAdvised: !!f.recoveryAdvised
-    };
-  });
-  const json = {
-    offered: totp.offered(),
-    totp: totp.report(),
-    webauthn: webauthnPolicy.report(),
-    counts: Object.assign({ people: list.json.known }, list.json.factors),
-    store: list.json.store, scanned: list.json.scanned,
-    capped: list.json.capped, scanLimit: list.json.scanLimit,
-    filter: list.json.filter,
-    page: list.json.page, pages: list.json.pages, perPage: list.json.perPage,
-    firstRow: list.json.firstRow, lastRow: list.json.lastRow,
-    matched: list.json.matched, shown: list.json.shown,
-    people: people
-  };
-  log.debug("Leaving mfaView(). " + people.length + " person/people.");
-  return { json: json, inner: list.inner,
-           title: 'Second factors' };
-}
 
-// The two acts, through the one switch that has them — **BEHIND A GUARD OF ITS
-// OWN, and that guard is not ceremony.**
-//
-// `tests/vendored/sts_admin_api_operations.js` compares an action resource's
-// REFUSAL SENTENCE against the operations the OpenAPI document declares for it,
-// in both directions, because `tests/vendored/admin_api.js`'s parity check
-// reads that sentence to discover what to look for. A bare delegation to
-// `usersAction()` therefore answered `/admin-api/mfa/no-such-action` by naming
-// all five actions the USERS resource has — so this resource claimed to offer
-// `create`, `set-password` and `issue-activation`, which it does not and must
-// not. It went red on the first full run, which is exactly what that assertion
-// is for.
-//
-// So the repertoire is stated here and the WORK is not duplicated: an action
-// outside these two is refused in this resource's own words, and the two that
-// belong to it are handed to the one switch that performs them.
-const MFA_ACTIONS = ['clear-totp', 'clear-key'];
 
-function mfaAction(body, context) {
-  log.debug("Entering mfaAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  if (MFA_ACTIONS.indexOf(action) < 0) {
-    log.debug("Leaving mfaAction(). Not an action of this resource.");
-    return { ok: false, errors: ['Unknown action "' + action + '". There are ' +
-                                 MFA_ACTIONS.length + ': ' +
-                                 MFA_ACTIONS.join(' and ') + '. The rest of ' +
-                                 'what can be done to a person is on ' +
-                                 '/admin-api/users, which is also where these ' +
-                                 'two answer.'] };
-  }
-  log.debug("Leaving mfaAction(). Handing " + action + " to usersAction().");
-  return usersAction(body, context);
-}
 
 // ===========================================================================
 // `/admin/mfa` WAS HERE AND IT IS GONE (2026-09-10).
@@ -22935,34 +19779,6 @@ function rbacView(req) {
   return { json: list.json, inner: list.inner, title: 'Admin roles' };
 }
 
-// Both writes, and neither decides anything: admin_rbac.js holds the rules and
-// this reads two fields off a body. `actor` is threaded through so the
-// `admin.role.change` audit row can say WHO made the grant — the one question an
-// audit log of permissions changes exists to answer, and the one nothing else on
-// the row could reconstruct.
-function rbacAction(body, context) {
-  log.debug("Entering rbacAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const username = String(body.username || body.user || '').trim();
-  const role = String(body.role || '').trim();
-  const ctx = { via: (context || {}).via || 'console',
-                actor: (context || {}).actor || '' };
-
-  if (action === 'grant') {
-    const result = rbac.grant(username, role, ctx);
-    log.debug("Leaving rbacAction(). grant " + (result.ok ? "ok." : "refused."));
-    return result;
-  }
-  if (action === 'revoke') {
-    const result = rbac.revoke(username, role, ctx);
-    log.debug("Leaving rbacAction(). revoke " + (result.ok ? "ok." : "refused."));
-    return result;
-  }
-
-  log.debug("Leaving rbacAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". There are two: grant and ' +
-                               'revoke.'] };
-}
 
 
 // ---------------------------------------------------------------------------
@@ -23002,86 +19818,8 @@ function rbacAction(body, context) {
 // audit row and the `ldapmodify` equivalence all come for free.
 // ---------------------------------------------------------------------------
 
-// BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
-// PERMISSION_ACTIONS gives at its own site: this repository's own
-// tests/vendored/admin_api.js READS the refusal sentence to check that every
-// console action has an /admin-api operation, so a list that is short by one is
-// a list that turns the parity check off for that action.
-const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
-                         'revoke-consent', 'forget-user-consent'];
 
-function consentAction(body) {
-  log.debug("Entering consentAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const actor = String(body.actor || '');
-  // `client` for the application half and `username` for the person half, named
-  // apart for `permissionsAction()`'s reason: this is another feature where a
-  // body naming the wrong field still succeeds and writes the right-looking
-  // thing onto the wrong entry. `application` is accepted for `client` as a
-  // convenience for a caller editing one entry.
-  const client = String(body.client || body.application || '').trim();
-  const username = String(body.username || body.user || '').trim();
-  const scope = String(body.scope || '').trim();
 
-  if (action === 'grant-global-consent') {
-    const result = consent.grantGlobal(client, scope, actor);
-    log.debug("Leaving consentAction(). grant-global-consent " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  if (action === 'revoke-global-consent') {
-    const result = consent.revokeGlobal(client, scope, actor);
-    log.debug("Leaving consentAction(). revoke-global-consent " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  if (action === 'revoke-consent') {
-    const result = consent.revoke(username, client, scope, actor);
-    if (result.ok) {
-      // THE AUDIT ROW IS WRITTEN HERE AND NOT IN consent.js, and that is the
-      // same division `rbacAction()` has: the actor is the person whose session
-      // got them through the gate, and the module underneath has no request to
-      // read one from. `consent_screen.js` writes its own row for the same
-      // reason from the other side — there the actor is the person consenting.
-      auditLog.audit({ action: 'consent.revoke', actor: actor, target: client,
-                    protocol: 'OAuth 2.0 / OIDC', channel: 'http',
-                    detail: 'revoked "' + scope + '" for ' + username });
-    }
-    log.debug("Leaving consentAction(). revoke-consent " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  if (action === 'forget-user-consent') {
-    const result = consent.forget(username, actor);
-    if (result.ok) {
-      auditLog.audit({ action: 'consent.revoke', actor: actor, target: username,
-                    protocol: 'OAuth 2.0 / OIDC', channel: 'http',
-                    detail: 'forgot every consent (' + result.removed + ') for ' + username });
-    }
-    log.debug("Leaving consentAction(). forget-user-consent " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  log.debug("Leaving consentAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The ' +
-                               numberWord(CONSENT_ACTIONS.length) + ' are: ' +
-                               CONSENT_ACTIONS.join(', ') + '.'] };
-}
-
-// The register, in one place so that the page, `?format=json` and
-// `GET /admin-api/consent` cannot come to disagree about what is in it — the
-// same property `permissionsView()` gives the delegated permission register.
-function consentView() {
-  log.debug("Entering consentView().");
-  const register = consent.register();
-  log.debug("Leaving consentView(). " + register.counts.globals + " override(s), " +
-            register.counts.consents + " recorded.");
-  return register;
-}
 
 function consentBack(listView) {
   return '<input type="hidden" name="back" value="' +
@@ -23382,37 +20120,8 @@ app.post('/admin/consent', function (req, res) {
 // `common/roles.js` argues that split at length and it is not repeated here.
 // ---------------------------------------------------------------------------
 
-// BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for CONSENT_ACTIONS' reason:
-// this repository's own tests/vendored/admin_api.js READS the refusal sentence
-// to check that every console action has an /admin-api operation, so a list
-// that is short by one turns the parity check off for that action.
-const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
-                      'remove-member', 'describe-role'];
 
-// The three kinds of thing that can hold a role, in one table because four
-// places have to agree about them — the two member actions, the console's
-// select, the management API's enum and the register's own attribute names.
-const ROLE_MEMBER_KINDS = [
-  { kind: 'user', label: 'a person', field: 'users',
-    what: 'A username. The person need not exist yet: this service creates a ' +
-          'directory entry for any name on first sight, so a role can be ' +
-          'granted before its holder has ever signed in.' },
-  { kind: 'group', label: 'a group', field: 'groups',
-    what: 'A group in ou=groups. Every member of it holds the role, resolved ' +
-          'at DECISION TIME rather than expanded on write — so an ldapmodify ' +
-          'adding somebody to the group changes the very next token.' },
-  { kind: 'application', label: 'an application', field: 'applications',
-    what: 'An application that holds the role AS ITSELF. This is what a ' +
-          'client_credentials grant is decided on, where there is no person ' +
-          'at all, and it is the reason an application is a first-class ' +
-          'member of a role here.' }
-];
 
-function roleMemberKindOf(kind) {
-  return ROLE_MEMBER_KINDS.filter(function (one) {
-    return one.kind === String(kind);
-  })[0] || null;
-}
 
 // ---------------------------------------------------------------------------
 // THE ELEVENTH SLOT ON THIS MODULE, AND IT PASSES RULE 3e'S TEST BOTH WAYS
@@ -23444,7 +20153,7 @@ function setRolePreviewer(hooks) {
   log.debug("Entering setRolePreviewer().");
   if (!hooks || typeof hooks.preview !== 'function' ||
       typeof hooks.policy !== 'function') {
-    log.error('admin: setRolePreviewer() was offered an object without both ' +
+    log.error(errorCodes.tag('STS-ADMIN-0014') + 'admin: setRolePreviewer() was offered an object without both ' +
               'preview() and policy(), so it was refused and /admin/roles ' +
               'will say the decision cannot be previewed. Installing half of ' +
               'it would leave the page able to ask a question and unable to ' +
@@ -23453,314 +20162,18 @@ function setRolePreviewer(hooks) {
     return false;
   }
   rolePreviewer = hooks;
+  // AND THE READ LAYER, which needs the same thing — see the header of
+  // admin-core/admin_views.js. Still one statement and one writer.
+  adminViews.setRolePreviewer(hooks);
   log.info('admin: /admin/roles can preview an issuance decision — the same ' +
            'call the nine issuance sites make, through the same policy.');
   log.debug("Leaving setRolePreviewer(). Installed.");
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// THE REGISTER, IN ONE PLACE so that the page, `?format=json` and
-// `GET /admin-api/roles` cannot come to disagree about what is in it — the
-// same property `consentView()` and `permissionsView()` give their registers.
-// ---------------------------------------------------------------------------
-function rolesRegister() {
-  log.debug("Entering rolesRegister().");
-  const configured = roles.all();
-  // WHICH APPLICATIONS REQUIRE WHAT, computed from the applications registry
-  // rather than kept anywhere: the requirement lives on the application entry
-  // and this is a READING of it. `requiresNarrowedRoles()` is what tells an
-  // application somebody has deliberately restricted from one that merely has
-  // the default — and the difference matters, because every application in
-  // this service requires EVERYBODY and listing all of them would bury the
-  // handful that were narrowed.
-  const requiring = applications.list().filter(function (row) {
-    return applications.requiresNarrowedRoles(row.identifier);
-  }).map(function (row) {
-    const required = applications.requiredRolesOf(row.identifier);
-    return {
-      application: row.identifier,
-      name: row.name || row.identifier,
-      required: required,
-      // WHETHER ANYBODY AT ALL COULD SATISFY IT. A role named on an
-      // application entry that no role entry defines and that is not built in
-      // is a requirement NOBODY can hold — which refuses everybody, silently
-      // and correctly, and looks exactly like the application being broken.
-      // This is the one thing this page can say that neither the application
-      // page nor the role table can.
-      unknown: required.filter(function (name) {
-        return !roles.isBuiltIn(name) && !configured.some(function (role) {
-          return role.name === name;
-        });
-      })
-    };
-  });
-  const out = {
-    // The store, so a reader can say where these entries are and reach them
-    // with an ldapsearch.
-    container: roles.directoryInstalled() ? 'ou=roles' : '',
-    storable: !!roles.directoryInstalled(),
-    defaultRequired: roles.DEFAULT_REQUIRED_ROLE,
-    claim: config.value('roles.claim') !== false,
-    claimName: String(config.value('roles.claimName') || 'roles'),
-    enforced: config.value('roles.enforceIssuance') !== false,
-    gated: !!rolePreviewer,
-    policy: rolePreviewer ? rolePreviewer.policy() : null,
-    builtIn: roles.builtInCatalogue(),
-    roles: configured,
-    requiring: requiring,
-    counts: {
-      builtIn: roles.BUILT_IN_NAMES.length,
-      configured: configured.length,
-      members: configured.reduce(function (n, one) {
-        return n + one.users.length + one.groups.length +
-               one.applications.length;
-      }, 0),
-      requiring: requiring.length,
-      unsatisfiable: requiring.filter(function (one) {
-        return one.unknown.length > 0;
-      }).length
-    }
-  };
-  log.debug("Leaving rolesRegister(). " + out.counts.configured +
-            " configured role(s).");
-  return out;
-}
 
-function rolesView() {
-  log.debug("Entering rolesView().");
-  const register = rolesRegister();
-  log.debug("Leaving rolesView(). " + register.counts.configured + " role(s).");
-  return register;
-}
 
-// ---------------------------------------------------------------------------
-// THE FIVE WRITES. Every one of them goes through `common/roles.js`, which
-// holds the rules — the name grammar, the refusal to shadow a built-in one,
-// and the cap — so this function reads fields off a body and decides nothing.
-// It is the same division `rbacAction()` has with `admin_rbac.js`.
-// ---------------------------------------------------------------------------
-function rolesAction(body, context) {
-  log.debug("Entering rolesAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const ctx = context || {};
-  const actor = String(ctx.actor || body.actor || '');
-  const name = String(body.role || body.name || '').trim();
-  const kind = String(body.kind || '').trim();
-  // `member` for the thing being added and never `name`, which is the ROLE's.
-  // Named apart for `permissionsAction()`'s reason: this is another feature
-  // where a body naming the wrong field still succeeds and writes the
-  // right-looking thing into the wrong place — here, a role called `alice`.
-  const member = String(body.member || '').trim();
-  const description = String(body.description || '');
 
-  if (action === 'create-role') {
-    const existing = roles.read(name);
-    if (existing) {
-      log.debug("Leaving rolesAction(). create-role refused: it is there.");
-      return { ok: false, errors: ['There is already a role called "' + name +
-                                   '". Roles are edited in place — add a ' +
-                                   'member to it rather than creating it ' +
-                                   'again.'] };
-    }
-    const result = roles.write(name, { description: description });
-    if (result.ok) {
-      auditLog.audit({ action: 'roles.create', actor: actor, target: name,
-                    protocol: 'XACML', channel: 'http',
-                    detail: 'created the role "' + name + '"' });
-    }
-    log.debug("Leaving rolesAction(). create-role " +
-              (result.ok ? 'ok.' : 'refused.'));
-    return result.ok ? result : { ok: false, errors: [result.why] };
-  }
-
-  if (action === 'delete-role') {
-    // WHAT STILL REQUIRES IT IS REPORTED AND THE DELETE STILL HAPPENS, which
-    // is deliberate and is the more useful of the two behaviours. Refusing
-    // would mean a role could not be removed until every application that
-    // named it had been edited, and the application entries are the things
-    // somebody is usually in the middle of changing. The reply names them, so
-    // the consequence — those applications now require a role NOBODY holds,
-    // and are therefore issued nothing — is said at the moment it is created
-    // rather than discovered later as a service that stopped working.
-    const stillRequired = applications.list().filter(function (row) {
-      return applications.requiredRolesOf(row.identifier)
-        .some(function (one) { return one === name; });
-    }).map(function (row) { return row.identifier; });
-    const result = roles.remove(name);
-    if (!result.ok) {
-      log.debug("Leaving rolesAction(). delete-role refused.");
-      return { ok: false, errors: [result.why] };
-    }
-    auditLog.audit({ action: 'roles.delete', actor: actor, target: name,
-                  protocol: 'XACML', channel: 'http',
-                  detail: 'deleted the role "' + name + '"' +
-                          (stillRequired.length
-                             ? '; still required by ' + stillRequired.join(', ')
-                             : '') });
-    log.debug("Leaving rolesAction(). delete-role ok.");
-    return { ok: true, name: name, stillRequired: stillRequired,
-             message: 'The role "' + name + '" is gone.' +
-                      (stillRequired.length
-                         ? ' ' + numberWord(stillRequired.length) +
-                           ' application(s) still require it and can now be ' +
-                           'issued nothing: ' + stillRequired.join(', ') +
-                           '. Clear appRequiredRole on each, or create the ' +
-                           'role again.'
-                         : '') };
-  }
-
-  if (action === 'describe-role') {
-    const row = roles.read(name);
-    if (!row) {
-      log.debug("Leaving rolesAction(). describe-role refused.");
-      return { ok: false, errors: ['There is no role called "' + name + '".'] };
-    }
-    // THE WHOLE RECORD IS WRITTEN BACK and not just the description, because
-    // `roles.write()` REPLACES an entry — a write carrying only the
-    // description would empty the membership, which is the one mistake in this
-    // file that would be silent and total.
-    const result = roles.write(name, {
-      description: description, users: row.users, groups: row.groups,
-      applications: row.applications
-    });
-    log.debug("Leaving rolesAction(). describe-role " +
-              (result.ok ? 'ok.' : 'refused.'));
-    return result.ok ? result : { ok: false, errors: [result.why] };
-  }
-
-  if (action === 'add-member' || action === 'remove-member') {
-    const kindRow = roleMemberKindOf(kind);
-    if (!kindRow) {
-      log.debug("Leaving rolesAction(). Unknown member kind.");
-      return { ok: false, errors: ['"' + kind + '" is not a kind of member. ' +
-                                   'There are three: ' +
-                                   ROLE_MEMBER_KINDS.map(function (one) {
-                                     return one.kind;
-                                   }).join(', ') + '.'] };
-    }
-    if (!member) {
-      log.debug("Leaving rolesAction(). No member named.");
-      return { ok: false, errors: ['`member` names the ' + kindRow.label +
-                                   ' being ' + (action === 'add-member'
-                                     ? 'added to' : 'removed from') +
-                                   ' the role, and it is required. `role` is ' +
-                                   'the role\'s own name.'] };
-    }
-    const row = roles.read(name);
-    if (!row) {
-      // A BUILT-IN ROLE IS NAMED IN THE REFUSAL RATHER THAN FALLING THROUGH TO
-      // "no such role", because that is the mistake somebody will actually
-      // make: the six built-in roles are in every menu on this page, they have
-      // no members and cannot be given any, and "there is no role called
-      // ALL_AUTHENTICATED_USERS" would be a flatly false sentence about a role
-      // the page had just drawn.
-      if (roles.isBuiltIn(name)) {
-        log.debug("Leaving rolesAction(). Built-in role.");
-        return { ok: false, errors: ['"' + name + '" is a BUILT-IN role. It ' +
-                                     'is COMPUTED from the context of each ' +
-                                     'decision rather than stored, so it has ' +
-                                     'no membership to edit — everybody who ' +
-                                     'matches it holds it, always. Create a ' +
-                                     'role of your own to give somebody ' +
-                                     'something they do not already have.'] };
-      }
-      log.debug("Leaving rolesAction(). No such role.");
-      return { ok: false, errors: ['There is no role called "' + name +
-                                   '". Create it first.'] };
-    }
-    const held = {
-      users: row.users.slice(), groups: row.groups.slice(),
-      applications: row.applications.slice()
-    };
-    const list = held[kindRow.field];
-    // Case-insensitively, for `roles.js`'s reason: a username here arrives
-    // from a login form, a SAML subject, a Kerberos principal and a client_id,
-    // and this service has always treated those as one identity however they
-    // were typed.
-    const at = list.map(function (one) {
-      return String(one).toLowerCase();
-    }).indexOf(member.toLowerCase());
-    if (action === 'add-member') {
-      if (at >= 0) {
-        log.debug("Leaving rolesAction(). Already a member.");
-        return { ok: false, errors: ['"' + member + '" already holds "' +
-                                     name + '" as ' + kindRow.label + '.'] };
-      }
-      list.push(member);
-    } else {
-      if (at < 0) {
-        log.debug("Leaving rolesAction(). Not a member.");
-        return { ok: false, errors: ['"' + member + '" does not hold "' +
-                                     name + '" as ' + kindRow.label + '.'] };
-      }
-      list.splice(at, 1);
-    }
-    const result = roles.write(name, {
-      description: row.description, users: held.users, groups: held.groups,
-      applications: held.applications
-    });
-    if (!result.ok) {
-      log.debug("Leaving rolesAction(). The write was refused.");
-      return { ok: false, errors: [result.why] };
-    }
-    auditLog.audit({
-      action: action === 'add-member' ? 'roles.grant' : 'roles.revoke',
-      actor: actor, target: member, protocol: 'XACML', channel: 'http',
-      detail: (action === 'add-member' ? 'gave ' : 'took ') + kindRow.label +
-              ' "' + member + '" the role "' + name + '"' +
-              (action === 'add-member' ? '' : ' away') });
-    log.debug("Leaving rolesAction(). " + action + " ok.");
-    return { ok: true, role: name, kind: kind, member: member,
-             message: action === 'add-member'
-               ? '"' + member + '" now holds "' + name + '".'
-               : '"' + member + '" no longer holds "' + name + '".' };
-  }
-
-  log.debug("Leaving rolesAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The ' +
-                               numberWord(ROLE_ACTIONS.length) + ' are: ' +
-                               ROLE_ACTIONS.join(', ') + '.'] };
-}
-
-// ---------------------------------------------------------------------------
-// THE DRY RUN. Asked through the SAME call the nine issuance sites make, so a
-// preview that agreed with the enforcement only by coincidence is impossible —
-// which is the property that makes it worth having at all.
-// ---------------------------------------------------------------------------
-function rolesPreview(query) {
-  log.debug("Entering rolesPreview().");
-  const asked = query || {};
-  const application = String(asked.application || '').trim();
-  const who = String(asked.subject || asked.username || '').trim();
-  const kind = String(asked.subjectKind || 'user') === 'application'
-    ? 'application' : 'user';
-  const issuance = String(asked.kind || '');
-  if (!application || !who) {
-    log.debug("Leaving rolesPreview(). Nothing asked.");
-    return null;
-  }
-  if (!rolePreviewer) {
-    log.debug("Leaving rolesPreview(). No previewer.");
-    return { asked: { application: application, subject: who,
-                      subjectKind: kind, kind: issuance },
-             available: false,
-             why: 'The XACML family is not loaded in this process, so there ' +
-                  'is no PDP to ask and nothing is gated: every issuance is ' +
-                  'allowed. That is what issuance_gate.check() answers with ' +
-                  'an empty decider, and it is why a process without the ' +
-                  'engine is a smaller service rather than a broken one.' };
-  }
-  const answer = rolePreviewer.preview({
-    application: application,
-    kind: issuance || undefined,
-    subject: { kind: kind, name: who, authenticated: true }
-  });
-  log.debug("Leaving rolesPreview(). " + (answer.allowed ? 'Permit.' : 'Refused.'));
-  return Object.assign({ asked: { application: application, subject: who,
-                                  subjectKind: kind, kind: issuance },
-                         available: true }, answer);
-}
 
 function rolesBack(listView) {
   return '<input type="hidden" name="back" value="' +
@@ -24222,6 +20635,236 @@ app.post('/admin/roles', function (req, res) {
   log.debug("Leaving the admin roles action endpoint.");
 });
 
+// ---------------------------------------------------------------------------
+// /admin/policies (2026-09-12) — DIRECTORY → POLICIES, and the PASSWORD POLICY
+// is the first kind of policy on it.
+//
+// ONE COMPUTATION, TWO RENDERINGS: `adminViews.passwordPoliciesView()` is the
+// model, this route draws it, and `GET /admin-api/policies` hands the same
+// model back. The two writes are `adminActions.passwordPoliciesAction()`, which
+// `POST /admin-api/policies/{action}` calls too — rule 7 by construction.
+//
+// **THE FORM CARRIES EVERY FIELD**, because a save replaces the whole profile;
+// the action is told it came from the console so that an unticked checkbox —
+// which posts nothing — reads as "no" here and as a refusal from an API caller
+// that forgot one.
+//
+// **THE RESET IS ITS OWN FORM, NOT A SECOND BUTTON IN THE SAVE FORM**, for
+// `/admin/users/new`'s reason: two submit buttons named `action` make
+// `form.elements.action` a RadioNodeList whose value is empty, and the console
+// suite finds every form it presses by the action it posts.
+// ---------------------------------------------------------------------------
+function passwordPolicyFieldRow(field) {
+  const id = 'pp-' + field.key;
+  const hint = tip(field.what, Infinity);
+  let control;
+  if (field.type === 'bool') {
+    control = '<input type="checkbox" id="' + esc(id) + '" name="' +
+      esc(field.key) + '" value="TRUE"' + (field.value ? ' checked' : '') +
+      hint + '>';
+  } else {
+    control = '<input type="number" id="' + esc(id) + '" name="' +
+      esc(field.key) + '" min="' + esc(field.min) + '" max="' + esc(field.max) +
+      '" step="1" required value="' + esc(field.value) + '"' + hint + '> ' +
+      '<span class="sub">' + esc(field.unit) + '</span>';
+  }
+  return '<tr><td><label for="' + esc(id) + '"' + hint + '>' + esc(field.label) +
+    '</label></td><td>' + control + '</td>' +
+    '<td><code>' + esc(field.attribute) + '</code></td>' +
+    '<td>' + esc(field.type === 'bool' ? (field.default ? 'yes' : 'no')
+                                       : String(field.default)) + '</td>' +
+    '<td class="' + (field.source === 'directory' ? '' : 'state-none') + '">' +
+    esc(field.source === 'directory' ? 'this profile' : 'built-in default') +
+    '</td></tr>';
+}
+
+app.get('/admin/policies', function (req, res) {
+  log.debug("Entering the admin policies page.");
+  const view = adminViews.passwordPoliciesView(req.query);
+  const pw = view.password;
+  const profile = pw.profile;
+  const listedNav = pageNavPair('/admin/policies', pageParamsOf(req.query),
+                                pagingOf(req.query, view.paging.total));
+
+  const inner = messagesOf(req) +
+    '<div class="tiles">' +
+      tile(view.kinds.length, 'kind of policy') +
+      tile(view.paging.total, 'password profile') +
+      tile(view.enforced ? 'yes' : 'no', 'enforced in this realm') +
+      tile(profile.stored ? 'stored' : 'built-in', 'the default profile is') +
+    '</div>' +
+
+    note('<strong>A policy here is a rule this realm holds a credential ' +
+    'to.</strong> The first kind is the password policy, and there is one ' +
+    'profile of it — <code>default</code> — which applies to every person in ' +
+    'this realm. It is stored in the directory as <code>' +
+    esc(profile.dn || ('cn=default,ou=passwordPolicies,…')) + '</code>, in the ' +
+    'shape of draft-behera-ldap-password-policy (the schema OpenLDAP\'s ppolicy ' +
+    'overlay reads), so an <code>ldapsearch</code> finds it and an ' +
+    '<code>ldapmodify</code> changes it. <strong>This is not the XACML policy ' +
+    'repository</strong>: <a href="/admin/xacml/policies">that one</a> holds ' +
+    'documents a PDP evaluates, in <code>ou=policies</code>; this holds ' +
+    'numbers every door that sets a password checks.') +
+
+    (view.enforced
+      ? '<div class="ok">' + esc(view.enforcement) + '</div>'
+      : warn(esc(view.enforcement) + ' Switch the realm with ' +
+        '<code>global.mode</code> on <a href="/admin/config">Configuration</a>.')) +
+
+    (profile.problems.length
+      ? warn('<strong>The stored profile has ' + profile.problems.length +
+        ' problem(s), and the built-in default is in force for each ' +
+        'field named:</strong> ' + profile.problems.map(esc).join(' '))
+      : '') +
+
+    '<h2 id="password">Password policy — the default profile</h2>' +
+    note(profile.stored
+      ? 'This profile is <strong>stored</strong> at <code>' + esc(profile.dn) +
+        '</code>. Saving replaces it; putting the defaults back deletes it, ' +
+        'after which the built-in defaults below are in force.'
+      : '<strong>Nothing is stored yet, so the built-in defaults are in ' +
+        'force.</strong> Saving this form writes <code>cn=default</code> under ' +
+        '<code>ou=passwordPolicies</code> in this realm\'s directory. A realm ' +
+        'created later starts with the same built-in defaults rather than a ' +
+        'copy of this one — the profile is not seeded, so it cannot be missing ' +
+        'from a realm nobody seeded.') +
+
+    '<form method="post" action="/admin/policies">' +
+    '<input type="hidden" name="action" value="save-password-policy">' +
+    '<input type="hidden" name="profile" value="' + esc(profile.name) + '">' +
+    wideTable('The default password profile',
+      '<table><tr><th>Rule</th><th>Value</th><th>Attribute</th>' +
+      '<th>Built-in default</th><th>Source</th></tr>' +
+      pw.fields.map(passwordPolicyFieldRow).join('') +
+      '<tr><td><label for="pp-description">Description</label></td>' +
+      '<td colspan="4"><input type="text" id="pp-description" ' +
+      'name="description" size="60" maxlength="1024" value="' +
+      esc(profile.description) + '" placeholder="what this profile is for">' +
+      '</td></tr></table>') +
+    '<p><button>Save the profile</button></p>' +
+    note('Every field is checked before anything is written, and two rules ' +
+    'relate fields to each other: a generated password must be at least the ' +
+    'minimum length, and at least twice the symbol count plus two — a ' +
+    'generator asked for more symbols than that would be drawing for a very ' +
+    'long time. <strong>A change applies to the NEXT password set in this ' +
+    'realm</strong>; nothing already stored is re-checked, because a stored ' +
+    'password is a hash and there is nothing left to check it against.') +
+    '</form>' +
+
+    (profile.stored
+      ? '<form method="post" action="/admin/policies" class="inline">' +
+        '<input type="hidden" name="action" value="reset-password-policy">' +
+        '<input type="hidden" name="profile" value="' + esc(profile.name) + '">' +
+        '<button class="secondary">Put the built-in defaults back</button>' +
+        '</form>'
+      : '') +
+
+    '<h2 id="rules">What a password must be, right now</h2>' +
+    note('The rules as the <a href="/portal/password">user portal</a> and the ' +
+    'activation page print them to the person choosing a password, so the ' +
+    'page they read and the rule this service applies are one sentence.') +
+    '<ul>' + pw.rules.map(function (rule) {
+      return '<li>' + esc(rule) + '</li>';
+    }).join('') + '</ul>' +
+
+    '<h2 id="doors">Where it is enforced</h2>' +
+    note('Every door that sets a password ends in one function in ' +
+    '<code>common/credentials.js</code>, which is what makes the list below ' +
+    'complete rather than a list somebody remembered. ' + esc(pw.notDoors)) +
+    '<table><tr><th>Door</th><th>Reaches</th></tr>' +
+    pw.doors.map(function (row) {
+      return '<tr><td>' + esc(row.door) + '</td><td><code>' + esc(row.via) +
+        '</code></td></tr>';
+    }).join('') + '</table>' +
+
+    '<h2 id="history">The history, and what it costs</h2>' +
+    note('<strong>A remembered password is the scrypt hash it was already ' +
+    'stored as</strong>, moved into <code>pwdHistory</code> on the person\'s ' +
+    'own entry when the next one replaces it — no new hash is made, and the ' +
+    'password itself is never kept. Checking a new password costs one scrypt ' +
+    'comparison per remembered one, about 70ms each on this thread, so a ' +
+    'history of ' + esc(profile.history) + ' is up to ' +
+    esc((profile.history + 1) * 70) + 'ms at a password change. A generated ' +
+    'password skips the comparison, because nothing drawn at random is a ' +
+    'previous password. <code>pwdHistory</code> and <code>pwdChangedTime</code> ' +
+    'are maintained by this service and an LDAP modify naming either is ' +
+    'refused in product mode.') +
+
+    '<h2 id="generator">The generator</h2>' +
+    note('<strong>New users created from the console or <code>/admin-api</code> ' +
+    'get a generated password by default</strong>, shown or returned ONCE. It ' +
+    'is drawn by <code>' + esc(pw.generator.module) + '</code>' +
+    (pw.generator.version ? ' ' + esc(pw.generator.version) : '') + ' from ' +
+    esc(pw.generator.source) + ', using ' + esc(pw.generator.pools.join(', ')) +
+    ' (leaving out ' + pw.generator.excluded.map(function (one) {
+      return '<code>' + esc(one) + '</code>';
+    }).join(' and ') + ', which silently end or change a string pasted into ' +
+    'a shell or a JSON body), and it draws until ' + esc(pw.generator.drawsUntil) +
+    '.') +
+
+    '<h2 id="profiles">Profiles</h2>' +
+    note('One profile today, and the list is paged like every list in this ' +
+    'console. A second profile cannot be created yet: nothing assigns a ' +
+    'profile to a person, so a second one would decide nothing while looking ' +
+    'exactly like one that does.') +
+    listedNav.head +
+    '<table><tr><th>Kind</th><th>Profile</th><th>Stored at</th>' +
+    '<th>Problems</th></tr>' +
+    view.profiles.map(function (row) {
+      return '<tr><td>' + esc(row.kind) + '</td><td><a href="#password">' +
+        esc(row.name) + '</a></td><td>' +
+        (row.stored ? '<code>' + esc(row.dn) + '</code>'
+                    : '<span class="state-none">not stored — built-in ' +
+                      'defaults</span>') +
+        '</td><td>' + esc(String(row.problems.length)) + '</td></tr>';
+    }).join('') + '</table>' +
+    listedNav.foot +
+
+    '<h2 id="schema">Schema</h2>' +
+    note('This directory is schemaless, so a container of entries carrying ' +
+    'invented attributes says what they mean here. The <code>pwd*</code> ' +
+    'names are draft-behera-ldap-password-policy\'s; the <code>stsPwd*</code> ' +
+    'ones are this service\'s own, because the draft delegates composition ' +
+    'rules to the server and defines none.') +
+    '<table><tr><th>Object class</th><th>What it is</th></tr>' +
+    pw.schema.objectClasses.map(function (row) {
+      return '<tr><td><code>' + esc(row.name) + '</code></td><td>' +
+        esc(row.what) + '</td></tr>';
+    }).join('') + '</table>' +
+    '<table><tr><th>Attribute</th><th>On</th><th>What it holds</th></tr>' +
+    pw.schema.attributes.map(function (row) {
+      return '<tr><td><code>' + esc(row.name) + '</code></td><td>the profile</td>' +
+        '<td>' + esc(row.what) + '</td></tr>';
+    }).join('') +
+    pw.schema.personAttributes.map(function (row) {
+      return '<tr><td><code>' + esc(row.name) + '</code></td><td>a person</td>' +
+        '<td>' + esc(row.what) + '</td></tr>';
+    }).join('') + '</table>' +
+
+    note('The same over JSON is <code>/admin/policies?format=json</code> and ' +
+    '<code>GET /admin-api/policies</code>; the two actions on this page are ' +
+    '<code>POST /admin-api/policies/save-password-policy</code> and ' +
+    '<code>/reset-password-policy</code>.');
+
+  respond(req, res, view, 'Policies', '/admin/policies', inner);
+  log.debug("Leaving the admin policies page.");
+});
+
+app.post('/admin/policies', function (req, res) {
+  log.debug("Entering the admin policies action endpoint.");
+  const body = parseBody(req);
+  // The actor is read here rather than inside the action for rolesAction()'s
+  // reason: the management API calls the same function with an actor of its
+  // own, and a function that reached for a cookie would work from one of them.
+  const state = gateStateFor(req);
+  const result = adminActions.passwordPoliciesAction(body, {
+    actor: (state && state.username) || '', via: 'console' });
+  respondToAction(req, res, '/admin/policies' +
+    queryWith(listViewFromBack('/admin/policies', body.back), {}) +
+    (result.ok ? '#password' : ''), result);
+  log.debug("Leaving the admin policies action endpoint.");
+});
+
 app.get('/admin/rbac', function (req, res) {
   log.debug("Entering the admin roles page.");
   const view = rbacView(req);
@@ -24244,170 +20887,6 @@ app.post('/admin/rbac', function (req, res) {
   log.debug("Leaving the admin roles action endpoint.");
 });
 
-// ---------------------------------------------------------------------------
-// GET /admin/claims, POST /admin/claims
-// GET /admin/saml-attributes, POST /admin/saml-attributes
-// ---------------------------------------------------------------------------
-// TWO PAGES, ONE ACTION FUNCTION AND ONE STORE. The four claim sets used to be
-// four sections of /admin/claims; since 2026-08-24 the two JWT sets are there
-// and the two SAML ones are on /admin/saml-attributes, under the console's own
-// SAML group. What did NOT split is anything underneath: `CLAIM_SETS` is one
-// object in admin_stats.js, `setClaimSet()` is the one door onto it, and this
-// one function is what both pages and both /admin-api resources post to. A
-// second action function would have been a second set of rules about reserved
-// names and duplicates that agreed with the first until one of them changed.
-//
-// `names` is the second argument for the same reason vcAction() has one: a list
-// that may appear more than once in a form body is not something
-// helpers.parseBody() can answer, so the caller reads it with listField() and
-// hands it in. It is only read by the `attributes` action; the other six ignore
-// it.
-//
-// `allowed` is the third and it is what makes the SPLIT real rather than
-// cosmetic: it is the set ids the door being knocked on carries, so a POST to
-// /admin/claims naming `saml2` is refused by name instead of quietly changing a
-// set whose page it is not on and then redirecting to a page that cannot show
-// what it did. It defaults to all four, which is what a caller that has not
-// been given a family — nothing today — would get.
-function claimsAction(body, names, allowed) {
-  log.debug("Entering claimsAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const setId = String(body.set || '');
-  const sets = allowed && allowed.length ? allowed : stats.CLAIM_SET_IDS;
-  if (sets.indexOf(setId) < 0) {
-    log.debug("Leaving claimsAction(). No such set here.");
-    return { ok: false, errors: ['There is no claim set called "' + setId + '" here. The ones ' +
-                                 'this door carries are: ' + sets.join(', ') + '.'] };
-  }
-  const label = stats.CLAIM_SETS[setId].label;
-
-  if (action === 'add') {
-    const entry = { name: String(body.name || '').trim(), value: String(body.value == null ? '' : body.value) };
-    if (body.nameFormat) entry.nameFormat = String(body.nameFormat).trim();
-    if (body.namespace) entry.namespace = String(body.namespace).trim();
-    const result = stats.setClaimSet(setId, stats.claimSet(setId).concat([entry]));
-    log.debug("Leaving claimsAction(). add -> ok=" + result.ok);
-    return result.ok
-      ? { ok: true, set: setId, claims: result.claims,
-          message: 'Added "' + entry.name + '" to the ' + label + ' claim set. Every one of those ' +
-                   'issued from now on carries it; nothing already issued changes.' }
-      : result;
-  }
-
-  if (action === 'remove') {
-    const name = String(body.name || '').trim();
-    const remaining = stats.claimSet(setId).filter(function (c) { return c.name !== name; });
-    if (remaining.length === stats.claimSet(setId).length) {
-      log.debug("Leaving claimsAction(). Nothing named that.");
-      return { ok: false, errors: ['The ' + label + ' claim set has no claim called "' + name + '".'] };
-    }
-    const result = stats.setClaimSet(setId, remaining);
-    log.debug("Leaving claimsAction(). remove -> ok=" + result.ok);
-    return result.ok
-      ? { ok: true, set: setId, claims: result.claims,
-          message: 'Removed "' + name + '" from the ' + label + ' claim set.' }
-      : result;
-  }
-
-  if (action === 'clear') {
-    stats.setClaimSet(setId, []);
-    log.debug("Leaving claimsAction(). Cleared.");
-    return { ok: true, set: setId, claims: [],
-             message: 'The ' + label + ' claim set is empty again.' };
-  }
-
-  if (action === 'replace') {
-    let entries = body.claims;
-    if (typeof entries === 'string') {
-      try {
-        entries = JSON.parse(entries || '[]');
-      } catch (e) {
-        log.debug("Leaving claimsAction(). The JSON did not parse.");
-        return { ok: false, errors: ['That is not valid JSON: ' + e.message] };
-      }
-    }
-    if (!Array.isArray(entries)) {
-      log.debug("Leaving claimsAction(). Not an array.");
-      return { ok: false, errors: ['Give a JSON ARRAY of {"name": ..., "value": ...} objects. An ' +
-                                   'empty array clears the set.'] };
-    }
-    const result = stats.setClaimSet(setId, entries);
-    log.debug("Leaving claimsAction(). replace -> ok=" + result.ok);
-    return result.ok
-      ? { ok: true, set: setId, claims: result.claims,
-          message: 'The ' + label + ' claim set now has ' + result.claims.length + ' custom claim(s).' }
-      : result;
-  }
-
-  // ------------------------------------------------------------------------
-  // The three that act on the DIRECTORY ATTRIBUTE half of a set rather than on
-  // the typed claims above.
-  //
-  // They are three actions and not one with a mode, because each is a different
-  // thing to authorise and a different row in the audit log: `attributes`
-  // carries a list somebody chose, and the other two carry nothing and mean the
-  // extremes. A single action taking a list would make "select all" a caller's
-  // job to construct — the whole catalogue in a POST body to say "all of them" —
-  // which is a list that has to be updated every time the catalogue is.
-  //
-  // What the split does NOT do is make an empty `attributes` unambiguous, and it
-  // is worth being plain about that rather than implying otherwise. An empty
-  // list and an absent one both mean "the selection is nothing", so a caller
-  // that misspells the field clears the set. Three things make that recoverable
-  // rather than silent, and they are the reason it is not refused instead: the
-  // reply names every attribute it `removed`, the audit log keeps a row saying
-  // the same, and unticking every box and pressing Update is a legitimate way to
-  // clear a set that a refusal would have to break. `attributes-clear` exists so
-  // that a caller which MEANS it can say so, and so that the console's button
-  // does not depend on submitting an empty form.
-  //
-  // The console's buttons are form posts for the same reason every other control
-  // here is: app.js sets `script-src 'none'` for the whole service, so a
-  // browser-side "tick every box" is not available and would not be taken if it
-  // were — a server-side select-all leaves an audit row, and a scripted one
-  // would leave the boxes ticked and the set unchanged until somebody pressed
-  // Update.
-  // ------------------------------------------------------------------------
-  if (action === 'attributes') {
-    const result = claimAttributes.setSelection(setId, names || [], 'select');
-    log.debug("Leaving claimsAction(). attributes -> ok=" + result.ok);
-    return result.ok
-      ? { ok: true, set: setId, attributes: result.attributes,
-          added: result.added, removed: result.removed,
-          message: 'The ' + label + ' set now carries ' + result.attributes.length +
-                   ' directory attribute(s): ' + (result.attributes.join(', ') || '(none)') +
-                   '. Every one of those issued from now on carries them, with the value on ' +
-                   'that person\'s entry; nothing already issued changes.' }
-      : result;
-  }
-
-  if (action === 'attributes-all') {
-    const result = claimAttributes.selectAll(setId);
-    log.debug("Leaving claimsAction(). attributes-all -> ok=" + result.ok);
-    return result.ok
-      ? { ok: true, set: setId, attributes: result.attributes,
-          added: result.added, removed: result.removed,
-          message: 'The ' + label + ' set now carries every attribute in the catalogue — ' +
-                   result.attributes.length + ' of them. That is a legitimate thing to test ' +
-                   'and it makes a large token; it is not a mistake this page will correct.' }
-      : result;
-  }
-
-  if (action === 'attributes-clear') {
-    const result = claimAttributes.clearSelection(setId);
-    log.debug("Leaving claimsAction(). attributes-clear -> ok=" + result.ok);
-    return result.ok
-      ? { ok: true, set: setId, attributes: [], added: [], removed: result.removed,
-          message: 'The ' + label + ' set carries no directory attribute again. Removed: ' +
-                   (result.removed.join(', ') || 'nothing — it was already empty') + '. The ' +
-                   'typed claims on this set, if any, are untouched.' }
-      : result;
-  }
-
-  log.debug("Leaving claimsAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The seven are: add, remove, ' +
-                               'clear, replace, attributes, attributes-all, attributes-clear.'] };
-}
 
 app.post('/admin/claims', function (req, res) {
   log.debug("Entering the admin claims action endpoint.");
@@ -24439,16 +20918,6 @@ app.post('/admin/saml-attributes', function (req, res) {
   log.debug("Leaving the admin SAML attributes action endpoint.");
 });
 
-// Which person the four tables show values for, and where the page sends itself
-// back to. Capped because the string is echoed, and defaulted to somebody the
-// directory actually holds from startup so a fresh process shows real values
-// rather than an invented person nobody can look up — the same rule and the same
-// default /admin/vc uses, deliberately, so the two pages preview the same person
-// unless somebody says otherwise.
-function claimsPreviewUser(query) {
-  const asked = String((query && query.user) || 'alice').trim();
-  return asked.slice(0, 64) || 'alice';
-}
 
 // The page's own URL with the preview user on it. Every form on this page posts
 // to THIS rather than to the bare path, so that the 303 after an action lands
@@ -24712,100 +21181,8 @@ function groupClaimSection(previewUser) {
         'The entry would be at <code>' + esc(answer.dn) + '</code>.'));
 }
 
-// One family of sets and the rules that govern them. The rules are in the reply
-// and not only on the page because the first thing a caller of POST
-// .../claims/add needs is the list of names it will refuse.
-//
-// TWO CALLERS, ONE BUILDER, for the reason claimsAction() has one: the two
-// pages differ in WHICH sets they carry and in one rule each — the reserved JWT
-// names apply to a token and the default SAML 1.1 namespace to an assertion —
-// and everything else about the reply is the same fact answered twice. Two
-// builders would have been two previews that could disagree about one person,
-// which is precisely the thing every preview here is built through the issuance
-// path to prevent.
-function claimSetsJson(ids, previewUser) {
-  log.debug("Entering claimSetsJson(). " + ids.length + " set(s).");
-  const user = previewUser || 'alice';
-  const json = {
-    placeholders: stats.PLACEHOLDERS,
-    // The catalogue every set chooses from, so a caller can discover the legal
-    // values of `attributes` without reading this service's source or guessing
-    // at LDAP spellings. `sets` says which of the FIVE carries each — all five,
-    // not only the ones in this reply, because the catalogue is one list and a
-    // per-page view of it would answer "which sets carry mail" with half the
-    // truth.
-    attributeCatalogue: claimAttributes.catalogueRows(),
-    // Stated rather than left to be discovered, because the two halves of a set
-    // are one screen apart and the precedence only shows up when both name one
-    // claim.
-    precedence: 'A typed claim wins over a directory attribute of the same name.',
-    sets: ids.map(function (id) {
-      const preview = claimAttributes.previewFor(id, user);
-      return { id: id, label: stats.CLAIM_SETS[id].label,
-               claims: stats.claimSet(id),
-               attributes: claimAttributes.selectedNames(id),
-               // What those attributes would actually put in this set right now,
-               // built by the function the ISSUANCE path calls. A caller with no
-               // browser has no other way to ask "what would this issue", and a
-               // preview built by a second walk of the catalogue would be a
-               // preview that can disagree with the token.
-               attributeClaims: preview.claims,
-               attributeReport: preview.report };
-    }),
-    // Whether the directory holds this person at all, and what every attribute
-    // in the catalogue would say about them — selected or not, so a caller can
-    // see what ticking a box would do before ticking it. Read through
-    // catalogueValuesFor() rather than off one of the previews above, because a
-    // set with nothing selected reports no entry: that is the right answer to
-    // "what does this set carry" and the wrong answer to "is this person in the
-    // directory".
-    preview: Object.assign({ user: user }, claimAttributes.catalogueValuesFor(user)),
-    // The groups claim, which is the one thing here that is not chosen per set:
-    // all five carry it or none does — which is also why it is reported by ALL
-    // THREE pages' replies rather than by the one it was written on. Its settings are
-    // config.js's, so this is a report and there is no operation beside it —
-    // POST /admin-api/config/set is the door, and a second one would be a
-    // second store for one setting.
-    //
-    // `preview` is built by the function the ISSUANCE path calls, for the
-    // reason every other preview here is: a caller with no browser has no other
-    // way to ask "what would this token carry", and a second walk of the
-    // directory would be a preview that can disagree with the token.
-    groups: Object.assign(groupClaims.state(),
-                          { preview: groupClaims.groupsOf(user) })
-  };
-  log.debug("Leaving claimSetsJson(). " + json.sets.length + " set(s).");
-  return json;
-}
 
-// The two JWT sets, and the one rule that is theirs alone: the claim names this
-// service sets itself and refuses. It is in the reply rather than only in the
-// document because the first thing a caller of POST /admin-api/claims/add needs
-// is the list of names it will be refused for.
-function claimsJson(previewUser) {
-  log.debug("Entering claimsJson(). previewUser=" + previewUser);
-  const json = Object.assign(
-    { reservedJwtClaims: stats.RESERVED_JWT_CLAIMS },
-    claimSetsJson(stats.JWT_CLAIM_SET_IDS, previewUser));
-  log.debug("Leaving claimsJson(). " + json.sets.length + " set(s).");
-  return json;
-}
 
-// The two SAML sets, and the one rule that is theirs: the namespace a SAML 1.1
-// attribute gets when nobody names one. THERE IS NO `reservedJwtClaims` HERE
-// and its absence is the honest answer rather than an oversight — that list is
-// enforced for a JWT set only (admin_stats.js's setClaimSet() checks `kind`),
-// because an assertion attribute called `exp` collides with nothing. Reporting
-// it here would have told a caller their call would be refused when it will
-// succeed.
-function samlAttributesJson(previewUser) {
-  log.debug("Entering samlAttributesJson(). previewUser=" + previewUser);
-  const json = Object.assign(
-    { defaultSaml11Namespace: stats.DEFAULT_SAML11_NAMESPACE },
-    claimSetsJson(stats.SAML_CLAIM_SET_IDS, previewUser));
-  log.debug("Leaving samlAttributesJson(). " + json.sets.length + " set(s).");
-  return json;
-}
 
 // ---------------------------------------------------------------------------
 // THE PROSE BOTH PAGES NEED, WRITTEN ONCE.
@@ -25213,16 +21590,6 @@ function userinfoClaimsPageUrl(query) {
     (request ? '&request=' + encodeURIComponent(request) : '');
 }
 
-// The claims request being previewed, as the characters somebody typed. Capped
-// because it is echoed and because it is parsed — and the cap is larger than
-// the other echoed fields on this console for one reason: this one is a JSON
-// document rather than a name, and a cap that truncated a legitimate request
-// would produce a parse error that pointed at this service instead of at the
-// request.
-function claimsRequestParameter(query) {
-  const asked = String((query && query.request) || '').trim();
-  return asked.slice(0, 2048);
-}
 
 app.post('/admin/userinfo-claims', function (req, res) {
   log.debug("Entering the admin UserInfo claims action endpoint.");
@@ -25236,123 +21603,8 @@ app.post('/admin/userinfo-claims', function (req, res) {
   log.debug("Leaving the admin UserInfo claims action endpoint.");
 });
 
-// ---------------------------------------------------------------------------
-// WHAT A CLAIMS REQUEST WOULD RETURN, for the person being previewed.
-//
-// Built by oauth2.js's parseClaimsRequest() and requestedClaimsOf() — the two
-// functions the UserInfo endpoint itself calls — rather than by a second reader
-// of section 5.5 written for this page. The rule is claim_attributes.js's and
-// is not new here: a preview that agreed with the page and disagreed with the
-// endpoint would be worse than no preview at all, and section 5.5 is exactly
-// the kind of thing two implementations would come to disagree about (is `{}`
-// the same as `null`? does an unknown top-level member refuse?).
-//
-// A MALFORMED REQUEST IS SHOWN AS AN ERROR AND IS NOT AN ERROR ON THE PAGE. The
-// endpoint answers `invalid_request` for the same string, so what this shows is
-// the refusal a client would get — which is the thing somebody is here to see.
-// ---------------------------------------------------------------------------
-function claimsRequestPreview(previewUser, raw) {
-  log.debug("Entering claimsRequestPreview(). user=" + previewUser);
-  if (!raw) {
-    log.debug("Leaving claimsRequestPreview(). Nothing was asked for.");
-    return { asked: false };
-  }
-  const parsed = oauth2.parseClaimsRequest(raw);
-  if (parsed.error) {
-    log.debug("Leaving claimsRequestPreview(). " + parsed.error);
-    return { asked: true, ok: false, error: parsed.error, request: raw };
-  }
-  const answer = oauth2.requestedClaimsOf(parsed.claims, 'userinfo', previewUser,
-                                          userFor(previewUser));
-  log.debug("Leaving claimsRequestPreview(). " + answer.report.length + " claim(s) resolved.");
-  return { asked: true, ok: true, request: raw, parsed: parsed.claims,
-           ignoredMembers: parsed.ignored || [],
-           idTokenNames: oauth2.requestedClaimNames(parsed.claims, 'id_token'),
-           claims: answer.claims, report: answer.report, unresolvable: answer.unknown,
-           essentialAndAbsent: answer.missingEssential, valueMismatches: answer.mismatched,
-           entryFound: answer.entryFound };
-}
 
-// The section 5.5 half of the page, and of the API's reply. It is one builder
-// for both, for the reason claimSetsJson() is: the vocabulary a client may ask
-// for is the thing a caller with no browser most needs, and a list published by
-// the page that the API answered differently would be two answers to one
-// question.
-function claimsRequestJson(previewUser, raw) {
-  log.debug("Entering claimsRequestJson().");
-  const json = {
-    supported: true,
-    members: oauth2.CLAIMS_REQUEST_MEMBERS.slice(0),
-    maxClaims: oauth2.MAX_REQUESTED_CLAIMS,
-    // Every name a request may use, in the two spellings the resolver indexes:
-    // the flat claim name of each catalogue row, and the top-level name of a
-    // nested one (`address`), which is the spelling section 5.5.1's own example
-    // uses and which returns the whole Address Claim of OIDC Core 5.1.1.
-    requestable: claimAttributes.requestableClaims(),
-    // The six this service invents from the username rather than reading off an
-    // entry. They are answerable too, and they are listed separately because
-    // the DIFFERENCE is the interesting part: an `ldapmodify` moves everything
-    // in `requestable` and moves none of these.
-    fromTheSignIn: oauth2.PERSONA_CLAIMS.slice(0),
-    precedence: [
-      'the configured UserInfo set on this page (typed claims, ticked directory ' +
-        'attributes, the groups claim)',
-      'OIDC Core 5.4\'s scope-driven claims (profile, email)',
-      'OIDC Core 5.5\'s individually requested claims, read off ou=users',
-      'sub, which no layer may displace (OIDC Core 5.3.2)'
-    ],
-    notEnforced: [
-      '`essential` is carried and is a hint: section 5.5.1 says a server MUST NOT ' +
-        'error because a requested claim is unavailable, so an essential claim ' +
-        'this service cannot produce is simply absent and is logged.',
-      '`value` and `values` are CHECKED and not honoured. This service could echo ' +
-        'back whatever a client asked it to assert and deliberately does not — ' +
-        'everything it says about a person comes from the directory or from the ' +
-        'invented persona, and a mock that agreed with the request could not be ' +
-        'used to test anything. A mismatch is reported in the log and in the ' +
-        'response\'s artifact.',
-      'A claims request IS filtered by the federation release policy, exactly as a ' +
-        'custom claim set is. The list is about what an audience may see rather ' +
-        'than about which mechanism produced the value, so a partner released ' +
-        '`email` alone cannot ASK for `birthdate` and be given it — which is ' +
-        'precisely the hole a release list exists to close.'
-    ],
-    // NON-SPEC, and labelled in the reply rather than only on the page: a caller
-    // reading this document is exactly the caller who would otherwise have to
-    // run a browser flow per variation.
-    directParameter: {
-      note: 'NON-SPEC. The UserInfo endpoint also accepts a claims request on ' +
-            'the request itself, which section 5.3.1 does not define — it takes ' +
-            'an access token and nothing else. It exists because exercising ' +
-            'section 5.5 through the specified route means a whole authorization ' +
-            'flow per variation. It is a UNION with what the access token ' +
-            'carries and can never take a claim away from it.',
-      spellings: ['GET /oauth2/userinfo?claims={"userinfo":{"birthdate":null}}',
-                  'GET /oauth2/userinfo?claim=birthdate&claim=address',
-                  'POST /oauth2/userinfo with the same two, form-encoded'],
-      malformedIsRefused: 'invalid_request, with the reason. Ignoring a ' +
-                          'debugging parameter that was typed wrong would ' +
-                          'produce the same response as one never sent.'
-    },
-    preview: claimsRequestPreview(previewUser, raw)
-  };
-  log.debug("Leaving claimsRequestJson().");
-  return json;
-}
 
-// The one UserInfo set, the rules that are its own, and the section 5.5 half.
-// `reservedJwtClaims` IS here, unlike the SAML page's reply, and the reason is
-// in the page header: every name on that list is load-bearing in at least one
-// of this response's two shapes.
-function userinfoClaimsJson(previewUser, raw) {
-  log.debug("Entering userinfoClaimsJson(). previewUser=" + previewUser);
-  const json = Object.assign(
-    { reservedJwtClaims: stats.RESERVED_JWT_CLAIMS,
-      claimsRequest: claimsRequestJson(previewUser, raw) },
-    claimSetsJson(stats.USERINFO_CLAIM_SET_IDS, previewUser));
-  log.debug("Leaving userinfoClaimsJson(). " + json.sets.length + " set(s).");
-  return json;
-}
 
 // The "what would this request return" form and its answer. A GET form onto the
 // page's own path, exactly as the preview-user form is and for the same reason:
@@ -25615,98 +21867,7 @@ function listField(req, body, name) {
   return out;
 }
 
-// The sweep's outcome as a sentence, appended to whatever message the action
-// itself produced. It is stated on EVERY selection change, including the ones that
-// changed nothing in the directory, because "0 entries gained anything" and "there
-// is no directory here" are different facts and the page must not read the same
-// for both.
-function sweepText(sweep) {
-  if (!sweep.loaded) {
-    return ' The embedded directory is not loaded, so no entry was populated; ' +
-           'credentials still carry these claims, generated per user.';
-  }
-  if (!sweep.ok) {
-    return ' The directory could not be populated: ' + (sweep.errors || []).join(' ');
-  }
-  return ' Swept ' + sweep.examined + ' directory entry/entries; ' + sweep.changed +
-         ' of them gained ' + sweep.values + ' value(s).';
-}
 
-function vcAction(body, names) {
-  log.debug("Entering vcAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const current = vcClaims.selectedNames();
-
-  if (action === 'select' || action === 'replace') {
-    // `replace` is the same operation under the name a test would look for, and
-    // the same name /admin/claims uses for "here is the whole set at once".
-    const result = vcClaims.setSelection(names);
-    if (!result.ok) {
-      log.debug("Leaving vcAction(). The selection was refused.");
-      return result;
-    }
-    const sweep = vcClaims.populateDirectory();
-    log.debug("Leaving vcAction(). Selected " + result.selected.length + " attribute(s).");
-    return { ok: true, selected: result.selected, added: result.added, removed: result.removed,
-             sweep: sweep,
-             message: 'A credential issued from now on carries ' + result.selected.length +
-                      ' claim(s). Added: ' + (result.added.join(', ') || 'nothing') +
-                      '. Removed: ' + (result.removed.join(', ') || 'nothing') + '.' +
-                      sweepText(sweep) };
-  }
-
-  if (action === 'add' || action === 'remove') {
-    const name = String(body.attribute || body.name || '').trim();
-    if (!name) {
-      log.debug("Leaving vcAction(). No attribute was named.");
-      return { ok: false, errors: ['Name the attribute to ' + action + '.'] };
-    }
-    const lower = name.toLowerCase();
-    const already = current.some(function (n) { return n.toLowerCase() === lower; });
-    if (action === 'add' && already) {
-      log.debug("Leaving vcAction(). Already selected.");
-      return { ok: false, errors: ['"' + name + '" is already in the claim set.'] };
-    }
-    if (action === 'remove' && !already) {
-      log.debug("Leaving vcAction(). Not selected.");
-      return { ok: false, errors: ['"' + name + '" is not in the claim set.'] };
-    }
-    const wanted = action === 'add' ? current.concat([name])
-                                    : current.filter(function (n) { return n.toLowerCase() !== lower; });
-    const result = vcClaims.setSelection(wanted);
-    if (!result.ok) {
-      log.debug("Leaving vcAction(). The attribute was refused.");
-      return result;
-    }
-    const sweep = vcClaims.populateDirectory();
-    log.debug("Leaving vcAction(). " + action + " -> " + result.selected.length + " selected.");
-    return { ok: true, selected: result.selected, sweep: sweep,
-             message: (action === 'add' ? 'Added ' : 'Removed ') + name +
-                      '. A credential issued from now on carries ' + result.selected.length +
-                      ' claim(s).' + sweepText(sweep) };
-  }
-
-  if (action === 'defaults') {
-    const result = vcClaims.resetSelection();
-    const sweep = vcClaims.populateDirectory();
-    log.debug("Leaving vcAction(). Restored the defaults.");
-    return { ok: true, selected: result.selected, sweep: sweep,
-             message: 'The claim set is the default ' + result.selected.length +
-                      ' attribute(s) again — the six claims this issuer carried before this ' +
-                      'page existed.' + sweepText(sweep) };
-  }
-
-  if (action === 'populate') {
-    const sweep = vcClaims.populateDirectory();
-    log.debug("Leaving vcAction(). Populated only.");
-    return { ok: sweep.ok, errors: sweep.errors, selected: current, sweep: sweep,
-             message: 'Populated the directory for the current claim set.' + sweepText(sweep) };
-  }
-
-  log.debug("Leaving vcAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The five are: select, add, ' +
-                               'remove, defaults, populate.'] };
-}
 
 app.post('/admin/vc', function (req, res) {
   log.debug("Entering the admin credential-claims action endpoint.");
@@ -25820,35 +21981,7 @@ function vcPreviewSection(previewUser) {
       : '');
 }
 
-// Somebody the directory actually holds, so the page shows real values on a
-// fresh start rather than an invented person nobody can look up. The parameter
-// wins where it is given; the cap is there because this string is echoed.
-function vcPreviewUser(query) {
-  const asked = String((query && query.user) || 'alice').trim();
-  return asked.slice(0, 64) || 'alice';
-}
 
-// The catalogue, the selection, and one person's claims as they would be minted
-// right now. The preview is in the JSON as well as on the page because "what
-// would this issue" is the question the selection exists to answer, and a
-// caller with no browser has no other way to ask it.
-function vcJson(previewUser) {
-  log.debug("Entering vcJson(). previewUser=" + previewUser);
-  const json = {
-    selected: vcClaims.selectedNames(),
-    defaults: vcClaims.DEFAULT_SELECTION,
-    ldpOmitted: vcClaims.ldpOmitted(),
-    attributes: vcClaims.VC_ATTRIBUTES.map(function (row) {
-      return { ldap: row.ldap, claim: row.claim.join('.'), label: row.label,
-               schema: row.schema, ldpTerm: row.ldpTerm || '',
-               selected: vcClaims.isSelected(row.ldap) };
-    }),
-    preview: { user: previewUser,
-               claims: vcClaims.subjectClaimsFor(previewUser, {}) }
-  };
-  log.debug("Leaving vcJson().");
-  return json;
-}
 
 app.get('/admin/vc', function (req, res) {
   log.debug("Entering the admin credential-claims page.");
@@ -25909,108 +22042,6 @@ app.get('/admin/vc', function (req, res) {
 });
 
 
-// ---------------------------------------------------------------------------
-// GET /admin/vc-verifier-config, POST /admin/vc-verifier-config
-//
-// WHAT THE BAR DOOR ASKS FOR — the other end of the page above. /admin/vc decides
-// what an issued credential CARRIES; this decides what the Verifier at
-// /oid4vp/verifier ASKS FOR, and the two are deliberately separate settings
-// because the interesting states are the ones where they disagree. A Verifier
-// asking for a claim the issuer is not minting is the negative that exercises a
-// wallet's "I cannot satisfy this request" path, and there is no way to reach it
-// if one page sets both.
-//
-// The catalogue is vc_claims.js's, grouped into CLAIMS rather than listed as
-// attribute types, and vc_verifier_config.js says at length why: a credential
-// carries one Disclosure per top-level claim, so `address` is one unit of
-// disclosure however many attribute types feed it. Offering six address
-// checkboxes would offer a choice that does not exist on the wire.
-//
-// It is the third page here that changes what a protocol endpoint does, and the
-// only one whose effect is visible in a document this service SENDS rather than
-// in one it issues — the dcql_query in the next Authorization Request.
-// ---------------------------------------------------------------------------
-function vpConfigAction(body, names) {
-  log.debug("Entering vpConfigAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-
-  if (action === 'select' || action === 'replace') {
-    // An empty list is a legitimate save and not an empty form: DCQL with no
-    // `claims` member asks for the WHOLE credential, so unticking everything is
-    // how somebody tests that. It is stated in the message rather than left to be
-    // discovered from a presentation that disclosed everything.
-    const result = vpConfig.setRequested(names);
-    if (!result.ok) {
-      log.debug("Leaving vpConfigAction(). The selection was refused.");
-      return result;
-    }
-    log.debug("Leaving vpConfigAction(). " + result.requested.length + " claim(s) requested.");
-    return { ok: true, requested: result.requested, added: result.added, removed: result.removed,
-             message: result.requested.length
-               ? 'The next Authorization Request asks for ' + result.requested.length +
-                 ' claim(s): ' + result.requested.join(', ') + '. Added: ' +
-                 (result.added.join(', ') || 'nothing') + '. Removed: ' +
-                 (result.removed.join(', ') || 'nothing') + '.'
-               : 'The next Authorization Request names no claims at all, which in DCQL asks for ' +
-                 'the WHOLE credential — the query carries no claims member. Removed: ' +
-                 (result.removed.join(', ') || 'nothing') + '.' };
-  }
-
-  if (action === 'add') {
-    const name = String(body.claim || body.name || '').trim();
-    const result = vpConfig.addRequested(name);
-    if (!result.ok) {
-      log.debug("Leaving vpConfigAction(). The claim was refused.");
-      return result;
-    }
-    const known = vpConfig.rowFor(name);
-    log.debug("Leaving vpConfigAction(). Added " + name + ".");
-    return { ok: true, requested: result.requested,
-             message: 'Now asking for ' + name + '.' + (known ? '' :
-               ' It is not in the catalogue, so no credential this service issues carries it — ' +
-               'which is what makes it a test of what your wallet does with a request it cannot ' +
-               'satisfy. This Verifier will refuse the presentation on the "Requested claims" ' +
-               'check and name it.') };
-  }
-
-  if (action === 'remove') {
-    const name = String(body.claim || body.name || '').trim();
-    const result = vpConfig.removeRequested(name);
-    if (!result.ok) {
-      log.debug("Leaving vpConfigAction(). Nothing named that.");
-      return result;
-    }
-    log.debug("Leaving vpConfigAction(). Removed " + name + ".");
-    return { ok: true, requested: result.requested,
-             message: 'No longer asking for ' + name + '.' };
-  }
-
-  if (action === 'defaults') {
-    const result = vpConfig.resetRequested();
-    log.debug("Leaving vpConfigAction(). Restored the startup request.");
-    return { ok: true, requested: result.requested,
-             message: 'Back to what this process started with: ' +
-                      (result.requested.join(', ') || '(no claims)') + '. That is OID4VP_CLAIMS ' +
-                      'where it was set and given_name, family_name where it was not.' };
-  }
-
-  if (action === 'format') {
-    const result = vpConfig.setDefaultFormat(String(body.format || ''));
-    if (!result.ok) {
-      log.debug("Leaving vpConfigAction(). No such format.");
-      return result;
-    }
-    log.debug("Leaving vpConfigAction(). Default format is " + result.format + ".");
-    return { ok: true, format: result.format,
-             message: 'A request that does not name a format now asks for a ' + result.format +
-                      ' credential. The three format links on the bar door name one explicitly ' +
-                      'and are unaffected.' };
-  }
-
-  log.debug("Leaving vpConfigAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The five are: select, add, ' +
-                               'remove, defaults, format.'] };
-}
 
 app.post('/admin/vc-verifier-config', function (req, res) {
   log.debug("Entering the admin verifier-request action endpoint.");
@@ -26174,41 +22205,6 @@ function vpFormatsSection(format) {
     'text box on this page.');
 }
 
-// What the bar door asks for, and the dcql_query that carries it. The query is
-// built by the function that builds the REAL one — see the note in
-// vc_verifier_config.js — so a caller reading this reply is reading the next
-// Authorization Request rather than a description of one.
-function vpConfigJson() {
-  log.debug("Entering vpConfigJson().");
-  const format = vpConfig.defaultFormatId();
-  const json = {
-    requested: vpConfig.requestedClaims(),
-    defaults: vpConfig.defaultRequested(),
-    format: format,
-    formats: vpConfig.FORMATS.map(function (item) {
-      return { id: item.id, label: item.label, identifiedBy: item.identifiedBy,
-               identifier: item.identifier,
-               selectiveDisclosure: item.selectiveDisclosure,
-               holderBinding: item.holderBinding,
-               configurations: item.configs };
-    }),
-    ldpOmitted: vpConfig.ldpOmitted(),
-    catalogue: vpConfig.REQUESTABLE.map(function (row) {
-      return { claim: row.claim, label: row.label, nested: row.nested,
-               attributes: row.members.map(function (member) {
-                 return { ldap: member.ldap, schema: member.schema };
-               }),
-               ldpTerms: row.ldpTerms,
-               paths: vpConfig.dcqlPathsFor(format, row.claim),
-               requested: vpConfig.isRequested(row.claim),
-               issued: vpConfig.carriedNow(row.claim) };
-    }),
-    dcqlQuery: vpConfig.dcqlQuery(format)
-  };
-  log.debug("Leaving vpConfigJson(). Asking for " + json.requested.length +
-            " claim(s).");
-  return json;
-}
 
 app.get('/admin/vc-verifier-config', function (req, res) {
   log.debug("Entering the admin verifier-request page.");
@@ -26342,88 +22338,9 @@ const REALMS_CAVEAT =
       'registry and each realm\'s directory down. The KEYS are regenerated on every start ' +
       'either way.'));
 
-// The base URL of this service WITHOUT any realm prefix. Every URL this page
-// prints is built from it, because a page read inside `acme` still has to be
-// able to name `default`'s endpoints — and baseUrlOf() adds the ambient prefix
-// by design.
-function realmRootUrl(req) {
-  const withRealm = baseUrlOf(req);
-  return withRealm.slice(0, withRealm.length - realms.currentPrefix().length);
-}
 
-// What a realm sets, as rows. `config.describe()` is not used here and the
-// reason is worth a line: describing a setting means RESOLVING it, and resolving
-// it answers for the realm that is ambient rather than for the realm being
-// listed. So the raw value the realm carries is shown, beside what that setting
-// is called — which is what a person checking a realm's configuration is
-// actually reading.
-function realmSettingRows(realm) {
-  log.debug("Entering realmSettingRows(). realm=" + realm.id);
-  const rows = Object.keys(realm.overrides).sort().map(function (key) {
-    const setting = configSettingFor(key);
-    return { key: key, value: String(realm.overrides[key]),
-             label: setting ? setting.label : key,
-             group: setting ? setting.group : '' };
-  });
-  log.debug("Leaving realmSettingRows(). " + rows.length + " setting(s).");
-  return rows;
-}
 
-// One realm as JSON. The same shape the list and the drill-down both answer
-// with, and the same shape GET /admin-api/realms answers with, so that a test
-// reading one has read all three.
-function realmJson(req, realm) {
-  const prefix = realms.prefixOf(realm);
-  const base = realmRootUrl(req) + prefix;
-  return {
-    id: realm.id,
-    name: realm.name,
-    description: realm.description,
-    builtin: !!realm.builtin,
-    pathPrefix: prefix,
-    baseUrl: base,
-    // The kid of the realm's signing key. It is the one fact on this page that
-    // PROVES the realms are separate rather than asserting it — two realms
-    // showing one kid would be two names for one authorization server.
-    //
-    // Reading it MINTS it for a realm that has not signed anything yet, which is
-    // a 2048-bit RSA generation and about a tenth of a second. That is accepted
-    // deliberately: a console page that could not show a realm's key identifier
-    // until something had used the realm would be showing a blank for exactly
-    // the realm somebody had just created and was checking.
-    kid: stsKeysFor.of(realm.id).kid,
-    settings: realmSettingRows(realm),
-    // The four a client asks for first, in this realm.
-    endpoints: {
-      openidConfiguration: base + '/.well-known/openid-configuration',
-      authorizationServerMetadata: base + '/.well-known/oauth-authorization-server',
-      jwks: base + '/oauth2/jwks',
-      samlMetadata: base + '/saml2/metadata'
-    }
-  };
-}
 
-function realmsJson(req) {
-  log.debug("Entering realmsJson().");
-  const out = {
-    // The SETTING, and whether any prefix is actually answering. They differ in
-    // the one case that matters — the feature on with no realm defined — and a
-    // single flag reported that as "off". See GET /realms, which answers the
-    // same pair.
-    enabled: config.value('realms.enabled'),
-    active: realms.active(),
-    pathSegment: realms.pathSegment(),
-    current: realms.currentId(),
-    // The ids a realm may not be called, read off the live router. It is here
-    // rather than only in the refusal because somebody choosing a name wants to
-    // know before they type it, not after.
-    reserved: realms.reserved().sort(),
-    realms: realms.list().map(function (realm) { return realmJson(req, realm); }),
-    support: realms.realmSupport()
-  };
-  log.debug("Leaving realmsJson(). " + out.realms.length + " realm(s).");
-  return out;
-}
 
 // HOW a family is separated, in the words the row itself carries. This used to
 // print the literal "by path" for every `full` row, which was true of all of
@@ -26563,7 +22480,7 @@ function realmDetailPage(req, wanted) {
   const realm = realms.get(wanted);
   if (!realm) {
     log.debug("Leaving realmDetailPage(). No such realm.");
-    return { json: { error: 'no_such_realm', realm: wanted },
+    return { missing: true, json: { error: 'no_such_realm', realm: wanted },
              inner: '<div class="err">No realm called <code>' + esc(wanted) +
                     '</code> is defined. <a href="/admin/realms">The list</a> ' +
                     'is what there is.</div>' };
@@ -26671,121 +22588,6 @@ function realmDetailPage(req, wanted) {
   return { json: json, inner: inner };
 }
 
-// The four writes. One function, the way every other page here has one, so that
-// the console form and POST /admin-api/realms cannot come to disagree about what
-// "remove" means.
-function realmsAction(body) {
-  log.debug("Entering realmsAction(). action=" + (body && body.action));
-  const action = String((body && body.action) || '').trim();
-  const id = String((body && body.id) || '').trim();
-
-  if (action === 'create') {
-    // `overrides` IS PASSED THROUGH, and until 2026-08-25 it was not. The
-    // management API documents the field, gives it an example
-    // (`{"saml2.entityId": "urn:acme:idp"}`) and says it wins over the six
-    // seeded names — and this function built its argument out of three
-    // properties and dropped the fourth, so a create carrying overrides
-    // answered 200 and made a realm configured differently from the one that
-    // was asked for. Nothing could have shown it: `realms.create()` validates
-    // and merges overrides properly, the console's own form has no such field,
-    // and a silently ignored parameter has no failure to point at.
-    //
-    // It is `undefined` rather than `{}` when nobody sent one, because
-    // `create()` distinguishes them: an empty object is still merged over the
-    // seeded names — harmlessly, but the intent is "the caller sent nothing".
-    const result = realms.create({ id: id.toLowerCase(), name: body.name,
-                                   description: body.description,
-                                   overrides: body.overrides });
-    if (!result.ok) {
-      log.debug("Leaving realmsAction(). create refused.");
-      return result;
-    }
-    log.debug("Leaving realmsAction(). create ok, " +
-              Object.keys(result.realm.overrides).length + " setting(s).");
-    return { ok: true, realm: result.realm.id,
-             message: 'The realm "' + result.realm.id + '" is defined. Every ' +
-                      'HTTP endpoint this service has now answers under ' +
-                      realms.prefixOf(result.realm) + '/ as well, with its own ' +
-                      'signing key and nothing issued yet.' };
-  }
-
-  if (action === 'update') {
-    const result = realms.update(id, { name: body.name, description: body.description });
-    if (!result.ok) {
-      log.debug("Leaving realmsAction(). update refused.");
-      return result;
-    }
-    log.debug("Leaving realmsAction(). update ok.");
-    return { ok: true, realm: id, message: 'Saved.' };
-  }
-
-  if (action === 'set') {
-    const key = String(body.key || '').trim();
-    const result = realms.setOverride(id, key, body.value);
-    if (!result.ok) {
-      log.debug("Leaving realmsAction(). set refused.");
-      return result;
-    }
-    log.debug("Leaving realmsAction(). set ok.");
-    return { ok: true, realm: id, key: key,
-             message: key + ' is set on the "' + id + '" realm. It applies to ' +
-                      'the next request that arrives under that realm\'s prefix, ' +
-                      'and to nothing else.' };
-  }
-
-  if (action === 'unset') {
-    const key = String(body.key || '').trim();
-    const result = realms.clearOverride(id, key);
-    if (!result.ok) {
-      log.debug("Leaving realmsAction(). unset refused.");
-      return result;
-    }
-    log.debug("Leaving realmsAction(). unset ok.");
-    return { ok: true, realm: id, key: key,
-             message: key + ' is no longer set on the "' + id + '" realm; it ' +
-                      'comes from whatever this service as a whole is ' +
-                      'configured with.' };
-  }
-
-  if (action === 'remove') {
-    // ------------------------------------------------------------------
-    // A REALM MAY NOT REMOVE ITSELF, and this is the one refusal here that is
-    // about the request rather than about the realm.
-    //
-    // The response to this POST is a 303 back to /admin/realms — a path that
-    // app.js is about to rewrite into the realm that is being deleted, because
-    // that is the realm the request arrived in. The reader would be redirected
-    // into a prefix that had stopped existing one instruction earlier and would
-    // meet `Cannot GET`. Everything else about the removal would have worked,
-    // which is what makes it worth refusing rather than fixing: the fix is to
-    // do it from another realm, and that is a sentence rather than a special
-    // case in the redirect.
-    // ------------------------------------------------------------------
-    if (id && id === realms.currentId()) {
-      log.debug("Leaving realmsAction(). A realm may not remove itself.");
-      return { ok: false, errors: ['This request arrived inside the "' + id +
-        '" realm, so removing it would leave the caller on a path that no ' +
-        'longer exists — the console would be redirected into a prefix that ' +
-        'had stopped existing one instruction earlier. Do it from another ' +
-        'realm: the switcher at the top of the console sidebar, or the same ' +
-        'call under a different prefix.'] };
-    }
-    const result = realms.remove(id);
-    if (!result.ok) {
-      log.debug("Leaving realmsAction(). remove refused.");
-      return result;
-    }
-    log.debug("Leaving realmsAction(). remove ok.");
-    return { ok: true, realm: id,
-             message: 'The realm "' + id + '" is gone, with its sessions, its ' +
-                      'tokens, its statistics, its audit log and its signing ' +
-                      'key. Nothing was removed from the shared directory.' };
-  }
-
-  log.debug("Leaving realmsAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The five are: ' +
-    'create, update, set, unset, remove.'] };
-}
 
 function realmsView(req) {
   log.debug("Entering realmsView().");
@@ -26793,7 +22595,7 @@ function realmsView(req) {
   if (wanted) {
     const detail = realmDetailPage(req, wanted);
     log.debug("Leaving realmsView(). The drill-down.");
-    return { json: detail.json, inner: detail.inner,
+    return { missing: !!detail.missing, json: detail.json, inner: detail.inner,
              title: 'Trust realm ' + wanted,
              up: upTo('/admin/realms', wanted, listViewOf('/admin/realms', req.query)) };
   }
@@ -26837,9 +22639,13 @@ app.get('/admin/realm-switch', function (req, res) {
   // slash, no scheme, and short enough not to be a place to hide one.
   const path = (/^\/(?!\/)[^\s]*$/.test(asked) && asked.length <= 2000) ?
     asked : '/admin';
+  if (asked && path !== asked) {
+    errorCodes.mark(res, 'STS-ADMIN-0022');
+  }
   if (!target) {
     log.debug("Leaving the admin realm switch endpoint. No such realm " +
       JSON.stringify(wanted) + ".");
+    errorCodes.mark(res, 'STS-ADMIN-0020');
     res.set('Cache-Control', 'no-store')
        .redirect(303, realmRoot(req) + realms.currentPrefix() + path);
     return;
@@ -26852,6 +22658,9 @@ app.get('/admin/realm-switch', function (req, res) {
 app.get('/admin/realms', function (req, res) {
   log.debug("Entering the admin trust realms page.");
   const view = realmsView(req);
+  if (view.missing) {
+    errorCodes.mark(res, 'STS-ADMIN-0021');
+  }
   respond(req, res, view.json, view.title, '/admin/realms', view.inner, view.up);
   log.debug("Leaving the admin trust realms page.");
 });
@@ -27043,6 +22852,14 @@ function configSettingsJson(path) {
   log.debug("Leaving configSettingsJson(). " + json.settingCount + " setting(s).");
   return json;
 }
+
+// THE SIXTH THING THE READ LAYER IS HANDED, and the only one that is not an
+// inverted hook: `scimJson()` embeds this console's settings block in its
+// answer, and the alternative was for the page and /admin-api/scim to
+// assemble that block separately — which is the drift rule 7 exists to
+// prevent. It is handed over at require time because it is defined here and
+// never replaced.
+adminViews.setConfigSettingsJson(configSettingsJson);
 
 // The other pages a group of these settings is also drawn on, as a sentence, or
 // '' when there are none. Only `SAML` has any today; the sentence is derived so
@@ -27322,112 +23139,8 @@ function configSection(group, from) {
     rows + '</table>' + save + '</form>';
 }
 
-// The action switch. `set` and `reset` name one setting; `set-many` is what a
-// section's Save posts, and it is not a convenience — a section is how a person
-// changes configuration, and turning that into one call per field would make a
-// partly-applied section the ordinary outcome of a mistake in any one of them.
-// So set-many is ALL-OR-NOTHING: every field is checked before any is written.
-function configAction(body) {
-  log.debug("Entering configAction(). action=" + (body && body.action));
-  const action = String((body && body.action) || '').trim();
 
-  if (action === 'set') {
-    const key = String(body.key || '').trim();
-    const result = config.setOverride(key, body.value);
-    if (!result.ok) {
-      log.debug("Leaving configAction(). set refused.");
-      return result;
-    }
-    log.debug("Leaving configAction(). set ok.");
-    return { ok: true, key: key, setting: config.describe(configSettingFor(key)),
-             message: key + ' is now "' + config.text(key) + '". It applies to ' +
-                      'the next token, assertion, ticket or search, and is gone ' +
-                      'on restart.' };
-  }
 
-  if (action === 'set-many') {
-    // Only the keys this service knows and that were actually posted. A form
-    // posts its disabled inputs not at all, so a section holding restart-only
-    // rows submits the editable ones and nothing else — which is why an absent
-    // key is silently skipped rather than treated as an attempt to clear it.
-    const wanted = Object.keys(body).filter(function (name) {
-      return name !== 'action' && configKnows(name);
-    });
-    if (!wanted.length) {
-      log.debug("Leaving configAction(). set-many named nothing.");
-      return { ok: false, errors: ['No settings were posted. Every name must be ' +
-        'one of the keys GET /admin/config?format=json lists.'] };
-    }
-    // Checked first, every one of them, and only then written. A section that
-    // applied its first three fields and refused the fourth would leave the
-    // service in a state nobody asked for and the page showing it.
-    const errors = [];
-    wanted.forEach(function (key) {
-      const problem = config.checkOverride(key, body[key]);
-      if (problem) errors.push(problem);
-    });
-    if (errors.length) {
-      log.debug("Leaving configAction(). set-many refused: " + errors.length + " problem(s).");
-      return { ok: false, errors: errors };
-    }
-    const changed = [];
-    wanted.forEach(function (key) {
-      const before = config.text(key);
-      config.setOverride(key, body[key]);
-      if (config.text(key) !== before) changed.push(key);
-    });
-    log.debug("Leaving configAction(). set-many ok, " + changed.length + " changed.");
-    return { ok: true, applied: wanted, changed: changed,
-             settings: wanted.map(function (key) {
-               return config.describe(configSettingFor(key));
-             }),
-             message: changed.length
-               ? changed.length + ' setting(s) changed: ' + changed.join(', ') +
-                 '. Gone on restart.'
-               : 'Nothing changed — every value posted was the one already in force.' };
-  }
-
-  if (action === 'reset') {
-    const key = String(body.key || '').trim();
-    const result = config.clearOverride(key);
-    if (!result.ok) {
-      log.debug("Leaving configAction(). reset refused.");
-      return result;
-    }
-    log.debug("Leaving configAction(). reset ok.");
-    return { ok: true, key: key, setting: config.describe(configSettingFor(key)),
-             message: key + ' is back to its ' + config.sourceOf(key) + ' value, "' +
-                      config.text(key) + '".' };
-  }
-
-  if (action === 'reset-all') {
-    const result = config.clearAllOverrides();
-    log.debug("Leaving configAction(). reset-all ok.");
-    return { ok: true, cleared: result.cleared,
-             message: result.cleared.length
-               ? result.cleared.length + ' runtime override(s) cleared: ' +
-                 result.cleared.join(', ') + '.'
-               : 'There were no runtime overrides to clear.' };
-  }
-
-  log.debug("Leaving configAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The four are: ' +
-    'set, set-many, reset, reset-all.'] };
-}
-
-// Whether this service has a setting of that name. Asked before `describe()`,
-// which throws on an unknown key by design — the throw is right for a caller
-// that has a key it believes in, and wrong for a form body whose field names
-// arrived from outside.
-function configKnows(key) {
-  return config.SETTINGS.some(function (setting) { return setting.key === key; });
-}
-
-function configSettingFor(key) {
-  return config.SETTINGS.filter(function (setting) {
-    return setting.key === key;
-  })[0];
-}
 
 // The whole table, plus WHERE EACH GROUP IS EDITED. The snapshot is untouched
 // — this resource is still every setting this service has, because a caller
@@ -27517,13 +23230,6 @@ app.post('/admin/config', function (req, res) {
 // the setting did not take.
 // ---------------------------------------------------------------------------
 
-// The four keys, in the order the page draws them: the three lifetimes, then
-// the allowance applied when reading one back. Written once, and every part of
-// this page and its two API operations is derived from it, so a fifth setting
-// is one entry here.
-const TOKEN_LIFETIME_KEYS = ['oauth2.accessTokenTtlS', 'oauth2.idTokenTtlS',
-                             'oauth2.refreshTokenTtlS', 'oauth2.refreshIdleSeconds',
-                             'oauth2.revokeRefreshOnLogout', 'oauth2.clockSkewS'];
 
 // Which token kind each lifetime governs, so the page can put the count of what
 // is already out there beside the number that decided it. `oauth2.clockSkewS`
@@ -27656,138 +23362,7 @@ function tokenLifetimeWarnings() {
   return notes.map(function (note) { return warn(note); }).join('');
 }
 
-// The action switch. Two actions, and both write through config.js.
-//
-// `set` is ALL-OR-NOTHING for the reason configAction()'s set-many is: this
-// form posts four fields at once, and applying two of them before refusing the
-// third would leave the service issuing tokens with a lifetime combination
-// nobody asked for and the page showing it as though it had been chosen.
-//
-// `defaults` clears the runtime override on these four ONLY. It is not
-// config.js's reset-all, which would also drop an unrelated override somebody
-// set on another page — that is the sort of button that is used once and
-// regretted, and "reset all" already exists on /admin/config for whoever wants
-// it.
-function tokenLifetimesAction(body) {
-  log.debug("Entering tokenLifetimesAction(). action=" + (body && body.action));
-  const action = String((body && body.action) || '').trim();
 
-  if (action === 'set') {
-    // Only the four this page owns, and only the ones actually posted. A JSON
-    // caller that sends one of them is setting one of them; a form sends all
-    // four. A field named here that is NOT one of the four is refused by name
-    // rather than ignored, because this action's whole surface is four keys and
-    // a caller that misspelt one deserves to be told rather than to watch
-    // nothing happen.
-    const posted = Object.keys(body || {}).filter(function (name) {
-      return !FORM_FURNITURE[name];
-    });
-    const unknown = posted.filter(function (name) {
-      return TOKEN_LIFETIME_KEYS.indexOf(name) < 0;
-    });
-    if (unknown.length) {
-      log.debug("Leaving tokenLifetimesAction(). Unknown field(s): " + unknown.join(', '));
-      return { ok: false, errors: ['This action sets only ' + TOKEN_LIFETIME_KEYS.join(', ') +
-        '. It was also given: ' + unknown.join(', ') + '. Every other setting is on ' +
-        '/admin/config and POST /admin-api/config/set.'] };
-    }
-    const wanted = posted.filter(function (name) { return TOKEN_LIFETIME_KEYS.indexOf(name) >= 0; });
-    if (!wanted.length) {
-      log.debug("Leaving tokenLifetimesAction(). Nothing was posted.");
-      return { ok: false, errors: ['No lifetime was posted. Name at least one of ' +
-        TOKEN_LIFETIME_KEYS.join(', ') + '.'] };
-    }
-    const errors = [];
-    wanted.forEach(function (key) {
-      const problem = config.checkOverride(key, body[key]);
-      if (problem) errors.push(problem);
-    });
-    if (errors.length) {
-      log.debug("Leaving tokenLifetimesAction(). Refused: " + errors.length + " problem(s).");
-      return { ok: false, errors: errors };
-    }
-    const changed = [];
-    wanted.forEach(function (key) {
-      const before = config.text(key);
-      config.setOverride(key, body[key]);
-      if (config.text(key) !== before) changed.push(key);
-    });
-    log.debug("Leaving tokenLifetimesAction(). " + changed.length + " changed.");
-    return { ok: true, applied: wanted, changed: changed,
-             settings: wanted.map(function (key) {
-               return config.describe(configSettingFor(key));
-             }),
-             message: (changed.length
-               ? changed.length + ' setting(s) changed: ' + changed.map(function (key) {
-                   return key + ' = ' + config.text(key) + 's';
-                 }).join(', ') + '.'
-               : 'Nothing changed — every value posted was the one already in force.') +
-               ' It applies to the NEXT token signed; nothing already issued is affected, ' +
-               'because a lifetime is stamped into a token as its exp claim. Gone on restart.' };
-  }
-
-  if (action === 'defaults') {
-    // clearOverride() refuses a key that was never overridden, which is the
-    // right answer for a caller naming one key and the wrong one for a button
-    // meaning "put these four back". So the refusals are counted rather than
-    // returned: a page where three of the four were overridden must not fail
-    // because the fourth was already where it belonged.
-    const cleared = [];
-    TOKEN_LIFETIME_KEYS.forEach(function (key) {
-      if (config.clearOverride(key).ok) cleared.push(key);
-    });
-    log.debug("Leaving tokenLifetimesAction(). Cleared " + cleared.length + ".");
-    return { ok: true, cleared: cleared,
-             settings: TOKEN_LIFETIME_KEYS.map(function (key) {
-               return config.describe(configSettingFor(key));
-             }),
-             message: cleared.length
-               ? cleared.length + ' override(s) cleared: ' + cleared.join(', ') + '. Each is ' +
-                 'back to its environment or appconfig value.'
-               : 'None of the four was overridden here, so nothing changed — they are ' +
-                 'already coming from the environment or from one of the two appconfig ' +
-                 'files.' };
-  }
-
-  log.debug("Leaving tokenLifetimesAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The two are: set, defaults.'] };
-}
-
-// The JSON view, answered by GET /admin/token-lifetimes?format=json and by
-// GET /admin-api/token-lifetimes. Built here rather than in the route so the
-// page and the API cannot come to describe different settings — the rule
-// usersView() and groupsView() follow for the same reason.
-function tokenLifetimesJson() {
-  log.debug("Entering tokenLifetimesJson().");
-  const snapshot = stats.snapshot();
-  const settings = TOKEN_LIFETIME_KEYS.map(function (key) {
-    return config.describe(configSettingFor(key));
-  });
-  const json = {
-    // The effective seconds, flat, for a caller that wants the number and not
-    // the provenance. The `settings` array beside it is the whole row —
-    // bounds, source, default, description — which is what a console or an
-    // explorer needs and what a test asserting "it is 3600" does not.
-    lifetimes: {
-      accessTokenTtlS: config.value('oauth2.accessTokenTtlS'),
-      idTokenTtlS: config.value('oauth2.idTokenTtlS'),
-      refreshTokenTtlS: config.value('oauth2.refreshTokenTtlS'),
-      clockSkewS: config.value('oauth2.clockSkewS')
-    },
-    settings: settings,
-    // What is already out there, per kind, against the same clock the endpoints
-    // use — stats.tokenStateOf() applies oauth2.clockSkewS, so a token this
-    // says is expired is one /oauth2/introspect will call inactive.
-    tokens: {
-      held: snapshot.tokens.held, forgotten: snapshot.tokens.forgotten,
-      cap: snapshot.tokens.cap, revoked: snapshot.tokens.revoked,
-      byKind: snapshot.tokens.byKind
-    },
-    now: snapshot.now
-  };
-  log.debug("Leaving tokenLifetimesJson(). " + settings.length + " setting(s).");
-  return json;
-}
 
 app.get('/admin/token-lifetimes', function (req, res) {
   log.debug("Entering the admin token lifetimes page.");
@@ -27971,80 +23546,9 @@ app.post('/admin/token-lifetimes', function (req, res) {
 // stamped into an assertion when it is signed.
 // ---------------------------------------------------------------------------
 
-// THE ELEVEN SETTINGS THIS PAGE OWNS: five per profile, plus the skew both
-// share. `unit` is what an int row's number means; `kind` is the artifact kind
-// whose count belongs beside it (only the two lifetimes have one, because only
-// they govern how long an assertion lives); `profile` and `field` name the
-// per-application attribute that OVERRIDES the row, which is what makes these
-// ten defaults rather than settings. Written once, and every part of this page,
-// its two API operations and the per-application resolver's documentation is
-// derived from it.
-const SAML_ASSERTION_SETTINGS = [
-  { key: 'saml2.assertionLifetimeMin', unit: 'min', kind: 'SAML 2.0',
-    profile: 'saml2', field: 'saml2AssertionLifetimeMin' },
-  { key: 'saml2.signAssertion', unit: '', kind: null,
-    profile: 'saml2', field: 'saml2SignAssertion' },
-  { key: 'saml2.signResponse', unit: '', kind: null,
-    profile: 'saml2', field: 'saml2SignResponse' },
-  { key: 'saml2.nameIdFormat', unit: '', kind: null,
-    profile: 'saml2', field: 'saml2NameIdFormat' },
-  { key: 'saml2.artifactTtlS', unit: 's', kind: null,
-    profile: 'saml2', field: 'saml2ArtifactTtlS' },
-  // ENCRYPTION, added 2026-08-27. They are `saml2.*` and per application like
-  // the five above, so they are drawn in the same section — a reader deciding
-  // what a service provider receives should not have to visit two pages to see
-  // that it is signed AND encrypted.
-  { key: 'saml2.encryptAssertion', unit: '', kind: null,
-    profile: 'saml2', field: 'saml2EncryptAssertion' },
-  { key: 'saml2.encryptionAlgorithm', unit: '', kind: null,
-    profile: 'saml2', field: 'saml2EncryptionAlgorithm' },
-  { key: 'saml2.keyTransportAlgorithm', unit: '', kind: null,
-    profile: 'saml2', field: 'saml2KeyTransportAlgorithm' },
-  { key: 'saml2.encryptLogoutNameId', unit: '', kind: null,
-    profile: 'saml2', field: 'saml2EncryptLogoutNameId' },
-  { key: 'saml11.assertionLifetimeMin', unit: 'min', kind: 'SAML 1.1',
-    profile: 'saml11', field: 'saml11AssertionLifetimeMin' },
-  { key: 'saml11.signAssertion', unit: '', kind: null,
-    profile: 'saml11', field: 'saml11SignAssertion' },
-  { key: 'saml11.signResponse', unit: '', kind: null,
-    profile: 'saml11', field: 'saml11SignResponse' },
-  { key: 'saml11.nameIdFormat', unit: '', kind: null,
-    profile: 'saml11', field: 'saml11NameIdFormat' },
-  { key: 'saml11.artifactTtlS', unit: 's', kind: null,
-    profile: 'saml11', field: 'saml11ArtifactTtlS' },
-  // WS-FEDERATION'S ONE, and it is on this page rather than on /admin/wsfed
-  // because a WS-Federation sign-in response carries a SAML 1.1 assertion built
-  // by the same function the profile above uses. See SETTING_HOMES, where the
-  // same argument is made about the group.
-  { key: 'wsfed.assertionLifetimeMin', unit: 'min', kind: null,
-    profile: 'wsfed', field: 'wsfedAssertionLifetimeMin' },
-  // The one row with no `profile` and no per-application field, and that is
-  // the whole of what distinguishes it: a skew is a fact about the clocks in
-  // the estate this service issues into, which is decided once and not per
-  // relying party. The ten above are per application because two service
-  // providers in one estate legitimately want different answers.
-  { key: 'saml.clockSkewS', unit: 's', kind: null, profile: '', field: '' }
-];
 
-const SAML_ASSERTION_KEYS = SAML_ASSERTION_SETTINGS.map(function (row) {
-  return row.key;
-});
 
-function samlAssertionRowFor(key) {
-  return SAML_ASSERTION_SETTINGS.filter(function (row) {
-    return row.key === key;
-  })[0] || null;
-}
 
-// The setting's value in SECONDS, whatever unit its row is written in. Every
-// comparison on this page — skew against lifetime, the warnings below — has to
-// be made in one unit, and doing it at each comparison is how two of them come
-// to disagree.
-function samlAssertionSeconds(key) {
-  const row = samlAssertionRowFor(key);
-  const value = Number(config.value(key)) || 0;
-  return row && row.unit === 'min' ? value * 60 : value;
-}
 
 // One row of the form. The same shape tokenLifetimeRow() draws and for the same
 // reasons — a `number` input with `min`, `max` and `step` off the setting
@@ -28147,151 +23651,7 @@ function samlAssertionWarnings() {
   return notes.map(function (note) { return warn(note); }).join('');
 }
 
-// The action switch. Two actions, both writing through config.js, and both
-// behaving exactly as /admin/token-lifetimes' do — including `set` being
-// ALL-OR-NOTHING, for that page's reason: this form posts three fields at once,
-// and applying two before refusing the third would leave this service issuing
-// assertions with a combination nobody asked for and the page showing it as
-// though it had been chosen.
-function samlAssertionsAction(body) {
-  log.debug("Entering samlAssertionsAction(). action=" + (body && body.action));
-  const action = String((body && body.action) || '').trim();
 
-  if (action === 'set') {
-    // Only the three this page owns, and only the ones actually posted. A field
-    // named here that is not one of them is refused BY NAME rather than
-    // ignored: this action's whole surface is three keys, and a caller that
-    // misspelt one deserves to be told rather than to watch nothing happen.
-    const posted = Object.keys(body || {}).filter(function (name) {
-      return !FORM_FURNITURE[name];
-    });
-    const unknown = posted.filter(function (name) {
-      return SAML_ASSERTION_KEYS.indexOf(name) < 0;
-    });
-    if (unknown.length) {
-      log.debug("Leaving samlAssertionsAction(). Unknown field(s): " + unknown.join(', '));
-      return { ok: false, errors: ['This action sets only ' + SAML_ASSERTION_KEYS.join(', ') +
-        '. It was also given: ' + unknown.join(', ') + '. Every other setting is on ' +
-        '/admin/config and POST /admin-api/config/set.'] };
-    }
-    const wanted = posted.filter(function (name) { return SAML_ASSERTION_KEYS.indexOf(name) >= 0; });
-    if (!wanted.length) {
-      log.debug("Leaving samlAssertionsAction(). Nothing was posted.");
-      return { ok: false, errors: ['No setting was posted. Name at least one of ' +
-        SAML_ASSERTION_KEYS.join(', ') + '.'] };
-    }
-    const errors = [];
-    wanted.forEach(function (key) {
-      const problem = config.checkOverride(key, body[key]);
-      if (problem) errors.push(problem);
-    });
-    if (errors.length) {
-      log.debug("Leaving samlAssertionsAction(). Refused: " + errors.length + " problem(s).");
-      return { ok: false, errors: errors };
-    }
-    const changed = [];
-    wanted.forEach(function (key) {
-      const before = config.text(key);
-      config.setOverride(key, body[key]);
-      if (config.text(key) !== before) changed.push(key);
-    });
-    log.debug("Leaving samlAssertionsAction(). " + changed.length + " changed.");
-    return { ok: true, applied: wanted, changed: changed,
-             settings: wanted.map(function (key) {
-               return config.describe(configSettingFor(key));
-             }),
-             message: (changed.length
-               ? changed.length + ' setting(s) changed: ' + changed.map(function (key) {
-                   const row = samlAssertionRowFor(key);
-                   return key + ' = ' + config.text(key) + (row ? row.unit : '');
-                 }).join(', ') + '.'
-               : 'Nothing changed — every value posted was the one already in force.') +
-               ' It applies to the NEXT assertion signed; nothing already issued is affected, ' +
-               'because a validity window is stamped into an assertion when it is signed. ' +
-               'Gone on restart.' };
-  }
-
-  if (action === 'defaults') {
-    // clearOverride() refuses a key that was never overridden, which is right
-    // for a caller naming one key and wrong for a button meaning "put these
-    // three back". So the refusals are counted rather than returned.
-    const cleared = [];
-    SAML_ASSERTION_KEYS.forEach(function (key) {
-      if (config.clearOverride(key).ok) cleared.push(key);
-    });
-    log.debug("Leaving samlAssertionsAction(). Cleared " + cleared.length + ".");
-    return { ok: true, cleared: cleared,
-             settings: SAML_ASSERTION_KEYS.map(function (key) {
-               return config.describe(configSettingFor(key));
-             }),
-             message: cleared.length
-               ? cleared.length + ' override(s) cleared: ' + cleared.join(', ') + '. Each is ' +
-                 'back to its environment or appconfig value.'
-               : 'None of the sixteen was overridden here, so nothing changed — they are ' +
-                 'already coming from the environment or from one of the two appconfig ' +
-                 'files.' };
-  }
-
-  log.debug("Leaving samlAssertionsAction(). Unknown action.");
-  return { ok: false, errors: ['Unknown action "' + action + '". The two are: set, defaults.'] };
-}
-
-// The JSON view, answered by GET /admin/saml-assertions?format=json and by
-// GET /admin-api/saml-assertions. Built here rather than in the route so the
-// page and the API cannot come to describe different settings.
-function samlAssertionsJson() {
-  log.debug("Entering samlAssertionsJson().");
-  const snapshot = stats.snapshot();
-  const settings = SAML_ASSERTION_KEYS.map(function (key) {
-    return config.describe(configSettingFor(key));
-  });
-  // Only the two SAML kinds. `artifacts.byKind` also carries Kerberos tickets
-  // and verifiable credentials, and a page about assertions reporting those
-  // would be answering a question nobody asked it.
-  const kinds = SAML_ASSERTION_SETTINGS.filter(function (row) { return row.kind; })
-    .map(function (row) {
-      return snapshot.artifacts.byKind.filter(function (k) {
-        return k.kind === row.kind;
-      })[0] || { kind: row.kind, issued: 0, valid: 0, expired: 0, noExpiry: 0 };
-    });
-  const json = {
-    // The effective numbers, flat, for a caller that wants the value and not
-    // the provenance — and `windowS`, which is the thing a caller actually has
-    // to reason about and which no single setting states: the whole width of
-    // the window written into an assertion, skew included at both ends.
-    assertions: {
-      saml2LifetimeMin: config.value('saml2.assertionLifetimeMin'),
-      saml11LifetimeMin: config.value('saml11.assertionLifetimeMin'),
-      clockSkewS: config.value('saml.clockSkewS'),
-      saml2WindowS: samlAssertionSeconds('saml2.assertionLifetimeMin') +
-                    2 * samlAssertionSeconds('saml.clockSkewS'),
-      saml11WindowS: samlAssertionSeconds('saml11.assertionLifetimeMin') +
-                     2 * samlAssertionSeconds('saml.clockSkewS')
-    },
-    // WHICH OF THESE AN APPLICATION MAY OVERRIDE, AND WHAT THE ATTRIBUTE IS
-    // CALLED. Read off the same table the form is drawn from, so a caller that
-    // wants to write the exception does not have to be told the attribute names
-    // in prose somewhere else — and so that a row added to that table cannot
-    // reach the page without reaching this reply.
-    perApplication: SAML_ASSERTION_SETTINGS.filter(function (row) {
-      return row.field;
-    }).map(function (row) {
-      return { setting: row.key, attribute: row.field, profile: row.profile };
-    }),
-    settings: settings,
-    // What is already out there, per profile. Counted against this service's
-    // own clock with no allowance applied — the skew above is written INTO an
-    // assertion rather than applied when one is read here, so an assertion this
-    // calls expired is one whose stated NotOnOrAfter has passed.
-    assertionsIssued: {
-      held: snapshot.artifacts.held, forgotten: snapshot.artifacts.forgotten,
-      cap: snapshot.artifacts.cap, byKind: kinds
-    },
-    now: snapshot.now
-  };
-  log.debug("Leaving samlAssertionsJson(). " + settings.length + " setting(s).");
-  return json;
-}
 
 app.get('/admin/saml-assertions', function (req, res) {
   log.debug("Entering the admin SAML assertions page.");
@@ -28470,70 +23830,6 @@ app.post('/admin/saml-assertions', function (req, res) {
 });
 
 
-// ---------------------------------------------------------------------------
-// /admin/scim — WHAT THE PROVISIONING SURFACE HAS DONE.
-//
-// The one page here that reports a protocol family rather than an artifact this
-// service issued, and it reports two different kinds of thing on purpose:
-//
-//   * the COUNTERS, from admin_stats.js. Which SCIM operation was performed how
-//     many times, on which resource type, and what was refused with which
-//     `scimType`. Every row of both vocabularies is drawn INCLUDING the zeroes,
-//     because "does this server do PATCH" is the question somebody comes here
-//     with and a table that only listed what had happened would answer it by
-//     omission.
-//   * the SURFACE, from scim.js through the reader slot — the endpoints, what it
-//     deliberately does not do, and the things you can make fail. Written once,
-//     in the module that implements them, and rendered here. See setScimReader().
-//
-// **IT HAS NO CONTROLS, AND THAT IS WHY IT NEEDS ONLY A GET ON /admin-api.**
-// Everything about SCIM that can be changed is a `config.js` row —
-// `scim.enabled`, the three limits, and the thirteen authentication settings
-// (which scheme is offered, the two scope names, the realm, the shared Digest
-// password, the two lifetimes) — so /admin/config already has the form
-// and POST /admin-api/config/set already has the operation. A second form here
-// would be a second door to one setting, which is the mistake rule 5 exists for
-// and the same argument group_claims.js makes about `groups.claim`.
-//
-// **THE BULK COUNT DOES NOT TALLY WITH THE REST, ON PURPOSE.** One
-// POST /scim/v2/Bulk carrying five creates is one `bulk` row AND five `create`
-// rows, because each operation inside really is performed. Said on the page,
-// because a reader adding the column up will otherwise conclude the counting is
-// broken.
-// ---------------------------------------------------------------------------
-function scimJson(req) {
-  log.debug("Entering scimJson().");
-  const counters = stats.scimSnapshot();
-  const surface = scimReader ? scimReader(req) : null;
-  const out = {
-    // Distinguished from `enabled` deliberately: a process whose scim.js never
-    // loaded is a different thing from one where scim.enabled is false, and a
-    // page that reported both as "off" would send somebody to the wrong setting.
-    installed: !!surface,
-    enabled: surface ? surface.enabled : false,
-    baseUrl: surface ? surface.baseUrl : null,
-    specifications: surface ? surface.specifications : ['RFC 7642', 'RFC 7643', 'RFC 7644'],
-    store: surface ? surface.store : null,
-    identifiers: surface ? surface.identifiers : null,
-    // The six schemes, whether each is on, and the access control policy —
-    // from scim_auth.js's table by way of scim.js's description(). Null when
-    // SCIM is not loaded, which is a different thing from every scheme being
-    // off and is why it is not defaulted to an empty list.
-    authentication: surface ? surface.authentication : null,
-    endpoints: surface ? surface.endpoints : [],
-    doesNotDo: surface ? surface.doesNotDo : [],
-    reachableNegatives: surface ? surface.reachableNegatives : [],
-    mapping: { user: scimMap.USER_ATTRIBUTES.map(scimMappingRow),
-               group: scimMap.GROUP_ATTRIBUTES.map(scimMappingRow) },
-    counters: counters,
-    // The eighteen scim.* rows this page now edits, described. It answers the
-    // question the rest of this reply cannot: not what the server does, but
-    // where the value that decides it came from.
-    settings: configSettingsJson('/admin/scim')
-  };
-  log.debug("Leaving scimJson(). " + counters.total + " request(s) counted.");
-  return out;
-}
 
 // ---------------------------------------------------------------------------
 // THE AUTHENTICATION SECTION OF /admin/scim.
@@ -28611,26 +23907,6 @@ function authenticationSection(auth, counters) {
   return out;
 }
 
-// One row of the mapping, as the page and the API both want it. The `note` is
-// carried through because several of them are the whole reason the row is not
-// obvious — `groups` being read-only, `active` deactivating nobody, `manager`
-// being passed through rather than resolved.
-// ONE PROJECTION, AND IT IS scim_map.js's SINCE 2026-09-06.
-//
-// This function used to build the row itself, and `scim.js`'s `description()`
-// built a DIFFERENT one for `GET /scim` — the same table, published by one
-// service at two endpoints, describing itself with different members. Nothing
-// failed, because nothing read either of them; that changed when a job started
-// building SCIM resources out of the published mapping rather than out of a
-// copy, and needed `type` and `parent` that neither projection carried.
-//
-// It is kept as a named function rather than passing `scimMap.describeRow`
-// straight to `.map()`: `Array.prototype.map` hands the callback an INDEX as
-// its second argument, and a projection that later grew a second parameter
-// would start receiving row numbers.
-function scimMappingRow(row) {
-  return scimMap.describeRow(row);
-}
 
 app.get('/admin/scim', function (req, res) {
   log.debug("Entering the admin SCIM page.");
@@ -28841,102 +24117,6 @@ app.get('/admin/scim', function (req, res) {
   log.debug("Leaving the admin SCIM page.");
 });
 
-// ---------------------------------------------------------------------------
-// /admin/scim/monitor — WHAT THE PROVISIONING SURFACE IS ACTUALLY DOING.
-//
-// **IT IS UNDER MONITORING AND NOT UNDER PROTOCOLS**, which is the same filing
-// decision `/admin/xacml/monitor` records and is made on the same test: where a
-// page goes is decided by the QUESTION IT ANSWERS and never by the module that
-// draws it or the path space it sits in. `/admin/scim` answers "what is this
-// surface, and what will it do" — the schemes, the endpoints, the attribute
-// mapping, the eighteen settings. This one answers "how much traffic is there,
-// from whom, and how much of it is failing", which is the question somebody has
-// when a provisioning client is misbehaving, and it is a monitoring question.
-// It shares a path prefix with the protocol page because the path is where the
-// module's other page is; `SECTIONS` is the only place placement is stated.
-//
-// ---------------------------------------------------------------------------
-// ONE STORE, TWO VIEWS, AND THAT IS WHY THE TWO PAGES CANNOT DISAGREE.
-//
-// `/admin/scim` carries the headline counts already and goes on carrying them:
-// a page about a surface with no evidence anything ever called it is a page
-// about a hypothesis. What it does NOT carry is anything on this page below the
-// tiles, and the division is deliberate rather than incidental — those two
-// pages read `stats.scimSnapshot()` and `stats.scimMonitorSnapshot()`, which
-// are two functions over ONE set of counters in `common/admin_stats.js`. There
-// is no second tally anywhere and there must never be one: a second tally is a
-// second answer to "how many SCIM calls have there been", and this repository
-// has the same rule about that as it has about everything else it counts once.
-//
-// ---------------------------------------------------------------------------
-// FOUR THINGS ON THIS PAGE ARE EASY TO MISREAD AND EACH IS SAID ON IT.
-//
-//   * **A CLIENT IS AN AUTHENTICATED PRINCIPAL, NOT A CONNECTION.** SCIM is
-//     stateless HTTP — no session, no registration, nothing to be connected —
-//     so the only honest reading of "how many clients" is how many distinct
-//     names have successfully authenticated since this process started. The
-//     figure never goes down, because a provisioning client that has stopped
-//     calling looks exactly like one that is between calls.
-//   * **A REFUSED CALLER IS NOT A CLIENT.** Basic and Digest both put a name on
-//     the wire and the gate can still turn it away; those calls are counted
-//     under `refused` and appear in no client row. Attributing traffic to an
-//     identity this service declined to believe is the one mistake this page
-//     could make that would matter.
-//   * **THE OPERATION COLUMN DOES NOT TALLY WITH THE CALL TOTAL.** One
-//     `POST /scim/v2/Bulk` carrying five creates is one `bulk` row AND five
-//     `create` rows, because each of the five really is performed. `/admin/scim`
-//     already says this about its own table and it is said again here rather
-//     than cross-referenced, because a reader adding a column up is not going
-//     to another page first.
-//   * **A LATENCY IS ABSENT AND NOT ZERO WHERE NOTHING WAS MEASURED.** An
-//     operation nothing has called shows `—`, never `0.0ms`, which would read
-//     as a service answering instantly.
-//
-// ---------------------------------------------------------------------------
-// NO RESET BUTTON, AND IT WAS REFUSED RATHER THAN FORGOTTEN.
-//
-// `admin_stats.js` exports `resetScimForTests()` and nothing on this console
-// calls it. A console that could zero its own monitoring would make every
-// number on this page a number somebody might have zeroed — and the durable
-// record of what SCIM was asked to do is the audit log, which cannot be reset
-// either. Same argument as `/admin/xacml/monitor`'s, made again rather than
-// cited, because the second refusal is not cheaper than the first.
-// ---------------------------------------------------------------------------
-function scimMonitorJson(req) {
-  log.debug("Entering scimMonitorJson().");
-  const counters = stats.scimMonitorSnapshot();
-  const surface = scimReader ? scimReader(req) : null;
-  const out = {
-    // Distinguished from `enabled` deliberately, exactly as scimJson() does it:
-    // a process whose scim.js never loaded has no /scim routes at all, where
-    // one with scim.enabled false has routes answering 501. Reporting both as
-    // "off" would send a reader to the wrong setting — and on THIS page it
-    // would also make a call total of zero mean two different things.
-    installed: !!surface,
-    enabled: surface ? surface.enabled : false,
-    baseUrl: surface ? surface.baseUrl : null,
-    // THE SCHEME VOCABULARY, so that the by-scheme table can draw the ones at
-    // zero. It is scim_auth.js's own table by way of scim.js's description(),
-    // for the reason admin_stats.js's comment on `byAuthScheme` gives: the
-    // counters are a plain tally and this module cannot require the module
-    // that owns the list, so the ZEROES are supplied by the reader. A scheme
-    // that is turned off and has never been used is the most interesting row
-    // on that table for somebody asking why a client cannot get in.
-    schemes: surface && surface.authentication
-      ? surface.authentication.schemes : [],
-    authRequired: !!(surface && surface.authentication &&
-                     surface.authentication.required),
-    // What SCIM wrote, which is the other half of "is provisioning working".
-    // It is not a counter — it is the directory counted now — and it is here
-    // because a page reporting 400 successful creates beside a directory
-    // holding three people is reporting something worth knowing.
-    store: surface ? surface.store : null,
-    counters: counters
-  };
-  log.debug("Leaving scimMonitorJson(). " + counters.calls + " request(s), " +
-            counters.authentication.distinct + " client(s).");
-  return out;
-}
 
 // One row of the by-scheme table. Not folded into the page body because the
 // same rows are wanted in two orders — the schemes the surface declares, then
@@ -29287,93 +24467,9 @@ app.get('/admin/scim/monitor', function (req, res) {
 // It is required at the top of this file with the others.
 // ===========================================================================
 
-// The reply BOTH doors answer with — `/admin/signals?format=json` and
-// GET /admin-api/signals are the same document, rule 7 — built by the
-// receiver module so that the console, the management API and the portal
-// cannot come to three different opinions about what a delivered event is.
-function signalsJson(req) {
-  log.debug("Entering signalsJson().");
-  // THE CONSOLE SEES EVERYTHING IN THE REALM IT IS READING, which is the
-  // `sees: 'all'` on its row over there. It is an administrative surface: the
-  // question it answers is "what has this service been telling its receivers",
-  // and a per-person filter here would be the portal's page drawn in the wrong
-  // application.
-  const view = signals.view(signals.ADMIN, {});
-  const state = signalsState(req, view);
-  log.debug("Leaving signalsJson(). " + view.received.length + " row(s).");
-  return Object.assign({}, view, {
-    filter: { received: state.wanted || null },
-    received: state.page.shown,
-    total: view.received.length,
-    paging: { received: pagingJson(state.page.paging) }
-  });
-}
 
-// Filter first, then page — `pagingOf()`'s rule, for its reason: paging a list
-// and then filtering it gives a page 2 whose length depends on what page 1
-// happened to hold.
-//
-// THE SEARCH IS OVER WHAT A READER ARRIVES HOLDING: a username or an address
-// out of a complaint, an event name, a `jti` out of a transmitter's log, or a
-// stream id. They do not know which column it will be in, so it is one box
-// over all of them rather than four.
-function signalsState(req, view) {
-  log.debug("Entering signalsState().");
-  const wanted = queryOne(req.query, 'sigq').trim().toLowerCase();
-  const rows = wanted
-    ? view.received.filter(function (row) {
-        return [row.name, row.subject, row.jti, row.stream, row.vocabulary,
-                row.issuer, row.audience].concat(row.types)
-          .some(function (value) {
-            return String(value || '').toLowerCase().indexOf(wanted) >= 0;
-          });
-      })
-    : view.received;
-  const page = pagedRows(req.query, rows,
-    { name: 'received', noun: 'events' });
-  log.debug("Leaving signalsState(). " + rows.length + " match(es).");
-  return { wanted: wanted, page: page };
-}
 
-// The one control. It empties this console's inbox and DOES NOT touch the
-// stream — see `clearFor()`: clearing what a receiver has been shown and
-// tearing down the agreement to send it more are two different acts, and the
-// second one is `/admin/ssf`'s.
-const SIGNALS_CONSOLE_ACTIONS = ['clear'];
 
-function signalsAction(body) {
-  log.debug("Entering signalsAction(). action=" + String((body || {}).action));
-  const asked = body || {};
-  const action = String(asked.action || '');
-  if (SIGNALS_CONSOLE_ACTIONS.indexOf(action) < 0) {
-    // THE SENTENCE IS THE HOUSE SHAPE — `Unknown action "x". <prose>: a, b.` —
-    // AND IT IS READ RATHER THAN BEING STYLE.
-    // `tests/vendored/sts_admin_api_operations.js` matches exactly that out of
-    // `errors` on every action resource this API declares, and
-    // `tests/vendored/admin_api.js` reads the same sentence to check that
-    // every console action has an operation over there. This handler phrased
-    // it its own way — `"x" is not one of clear.` — which parses as neither,
-    // so it turned the parity check off for this resource with nothing
-    // failing until that walk went red on it.
-    //
-    // The count comes from the list rather than being written out, for
-    // `pki_admin.js`'s reason: a second action added tomorrow cannot leave the
-    // sentence short by one.
-    log.debug("Leaving signalsAction(). Unknown action.");
-    return { ok: false, errors: ['Unknown action "' + action + '". ' +
-      (SIGNALS_CONSOLE_ACTIONS.length === 1
-        ? 'There is one: '
-        : 'There are ' + SIGNALS_CONSOLE_ACTIONS.length + ': ') +
-      SIGNALS_CONSOLE_ACTIONS.join(', ') + '.'] };
-  }
-  const gone = signals.clearFor(signals.ADMIN);
-  log.debug("Leaving signalsAction(). " + gone + " dropped.");
-  return { ok: true, dropped: gone,
-    message: gone + ' delivered event(s) were dropped from this console\'s ' +
-      'inbox. The stream is untouched and goes on delivering; what was ' +
-      'RECORDED about each delivery is still in the ' +
-      'audit log, which cannot be cleared.' };
-}
 
 // ---------------------------------------------------------------------------
 // THE RECEIVE ENDPOINT. Three lines, because everything a receiver checks is
@@ -29383,6 +24479,9 @@ function signalsAction(body) {
 app.post('/admin/signals/receive', function (req, res) {
   log.debug("Entering the admin console's Shared Signals receive endpoint.");
   const taken = signals.accept(signals.ADMIN, req);
+  if (taken.status >= 400) {
+    errorCodes.mark(res, taken.errorCode || errorCodes.codeOf(taken) || 'STS-ADMIN-0019');
+  }
   res.status(taken.status).set('Cache-Control', 'no-store');
   if (taken.body) {
     res.type('application/json').send(JSON.stringify(taken.body, null, 2));
@@ -29645,7 +24744,7 @@ function setSignalsReporter(reporter) {
     return !reporter || reporter[name] === undefined;
   });
   if (missing.length) {
-    log.error('admin: setSignalsReporter() was given something without ' +
+    log.error(errorCodes.tag('STS-ADMIN-0014') + 'admin: setSignalsReporter() was given something without ' +
               missing.join(', ') + ', and was ignored whole. /admin/ssf and ' +
               '/admin-api/ssf will say the reporter is not installed rather ' +
               'than half working.');
@@ -29653,43 +24752,474 @@ function setSignalsReporter(reporter) {
     return;
   }
   signalsReporter = reporter;
+  // AND THE ACTION LAYER, which needs the same object and is handed it
+  // from here rather than asking for it — see the header of
+  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // the ONLY place either is written, which is what keeps it one answer.
+  adminActions.setSignalsReporter(reporter);
+  // AND THE READ LAYER: the /admin-api report of this stream is drawn there
+  // while the controls beside it are actions. One statement, one writer.
+  adminViews.setSignalsReporter(reporter);
   log.debug("Leaving setSignalsReporter(). Installed.");
 }
 
-// The whole report, for this page and for `GET /admin-api/ssf`. One function,
-// so the page and the API cannot disagree about what this transmitter is
-// doing — which is rule 7's entire subject.
-function ssfJson(req) {
-  log.debug("Entering ssfJson().");
-  if (!signalsReporter) {
-    log.debug("Leaving ssfJson(). Not installed.");
-    return { installed: false, enabled: false, streamDetail: [],
-             receivedDetail: [], settings: configSettingsJson('/admin/ssf'),
-             note: 'ssf/ssf.js is not loaded in this process, so nothing ' +
-                   'here can report on the Shared Signals Framework.' };
+// ---------------------------------------------------------------------------
+// THE THIRTEENTH SLOT: THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12), and it
+// passes rule 3e's test both ways round like the eighth above it.
+//
+//   * a require from THIS file to `../tls/tls_server.js` would MOVE ROUTES on
+//     the order this repository documents — `/tls`, `/tls/server-certificate`
+//     and `/tls/trust` belong at 20, after the management API — and would make
+//     the console the reason they are where they are.
+//   * a require the other way round, from `tls_server.js` to this file at its
+//     own top level, would CLOSE A CYCLE — and not a theoretical one: that
+//     module is really first loaded from inside THIS file's require, through
+//     `admin-core/admin_views.js` → `spiffe/spiffe_auth.js`, so it would be
+//     handed this module's half-built exports and find no `setTruststore` on
+//     them. That is why `common/protocol_stack.js` fills this, on the line
+//     after it requires `tls_server.js`, rather than the filler being the
+//     module that owns the array. It is the one slot here filled that way.
+//
+// **IT CARRIES ONE OBJECT AND IS VALIDATED WHOLE**, for `setLogoutReader()`'s
+// reason: a truststore that could be LISTED and not changed would be a page
+// drawing the anchors under two controls that answer "not installed", and one
+// that could be changed and not listed would be a write nothing reads back.
+//
+// **AND IT IS A PAGE OF A PROCESS'S SOCKETS**, which decides where it is
+// answered: `common/request_pool.js` pins `/admin/tls/trust` and
+// `/admin-api/tls/trust` to the front process, because the array is the
+// configuration of listeners only that process holds. A worker installs this
+// slot too — it runs the same stack — and is never asked.
+// ---------------------------------------------------------------------------
+let truststore = null;
+
+function setTruststore(value) {
+  log.debug("Entering setTruststore().");
+  const needed = ['list', 'add', 'remove'];
+  const missing = needed.filter(function (name) {
+    return !value || typeof value[name] !== 'function';
+  });
+  if (missing.length) {
+    log.error(errorCodes.tag('STS-ADMIN-0014') + 'admin: setTruststore() was given something without ' +
+              missing.join(', ') + ', and was ignored whole. /admin/tls/trust ' +
+              'and /admin-api/tls/trust will say the truststore is not ' +
+              'installed rather than half working.');
+    log.debug("Leaving setTruststore(). Refused.");
+    return false;
   }
-  const report = signalsReporter.report(req);
-  report.installed = true;
-  report.settings = configSettingsJson('/admin/ssf');
-  log.debug("Leaving ssfJson(). " + report.streamDetail.length + " stream(s).");
-  return report;
+  truststore = value;
+  // One statement, two destinations, and this is the only place either is
+  // written — the arrangement every forwarded collaborator here keeps, and
+  // what tests/admin_actions_layer.js asserts.
+  adminActions.setTruststore(value);
+  adminViews.setTruststore(value);
+  log.debug("Leaving setTruststore(). Installed.");
+  return true;
 }
 
-// The four actions, shared with `POST /admin-api/ssf/:action`. It resolves
-// rather than returning, for the reason the slot's header gives.
-function ssfAction(body) {
-  log.debug("Entering ssfAction().");
-  const asked = body || {};
-  if (!signalsReporter) {
-    log.debug("Leaving ssfAction(). Not installed.");
-    return Promise.resolve({ ok: false, errors: [
-      'ssf/ssf.js is not loaded in this process, so there is nothing to ' +
-      'act on.'] });
+// ---------------------------------------------------------------------------
+// GET /admin/tls/trust — THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12).
+//
+// Every anchor 8443, 9443, LDAPS 636 and the main port verify a client
+// certificate against, where each came from, and two controls: add one or more
+// PEM certificates, and remove one row. It is the runtime door product mode
+// did not have — `POST /tls/trust` answers anybody who can reach the port and
+// is refused there, so until this page anchors could only come from
+// `tls.trustAnchorsFile` at startup.
+//
+// **FILED UNDER PROTOCOLS, DIRECTLY BENEATH `/admin/tls`, AND UNGROUPED.** It
+// is configuration of those listeners, which is the question Protocols answers.
+// There is no TLS group to put it in and it does not make one: a heading `TLS`
+// over `TLS / mutual TLS` would say the label twice, which is the test
+// `SECTIONS` applies to a group.
+//
+// **NO `clear` BUTTON**, and the page says why where one would be. The two
+// controls are drawn only for a reader who holds Admin Write; the GATE is what
+// refuses a POST without it, whatever the page drew.
+//
+// It holds no state and decides nothing: every row is `tls/tls_server.js`'s
+// own description through `admin-core/admin_views.js`, and every change is
+// `truststoreAction()` in `admin-core/admin_actions.js`, the function
+// `POST /admin-api/tls/trust/{action}` calls.
+// ---------------------------------------------------------------------------
+app.get('/admin/tls/trust', function (req, res) {
+  log.debug("Entering the admin truststore page.");
+  const json = adminViews.truststoreJson(req);
+  const state = gateStateFor(req);
+  const mayChange = !!(state && state.write);
+  if (!json.installed) {
+    const missing = messagesOf(req) + '<div class="err"><strong>The ' +
+      'client-certificate truststore is not installed in this process.' +
+      '</strong> ' + esc(json.note) + '</div>';
+    respond(req, res, json, 'Client-certificate truststore',
+            '/admin/tls/trust', missing);
+    log.debug("Leaving the admin truststore page. Not installed.");
+    return;
   }
-  const name = String(asked.action || '');
-  log.debug("Leaving ssfAction(). " + name);
-  return signalsReporter.action(name, asked, null);
-}
+  const back = queryWith(listViewOf('/admin/tls/trust', req.query), {});
+  const nav = pageNavPair('/admin/tls/trust', pageParamsOf(req.query),
+                          json.paging && Object.assign({ param: 'page',
+                            noun: 'anchors', offset: 0 }, json.paging));
+  const rows = json.anchors.map(function (anchor) {
+    return '<tr>' +
+      '<td><code>' + esc(anchor.subject) + '</code>' +
+      (anchor.readable ? '' : '<div class="state-invalid">' +
+        esc('OpenSSL cannot read this certificate, so no handshake uses it.') +
+        '</div>') +
+      '<div class="sub">' + (anchor.ca ? 'CA' : 'not a CA') + '</div></td>' +
+      '<td><code>' + esc(anchor.issuer || '—') + '</code></td>' +
+      '<td class="sub"><code>' + esc(anchor.serial || '—') + '</code></td>' +
+      '<td class="sub">' + esc(anchor.notBefore || '—') + '<br>' +
+      esc(anchor.notAfter || '—') + '</td>' +
+      '<td class="sub"><code>' + esc(anchor.fingerprint256) + '</code></td>' +
+      '<td>' + (anchor.source === 'file'
+        ? '<span title="' + esc('Loaded from tls.trustAnchorsFile at startup. ' +
+            'Removing it here lasts until the next start, when the file is ' +
+            'read again.') + '">file</span>'
+        : '<span title="' + esc(anchor.persisted
+            ? 'Added at runtime and written to ou=trustAnchors, so it survives ' +
+              'a restart wherever the directory is persisted.'
+            : 'Added at runtime and NOT written down — the directory was full ' +
+              'or no store is installed — so it is gone at the next start.') +
+          '">runtime' + (anchor.persisted ? '' : ' (not stored)') + '</span>') +
+      '</td>' +
+      '<td>' + (mayChange
+        ? '<form method="post" action="/admin/tls/trust">' +
+          '<input type="hidden" name="action" value="remove">' +
+          '<input type="hidden" name="fingerprint" value="' +
+          esc(anchor.fingerprint256) + '">' +
+          '<input type="hidden" name="back" value="' + esc(back) + '">' +
+          '<button type="submit" class="secondary" title="' +
+          esc(anchor.source === 'file'
+            ? 'Stops client certificates chaining only to this anchor from ' +
+              'verifying, until the next start re-reads tls.trustAnchorsFile.'
+            : 'Stops client certificates chaining only to this anchor from ' +
+              'verifying. Nothing brings it back.') + '">Remove</button></form>'
+        : '<span class="sub">Admin Write</span>') + '</td></tr>';
+  }).join('') || '<tr><td colspan="7">' + esc('Empty. No client certificate ' +
+    'verifies on any listener, and nothing can connect to the one that ' +
+    'requires a certificate.') + '</td></tr>';
+
+  const inner = messagesOf(req) +
+    note('Every anchor <strong>8443, 9443, LDAPS 636 and the main port</strong> ' +
+    'verify a client certificate against. A certificate that chains to one of ' +
+    'these is VERIFIED — and since 2026-09-06 a verified certificate is an ' +
+    'identity here: it starts a sign-on session, and it is what admits a ' +
+    'remote XACML PEP to <code>/xacml/pep/*</code>. So this list decides whose ' +
+    'certificates this service believes.') +
+    warn('<strong>Nothing on this page is persisted.</strong> ' +
+    esc(json.notes.persisted)) +
+    note(esc(json.notes.scope) + ' ' + esc(json.notes.effect) + ' ' +
+    esc(json.notes.revocation)) +
+    '<div class="tiles">' +
+    tile(json.total, 'anchors') +
+    tile(json.fromFile, 'from the file') +
+    tile(json.atRuntime, 'added at runtime') +
+    tile(json.max, 'maximum') +
+    '</div>' +
+    note('<code>tls.trustAnchorsFile</code> is ' + (json.anchorsFile
+      ? '<code>' + esc(json.anchorsFile) + '</code>, and ' +
+        esc(String(json.loadedFromFile)) + ' anchor(s) were loaded from it ' +
+        'at startup.'
+      : 'not set, so every anchor here was added while this process was ' +
+        'running.') +
+    ' The two test controls on <a href="/tls">/tls</a> — ' +
+    '<code>POST /tls/trust</code> and <code>POST /tls/trust/clear</code> — ' +
+    (json.doors.testControls.open
+      ? 'answer anybody in this development-mode process.'
+      : 'are refused in product mode; this page and ' +
+        '<code>/admin-api/tls/trust</code> are the runtime doors.')) +
+    '<h2>Anchors</h2>' + nav.head +
+    '<table><tr><th>Subject</th><th>Issuer</th><th>Serial</th>' +
+    '<th>Not before / not after</th><th>SHA-256 fingerprint</th>' +
+    '<th>Source</th><th></th></tr>' + rows + '</table>' + nav.foot +
+    perPageForm('/admin/tls/trust', 'page', '1', json.perPage) +
+    (mayChange
+      ? '<h2>Add anchors</h2>' +
+        note('One or more <code>-----BEGIN CERTIFICATE-----</code> blocks — ' +
+        'the root, or the whole chain above the leaf. Every block must be one ' +
+        'OpenSSL can read, or NONE is added: a block the listener cannot parse ' +
+        'makes the next truststore change throw on every listener. A ' +
+        'certificate already held is counted and not added twice.') +
+        '<form method="post" action="/admin/tls/trust">' +
+        '<input type="hidden" name="action" value="add">' +
+        '<input type="hidden" name="back" value="' + esc(back) + '">' +
+        '<textarea name="certificates" rows="8" ' +
+        'placeholder="-----BEGIN CERTIFICATE-----"></textarea>' +
+        '<div class="formrow"><button type="submit">Trust these</button>' +
+        '</div></form>'
+      : note('Changing this list needs <strong>Admin Write</strong>.')) +
+    '<h2>What there is deliberately no button for</h2>' +
+    note('<strong>Emptying the truststore.</strong> A bulk clear on this door ' +
+    'would be the one control whose reach is every client certificate every ' +
+    'other caller relies on — a remote PEP authenticating as nobody for the ' +
+    'rest of a run is what one unguarded clear has already cost. Remove the ' +
+    'rows you mean, one at a time; the ones you did not put there are the ' +
+    'ones you have to name. Removing a <code>file</code> anchor is allowed and ' +
+    'lasts until the next start.') +
+    note('<a href="/admin/tls/trust?format=json">this page as JSON</a> ' +
+    '&middot; <a href="/admin-api/tls/trust">the same over the management ' +
+    'API</a> &middot; <a href="/admin/tls">the TLS listeners\' settings</a> ' +
+    '&middot; <a href="/tls">the TLS endpoint</a> &middot; ' +
+    '<a href="/admin/pki">this service\'s own certificate authority</a>');
+
+  respond(req, res, json, 'Client-certificate truststore', '/admin/tls/trust',
+          inner);
+  log.debug("Leaving the admin truststore page. " + json.total + " anchor(s).");
+});
+
+app.post('/admin/tls/trust', function (req, res) {
+  log.debug("Entering the admin truststore action endpoint.");
+  const body = parseBody(req);
+  // The actor is read here, not inside the action, for rolesAction()'s reason:
+  // the management API calls the same function with an actor of its own.
+  const state = gateStateFor(req);
+  const result = adminActions.truststoreAction(body,
+    { actor: (state && state.username) || '', via: 'console' });
+  respondToAction(req, res, '/admin/tls/trust' +
+    queryWith(listViewFromBack('/admin/tls/trust', body.back), {}), result);
+  log.debug("Leaving the admin truststore action endpoint.");
+});
+
+// ---------------------------------------------------------------------------
+// GET /admin/kerberos/principals — THE STORED KERBEROS KEYS (2026-09-12).
+//
+// Two tables: the directory people who hold Kerberos keys derived from their
+// own password, and the service principals an operator created here with a
+// random key. `admin-core/admin_views.js`'s `kerberosPrincipalsJson()` computes
+// both, from the PUBLIC half of each pair of attributes, so nothing is opened
+// to draw this page and no key is on it. Every change is
+// `kerberosPrincipalsAction()` in `admin-core/admin_actions.js`, the function
+// `POST /admin-api/kerberos/principals/{action}` calls.
+//
+// **A CREATE AND A ROTATE ANSWER WITH A PAGE, NOT A 303 — AND NOT A FILE.**
+// The keytab exists outside the seal exactly once, in the answer to the request
+// that made it. `respondToAction()` puts its message on a query string, which is
+// the browser history and every access log, so it cannot carry a key. A bare
+// file download was the other candidate and it was not taken: the answer has to
+// say WHICH kvno and enctypes were minted, and a download is a response the
+// browser does not draw. So the page names the principal and the kvno and
+// carries the keytab twice — a `data:` link with a `download` attribute, which
+// needs no script, and the base64 in a textarea for a terminal — marked
+// shown-once, in a `no-store` response. `/admin/pki/person` hands a private key
+// over the same way and for the same reason.
+//
+// **NO SCRIPT**, and the argument is made rather than cited: nothing here needs
+// one. A download link is markup, and every control is a form.
+// ---------------------------------------------------------------------------
+app.get('/admin/kerberos/principals', function (req, res) {
+  log.debug("Entering the admin Kerberos principals page.");
+  const json = adminViews.kerberosPrincipalsJson(req);
+  const state = gateStateFor(req);
+  const mayChange = !!(state && state.write);
+  const back = queryWith(listViewOf('/admin/kerberos/principals', req.query), {});
+  const peopleNav = pageNavPair('/admin/kerberos/principals', pageParamsOf(req.query),
+    Object.assign({ param: 'peoplePage', noun: 'people', offset: 0 }, json.peoplePaging));
+  const servicesNav = pageNavPair('/admin/kerberos/principals', pageParamsOf(req.query),
+    Object.assign({ param: 'servicesPage', noun: 'service principals', offset: 0 },
+                  json.servicesPaging));
+  const etypeList = function (etypes) {
+    return (etypes || []).map(function (one) {
+      return '<code>' + esc(one.name) + '</code>';
+    }).join(' ');
+  };
+  // THE PREVIOUS VERSIONS A KEY STILL KEEPS (2026-09-12): kvno, enctypes and
+  // when each stops being accepted. Never a key — the row carries none.
+  const retainedCell = function (retained) {
+    return (retained || []).length
+      ? retained.map(function (one) {
+          return 'kvno ' + esc(String(one.kvno)) + ' ' + etypeList(one.etypes) +
+            '<br><span class="sub">until ' + esc(one.expiresAt) + '</span>';
+        }).join('<br>')
+      : '<span class="sub">none</span>';
+  };
+  const rowButton = function (action, field, value, label, title) {
+    return '<form method="post" action="/admin/kerberos/principals">' +
+      '<input type="hidden" name="action" value="' + esc(action) + '">' +
+      '<input type="hidden" name="' + esc(field) + '" value="' + esc(value) + '">' +
+      '<input type="hidden" name="back" value="' + esc(back) + '">' +
+      '<button type="submit" class="secondary" title="' + esc(title) + '">' +
+      esc(label) + '</button></form>';
+  };
+  const serviceRows = json.services.map(function (row) {
+    return '<tr><td><code>' + esc(row.principal) + '</code>' +
+      (row.held ? '' : '<div class="state-invalid">' +
+        esc('The key record is missing; the info attribute is all that is left.') +
+        '</div>') + '</td>' +
+      '<td>' + esc(row.kvno == null ? '—' : String(row.kvno)) + '</td>' +
+      '<td>' + etypeList(row.etypes) + '</td>' +
+      '<td class="sub">' + esc(row.createdAt || '—') +
+      (row.rotatedAt ? '<br>rotated ' + esc(row.rotatedAt) : '') + '</td>' +
+      '<td>' + retainedCell(row.retained) + '</td>' +
+      '<td>' + (row.sealed ? 'sealed' : 'clear (development)') + '</td>' +
+      '<td>' + (mayChange
+        ? rowButton('rotate-service', 'spn', row.spn, 'Rotate and show the keytab',
+            'Makes new random keys at kvno ' + (Number(row.kvno) + 1) + ' and ' +
+            'shows their keytab once, with the kvno it replaces still in it. ' +
+            'Tickets already issued under the current key go on being accepted ' +
+            'for krb5.retainedKeyTtlS.') +
+          ((row.retained || []).length
+            ? rowButton('drop-previous-service-keys', 'spn', row.spn,
+                'Drop previous versions',
+                'Stops accepting tickets under kvno ' + row.retained.map(function (one) {
+                  return one.kvno;
+                }).join(', ') + ' now, rather than when their window ends. The ' +
+                'current key is untouched.')
+            : '') +
+          rowButton('delete-service', 'spn', row.spn, 'Delete the key',
+            'Removes the stored key and every previous version. Tickets for this ' +
+            'SPN are then keyed as they were before a key was stored.')
+        : '<span class="sub">Admin Write</span>') + '</td></tr>';
+  }).join('') || '<tr><td colspan="7">' + esc('No service principal holds a ' +
+    'stored key.') + '</td></tr>';
+  const peopleRows = json.people.map(function (row) {
+    return '<tr><td><code>' + esc(row.principal) + '</code></td>' +
+      '<td>' + esc(row.kvno == null ? '—' : String(row.kvno)) + '</td>' +
+      '<td>' + etypeList(row.etypes) + '</td>' +
+      '<td class="sub">' + esc(row.derivedAt || '—') +
+      (row.derivedOn ? '<br>on a password ' + esc(row.derivedOn) : '') + '</td>' +
+      '<td>' + (row.current ? 'yes'
+        : '<span class="state-invalid" title="' + esc('The password on the entry ' +
+            'is not the one these keys were derived from, so the KDC refuses ' +
+            'them. The next verified sign-in derives new ones.') + '">no</span>') +
+      '</td>' +
+      '<td>' + retainedCell(row.retained) + '</td>' +
+      '<td>' + (row.sealed ? 'sealed' : 'clear (development)') + '</td>' +
+      '<td>' + (mayChange
+        ? rowButton('clear-person-keys', 'username', row.username, 'Clear the keys',
+            'Removes this person\'s Kerberos keys, previous versions included. ' +
+            'Their next AS-REQ is refused with "sign in once"; their next ' +
+            'verified sign-in derives new keys at the next kvno.') +
+          ((row.retained || []).length
+            ? rowButton('drop-previous-person-keys', 'username', row.username,
+                'Drop previous versions',
+                'Stops accepting tickets sealed under kvno ' +
+                row.retained.map(function (one) { return one.kvno; }).join(', ') +
+                ' — this person\'s keys before their last password change — now. ' +
+                'Their current keys, and so their sign-in, are untouched.')
+            : '')
+        : '<span class="sub">Admin Write</span>') + '</td></tr>';
+  }).join('') || '<tr><td colspan="8">' + esc(json.productKdc
+    ? 'Nobody holds Kerberos keys yet. A person gets them the first time their ' +
+      'password is set or verified.'
+    : 'Development mode keys every user from krb5.userPassword, so nobody here ' +
+      'holds stored keys.') + '</td></tr>';
+
+  const inner = messagesOf(req) +
+    note('<strong>Who this KDC holds a stored key for.</strong> ' + esc(json.notes.mode)) +
+    warn('<strong>No key is on this page, and none is in its JSON.</strong> ' +
+         esc(json.notes.keys)) +
+    note(esc(json.notes.realm) + ' ' + esc(json.notes.window)) +
+    note('<strong>Previous key versions.</strong> ' + esc(json.notes.previous) +
+         ' Now: ' + esc(String(json.retention.versions)) + ' kept, each for ' +
+         esc(String(json.retention.ttlSeconds)) + ' seconds' +
+         (json.retention.ttlSetting > 0 ? '' : ' (the ticket lifetime plus the ' +
+           'clock skew, because <code>krb5.retainedKeyTtlS</code> is 0)') + '.') +
+    '<div class="tiles">' +
+    tile(json.peopleTotal, 'people with keys') +
+    tile(json.servicesTotal, 'service principals') +
+    tile(json.enctypes.length, 'enctypes (krb5.enctypes)') +
+    tile(json.startingKvno, 'starting kvno') +
+    '</div>' +
+    note('The acceptor on <code>krb5.servicePort</code> and <code>/authn/spnego</code> ' +
+         'answers as <code>' + esc(json.acceptor.spn || '(no SPN)') + '</code>' +
+         (json.acceptor.storedKey
+           ? ', keyed from a service principal stored here.'
+           : json.acceptor.available
+             ? ', keyed from krb5.servicePassword. Creating that SPN here gives it ' +
+               'a random key and a keytab instead.'
+             : ', and holds no key: create that SPN here to give it one.') +
+         ' <code>krb5.personKeys</code> is ' + (json.personKeys ? 'on' : 'OFF') + '.') +
+    '<h2>Service principals</h2>' + servicesNav.head +
+    '<table><tr><th>Principal</th><th>kvno</th><th>Enctypes</th>' +
+    '<th>Created</th><th>Previous versions</th><th>At rest</th><th></th></tr>' +
+    serviceRows + '</table>' +
+    servicesNav.foot +
+    (mayChange
+      ? '<h3>Create a service principal</h3>' +
+        note('A service principal name — <code>HTTP/web.example.com</code>, with or ' +
+             'without <code>@' + esc(json.realm) + '</code>. It gets a RANDOM key ' +
+             'for every enctype in <code>krb5.enctypes</code> at kvno ' +
+             esc(String(json.startingKvno)) + ', stored sealed on its application ' +
+             'entry, and the next page shows its keytab ONCE. <code>krbtgt</code> ' +
+             'is refused: that key is <code>krb5.krbtgtPassword</code>.') +
+        '<form method="post" action="/admin/kerberos/principals">' +
+        '<input type="hidden" name="action" value="create-service">' +
+        '<input type="hidden" name="back" value="' + esc(back) + '">' +
+        '<div class="formrow"><label for="krb5-spn">SPN</label>' +
+        '<input type="text" id="krb5-spn" name="spn" size="40" ' +
+        'placeholder="HTTP/web.example.com">' +
+        '<button type="submit">Create and show the keytab</button></div></form>'
+      : note('Creating, rotating and deleting a service principal needs ' +
+             '<strong>Admin Write</strong>.')) +
+    '<h2>People</h2>' + peopleNav.head +
+    '<table><tr><th>Principal</th><th>kvno</th><th>Enctypes</th>' +
+    '<th>Derived</th><th>Matches the password</th><th>Previous versions</th>' +
+    '<th>At rest</th><th></th></tr>' +
+    peopleRows + '</table>' + peopleNav.foot +
+    perPageForm('/admin/kerberos/principals', 'peoplePage', '1', json.peoplePaging.perPage) +
+    '<h2>What there is deliberately no button for</h2>' +
+    note('<strong>Downloading a keytab again.</strong> A stored key is never read ' +
+         'back out: the keytab is handed over by the create or rotate that made ' +
+         'it, and a lost one is replaced by rotating. <strong>Setting a person\'s ' +
+         'keys.</strong> They come from the person\'s password and from nothing ' +
+         'else; clearing them is the one control, and the next verified sign-in ' +
+         'derives them again.') +
+    note('<a href="/admin/kerberos/principals?format=json">this page as JSON</a> ' +
+         '&middot; <a href="/admin-api/kerberos/principals">the same over the ' +
+         'management API</a> &middot; <a href="/admin/kerberos">the Kerberos ' +
+         'settings</a> &middot; <a href="/krb5/principals">the principal database</a>');
+
+  respond(req, res, json, 'Kerberos principals', '/admin/kerberos/principals', inner);
+  log.debug("Leaving the admin Kerberos principals page.");
+});
+
+app.post('/admin/kerberos/principals', function (req, res) {
+  log.debug("Entering the admin Kerberos principals action endpoint.");
+  const body = parseBody(req);
+  const state = gateStateFor(req);
+  const result = adminActions.kerberosPrincipalsAction(body,
+    { actor: (state && state.username) || '', via: 'console' });
+  const isJson = /json/i.test(String(req.headers['content-type'] || ''));
+  if (result.ok && result.keytab && !isJson) {
+    // THE ONE TIME THE KEYTAB IS DRAWN. See the header above the GET.
+    const shown = Object.assign({}, result);
+    delete shown.keytab;
+    const inner = warn('<strong>This keytab is shown once.</strong> It is not ' +
+        'kept in the clear anywhere and this service cannot show it again; a ' +
+        'lost keytab is replaced by rotating, which makes a new key.') +
+      note(esc(result.message)) +
+      '<table class="key">' +
+      '<tr><th>Principal</th><td><code>' + esc(result.principal) + '</code></td></tr>' +
+      '<tr><th>kvno</th><td>' + esc(String(result.kvno)) + '</td></tr>' +
+      ((result.keytabKvnos || []).length > 1
+        ? '<tr><th>Versions in the keytab</th><td>' +
+          esc(result.keytabKvnos.join(', ')) + ' — the previous version stays in ' +
+          'it, as after <code>ktadd</code>, for tickets already issued under it' +
+          '</td></tr>'
+        : '') +
+      '<tr><th>Enctypes</th><td>' + result.etypes.map(function (etype) {
+        return '<code>' + esc(String(etype)) + '</code>';
+      }).join(' ') + '</td></tr></table>' +
+      '<p><a class="btn" download="' + esc(result.keytabFilename) + '" ' +
+      'href="data:application/octet-stream;base64,' + esc(result.keytab) + '">' +
+      'Save ' + esc(result.keytabFilename) + '</a></p>' +
+      note('Or, in a terminal: <code>base64 -d &gt; ' + esc(result.keytabFilename) +
+           '</code> and paste the text below, then <code>klist -k -e ' +
+           esc(result.keytabFilename) + '</code> to see the entries.') +
+      '<textarea readonly rows="6" name="keytab-base64">' + esc(result.keytab) +
+      '</textarea>' +
+      note('<a href="/admin/kerberos/principals">Back to the Kerberos principals</a>');
+    respond(req, res, shown, 'Kerberos keytab', '/admin/kerberos/principals', inner);
+    log.debug("Leaving the admin Kerberos principals action endpoint. Keytab shown.");
+    return;
+  }
+  respondToAction(req, res, '/admin/kerberos/principals' +
+    queryWith(listViewFromBack('/admin/kerberos/principals', body.back), {}), result);
+  log.debug("Leaving the admin Kerberos principals action endpoint.");
+});
+
+
 
 function ssfStreamCard(row) {
   log.debug("Entering ssfStreamCard().");
@@ -29948,9 +25478,9 @@ app.post('/admin/ssf', function (req, res) {
     // request can cause — consoleAction() resolves a refusal rather than
     // throwing one — so it is reported as a refusal naming the message
     // instead of becoming an unhandled rejection that ends the process.
-    log.error('admin: the Shared Signals action threw: ' + e.message);
+    log.error(errorCodes.tag('STS-ADMIN-0013') + 'admin: the Shared Signals action threw: ' + e.message);
     respondToAction(req, res, '/admin/ssf',
-      { ok: false, errors: ['The action failed: ' + e.message] });
+      { ok: false, errorCode: 'STS-ADMIN-0013', errors: ['The action failed: ' + e.message] });
     log.debug("Leaving the admin Shared Signals action endpoint. Threw.");
   });
 });
@@ -29988,7 +25518,7 @@ function setCaepReporter(reporter) {
     return !reporter || reporter[name] === undefined;
   });
   if (missing.length) {
-    log.error('admin: setCaepReporter() was given something without ' +
+    log.error(errorCodes.tag('STS-ADMIN-0014') + 'admin: setCaepReporter() was given something without ' +
               missing.join(', ') + ', and was ignored whole. /admin/caep and ' +
               '/admin/caep-sessions will say the reporter is not installed ' +
               'rather than half working.');
@@ -29996,44 +25526,18 @@ function setCaepReporter(reporter) {
     return;
   }
   caepReporter = reporter;
+  // AND THE ACTION LAYER, which needs the same object and is handed it
+  // from here rather than asking for it — see the header of
+  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // the ONLY place either is written, which is what keeps it one answer.
+  adminActions.setCaepReporter(reporter);
+  // AND THE READ LAYER: the /admin-api report of this stream is drawn there
+  // while the controls beside it are actions. One statement, one writer.
+  adminViews.setCaepReporter(reporter);
   log.debug("Leaving setCaepReporter(). Installed.");
 }
 
-// The whole report, for both pages and for `GET /admin-api/caep`. ONE
-// function, so the two pages and the API cannot come to disagree about what
-// this transmitter has said — rule 7's entire subject.
-function caepJson(req) {
-  log.debug("Entering caepJson().");
-  if (!caepReporter) {
-    log.debug("Leaving caepJson(). Not installed.");
-    return { installed: false, enabled: false, sessions: [], eventTypes: [],
-             streams: [], totals: {}, tracked: 0,
-             settings: configSettingsJson('/admin/caep'),
-             note: 'ssf/ssf.js is not loaded in this process, so nothing ' +
-                   'here can report on the Continuous Access Evaluation ' +
-                   'Profile.' };
-  }
-  const report = caepReporter.report(req);
-  report.installed = true;
-  report.catalogue = caepReporter.eventTypes();
-  report.settings = configSettingsJson('/admin/caep');
-  log.debug("Leaving caepJson(). " + report.tracked + " session(s).");
-  return report;
-}
 
-function caepAction(body) {
-  log.debug("Entering caepAction().");
-  const asked = body || {};
-  if (!caepReporter) {
-    log.debug("Leaving caepAction(). Not installed.");
-    return Promise.resolve({ ok: false, errors: [
-      'ssf/ssf.js is not loaded in this process, so there is nothing to ' +
-      'act on.'] });
-  }
-  const name = String(asked.action || '');
-  log.debug("Leaving caepAction(). " + name);
-  return caepReporter.action(name, asked, null);
-}
 
 // The short name of every CAEP event type, in catalogue order, so that the
 // count columns on the monitoring table are in the same order as the emit
@@ -30425,69 +25929,14 @@ app.post('/admin/caep', function (req, res) {
     respondToAction(req, res, back, result);
     log.debug("Leaving the admin CAEP action endpoint.");
   }).catch(function (e) {
-    log.error('admin: the CAEP action threw: ' + e.message);
+    log.error(errorCodes.tag('STS-ADMIN-0013') + 'admin: the CAEP action threw: ' + e.message);
     respondToAction(req, res, back,
-      { ok: false, errors: ['The action failed: ' + e.message] });
+      { ok: false, errorCode: 'STS-ADMIN-0013', errors: ['The action failed: ' + e.message] });
     log.debug("Leaving the admin CAEP action endpoint. Threw.");
   });
 });
 
-// ---------------------------------------------------------------------------
-// MONITORING -> CAEP SESSIONS.
-//
-// **THE REGISTER OUTLIVES THE SESSION AND THAT IS THE POINT.** `authn.js`
-// forgets a session the moment it is signed out; a row here whose state is
-// `revoked` is the only remaining evidence that the session existed and was
-// revoked, and "did anything go out when I signed that person out?" is the
-// question this page is for.
-//
-// It is under Monitoring rather than beside the settings for the reason
-// /admin/delegation is: that section's heading says *what this service has
-// done*, and this is an OBSERVATION. The settings are a configuration and live
-// at /admin/caep.
-// ---------------------------------------------------------------------------
-// THE SEARCH AND THE SLICE, as one pure function called twice — by the page and
-// by GET /admin-api/caep/sessions. Written once for the reason
-// `permissionsListState()` is: the markup and the reply have to agree about
-// what was filtered and what was drawn, and two walks of one list is how they
-// come to disagree about a session that ended in between.
-function caepSessionsState(req, report) {
-  log.debug("Entering caepSessionsState().");
-  const wanted = queryOne(req.query, 'sessq').trim();
-  const matched = (report.sessions || []).filter(function (row) {
-    return chooserMatches([row.username, row.sub, row.sessionId, row.subject,
-                           row.protocol], wanted);
-  });
-  const page = pagedRows(req.query, matched,
-    { name: 'sessions', noun: 'sessions' });
-  log.debug("Leaving caepSessionsState(). " + page.shown.length + " of " +
-            matched.length + ".");
-  return { wanted: wanted, matched: matched, page: page };
-}
 
-// THE PER-RECEIVER SECTION'S SEARCH AND SLICE, the same shape
-// `caepSessionsState()` has and for the same reason: the markup and the reply
-// have to agree about what was filtered and what was drawn.
-//
-// The search is over the RECEIVER — its identifier, its name, and the `aud` its
-// SETs are addressed to — because those are the three strings a reader arrives
-// holding and they are routinely different. It is NOT over the event types: a
-// receiver that takes none of the eight is exactly the row somebody is looking
-// for when they ask why nothing arrived, and a search that hid it would hide
-// the answer.
-function caepApplicationsState(req, report) {
-  log.debug("Entering caepApplicationsState().");
-  const wanted = queryOne(req.query, 'appq').trim();
-  const matched = (report.applications || []).filter(function (row) {
-    return chooserMatches([row.identifier, row.name, row.audiences.join(' ')],
-                          wanted);
-  });
-  const page = pagedRows(req.query, matched,
-    { name: 'applications', noun: 'receivers' });
-  log.debug("Leaving caepApplicationsState(). " + page.shown.length + " of " +
-            matched.length + ".");
-  return { wanted: wanted, matched: matched, page: page };
-}
 
 // One row of it. The eight count columns are in the SAME ORDER as the sessions
 // table's, off the same `caepShortNames()`, because a reader moving between the
@@ -30567,37 +26016,6 @@ function caepApplicationRow(row, shorts, prefix) {
   return out;
 }
 
-// The reply BOTH doors answer with. `/admin/caep-sessions?format=json` and
-// GET /admin-api/caep/sessions are the same document — rule 7 — and the drill-
-// down is `?session=`, which is one operation answering two shapes for the
-// reason /admin-api/permissions/groups gives: they are the same question at two
-// scales and the console draws them with one register.
-function caepSessionsJson(req) {
-  log.debug("Entering caepSessionsJson().");
-  const json = caepJson(req);
-  const asked = String(req.query.session || '').trim();
-  if (asked) {
-    const row = (json.sessions || []).filter(function (one) {
-      return String(one.sessionId) === asked;
-    })[0] || null;
-    const eventPage = pagedRows(req.query, (row && row.events) || [],
-      { name: 'events', noun: 'events' });
-    log.debug("Leaving caepSessionsJson(). One session.");
-    return { installed: json.installed, id: asked, session: row,
-             eventTypes: json.eventTypes || [],
-             events: eventPage.shown,
-             paging: { events: pagingJson(eventPage.paging) } };
-  }
-  const state = caepSessionsState(req, json);
-  const appState = caepApplicationsState(req, json);
-  log.debug("Leaving caepSessionsJson(). The list.");
-  return Object.assign({}, json, {
-    filter: { sessions: state.wanted || null,
-              applications: appState.wanted || null },
-    paging: { sessions: pagingJson(state.page.paging),
-              applications: pagingJson(appState.page.paging) }
-  });
-}
 
 app.get('/admin/caep-sessions', function (req, res) {
   log.debug("Entering the admin CAEP sessions page.");
@@ -31128,7 +26546,7 @@ function setRiscReporter(reporter) {
     return !reporter || reporter[name] === undefined;
   });
   if (missing.length) {
-    log.error('admin: setRiscReporter() was given something without ' +
+    log.error(errorCodes.tag('STS-ADMIN-0014') + 'admin: setRiscReporter() was given something without ' +
               missing.join(', ') + ', and was ignored whole. /admin/risc and ' +
               '/admin/risc-accounts will say the reporter is not installed ' +
               'rather than half working.');
@@ -31136,44 +26554,18 @@ function setRiscReporter(reporter) {
     return;
   }
   riscReporter = reporter;
+  // AND THE ACTION LAYER, which needs the same object and is handed it
+  // from here rather than asking for it — see the header of
+  // admin-core/admin_actions.js. One statement, two destinations: this is
+  // the ONLY place either is written, which is what keeps it one answer.
+  adminActions.setRiscReporter(reporter);
+  // AND THE READ LAYER: the /admin-api report of this stream is drawn there
+  // while the controls beside it are actions. One statement, one writer.
+  adminViews.setRiscReporter(reporter);
   log.debug("Leaving setRiscReporter(). Installed.");
 }
 
-// The whole report, for both pages and for `GET /admin-api/risc`. ONE
-// function, so the two pages and the API cannot come to disagree about what
-// this transmitter has said — rule 7's entire subject.
-function riscJson(req) {
-  log.debug("Entering riscJson().");
-  if (!riscReporter) {
-    log.debug("Leaving riscJson(). Not installed.");
-    return { installed: false, enabled: false, accounts: [], eventTypes: [],
-             streams: [], totals: {}, tracked: 0,
-             settings: configSettingsJson('/admin/risc'),
-             note: 'ssf/ssf.js is not loaded in this process, so nothing ' +
-                   'here can report on the Risk Incident Sharing and ' +
-                   'Coordination profile.' };
-  }
-  const report = riscReporter.report(req);
-  report.installed = true;
-  report.catalogue = riscReporter.eventTypes();
-  report.settings = configSettingsJson('/admin/risc');
-  log.debug("Leaving riscJson(). " + report.tracked + " account(s).");
-  return report;
-}
 
-function riscAction(body) {
-  log.debug("Entering riscAction().");
-  const asked = body || {};
-  if (!riscReporter) {
-    log.debug("Leaving riscAction(). Not installed.");
-    return Promise.resolve({ ok: false, errors: [
-      'ssf/ssf.js is not loaded in this process, so there is nothing to ' +
-      'act on.'] });
-  }
-  const name = String(asked.action || '');
-  log.debug("Leaving riscAction(). " + name);
-  return riscReporter.action(name, asked, null);
-}
 
 // The short name of every RISC event type, in catalogue order, so that the
 // count columns on the monitoring table are in the same order as the emit
@@ -31621,9 +27013,9 @@ app.post('/admin/risc', function (req, res) {
     respondToAction(req, res, back, result);
     log.debug("Leaving the admin RISC action endpoint.");
   }).catch(function (e) {
-    log.error('admin: the RISC action threw: ' + e.message);
+    log.error(errorCodes.tag('STS-ADMIN-0013') + 'admin: the RISC action threw: ' + e.message);
     respondToAction(req, res, back,
-      { ok: false, errors: ['The action failed: ' + e.message] });
+      { ok: false, errorCode: 'STS-ADMIN-0013', errors: ['The action failed: ' + e.message] });
     log.debug("Leaving the admin RISC action endpoint. Threw.");
   });
 });
@@ -31650,58 +27042,7 @@ function riscAccountsBackTo(body) {
   return '/admin/risc';
 }
 
-// ---------------------------------------------------------------------------
-// MONITORING -> RISC ACCOUNTS.
-//
-// **THE REGISTER OUTLIVES THE ACCOUNT, AND MORE STARKLY THAN THE CAEP ONE
-// OUTLIVES A SESSION.** That register keeps a row for a session the session
-// store has forgotten. This one keeps a row for an account that has been
-// DELETED FROM THE DIRECTORY ENTIRELY — the row whose lifecycle says `purged`
-// is the only remaining evidence anywhere that this service ever told anybody
-// the account was purged, and *"did anything go out when I deleted that
-// person?"* is the entire question this page answers.
-//
-// It is under Monitoring rather than beside the settings for the reason
-// /admin/caep-sessions is: that section's heading says *what this service has
-// done*, and this is an OBSERVATION.
-// ---------------------------------------------------------------------------
-// THE SEARCH AND THE SLICE, as one pure function called twice — by the page
-// and by the management API — for the reason caepSessionsState() is one.
-//
-// The search reaches `formerIdentifiers` as well as the current ones, and that
-// is not thoroughness: an `identifier-changed` is an event ABOUT the key, so
-// the address a reader arrives holding — out of a log, off an event they are
-// chasing — is routinely the one the account no longer has. A search that
-// matched only the current spelling would hide exactly the row somebody came
-// to find.
-function riscAccountsState(req, report) {
-  log.debug("Entering riscAccountsState().");
-  const wanted = queryOne(req.query, 'acctq').trim();
-  const matched = (report.accounts || []).filter(function (row) {
-    return chooserMatches([row.accountId, row.username, row.sub, row.email,
-                           row.phone, row.subject, row.dn].concat(
-                           row.formerIdentifiers || []), wanted);
-  });
-  const page = pagedRows(req.query, matched,
-    { name: 'accounts', noun: 'accounts' });
-  log.debug("Leaving riscAccountsState(). " + page.shown.length + " of " +
-            matched.length + ".");
-  return { wanted: wanted, matched: matched, page: page };
-}
 
-function riscApplicationsState(req, report) {
-  log.debug("Entering riscApplicationsState().");
-  const wanted = queryOne(req.query, 'rappq').trim();
-  const matched = (report.applications || []).filter(function (row) {
-    return chooserMatches([row.identifier, row.name, row.audiences.join(' ')],
-                          wanted);
-  });
-  const page = pagedRows(req.query, matched,
-    { name: 'rapplications', noun: 'receivers' });
-  log.debug("Leaving riscApplicationsState(). " + page.shown.length + " of " +
-            matched.length + ".");
-  return { wanted: wanted, matched: matched, page: page };
-}
 
 function riscApplicationRow(row, shorts, prefix) {
   log.debug("Entering riscApplicationRow(). " + row.identifier);
@@ -31754,37 +27095,6 @@ function riscApplicationRow(row, shorts, prefix) {
   return out;
 }
 
-// The reply BOTH doors answer with. `/admin/risc-accounts?format=json` and
-// GET /admin-api/risc/accounts are the same document — rule 7 — and the
-// drill-down is `?account=`, one operation answering two shapes for the reason
-// the CAEP pair gives: they are the same question at two scales and the
-// console draws them from one register.
-function riscAccountsJson(req) {
-  log.debug("Entering riscAccountsJson().");
-  const json = riscJson(req);
-  const asked = String(req.query.account || '').trim();
-  if (asked) {
-    const row = (json.accounts || []).filter(function (one) {
-      return String(one.accountId) === asked;
-    })[0] || null;
-    const eventPage = pagedRows(req.query, (row && row.events) || [],
-      { name: 'events', noun: 'events' });
-    log.debug("Leaving riscAccountsJson(). One account.");
-    return { installed: json.installed, id: asked, account: row,
-             eventTypes: json.eventTypes || [],
-             events: eventPage.shown,
-             paging: { events: pagingJson(eventPage.paging) } };
-  }
-  const state = riscAccountsState(req, json);
-  const appState = riscApplicationsState(req, json);
-  log.debug("Leaving riscAccountsJson(). The list.");
-  return Object.assign({}, json, {
-    filter: { accounts: state.wanted || null,
-              applications: appState.wanted || null },
-    paging: { accounts: pagingJson(state.page.paging),
-              applications: pagingJson(appState.page.paging) }
-  });
-}
 
 app.get('/admin/risc-accounts', function (req, res) {
   log.debug("Entering the admin RISC accounts page.");
@@ -32355,6 +27665,26 @@ function persistenceStatusBlock() {
             '</code>. The connection string itself is never shown here: it ' +
             'carries a password and this page is one fetch away from a log.'
           : 'a PostgreSQL connection string'],
+    // WHERE THE PASSWORD COMES FROM (2026-09-12), as its own row and never
+    // the password itself. A deployment that moved it into a secret store has
+    // no other way to see that this process agreed: the row above looks
+    // identical either way, because it never printed the password.
+    ['Password', off || info.mode !== 'postgres'
+      ? 'no connection is dialled, so there is no credential'
+      : (info.database
+          ? (info.database.passwordProvider &&
+             info.database.passwordProvider !== 'none'
+              ? '<strong>' + esc(String(info.database.passwordFrom)) +
+                '</strong> &mdash; read once at startup and put into the ' +
+                'connection string. The same mechanism, and by default the ' +
+                'same file or secret, as the key-encryption key on ' +
+                '<a href="/admin/encryption">the encryption report</a>.'
+              : 'the connection string ' +
+                '(<code>persistence.databaseUrl</code>), in plain text. ' +
+                '<code>persistence.databasePasswordProvider</code> reads it ' +
+                'from a mounted file, AWS Secrets Manager, Google Secret ' +
+                'Manager, Azure Key Vault or HashiCorp Vault instead.')
+          : 'unknown')],
     // TLS TO THE DATABASE, as its own row rather than folded into the one
     // above. Encryption and authentication are two answers and this page has
     // room to give both — which matters here more than in most places,
@@ -33461,85 +28791,29 @@ function spiffePostureNote() {
     'of what is and is not checked.</div>';
 }
 
-function spiffeSelectorText(selector) {
-  return spiffeRegistry.selectorText(selector);
-}
 
-// ---------------------------------------------------------------------------
-// THE TRUST DOMAIN PAGE.
-// ---------------------------------------------------------------------------
-function spiffeJson(req) {
-  log.debug("Entering spiffeJson().");
-  const state = spiffeCa.state();
-  const bindings = spiffeListeners();
-  const json = {
-    enabled: state.enabled,
-    ready: state.ready,
-    error: state.error,
-    trustDomain: state.trustDomain,
-    trustDomainId: state.trustDomainId,
-    serverId: state.serverId,
-    bundle: {
-      path: bindings.bundlePath,
-      sequence: state.sequence,
-      refreshHint: state.refreshHint
-    },
-    authorities: { source: state.authoritySource,
-                   realm: state.realm,
-                   x509: state.x509Authorities, jwt: state.jwtAuthorities,
-                   trustAnchors: state.trustAnchors,
-                   chainSubjects: state.chainSubjects,
-                   root: state.root,
-                   maxRetained: spiffeCa.MAX_RETAINED_AUTHORITIES },
-    listeners: { workloadApi: bindings.workload, serverApi: bindings.api },
-    federated: state.federated,
-    counts: { entries: spiffeRegistry.entryCount(),
-              agents: spiffeRegistry.agentCount(),
-              maxEntries: spiffeRegistry.maxEntries(),
-              maxAgents: spiffeRegistry.maxAgents(),
-              maxFederatedBundles: config.value('spiffe.maxFederatedBundles') },
-    keyTypes: state.keyTypes,
-    // WHO MAY CALL, from the one table `GET /spiffe` and the management API
-    // read too. Built there rather than here for the reason the two discovery
-    // documents are built from one object: three surfaces describing what is
-    // enforced three ways is two of them eventually wrong.
-    authentication: spiffeAuth.state(),
-    // Which settings shape this, so that a reader who wants to change something
-    // knows where to go rather than hunting /admin/config. The same courtesy
-    // /admin/scim pays.
-    settings: ['spiffe.enabled', 'spiffe.trustDomain', 'spiffe.x509KeyType',
-               'spiffe.jwtKeyType', 'spiffe.caTtl', 'spiffe.svidTtl',
-               'spiffe.jwtSvidTtl', 'spiffe.refreshHint', 'spiffe.svidSubject',
-               'spiffe.autoCreateEntries', 'spiffe.requireSecurityHeader',
-               'spiffe.trustLocalSocket',
-               'spiffe.adminIds', 'spiffe.clockSkew',
-               'spiffe.attestWorkloads', 'spiffe.acceptAssertedSelectors',
-               'spiffe.maxEntries', 'spiffe.maxAgents',
-               'spiffe.maxFederatedBundles', 'spiffe.bundlePath',
-               'spiffe.workloadSocketEnabled', 'spiffe.workloadSocket',
-               'spiffe.workloadPort', 'spiffe.serverPort',
-               'spiffe.serverSocketEnabled', 'spiffe.serverSocket',
-               'spiffe.grpcHost'].map(function (key) {
-      return { key: key, value: config.text(key) };
-    })
-  };
-  log.debug("Leaving spiffeJson(). ready=" + json.ready);
-  return json;
-}
 
 // A listener row, and the fourth column is WHAT A CALLER HAS TO PRESENT ON IT.
 // Not decoration: the four sockets have three different postures — plain,
 // plain-and-trusted-as-local, and mutual TLS — and a reader who cannot see
 // which is which meets the difference as a handshake failure with no message.
 // The same courtesy /tls says about which port needs verification turned off.
+// **THE REALM IS A COLUMN SINCE 2026-09-12**, and it is the first thing a
+// reader of this table needs: the listeners are per realm now, so two rows
+// with the same surface and different addresses are two TRUST DOMAINS rather
+// than one surface on two transports. A table without it would report four
+// Workload API rows and leave the reader to work out which service they
+// belong to from the port.
 function spiffeListenerRows(bindings, what) {
   if (!bindings.length) {
-    return '<tr><td colspan="4">Nothing bound for ' + esc(what) + '. Either ' +
+    return '<tr><td colspan="5">Nothing bound for ' + esc(what) + '. Either ' +
       'both transports are off in configuration, or the process has not ' +
       'finished starting.</td></tr>';
   }
   return bindings.map(function (binding) {
-    return '<tr><td>' + esc(what) + '</td><td><code>' + esc(binding.address) +
+    return '<tr><td>' + esc(what) + '</td><td>' +
+      esc(binding.realm || 'default') + '</td><td><code>' +
+      esc(binding.address) +
       '</code>' + (binding.tls ? ' <span class="note">(mutual TLS)</span>' : '') +
       '</td><td>' + (binding.listening ? 'listening'
         : '<strong>did not bind</strong> &mdash; ' + esc(binding.error)) +
@@ -33681,8 +28955,15 @@ function spiffePage(req) {
     note('Neither <code>/admin/sts-metadata</code> nor this page can see a ' +
     'socket, so ' +
     'this table is the only place that reports whether each one actually ' +
-    'bound. All four are restart-only.') +
-    '<table><tr><th>Surface</th><th>Address</th><th>State</th>' +
+    'bound. The DEFAULT realm\'s four are bound when the process starts and ' +
+    'stay bound with <code>spiffe.enabled</code> off — they answer ' +
+    '<code>Unavailable</code>, because a socket that vanished would read as a ' +
+    'service that had stopped. EVERY OTHER REALM\'S are bound when ' +
+    '<code>spiffe.enabled</code> is turned on for it, on the address ' +
+    '<code>spiffe.grpcHost</code> names for that realm — the endpoint address ' +
+    'is the only thing a SPIFFE client has to name a tenant with, because the ' +
+    'gRPC method name is fixed by the specification.') +
+    '<table><tr><th>Surface</th><th>Realm</th><th>Address</th><th>State</th>' +
     '<th>What a caller presents</th></tr>' +
     spiffeListenerRows(json.listeners.workloadApi, 'Workload API') +
     spiffeListenerRows(json.listeners.serverApi, 'SPIRE Server API') +
@@ -33795,39 +29076,6 @@ function spiffePage(req) {
   return { json: json, inner: inner, title: 'SPIFFE' };
 }
 
-// ---------------------------------------------------------------------------
-// THE REGISTRATION ENTRIES.
-// ---------------------------------------------------------------------------
-function spiffeEntriesJson(req) {
-  log.debug("Entering spiffeEntriesJson().");
-  const q = String(req.query.q || '').trim().toLowerCase();
-  const origin = String(req.query.origin || '').trim();
-  const all = spiffeRegistry.allEntries();
-  const rows = all.filter(function (entry) {
-    if (origin && entry.origin !== origin) return false;
-    if (!q) return true;
-    return (entry.spiffeId + ' ' + entry.parentId + ' ' + entry.id + ' ' +
-            entry.hint + ' ' +
-            entry.selectors.map(spiffeSelectorText).join(' ')).toLowerCase()
-      .indexOf(q) >= 0;
-  });
-  const pg = pagingOf(req.query, rows.length, { unit: 'entry' });
-  const json = {
-    total: all.length,
-    matched: rows.length,
-    filter: { q: q, origin: origin },
-    origins: all.map(function (entry) { return entry.origin; })
-      .filter(function (value, index, list) { return list.indexOf(value) === index; })
-      .sort(),
-    paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
-              total: pg.total },
-    max: spiffeRegistry.maxEntries(),
-    container: 'ou=entries,ou=spiffe',
-    entries: rows.slice(pg.offset, pg.offset + pg.perPage)
-  };
-  log.debug("Leaving spiffeEntriesJson(). " + rows.length + " matched.");
-  return { json: json, paging: pg };
-}
 
 function spiffeEntriesListPage(req) {
   log.debug("Entering spiffeEntriesListPage().");
@@ -34031,33 +29279,6 @@ function spiffeEntriesView(req) {
   return { json: list.json, inner: list.inner, title: 'Registration entries' };
 }
 
-// ---------------------------------------------------------------------------
-// THE AGENTS.
-// ---------------------------------------------------------------------------
-function spiffeAgentsJson(req) {
-  log.debug("Entering spiffeAgentsJson().");
-  const q = String(req.query.q || '').trim().toLowerCase();
-  const all = spiffeRegistry.allAgents();
-  const rows = all.filter(function (agent) {
-    if (!q) return true;
-    return (agent.id + ' ' + agent.attestationType + ' ' +
-            agent.selectors.map(spiffeSelectorText).join(' ')).toLowerCase()
-      .indexOf(q) >= 0;
-  });
-  const pg = pagingOf(req.query, rows.length, { unit: 'agent' });
-  const json = {
-    total: all.length,
-    matched: rows.length,
-    filter: { q: q },
-    max: spiffeRegistry.maxAgents(),
-    container: 'ou=agents,ou=spiffe',
-    paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
-              total: pg.total },
-    agents: rows.slice(pg.offset, pg.offset + pg.perPage)
-  };
-  log.debug("Leaving spiffeAgentsJson(). " + rows.length + " matched.");
-  return { json: json, paging: pg };
-}
 
 function spiffeAgentsListPage(req) {
   log.debug("Entering spiffeAgentsListPage().");
@@ -34192,268 +29413,18 @@ function spiffeAgentsView(req) {
   return { json: list.json, inner: list.inner, title: 'Attested agents' };
 }
 
-// ---------------------------------------------------------------------------
-// THE ACTIONS.
-//
-// Three handlers, one per page, and each is what BOTH the console form and the
-// management API call — with `action` taken from the URL there instead of from
-// a hidden input here. That is rule 7's arrangement, and it is what makes an
-// API operation most of the cost of a console control rather than a second
-// implementation of it.
-//
-// Each returns `{ ok, errors, message }` and DECIDES NOTHING ITSELF: the work
-// is in `spiffe_registry.js` and `spiffe_ca.js`, which the SPIRE Server API
-// also calls.
-// ---------------------------------------------------------------------------
-function spiffeCommaList(value) {
-  return String(value == null ? '' : value).split(',')
-    .map(function (part) { return part.trim(); })
-    .filter(Boolean);
-}
 
 // The known actions, as a list, so that an unknown one can be answered by
 // NAMING the ones that exist. The parent project's tests/vendored/admin_api.js reads
 // exactly that reply to assert console/API parity — it asks each handler for an
 // action that does not exist and compares what comes back with the API's
 // operations — so this list is not decoration.
-const SPIFFE_ACTIONS = ['rotate', 'federation-set', 'federation-remove'];
-const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
-const SPIFFE_AGENT_ACTIONS = ['ban', 'unban', 'delete'];
 
-function spiffeUnknownAction(action, known) {
-  return { ok: false, errors: ['Unknown action "' + String(action) + '". ' +
-    'The actions here are: ' + known.join(', ') + '.'] };
-}
 
-async function spiffeAction(body) {
-  log.debug("Entering spiffeAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  if (action === 'rotate') {
-    const which = String(body.which || 'x509');
-    const done = [];
-    try {
-      if (which === 'x509' || which === 'both') {
-        const authority = await spiffeCa.rotateX509Authority();
-        done.push('a new X.509 authority (' + authority.id + ')');
-      }
-      if (which === 'jwt' || which === 'both') {
-        const authority = await spiffeCa.rotateJwtAuthority();
-        done.push('a new JWT authority (kid ' + authority.id + ')');
-      }
-    } catch (e) {
-      log.debug("Leaving spiffeAction(). Rotation failed.");
-      return { ok: false, errors: ['The authority could not be rotated: ' +
-                                   e.message] };
-    }
-    if (!done.length) {
-      log.debug("Leaving spiffeAction(). Nothing named.");
-      return { ok: false, errors: ['Rotate what? `which` is x509, jwt or both.'] };
-    }
-    auditLog.audit({ action: 'spiffe.bundle.change', actor: '', protocol: 'SPIFFE',
-                  channel: 'internal', target: spiffeCa.trustDomainId(),
-                  summary: 'An authority was rotated from the console',
-                  detail: { which: which, sequence: spiffeCa.sequence() } });
-    log.debug("Leaving spiffeAction(). Rotated.");
-    return { ok: true, message: 'Rotated: ' + done.join(' and ') + '. The ' +
-      'previous authority is still published in the bundle, so SVIDs already ' +
-      'issued go on verifying; the bundle sequence is now ' +
-      spiffeCa.sequence() + '.' };
-  }
 
-  if (action === 'federation-set') {
-    const name = String(body.trustDomain || '').trim().toLowerCase();
-    if (!name) {
-      log.debug("Leaving spiffeAction(). No trust domain.");
-      return { ok: false, errors: ['Which trust domain? Send `trustDomain` ' +
-                                   'with its name — other.example, not ' +
-                                   'spiffe://other.example.'] };
-    }
-    const result = spiffeCa.setFederatedBundle(name, body.document, {
-      bundleEndpointUrl: String(body.bundleEndpointUrl || ''),
-      bundleEndpointProfile: String(body.bundleEndpointProfile || 'https_web'),
-      endpointSpiffeId: String(body.endpointSpiffeId || '')
-    });
-    if (!result.ok) {
-      log.debug("Leaving spiffeAction(). Refused.");
-      return { ok: false, errors: [result.reason] };
-    }
-    auditLog.audit({ action: 'spiffe.bundle.change', actor: '', protocol: 'SPIFFE',
-                  channel: 'internal', target: name,
-                  summary: 'A federated bundle for ' + name + ' was set from ' +
-                           'the console',
-                  detail: { created: result.created } });
-    log.debug("Leaving spiffeAction(). Federated bundle set.");
-    return { ok: true, message: 'The bundle for ' + name + ' was ' +
-      (result.created ? 'added' : 'replaced') + '. Any registration entry that ' +
-      'federates with it will now hand it to its workloads. The endpoint URL ' +
-      'is recorded and will not be fetched — see the note on this page.' };
-  }
 
-  if (action === 'federation-remove') {
-    const name = String(body.trustDomain || '').trim().toLowerCase();
-    const removed = spiffeCa.deleteFederatedBundle(name);
-    if (!removed) {
-      log.debug("Leaving spiffeAction(). Not held.");
-      return { ok: false, errors: ['This service holds no bundle for the ' +
-                                   'trust domain ' + name + '.'] };
-    }
-    auditLog.audit({ action: 'spiffe.bundle.change', actor: '', protocol: 'SPIFFE',
-                  channel: 'internal', target: name,
-                  summary: 'A federated bundle for ' + name + ' was removed ' +
-                           'from the console', detail: {} });
-    log.debug("Leaving spiffeAction(). Removed.");
-    return { ok: true, message: 'The bundle for ' + name + ' is gone. Any ' +
-      'entry that federates with it keeps the name and simply contributes no ' +
-      'bundle, which is the same state as a relationship configured before its ' +
-      'bundle arrives.' };
-  }
 
-  log.debug("Leaving spiffeAction(). Unknown action.");
-  return spiffeUnknownAction(action, SPIFFE_ACTIONS);
-}
 
-function spiffeEntriesAction(body) {
-  log.debug("Entering spiffeEntriesAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const trustDomain = spiffeCa.trustDomain();
-
-  if (action === 'create') {
-    const result = spiffeRegistry.createEntry({
-      spiffeId: String(body.spiffeId || '').trim(),
-      parentId: String(body.parentId || '').trim() ||
-                spiffeIdLib.serverId(trustDomain),
-      selectors: spiffeCommaList(body.selectors)
-        .map(spiffeRegistry.parseSelector).filter(Boolean),
-      dnsNames: spiffeCommaList(body.dnsNames),
-      federatesWith: spiffeCommaList(body.federatesWith),
-      x509SvidTtl: parseInt(String(body.x509SvidTtl || '0'), 10) || 0,
-      jwtSvidTtl: parseInt(String(body.jwtSvidTtl || '0'), 10) || 0,
-      hint: String(body.hint || '').trim()
-    }, 'console', trustDomain, '');
-    log.debug("Leaving spiffeEntriesAction(). create " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return result;
-    return { ok: true, id: result.id, entry: result.entry,
-             message: 'The entry is in the registry as ' + result.id +
-                      '. The next FetchX509SVID will include an SVID ' +
-                      'for ' + result.entry.spiffeId + ' — this service hands ' +
-                      'every caller every identity, so the selectors do not ' +
-                      'narrow that.' };
-  }
-
-  if (action === 'update') {
-    const id = String(body.entry || '').trim();
-    if (!id) {
-      log.debug("Leaving spiffeEntriesAction(). No entry named.");
-      return { ok: false, errors: ['Which entry? Send `entry` with its id.'] };
-    }
-    const field = String(body.field || '').trim();
-    if (spiffeRegistry.EDITABLE.indexOf(fieldToAttribute(field)) < 0) {
-      log.debug("Leaving spiffeEntriesAction(). Not editable.");
-      return { ok: false, errors: ['"' + field + '" is not a field this page ' +
-        'may change. The editable ones are what the entry may DO: ' +
-        'spiffeId, parentId, selectors, dnsNames, federatesWith, ' +
-        'x509SvidTtl, jwtSvidTtl, hint, expiresAt, admin, downstream, ' +
-        'storeSvid. The rest is what HAPPENED, and only ldapmodify reaches it.'] };
-    }
-    const raw = body.value === undefined ? '' : String(body.value);
-    const changes = {};
-    if (field === 'selectors') {
-      changes.selectors = spiffeCommaList(raw)
-        .map(spiffeRegistry.parseSelector).filter(Boolean);
-    } else if (field === 'dnsNames' || field === 'federatesWith') {
-      changes[field] = spiffeCommaList(raw);
-    } else if (field === 'x509SvidTtl' || field === 'jwtSvidTtl' ||
-               field === 'expiresAt') {
-      changes[field] = parseInt(raw, 10) || 0;
-    } else if (field === 'admin' || field === 'downstream' ||
-               field === 'storeSvid') {
-      changes[field] = /^(1|true|yes|on)$/i.test(raw.trim());
-    } else {
-      changes[field] = raw.trim();
-    }
-    const result = spiffeRegistry.updateEntry(id, changes, trustDomain, '');
-    log.debug("Leaving spiffeEntriesAction(). update " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return result;
-    return { ok: true, id: id, entry: result.entry,
-             message: field + ' is set. The entry is now at revision ' +
-                      result.entry.revisionNumber + ', and the change applies ' +
-                      'to the NEXT SVID issued from it — nothing caches this ' +
-                      'and nothing already issued changes.' };
-  }
-
-  if (action === 'delete') {
-    const id = String(body.entry || '').trim();
-    if (!id) {
-      log.debug("Leaving spiffeEntriesAction(). No entry named.");
-      return { ok: false, errors: ['Which entry? Send `entry` with its id.'] };
-    }
-    const result = spiffeRegistry.deleteEntry(id, '');
-    log.debug("Leaving spiffeEntriesAction(). delete " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return result;
-    return { ok: true, id: id,
-             message: 'The entry is gone. Anything holding an SVID minted from ' +
-                      'it keeps that SVID until it expires — SPIFFE has no ' +
-                      'revocation.' };
-  }
-
-  log.debug("Leaving spiffeEntriesAction(). Unknown action.");
-  return spiffeUnknownAction(action, SPIFFE_ENTRY_ACTIONS);
-}
-
-// The console names a field the way the record does and the EDITABLE table
-// names it the way the DIRECTORY does. One map, here, rather than two
-// vocabularies that drift: a form offering `dnsNames` while the table says
-// `spiffeDnsName` would refuse every edit the form offers.
-const SPIFFE_FIELD_ATTRIBUTES = {
-  spiffeId: 'spiffeId', parentId: 'spiffeParentId', selectors: 'spiffeSelector',
-  dnsNames: 'spiffeDnsName', federatesWith: 'spiffeFederatesWith',
-  x509SvidTtl: 'spiffeX509SvidTtl', jwtSvidTtl: 'spiffeJwtSvidTtl',
-  hint: 'spiffeHint', expiresAt: 'spiffeEntryExpiresAt', admin: 'spiffeAdmin',
-  downstream: 'spiffeDownstream', storeSvid: 'spiffeStoreSvid'
-};
-
-function fieldToAttribute(field) {
-  return SPIFFE_FIELD_ATTRIBUTES[String(field)] || '';
-}
-
-function spiffeAgentsAction(body) {
-  log.debug("Entering spiffeAgentsAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const id = String(body.agent || '').trim();
-  if (SPIFFE_AGENT_ACTIONS.indexOf(action) >= 0 && !id) {
-    log.debug("Leaving spiffeAgentsAction(). No agent named.");
-    return { ok: false, errors: ['Which agent? Send `agent` with its SPIFFE ' +
-                                 'ID, which is under /spire/agent/.'] };
-  }
-  if (action === 'ban' || action === 'unban') {
-    const result = spiffeRegistry.setAgentBanned(id, action === 'ban', '');
-    log.debug("Leaving spiffeAgentsAction(). " + action + " " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return result;
-    return { ok: true, id: id, agent: result.agent,
-             message: action === 'ban'
-               ? 'That agent is banned: AttestAgent now refuses it with ' +
-                 'PermissionDenied. Whatever SVID it already holds keeps ' +
-                 'working until it expires.'
-               : 'That agent may attest again.' };
-  }
-  if (action === 'delete') {
-    const result = spiffeRegistry.deleteAgent(id, '');
-    log.debug("Leaving spiffeAgentsAction(). delete " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return result;
-    return { ok: true, id: id,
-             message: 'That agent is forgotten. It reappears the moment it ' +
-                      'attests again, because attestation is not checked — ' +
-                      'deleting is forgetting, not revoking. Ban it instead if ' +
-                      'that is what you meant.' };
-  }
-  log.debug("Leaving spiffeAgentsAction(). Unknown action.");
-  return spiffeUnknownAction(action, SPIFFE_AGENT_ACTIONS);
-}
 
 // ---------------------------------------------------------------------------
 // THE ROUTES.
@@ -34480,9 +29451,9 @@ app.post('/admin/spiffe', function (req, res) {
     // A throw out of the action itself. Answered rather than left to express's
     // handler, which would replace the Content-Security-Policy header — see the
     // frame-ancestors note in CLAUDE.md.
-    log.error('The SPIFFE console action threw: ' + err.message);
+    log.error(errorCodes.tag('STS-ADMIN-0013') + 'The SPIFFE console action threw: ' + err.message);
     respondToAction(req, res, '/admin/spiffe',
-                    { ok: false, errors: [err.message] });
+                    { ok: false, errorCode: 'STS-ADMIN-0013', errors: [err.message] });
     log.debug("Leaving the admin SPIFFE action endpoint. It threw.");
   });
 });
@@ -34578,36 +29549,6 @@ const FEDERATION_LINKS =
   '<a href="/admin/users">who has signed in</a> &middot; ' +
   '<a href="/admin/ldap/federations">the register as the directory sees it</a></p>';
 
-// One row's summary, shared by the list and the JSON. It is a function rather
-// than being built inline twice because the READINESS is computed here — the
-// page prints it and the API answers it, and two computations of "is this
-// partner usable" would be two answers to the question the whole page is about.
-function federationRow(record) {
-  const readiness = federation.readinessOf(record);
-  return {
-    id: record.fedId,
-    name: record.fedName || record.fedId,
-    role: record.fedRole,
-    roleLabel: (federation.roleRow(record.fedRole) || {}).short || record.fedRole,
-    protocol: record.fedProtocol,
-    protocolLabel: (federation.protocolRow(record.fedProtocol) || {}).label || record.fedProtocol,
-    peer: record.fedPeer || '',
-    application: record.fedApplication || '',
-    enabled: federation.isEnabled(record),
-    ready: readiness.ready,
-    missing: readiness.missing,
-    usable: federation.isEnabled(record) && readiness.ready,
-    releases: (record.fedRelease || []).slice(0),
-    mappings: (record.fedAttributeMap || []).slice(0),
-    authentications: parseInt(record.fedAuthentications, 10) || 0,
-    users: parseInt(record.fedUsers, 10) || 0,
-    lastUser: record.fedLastUser || '',
-    lastSeen: record.fedLastSeen || '',
-    lastError: record.fedLastError || '',
-    lastErrorAt: record.fedLastErrorAt || '',
-    dn: record.dn || ''
-  };
-}
 
 // THE STATE CELL, and it is the most important thing on the page. Four states
 // and each is a different instruction to the reader, which is why they are four
@@ -34625,17 +29566,13 @@ function federationStateCell(row) {
 
 function federationListPage(req) {
   log.debug("Entering federationListPage().");
-  const all = federation.list().map(federationRow);
-  const wantedText = String(req.query.q || '').trim().toLowerCase();
-  const wantedRole = String(req.query.role || '').trim();
-  const filtered = all.filter(function (row) {
-    if (wantedRole && row.role !== wantedRole) return false;
-    if (!wantedText) return true;
-    return (row.id + ' ' + row.name + ' ' + row.peer + ' ' + row.application)
-      .toLowerCase().indexOf(wantedText) >= 0;
-  });
-  const paging = pagingOf(req.query, filtered.length, {});
-  const paged = pagedRows(req.query, filtered, {});
+  const view = adminViews.federationListJson(req);
+  const all = view.all;
+  const wantedText = view.wantedText;
+  const wantedRole = view.wantedRole;
+  const filtered = view.filtered;
+  const paging = view.paging;
+  const paged = view.paged;
   const nav = pageNavPair('/admin/federation', pageParamsOf(req.query), paging);
 
   const rows = paged.shown.map(function (row) {
@@ -34734,18 +29671,7 @@ function federationListPage(req) {
             filtered.length + " matched.");
   return {
     inner: inner,
-    json: {
-      relationshipCount: all.length, matched: filtered.length, shown: paged.shown.length,
-      ready: all.filter(function (r) { return r.usable; }).length,
-      filter: { q: String(req.query.q || '') || null, role: wantedRole || null },
-      page: paging.page, pages: paging.pages, perPage: paging.perPage,
-      firstRow: paging.firstRow, lastRow: paging.lastRow,
-      container: federation.containerDn(), max: federation.maxRelationships(),
-      settings: configSettingsJson('/admin/federation'),
-      roles: federation.ROLES, protocols: federation.PROTOCOLS,
-      paths: federation.PATHS,
-      relationships: paged.shown
-    }
+    json: view.json
   };
 }
 
@@ -34791,67 +29717,30 @@ function federationCreateForm() {
 // so this page cannot offer a field the action would refuse.
 function federationDetailPage(req, id) {
   log.debug("Entering federationDetailPage(). id=" + id);
+  const view = adminViews.federationDetailJson(req, id);
+  const record = view.record;
   const carryBack = '<input type="hidden" name="back" value="' +
     esc(queryWith(listViewOf('/admin/federation', req.query), {})) + '">';
-  const record = federation.get(id);
   if (!record) {
     log.debug("Leaving federationDetailPage(). No such relationship.");
     return {
+      missing: true,
       inner: messagesOf(req) +
         '<p class="warn">There is no federation relationship called <code>' + esc(id) +
         '</code>. Unlike almost everything else in this console, one does not appear because ' +
         'somebody used it: this register is configured and nothing creates an entry in it by ' +
         'turning up.</p>' + FEDERATION_LINKS,
-      json: { found: false, id: id }
+      json: view.json
     };
   }
-  const row = federationRow(record);
-  // ---------------------------------------------------------------------
-  // THE ADDRESSES TO GIVE THE PARTNER, and they are the whole point of this
-  // page: an operator copies them into somebody else's identity service, where
-  // being wrong is a federation that fails at the far end with nothing here to
-  // point at.
-  //
-  // `baseUrlOf(req)` is the ONLY way to build one. This was
-  // `'http://' + req.get('host')` until 2026-08-26 — the one place in this file
-  // that did not go through that helper — and it was wrong three ways at once,
-  // each of them invisible on a default deployment:
-  //
-  //   * NO REALM PREFIX. A relationship is an entry in one realm's own
-  //     register and its assertion consumer service answers only under that
-  //     realm's prefix, so the URL printed here named a path that 404s — while
-  //     the AuthnRequest this service actually sends carries the right one,
-  //     because federation_sp.js does use baseUrlOf(). The page and the wire
-  //     disagreed, and the page is the half a person reads.
-  //   * ALWAYS `http://`, on a service that binds TLS whenever `global.https`
-  //     is set — which every launcher in the parent project's suite does.
-  //   * NO FORWARDED HEADERS, so a deployment behind a proxy with
-  //     `global.trustProxy` on was told its own internal address.
-  // ---------------------------------------------------------------------
-  const base = baseUrlOf(req);
-  const acs = base + federation.PATHS.acs + '/' + encodeURIComponent(row.id);
-  const login = federation.PATHS.login + '/' + encodeURIComponent(row.id);
-  const metadata = base + federation.PATHS.metadata + '/' + encodeURIComponent(row.id);
-  // AND THE SAME PATH AGAIN, PREFIXED, FOR THE JSON — which is not a
-  // duplicate. `login` above is used in an `href` on this page and must stay
-  // ROOT-RELATIVE, because app.js's realm middleware rewrites root-relative
-  // hrefs in an HTML response on the way out and its regex has no idempotence
-  // guard: a path prefixed here would leave the page carrying
-  // /realm/acme/realm/acme/federation/login/x. That rewrite runs on `text/html`
-  // ONLY, so the JSON reply is never touched and has to carry the prefix
-  // itself. `realms.href()` is the guarded version and is safe either way.
-  const loginPath = realms.href(login);
-
-  const setFields = federation.fieldsForRole(row.role, 'set').filter(function (field) {
-    // The four booleans get their own two-button control below, because a text
-    // box a person types TRUE into is a text box a person types "true", "yes"
-    // and "1" into — and one of those is how a relationship stays disabled
-    // while the page says it is on.
-    return ['fedEnabled', 'fedAutocreateUsers', 'fedSignRequest',
-            'fedAllowUnsolicited'].indexOf(field.name) === -1;
-  });
-  const multiFields = federation.fieldsForRole(row.role, 'multi');
-
+  const row = view.row;
+  const base = view.base;
+  const acs = view.acs;
+  const login = view.login;
+  const metadata = view.metadata;
+  const loginPath = view.loginPath;
+  const setFields = view.setFields;
+  const multiFields = view.multiFields;
   const fieldRows = setFields.map(function (field) {
     const value = record[field.name] || '';
     return '<tr><td><code>' + esc(field.name) + '</code></td>' +
@@ -35047,106 +29936,9 @@ function federationDetailPage(req, id) {
     '">back to the list</a></p>' + FEDERATION_LINKS;
 
   log.debug("Leaving federationDetailPage(). " + row.id + ".");
-  return {
-    inner: inner,
-    json: Object.assign({ found: true }, row, {
-      endpoints: { assertionConsumerService: acs, login: loginPath,
-                   metadata: (row.protocol === 'saml2' || row.protocol === 'saml11')
-                     ? metadata : null },
-      // The whole record, MINUS the one sensitive field. `fedClientSecret` is
-      // replaced by a boolean saying whether one is set — which is the fact a
-      // caller actually needs ("is this configured?") without the API being a
-      // second way to read a credential out of this process. An ldapsearch is
-      // still that way, deliberately and loudly.
-      fields: (function () {
-        const out = {};
-        federation.SCHEMA.attributes.forEach(function (field) {
-          if (field.sensitive) {
-            out[field.name] = record[field.name] ? '(set — not returned)' : '';
-            return;
-          }
-          out[field.name] = record[field.name];
-        });
-        return out;
-      })(),
-      editable: federation.fieldsForRole(row.role)
-    })
-  };
+  return { inner: inner, json: view.json };
 }
 
-// ---------------------------------------------------------------------------
-// THE ACTION FUNCTION. `/admin-api/federation/:action` calls exactly this, with
-// `action` off the URL instead of out of a hidden input — rule 7, and it is
-// what makes "every console control has an API operation" a property of the
-// code rather than a promise in a comment.
-//
-// It decides NOTHING itself. Every branch calls `federation.js`, which owns the
-// schema, the modes and the refusals — the same division `applicationsAction()`
-// keeps with `applications.js`. A validation written here would be a second
-// opinion about what a relationship may hold, and the one an `ldapmodify` never
-// saw.
-// ---------------------------------------------------------------------------
-function federationAction(body) {
-  log.debug("Entering federationAction(). action=" + (body.action || '(none)'));
-  const action = String(body.action || '');
-  const id = String(body.id || body.relationship || '').trim();
-
-  if (action === 'create') {
-    const result = federation.create({
-      fedId: id,
-      fedRole: String(body.role || ''),
-      fedProtocol: String(body.protocol || ''),
-      fedName: String(body.name || ''),
-      fedPeer: String(body.peer || ''),
-      fedApplication: String(body.application || '')
-    });
-    log.debug("Leaving federationAction(). create " + (result.ok ? 'ok' : 'refused') + ".");
-    if (!result.ok) return result;
-    return Object.assign({}, result, {
-      message: 'Registered, and DISABLED. Set what it needs — ' +
-        (result.readiness.missing.length
-          ? result.readiness.missing.join(', ')
-          : 'nothing is missing') +
-        ' — and then enable it. A relationship does nothing at all until both are done.'
-    });
-  }
-
-  if (!id) {
-    log.debug("Leaving federationAction(). No relationship named.");
-    return { ok: false, errors: ['Name the relationship by its id, in `id`.'] };
-  }
-
-  if (action === 'set' || action === 'add-value' || action === 'remove-value') {
-    const result = federation.update(id, {
-      field: String(body.field || ''),
-      value: String(body.value == null ? '' : body.value),
-      mode: action === 'remove-value' ? 'remove' : 'add'
-    });
-    log.debug("Leaving federationAction(). " + action + " " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  if (action === 'enable' || action === 'disable') {
-    const result = federation.update(id, {
-      field: 'fedEnabled', value: action === 'enable' ? 'TRUE' : 'FALSE'
-    });
-    log.debug("Leaving federationAction(). " + action + " " +
-              (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  if (action === 'delete') {
-    const result = federation.remove(id);
-    log.debug("Leaving federationAction(). delete " + (result.ok ? 'ok' : 'refused') + ".");
-    return result;
-  }
-
-  log.debug("Leaving federationAction(). Unknown action.");
-  return { ok: false,
-           errors: ['Unknown action "' + action + '". The seven are: create, set, ' +
-                    'add-value, remove-value, enable, disable, delete.'] };
-}
 
 function federationView(req) {
   log.debug("Entering federationView().");
@@ -35154,7 +29946,7 @@ function federationView(req) {
   if (wanted) {
     const detail = federationDetailPage(req, wanted);
     log.debug("Leaving federationView(). The drill-down.");
-    return { json: detail.json, inner: detail.inner,
+    return { missing: !!detail.missing, json: detail.json, inner: detail.inner,
              title: 'Federation relationship ' + wanted,
              up: upTo('/admin/federation', wanted,
                       listViewOf('/admin/federation', req.query)) };
@@ -35167,6 +29959,9 @@ function federationView(req) {
 app.get('/admin/federation', function (req, res) {
   log.debug("Entering the admin federation page.");
   const view = federationView(req);
+  if (view.missing) {
+    errorCodes.mark(res, 'STS-ADMIN-0021');
+  }
   respond(req, res, view.json, view.title, '/admin/federation', view.inner, view.up);
   log.debug("Leaving the admin federation page. " + view.title + ".");
 });
@@ -35752,13 +30547,6 @@ module.exports = {
   // how a console starts behaving differently on different pages.
   configFormsFor: configFormsFor,
   setXacmlPages: setXacmlPages,
-  xacmlView: xacmlView,
-  xacmlPoliciesView: xacmlPoliciesView,
-  xacmlEditorView: xacmlEditorView,
-  xacmlPepsView: xacmlPepsView,
-  xacmlDecideView: xacmlDecideView,
-  xacmlMonitorView: xacmlMonitorView,
-  xacmlAction: xacmlAction,
   xacmlActionNames: xacmlActionNames,
   // The JSON counterpart of the block above, so that a page drawn
   // elsewhere can answer ?format=json with the SAME settings it just
@@ -35767,6 +30555,18 @@ module.exports = {
   // does not carry, which is correct for the pages this file generates
   // and wrong for one somebody else draws.
   configSettingsJson: configSettingsJson,
+  // ---------------------------------------------------------------------
+  // THE ACTIONS ARE NOT HERE ANY MORE (2026-09-12). All thirty-one live in
+  // `admin-core/admin_actions.js`, which `mgmt-api/admin_api.js` requires
+  // directly — so the management API no longer reaches its decisions through
+  // the console module.
+  //
+  // They are deliberately NOT re-exported from here. Aliasing them back into
+  // this file's scope (see the block below the requires) is what keeps the
+  // several hundred call sites in this file unchanged; re-exporting them as
+  // well would publish a SECOND way to reach the same function, and the
+  // second way is the one that goes stale.
+  // ---------------------------------------------------------------------
   respondToAction: respondToAction,
   // THE FOLDS AND THE TOOLTIPS, for the same one module. They are exported for
   // the reason page() is: `sts_metadata.js` draws a console page, and a page
@@ -35782,7 +30582,6 @@ module.exports = {
   // THE NINTH SLOT, filled by the same module, and the views behind it. See
   // the block above setDirectoryPages().
   setDirectoryPages: setDirectoryPages,
-  directoryPageJson: directoryPageJson,
   // ---------------------------------------------------------------------
   // THE LIST-PAGE FURNITURE, FOR THE ONE MODULE OUTSIDE THIS DIRECTORY THAT
   // DRAWS LIST PAGES IN THIS SHELL.
@@ -35807,11 +30606,9 @@ module.exports = {
   tile: tile,
   clipped: clipped,
   clippedValues: clippedValues,
-  pagedRows: pagedRows,
   pageNavPair: pageNavPair,
   perPageOptions: perPageOptions,
   queryWith: queryWith,
-  pagingJson: pagingJson,
   // Filled by spiffe_server.js at its require time, for the reason beside the
   // requires at the top: this file must not require that module.
   setSpiffeReader: setSpiffeReader,
@@ -35831,14 +30628,16 @@ module.exports = {
   // to pass rule 3e's test both ways round. See the block above
   // setSignalsReporter().
   setSignalsReporter: setSignalsReporter,
+  // Filled by ../common/protocol_stack.js on the line after it requires
+  // ../tls/tls_server.js — the thirteenth, and the one slot here NOT filled by
+  // the module that owns what it carries. See the block above setTruststore().
+  setTruststore: setTruststore,
   // The Shared Signals page's view and its four actions, for admin_api.js.
   // Rule 7: the API calls exactly these, so an action added to that switch is
   // most of adding it there. `ssfAction` RESOLVES rather than returning — it
   // is the only action function in this console that does, because
   // transmitting a Security Event Token signs a JWS and POSTs it to somebody
   // else's endpoint.
-  ssfView: ssfJson,
-  ssfAction: ssfAction,
   ssfActionNames: function () {
     return signalsReporter ? signalsReporter.actions.slice() : [];
   },
@@ -35860,61 +30659,42 @@ module.exports = {
   // from, so the console and the management API cannot come to disagree about
   // who is signed in. It takes the whole request because the filter and the
   // paging are query parameters, which is the shape every list view here has.
-  sessionsView: function (req) { return sessionsView(req).json; },
-  sessionsAction: sessionsAction,
-  caepView: caepJson,
   // The sessions register as /admin/caep-sessions draws it — the list, or one
   // session with `?session=`. Rule 7: that page is a page of this console and
   // owed an operation of its own.
-  caepSessionsView: caepSessionsJson,
-  caepAction: caepAction,
   caepActionNames: function () {
     return caepReporter ? caepReporter.actions.slice() : [];
   },
   // The RISC view and its three actions, on exactly the CAEP pair's terms.
   // `riscAction` RESOLVES for the same reason: emitting a RISC event signs a
   // JWS and POSTs it.
-  riscView: riscJson,
   // The account register as /admin/risc-accounts draws it — the list, or one
   // account with `?account=`.
-  riscAccountsView: riscAccountsJson,
-  riscAction: riscAction,
   riscActionNames: function () {
     return riscReporter ? riscReporter.actions.slice() : [];
   },
   // The crypto report, for admin_api.js. One function, so the page and the API
   // cannot disagree about what this service's cryptography is.
-  cryptoView: cryptoView,
   // The key inventory and the export, for admin_api.js. Two functions rather
   // than one because LISTING what this process holds and HANDING A KEY OVER
   // are different acts, and only the second needs Admin Write.
-  keysView: keysView,
-  keysExport: keysExport,
   // For crypto_metadata.js's export route, which is the only caller.
   mayWrite: mayWrite,
-  usersAction: usersAction,
   // The sign-out page's view and its four actions, for admin_api.js. Rule 7:
   // the API calls exactly these, so an action added to that switch is most of
   // adding it there — and the refusal sentence that names the four is what the
   // parent project's tests/vendored/admin_api.js reads to check the parity.
   logoutView: logoutView,
-  logoutAction: logoutAction,
   jtiFrom: jtiFrom,
   // The four action functions. admin_api.js calls exactly these — it decides
   // nothing about a revocation or a claim that this console does not — which is
   // what makes "every /admin control has an /admin-api operation" a property of
   // the code rather than a promise in a comment.
-  tokenAction: tokenAction,
-  claimsAction: claimsAction,
-  vcAction: vcAction,
-  vpConfigAction: vpConfigAction,
-  configAction: configAction,
   // The trust realm registry's five writes and its whole view, for
   // mgmt-api/admin_api.js. Rule 7 — every page of this console and every action
   // of its handlers has an operation on /admin-api, driven through the SAME
   // function, so that a realm created over the API and a realm created on the
   // form cannot come to mean two different things.
-  realmsAction: realmsAction,
   // The token-lifetimes page's own action. It writes through config.js like
   // configAction does — see the header above it for why it is a page of its own
   // and not four more rows on /admin/config — and it is exported separately
@@ -35922,8 +30702,6 @@ module.exports = {
   // so the API has two operations, and pointing them at configAction instead
   // would give a caller a door that took any of forty-nine settings under a
   // name that promised four.
-  tokenLifetimesAction: tokenLifetimesAction,
-  samlAssertionsAction: samlAssertionsAction,
   // THE TWO NARROW DOORS' KEY LISTS, for mgmt-api/admin_api.js to BUILD their
   // request schemas from rather than to keep a second copy of.
   //
@@ -35935,8 +30713,6 @@ module.exports = {
   // following it, and a caller reading the refusal finds settings the document
   // never mentioned. Derived, that cannot happen: adding a row to either table
   // adds the property.
-  tokenLifetimeKeys: function () { return TOKEN_LIFETIME_KEYS.slice(); },
-  samlAssertionKeys: function () { return SAML_ASSERTION_KEYS.slice(); },
   // The JSON views, one per page, for the same reason. See the block comment
   // The eight protocol settings pages, through ONE export keyed by path.
   // Rule 7 wants an operation per page and there are eight of them, all
@@ -35956,19 +30732,14 @@ module.exports = {
   },
   // above consoleJson().
   consoleJson: consoleJson,
-  metricsJson: metricsJson,
-  tokensView: tokensView,
-  tokenSetView: tokenSetView,
   // The audit log's view is the whole function rather than a JSON builder, for
   // the reason the block above consoleJson() gives: the filtering and the paging
   // are work both the page and the API need, and two copies of it would be two
   // answers that each looked right alone.
-  auditView: auditView,
   // The delegation page's view, and the whole function for the same reason the
   // audit log's is: the filtering, the paging and the collapse to chains are
   // work both the page and the API need. It is the second read-only resource
   // here — rule 7 asks for an operation per CONTROL, and this page has none.
-  delegationView: delegationView,
   // THE CONFIGURED HALF OF THAT PAGE, and the reason the sentence above it no
   // longer describes the whole route. `/admin/delegation` has five controls
   // now, all of them on this register, so rule 7 asks for five operations —
@@ -35977,9 +30748,6 @@ module.exports = {
   // exported beside it for the same reason `delegationView` is: the walk of the
   // registry and the resolution of both directions are work both need, and two
   // copies of it would be two answers that each looked right alone.
-  permissionsView: permissionsView,
-  permissionGroupsView: permissionGroupsView,
-  permissionsAction: permissionsAction,
   // The action names, read by admin_api.js so that its operations and this
   // console's switch cannot come to name different things. Built from the same
   // constant the refusal sentence is built from.
@@ -35987,17 +30755,12 @@ module.exports = {
   // The consent register, its four actions and their names — the same three
   // exports the delegated permission register has, for rule 7's reason: the
   // management API mirrors the page and reads the action list to check it.
-  consentView: consentView,
-  consentAction: consentAction,
   consentActionNames: function () { return CONSENT_ACTIONS.slice(); },
   // The role register, its five actions, their names and the two closed
   // vocabularies they take — the same shape the consent register above has,
   // for rule 7's reason: the management API mirrors the page and reads the
   // action list to check it. `rolesPreview` is exported too, because the dry
   // run is a control on that page and rule 7 gives every control an operation.
-  rolesView: rolesView,
-  rolesAction: rolesAction,
-  rolesPreview: rolesPreview,
   rolesActionNames: function () { return ROLE_ACTIONS.slice(); },
   roleMemberKinds: function () { return ROLE_MEMBER_KINDS.slice(); },
   // The ELEVENTH slot, filled by `xacml/xacml_role_pep.js` at 23c. See its
@@ -36015,7 +30778,6 @@ module.exports = {
   // operation would be a second door onto one function pretending to be two.
   newUserView: newUserView,
   groupsView: groupsView,
-  groupsAction: groupsAction,
   applicationsView: applicationsView,
   // The create page's own view, for GET /admin-api/applications/new. Rule 7:
   // every page of this console has an operation, and this one is worth more
@@ -36027,33 +30789,27 @@ module.exports = {
   // control already exists and a second one would be a second door onto one
   // function pretending to be two.
   newApplicationView: newApplicationView,
-  applicationsAction: applicationsAction,
   // The three SPIFFE views and their three action handlers. admin_api.js calls
   // exactly these — rule 7 again: the API decides nothing the console does not,
   // and an action added to one of these switches is most of adding it there.
   spiffeView: spiffePage,
-  spiffeAction: spiffeAction,
   spiffeEntriesView: spiffeEntriesView,
-  spiffeEntriesAction: spiffeEntriesAction,
   spiffeAgentsView: spiffeAgentsView,
-  spiffeAgentsAction: spiffeAgentsAction,
   authorizationServersView: authorizationServersView,
-  authorizationServersAction: asAction,
   // The SAML 2.0 identity provider page and its four writes. Rule 7 again: the
   // API calls exactly these, so an action added to that switch is most of
   // adding it to /admin-api.
   saml2View: saml2View,
-  saml2Action: saml2Action,
   saml11View: saml11View,
-  saml11Action: saml11Action,
   // The roles page and its two writes. Rule 7 again — and this one is the page
   // most in need of the API half rather than least: the management API is not
   // gated, so `POST /admin-api/rbac/grant` is the only door onto the roster that
   // still works when nobody holds a role and `admin.openWhenEmpty` is off.
   rbacView: rbacView,
-  rbacAction: rbacAction,
-  mfaView: mfaView,
-  mfaAction: mfaAction,
+  // `mfaView` is gone (2026-09-12): the page it belonged to split into
+  // /admin/totp and /admin/webauthn and its columns moved onto /admin/users,
+  // so nothing here drew from it. It is `adminViews.mfaRosterJson()` now —
+  // the resource, and only the resource.
   // The federation register's page and its seven writes. Rule 7 again: the API
   // calls exactly these, so an action added to that switch is most of adding it
   // to /admin-api. This one matters more than most — the management API is not
@@ -36061,47 +30817,33 @@ module.exports = {
   // partner with no browser at all, which is the only way the feature can be
   // exercised automatically.
   federationView: federationView,
-  federationAction: federationAction,
   // The gate's answer for one request, so admin_api.js's own /rbac view can say
   // WHO IS ASKING without a second reading of the cookie that could disagree
   // with this one.
-  gateStateFor: gateStateFor,
-  claimsJson: claimsJson,
   // The SAML half of the same store, as its own view, because it is its own
   // page: GET /admin-api/saml-attributes answers this and GET /admin-api/claims
   // answers the one above. There is no third function underneath them — both
   // are claimSetsJson() with a different list of set ids and the one rule that
   // is theirs alone.
-  samlAttributesJson: samlAttributesJson,
   // The third view onto the same store, for GET /admin-api/userinfo-claims.
   // Same reasoning as the line above it: it is its own page, so it is its own
   // operation, and underneath the three of them is one claimSetsJson() with a
   // different list of set ids and the one rule that is each family's alone.
-  userinfoClaimsJson: userinfoClaimsJson,
   // The `request` query parameter /admin/userinfo-claims previews a claims
   // request from. Exported for the reason claimsPreviewUser is: the API takes
   // the same parameter, and a second reader of that query string would be a
   // second cap.
-  claimsRequestParameter: claimsRequestParameter,
   // Which person the claims page shows attribute values for. Exported for the
   // same reason vcPreviewUser is: GET /admin-api/claims takes the same `user`
   // parameter, and a second reader of that query string would be a second cap
   // and a second default.
-  claimsPreviewUser: claimsPreviewUser,
-  vcJson: vcJson,
-  vcPreviewUser: vcPreviewUser,
-  vpConfigJson: vpConfigJson,
-  scimJson: scimJson,
   // The TRAFFIC view, for GET /admin-api/scim/monitor. Rule 7: every page
   // of this console has an operation that mirrors it, and this one has no
   // POST beside it because the page has no control — the reset was
   // refused rather than forgotten. See the header on scimMonitorJson().
-  scimMonitorJson: scimMonitorJson,
   // THIS CONSOLE'S OWN SHARED SIGNALS INBOX. Rule 7: `/admin/signals` is a
   // page, so `/admin-api/signals` mirrors it, and both answer with this one
   // function — the reason every parity pair here does.
-  signalsView: signalsJson,
-  signalsAction: signalsAction,
   SIGNALS_CONSOLE_ACTIONS: SIGNALS_CONSOLE_ACTIONS,
   configJson: configJson,
   // It takes the REQUEST, unlike most of the views here, and for a reason worth
@@ -36109,9 +30851,6 @@ module.exports = {
   // that is what makes a realm's base URL correct through a published port, on
   // a compose network and behind a proxy alike, and a snapshot built without a
   // request could only ever name localhost.
-  realmsJson: realmsJson,
-  tokenLifetimesJson: tokenLifetimesJson,
-  samlAssertionsJson: samlAssertionsJson,
   // A body field that may appear more than once. Exported because the
   // management API takes the same two spellings of a list (`attribute` and
   // `attributes`), and reading a repeated form field is not something
@@ -36120,8 +30859,6 @@ module.exports = {
   // The console's own paging rules, so that /admin-api reports and clamps `per`
   // and `page` the way every page here does rather than inventing a second
   // ceiling.
-  MAX_ROWS: MAX_ROWS,
-  DEFAULT_PER_PAGE: DEFAULT_PER_PAGE,
   // The drill-downs' session blocks start smaller, and the API documents that
   // number rather than repeating it: a document saying 50 beside a service doing
   // 5 is worse than a document that says nothing.

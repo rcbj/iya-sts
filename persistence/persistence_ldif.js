@@ -68,6 +68,8 @@
 
 const fs = require('fs');
 const path = require('path');
+// A LEAF with no requires: the failure codes on the log lines below.
+const errorCodes = require('../common/error_codes');
 
 // RFC 2849 says lines SHOULD be wrapped, and does not say where. 76 is what
 // OpenLDAP's tools emit and is therefore what a diff of our file against one
@@ -291,7 +293,8 @@ function fromLdif(text, log) {
   });
 
   if (skipped) {
-    log.warn('persistence: ' + skipped + ' LDIF line(s) were not loaded — a ' +
+    log.warn(errorCodes.tag('STS-STORE-0010') +
+             'persistence: ' + skipped + ' LDIF line(s) were not loaded — a ' +
              'URL-valued attribute (which this service will not dereference) ' +
              'or a line before the first dn:.');
   }
@@ -558,7 +561,8 @@ function create(options) {
             // A file this service cannot read is REPLACED rather than appended
             // to, and the warning says so: appending to something unparseable
             // produces a file that is unparseable for ever.
-            log.warn('persistence: keys.json could not be parsed and is being ' +
+            log.warn(errorCodes.tag('STS-STORE-0011') +
+                     'persistence: keys.json could not be parsed and is being ' +
                      'rewritten: ' + e.message);
             rows = [];
           }
@@ -593,7 +597,8 @@ function create(options) {
         try {
           rows = (JSON.parse(fs.readFileSync(file, 'utf8')) || {}).keys || [];
         } catch (e) {
-          log.warn('persistence: keys.json could not be parsed while removing ' +
+          log.warn(errorCodes.tag('STS-STORE-0011') +
+                   'persistence: keys.json could not be parsed while removing ' +
                    'a realm\'s keys: ' + e.message);
           return;
         }

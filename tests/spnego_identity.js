@@ -57,7 +57,7 @@ const REALM = principals.REALM;
 function theLocalRealmIsStrippedAndAForeignOneIsNot(t) {
   t.equal(door.usernameFor('alice@' + REALM), 'alice',
     'the local realm is stripped: the session username becomes ' +
-    'sub urn:sts-mock:user:<name> in every token that follows, and leaving ' +
+    'sub urn:sts:user:<name> in every token that follows, and leaving ' +
     'the realm on would make a typed sign-in and a ticket sign-in TWO ' +
     'subjects for one person');
 

@@ -129,6 +129,11 @@ const bcp = require('../oauth-oidc/oauth2_bcp');
 // This module also FILLS audit.js's actor slot at the bottom of this file, which
 // is what puts a name on every console and management API row.
 const audit = require('../common/audit');
+// The error codes (common/error_codes.js). A refusal here is marked on the
+// RESPONSE before the page or redirect is sent; a verdict from the credential
+// libraries arrives carrying its own code non-enumerably, and this module
+// marks `codeOf(verdict)` so the specific reason reaches the audit row.
+const errorCodes = require('../common/error_codes');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
@@ -177,9 +182,89 @@ const BACKUP_CODE_PATH = '/authn/backup-code';
 // ---------------------------------------------------------------------------
 const SPNEGO_PATH = '/authn/spnego';
 
-const SESSION_COOKIE = 'sts_mock_session';
+const SESSION_COOKIE = 'sts_session';
 
+// ---------------------------------------------------------------------------
+// THE SESSION CLOCKS ARE SETTINGS SINCE 2026-09-12, AND THESE ARE THEIR
+// DEFAULTS.
+//
+// `SESSION_TTL_MS` was the absolute lifetime of every sign-on, console, portal
+// and API session, as a literal, with no idle timeout anywhere — which is the
+// first thing a deployment's security review asks to change and the one thing
+// here nobody could. `authn.sessionLifetimeS` is the lifetime and
+// `authn.sessionIdleTimeoutS` the idle timeout, whose ZERO means none and is
+// the default, so an unedited service behaves exactly as it did.
+//
+// **THE LIFETIME IS STAMPED AT CREATION AND THE IDLE TIMEOUT IS CHECKED AT
+// READ**, and the difference is what each setting promises. A lifetime is a
+// property a session was issued with, so changing it reaches the next session
+// and leaves a live one as it was. An idle timeout is a policy about how long
+// this service goes on honouring a session nobody is using, so it is checked
+// by `sessionEnded()` — the ONE place the question *is this session over* is
+// answered — every time a session is looked up and on every sweep.
+// ---------------------------------------------------------------------------
 const SESSION_TTL_MS = 60 * 60 * 1000;
+
+function secondsSetting(key, fallbackMs) {
+  const n = Number(config.value(key));
+  return (isFinite(n) && n > 0 ? Math.floor(n) * 1000 : fallbackMs);
+}
+
+function sessionLifetimeMs() {
+  return secondsSetting('authn.sessionLifetimeS', SESSION_TTL_MS);
+}
+
+// ZERO IS THE DEFAULT AND MEANS NONE, so this is NOT `secondsSetting()`, whose
+// fallback would turn a deliberate zero into an hour.
+function sessionIdleTimeoutMs() {
+  const n = Number(config.value('authn.sessionIdleTimeoutS'));
+  return isFinite(n) && n > 0 ? Math.floor(n) * 1000 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// IS THIS SESSION OVER? The one answer, for every reader in this file, for the
+// sweep, and for `logout/logout.js`'s list of what is live.
+//
+// '' means live. 'expired' means the absolute expiry passed; 'idle' means it
+// has gone unused longer than `authn.sessionIdleTimeoutS`. An ARRIVAL session
+// (`chosen: false`) is exempt from the idle rule: it has an inactivity window
+// of its own — `touchArrivalSession()`, on the sign-in screen's clock — and a
+// short idle timeout applied to it would end a person's flow while they read
+// the screen.
+// ---------------------------------------------------------------------------
+function sessionEnded(session, nowMs) {
+  const now = nowMs || Date.now();
+  if (!session) {
+    return 'expired';
+  }
+  if (session.expires && session.expires < now) {
+    return 'expired';
+  }
+  const idle = sessionIdleTimeoutMs();
+  if (idle && session.chosen !== false && session.lastSeenAt &&
+      now - session.lastSeenAt > idle) {
+    return 'idle';
+  }
+  return '';
+}
+
+// A session was USED. Only matters with an idle timeout in force, and only
+// then is anything written — with none, nothing a session carries changes on a
+// read, which is what this service has always done and what keeps a read from
+// being a write to a persisted store. Written back through the store at most
+// once a second, because `sessionOf()` is called several times per request and
+// the store's journal sees `set()` rather than a stamped field.
+function noteSessionUsed(store, id, session) {
+  if (!session || !sessionIdleTimeoutMs()) {
+    return;
+  }
+  const now = Date.now();
+  if (session.lastSeenAt && now - session.lastSeenAt < 1000) {
+    return;
+  }
+  session.lastSeenAt = now;
+  store.set(id, session);
+}
 
 // ---------------------------------------------------------------------------
 // THE ONE NAME AN UNAUTHENTICATED SESSION EVER CARRIES (2026-09-05).
@@ -202,8 +287,14 @@ const SESSION_TTL_MS = 60 * 60 * 1000;
 const ANONYMOUS_USERNAME = 'anonymous';
 
 // How long an interrupted request waits at the screen before it has to be
-// started again.
+// started again. `authn.pendingTtlS` since 2026-09-12 — this is its default,
+// and `common/oidc_rp.js`'s flow reads the same setting, because the two were
+// "deliberately the same" as two literals.
 const AUTHN_TTL_MS = 10 * 60 * 1000;
+
+function pendingTtlMs() {
+  return secondsSetting('authn.pendingTtlS', AUTHN_TTL_MS);
+}
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -303,7 +394,13 @@ const webauthnPolicy = require('./webauthn_policy');
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 const pendingMfa = realms.map({ persist: 'authn.pendingMfa' });
+// How long a second-factor step waits. `authn.mfaStepTtlS` since 2026-09-12;
+// this is its default.
 const MFA_TTL_MS = 5 * 60 * 1000;
+
+function mfaStepTtlMs() {
+  return secondsSetting('authn.mfaStepTtlS', MFA_TTL_MS);
+}
 
 // --- the browser session -----------------------------------------------------
 // The cookie, and the three things done with it. This is the store every
@@ -332,12 +429,15 @@ function sessionOf(req) {
     log.debug("Leaving sessionOf(). The cookie names no session this server knows.");
     return null;
   }
-  if (session.expires < Date.now()) {
+  const ended = sessionEnded(session);
+  if (ended) {
     // Through expireSession() and not a bare delete: this is a session ENDING
     // and it owes the same audit row and the same CAEP event every other way of
     // ending one writes. See that function's header.
-    expireSession(sessions.realmMap(), id, session, 'a request that presented it');
-    log.debug("Leaving sessionOf(). The session had expired and was discarded.");
+    expireSession(sessions.realmMap(), id, session, 'a request that presented it',
+                  ended);
+    log.debug("Leaving sessionOf(). The session had " +
+              (ended === 'idle' ? "gone idle" : "expired") + " and was discarded.");
     return null;
   }
   // -------------------------------------------------------------------------
@@ -373,6 +473,7 @@ function sessionOf(req) {
     log.debug("Leaving sessionOf(). An anonymous session nobody has chosen yet.");
     return null;
   }
+  noteSessionUsed(sessions.realmMap(), id, session);
   log.debug("Leaving sessionOf(). Signed in as " + session.user.username + ".");
   return session;
 }
@@ -441,7 +542,7 @@ function startArrivalSession(req, res, via) {
     // that has not become a sign-in in ten minutes is a browser that went
     // away.
     // ---------------------------------------------------------------------
-    expires: Date.now() + AUTHN_TTL_MS,
+    expires: Date.now() + pendingTtlMs(),
     startedAt: Date.now(),
     lastSeenAt: Date.now(),
     amr: [], acr: '0',
@@ -566,7 +667,8 @@ app.use(function (req, res, next) {
     // started for: the person is trying to sign in, and the flow works without
     // this — a sign-in mints its own session at the end exactly as it always
     // did. Logged because it is a fault rather than an ordinary outcome.
-    log.error('authn: an arrival session could not be started for ' +
+    log.error(errorCodes.tag('STS-AUTHN-0012') +
+              'authn: an arrival session could not be started for ' +
               pathOnly + ': ' + e.message);
   }
   next();
@@ -604,7 +706,7 @@ function touchArrivalSession(req) {
     // Already gone. Not revived — see the header.
     return;
   }
-  session.expires = Date.now() + AUTHN_TTL_MS;
+  session.expires = Date.now() + pendingTtlMs();
   session.lastSeenAt = Date.now();
   // AND WRITTEN BACK THROUGH THE STORE. `sessions` is `realms.map({persist})`,
   // whose journal sees `set()` and not a field stamped on the object it handed
@@ -759,9 +861,11 @@ function relyingPartySessionOf(req, cookie, realmId) {
     log.debug("Leaving relyingPartySessionOf(). The cookie names no session.");
     return null;
   }
-  if (session.expires < Date.now()) {
-    expireSession(store, id, session, 'a request that presented it');
-    log.debug("Leaving relyingPartySessionOf(). It had expired.");
+  const ended = sessionEnded(session);
+  if (ended) {
+    expireSession(store, id, session, 'a request that presented it', ended);
+    log.debug("Leaving relyingPartySessionOf(). It had " +
+              (ended === 'idle' ? "gone idle." : "expired."));
     return null;
   }
   // WHERE THIS SESSION LIVES AND WHERE ITS PARENT LIVES ARE TWO ANSWERS
@@ -801,6 +905,17 @@ function relyingPartySessionOf(req, cookie, realmId) {
     log.debug("Leaving relyingPartySessionOf(). Its parent is gone.");
     return null;
   }
+  // USE OF AN APPLICATION IS USE OF THE SIGN-ON SESSION BEHIND IT. With an
+  // idle timeout in force, an operator working in the console presents the
+  // console's cookie and never the sign-on session's — so without touching the
+  // parent here, the sweep would idle the parent out underneath somebody
+  // actively using the console, and the cascade would then end the console
+  // session too. Inert with no idle timeout, which is the default.
+  noteSessionUsed(store, id, session);
+  if (session.derivedFrom) {
+    noteSessionUsed(parentStore, session.derivedFrom,
+                    parentStore.get(session.derivedFrom));
+  }
   log.debug("Leaving relyingPartySessionOf(). Signed in as " +
             session.user.username + ".");
   return session;
@@ -827,7 +942,7 @@ function startRelyingPartySession(spec) {
   // THE PARENT MAY BE IN ANOTHER PARTITION. `spec.parentRealm` is the realm the
   // code flow ran in, which for the admin console is the ambient realm while
   // this session is being created in the default one. Reading the expiry out of
-  // THIS store would find nothing and fall back to a full SESSION_TTL_MS, so a
+  // THIS store would find nothing and fall back to a full session lifetime, so a
   // console session would routinely outlive the sign-on session it descends
   // from — which the parent check in relyingPartySessionOf() would then end, at
   // a moment decided by nothing a reader could see.
@@ -839,7 +954,7 @@ function startRelyingPartySession(spec) {
     id: sessionId,
     user: userFor(username),
     authTime: Number(claims.auth_time) || nowSec(),
-    expires: parent ? parent.expires : Date.now() + SESSION_TTL_MS,
+    expires: parent ? parent.expires : Date.now() + sessionLifetimeMs(),
     // Off the ID TOKEN and not off the parent, because the token is what this
     // application was actually told. They agree today — the same process
     // issued both — and a relying party that read the provider's own record
@@ -947,7 +1062,7 @@ function startRelyingPartySession(spec) {
 // were nobody.
 //
 // **THERE IS STILL ONE COOKIE, AND THAT IS WHY THIS IS NOT `sessionOf()`.**
-// `startSession()` writes `sts_mock_session` at `Path=/`, deliberately and for
+// `startSession()` writes `sts_session` at `Path=/`, deliberately and for
 // a reason that has nothing to do with realms — every protocol here shares one
 // session, so the name, path and SameSite have to agree exactly. A browser
 // therefore holds exactly ONE session id for this whole origin. Reading the
@@ -1005,13 +1120,14 @@ function consoleSession(req) {
     log.debug("Leaving consoleSession(). The default realm holds no such session.");
     return null;
   }
-  if (session.expires < Date.now()) {
+  const ended = sessionEnded(session);
+  if (ended) {
     // The DEFAULT realm's store, whichever realm the console is being read in —
     // which is what this whole function is about — so the expiry is run in that
     // realm too, or the event would name the issuer of the realm somebody
     // happened to be looking at.
     realms.run(realms.DEFAULT_REALM, function () {
-      expireSession(store, id, session, 'the admin console');
+      expireSession(store, id, session, 'the admin console', ended);
     });
     log.debug("Leaving consoleSession(). The session had expired and was discarded.");
     return null;
@@ -1147,7 +1263,8 @@ let sessionObserver = null;
 function setSessionObserver(fn) {
   log.debug("Entering setSessionObserver().");
   if (typeof fn !== 'function') {
-    log.error('authn: setSessionObserver() was given something that is not a ' +
+    log.error(errorCodes.tag('STS-AUTHN-0013') +
+              'authn: setSessionObserver() was given something that is not a ' +
               'function, and was ignored. Nothing will be told when a ' +
               'session starts or ends.');
     log.debug("Leaving setSessionObserver(). Refused.");
@@ -1172,7 +1289,8 @@ function notifySession(kind, session, extra) {
   } catch (e) {
     // Swallowed, and the reason is in the header: a transmitter that cannot
     // build an event must not turn a sign-in into a 500.
-    log.error('authn: the session observer threw on a "' + kind + '" and was ' +
+    log.error(errorCodes.tag('STS-AUTHN-0014') +
+              'authn: the session observer threw on a "' + kind + '" and was ' +
               'ignored: ' + e.message);
   }
   log.debug("Leaving notifySession(). " + kind);
@@ -1222,8 +1340,14 @@ let sweepTimer = null;
 // by the sweep. `via` says which, because "it expired and somebody came back to
 // find out" and "it expired and the sweep noticed" are the same act at
 // different moments and the audit log should not have to guess.
-function expireSession(store, id, session, via) {
+function expireSession(store, id, session, via, why) {
   log.debug("Entering expireSession(). id=" + id);
+  // WHICH LIMIT RAN OUT (2026-09-12). An absolute expiry and an idle timeout
+  // are both a policy ending a session nobody signed out of, so they are one
+  // act here — but the audit row and the event say which, because "you were
+  // away too long" and "your session is an hour old" are different things to
+  // tell somebody, and a receiver may treat them differently.
+  const idle = why === 'idle';
   store.delete(id);
   audit.audit({
     action: 'session.end',
@@ -1239,7 +1363,9 @@ function expireSession(store, id, session, via) {
       // Not "signed out": nobody asked for this and no browser was involved.
       // A receiver told the session was established has to be able to tell the
       // two apart, which is what `initiating_entity` carries in the event.
-      reason: 'the session lifetime ran out',
+      reason: idle
+        ? 'the session went unused for longer than authn.sessionIdleTimeoutS'
+        : 'the session lifetime ran out',
       noticedBy: via,
       expiresAt: session && session.expires
         ? new Date(session.expires).toISOString() : ''
@@ -1259,9 +1385,13 @@ function expireSession(store, id, session, via) {
   notifySession('revoked', session, {
     via: via, byAdmin: false, expired: true,
     initiatingEntity: 'policy',
-    reason: 'The session lifetime ran out. Nobody signed out — this service ' +
-            'stopped honouring the session because its absolute expiry ' +
-            'passed, and it is not extended by use.',
+    reason: idle
+      ? 'The session went unused for longer than this service\'s idle ' +
+        'timeout. Nobody signed out — this service stopped honouring a ' +
+        'session nobody was using.'
+      : 'The session lifetime ran out. Nobody signed out — this service ' +
+        'stopped honouring the session because its absolute expiry ' +
+        'passed, and it is not extended by use.',
     req: null });
   log.debug("Leaving expireSession().");
 }
@@ -1280,8 +1410,18 @@ function sweepExpiredSessions() {
     // that may reach back into this store.
     const expired = [];
     store.forEach(function (session, id) {
-      if (session && session.expires && session.expires <= nowMs) {
-        expired.push([id, session]);
+      if (!session) {
+        return;
+      }
+      // The sweep's `<=` against a lookup's `<` is kept: at the exact
+      // millisecond both are right, and this is not the place to move it.
+      if (session.expires && session.expires <= nowMs) {
+        expired.push([id, session, 'expired']);
+        return;
+      }
+      const ended = sessionEnded(session, nowMs);
+      if (ended) {
+        expired.push([id, session, ended]);
       }
     });
     if (!expired.length) {
@@ -1289,7 +1429,7 @@ function sweepExpiredSessions() {
     }
     realms.run(realm, function () {
       expired.forEach(function (pair) {
-        expireSession(store, pair[0], pair[1], 'the session sweep');
+        expireSession(store, pair[0], pair[1], 'the session sweep', pair[2]);
         gone++;
       });
     });
@@ -1391,7 +1531,8 @@ function setCookieHeader(res, value) {
   // caller of this is finishing a sign-in that has already succeeded and a
   // throw here would turn "the cookie could not be written" into "the request
   // failed".
-  log.error('authn: a session cookie could not be written — the response ' +
+  log.error(errorCodes.tag('STS-AUTHN-0015') +
+            'authn: a session cookie could not be written — the response ' +
             'object has neither set() nor setHeader(). The session exists and ' +
             'the caller has not been told about it.');
 }
@@ -1488,6 +1629,7 @@ function startSession(res, username, amr, acr, via, detail) {
                sessionAnswer.why);
       audit.audit({
         action: 'session.refuse', actor: username,
+        errorCode: 'STS-AUTHN-0010',
         protocol: via || 'OAuth 2.0 / OIDC', channel: 'http', target: '',
         summary: 'a session for ' + username + ' was refused by the issuance ' +
                  'policy at the ' + (via || 'sign-in') + ' door',
@@ -1533,13 +1675,12 @@ function startSession(res, username, amr, acr, via, detail) {
     const wanted = String(extra.key);
     let found = null;
     sessions.forEach(function (held) {
-      if (!found && held.credentialKey === wanted &&
-          (!held.expires || held.expires > Date.now())) {
+      if (!found && held.credentialKey === wanted && !sessionEnded(held)) {
         found = held;
       }
     });
     if (found) {
-      found.expires = Date.now() + SESSION_TTL_MS;
+      found.expires = Date.now() + sessionLifetimeMs();
       found.lastSeenAt = Date.now();
       found.calls = (found.calls || 1) + 1;
       // The name may sharpen between calls — a scheme that authenticated
@@ -1573,7 +1714,9 @@ function startSession(res, username, amr, acr, via, detail) {
     // endpoint, WS-Federation, the console — and without it the tokens issued on a
     // session could not name the session they were issued on.
     id: sessionId,
-    user: userFor(username), authTime: nowSec(), expires: Date.now() + SESSION_TTL_MS,
+    user: userFor(username), authTime: nowSec(),
+    // `authn.sessionLifetimeS`, read now, so a change reaches the next session.
+    expires: Date.now() + sessionLifetimeMs(),
     // WHETHER ANYBODY ACTUALLY AUTHENTICATED (2026-09-05).
     //
     // `true` for every caller that does not say otherwise, which is every
@@ -1882,6 +2025,7 @@ function dropSession(id, via, cookiePresented, req) {
   audit.audit({
     action: 'session.end',
     outcome: session ? 'success' : 'refused',
+    errorCode: session ? '' : 'STS-AUTHN-0011',
     actor: session ? session.user.username : '',
     channel: 'http',
     target: session ? session.id : (id || ''),
@@ -2077,7 +2221,8 @@ function federationFor(applicationId) {
     // federatedOptionsHtml() below swallows the register's: this runs on the
     // way to the sign-in screen, so a registry that throws must cost the
     // shortcut and never the screen.
-    log.error('authn: the application registry threw while looking "' + wanted +
+    log.error(errorCodes.tag('STS-AUTHN-0016') +
+              'authn: the application registry threw while looking "' + wanted +
               '" up on the way to the sign-in screen and was ignored; the ' +
               'screen itself is unaffected: ' + e.message);
     log.debug("Leaving federationFor(). The registry threw.");
@@ -2214,7 +2359,8 @@ function declaredMechanismFor(applicationId) {
     // Swallowed for federationFor()'s reason and no other: this runs on the
     // way to the sign-in screen, so a registry that throws must cost the
     // shortcut and never the screen.
-    log.error('authn: the application registry threw while reading ' +
+    log.error(errorCodes.tag('STS-AUTHN-0016') +
+              'authn: the application registry threw while reading ' +
               'appAuthnMechanism for "' + applicationId + '" and was ignored; ' +
               'the sign-in screen itself is unaffected: ' + e.message);
     log.debug("Leaving declaredMechanismFor(). The registry threw.");
@@ -2270,7 +2416,8 @@ function mechanismFor(applicationId) {
     // way to the sign-in screen, so a register that throws must cost the
     // shortcut and never the screen. It is logged at error because a throw
     // here is a bug in this service rather than a configuration.
-    log.error('authn: the federation register threw while looking for an ' +
+    log.error(errorCodes.tag('STS-AUTHN-0017') +
+              'authn: the federation register threw while looking for an ' +
               'identity-provider-side relationship naming "' + wanted +
               '" and was ignored; the sign-in screen itself is unaffected: ' +
               e.message);
@@ -2607,7 +2754,7 @@ function beginAuthentication(opts) {
     // use is reported instead of being replaced by a password box.
     application: String(opts.application || ''),
     federation: home,
-    expires: Date.now() + AUTHN_TTL_MS
+    expires: Date.now() + pendingTtlMs()
   };
   pending.set(record.id, record);
   pending.forEach(function (v, k) {
@@ -2862,7 +3009,8 @@ function federatedOptionsHtml(record) {
     // Swallowed with a reason: the sign-in screen is the last thing in this
     // service that may fail to draw. A federation register that throws costs
     // the buttons, never the password field underneath them.
-    log.error('authn: the federation register threw while building the sign-in ' +
+    log.error(errorCodes.tag('STS-AUTHN-0017') +
+              'authn: the federation register threw while building the sign-in ' +
               'screen and was ignored; the screen itself is unaffected: ' + e.message);
     log.debug("Leaving federatedOptionsHtml(). It threw.");
     return '';
@@ -3267,6 +3415,7 @@ function selectIdpPage(base, record) {
 function refuseInvalid(res, why) {
   log.debug("Entering refuseInvalid(). code=" + why.code + " field=" + why.field);
   log.debug("Leaving refuseInvalid().");
+  // error-code: none — the helper's own internals; every call site marks its own code first
   return oauthError(res, 400, 'invalid_request', why.detail);
 }
 
@@ -3314,11 +3463,13 @@ app.get(SELECT_IDP_PATH, function (req, res) {
   log.debug("Entering the federation chooser.");
   const asked = validation.check(req, 'query', PENDING_ID_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0001');
     return refuseInvalid(res, asked);
   }
   const record = pendingFor(asked.value.authn);
   if (!record) {
     log.debug("Leaving the federation chooser. Nothing is pending under that id.");
+    errorCodes.mark(res, 'STS-AUTHN-0003');
     return oauthError(res, 400, 'invalid_request',
       'There is no sign-in waiting under that id, or it has expired. Start the request again ' +
       'from the application that sent you here.');
@@ -3379,11 +3530,13 @@ app.get(LOGIN_PATH, function (req, res) {
   log.debug("Entering the authentication screen.");
   const asked = validation.check(req, 'query', PENDING_ID_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0001');
     return refuseInvalid(res, asked);
   }
   const record = pendingFor(asked.value.authn);
   if (!record) {
     log.debug("Leaving the authentication screen. Nothing is pending under that id.");
+    errorCodes.mark(res, 'STS-AUTHN-0003');
     return oauthError(res, 400, 'invalid_request',
       'There is no sign-in waiting under that id, or it has expired. Start the request again ' +
       'from the application that sent you here.');
@@ -3430,12 +3583,14 @@ app.post(LOGIN_PATH, function (req, res) {
   // point for exactly that, and its header argues why.
   const posted = validation.checkParsed(parseBody(req), 'body', LOGIN_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0002');
     return refuseInvalid(res, posted);
   }
   const body = posted.value;
   const record = pendingFor(body.authn_id);
   if (!record) {
     log.debug("Leaving the authentication endpoint. The form had expired.");
+    errorCodes.mark(res, 'STS-AUTHN-0003');
     return oauthError(res, 400, 'invalid_request',
       'This sign-in form has expired. Start the request again from the application that sent ' +
       'you here.');
@@ -3444,6 +3599,7 @@ app.post(LOGIN_PATH, function (req, res) {
   if (String(body.action || '') === 'cancel') {
     pending.delete(record.id);
     log.debug("Leaving the authentication endpoint. The user cancelled.");
+    errorCodes.mark(res, 'STS-AUTHN-0004');
     return returnToCaller(res, record, 'access_denied',
       'The user cancelled at the sign-in screen.');
   }
@@ -3492,6 +3648,7 @@ app.post(LOGIN_PATH, function (req, res) {
       log.info('authn: the issuance policy refused an unauthenticated session ' +
                'at "' + String(record.application) + '". ' + anonRoleAnswer.why);
       log.debug("Leaving the authentication endpoint. The issuance policy refused the anonymous session.");
+      errorCodes.mark(res, 'STS-AUTHN-0005');
       return sendLoginPage(res, loginPage(base, record, anonRoleAnswer.why));
     }
     pending.delete(record.id);
@@ -3519,6 +3676,7 @@ app.post(LOGIN_PATH, function (req, res) {
   // reserved password the rest of this mock also refuses.
   if (!username) {
     log.debug("Leaving the authentication endpoint. No username was entered, so the form is shown again.");
+    errorCodes.mark(res, 'STS-AUTHN-0006');
     return sendLoginPage(res, loginPage(base, record,
       'Enter a username. It does not have to exist — it is the identity the issued tokens will ' +
       'describe.'));
@@ -3560,6 +3718,7 @@ app.post(LOGIN_PATH, function (req, res) {
                'and this realm does not allow it. ' + allowed.why);
       log.debug("Leaving the authentication endpoint. The security-key path " +
                 "is switched off in this realm.");
+      errorCodes.mark(res, errorCodes.codeOf(allowed) || 'STS-AUTHN-0044');
       return sendLoginPage(res, loginPage(base, record, allowed.why));
     }
   }
@@ -3572,6 +3731,7 @@ app.post(LOGIN_PATH, function (req, res) {
   if (passwordless && record.forceMfa) {
     log.debug("Leaving the authentication endpoint. Passwordless was asked for where the caller " +
               "demands a second factor, so the form is shown again.");
+    errorCodes.mark(res, 'STS-AUTHN-0007');
     return sendLoginPage(res, loginPage(base, record,
       'This request asked for a second factor, so a security key on its own cannot answer it — ' +
       'one factor is one factor. Sign in with a password and the key together.'));
@@ -3623,6 +3783,7 @@ app.post(LOGIN_PATH, function (req, res) {
                allowed.kind + ' bucket). Refusing for ' + allowed.retryAfterS +
                's.');
       log.debug("Leaving the authentication endpoint. Rate limited.");
+      errorCodes.mark(res, 'STS-AUTHN-0008');
       return sendLoginPage(res, loginPage(base, record, allowed.detail));
     }
     const credential = credentials.verify(username, String(body.password || ''),
@@ -3631,6 +3792,7 @@ app.post(LOGIN_PATH, function (req, res) {
       log.info('authn: the sign-in for "' + username + '" was refused (' +
                credential.reason + '): ' + credential.detail);
       log.debug("Leaving the authentication endpoint. The credential was refused, so the form is shown again.");
+      errorCodes.mark(res, errorCodes.codeOf(credential) || 'STS-AUTHN-0054');
       return sendLoginPage(res, loginPage(base, record,
         'Authentication failed for ' + username + '.'));
     }
@@ -3690,6 +3852,7 @@ app.post(LOGIN_PATH, function (req, res) {
     log.info('authn: the issuance policy refused a session for "' + username +
              '" at "' + String(record.application) + '". ' + roleAnswer.why);
     log.debug("Leaving the authentication endpoint. The issuance policy refused the session.");
+    errorCodes.mark(res, 'STS-AUTHN-0009');
     return sendLoginPage(res, loginPage(base, record, roleAnswer.why));
   }
 
@@ -3784,7 +3947,7 @@ app.post(LOGIN_PATH, function (req, res) {
       // session then claims — amr, acr, and whether the directory entry is
       // flagged as multi-factor — is decided from this one boolean.
       passwordless: passwordless,
-      expires: Date.now() + MFA_TTL_MS
+      expires: Date.now() + mfaStepTtlMs()
     });
     pendingMfa.forEach(function (v, k) {
       if (v.expires < Date.now()) pendingMfa.delete(k);
@@ -3878,7 +4041,7 @@ function keyForAssertion(username, role, presentedId) {
     return { key: key, usable: usable.length };
   }
   log.debug("Leaving keyForAssertion(). No match among " + usable.length + ".");
-  return {
+  return errorCodes.mark({
     key: null, usable: usable.length,
     why: usable.length
       ? 'the assertion names a credential that is not one of the ' +
@@ -3886,7 +4049,7 @@ function keyForAssertion(username, role, presentedId) {
         ' as a ' + role + ' credential'
       : 'no security key is enrolled for ' + username + ' as a ' + role +
         ' credential'
-  };
+  }, usable.length ? 'STS-AUTHN-0026' : 'STS-AUTHN-0025');
 }
 
 // ---------------------------------------------------------------------------
@@ -4275,6 +4438,94 @@ function originOf(base) {
 // **WIDENING IT IS NOT FREE AND THE SETTING SAYS SO**: every host under that
 // suffix can then assert these credentials.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// **AND IN PRODUCT MODE A REFUSED VALUE REFUSES THE CEREMONY (2026-09-12).**
+//
+// The fallback below — use the host this was reached on and say why — is a
+// development convenience with a security edge: the HOST is read off the
+// request, so an operator who set `webauthn.rpId` to pin the credential scope
+// got, on any request whose Host did not fit, a ceremony scoped to whatever
+// that Host said. `rpIdProblem()` is the refusal and asks
+// `mode.acceptsUnregisteredAddresses()`, which is the question exactly: may a
+// ceremony run against an address the configuration did not name. It is
+// checked at the doors that DRAW or VERIFY a ceremony, and `rpIdOf()` itself
+// keeps answering, because a page that says what it would have sent is worth
+// more than a page that throws.
+// ---------------------------------------------------------------------------
+function rpIdProblem(base) {
+  const wanted = webauthnPolicy.settings().rpId;
+  if (!wanted || mode.acceptsUnregisteredAddresses()) {
+    return '';
+  }
+  let host;
+  try {
+    host = new URL(base).hostname;
+  } catch (e) {
+    // Unparseable base: the same literal fallback `rpIdOf()` takes.
+    host = String(base).replace(/^https?:\/\//, '').split(':')[0];
+  }
+  const lower = String(host).toLowerCase();
+  const want = String(wanted).toLowerCase();
+  if (lower === want || lower.endsWith('.' + want)) {
+    return '';
+  }
+  return 'webauthn.rpId is "' + wanted + '", which is neither the host this ' +
+         'request reached ("' + host + '") nor a registrable domain suffix of ' +
+         'it, and in product mode a security-key ceremony is not run against ' +
+         'an address the configuration did not name. Reach this service at a ' +
+         'host under "' + wanted + '", or set global.publicBaseUrl to one.';
+}
+
+// ---------------------------------------------------------------------------
+// THE ORIGIN A CEREMONY IS ACCEPTED FROM (2026-09-12).
+//
+// `webauthn.allowedOrigins` EMPTY — the default — is `originOf(base)`, which is
+// what this service always compared against and which `global.publicBaseUrl`
+// already pins when it is set. NON-EMPTY, the list is the whole answer: the
+// clientDataJSON's origin is looked up in it, and one that is not there is
+// answered with the list's first entry so the verifier refuses it in its own
+// words (`origin matches / got …, expected …`) rather than this function
+// inventing a second refusal with a different sentence.
+//
+// The browser's claimed origin is READ here, not trusted: it is only ever
+// returned when it is already on an operator's list, and the verifier still
+// compares the signed bytes against it.
+// ---------------------------------------------------------------------------
+function allowedOrigins() {
+  const raw = config.value('webauthn.allowedOrigins');
+  return (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) { return String(one || '').trim(); })
+    .filter(Boolean)
+    .map(function (one) { return originOf(one); });
+}
+
+function expectedOriginFor(base, credential) {
+  log.debug("Entering expectedOriginFor().");
+  const list = allowedOrigins();
+  if (!list.length) {
+    log.debug("Leaving expectedOriginFor(). Derived from the base.");
+    return originOf(base);
+  }
+  let claimed = '';
+  try {
+    const clientData = credential && credential.response &&
+                       credential.response.clientDataJSON;
+    const parsed = JSON.parse(Buffer.from(String(clientData || ''), 'base64url')
+                                .toString('utf8'));
+    claimed = String((parsed && parsed.origin) || '');
+  } catch (e) {
+    // Not decodable. The verifier reads the same bytes and refuses them with a
+    // sentence about the client data, which is the right place for that.
+    claimed = '';
+  }
+  if (claimed && list.indexOf(claimed) >= 0) {
+    log.debug("Leaving expectedOriginFor(). " + claimed + " is on the list.");
+    return claimed;
+  }
+  log.debug("Leaving expectedOriginFor(). Not on the list; the verifier refuses.");
+  return list[0];
+}
+
 function rpIdOf(base) {
   log.debug("Entering rpIdOf(). base=" + base);
   let host;
@@ -4308,7 +4559,10 @@ function rpIdOf(base) {
            'ceremony with an error indistinguishable from a hardware failure, ' +
            'so this service is using "' + host + '" instead and telling you ' +
            'why. Set webauthn.rpId to "" or to a suffix of the host you reach ' +
-           'this service on.');
+           'this service on.' +
+           (mode.acceptsUnregisteredAddresses() ? ''
+             : ' In product mode the ceremony itself is refused — see ' +
+               'rpIdProblem().'));
   log.debug("Leaving rpIdOf(). " + host + " (the configured value was refused).");
   return host;
 }
@@ -4332,6 +4586,7 @@ app.get(WEBAUTHN_PATH, function (req, res) {
   log.debug("Entering the WebAuthn second-factor screen.");
   const asked = validation.check(req, 'query', MFA_STEP_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0018');
     return refuseInvalid(res, asked);
   }
   const mfaId = String(asked.value.mfa || '');
@@ -4339,6 +4594,7 @@ app.get(WEBAUTHN_PATH, function (req, res) {
   if (!step || step.expires < Date.now()) {
     pendingMfa.delete(mfaId);
     log.debug("Leaving the WebAuthn second-factor screen. The step had expired.");
+    errorCodes.mark(res, 'STS-AUTHN-0019');
     return oauthError(res, 400, 'invalid_request',
       'This second-factor step has expired. Start the request again from the ' +
       'application that sent you here.');
@@ -4347,13 +4603,21 @@ app.get(WEBAUTHN_PATH, function (req, res) {
     log.info('authn: a security-key screen was asked for "' + step.username +
              '", who holds no key marked as a second factor. Refused.');
     log.debug("Leaving the WebAuthn second-factor screen. No key is enrolled.");
+    errorCodes.mark(res, 'STS-AUTHN-0025');
     return oauthError(res, 400, 'invalid_request',
       'No security key is enrolled as a second factor for that account.');
   }
   log.debug("Leaving the WebAuthn second-factor screen. Drawn for " +
             step.username + ".");
+  // In product mode an RP ID that does not fit is said HERE, on the page, as
+  // well as refused at the POST — a ceremony drawn under a refusal would be a
+  // browser prompt whose answer is thrown away.
+  const rpProblem = rpIdProblem(baseUrlOf(req));
+  if (rpProblem) {
+    errorCodes.mark(res, 'STS-AUTHN-0023');
+  }
   return sendWebauthnPage(res, webauthnPage(baseUrlOf(req), mfaId,
-                                            step.username, ''));
+                                            step.username, rpProblem));
 });
 
 app.post(WEBAUTHN_PATH, function (req, res) {
@@ -4361,6 +4625,7 @@ app.post(WEBAUTHN_PATH, function (req, res) {
   const base = baseUrlOf(req);
   const posted = validation.checkParsed(parseBody(req), 'body', WEBAUTHN_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0020');
     return refuseInvalid(res, posted);
   }
   const body = posted.value;
@@ -4368,6 +4633,7 @@ app.post(WEBAUTHN_PATH, function (req, res) {
   if (!step || step.expires < Date.now()) {
     pendingMfa.delete(String(body.mfa_id || ''));
     log.debug("Leaving the WebAuthn endpoint. The step had expired.");
+    errorCodes.mark(res, 'STS-AUTHN-0019');
     return oauthError(res, 400, 'invalid_request',
       'This security-key step has expired. Start the request again from the application that ' +
       'sent you here.');
@@ -4378,6 +4644,7 @@ app.post(WEBAUTHN_PATH, function (req, res) {
     credential = JSON.parse(String(body.credential || '{}'));
   } catch (e) {
     log.debug("Leaving the WebAuthn endpoint. The posted credential was not JSON.");
+    errorCodes.mark(res, 'STS-AUTHN-0021');
     return sendWebauthnPage(res, webauthnPage(base, step.authn && String(body.mfa_id), step.username,
                          'The browser returned something this server could not read.'));
   }
@@ -4386,14 +4653,28 @@ app.post(WEBAUTHN_PATH, function (req, res) {
     // no credential, declined, and timed out are one error — so report it as
     // given rather than guessing which happened.
     log.debug("Leaving the WebAuthn endpoint. The browser refused: " + credential.error);
+    errorCodes.mark(res, 'STS-AUTHN-0022');
     return sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id), step.username,
         credential.error + ': ' + (credential.message || '') +
         '  (WebAuthn reports one error for several situations, so this does not say which.)'));
   }
 
+  // THE RP ID MUST FIT, IN PRODUCT MODE, BEFORE ANYTHING IS VERIFIED. See
+  // rpIdProblem(): the fallback to the request's host is a development
+  // convenience and not something a deployment's ceremony may rest on.
+  const rpRefusal = rpIdProblem(base);
+  if (rpRefusal) {
+    log.warn('authn: a WebAuthn ceremony for "' + step.username + '" was ' +
+             'REFUSED. ' + rpRefusal);
+    log.debug("Leaving the WebAuthn endpoint. The RP ID does not fit.");
+    errorCodes.mark(res, 'STS-AUTHN-0023');
+    return sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id),
+                                              step.username, rpRefusal));
+  }
   // THE ORIGIN, NOT THE BASE URL. See originOf() — a realm's base URL carries a
-  // path and a clientDataJSON origin never does.
-  const expectedOrigin = originOf(base);
+  // path and a clientDataJSON origin never does. And `webauthn.allowedOrigins`
+  // where it is set — see expectedOriginFor().
+  const expectedOrigin = expectedOriginFor(base, credential);
   const expectedRpId = rpIdOf(base);
   let verdict;
   try {
@@ -4411,6 +4692,7 @@ app.post(WEBAUTHN_PATH, function (req, res) {
                  'realm (webauthn.enabled). An already-enrolled key is ' +
                  'unaffected.');
         log.debug("Leaving the WebAuthn endpoint. Enrolment is switched off.");
+        errorCodes.mark(res, 'STS-AUTHN-0044');
         return sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id),
           step.username,
           'Security keys are switched off in this realm (webauthn.enabled), ' +
@@ -4460,10 +4742,10 @@ app.post(WEBAUTHN_PATH, function (req, res) {
           log.info('authn: product mode, so a WebAuthn key was NOT enrolled ' +
                    'for "' + step.username + '" — there is no directory entry ' +
                    'for them and enrolling would create one.');
-          verdict = { ok: false,
+          verdict = errorCodes.mark({ ok: false,
                       why: 'This service is in product mode, where a security ' +
                            'key can only be enrolled for somebody who already ' +
-                           'exists. Create the person first.' };
+                           'exists. Create the person first.' }, 'STS-AUTHN-0024');
         } else {
           // THE ENTRY FIRST, AND THE ORDER IS NOW LOAD-BEARING RATHER THAN
           // TIDY. `credentials.addKey()` writes an ATTRIBUTE ON THE PERSON'S
@@ -4528,7 +4810,8 @@ app.post(WEBAUTHN_PATH, function (req, res) {
             log.info('authn: the security key "' + step.username + '" just ' +
                      'registered was NOT stored: ' +
                      (stored.errors || []).join(' '));
-            verdict = { ok: false, why: (stored.errors || []).join(' ') };
+            verdict = errorCodes.mark({ ok: false, why: (stored.errors || []).join(' ') },
+                                      errorCodes.codeOf(stored) || 'STS-AUTHN-0068');
           }
         }
       }
@@ -4557,7 +4840,7 @@ app.post(WEBAUTHN_PATH, function (req, res) {
         step.passwordless ? 'primary' : 'mfa',
         String(credential.rawId || credential.id || ''));
       if (!picked.key) {
-        throw new Error(picked.why);
+        throw errorCodes.mark(new Error(picked.why), errorCodes.codeOf(picked));
       }
       const known = picked.key;
       verdict = webauthnVerifier.verifyAssertion({
@@ -4587,7 +4870,8 @@ app.post(WEBAUTHN_PATH, function (req, res) {
         // that somebody is refused.
         if (!credentials.noteKeyUsed(step.username, known.credentialId,
                                      verdict.signCount)) {
-          log.warn('authn: the signature counter for "' + step.username +
+          log.warn(errorCodes.tag('STS-AUTHN-0038') +
+                   'authn: the signature counter for "' + step.username +
                    '" could not be recorded. The sign-in stands; the replay ' +
                    'defence has nothing new to check against next time.');
         }
@@ -4595,6 +4879,7 @@ app.post(WEBAUTHN_PATH, function (req, res) {
     }
   } catch (e) {
     log.debug("Leaving the WebAuthn endpoint. Verification threw: " + e.message);
+    errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-AUTHN-0027');
     return sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id), step.username,
                          'The second factor could not be checked: ' + e.message));
   }
@@ -4605,6 +4890,7 @@ app.post(WEBAUTHN_PATH, function (req, res) {
   if (!verdict.ok) {
     // Name the check that failed. "Authentication failed" would be true and
     // useless, and this is a debugging service.
+    errorCodes.mark(res, errorCodes.codeOf(verdict) || webauthnPolicy.failureCodeFor(verdict));
     log.debug("Leaving the WebAuthn endpoint. Refused: " + verdict.failed.join('; '));
     return sendWebauthnPage(res, webauthnPage(base, String(body.mfa_id), step.username,
                          'The second factor did not verify — ' + verdict.failed.join('; ') + '.'));
@@ -4795,6 +5081,7 @@ app.get(TOTP_PATH, function (req, res) {
   log.debug('Entering the one-time code screen.');
   const asked = validation.check(req, 'query', MFA_STEP_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0018');
     return refuseInvalid(res, asked);
   }
   const mfaId = String(asked.value.mfa || '');
@@ -4802,6 +5089,7 @@ app.get(TOTP_PATH, function (req, res) {
   if (!step || step.expires < Date.now()) {
     pendingMfa.delete(mfaId);
     log.debug('Leaving the one-time code screen. The step had expired.');
+    errorCodes.mark(res, 'STS-AUTHN-0019');
     return oauthError(res, 400, 'invalid_request',
       'This second-factor step has expired. Start the request again from the ' +
       'application that sent you here.');
@@ -4810,6 +5098,7 @@ app.get(TOTP_PATH, function (req, res) {
     log.info('authn: a one-time code screen was asked for "' + step.username +
              '", who has no authenticator enrolled. Refused.');
     log.debug('Leaving the one-time code screen. Nothing is enrolled.');
+    errorCodes.mark(res, 'STS-AUTHN-0076');
     return oauthError(res, 400, 'invalid_request',
       'No authenticator app is enrolled for that account, so there is no code ' +
       'to ask for.');
@@ -4845,6 +5134,7 @@ app.post(TOTP_PATH, function (req, res) {
   const base = baseUrlOf(req);
   const posted = validation.checkParsed(parseBody(req), 'body', TOTP_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0039');
     return refuseInvalid(res, posted);
   }
   const body = posted.value;
@@ -4853,6 +5143,7 @@ app.post(TOTP_PATH, function (req, res) {
   if (!step || step.expires < Date.now()) {
     pendingMfa.delete(mfaId);
     log.debug('Leaving the one-time code endpoint. The step had expired.');
+    errorCodes.mark(res, 'STS-AUTHN-0019');
     return oauthError(res, 400, 'invalid_request',
       'This second-factor step has expired. Start the request again from the ' +
       'application that sent you here.');
@@ -4864,6 +5155,7 @@ app.post(TOTP_PATH, function (req, res) {
              '" (' + allowed.kind + ' bucket). Refusing for ' +
              allowed.retryAfterS + 's.');
     log.debug('Leaving the one-time code endpoint. Rate limited.');
+    errorCodes.mark(res, 'STS-AUTHN-0040');
     return sendTotpPage(res, totpPage(base, mfaId, step.username,
                                       allowed.detail, ''));
   }
@@ -4880,6 +5172,7 @@ app.post(TOTP_PATH, function (req, res) {
     log.info('authn: the one-time code for "' + step.username +
              '" was refused (' + verdict.reason + ').');
     log.debug('Leaving the one-time code endpoint. Refused: ' + verdict.reason + '.');
+    errorCodes.mark(res, errorCodes.codeOf(verdict) || 'STS-AUTHN-0105');
     return sendTotpPage(res, totpPage(base, mfaId, step.username,
                                       verdict.detail, ''));
   }
@@ -5072,6 +5365,7 @@ app.get(BACKUP_CODE_PATH, function (req, res) {
   log.debug('Entering the recovery code screen.');
   const asked = validation.check(req, 'query', MFA_STEP_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0018');
     return refuseInvalid(res, asked);
   }
   const mfaId = String(asked.value.mfa || '');
@@ -5079,6 +5373,7 @@ app.get(BACKUP_CODE_PATH, function (req, res) {
   if (!step || step.expires < Date.now()) {
     pendingMfa.delete(mfaId);
     log.debug('Leaving the recovery code screen. The step had expired.');
+    errorCodes.mark(res, 'STS-AUTHN-0019');
     return oauthError(res, 400, 'invalid_request',
       'This second-factor step has expired. Start the request again from the ' +
       'application that sent you here.');
@@ -5090,6 +5385,7 @@ app.get(BACKUP_CODE_PATH, function (req, res) {
                ? 'spent every code in their set' : 'no recovery codes')
              + '. Refused.');
     log.debug('Leaving the recovery code screen. Nothing left to present.');
+    errorCodes.mark(res, (held && held.total) ? 'STS-AUTHN-0088' : 'STS-AUTHN-0087');
     return oauthError(res, 400, 'invalid_request',
       (held && held.total)
         ? 'Every recovery code on that account has been used. A set is issued ' +
@@ -5129,6 +5425,7 @@ app.post(BACKUP_CODE_PATH, function (req, res) {
   const base = baseUrlOf(req);
   const posted = validation.checkParsed(parseBody(req), 'body', BACKUP_CODE_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, 'STS-AUTHN-0041');
     return refuseInvalid(res, posted);
   }
   const body = posted.value;
@@ -5137,6 +5434,7 @@ app.post(BACKUP_CODE_PATH, function (req, res) {
   if (!step || step.expires < Date.now()) {
     pendingMfa.delete(mfaId);
     log.debug('Leaving the recovery code endpoint. The step had expired.');
+    errorCodes.mark(res, 'STS-AUTHN-0019');
     return oauthError(res, 400, 'invalid_request',
       'This second-factor step has expired. Start the request again from the ' +
       'application that sent you here.');
@@ -5148,6 +5446,7 @@ app.post(BACKUP_CODE_PATH, function (req, res) {
              '" (' + allowed.kind + ' bucket). Refusing for ' +
              allowed.retryAfterS + 's.');
     log.debug('Leaving the recovery code endpoint. Rate limited.');
+    errorCodes.mark(res, 'STS-AUTHN-0042');
     return sendBackupCodePage(res, backupCodePage(base, mfaId, step.username,
                                                   allowed.detail, ''));
   }
@@ -5174,8 +5473,10 @@ app.post(BACKUP_CODE_PATH, function (req, res) {
       // RETURNS.** A rejection would be an unhandled rejection and a request
       // that never gets an answer — the trap the token endpoint's wrapper
       // exists for, met again by the second asynchronous door in this file.
-      log.error('authn: checking a recovery code for "' + step.username +
+      log.error(errorCodes.tag('STS-AUTHN-0043') +
+                'authn: checking a recovery code for "' + step.username +
                 '" threw: ' + (e && e.stack ? e.stack : e));
+      errorCodes.mark(res, 'STS-AUTHN-0043');
       sendBackupCodePage(res, backupCodePage(base, mfaId, step.username,
         'That code could not be checked. Try again.', ''));
     });
@@ -5198,6 +5499,7 @@ function finishBackupCode(req, res, base, mfaId, step, verdict) {
              '" was refused (' + verdict.reason + ').');
     log.debug('Leaving the recovery code endpoint. Refused: ' +
               verdict.reason + '.');
+    errorCodes.mark(res, errorCodes.codeOf(verdict) || 'STS-AUTHN-0092');
     return sendBackupCodePage(res, backupCodePage(base, mfaId, step.username,
                                                   verdict.detail, ''));
   }
@@ -5301,6 +5603,11 @@ module.exports = {
   // A caller computing either for itself is a caller that will get the realm
   // case wrong exactly as this module once did.
   originOf: originOf,
+  // THE TWO ADDRESS RULES OF 2026-09-12, beside the helpers they refine:
+  // `/portal/keys` verifies a ceremony of its own and must refuse and accept
+  // exactly what this module does.
+  expectedOriginFor: expectedOriginFor,
+  rpIdProblem: rpIdProblem,
   // The one script this service serves for a WebAuthn ceremony, for
   // `/portal/keys`, which runs a registration of its own against it rather
   // than carrying a second copy — see that page's own argument.
@@ -5319,6 +5626,15 @@ module.exports = {
   // should: the RP ID is decided where the ceremony is drawn.
   rpIdOf: rpIdOf,
   SESSION_COOKIE: SESSION_COOKIE,
+  // THE SESSION CLOCKS (2026-09-12). `sessionEnded()` is exported for
+  // `logout/logout.js`'s list of what is live, which must agree with this file
+  // about what has ended; the three readers are for the tests and for the
+  // sentences `/admin/sessions` prints about the rule in force.
+  sessionEnded: sessionEnded,
+  sessionLifetimeMs: sessionLifetimeMs,
+  sessionIdleTimeoutMs: sessionIdleTimeoutMs,
+  pendingTtlMs: pendingTtlMs,
+  mfaStepTtlMs: mfaStepTtlMs,
   startArrivalSession: startArrivalSession,
   ANONYMOUS_USERNAME: ANONYMOUS_USERNAME,
   sessions: sessions,

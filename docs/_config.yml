@@ -43,9 +43,11 @@ header_pages:
   - sessions.md
   - caep-events.md
   - signals-received.md
+  - gnap.md
   - persistence.md
   - encryption-at-rest.md
   - remote-pep.md
   - what-is-not-checked.md
+  - error-codes.md
   - layout.md
   - parent-project-migration.md

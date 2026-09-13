@@ -113,7 +113,7 @@
 // riding along beside the identity.
 //
 // ONE ENTRY PER PERSON, HOWEVER MANY WAYS THEY GET IN. `rcbj` signing in at the
-// login screen, `urn:sts-mock:user:rcbj` in a token, `rcbj@STS.MOCK` in a
+// login screen, `urn:sts:user:rcbj` in a token, `rcbj@STS.MOCK` in a
 // Kerberos AS-REQ and `rcbj` on a WS-Security UsernameToken have always been one
 // entry — identityOf() in admin_stats.js normalises all four to one key before
 // this hook ever sees them. What did NOT fold was the identity that is a DN
@@ -224,11 +224,26 @@ const xacmlPip = require('../xacml/xacml_pip');
 // user, a group or something else, and that lives in audit.directoryActionFor()
 // rather than being spelled out at four of the seven.
 const audit = require('../common/audit');
+// Every refusal an LDAP handler answers, and every failure this module has on
+// its own, carries an STS-LDAP-* code — see common/error_codes.js. A leaf.
+const errorCodes = require('../common/error_codes');
 // The admin console, for ONE reason: to hand it the reader below so that a user's
 // page can show that user's directory entry. It is required here rather than the
 // other way round because server.js requires ./admin BEFORE this module (rule 6),
 // so admin.js must not require this one back — see the note above objectFor().
 const admin = require('../admin-ui/admin');
+// THE PAGING HELPERS MOVED ON 2026-09-12. `pagedRows()` and `pagingJson()`
+// went to the read layer with the views that use them — they are pure
+// arithmetic over a row count — and the eight /admin/ldap/* pages this
+// module draws page with the same ones. This module is at 21 in the require
+// order, well past the 18 that layer may first be loaded at, so this is a
+// cache hit. See admin-core/CLAUDE.md.
+// The paging helpers moved to the read layer on 2026-09-12 — `pagedRows()` and
+// `pagingJson()` are pure arithmetic over a row count, and the eight
+// /admin/ldap/* pages this module draws page with the same ones the views do.
+// This module is at 21 and the layer may first be required at 18, so this is a
+// cache hit. See admin-core/CLAUDE.md.
+const adminViews = require('../admin-core/admin_views');
 // The TLS module, for ONE thing: the server certificate and key it generates at
 // its own require time. The LDAPS listener below serves that same pair rather
 // than making a second one — see the note above SERVER_CERTIFICATE over there
@@ -288,7 +303,26 @@ const consent = require('../common/consent');
 // and requires nothing here, so this require can neither move a route nor close
 // a cycle; what crosses is the two functions the slot below installs.
 const credentials = require('../common/credentials');
+// THE PASSWORD POLICY REGISTER (2026-09-12). `ou=passwordPolicies` is its
+// store the way `ou=roles` is the role register's, and for `roles.js`'s reason
+// it is a LEAF — requiring `helpers.js`, `mode.js` and an npm package — so this
+// require moves no route and closes no cycle; what crosses the other way is the
+// three store functions its slot below installs.
+const passwordPolicy = require('../common/password_policy');
 const mode = require('../common/mode');
+// THE RATE LIMITER THE SIGN-IN SCREEN AND THE PORTAL ALREADY USE, for failed
+// binds (2026-09-12). A LIBRARY that requires only helpers, config, crypto,
+// realms and error_codes, so the require closes no cycle and moves no route.
+const websecurity = require('../common/websecurity');
+// STORED KERBEROS KEYS (2026-09-12) — a directory person's, derived from their
+// password, and a service principal's random ones. A LIBRARY (rule 3) that
+// registers no route; the modules it requires are the principal database and
+// the codec (loaded at 15), and `common/` leaves already loaded far above this
+// line, so this require moves no route and closes no cycle. What crosses is the
+// six directory functions its slot below installs — and it is THIS require
+// that loads it in a process with no console, which is what fills the two
+// slots it offers the credential store and the KDC.
+const krb5PersonKeys = require('../kerberos/krb5_person_keys');
 
 // The port. 389 is the assigned one and this process is root in the container,
 // so it binds it directly; a host run is not root, which is why the variable
@@ -471,7 +505,8 @@ function publishCrl(scopeId, caId, der) {
     // still served over HTTPS, and a directory write must not be able to fail
     // a revocation. The two LDAP distribution points are the ones that then
     // fetch nothing, which is what this message is for.
-    log.error('ldap: the "' + caId + '" CRL could not be published at ' + dn +
+    log.error(errorCodes.tag('STS-LDAP-0031') +
+              'ldap: the "' + caId + '" CRL could not be published at ' + dn +
               ': ' + e.message + '. It is still served over HTTP — the ' +
               'ldap:// and ldaps:// distribution points in certificates this ' +
               'authority signed will fetch nothing.');
@@ -549,6 +584,42 @@ function pepsDn() {
   return 'ou=peps,' + baseDn();
 }
 
+// ou=trustAnchors is the DURABLE half of the client-certificate truststore
+// (2026-09-12) — one entry per anchor somebody added at runtime, through
+// /admin/tls/trust, POST /admin-api/tls/trust/add or (in development)
+// POST /tls/trust. It is in the DEFAULT realm's tree and only there, because
+// the truststore is one array for every listener in the process: a container
+// per realm would be a per-realm truststore this service does not have.
+//
+// **WHY THE DIRECTORY AND NOT A STORE OF ITS OWN.** An anchor is configuration
+// somebody TYPED, and the directory is the one thing this service persists in
+// every store mode (`ldif` and `postgres`) and replicates between processes
+// through the change log — so an anchor added in one front process survives a
+// restart and reaches every other front process with no mechanism written for
+// it. The keystore's row family was the alternative and it is product-only and
+// never adopted across processes; an appconfig override was the other, and a
+// bundle of PEM blocks is not a setting. `tls/tls_server.js` owns what an anchor
+// IS; this container is only where one is written down. Anchors read from
+// `tls.trustAnchorsFile` are NOT written here: they come back from the file.
+function trustAnchorsDn() {
+  return 'ou=trustAnchors,' + baseDn();
+}
+
+function trustAnchorDn(fingerprint) {
+  return 'cn=' + escapeDnValue(String(fingerprint)) + ',' + trustAnchorsDn();
+}
+
+// ou=passwordPolicies is the PASSWORD POLICY register (2026-09-12). A container
+// of its own rather than a corner of ou=policies, for the rule that decides
+// every split here: ou=policies holds XACML documents a PDP evaluates, and a
+// password policy is a profile of numbers `credentials.setPassword()` checks —
+// two kinds of entry sharing one word, which is the reason not to share one
+// container. The name is `ou=policies` in OpenLDAP's own ppolicy examples and
+// could not be here. `common/password_policy.js` owns the schema.
+function passwordPoliciesDn() {
+  return 'ou=passwordPolicies,' + baseDn();
+}
+
 // The fourth and fifth, and they are `spiffe_registry.js`'s store the way
 // ou=applications is `applications.js`'s. TWO containers rather than one,
 // because they hold different KINDS of thing: an entry under ou=entries is
@@ -586,7 +657,21 @@ function autocreateUsers() {
 
 // The password that is refused. See the header: this is the service's standing
 // convention rather than an authentication policy.
+//
+// **REFUSED IN BOTH MODES, DELIBERATELY, AND NOT A HARD-CODED BACKDOOR TO
+// REMOVE.** `common/credentials.js` refuses the same literal (`RESERVED_REFUSAL`)
+// before it looks at any store, at every door that takes a password. In
+// development it is what makes result code 49 reachable at all, since nothing
+// else is checked. In product mode it changes nothing an attacker can use: it
+// can only turn a bind that would have been verified into a REFUSAL, never a
+// refusal into a success — so the one effect is that nobody can hold "invalid"
+// as a real password, which is a password nobody should hold. Keeping it in both
+// modes means a negative test means the same thing against either.
 const REFUSED_PASSWORD = 'invalid';
+
+// The characters RFC 4514 reserves in a DN value. See nameUsableInDn() for why
+// there is one copy; it is up here only so that it exists when seed() runs.
+const DN_RESERVED = /[,=+<>#;"\\]/;
 
 // A ceiling on how large this directory may grow. It is in memory and it grows
 // on its own (every authentication can add an entry), so an unbounded one is a
@@ -803,6 +888,16 @@ let directoryVersion = 0;
 // what a client can act on; the alternative was to strip the byte, which would
 // be this service quietly storing something other than what was sent.
 // ---------------------------------------------------------------------------
+// The code for the condition, carried on the ldapjs error — or on the
+// `{ ok: false }` result a library function hands its caller — under the
+// non-enumerable Symbol errorCodes.mark() uses, so whoever sends the refusal
+// records it (ldapRefusal() here; `errorCodes.codeOf(result)` in SCIM and the
+// console). Nothing ldapjs encodes and no JSON serialisation reads a Symbol, so
+// what a client receives is unchanged.
+function coded(code, err) {
+  return errorCodes.mark(err, code);
+}
+
 function refuseNulValues(type, values) {
   log.debug('Entering refuseNulValues(). type=' + type);
   for (let i = 0; i < values.length; i++) {
@@ -810,10 +905,10 @@ function refuseNulValues(type, values) {
     if (typeof value === 'string' && value.indexOf('\u0000') >= 0) {
       log.warn('ldap: refused a value for "' + type + '" carrying a NUL byte.');
       log.debug('Leaving refuseNulValues(). Refused.');
-      return new ldap.InvalidAttributeSyntaxError(
+      return coded('STS-LDAP-0008', new ldap.InvalidAttributeSyntaxError(
         'The value for "' + type + '" contains a NUL byte. It is malformed ' +
         'under every LDAP string syntax, and a value that half this stack ' +
-        'reads as shorter than the other half is worse than no value at all.');
+        'reads as shorter than the other half is worse than no value at all.'));
     }
   }
   log.debug('Leaving refuseNulValues(). ' + values.length + ' value(s) are clean.');
@@ -1566,6 +1661,14 @@ const OWN_NAMES = [
   'stsWebauthnCredential', 'stsActivationToken', 'stsActivationExpires',
   'stsTotpCredential',
 
+  // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
+  // under ou=trustAnchors in the DEFAULT realm. A CA certificate is public, so
+  // nothing here is sealed; what makes the container sensitive is that an
+  // entry decides whose client certificate becomes an identity. See
+  // `trustAnchorsDn()`.
+  'stsTrustAnchor', 'stsTrustAnchorCertificate', 'stsTrustAnchorFingerprint',
+  'stsTrustAnchorAddedBy',
+
   // AND A FIFTH SINCE 2026-09-10: the RECOVERY CODES. It belongs with the four
   // above and it is the SECOND of them that can be read back and used — a set
   // of single-use strings, issued automatically the first time somebody
@@ -1596,7 +1699,18 @@ const OWN_NAMES = [
   // kid and an expiry are all things a relying party is MEANT to be given.
   'stsAssertionIssuer', 'stsAssertionJwks', 'stsAssertionCertificate',
   'stsAssertionCertificateChain', 'stsAssertionPrivateKey',
-  'stsAssertionKid', 'stsAssertionExpiresAt'
+  'stsAssertionKid', 'stsAssertionExpiresAt',
+
+  // AND A SEVENTH SINCE 2026-09-12: A PERSON'S KERBEROS LONG-TERM KEYS, derived
+  // from their own password by `kerberos/krb5_person_keys.js` so that a
+  // product-mode KDC can authenticate them. `stsKrb5Keys` is ONE sealed value
+  // carrying every enctype's key beside the name and a stamp of the password
+  // hash they were derived beside; `stsKrb5KeyInfo` is the public half — kvno,
+  // enctypes, when. **The first is password-equivalent and is WITHHELD** from
+  // the directory dump and from an LDAP search, ciphertext included, which is
+  // one step further than the three credentials above it go: nothing ever reads
+  // a Kerberos key back out, so there is no reader whose view it would spoil.
+  'stsKrb5Keys', 'stsKrb5KeyInfo'
 ];
 
 // The table itself, built from the two lists. `learnName()` is the ONE way in,
@@ -1718,6 +1832,16 @@ federation.SCHEMA.attributes.forEach(function (row) {
 roles.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the roles schema');
 });
+// The password policy's, BOTH halves: the attributes on a profile entry and the
+// two the policy maintains on a PERSON (`pwdHistory`, `pwdChangedTime`). Merged
+// from the schema rather than added to OWN_NAMES above, because the module that
+// gives those two their meaning is the one that spells them — and because an
+// unlearnt `pwdInHistory` read back as `pwdinhistory` is exactly the lookup that
+// silently misses and answers "the built-in default".
+passwordPolicy.SCHEMA.attributes.concat(passwordPolicy.SCHEMA.personAttributes)
+  .forEach(function (row) {
+    learnName(row.name, 'the password policy schema');
+  });
 xacmlStore.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML policy schema');
 });
@@ -1955,8 +2079,18 @@ function toSearchEntry(stored, requested, messageId) {
   Object.keys(stored.attributes).forEach(function (name) {
     const isOperational = OPERATIONAL.indexOf(name) !== -1;
     const askedFor = wanted.indexOf(name) !== -1;
+    // A CREDENTIAL IS NOT SENT AT ALL IN PRODUCT MODE, asked for by name or not
+    // (2026-09-12) — see *THE DIRECTORY'S READ AND BIND SECURITY*.
+    if (withheldFromReaders(name)) {
+      return;
+    }
     if (askedFor || (all && !isOperational)) {
-      attributes[canonicalName(name)] = stored.attributes[name].slice(0);
+      // WITHHELD ON THE WIRE TOO (2026-09-12): a search is the one door onto a
+      // Kerberos key that needs no page, and in development every bind succeeds.
+      // The KDC reads the store and never a search result, so nothing that
+      // needs the key is behind this.
+      attributes[canonicalName(name)] =
+        krb5PersonKeys.withheldValues(name, stored.attributes[name].slice(0));
     }
   });
   if (wanted.indexOf('entrydn') !== -1) attributes.entryDN = [stored.dn];
@@ -1998,14 +2132,24 @@ function seed() {
   putEntry(baseDn(), {
     objectClass: ['top', 'domain', 'dcObject'],
     dc: dcValue,
-    description: 'The mock STS directory. Every bind succeeds; nothing here ' +
-      'is a real account.'
+    // The two sentences that describe development mode were true of every
+    // directory this service built until product mode existed; in product
+    // mode a bind is verified and nobody is created by authenticating, and a
+    // description saying otherwise is the first thing an `ldapsearch` reads.
+    description: mode.verifiesCredentials()
+      ? 'The STS directory. A simple bind is verified against the entry\'s ' +
+        'userPassword.'
+      : 'The mock STS directory. Every bind succeeds; nothing here ' +
+        'is a real account.'
   }, { origin: 'seed' });
   putEntry(usersDn(), {
     objectClass: ['top', 'organizationalUnit'],
     ou: 'users',
-    description: 'People. An entry appears here for anyone who authenticates ' +
-      'to this service through any protocol.'
+    description: mode.autoCreates()
+      ? 'People. An entry appears here for anyone who authenticates ' +
+        'to this service through any protocol.'
+      : 'People, as provisioned — through the console, /admin-api, SCIM or an ' +
+        'LDAP add. Authenticating creates nobody.'
   }, { origin: 'seed' });
   putEntry(groupsDn(), {
     objectClass: ['top', 'organizationalUnit'],
@@ -2064,6 +2208,23 @@ function seed() {
       'context of the decision being made. common/roles.js holds the schema; ' +
       'GET /admin/roles publishes it.'
   }, { origin: 'seed' });
+  // THE CONTAINER AND NOT THE PROFILE. The tree is structural and is seeded
+  // in both modes; `cn=default` is written the first time an operator saves
+  // it, and until then the built-in defaults are in force — see
+  // `common/password_policy.js` for why a seeded profile would be the wrong
+  // answer in every realm created after this one.
+  putEntry(passwordPoliciesDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'passwordPolicies',
+    description: 'PASSWORD POLICY profiles, in the shape of ' +
+      'draft-behera-ldap-password-policy (pwdPolicy, pwdMinLength, ' +
+      'pwdInHistory) with this service\'s composition rules beside them. ' +
+      'An ldapmodify here changes what the NEXT password set in this realm ' +
+      'must look like, and nothing already stored. The profile is ' +
+      'cn=default; while it is absent the built-in defaults are in force. ' +
+      'ENFORCED IN PRODUCT MODE. common/password_policy.js holds the schema; ' +
+      'GET /admin/policies publishes it.'
+  }, { origin: 'seed' });
   putEntry(pepsDn(), {
     objectClass: ['top', 'organizationalUnit'],
     ou: 'peps',
@@ -2075,6 +2236,22 @@ function seed() {
       'place on /admin/xacml/peps and an address for the change nudge. ' +
       'xacml/xacml_pep_registry.js holds the schema.'
   }, { origin: 'seed' });
+  // STRUCTURAL, so not behind `mode.seedsDemoData()` below — and in the DEFAULT
+  // realm only, because the truststore is the process's. See trustAnchorsDn().
+  if (realms.currentId() === realms.DEFAULT_ID) {
+    putEntry(trustAnchorsDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'trustAnchors',
+      description: 'The client-certificate TRUSTSTORE\'s runtime anchors — ' +
+        'one stsTrustAnchor entry per CA certificate added at /admin/tls/trust ' +
+        'or POST /admin-api/tls/trust/add, restored into every TLS listener at ' +
+        'start and whenever another process changes this container. An entry ' +
+        'here decides whose client certificate this service will VERIFY, so ' +
+        'writing one is an administrative act. Anchors from ' +
+        'tls.trustAnchorsFile are not stored here. tls/tls_server.js owns ' +
+        'what an anchor is.'
+    }, { origin: 'seed' });
+  }
   putEntry(spiffeDn(), {
     objectClass: ['top', 'organizationalUnit'],
     ou: 'spiffe',
@@ -2100,52 +2277,74 @@ function seed() {
       'Node attestation is never verified — whatever an agent claimed is ' +
       'what is written down.'
   }, { origin: 'seed' });
-  putEntry('cn=admin,' + baseDn(), {
-    objectClass: ['top', 'person', 'organizationalRole'],
-    cn: 'admin',
-    sn: 'Administrator',
-    description: 'A bind account. So is every other DN in the universe: this ' +
-      'server accepts any bind except the password "invalid".'
-  }, { origin: 'seed' });
-  // `employeeType` IS HERE BECAUSE THE SEEDED XACML POLICY READS IT. The two
-  // seeds have to agree or neither demonstrates anything: a policy that grants
-  // on `employeeType=staff` against a directory whose people have no
-  // employeeType answers Deny for everybody, which looks exactly like a broken
-  // PDP. Carol is the admin because she is the Directory Administrator, which
-  // is the one of the three titles that already meant it.
-  [
-    { uid: 'alice', cn: 'Alice Anderson', sn: 'Anderson', given: 'Alice',
-      title: 'Principal Engineer', employeeType: 'staff' },
-    { uid: 'bob', cn: 'Bob Brown', sn: 'Brown', given: 'Bob',
-      title: 'Support Analyst', employeeType: 'staff' },
-    { uid: 'carol', cn: 'Carol Carter', sn: 'Carter', given: 'Carol',
-      title: 'Directory Administrator', employeeType: 'admin' }
-  ].forEach(function (person) {
-    putEntry('uid=' + person.uid + ',' + usersDn(), {
-      objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
-      uid: person.uid,
-      cn: person.cn,
-      sn: person.sn,
-      givenName: person.given,
-      displayName: person.cn,
-      title: person.title,
-      employeeType: person.employeeType,
-      mail: person.uid + '@sts-mock.example',
-      description: 'Seeded, not authenticated.'
+  // -------------------------------------------------------------------------
+  // EVERYTHING BELOW THE CONTAINERS IS DEMONSTRATION DATA, AND PRODUCT MODE
+  // SEEDS NONE OF IT (2026-09-12).
+  //
+  // The bind account, three people with invented titles — carol's
+  // `employeeType: admin` among them, which the seeded XACML policy reads — and
+  // two groups: a debugger opened against an empty directory teaches nothing,
+  // which is the whole argument above. A PRODUCT directory is not a debugger:
+  // an invented admin is an identity somebody else's policy may grant, and a
+  // person nobody provisioned is a person nobody is accountable for.
+  // `mode.seedsDemoData()` answers in the realm being seeded — at require time
+  // that is the process's mode, and for a realm created later it is that
+  // realm's own, since this runs inside `realms.run()`.
+  //
+  // What is left in product mode is the tree: the base and the containers
+  // above, which every door that provisions somebody writes UNDER. An `ldapadd`
+  // needs its parent, and a directory without `ou=users` is one nobody can
+  // put a person in.
+  // -------------------------------------------------------------------------
+  const demo = mode.seedsDemoData();
+  if (demo) {
+    putEntry('cn=admin,' + baseDn(), {
+      objectClass: ['top', 'person', 'organizationalRole'],
+      cn: 'admin',
+      sn: 'Administrator',
+      description: 'A bind account. So is every other DN in the universe: this ' +
+        'server accepts any bind except the password "invalid".'
     }, { origin: 'seed' });
-  });
-  putEntry('cn=developers,' + groupsDn(), {
-    objectClass: ['top', 'groupOfNames'],
-    cn: 'developers',
-    description: 'A groupOfNames. Membership is the `member` attribute.',
-    member: ['uid=alice,' + usersDn(), 'uid=bob,' + usersDn()]
-  }, { origin: 'seed' });
-  putEntry('cn=directory-admins,' + groupsDn(), {
-    objectClass: ['top', 'groupOfNames'],
-    cn: 'directory-admins',
-    description: 'A second group, so a search for groups returns more than one.',
-    member: ['uid=carol,' + usersDn()]
-  }, { origin: 'seed' });
+    // `employeeType` IS HERE BECAUSE THE SEEDED XACML POLICY READS IT. The two
+    // seeds have to agree or neither demonstrates anything: a policy that grants
+    // on `employeeType=staff` against a directory whose people have no
+    // employeeType answers Deny for everybody, which looks exactly like a broken
+    // PDP. Carol is the admin because she is the Directory Administrator, which
+    // is the one of the three titles that already meant it.
+    [
+      { uid: 'alice', cn: 'Alice Anderson', sn: 'Anderson', given: 'Alice',
+        title: 'Principal Engineer', employeeType: 'staff' },
+      { uid: 'bob', cn: 'Bob Brown', sn: 'Brown', given: 'Bob',
+        title: 'Support Analyst', employeeType: 'staff' },
+      { uid: 'carol', cn: 'Carol Carter', sn: 'Carter', given: 'Carol',
+        title: 'Directory Administrator', employeeType: 'admin' }
+    ].forEach(function (person) {
+      putEntry('uid=' + person.uid + ',' + usersDn(), {
+        objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
+        uid: person.uid,
+        cn: person.cn,
+        sn: person.sn,
+        givenName: person.given,
+        displayName: person.cn,
+        title: person.title,
+        employeeType: person.employeeType,
+        mail: person.uid + '@sts.example',
+        description: 'Seeded, not authenticated.'
+      }, { origin: 'seed' });
+    });
+    putEntry('cn=developers,' + groupsDn(), {
+      objectClass: ['top', 'groupOfNames'],
+      cn: 'developers',
+      description: 'A groupOfNames. Membership is the `member` attribute.',
+      member: ['uid=alice,' + usersDn(), 'uid=bob,' + usersDn()]
+    }, { origin: 'seed' });
+    putEntry('cn=directory-admins,' + groupsDn(), {
+      objectClass: ['top', 'groupOfNames'],
+      cn: 'directory-admins',
+      description: 'A second group, so a search for groups returns more than one.',
+      member: ['uid=carol,' + usersDn()]
+    }, { origin: 'seed' });
+  }
   // -------------------------------------------------------------------------
   // THE REMOTE PEP'S IDENTITY, AND THE GROUP THAT GRANTS IT ANYTHING
   // (2026-09-06).
@@ -2172,29 +2371,55 @@ function seed() {
   // `certificateIdentity()` files it here — so the ordinary path works out of
   // the box, and a deployment using a different common name adds its own
   // member to this group, which is one line on /admin/ldap/directory.
-  putEntry('cn=remote-pep-1,' + usersDn(), {
-    objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
-    cn: 'remote-pep-1',
-    sn: 'remote-pep-1',
-    displayName: 'Remote XACML PEP #1',
-    description: 'THE IDENTITY OF A REMOTE XACML POLICY ENFORCEMENT POINT, ' +
-                 'not a person. A client certificate whose subject common ' +
-                 'name is "remote-pep-1" resolves to this entry, and its ' +
-                 'membership of cn=remote-peps below is what lets it reach ' +
-                 '/xacml/pep/register, /xacml/pep/policies and ' +
-                 '/xacml/pep/heartbeat. Seeded, and authenticated by nothing ' +
-                 'until a certificate arrives.'
-  }, { origin: 'seed' });
-  putEntry('cn=remote-peps,' + groupsDn(), {
-    objectClass: ['top', 'groupOfNames'],
-    cn: 'remote-peps',
-    description: 'Members hold the built-in REMOTE_PEPS role, which is what ' +
-                 'the three /xacml/pep endpoints require. The group is named ' +
-                 'by roles.remotePepGroup; emptying it closes those endpoints ' +
-                 'to everybody, and adding a member is how a second ' +
-                 'enforcement point is admitted.',
-    member: ['cn=remote-pep-1,' + usersDn()]
-  }, { origin: 'seed' });
+  //
+  // **THE GROUP IS NAMED BY `roles.remotePepGroup`, AND UNTIL 2026-09-12 THIS
+  // WROTE THE LITERAL `cn=remote-peps`** while `common/roles.js` read the
+  // setting — so a deployment that renamed the group got a gate reading a
+  // group that was never seeded, beside a seeded group granting nothing. The
+  // setting is what is seeded now, and an empty one (NOBODY holds the role)
+  // seeds no group at all. Its default is the old literal.
+  //
+  // **IN PRODUCT MODE THE IDENTITY IS NOT SEEDED AND THE GROUP IS EMPTY.**
+  // `cn=remote-pep-1` is a privileged identity whose name is predictable and
+  // printed in this repository; anybody whose certificate a trust anchor here
+  // verifies with that common name would be admitted to the documents this
+  // service enforces its own access with. The empty group stays, so admitting
+  // a real enforcement point is one member added — the same act a deployment
+  // with a different common name always had to perform.
+  const remotePepGroup = String(config.value('roles.remotePepGroup') || '').trim();
+  const remotePepMembers = [];
+  if (demo) {
+    remotePepMembers.push('cn=remote-pep-1,' + usersDn());
+    putEntry('cn=remote-pep-1,' + usersDn(), {
+      objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
+      cn: 'remote-pep-1',
+      sn: 'remote-pep-1',
+      displayName: 'Remote XACML PEP #1',
+      description: 'THE IDENTITY OF A REMOTE XACML POLICY ENFORCEMENT POINT, ' +
+                   'not a person. A client certificate whose subject common ' +
+                   'name is "remote-pep-1" resolves to this entry, and its ' +
+                   'membership of cn=remote-peps below is what lets it reach ' +
+                   '/xacml/pep/register, /xacml/pep/policies and ' +
+                   '/xacml/pep/heartbeat. Seeded, and authenticated by nothing ' +
+                   'until a certificate arrives.'
+    }, { origin: 'seed' });
+  }
+  if (remotePepGroup && nameUsableInDn(remotePepGroup)) {
+    putEntry(groupDnFor(remotePepGroup), Object.assign({
+      objectClass: ['top', 'groupOfNames'],
+      cn: remotePepGroup,
+      description: 'Members hold the built-in REMOTE_PEPS role, which is what ' +
+                   'the three /xacml/pep endpoints require. The group is named ' +
+                   'by roles.remotePepGroup; emptying it closes those endpoints ' +
+                   'to everybody, and adding a member is how a second ' +
+                   'enforcement point is admitted.'
+    }, remotePepMembers.length ? { member: remotePepMembers } : {}),
+    { origin: 'seed' });
+  } else if (remotePepGroup) {
+    log.warn(errorCodes.tag('STS-LDAP-0041') +
+             'ldap: roles.remotePepGroup is "' + remotePepGroup + '", which ' +
+             'carries DN syntax, so no group was seeded for it.');
+  }
   // -------------------------------------------------------------------------
   // AND THE SAME PAIR FOR THE XACML SURFACE PROPER.
   //
@@ -2220,39 +2445,53 @@ function seed() {
   // `uid=alice` to `cn=xacml-users` below — one line on
   // /admin/ldap/directory or one `ldapmodify` — and it takes effect on the
   // very next request, because membership is resolved at decision time.
+  //
+  // Named by `roles.xacmlUserGroup` and seeded without its identity in product
+  // mode, for the two reasons the pair above gives.
   // -------------------------------------------------------------------------
-  putEntry('cn=xacml-user-1,' + usersDn(), {
-    objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
-    cn: 'xacml-user-1',
-    sn: 'xacml-user-1',
-    displayName: 'XACML surface caller #1',
-    description: 'THE IDENTITY OF A CALLER OF THE XACML ENDPOINTS, which is ' +
-                 'usually another service rather than a person. A client ' +
-                 'certificate whose subject common name is "xacml-user-1" ' +
-                 'resolves to this entry, and its membership of ' +
-                 'cn=xacml-users below is what lets it reach GET /xacml, ' +
-                 'POST /xacml/pdp, GET /xacml/policies and ' +
-                 'GET /xacml/protected. It is NOT a member of cn=remote-peps ' +
-                 'and must not be made one: those three endpoints publish ' +
-                 'the documents this service enforces its own access with. ' +
-                 'Seeded, and authenticated by nothing until a certificate ' +
-                 'arrives.'
-  }, { origin: 'seed' });
-  putEntry('cn=xacml-users,' + groupsDn(), {
-    objectClass: ['top', 'groupOfNames'],
-    cn: 'xacml-users',
-    description: 'Members hold the built-in XACML_USER role, which is what ' +
-                 'the four XACML endpoints proper require — GET /xacml, ' +
-                 'POST /xacml/pdp, GET /xacml/policies and ' +
-                 'GET /xacml/protected. The group is named by ' +
-                 'roles.xacmlUserGroup; emptying it closes those four ' +
-                 'endpoints to everybody, and adding a member — a person, or ' +
-                 'the DN a client certificate resolves to — is how a caller ' +
-                 'is admitted. It is deliberately NOT cn=remote-peps: that ' +
-                 'group reaches /xacml/pep/*, which publishes the documents ' +
-                 'this service enforces its own access with.',
-    member: ['cn=xacml-user-1,' + usersDn()]
-  }, { origin: 'seed' });
+  const xacmlUserGroup = String(config.value('roles.xacmlUserGroup') || '').trim();
+  const xacmlUserMembers = [];
+  if (demo) {
+    xacmlUserMembers.push('cn=xacml-user-1,' + usersDn());
+    putEntry('cn=xacml-user-1,' + usersDn(), {
+      objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
+      cn: 'xacml-user-1',
+      sn: 'xacml-user-1',
+      displayName: 'XACML surface caller #1',
+      description: 'THE IDENTITY OF A CALLER OF THE XACML ENDPOINTS, which is ' +
+                   'usually another service rather than a person. A client ' +
+                   'certificate whose subject common name is "xacml-user-1" ' +
+                   'resolves to this entry, and its membership of ' +
+                   'cn=xacml-users below is what lets it reach GET /xacml, ' +
+                   'POST /xacml/pdp, GET /xacml/policies and ' +
+                   'GET /xacml/protected. It is NOT a member of cn=remote-peps ' +
+                   'and must not be made one: those three endpoints publish ' +
+                   'the documents this service enforces its own access with. ' +
+                   'Seeded, and authenticated by nothing until a certificate ' +
+                   'arrives.'
+    }, { origin: 'seed' });
+  }
+  if (xacmlUserGroup && nameUsableInDn(xacmlUserGroup)) {
+    putEntry(groupDnFor(xacmlUserGroup), Object.assign({
+      objectClass: ['top', 'groupOfNames'],
+      cn: xacmlUserGroup,
+      description: 'Members hold the built-in XACML_USER role, which is what ' +
+                   'the four XACML endpoints proper require — GET /xacml, ' +
+                   'POST /xacml/pdp, GET /xacml/policies and ' +
+                   'GET /xacml/protected. The group is named by ' +
+                   'roles.xacmlUserGroup; emptying it closes those four ' +
+                   'endpoints to everybody, and adding a member — a person, or ' +
+                   'the DN a client certificate resolves to — is how a caller ' +
+                   'is admitted. It is deliberately NOT cn=remote-peps: that ' +
+                   'group reaches /xacml/pep/*, which publishes the documents ' +
+                   'this service enforces its own access with.'
+    }, xacmlUserMembers.length ? { member: xacmlUserMembers } : {}),
+    { origin: 'seed' });
+  } else if (xacmlUserGroup) {
+    log.warn(errorCodes.tag('STS-LDAP-0041') +
+             'ldap: roles.xacmlUserGroup is "' + xacmlUserGroup + '", which ' +
+             'carries DN syntax, so no group was seeded for it.');
+  }
   // This realm's own count. It reads `entries.size` through
   // realmEntryCount()'s walk either way now that the store is per realm, and
   // the walk is kept because the sentence it produces — "seeded N entries under
@@ -2461,6 +2700,12 @@ persistence.setDirectory({
     touchDirectory(stored.dn);
     noteUsernameIndexRefresh(stored, usernameWasCurrent);
     noteGroupIndexPut(stored, groupWasCurrent);
+    // AN ANCHOR ANOTHER PROCESS ADDED reaches this process's listeners here:
+    // the entry is in the store now, and the truststore array is what a
+    // handshake reads. See `tls_server.js`'s `reloadStoredAnchors()`.
+    if (isTrustAnchorKey(realmId, key)) {
+      reloadTrustAnchorsQuietly();
+    }
     // AND THE IDENTITY REGISTER, for `replaceRealm()`'s reason one row at a
     // time: `/admin/users` reads a different store from this one, and a person
     // created in another process would otherwise be in the directory here and
@@ -2509,6 +2754,9 @@ persistence.setDirectory({
     const gone = store.delete(key);
     if (gone) {
       touchDirectory();
+    }
+    if (gone && isTrustAnchorKey(realmId, key)) {
+      reloadTrustAnchorsQuietly();
     }
     log.debug('Leaving removeEntry(). ' + (gone ? 'Removed.' : 'It was not here.'));
   },
@@ -2761,8 +3009,8 @@ function commonNameOf(dn) {
 // below are the whole of how that is kept true.
 //
 // It was already true for most of this service and by accident rather than by
-// design: identityOf() in admin_stats.js strips the `urn:sts-mock:user:` prefix
-// and the Kerberos realm, so `rcbj`, `urn:sts-mock:user:rcbj` and
+// design: identityOf() in admin_stats.js strips the `urn:sts:user:` prefix
+// and the Kerberos realm, so `rcbj`, `urn:sts:user:rcbj` and
 // `rcbj@STS.MOCK` reach autoCreateUser() as one key and namePlan() builds one
 // DN from it. Every name-shaped family — OAuth 2.0, OpenID Connect,
 // WS-Federation, WS-Trust, both SAML profiles, Kerberos, SPNEGO, an LDAP bind —
@@ -3065,7 +3313,7 @@ function certificatePlan(info) {
 // protocol here produces: `uid=<name>,ou=users`.
 //
 // The invented person behind the name is what the entry gets — where it used to
-// get `dave`, `Mock` and `dave@sts-mock.example`, one string three times over.
+// get `dave`, `Mock` and `dave@sts.example`, one string three times over.
 //
 // The change is deliberate and it is not cosmetic: those three are attributes a
 // credential asserts, so a directory that derived all of them from the login
@@ -3093,17 +3341,28 @@ function namePlan(name) {
   // one — existingUserEntry() finds a uid without a scan.
   const already = existingUserEntry(name);
   log.debug('Leaving namePlan().' + (already ? ' Folding onto ' + already.dn + '.' : ''));
+  // THE FIVE PERSONA ATTRIBUTES ARE INVENTED, AND PRODUCT MODE INVENTS NONE OF
+  // THEM (2026-09-12). A `displayName` ending "(mock)", a surname out of a
+  // persona table and an address at a domain nobody owns are exactly the
+  // invented facts `mode.inventsClaimValues()` exists to keep off an entry a
+  // relying party will read. The entry is still a person to an LDAP client —
+  // its object classes and its `uid` are the identity, not an invention — and
+  // `createUser()` already drops the same five for `invent: false`, so both
+  // halves of that rule now agree about product mode too.
+  const attributes = {
+    objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
+    uid: name
+  };
+  if (mode.inventsClaimValues()) {
+    attributes.cn = persona.display;
+    attributes.sn = persona.family;
+    attributes.givenName = persona.given;
+    attributes.displayName = persona.display + ' (mock)';
+    attributes.mail = persona.email;
+  }
   return {
     dn: already ? already.dn : 'uid=' + name + ',' + usersDn(),
-    attributes: {
-      objectClass: ['top', 'person', 'organizationalPerson', 'inetOrgPerson'],
-      uid: name,
-      cn: persona.display,
-      sn: persona.family,
-      givenName: persona.given,
-      displayName: persona.display + ' (mock)',
-      mail: persona.email
-    },
+    attributes: attributes,
     merge: already ? { uid: name } : {}
   };
 }
@@ -4080,7 +4339,8 @@ function autoCreateUser(detail) {
   if (totalEntries() >= maxEntries()) {
     // Reported rather than thrown: the authentication itself succeeded and must
     // not be failed by a directory that is full.
-    log.warn('ldap: not creating ' + dn + '; the directory holds its maximum ' +
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its maximum ' +
              'of ' + maxEntries() + ' entries.');
     log.debug('Leaving autoCreateUser(). The directory is full.');
     return null;
@@ -4149,7 +4409,10 @@ function autoCreateUser(detail) {
 // Three copies of this regex would be three doors that eventually disagree
 // about whether `a+b` is a name, and the one that said yes would be the one
 // that produced the unreachable entry.
-const DN_RESERVED = /[,=+<>#;"\\]/;
+// (`DN_RESERVED` itself is declared near the top of this file, beside
+// REFUSED_PASSWORD, since 2026-09-12: `seed()` runs at require time and now
+// checks the two role-group names it seeds with this function, and a `const`
+// declared down here does not exist yet when it does.)
 
 function nameUsableInDn(name) {
   return !DN_RESERVED.test(String(name == null ? '' : name));
@@ -4213,7 +4476,7 @@ function personAttributesFrom(given) {
   });
   if (unknown.length) {
     log.debug('Leaving personAttributesFrom(). ' + unknown.length + ' unknown.');
-    return { ok: false,
+    return coded('STS-LDAP-0047', { ok: false,
              errors: ['A person here does not have ' +
                       (unknown.length === 1 ? 'an attribute' : 'attributes') +
                       ' called ' + unknown.join(', ') + '. The attributes a ' +
@@ -4223,7 +4486,7 @@ function personAttributesFrom(given) {
                       'OF THEM: it is set through the `credential` option on ' +
                       'this same call, or by POST /admin-api/users/set-password, ' +
                       'so that it is hashed rather than written down.'],
-             unknown: unknown };
+             unknown: unknown });
   }
   log.debug('Leaving personAttributesFrom(). ' + Object.keys(out).length +
             ' attribute(s).');
@@ -4299,31 +4562,31 @@ function createUser(name, options) {
   const wanted = String(name == null ? '' : name).trim();
   if (!wanted) {
     log.debug('Leaving createUser(). No name.');
-    return { ok: false, errors: ['Which user? Send `username` with the name ' +
+    return coded('STS-LDAP-0042', { ok: false, errors: ['Which user? Send `username` with the name ' +
                                  'they will authenticate under — the same ' +
                                  'string that would appear in a token\'s `sub` ' +
-                                 'and on /admin/users.'] };
+                                 'and on /admin/users.'] });
   }
   if (DN_SHAPED.test(wanted)) {
     log.debug('Leaving createUser(). That is a DN.');
-    return { ok: false, errors: ['"' + wanted + '" is a DN and not a username. ' +
+    return coded('STS-LDAP-0043', { ok: false, errors: ['"' + wanted + '" is a DN and not a username. ' +
                                  'An entry named by a distinguished name gets ' +
                                  'here by presenting a client certificate, ' +
                                  'where the DN is the identity; there is ' +
-                                 'nothing to create one from by hand.'] };
+                                 'nothing to create one from by hand.'] });
   }
   if (DID_SHAPED.test(wanted)) {
     log.debug('Leaving createUser(). That is a DID.');
-    return { ok: false, errors: ['"' + wanted.slice(0, 48) + '" is a ' +
+    return coded('STS-LDAP-0044', { ok: false, errors: ['"' + wanted.slice(0, 48) + '" is a ' +
                                  'decentralized identifier and not a username. ' +
                                  'A DID reaches this directory by being ' +
                                  'presented, and where this service knows whose ' +
                                  'it is the identifier goes onto that person\'s ' +
-                                 'entry as didSubject.'] };
+                                 'entry as didSubject.'] });
   }
   if (SPIFFE_SHAPED.test(wanted)) {
     log.debug('Leaving createUser(). That is a SPIFFE ID.');
-    return { ok: false, errors: ['"' + wanted.slice(0, 64) + '" is a SPIFFE ' +
+    return coded('STS-LDAP-0045', { ok: false, errors: ['"' + wanted.slice(0, 64) + '" is a SPIFFE ' +
                                  'identity and not a username. A workload ' +
                                  'identity reaches this directory by being ' +
                                  'PRESENTED — an X509-SVID over mutual TLS at ' +
@@ -4335,32 +4598,32 @@ function createUser(name, options) {
                                  'ENTRY, which is a different thing in a ' +
                                  'different container: /admin/spiffe/entries, ' +
                                  'POST /admin-api/spiffe/entries/create, or ' +
-                                 'BatchCreateEntry.'] };
+                                 'BatchCreateEntry.'] });
   }
   if (!nameUsableInDn(wanted)) {
     log.debug('Leaving createUser(). The name carries DN syntax.');
-    return { ok: false, errors: ['"' + wanted + '" cannot be a username here: ' +
+    return coded('STS-LDAP-0046', { ok: false, errors: ['"' + wanted + '" cannot be a username here: ' +
                                  'it carries a character RFC 4514 reserves in a ' +
                                  'DN (one of , = + < > # ; " \\), so the entry ' +
                                  'would be named something other than what was ' +
                                  'typed. An ldapadd can still create such an ' +
-                                 'entry, with the escaping written out.'] };
+                                 'entry, with the escaping written out.'] });
   }
   const clash = existingUserEntry(wanted);
   if (clash) {
     log.debug('Leaving createUser(). That username is taken.');
-    return { ok: false,
+    return coded('STS-LDAP-0005', { ok: false,
              errors: ['There is already a user called "' + wanted + '" here, at ' +
                       clash.dn + '. One entry per person is the rule this ' +
                       'directory keeps at every door — whatever protocol ' +
                       'authenticated them, and whichever attribute their entry ' +
                       'happens to be named by.'],
-             existing: { dn: clash.dn, origin: clash.origin || '' } };
+             existing: { dn: clash.dn, origin: clash.origin || '' } });
   }
   if (totalEntries() >= maxEntries()) {
     log.debug('Leaving createUser(). The directory is full.');
-    return { ok: false, errors: ['This directory holds its maximum of ' +
-                                 maxEntries() + ' entries.'] };
+    return coded('STS-LDAP-0007', { ok: false, errors: [
+      'This directory holds its maximum of ' + maxEntries() + ' entries.'] });
   }
   // WHAT THE CALLER TYPED, before anything is written: a refusal here must
   // leave the directory exactly as it was, and putEntry() is not undoable.
@@ -4369,7 +4632,13 @@ function createUser(name, options) {
     log.debug('Leaving createUser(). An attribute name is not a person\'s.');
     return supplied;
   }
-  const invent = opts.invent === undefined ? true : !!opts.invent;
+  // A CEILING, in the shape `autocreateUsers()` is one: the caller may ask for
+  // no invention, and product mode (`mode.inventsClaimValues()` false) is a
+  // ceiling no caller can raise — SCIM calls this with the default `true`, and
+  // that must not put a persona on a person provisioned into a product
+  // directory.
+  const invent = (opts.invent === undefined ? true : !!opts.invent) &&
+    mode.inventsClaimValues();
   const plan = namePlan(wanted);
   // THE FIVE INVENTED ATTRIBUTES namePlan() ADDS, dropped when nothing is to be
   // invented. `objectClass` and `uid` are kept in both branches and are not on
@@ -4495,6 +4764,17 @@ function applyVcAttributes(stored, key) {
   log.debug('Entering applyVcAttributes(). dn=' + (stored && stored.dn));
   if (!stored) {
     log.debug('Leaving applyVcAttributes(). There is no entry.');
+    return false;
+  }
+  // **EVERY VALUE THIS WRITES IS GENERATED**, so product mode writes none
+  // (2026-09-12). This is the one function the startup sweep, a realm's
+  // creation, Populate on /admin/vc, a SCIM create and a returning person's
+  // sign-in all come through, which is why the refusal is here rather than at
+  // those five callers. A credential then carries what the entry holds or
+  // omits the claim — see `oid4vc/vc_claims.js`.
+  if (!mode.inventsClaimValues()) {
+    log.debug('Leaving applyVcAttributes(). This service invents no claim value ' +
+              'in this mode.');
     return false;
   }
   const name = String(key == null ? '' : key).trim() || commonNameOf(stored.dn) ||
@@ -4626,6 +4906,18 @@ function personaKeyOf(stored) {
 function populateVcAttributes() {
   log.debug('Entering populateVcAttributes().');
   const wanted = vcClaims.selectedNames();
+  // Nothing to fill in a mode that invents nothing (see applyVcAttributes()),
+  // and a walk of the whole realm to learn that would be a walk for nothing.
+  // Said in the result, so the page behind Populate reports it rather than
+  // "0 entries changed" about a sweep that did not run.
+  if (!mode.inventsClaimValues()) {
+    log.info('ldap: the credential attribute sweep did not run — this service ' +
+             'invents no claim value in product mode, so an entry carries what ' +
+             'was provisioned onto it and nothing generated.');
+    log.debug('Leaving populateVcAttributes(). Not in this mode.');
+    return { examined: 0, changed: 0, values: 0, attributes: wanted,
+             skipped: 'product mode invents no claim value (mode.inventsClaimValues())' };
+  }
   let examined = 0;
   let changed = 0;
   const before = new Map();
@@ -4752,7 +5044,7 @@ function vcAttributesFor(key) {
 // it, exactly as admin_stats.js does for the observer.
 //
 // It is given the IDENTITY KEY the console files a person under — the local name,
-// with `urn:sts-mock:user:` and any realm already stripped — which is the same
+// with `urn:sts:user:` and any realm already stripped — which is the same
 // string autoCreateUser() built the DN from, so the two cannot drift.
 //
 // What comes back is deliberately more than the entry: the DN is reported whether
@@ -5693,6 +5985,23 @@ if (typeof roles.setDirectory === 'function') {
            'nothing is refused that was not refused before.');
 }
 
+// THE PASSWORD POLICY REGISTER'S CONTAINER. Three functions, the shape of the
+// role register's, and guarded the same way: an older copy of that module
+// without the slot costs a warning and leaves the BUILT-IN default profile in
+// force — which is the policy an unedited service enforces anyway, so nothing
+// becomes weaker by its absence.
+if (typeof passwordPolicy.setDirectory === 'function') {
+  passwordPolicy.setDirectory({
+    allPasswordPolicies: allPasswordPolicies,
+    writePasswordPolicy: writePasswordPolicy,
+    deletePasswordPolicy: deletePasswordPolicy
+  });
+} else {
+  log.warn('ldap: common/password_policy.js offers no setDirectory(), so ' +
+           'ou=passwordPolicies is unreachable and the built-in default ' +
+           'password policy cannot be edited.');
+}
+
 if (typeof xacmlStore.setDirectory === 'function') {
   xacmlStore.setDirectory({ allPolicies: allPolicies,
                             writePolicy: writePolicy,
@@ -5807,6 +6116,51 @@ if (typeof xacmlPip.setDirectory === 'function') {
 }
 
 // ---------------------------------------------------------------------------
+// THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12).
+//
+// `tls/tls_server.js` is already required at the top of this file — this
+// module serves its certificate on 636 — so filling its slot is a call in the
+// ORDINARY direction and costs no require at all. The other direction is out:
+// `tls_server.js` is loaded from inside `admin-ui/admin.js`'s require, long
+// before this module, and a require from there to here would register every
+// /ldap route and the eight /admin/ldap/* pages ahead of the console's (rule
+// 3e). Three functions, validated whole over there, all pinned to the DEFAULT
+// realm because the truststore belongs to the process.
+// ---------------------------------------------------------------------------
+if (typeof tlsServer.setTrustAnchorStore === 'function') {
+  tlsServer.setTrustAnchorStore({
+    list: inDefaultRealm(allTrustAnchors),
+    write: inDefaultRealm(writeTrustAnchor),
+    remove: inDefaultRealm(deleteTrustAnchor)
+  });
+} else {
+  log.warn('ldap: tls_server.js offers no setTrustAnchorStore(), so an anchor ' +
+           'added at runtime is lost at the next start. tls.trustAnchorsFile ' +
+           'is unaffected.');
+}
+
+// The replication appliers' call into the truststore. Quiet because it runs
+// inside an applier that must not fail because a LISTENER could not take a new
+// context: the entry is stored either way, and `applyAnchors()` logs its own
+// failure.
+function reloadTrustAnchorsQuietly() {
+  if (typeof tlsServer.reloadStoredAnchors !== 'function') {
+    return;
+  }
+  try {
+    tlsServer.reloadStoredAnchors();
+  } catch (e) {
+    // Swallowed on purpose: this is called from a replication applier, and a
+    // truststore that could not be re-read must not stop the directory
+    // applying the change that prompted it. The failure is logged here and the
+    // next change, or a restart, reads the container again.
+    log.error(errorCodes.tag('STS-LDAP-0051') +
+              'ldap: the truststore could not be reloaded after a replicated ' +
+              'change to ou=trustAnchors: ' + e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // CONSENT: THE FOUR FUNCTIONS THAT PUT AN ANSWER ON A PERSON'S ENTRY, AND READ
 // IT BACK.
 //
@@ -5828,7 +6182,7 @@ if (typeof xacmlPip.setDirectory === 'function') {
 // **THE IDENTITY IS ALREADY NORMALISED WHEN IT ARRIVES.** consent.js runs it
 // through `admin_stats.js`'s identityKeyOf() first, which is the same
 // normalisation `autoCreateUser()` used to place the entry — so `alice`,
-// `alice@EXAMPLE.COM` and `urn:sts-mock:user:alice` reach `locateEntry()` as
+// `alice@EXAMPLE.COM` and `urn:sts:user:alice` reach `locateEntry()` as
 // one key and find one entry. A second normalisation here would be a second
 // opinion about who somebody is.
 // ---------------------------------------------------------------------------
@@ -5857,7 +6211,8 @@ function addConsentValues(key, values) {
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
-    log.warn('ldap: "' + key + '" has no entry in this realm, so the consent they ' +
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so the consent they ' +
              'gave was not recorded. They will be asked again. This is what ' +
              'ldap.autoCreateUsers being off looks like from the consent screen.');
     log.debug('Leaving addConsentValues(). Nothing to write to.');
@@ -5967,15 +6322,452 @@ function readStoredPassword(key) {
   return values.length ? String(values[0]) : '';
 }
 
-function writeStoredPassword(key, hashed) {
+// THE PASSWORD HISTORY (2026-09-12): `pwdHistory` on the same entry, one value
+// per remembered previous password in draft-behera-ldap-password-policy's
+// `time#syntaxOID#length#data` form. The values are BUILT by
+// `common/password_policy.js` and CHOSEN by `common/credentials.js`; this
+// module stores strings, which is the same division `userPassword` beside it
+// already has — so this file never learns what a history value means, and
+// never holds the decision about how many to keep.
+function readPasswordHistory(key) {
+  log.debug('Entering readPasswordHistory(). key=' + key);
+  const located = locateEntry(String(key || ''));
+  const stored = located.stored;
+  if (!stored) {
+    log.debug('Leaving readPasswordHistory(). No entry.');
+    return [];
+  }
+  const values = (stored.attributes.pwdhistory || []).map(String);
+  log.debug('Leaving readPasswordHistory(). ' + values.length + ' value(s).');
+  return values;
+}
+
+// ---------------------------------------------------------------------------
+// A PASSWORD WRITTEN OVER THE SOCKET (2026-09-12).
+//
+// **THIS WAS THE ONE DOOR THAT WROTE `userPassword` AS IT WAS GIVEN** — an
+// `ldapadd` or `ldapmodify` carrying one stored the value verbatim, in the
+// clear, past every rule `credentials.setPassword()` applies, beside four other
+// doors that all hash and all ask the password policy. So a product-mode
+// deployment with a password policy had a policy an LDAP client was not told
+// about. Now the add and modify handlers bring the value here, and it goes
+// through `credentials.preparePassword()` — the same function every other door
+// ends in — and what is stored is its hash.
+//
+// **IT IS APPLIED TO THE WORKING COPY AND NOTHING IS WRITTEN HERE**, because a
+// modify is atomic across all of its changes (RFC 4511 section 4.6): a policy
+// refusal has to leave the entry exactly as it was, and the handler has not
+// committed anything until every change has been accepted.
+//
+// Three things, and the first is the one that differs by mode:
+//
+//   * **A VALUE THAT IS ALREADY A SCRYPT HASH** is kept as given in
+//     development — that is how a directory is moved between two instances of
+//     this service — and REFUSED in product mode, because a hash cannot be
+//     checked against a policy and accepting one would be the way round it.
+//   * **`pwdHistory` AND `pwdChangedTime` ARE THE SERVICE'S TO MAINTAIN** and a
+//     change naming either is refused in product mode: a history anybody can
+//     empty is not a history.
+//   * **ONE VALUE.** An entry with two `userPassword` values is an entry where
+//     the old password still works, which `writeStoredPassword()` refuses to
+//     produce and this refuses to accept.
+//
+// Answers null or the ldapjs error to hand to `next()`. A CONSTRAINT VIOLATION
+// (19) is what draft-behera-ldap-password-policy's servers answer for a
+// password that fails quality or history, and it is what an LDAP client's error
+// handling expects to meet there.
+// ---------------------------------------------------------------------------
+function passwordWriteRefusal(dn, attributes, previous, touched, written) {
+  log.debug('Entering passwordWriteRefusal(). dn=' + dn);
+  const before = previous || {};
+  const keyOf = function (lower) {
+    return Object.keys(attributes).filter(function (key) {
+      return key.toLowerCase() === lower;
+    })[0];
+  };
+  if (mode.verifiesCredentials() &&
+      (touched.indexOf('pwdhistory') >= 0 || touched.indexOf('pwdchangedtime') >= 0)) {
+    log.debug('Leaving passwordWriteRefusal(). An operational attribute.');
+    return coded('STS-LDAP-0009', new ldap.ConstraintViolationError(
+      'pwdHistory and pwdChangedTime are maintained by this service\'s ' +
+      'password policy and cannot be written'));
+  }
+  if (touched.indexOf('userpassword') < 0) {
+    log.debug('Leaving passwordWriteRefusal(). No password in this change.');
+    return null;
+  }
+  const key = keyOf('userpassword');
+  const values = key ? (attributes[key] || []).map(String) : [];
+  if (!values.length) {
+    // Taking a password away is not setting one. The history stays: removing
+    // somebody's password and giving them the old one back must still meet it.
+    log.debug('Leaving passwordWriteRefusal(). The password was removed.');
+    return null;
+  }
+  if (values.length > 1) {
+    log.debug('Leaving passwordWriteRefusal(). Two values.');
+    return coded('STS-LDAP-0010', new ldap.ConstraintViolationError(
+      'an entry holds one userPassword; replace it rather than adding a second'));
+  }
+  const value = values[0];
+  const had = (before.userpassword || [])[0];
+  if (had !== undefined && String(had) === value) {
+    log.debug('Leaving passwordWriteRefusal(). Unchanged.');
+    return null;
+  }
+  if (value.indexOf('$scrypt$') === 0) {
+    if (mode.verifiesCredentials()) {
+      log.debug('Leaving passwordWriteRefusal(). A hash, in product mode.');
+      return coded('STS-LDAP-0011', new ldap.ConstraintViolationError(
+        'a pre-hashed userPassword cannot be checked against the password ' +
+        'policy; send the password itself (over LDAPS), or set it through ' +
+        '/admin-api/users/set-password'));
+    }
+    log.debug('Leaving passwordWriteRefusal(). A hash, kept as given.');
+    return null;
+  }
+  const prepared = credentials.preparePassword(usernameOfEntry({ dn: dn }), value, {
+    current: had === undefined ? '' : String(had),
+    history: (before.pwdhistory || []).map(String)
+  });
+  if (!prepared.ok) {
+    log.info('ldap: a userPassword for ' + dn + ' was refused: ' +
+             (prepared.errors || []).join(' '));
+    log.debug('Leaving passwordWriteRefusal(). Refused by the policy.');
+    // The policy's own code for which rule refused it, or this one.
+    return coded(errorCodes.codeOf(prepared) || 'STS-LDAP-0012',
+      new ldap.ConstraintViolationError((prepared.errors || []).join(' ')));
+  }
+  attributes[key] = [prepared.hash];
+  // What was accepted, for the caller to announce once it has COMMITTED — the
+  // Kerberos key register derives from it. Not announced here, because this
+  // is the working copy and the modify may yet be refused.
+  if (written) {
+    written.name = usernameOfEntry({ dn: dn });
+    written.password = value;
+  }
+  const historyKey = keyOf('pwdhistory') || 'pwdhistory';
+  if (prepared.history.length) {
+    attributes[historyKey] = prepared.history;
+  } else {
+    delete attributes[historyKey];
+  }
+  attributes[keyOf('pwdchangedtime') || 'pwdchangedtime'] = [generalizedTime()];
+  log.debug('Leaving passwordWriteRefusal(). Hashed.');
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// WHO MAY WRITE THIS DIRECTORY OVER THE SOCKET (2026-09-12).
+//
+// Until this date nothing did. Product mode VERIFIED a bind, and then the
+// connection that had proved who it was could add, modify, rename or delete any
+// entry in any realm — `ou=trustAnchors` (which is the client-certificate
+// truststore), `ou=federations` (whose signing certificates decide whose
+// assertions this service believes), `ou=policies`, `ou=roles` and every person.
+// And one write was an escalation rather than a vandalism: `admin_rbac.js`
+// reads a person's OWN `memberOf` when it decides whether they hold a console
+// role, so `memberOf: cn=admin-write,…` on your own entry made you an
+// administrator of the whole service.
+//
+// **THE RULE IS THREE LINES.**
+//
+//   * an ANONYMOUS connection writes nothing;
+//   * an ADMINISTRATOR writes anything — somebody whose bound DN names an entry
+//     in the DEFAULT realm's directory whose identity holds Admin Write;
+//   * anybody else may MODIFY THEIR OWN ENTRY, and only the attributes
+//     `ldap.selfWritableAttributes` names. No add, no delete, no rename.
+//
+// **ADMIN WRITE AND NOT A GROUP OF THE DIRECTORY'S OWN.** The console, the
+// management API and SCIM's write scope already answer "who may change what
+// this service holds", and a second roster for the socket would be a second
+// answer that drifts from the first the day somebody is granted one and not the
+// other. **THE DEFAULT REALM ONLY**, for the reason the roster itself is pinned
+// there: a person in `acme` sharing a name with a default-realm administrator is
+// a different person, and anybody who can provision a realm can provision one.
+//
+// **THE CONSOLE'S EMPTY-ROSTER RULE DOES NOT COUNT HERE.** While no role group
+// has a member `rolesOf()` may answer that everybody holds both
+// (`admin.openWhenEmpty`); that is the console being reachable at all on a
+// fresh service. Carried over, it would make every bound connection an
+// administrator of the directory on exactly the deployment nobody has set up,
+// so a role held only through `open` is not a role here.
+//
+// **THE ALLOWLIST IS AN ALLOWLIST** because this directory is schemaless — a
+// client can write any attribute name at all — and the names that matter look
+// ordinary: `memberOf` grants the console roles, `employeeType` is what the
+// seeded XACML policy decides on, `mail` and `cn` are asserted in every token
+// as facts this service vouches for, and every `sts*` attribute is a credential.
+// A list of what is refused would be complete on the day it was written.
+// `userPassword` is on the default list and still meets the password policy in
+// `passwordWriteRefusal()`, exactly as at every other door.
+//
+// **PRODUCT MODE ONLY** (`mode.authorizesDirectoryWrites()`). Development binds
+// any DN with any password, so the bound DN proves nothing and a check keyed on
+// it would refuse the suite while protecting nothing.
+//
+// **ASKED BEFORE WHETHER THE TARGET EXISTS**, so a connection that may not
+// write an entry cannot learn from the refusal whether it is there.
+//
+// Answers null or the ldapjs error, already recorded, to hand to `next()`.
+// `changedTypes` is the lower-cased attribute names a modify touches, and is
+// ignored for the other three operations.
+// ---------------------------------------------------------------------------
+function selfWritableAttributes() {
+  const listed = config.value('ldap.selfWritableAttributes');
+  return (Array.isArray(listed) ? listed : String(listed || '').split(','))
+    .map(function (name) { return String(name).trim().toLowerCase(); })
+    .filter(function (name) { return name.length > 0; });
+}
+
+// Whether the entry this bound DN names holds Admin Write, asked in the DEFAULT
+// realm whichever realm the operation is in. A DN under another realm's base is
+// never an administrator, and a role held only because the roster is empty is
+// not one either (see above).
+function boundDnIsDirectoryAdministrator(boundDn) {
+  log.debug('Entering boundDnIsDirectoryAdministrator(). dn=' + boundDn);
+  if (!boundDn) {
+    log.debug('Leaving boundDnIsDirectoryAdministrator(). Nobody is bound.');
+    return false;
+  }
+  // NO SEPARATE "IS THIS DN IN THE DEFAULT REALM" TEST, and that is not an
+  // omission. The lookup below runs in the default realm's STORE, and a DN
+  // under another realm's base is never an entry there — the stores are one per
+  // realm, not subtrees of one. A realm check written in front of it was
+  // mutation-tested and could change no answer, so it was removed rather than
+  // left looking like the thing that decides.
+  const answer = inDefaultRealm(function () {
+    const stored = getEntry(boundDn);
+    if (!stored) {
+      return false;
+    }
+    const roles = adminRbac.rolesOf(consoleKeyFor(stored.dn, stored));
+    return roles.write === true && roles.open !== true;
+  })();
+  log.debug('Leaving boundDnIsDirectoryAdministrator(). ' + answer);
+  return answer;
+}
+
+function directoryWriteRefusal(req, operation, dn, changedTypes) {
+  log.debug('Entering directoryWriteRefusal(). ' + operation + ' ' + dn);
+  if (!mode.authorizesDirectoryWrites()) {
+    log.debug('Leaving directoryWriteRefusal(). This mode does not authorize writes.');
+    return null;
+  }
+  const boundDn = boundDnOf(req);
+  if (!boundDn) {
+    log.info('ldap: refusing an anonymous ' + operation + ' of ' + dn + '.');
+    log.debug('Leaving directoryWriteRefusal(). Anonymous.');
+    return ldapRefusal(req, 'STS-LDAP-0052', 'an anonymous connection asked ' +
+      'for a ' + operation + ' of ' + dn,
+      new ldap.InsufficientAccessRightsError(
+        'an anonymous connection may not write this directory; bind first'), dn);
+  }
+  if (boundDnIsDirectoryAdministrator(boundDn)) {
+    log.debug('Leaving directoryWriteRefusal(). An administrator.');
+    return null;
+  }
+  const own = operation === 'modify' &&
+              normalizeDn(boundDn) === normalizeDn(dn) &&
+              getEntry(dn) && isPersonEntry(getEntry(dn));
+  if (!own) {
+    log.info('ldap: refusing a ' + operation + ' of ' + dn + ' by ' + boundDn +
+             ', who does not hold Admin Write.');
+    log.debug('Leaving directoryWriteRefusal(). Not an administrator.');
+    return ldapRefusal(req, 'STS-LDAP-0053', boundDn + ' asked for a ' +
+      operation + ' of ' + dn + ' without holding Admin Write',
+      new ldap.InsufficientAccessRightsError(
+        operation === 'modify'
+          ? 'only an administrator may modify an entry other than your own'
+          : 'only an administrator may ' + operation + ' an entry'), dn);
+  }
+  const allowed = selfWritableAttributes();
+  const refused = (changedTypes || []).filter(function (type, index, all) {
+    return allowed.indexOf(type) < 0 && all.indexOf(type) === index;
+  });
+  if (refused.length) {
+    log.info('ldap: refusing ' + boundDn + ' a change to ' + refused.join(', ') +
+             ' on their own entry; ldap.selfWritableAttributes does not name it.');
+    log.debug('Leaving directoryWriteRefusal(). An attribute is not self-writable.');
+    return ldapRefusal(req, 'STS-LDAP-0054', boundDn + ' asked to change ' +
+      refused.join(', ') + ' on their own entry, which is not self-writable',
+      new ldap.InsufficientAccessRightsError(
+        'you may not change ' + refused.join(', ') + ' on your own entry'), dn);
+  }
+  log.debug('Leaving directoryWriteRefusal(). A permitted change to their own entry.');
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// THE DIRECTORY'S READ AND BIND SECURITY (2026-09-12).
+//
+// node-ldapjs decides nothing about who may do what. It records the DN a
+// successful bind named on the connection (`conn.ldap.bindDN`, `cn=anonymous`
+// until then) and leaves every question after that to these handlers — no
+// access control, no attribute visibility, no rule about which listener a
+// password may cross, no limit on guesses. `directoryWriteRefusal()` above is
+// the write half. This is the rest, and all of it is PRODUCT MODE ONLY, for
+// that function's reason: development binds any DN with any password, so a
+// bound DN proves nothing there.
+//
+// **A READ REQUIRES A BIND** (`mode.requiresDirectoryBind()`). A search or
+// compare on a connection that never bound as somebody is refused with
+// insufficientAccessRights (50) — asked BEFORE whether the target exists, so
+// the refusal says nothing about the tree. **THE ROOT DSE IS THE EXCEPTION**
+// and has to be: a client reads it to learn the naming contexts before it knows
+// where to bind, and a server with no answer there looks like a server that is
+// down. Anonymous and unauthenticated binds are refused at the bind handler, so
+// what a connection can be is "bound as somebody" or "not bound at all".
+//
+// **CREDENTIALS NEVER LEAVE ON THE WIRE** (`mode.withholdsDirectorySecrets()`).
+// `SECRET_ATTRIBUTES` is a LIST rather than a rule because the directory is
+// schemaless and the names that matter look ordinary. Three doors, and the
+// second is the one a naive implementation misses:
+//
+//   * a search never RETURNS one (`toSearchEntry()`);
+//   * a search FILTER cannot see one (`matchableForReader()`) — otherwise
+//     `(oauthClientSecret=a*)`, then `(oauthClientSecret=ab*)`, reads a secret
+//     one character at a time off whether an entry came back. An attribute the
+//     reader may not see is absent to the filter, which is how a directory with
+//     access control evaluates a term naming it (Undefined, so no match);
+//   * a COMPARE against one is refused, because a compare IS an oracle — it
+//     answers "is this the password" without a bind, and with no rate limit.
+//
+// **AN ADMINISTRATOR IS NOT EXCEPTED.** The console, the management API and
+// every protocol read these through this module's functions and never through
+// a search, so nothing that needs a credential is behind this — and a socket
+// that handed an administrator every client secret in the directory is a socket
+// whose one stolen administrator password is every application's.
+//
+// **OPERATIONAL ATTRIBUTES ARE THE DIRECTORY'S TO WRITE**
+// (`mode.protectsOperationalAttributes()`): createTimestamp, modifyTimestamp and
+// entryDN are refused on an add or a modify with constraintViolation (19), which
+// is what RFC 4512 section 3.3.1's NO-USER-MODIFICATION attributes answer —
+// administrator included, because a timestamp anybody can set is not evidence.
+// pwdHistory and pwdChangedTime are refused by `passwordWriteRefusal()` already.
+// ---------------------------------------------------------------------------
+const SECRET_ATTRIBUTES = [
+  'userpassword', 'pwdhistory',
+  'oauthclientsecret', 'appregistrationaccesstoken', 'fedclientsecret',
+  'oauthassertionprivatekey', 'oauthsamlassertionprivatekey',
+  'stsassertionprivatekey',
+  'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
+  'stskrb5keys', 'krb5servicekeys',
+  // GNAP (2026-09-12): a client's shared secret for a key reference, and a
+  // resource server's macaroon root key. Either one mints a working credential.
+  'gnapsymmetrickey', 'gnapmacaroonkey'
+];
+
+const CLIENT_WRITTEN_OPERATIONAL = ['createtimestamp', 'modifytimestamp', 'entrydn'];
+
+function isSecretAttribute(name) {
+  return SECRET_ATTRIBUTES.indexOf(String(name || '').toLowerCase()) !== -1;
+}
+
+// Whether THIS reader of the socket is refused sight of an attribute. One
+// question, asked by all three doors, so they cannot disagree.
+function withheldFromReaders(name) {
+  return mode.withholdsDirectorySecrets() && isSecretAttribute(name);
+}
+
+// `matchable()` as a READER of the socket may see it. A separate function
+// rather than a flag on that one, because `matchable()` has callers that are
+// not a reader on the wire.
+function matchableForReader(stored) {
+  const out = matchable(stored);
+  if (!mode.withholdsDirectorySecrets()) {
+    return out;
+  }
+  Object.keys(out).forEach(function (name) {
+    if (isSecretAttribute(name)) {
+      delete out[name];
+    }
+  });
+  return out;
+}
+
+// A search or compare on a connection that has not bound as anybody. Answers
+// null or the recorded ldapjs error. The root DSE is never refused here — the
+// search handler answers it before this is asked.
+function directoryReadRefusal(req, operation, dn) {
+  log.debug('Entering directoryReadRefusal(). ' + operation + ' ' + dn);
+  if (!mode.requiresDirectoryBind() || boundDnOf(req)) {
+    log.debug('Leaving directoryReadRefusal(). Allowed.');
+    return null;
+  }
+  log.info('ldap: refusing an unauthenticated ' + operation + ' of ' + dn +
+           '; product mode requires a bind before a read.');
+  log.debug('Leaving directoryReadRefusal(). Not bound.');
+  return ldapRefusal(req, 'STS-LDAP-0074', 'a ' + operation + ' of ' + dn +
+    ' arrived on a connection that has not bound as anybody',
+    new ldap.InsufficientAccessRightsError(
+      'bind as somebody before reading this directory'), dn);
+}
+
+// A compare that names a credential attribute.
+function secretCompareRefusal(req, dn, type) {
+  if (!withheldFromReaders(type)) {
+    return null;
+  }
+  log.info('ldap: refusing a compare of ' + type + ' on ' + dn +
+           '; credential attributes cannot be compared over this socket.');
+  return ldapRefusal(req, 'STS-LDAP-0075', 'a compare on ' + dn + ' named ' +
+    type + ', a credential attribute no reader of this socket may test',
+    new ldap.InsufficientAccessRightsError(
+      type + ' cannot be compared over LDAP'), dn);
+}
+
+// An add or modify naming an attribute this directory maintains itself.
+// `types` is the lower-cased attribute names the operation writes.
+function operationalWriteRefusal(req, operation, dn, types) {
+  log.debug('Entering operationalWriteRefusal(). ' + operation + ' ' + dn);
+  if (!mode.protectsOperationalAttributes()) {
+    log.debug('Leaving operationalWriteRefusal(). Not protected in this mode.');
+    return null;
+  }
+  const named = (types || []).filter(function (type, index, all) {
+    return CLIENT_WRITTEN_OPERATIONAL.indexOf(type) !== -1 &&
+           all.indexOf(type) === index;
+  });
+  if (!named.length) {
+    log.debug('Leaving operationalWriteRefusal(). None named.');
+    return null;
+  }
+  log.info('ldap: refusing a ' + operation + ' of ' + dn + ' that writes ' +
+           named.join(', ') + ', which this directory maintains itself.');
+  log.debug('Leaving operationalWriteRefusal(). Refused.');
+  return ldapRefusal(req, 'STS-LDAP-0076', 'a ' + operation + ' of ' + dn +
+    ' named ' + named.join(', ') + ', which this directory maintains itself',
+    new ldap.ConstraintViolationError(
+      named.join(', ') + ' is maintained by this directory and cannot be written'),
+    dn);
+}
+
+// What `websecurity` counts a bind against: the connection's address, which is
+// on the real socket and on the dispatched stub alike (`operationRequest()`
+// carries it). An empty address would put every dispatched bind in one bucket,
+// and one attacker would lock out everybody.
+function limiterRequestOf(req) {
+  const connection = (req && req.connection) || {};
+  return { headers: {},
+           socket: { remoteAddress: String(connection.remoteAddress || 'unknown') } };
+}
+
+// `options.history`, when given, is the WHOLE history to leave on the entry —
+// an empty array removes the attribute — and `pwdChangedTime` is stamped with
+// it. When it is NOT given the history is left exactly as it was, so a caller
+// that predates the policy writes a password and nothing else.
+function writeStoredPassword(key, hashed, options) {
   log.debug('Entering writeStoredPassword(). key=' + key);
+  const opts = options || {};
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
     // NOT created here, and that is product mode's second requirement working
     // rather than a limitation: setting a password for somebody who does not
     // exist would create them, which is exactly what product mode refuses.
-    log.warn('ldap: "' + key + '" has no entry in this realm, so no ' +
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no ' +
              'credential was written. In product mode every referenced ' +
              'object must be created ahead of time.');
     log.debug('Leaving writeStoredPassword(). No entry.');
@@ -5985,6 +6777,19 @@ function writeStoredPassword(key, hashed) {
   // where the old password still works, which is the whole of what changing one
   // is meant to stop.
   stored.attributes.userpassword = [String(hashed)];
+  if (Array.isArray(opts.history)) {
+    if (opts.history.length) {
+      stored.attributes.pwdhistory = opts.history.map(String);
+    } else {
+      // LDAP has no empty attribute (RFC 4511 section 4.1.7), so a history
+      // that is kept at nothing is an attribute that is not there.
+      delete stored.attributes.pwdhistory;
+    }
+    stored.attributes.pwdchangedtime = [generalizedTime()];
+  }
+  // ONE touch for the password and its history together: one logical change,
+  // one version bump, one scheduled persistence write — the rule
+  // `applyVcAttributes()` learnt the expensive way.
   touchDirectory();
   log.debug('Leaving writeStoredPassword(). Written to ' + stored.dn + '.');
   return true;
@@ -6044,7 +6849,8 @@ function writeWebauthnValue(key, value) {
   const located = locateEntry(String(key || ''));
   const stored = located.stored;
   if (!stored) {
-    log.warn('ldap: "' + key + '" has no entry in this realm, so no security ' +
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no security ' +
              'key was recorded.');
     log.debug('Leaving writeWebauthnValue(). No entry.');
     return false;
@@ -6123,7 +6929,8 @@ function writeTotp(key, value) {
     // NOT created here, for `writeStoredPassword()`'s reason: enrolling a
     // credential for somebody who does not exist would create them, and
     // product mode refuses exactly that.
-    log.warn('ldap: "' + key + '" has no entry in this realm, so no ' +
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no ' +
              'authenticator enrolment was recorded.');
     log.debug('Leaving writeTotp(). No entry.');
     return false;
@@ -6189,7 +6996,8 @@ function writeBackupCodes(key, value) {
     // NOT created here, for `writeTotp()`'s reason: writing a credential for
     // somebody who does not exist would create them, and product mode refuses
     // exactly that.
-    log.warn('ldap: "' + key + '" has no entry in this realm, so no recovery ' +
+    log.warn(errorCodes.tag('STS-LDAP-0040') +
+             'ldap: "' + key + '" has no entry in this realm, so no recovery ' +
              'codes were recorded.');
     log.debug('Leaving writeBackupCodes(). No entry.');
     return false;
@@ -6244,6 +7052,10 @@ if (typeof credentials.setDirectory === 'function') {
   credentials.setDirectory({
     readPassword: readStoredPassword,
     writePassword: writeStoredPassword,
+    // The password history (2026-09-12). Checked where it is used, like the
+    // pairs below: an older `common/credentials.js` still gets a working
+    // password write, and simply keeps no history.
+    readPasswordHistory: readPasswordHistory,
     anyCredential: anybodyHoldsACredential,
     readWebauthn: readWebauthnValues,
     writeWebauthn: writeWebauthnValue,
@@ -6421,7 +7233,8 @@ if (typeof personAssertions.setDirectory === 'function') {
         // NOT created here, for `writeStoredPassword()`'s reason: issuing a
         // credential to somebody who does not exist would create them, and
         // product mode refuses exactly that.
-        log.warn('ldap: "' + username + '" has no entry in this realm, so no ' +
+        log.warn(errorCodes.tag('STS-LDAP-0040') +
+                 'ldap: "' + username + '" has no entry in this realm, so no ' +
                  'assertion key material was written.');
         log.debug('Leaving write(). No entry.');
         return false;
@@ -6477,6 +7290,145 @@ if (typeof consent.setDirectory === 'function') {
            'person agrees to at /oauth2/consent can be written down or read ' +
            'back. With oauth2.consentRequired on, the screen is drawn on every ' +
            'authorization request. The directory itself is unaffected.');
+}
+
+// ---------------------------------------------------------------------------
+// THE KERBEROS KEY REGISTER'S SLOT (2026-09-12), and it is the one directory
+// slot in this file that is pinned to the DEFAULT realm for a reason that is not
+// about administrators.
+//
+// `kerberos/krb5_person_keys.js` owns what a stored Kerberos key IS — the sealed
+// record, the stamp, the kvno, the keytab — and this module owns where it lives:
+// `stsKrb5Keys` / `stsKrb5KeyInfo` on a person's entry under `ou=users`, and
+// `krb5ServiceKeys` / `krb5ServiceKeyInfo` on an application entry under
+// `ou=applications`. That is the division `person_assertions.js` has with this
+// file one slot up.
+//
+// **RULE 3e ANSWERS YES BOTH WAYS ROUND.** That module is required by the two
+// `admin-core/` halves at 18, so a require from there to this module would
+// register every `/ldap` route and all eight `/admin/ldap/*` pages ahead of the
+// management API (rule 1); and it requires `krb5_principals.js`, which the KDC
+// at 15 requires, so the directory reached from the KDC's side would move them
+// further still.
+//
+// **EVERY FUNCTION RUNS IN THE DEFAULT REALM**, through `inDefaultRealm()`. The
+// KDC's sockets and `krb5.realm` are process-wide — a raw Kerberos socket has no
+// path to carry a trust-realm segment — so the KDC answers in no trust realm,
+// and its people are the default realm's people. A person reached from a request
+// in `acme` is not a principal of this KDC; the register refuses to derive for
+// one before it ever gets here.
+//
+// **THE WRITES GO STRAIGHT ONTO THE STORED ENTRY, AND FOR AN APPLICATION THAT IS
+// DELIBERATE.** `applications.updateApplication()` quotes the value it wrote in
+// its audit summary, its log line and its reply, and the value here is key
+// material. The two attributes are rows in `applications.js`'s SCHEMA, which is
+// what makes a later `writeApplication()` — which REPLACES an entry from its
+// record — carry them rather than erase them.
+// ---------------------------------------------------------------------------
+function firstValue(stored, lowerName) {
+  const values = stored.attributes[lowerName] || [];
+  return values.length ? String(values[0]) : '';
+}
+
+function assignOrDelete(stored, lowerName, value) {
+  if (value === null || value === undefined || value === '') {
+    delete stored.attributes[lowerName];
+  } else {
+    stored.attributes[lowerName] = [String(value)];
+  }
+}
+
+if (typeof krb5PersonKeys.setDirectory === 'function') {
+  krb5PersonKeys.setDirectory({
+    readPerson: inDefaultRealm(function (username) {
+      log.debug('Entering readPerson(). username=' + username);
+      const located = locateEntry(String(username || ''));
+      if (!located.stored || !isPersonEntry(located.stored)) {
+        log.debug('Leaving readPerson(). No person at ' + located.dn + '.');
+        return null;
+      }
+      const stored = located.stored;
+      log.debug('Leaving readPerson(). ' + stored.dn);
+      return { dn: stored.dn, username: usernameOfEntry(stored),
+               keys: firstValue(stored, 'stskrb5keys'),
+               info: firstValue(stored, 'stskrb5keyinfo'),
+               passwordHash: firstValue(stored, 'userpassword') };
+    }),
+    writePerson: inDefaultRealm(function (username, keysValue, infoValue) {
+      log.debug('Entering writePerson(). username=' + username);
+      const located = locateEntry(String(username || ''));
+      if (!located.stored || !isPersonEntry(located.stored)) {
+        // NOT created here, for `writeStoredPassword()`'s reason.
+        log.warn(errorCodes.tag('STS-LDAP-0040') + 'ldap: "' + username +
+                 '" has no entry in the default realm, so no Kerberos key was ' +
+                 'written.');
+        log.debug('Leaving writePerson(). No entry.');
+        return false;
+      }
+      // BOTH IN ONE WRITE, so the public half can never describe a generation
+      // of keys the secret half does not hold.
+      assignOrDelete(located.stored, 'stskrb5keys', keysValue);
+      assignOrDelete(located.stored, 'stskrb5keyinfo', infoValue);
+      touchDirectory(located.stored.dn);
+      log.debug('Leaving writePerson(). ' + located.stored.dn);
+      return true;
+    }),
+    personKeyInfos: inDefaultRealm(function () {
+      log.debug('Entering personKeyInfos().');
+      const out = [];
+      eachEntryInRealm(function (stored) {
+        if (isPersonEntry(stored) && (stored.attributes.stskrb5keyinfo ||
+                                      stored.attributes.stskrb5keys)) {
+          out.push({ username: usernameOfEntry(stored) || stored.dn,
+                     info: firstValue(stored, 'stskrb5keyinfo'),
+                     passwordHash: firstValue(stored, 'userpassword') });
+        }
+      });
+      log.debug('Leaving personKeyInfos(). ' + out.length + ' person(s).');
+      return out;
+    }),
+    readService: inDefaultRealm(function (identifier) {
+      log.debug('Entering readService(). identifier=' + identifier);
+      const stored = applicationEntry(String(identifier || ''));
+      if (!stored) {
+        log.debug('Leaving readService(). No entry.');
+        return null;
+      }
+      log.debug('Leaving readService(). ' + stored.dn);
+      return { dn: stored.dn, keys: firstValue(stored, 'krb5servicekeys'),
+               info: firstValue(stored, 'krb5servicekeyinfo') };
+    }),
+    writeService: inDefaultRealm(function (identifier, keysValue, infoValue) {
+      log.debug('Entering writeService(). identifier=' + identifier);
+      const stored = applicationEntry(String(identifier || ''));
+      if (!stored) {
+        log.debug('Leaving writeService(). No entry.');
+        return false;
+      }
+      assignOrDelete(stored, 'krb5servicekeys', keysValue);
+      assignOrDelete(stored, 'krb5servicekeyinfo', infoValue);
+      touchDirectory(stored.dn);
+      log.debug('Leaving writeService(). ' + stored.dn);
+      return true;
+    }),
+    serviceKeyInfos: inDefaultRealm(function () {
+      log.debug('Entering serviceKeyInfos().');
+      const out = [];
+      entriesUnder(applicationsDn()).forEach(function (stored) {
+        if (stored.attributes.krb5servicekeyinfo || stored.attributes.krb5servicekeys) {
+          out.push({ identifier: firstValue(stored, 'appidentifier') || stored.dn,
+                     info: firstValue(stored, 'krb5servicekeyinfo'),
+                     hasKeys: !!firstValue(stored, 'krb5servicekeys') });
+        }
+      });
+      log.debug('Leaving serviceKeyInfos(). ' + out.length + ' entr(ies).');
+      return out;
+    })
+  });
+} else {
+  log.warn('ldap: kerberos/krb5_person_keys.js offers no setDirectory(), so no ' +
+           'person can hold Kerberos keys and no service principal key can be ' +
+           'stored. That is the older register and is not an error.');
 }
 
 // The SIXTH, and it is the first one that hands over a WRITER as well as
@@ -6634,6 +7586,21 @@ populateVcAttributes();
 // ---------------------------------------------------------------------------
 const plainServer = ldap.createServer({ log: log });
 
+// The TLS protocol policy, asked of the module that states it. An older copy of
+// `tls_server.js` without the function gets node's defaults, which is what
+// LDAPS always had.
+function tlsProtocolOptions() {
+  return typeof tlsServer.protocolOptions === 'function'
+    ? tlsServer.protocolOptions() : {};
+}
+
+// Where both sockets bind: `global.host`, which every other listener here
+// honours. They bound the literal '0.0.0.0' until 2026-09-12, so a service
+// confined to 127.0.0.1 still offered its directory on every interface.
+function ldapListenHost() {
+  return String(config.value('global.host') || '0.0.0.0').replace(/^\[|\]$/g, '');
+}
+
 const serverCertificate = tlsServer.serverCertificate();
 
 let secureServer = null;
@@ -6646,14 +7613,19 @@ if (serverCertificate && serverCertificate.certPem &&
   // out why the client certificate they offered was never requested. The
   // permissive and strict client-certificate listeners are the HTTPS ones next
   // door, where the whole content is the answer to that question.
-  secureServer = ldap.createServer({
+  // `tls.minVersion` and `tls.ciphers` go in too (2026-09-12): ldapjs hands
+  // this whole object to `tls.createServer()`, so LDAPS takes the same protocol
+  // floor and cipher list as 8443, 9443 and the main port rather than node's
+  // defaults behind their back.
+  secureServer = ldap.createServer(Object.assign({
     log: log,
     certificate: serverCertificate.certPem,
     key: serverCertificate.privateKeyPem
-  });
+  }, tlsProtocolOptions()));
 } else {
   tlsListenError = 'there was no server certificate at startup';
-  log.warn('ldap: no server certificate is available, so LDAPS will not be ' +
+  log.warn(errorCodes.tag('STS-LDAP-0029') +
+           'ldap: no server certificate is available, so LDAPS will not be ' +
            'offered on ' + LDAPS_PORT + '. The plain listener on ' + LDAP_PORT +
            ' is unaffected.');
 }
@@ -6714,6 +7686,28 @@ OPERATIONS.forEach(function (operation) {
       // handler) — and only it is wrapped, so a route registered with
       // middleware would keep its shape.
       args[args.length - 1] = inRealmOfRequest(args[args.length - 1]);
+    }
+    // ---------------------------------------------------------------------
+    // AND THE SECOND WRAPPER: THE REQUEST-WORKER POOL (2026-09-12).
+    //
+    // It is HERE, at registration, for exactly `inRealmOfRequest()`'s reason
+    // one line up — seven bodies each remembering to offer themselves to the
+    // pool is seven chances to forget, and the thing forgotten would be
+    // invisible: the operation would simply run in the front process and
+    // everything would work, slightly slower, for ever.
+    //
+    // The realm wrapper goes on FIRST and is therefore what a worker runs:
+    // `LOCAL_HANDLERS` holds the realm-entering function, so a worker enters
+    // the realm of the DN it was handed exactly as the socket does. Wrapping
+    // the other way round would leave a worker running the raw handler with
+    // no realm ambient, which answers "no such object" for entries that
+    // plainly exist — the failure this registration point was built to
+    // prevent, reintroduced one layer out.
+    // ---------------------------------------------------------------------
+    if (DISPATCHABLE_OPERATIONS.indexOf(operation) >= 0) {
+      LOCAL_HANDLERS[operation] = args[args.length - 1];
+      args[args.length - 1] = throughTheRequestPool(operation,
+                                                    LOCAL_HANDLERS[operation]);
     }
     servers.forEach(function (one) {
       one[operation].apply(one, args);
@@ -7025,13 +8019,15 @@ plainServer.on('error', function (err) {
   // Reported rather than thrown: the rest of this service is still useful, and
   // a listener that dies silently surfaces later as a directory that never
   // answers.
-  log.error('ldap: the plain listener (' + boundPort + ') reported an error: ' +
+  log.error(errorCodes.tag('STS-LDAP-0025') +
+            'ldap: the plain listener (' + boundPort + ') reported an error: ' +
             err.message);
 });
 
 if (secureServer) {
   secureServer.on('error', function (err) {
-    log.error('ldap: the LDAPS listener (' + boundTlsPort + ') reported an ' +
+    log.error(errorCodes.tag('STS-LDAP-0026') +
+              'ldap: the LDAPS listener (' + boundTlsPort + ') reported an ' +
               'error: ' + err.message + '. The plain listener on ' + boundPort +
               ' is a separate socket and is unaffected.');
   });
@@ -7121,6 +8117,568 @@ function auditLdap(req, fields) {
   }, fields));
 }
 
+// ---------------------------------------------------------------------------
+// A REFUSAL NO HANDLER WROTE A ROW FOR. Records the operator's code for the
+// condition and hands back the SAME ldapjs error, untouched, for `next()` — so
+// what the client receives is exactly what it was. The code is the one given,
+// or the one a helper marked on the error where the condition was decided
+// (refuseNulValues(), passwordWriteRefusal()). Written in whichever process
+// runs the handler, which is where the condition was known. `outcome` is
+// 'error' only where this service, rather than the request, is what failed.
+// ---------------------------------------------------------------------------
+function ldapRefusal(req, code, summary, err, target, outcome) {
+  const boundDn = req ? boundDnOf(req) : '';
+  const channel = req ? ldapChannelOf(req) : 'ldap';
+  audit.failure(code || errorCodes.codeOf(err), {
+    channel: channel,
+    protocol: channel === 'ldaps' ? 'LDAPS' : 'LDAP',
+    actor: boundDn ? consoleKeyFor(boundDn, getEntry(boundDn)) : '',
+    actorForm: boundDn,
+    target: target || '',
+    summary: summary,
+    outcome: outcome || 'refused',
+    detail: { result: err && err.name, resultCode: err && err.code }
+  });
+  return err;
+}
+
+// ---------------------------------------------------------------------------
+// THE DIRECTORY AS AN OPERATION: WHAT CROSSES TO A REQUEST WORKER, AND WHAT
+// CANNOT (2026-09-12).
+//
+// `common/request_pool.js` dispatches HTTP by proxying real HTTP over a unix
+// socket, and its header spends a page on why a FAKE `req`/`res` pair was
+// refused there: `http.ServerResponse` has an enormous surface, the handlers
+// here use most of it, and `app.js`'s response-flush CSP re-check hangs off the
+// real object. Every one of those arguments is about HTTP and **not one of them
+// reaches LDAP**, which is why the decision here comes out the other way.
+//
+// An LDAP response, as these seven handlers use it, is THREE METHODS AND ONE
+// PROPERTY: `res.send(entry)`, `res.end()`, `res.end(matched)` and
+// `res.messageId`. A request is a DN, a filter, a list of attributes and a
+// handful of scalars. There is no chunking, no content type, no header, no
+// trailer and no middleware that rewrites the body on the way out. So the pair
+// is reproduced rather than proxied, and the thing that makes it faithful is
+// not care — it is that **both processes parse with the same ldapjs
+// submodule**: a DN and a filter travel as the strings they arrived as and are
+// re-parsed by `ldap.parseDN()` and `ldap.parseFilter()` at the far end. That
+// is the HTTP path's "node's own parser at both ends" argument, transposed.
+//
+// **THE FRONT PROCESS KEEPS THE SOCKET AND THE FRAMING.** It accepts the
+// connection, ldapjs decodes the BER, this file turns the request into a plain
+// object, a worker does the work, and the front process writes the reply. What
+// a worker never touches is the file descriptor — which is the whole of why
+// `unbind` is not on the list below.
+//
+// ---------------------------------------------------------------------------
+// FOUR THINGS DELIBERATELY DO NOT CROSS, AND EACH IS A DIFFERENT REASON.
+//
+//   * **`unbind`.** RFC 4511 section 4.3: it ends the connection, and a
+//     connection is a file descriptor the front process holds. There is
+//     nothing in it for a worker to do.
+//   * **THE BIND'S EFFECT ON THE SOCKET.** The DECISION crosses — is this
+//     password right, is this DN refused, write the audit rows — and
+//     `req.connection.stsBoundAt` and `publishConnectionsSoon()` stay here,
+//     applied by `applyOperationResult()` when the worker says the bind
+//     succeeded. A worker stamping its own copy of a socket it does not hold
+//     would be the mirror bug of the one `setConnectionMirror()` exists to
+//     fix, pointing the other way.
+//   * **THE SEARCH IS COLLECTED, NOT STREAMED.** A worker fills an array and
+//     the front process sends it. That is a real cost and it is bounded on
+//     purpose: `maxSearchResults()` already caps a search, and the cap is the
+//     same number whether the search ran here or in a worker — so the array is
+//     never larger than an answer this service was already willing to build.
+//     A client raising `sizeLimit` past `ldap.sizeLimit` gets the service's
+//     limit, exactly as it did.
+//   * **THE `SearchEntry` MESSAGE ITSELF.** `toSearchEntry()` decides WHICH
+//     attributes go back — requested, operational, canonically spelled — and
+//     that is store logic, so it runs in the worker. What comes back is the
+//     plain `{ objectName, attributes }` inside it, and the front process
+//     builds the message with ITS OWN `res.messageId`. Sending the worker's
+//     would be the "SearchEntry messageId mismatch" that function's header
+//     already records having cost an afternoon.
+// ---------------------------------------------------------------------------
+const DISPATCHABLE_OPERATIONS = ['bind', 'add', 'del', 'modify', 'modifyDN',
+                                 'compare', 'search'];
+
+// The realm-entering handler for each, captured at registration. It is what a
+// worker runs and what the front process falls back to.
+const LOCAL_HANDLERS = {};
+
+// The pool, required LAZILY inside the functions that use it. A top-level
+// require would be this module (21) reaching up into the process's own
+// bootstrap — `common/app.js` loads the pool, and app.js is above every route
+// — and by the time an LDAP operation arrives it is a cache hit.
+function requestPool() {
+  try {
+    return require('../common/request_pool');
+  } catch (e) {
+    // A process that has no pool module at all is a process that cannot
+    // dispatch, which is the ordinary state of every in-process loader of this
+    // tree. Answering null puts the caller on the local path.
+    return null;
+  }
+}
+
+// What a worker is stuck to. **THE CONNECTION, and `request_pool.js`'s
+// operations header argues it at length**: RFC 4511 section 4.2 makes the
+// connection the unit of authorization state, a client may have several
+// operations outstanding on one, and an `ldapadd` followed by an `ldapsearch`
+// down one socket is one conversation rather than two callers. It is a
+// LOCALITY measure — the read barrier is what makes the write visible — and a
+// connection this process cannot name falls back to fanning out.
+function connectionAffinity(req) {
+  const socket = req && req.connection;
+  if (!socket) {
+    return '';
+  }
+  return (socket.ldap && socket.ldap.id) ||
+         ((socket.remoteAddress || '?') + ':' + (socket.remotePort || '?'));
+}
+
+// An ldapjs Attribute or Change carries class instances; the channel carries
+// structured clones. Both are read by the handlers as plain `{type, values}`
+// and `{operation, modification}`, so plain is what travels.
+function plainAttributes(attributes) {
+  return (attributes || []).map(function (attribute) {
+    return { type: String(attribute.type),
+             values: (attribute.values || []).map(function (v) {
+               return String(v);
+             }) };
+  });
+}
+
+function plainChanges(changes) {
+  return (changes || []).map(function (change) {
+    const modification = change.modification || {};
+    return { operation: String(change.operation || ''),
+             modification: { type: String(modification.type || ''),
+                             values: (modification.values || []).map(function (v) {
+                               return String(v);
+                             }) } };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE REQUEST, AS A PLAIN OBJECT. It throws rather than guessing: a shape this
+// function cannot describe is one the caller must run HERE, because a worker
+// handed a half-described request would answer confidently about the wrong
+// thing.
+// ---------------------------------------------------------------------------
+function operationRequest(operation, req) {
+  log.debug('Entering operationRequest(). operation=' + operation);
+  const shape = {
+    dn: req.dn ? req.dn.toString() : '',
+    // THE BOUND DN TRAVELS, and it is the one fact a worker could not possibly
+    // work out for itself: the connection is this process's, so who is on it
+    // is this process's to say. `auditLdap()` reads it through `boundDnOf()`
+    // at the far end, out of the connection stub `operationContext()` builds.
+    boundDn: boundDnOf(req),
+    channel: ldapChannelOf(req),
+    // THE CLIENT'S ADDRESS (2026-09-12), for the failed-bind rate limit. A
+    // worker has no socket to read it off, and a stub without it would count
+    // every dispatched bind against one address.
+    remoteAddress: String((req.connection && req.connection.remoteAddress) || '')
+  };
+  if (operation === 'bind') {
+    shape.credentials = req.credentials === undefined ? '' : String(req.credentials);
+  } else if (operation === 'add') {
+    shape.attributes = plainAttributes(req.attributes);
+  } else if (operation === 'modify') {
+    shape.changes = plainChanges(req.changes);
+  } else if (operation === 'modifyDN') {
+    shape.newRdn = req.newRdn ? req.newRdn.toString() : '';
+    shape.newSuperior = req.newSuperior ? req.newSuperior.toString() : '';
+  } else if (operation === 'compare') {
+    shape.attribute = String(req.attribute || '');
+    shape.value = String(req.value === undefined ? '' : req.value);
+  } else if (operation === 'search') {
+    // THE SCOPE TRAVELS AS THE NUMBER ldapjs PUT ON THE REQUEST, because
+    // `scopeOf()` reads `req.scope` and defaults a non-number to 2 (sub).
+    // Sending the word and re-deriving the number at the far end would be a
+    // second spelling of the same three values.
+    shape.scope = typeof req.scope === 'number' ? req.scope : 2;
+    shape.filter = req.filter ? req.filter.toString() : '(objectclass=*)';
+    shape.attributes = (req.attributes || []).map(function (a) {
+      return String(a);
+    });
+    shape.sizeLimit = parseInt(req.sizeLimit, 10) || 0;
+  }
+  log.debug('Leaving operationRequest().');
+  return shape;
+}
+
+// The other end: a request object the handlers can read, out of that shape.
+// **A FILTER IS RE-PARSED AND NEVER RECONSTRUCTED** — the handler calls
+// `req.filter.matches()`, which no plain object has, and the submodule that
+// parsed it on the way in is the one parsing it here.
+function operationContext(operation, shape) {
+  log.debug('Entering operationContext(). operation=' + operation);
+  const req = {
+    dn: ldap.parseDN(shape.dn || ''),
+    // A STUB CARRYING THE TWO THINGS THE HANDLERS ASK A CONNECTION FOR:
+    // whether it is encrypted (`ldapChannelOf()`) and who is bound on it
+    // (`boundDnOf()`). `cn=anonymous` where nobody is, because that is what
+    // ldapjs seeds an unbound connection with and what `boundDnOf()` reads
+    // back as the absence of a bind — a stub with an empty string there would
+    // take a different path through a function whose whole job is that
+    // distinction.
+    connection: { encrypted: shape.channel === 'ldaps',
+                  remoteAddress: shape.remoteAddress || '',
+                  ldap: { bindDN: shape.boundDn || 'cn=anonymous' } }
+  };
+  if (operation === 'bind') {
+    req.credentials = shape.credentials || '';
+  } else if (operation === 'add') {
+    req.attributes = shape.attributes || [];
+  } else if (operation === 'modify') {
+    req.changes = shape.changes || [];
+  } else if (operation === 'modifyDN') {
+    req.newRdn = shape.newRdn || '';
+    req.newSuperior = shape.newSuperior || '';
+  } else if (operation === 'compare') {
+    req.attribute = shape.attribute || '';
+    req.value = shape.value || '';
+  } else if (operation === 'search') {
+    req.scope = typeof shape.scope === 'number' ? shape.scope : 2;
+    req.filter = ldap.parseFilter(shape.filter || '(objectclass=*)');
+    req.attributes = shape.attributes || [];
+    req.sizeLimit = shape.sizeLimit || 0;
+  }
+  log.debug('Leaving operationContext().');
+  return req;
+}
+
+// ---------------------------------------------------------------------------
+// AN ERROR CROSSES AS ITS NAME AND ITS MESSAGE, AND IS REBUILT FROM THE SAME
+// ldapjs THAT MADE IT.
+//
+// **NOT AS A HAND-WRITTEN CODE TABLE**, which was the first version and is a
+// second copy of something the submodule already states — the kind of copy
+// that agrees on the day it is written and is wrong about the tenth error
+// somebody adds. The name is looked up on the module's own exports and the
+// result is CHECKED: it has to be a constructor whose instances carry a
+// numeric `code`, or this is not an LDAP error at all and the front process
+// must not turn an arbitrary export into one.
+//
+// A name that fails those tests becomes an `OperationsError` (result code 1)
+// with the original wording, logged loudly. That is the honest answer — the
+// operation genuinely failed and this process cannot say precisely how — and
+// it is far better than the alternative of resolving successfully, which would
+// answer a failed add with LDAP_SUCCESS.
+// ---------------------------------------------------------------------------
+function ldapErrorNamed(name, message) {
+  log.debug('Entering ldapErrorNamed(). name=' + name);
+  const candidate = /Error$/.test(String(name || '')) ? ldap[name] : null;
+  if (typeof candidate === 'function') {
+    try {
+      const built = new candidate(message);
+      if (typeof built.code === 'number') {
+        log.debug('Leaving ldapErrorNamed(). Rebuilt ' + name + '.');
+        return built;
+      }
+    } catch (e) {
+      // Falls through to the generic error below, which is what an ldapjs
+      // error constructor that does not take a message looks like from here.
+      log.warn('ldap: the error "' + name + '" could not be rebuilt: ' +
+               e.message);
+    }
+  }
+  log.warn('ldap: a request worker refused an operation with "' + name +
+           '", which is not an LDAP error this process can rebuild. The ' +
+           'client is being told LDAP_OPERATIONS_ERROR with the original ' +
+           'wording.');
+  audit.failure('STS-LDAP-0023', {
+    channel: 'ldap', protocol: 'LDAP',
+    summary: 'a request worker refused an LDAP operation with "' +
+             String(name || '') + '", which this process could not rebuild, ' +
+             'so the client was told LDAP_OPERATIONS_ERROR',
+    outcome: 'error'
+  });
+  log.debug('Leaving ldapErrorNamed(). Generic.');
+  return coded('STS-LDAP-0023', new ldap.OperationsError(message ||
+    'the request worker refused this operation'));
+}
+
+// ---------------------------------------------------------------------------
+// THE RESPONSE A WORKER WRITES INTO. Three methods and one property — see the
+// header above for why that is the whole surface and why reproducing it here
+// is not the thing `request_worker.js` refused to do for HTTP.
+//
+// `send()` takes the `SearchEntry` `toSearchEntry()` built and keeps the two
+// members that are the ANSWER, dropping the message id, which belongs to the
+// response this worker is not writing.
+// ---------------------------------------------------------------------------
+function collectingResponse() {
+  const out = { entries: [], ended: false, endArg: undefined };
+  return {
+    // Any number will do and none of it travels; it is here because
+    // `toSearchEntry()` reads it and would otherwise default to 1 and trip
+    // ldapjs's own mismatch check inside the worker.
+    messageId: 1,
+    collected: out,
+    send: function (entry) {
+      out.entries.push({
+        objectName: String(entry.objectName === undefined ? entry.dn : entry.objectName),
+        attributes: plainAttributes(entry.attributes)
+      });
+    },
+    end: function (arg) {
+      out.ended = true;
+      out.endArg = arg;
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// ONE OPERATION, IN WHICHEVER PROCESS IS RUNNING IT. The handler is the SAME
+// function the socket would have called, which is what makes "an operation
+// behaves identically in a worker and in the front process" true by
+// construction rather than by a comparison somebody maintains.
+//
+// **A HANDLER THAT NEITHER ENDED NOR FAILED IS A DEFECT AND IS REPORTED AS
+// ONE.** That state is what `next()` with no `res.end()` produces, and
+// `ldap/CLAUDE.md` records it hanging every client for ever when the size-limit
+// branch did it on the socket. Here it would hang them just as completely, one
+// process further away, so it is turned into a refusal naming the operation.
+// ---------------------------------------------------------------------------
+function performOperation(operation, shape) {
+  log.debug('Entering performOperation(). operation=' + operation);
+  const handler = LOCAL_HANDLERS[operation];
+  if (!handler) {
+    throw new Error('this process has no handler registered for the LDAP "' +
+      operation + '" operation.');
+  }
+  const req = operationContext(operation, shape);
+  const res = collectingResponse();
+  let failure = null;
+  handler(req, res, function (err) {
+    if (err) {
+      failure = err;
+    }
+  });
+  if (failure) {
+    // ---------------------------------------------------------------------
+    // THE ENTRIES ALREADY SENT TRAVEL WITH THE REFUSAL, AND DROPPING THEM WAS
+    // A REAL DEFECT (2026-09-12).
+    //
+    // **A REFUSAL IS NOT ALWAYS AN EMPTY ANSWER.** The search handler's
+    // size-limit branch sends N entries and THEN fails with
+    // `SizeLimitExceededError` — RFC 4511 section 4.5.2 requires exactly that:
+    // the entries already sent are a valid PARTIAL answer and result code 4 is
+    // how the client learns it is partial. This function returned only the
+    // error, so a size-limited search run in a worker answered **zero entries
+    // and code 4** where the front process answers five hundred entries and
+    // code 4.
+    //
+    // That is worse than it first reads. A client that handles code 4 properly
+    // — which is the whole reason the branch sends it — would report "0 of
+    // many" and be believed. And `ldap/CLAUDE.md` records this branch already
+    // having cost this service months once, by hanging every client; the
+    // dispatched version would have broken it a second time, differently, in
+    // the one mode nothing routine exercises.
+    //
+    // **NOTHING IN EITHER SUITE WOULD HAVE SEEN IT** for the reason recorded
+    // there: `ldap.sizeLimit` is 500 and the seeded directory holds about
+    // thirty entries, so the only thing anywhere that reaches this branch is
+    // `tests/vendored/sts_directory_bulk_load_ldap.js` — over a socket, in a
+    // stack, with operations off.
+    // ---------------------------------------------------------------------
+    log.debug('Leaving performOperation(). Refused with ' +
+              res.collected.entries.length + ' entry/entries already sent.');
+    return { ok: false, errorName: failure.name || 'OperationsError',
+             error: failure.message || '',
+             entries: res.collected.entries };
+  }
+  if (!res.collected.ended) {
+    log.debug('Leaving performOperation(). The handler ended nothing.');
+    audit.failure('STS-LDAP-0024', {
+      channel: ldapChannelOf(req), protocol: 'LDAP', target: operation,
+      summary: 'the LDAP "' + operation + '" handler finished without ' +
+               'sending a result message or failing',
+      outcome: 'error'
+    });
+    return { ok: false, errorName: 'OperationsError',
+             error: 'the "' + operation + '" handler finished without ' +
+               'sending a result message. See ldap/CLAUDE.md — a handler that ' +
+               'neither ends nor fails hangs the client for ever.' };
+  }
+  log.debug('Leaving performOperation(). ' + res.collected.entries.length +
+            ' entry/entries.');
+  return { ok: true, entries: res.collected.entries,
+           endArg: res.collected.endArg };
+}
+
+// ---------------------------------------------------------------------------
+// AND THE RESULT, WRITTEN TO THE REAL RESPONSE.
+//
+// The SOCKET-side effects of a bind live here and nowhere else — see the
+// header: the worker decides, this process stamps the connection and publishes
+// the snapshot, because the connection is this process's.
+// ---------------------------------------------------------------------------
+function applyOperationResult(operation, req, res, next, result) {
+  log.debug('Entering applyOperationResult(). operation=' + operation);
+  // THE ENTRIES GO OUT FIRST, WHETHER OR NOT THE OPERATION SUCCEEDED. A
+  // size-limited search is a PARTIAL ANSWER plus result code 4 (RFC 4511
+  // section 4.5.2), so sending them only on the success path answers zero
+  // entries and code 4 — see performOperation()'s block on the same subject.
+  // Every other refusal collected none, so this loop does nothing for them.
+  if (operation === 'search') {
+    (result && result.entries || []).forEach(function (entry) {
+      res.send(new ldap.SearchEntry({
+        // THE RESPONSE'S OWN MESSAGE ID. See toSearchEntry()'s header for what
+        // sending anything else costs.
+        messageId: res.messageId,
+        objectName: entry.objectName,
+        attributes: (entry.attributes || []).map(function (attribute) {
+          return new ldap.Attribute({ type: attribute.type,
+                                      values: attribute.values });
+        })
+      }));
+    });
+  }
+  if (!result || !result.ok) {
+    const err = ldapErrorNamed(result && result.errorName,
+                               result && result.error);
+    log.debug('Leaving applyOperationResult(). Refused.');
+    return next(err);
+  }
+  if (operation === 'bind') {
+    // THE TWO THINGS A WORKER CANNOT DO. Both are exactly what the bind
+    // handler does on its own success path, and they are ordered the same way:
+    // stamp the socket, then publish a TICK LATER, because ldapjs sets the
+    // bound DN only once the handler chain has returned.
+    if (req.connection) {
+      req.connection.stsBoundAt = Date.now();
+    }
+    publishConnectionsSoon();
+  }
+  // `res.end(matched)` for a compare and `res.end()` for everything else — the
+  // argument is carried rather than reconstructed, so a handler that starts
+  // ending with something new needs no edit here.
+  if (result.endArg === undefined) {
+    res.end();
+  } else {
+    res.end(result.endArg);
+  }
+  log.debug('Leaving applyOperationResult(). Ended.');
+  return next();
+}
+
+// ---------------------------------------------------------------------------
+// THE WRAPPER THE SOCKET ACTUALLY CALLS.
+//
+// **IT FALLS BACK TO RUNNING HERE ONLY WHERE NOTHING RAN ANYWHERE.** A pool
+// that is off, an operation not named in `workers.dispatch`, no worker to take
+// it — `runOperation()` answers `{ dispatched: false }` for all three and this
+// process does the work, which is what `workers.requestCount = 0` means and is
+// a supported configuration rather than a degraded one.
+//
+// **A REJECTION IS A REFUSAL AND NOT A SECOND ATTEMPT**, which is
+// `request_pool.js`'s "never silently half-dispatched" rule read for a
+// protocol that has no 503. A worker that died mid-add may have written the
+// entry; running the handler here as well would then refuse with
+// LDAP_ENTRY_ALREADY_EXISTS for an entry this client had just successfully
+// created, or — worse, on a modify — apply a change twice. Answering
+// LDAP_UNAVAILABLE says what is true: this service could not complete the
+// operation, and the client may try again.
+// ---------------------------------------------------------------------------
+function throughTheRequestPool(operation, local) {
+  return function (req, res, next) {
+    const pool = requestPool();
+    if (!pool || typeof pool.runOperation !== 'function') {
+      return local(req, res, next);
+    }
+    let shape = null;
+    try {
+      shape = operationRequest(operation, req);
+    } catch (e) {
+      // A request this process cannot describe is one it runs itself. It is
+      // worth a line: the alternative is a surface that silently stops being
+      // dispatched and nobody knows why it got slower.
+      log.warn('ldap: the ' + operation + ' request could not be described ' +
+               'for a request worker (' + e.message + '), so it is being ' +
+               'handled in this process.');
+      return local(req, res, next);
+    }
+    pool.runOperation('ldap.' + operation, shape,
+                      { affinity: connectionAffinity(req) })
+      .then(function (answer) {
+        if (!answer || !answer.dispatched) {
+          return local(req, res, next);
+        }
+        return applyOperationResult(operation, req, res, next, answer.result);
+      })
+      .catch(function (err) {
+        log.error(errorCodes.tag('STS-LDAP-0022') +
+                  'ldap: a request worker failed the ' + operation +
+                  ' operation: ' + err.message + '. The client is being told ' +
+                  'LDAP_UNAVAILABLE rather than having it retried here, ' +
+                  'because a worker that died part way through may already ' +
+                  'have written.');
+        return next(ldapRefusal(req, 'STS-LDAP-0022',
+          'a request worker failed the ' + operation + ' operation, so the ' +
+          'client was told LDAP_UNAVAILABLE',
+          new ldap.UnavailableError(
+            'the request worker handling this operation did not complete it: ' +
+            err.message), '', 'error'));
+      });
+  };
+}
+
+// ---------------------------------------------------------------------------
+// AND THE REGISTRATION ON THE WORKER SIDE.
+//
+// `common/request_worker.js` offers `register(kind, fn)` and its header says
+// the table is filled BY THE MODULE THAT OWNS THE OPERATION — so this is that
+// module doing it, at require time, exactly as requiring a protocol module is
+// what registers its routes (rule 1).
+//
+// **IT IS GUARDED AND SILENT IN A PROCESS THAT IS NOT A WORKER.** Requiring
+// `request_worker.js` from the front process is harmless (its child wiring is
+// behind the `begin` message), but registering there would be filling a table
+// nothing will ever read, and `register()` THROWS on a second registration —
+// which in a process that loads this module twice would turn a duplicate
+// require into a startup failure about a feature that is off.
+// ---------------------------------------------------------------------------
+function registerWorkerOperations() {
+  log.debug('Entering registerWorkerOperations().');
+  // ONLY IN A PROCESS THAT IS ACTUALLY A WORKER (2026-09-12). Requiring
+  // `request_worker.js` pulls `common/service_state.js` in at module scope —
+  // the store, the keys, the minted rows and coordination — and installs
+  // `process.on('message')` handlers, which in a process that will never
+  // answer an operation is a table nothing reads bought with half the
+  // service's startup machinery. `spiffe_grpc.js`'s `registerWorkerMethod()`
+  // carries the argument and the test it cost. `LOCAL_HANDLERS` is filled at
+  // registration either way, because it is also the fallback path.
+  if (!process.env.STS_REQUEST_WORKER) {
+    log.debug('Leaving registerWorkerOperations(). Not a request worker.');
+    return;
+  }
+  let worker = null;
+  try {
+    worker = require('../common/request_worker');
+  } catch (e) {
+    log.debug('Leaving registerWorkerOperations(). No worker module.');
+    return;
+  }
+  if (!worker || typeof worker.register !== 'function') {
+    log.debug('Leaving registerWorkerOperations(). Nothing to register with.');
+    return;
+  }
+  DISPATCHABLE_OPERATIONS.forEach(function (operation) {
+    const kind = 'ldap.' + operation;
+    if (worker.OPERATIONS && worker.OPERATIONS.has(kind)) {
+      return;
+    }
+    worker.register(kind, function (shape) {
+      return performOperation(operation, shape);
+    });
+  });
+  log.debug('Leaving registerWorkerOperations(). ' +
+            DISPATCHABLE_OPERATIONS.length + ' operation(s) registered.');
+}
+
 // --- bind ------------------------------------------------------------------
 server.bind('', function (req, res, next) {
   log.debug('Entering the LDAP bind handler.');
@@ -7134,6 +8692,68 @@ server.bind('', function (req, res, next) {
   log.info('ldap: BIND dn="' + dn + '" (' +
            (dn ? 'named' : 'anonymous') + '), ' + credentials_value.length +
            ' character password.');
+  // ---------------------------------------------------------------------
+  // THE FOUR PRODUCT-MODE REFUSALS THAT COME BEFORE A PASSWORD IS READ
+  // (2026-09-12). See *THE DIRECTORY'S READ AND BIND SECURITY*. Their order is
+  // the design: none of them looks at the password, and the rate limit is last
+  // so that a caller refused for a reason that has nothing to do with guessing
+  // is never counted as a guesser.
+  //
+  // **AN ANONYMOUS BIND** (no name) is refused with inappropriateAuthentication
+  // (48), which is what RFC 4513 section 5.1.1 says a server that does not
+  // offer anonymous access answers. The paragraph lower down that calls one "a
+  // legal operation" is still right about DEVELOPMENT — it is legal, and a
+  // server MAY support it — and product mode is a server that does not.
+  // ---------------------------------------------------------------------
+  if (mode.requiresDirectoryBind() && !dn) {
+    log.debug('Leaving the LDAP bind handler. Anonymous, in product mode.');
+    return next(ldapRefusal(req, 'STS-LDAP-0070', 'an anonymous bind was ' +
+      'refused; product mode requires a bind as somebody',
+      new ldap.InappropriateAuthenticationError(
+        'anonymous binds are not accepted; bind with a DN and a password'),
+      '(anonymous)'));
+  }
+  // **A PASSWORD ON THE PLAIN LISTENER** is refused with confidentialityRequired
+  // (13) BEFORE it is checked. It has already crossed the network in the clear
+  // by the time this line runs, so the refusal cannot protect this password —
+  // what it does is stop 389 being a port where a correct password WORKS, so no
+  // client is ever configured to send one there.
+  if (mode.requiresConfidentialDirectoryBinds() && ldapChannelOf(req) !== 'ldaps') {
+    log.debug('Leaving the LDAP bind handler. A password over plain LDAP.');
+    return next(ldapRefusal(req, 'STS-LDAP-0071', 'a bind as ' + dn + ' on the ' +
+      'plain LDAP listener was refused before its password was read; binds ' +
+      'require LDAPS', new ldap.ConfidentialityRequiredError(
+        'binds on this listener are refused; use LDAPS (ldap.tlsPort)'), dn));
+  }
+  // **A NAME WITH NO PASSWORD** is RFC 4513 section 5.1.2's unauthenticated
+  // bind, which a client library sends when a password field was left empty —
+  // and which, accepted, looks like a successful login as that name. Section
+  // 5.1.2 says a server SHOULD refuse it with unwillingToPerform (53) by default.
+  if (mode.requiresDirectoryBind() && credentials_value === '') {
+    log.debug('Leaving the LDAP bind handler. An unauthenticated bind.');
+    return next(ldapRefusal(req, 'STS-LDAP-0072', 'an unauthenticated bind ' +
+      '(a DN with an empty password) as ' + dn + ' was refused',
+      new ldap.UnwillingToPerformError(
+        'unauthenticated binds are not accepted; supply the password'), dn));
+  }
+  // **FAILED BINDS ARE RATE LIMITED**, and this reads the buckets without
+  // counting. A caller over either limit is refused whether or not this
+  // password is right, so a correct guess during a lockout teaches nothing.
+  const bindLimited = mode.limitsDirectoryBindFailures();
+  if (bindLimited) {
+    const lockedOut = websecurity.blocked('ldap-bind', limiterRequestOf(req), dn);
+    if (lockedOut) {
+      log.info('ldap: refusing a bind as ' + dn + '; too many failed binds (' +
+               lockedOut.kind + ' limit ' + lockedOut.limit + ').');
+      log.debug('Leaving the LDAP bind handler. Rate limited.');
+      return next(ldapRefusal(req, 'STS-LDAP-0073', 'a bind as ' + dn + ' was ' +
+        'refused without checking its password: too many failed binds for ' +
+        'this ' + (lockedOut.kind === 'address' ? 'address' : 'DN') +
+        ' (limit ' + lockedOut.limit + ')',
+        new ldap.UnwillingToPerformError('too many failed binds; retry in ' +
+          lockedOut.retryAfterS + ' seconds'), dn));
+    }
+  }
   if (credentials_value === REFUSED_PASSWORD) {
     // The one refusal. See the header: it is the service's convention, not a
     // policy, and it is what makes result code 49 reachable.
@@ -7150,7 +8770,7 @@ server.bind('', function (req, res, next) {
     // a "harmless" fact — the whole log carries no credential and a length is a
     // credential's most useful property to an attacker who has the rest.
     auditLdap(req, {
-      action: 'directory.bind', outcome: 'refused',
+      action: 'directory.bind', outcome: 'refused', errorCode: 'STS-LDAP-0001',
       // Not the connection's bound DN, which for a REFUSED bind is whatever the
       // connection was before: the DN this attempt named.
       actor: dn ? consoleKeyFor(dn, getEntry(dn)) : '', actorForm: dn,
@@ -7162,8 +8782,11 @@ server.bind('', function (req, res, next) {
                         REFUSED_PASSWORD + '", the one this service refuses in ' +
                         'every protocol' }
     });
+    if (bindLimited) {
+      websecurity.attempt('ldap-bind', limiterRequestOf(req), dn);
+    }
     log.debug('Leaving the LDAP bind handler. LDAP_INVALID_CREDENTIALS.');
-    return next(new ldap.InvalidCredentialsError());
+    return next(coded('STS-LDAP-0001', new ldap.InvalidCredentialsError()));
   }
   // ---------------------------------------------------------------------
   // THE CREDENTIAL (2026-09-06). Product mode verifies it; development checks
@@ -7181,9 +8804,19 @@ server.bind('', function (req, res, next) {
   // `userPassword`, which is what an LDAP client expects and what makes this
   // directory usable as a credential store by something that is not this
   // service.
+  // WHETHER A PASSWORD WAS ACTUALLY CHECKED, for the two rows below. They both
+  // said "no password was checked" on every successful bind until 2026-09-12,
+  // which stopped being true the day product mode started verifying: an audit
+  // log asserting the opposite of what happened is worse than one saying
+  // nothing. It is read off the verifier's own answer rather than off the
+  // mode, so the row describes THIS bind — an anonymous bind is unverified in
+  // both modes, and `reason: 'verified'` is the only answer that means a hash
+  // was compared.
+  let verified = false;
   if (dn) {
     const checked = credentials.verify(dn, credentials_value,
                                        { via: 'an LDAP simple bind' });
+    verified = !!(checked && checked.ok && checked.reason === 'verified');
     if (!checked.ok) {
       log.info('ldap: refusing the bind for ' + dn + ' (' + checked.reason +
                '): ' + checked.detail);
@@ -7191,10 +8824,22 @@ server.bind('', function (req, res, next) {
         action: 'directory.bind',
         actor: consoleKeyFor(dn, getEntry(dn)), actorForm: dn,
         target: dn, outcome: 'failure',
+        // The verifier's own code for WHY (common/credentials.js), or this one.
+        errorCode: errorCodes.codeOf(checked) || 'STS-LDAP-0002',
         summary: 'a simple bind as ' + dn + ' was refused',
         detail: { reason: checked.reason, note: checked.detail }
       });
-      return next(new ldap.InvalidCredentialsError());
+      // COUNTED, and only here and at the literal-password refusal above: a
+      // FAILURE is what the limit is about. See `websecurity.blocked()`.
+      if (bindLimited) {
+        websecurity.attempt('ldap-bind', limiterRequestOf(req), dn);
+      }
+      return next(coded(errorCodes.codeOf(checked) || 'STS-LDAP-0002',
+                        new ldap.InvalidCredentialsError()));
+    }
+    if (bindLimited) {
+      websecurity.succeeded('ldap-bind', limiterRequestOf(req), dn,
+                            { keepAddress: true });
     }
   }
   // A successful bind writes TWO audit rows and they are not duplicates: this
@@ -7210,14 +8855,20 @@ server.bind('', function (req, res, next) {
              (dn || '(anonymous)') + ' succeeded',
     detail: { anonymous: !dn,
               entryExists: dn ? !!getEntry(dn) : false,
-              note: 'no password was checked; every bind here succeeds except ' +
+              passwordVerified: verified,
+              note: verified
+                ? 'the password was verified against this entry\'s userPassword'
+                : !dn
+                  ? 'an anonymous bind: RFC 4511 section 5.1.1 defines it as ' +
+                    'unauthenticated, so there was no password to check'
+                  : 'no password was checked; every bind here succeeds except ' +
                     'the password "' + REFUSED_PASSWORD + '"' }
   });
   stats.recordAuthentication({
     presented: dn || '(anonymous)',
     protocol: 'ldap',
     method: dn ? 'simple bind' : 'anonymous simple bind',
-    note: 'no password was checked'
+    note: verified ? 'the password was verified' : 'no password was checked'
   });
   // WHEN THIS CONNECTION BECAME THIS PERSON'S SESSION (2026-09-04). In LDAP the
   // connection IS the session (RFC 4511 section 4.2), and until this line there
@@ -7292,7 +8943,8 @@ function publishConnections() {
   try {
     connectionWatcher(connectionSnapshot());
   } catch (e) {
-    log.warn('ldap: the connection watcher failed: ' + e.message +
+    log.warn(errorCodes.tag('STS-LDAP-0033') +
+             'ldap: the connection watcher failed: ' + e.message +
              '. A request worker may be holding a stale list of connections, ' +
              'so a sign-out there could miss one.');
   }
@@ -7332,6 +8984,19 @@ server.add('', function (req, res, next) {
   log.debug('Entering the LDAP add handler.');
   const dn = req.dn.toString();
   log.info('ldap: ADD ' + dn);
+  const addRefusal = directoryWriteRefusal(req, 'add', dn);
+  if (addRefusal) {
+    log.debug('Leaving the LDAP add handler. Not authorized.');
+    return next(addRefusal);
+  }
+  const addOperationalRefusal = operationalWriteRefusal(req, 'add', dn,
+    (req.attributes || []).map(function (attr) {
+      return String(attr.type || '').toLowerCase();
+    }));
+  if (addOperationalRefusal) {
+    log.debug('Leaving the LDAP add handler. An operational attribute.');
+    return next(addOperationalRefusal);
+  }
   // ROOT_DN, not baseDn(): THIS IS THE SOCKET, and the socket has no realm.
   // An LDAP client operating on `dc=acme,dc=example,dc=com` arrives with no
   // ambient realm at all, so asking whether its DN is under the DEFAULT realm's
@@ -7341,11 +9006,15 @@ server.add('', function (req, res, next) {
   // sits in that tree, and nothing here has to know.
   if (!isUnder(dn, ROOT_DN)) {
     log.debug('Leaving the LDAP add handler. Outside the naming context.');
-    return next(new ldap.NoSuchObjectError(ROOT_DN));
+    return next(ldapRefusal(req, 'STS-LDAP-0003', 'an add of ' + dn +
+      ' named a DN outside this directory\'s naming context',
+      new ldap.NoSuchObjectError(ROOT_DN), dn));
   }
   if (getEntry(dn)) {
     log.debug('Leaving the LDAP add handler. It is already there.');
-    return next(new ldap.EntryAlreadyExistsError(dn));
+    return next(ldapRefusal(req, 'STS-LDAP-0004', 'an add of ' + dn +
+      ' named an entry that already exists',
+      new ldap.EntryAlreadyExistsError(dn), dn));
   }
   // ---------------------------------------------------------------------
   // AND ONE ENTRY PER PERSON, WHICH IS A DIFFERENT REFUSAL FROM THE ONE
@@ -7395,7 +9064,9 @@ server.add('', function (req, res, next) {
                'names that user. One entry per person, whatever protocol or ' +
                'operation brought them.');
       log.debug('Leaving the LDAP add handler. That username is taken.');
-      return next(new ldap.EntryAlreadyExistsError(clash.dn));
+      return next(ldapRefusal(req, 'STS-LDAP-0005', 'an add of ' + dn +
+        ' named a username ' + clash.dn + ' already holds',
+        new ldap.EntryAlreadyExistsError(clash.dn), dn));
     }
   }
   const parent = parentDn(dn);
@@ -7405,12 +9076,17 @@ server.add('', function (req, res, next) {
     log.info('ldap: refusing to add ' + dn + '; its parent ' + parent +
              ' does not exist.');
     log.debug('Leaving the LDAP add handler. The parent is missing.');
-    return next(new ldap.NoSuchObjectError(parent));
+    return next(ldapRefusal(req, 'STS-LDAP-0006', 'an add of ' + dn +
+      ' named a parent that does not exist',
+      new ldap.NoSuchObjectError(parent), dn));
   }
   if (totalEntries() >= maxEntries()) {
     log.debug('Leaving the LDAP add handler. The directory is full.');
-    return next(new ldap.AdminLimitExceededError(
-      'this directory holds its maximum of ' + maxEntries() + ' entries'));
+    return next(ldapRefusal(req, 'STS-LDAP-0007', 'an add of ' + dn +
+      ' was refused because the directory holds its maximum of ' +
+      maxEntries() + ' entries',
+      new ldap.AdminLimitExceededError(
+        'this directory holds its maximum of ' + maxEntries() + ' entries'), dn));
   }
   const attributes = {};
   let nulRefusal = null;
@@ -7422,9 +9098,29 @@ server.add('', function (req, res, next) {
     // BEFORE putEntry(), so a refused add writes nothing at all — a partial
     // entry would be worse than the value it was refused for.
     log.debug('Leaving the LDAP add handler. A value carried a NUL byte.');
-    return next(nulRefusal);
+    return next(ldapRefusal(req, '', 'an add of ' + dn +
+      ' carried a value with a NUL byte', nulRefusal, dn));
+  }
+  // A PERSON ADDED WITH A PASSWORD meets the password policy and is stored as
+  // a hash, like a password set at any other door. Placement decides it is a
+  // person, for the reason the username check above states; also BEFORE
+  // putEntry(), for the NUL refusal's reason.
+  const addedPassword = {};
+  if (normalizeDn(parentDn(dn)) === normalizeDn(usersDn())) {
+    const policyRefusal = passwordWriteRefusal(dn, attributes, {},
+      Object.keys(attributes).map(function (key) { return key.toLowerCase(); }),
+      addedPassword);
+    if (policyRefusal) {
+      log.debug('Leaving the LDAP add handler. The password was refused.');
+      return next(ldapRefusal(req, '', 'an add of ' + dn +
+        ' carried a userPassword the password policy refused',
+        policyRefusal, dn));
+    }
   }
   const addedEntry = putEntry(dn, attributes, { origin: 'ldap add' });
+  if (addedPassword.password) {
+    credentials.passwordWritten(addedPassword.name, addedPassword.password);
+  }
   if (isPersonEntry(addedEntry)) {
     noteAccountChange('created', addedEntry.dn, {},
                       attributeSnapshot(addedEntry));
@@ -7460,14 +9156,22 @@ server.del('', function (req, res, next) {
   log.debug('Entering the LDAP delete handler.');
   const dn = req.dn.toString();
   log.info('ldap: DELETE ' + dn);
+  const deleteRefusal = directoryWriteRefusal(req, 'delete', dn);
+  if (deleteRefusal) {
+    log.debug('Leaving the LDAP delete handler. Not authorized.');
+    return next(deleteRefusal);
+  }
   const stored = getEntry(dn);
   if (!stored) {
     log.debug('Leaving the LDAP delete handler. There is no such entry.');
-    return next(new ldap.NoSuchObjectError(dn));
+    return next(ldapRefusal(req, 'STS-LDAP-0013', 'a delete named ' + dn +
+      ', which does not exist', new ldap.NoSuchObjectError(dn), dn));
   }
   if (hasChildren(dn)) {
     log.debug('Leaving the LDAP delete handler. It is not a leaf.');
-    return next(new ldap.NotAllowedOnNonLeafError(dn));
+    return next(ldapRefusal(req, 'STS-LDAP-0014', 'a delete of ' + dn +
+      ' was refused because it has entries beneath it',
+      new ldap.NotAllowedOnNonLeafError(dn), dn));
   }
   const deletedPerson = isPersonEntry(stored);
   const deletedAttributes = attributeSnapshot(stored);
@@ -7516,14 +9220,33 @@ server.modify('', function (req, res, next) {
   log.debug('Entering the LDAP modify handler.');
   const dn = req.dn.toString();
   log.info('ldap: MODIFY ' + dn + ' with ' + req.changes.length + ' change(s).');
+  const modifyRefusal = directoryWriteRefusal(req, 'modify', dn,
+    req.changes.map(function (change) {
+      return String(change.modification.type || '').toLowerCase();
+    }));
+  if (modifyRefusal) {
+    log.debug('Leaving the LDAP modify handler. Not authorized.');
+    return next(modifyRefusal);
+  }
+  const modifyOperationalRefusal = operationalWriteRefusal(req, 'modify', dn,
+    req.changes.map(function (change) {
+      return String(change.modification.type || '').toLowerCase();
+    }));
+  if (modifyOperationalRefusal) {
+    log.debug('Leaving the LDAP modify handler. An operational attribute.');
+    return next(modifyOperationalRefusal);
+  }
   const stored = getEntry(dn);
   if (!stored) {
     log.debug('Leaving the LDAP modify handler. There is no such entry.');
-    return next(new ldap.NoSuchObjectError(dn));
+    return next(ldapRefusal(req, 'STS-LDAP-0013', 'a modify named ' + dn +
+      ', which does not exist', new ldap.NoSuchObjectError(dn), dn));
   }
   if (!req.changes.length) {
     log.debug('Leaving the LDAP modify handler. It asked for no changes.');
-    return next(new ldap.ProtocolError('a modify must carry at least one change'));
+    return next(ldapRefusal(req, 'STS-LDAP-0015', 'a modify of ' + dn +
+      ' carried no changes',
+      new ldap.ProtocolError('a modify must carry at least one change'), dn));
   }
   // RFC 4511 section 4.6: the changes are applied in order and the whole
   // operation is atomic — either all of them or none. So they are applied to a
@@ -7551,7 +9274,8 @@ server.modify('', function (req, res, next) {
       // returns before ANY of them is applied rather than part way through.
       log.debug('Leaving the LDAP modify handler. Change ' + (i + 1) +
                 ' carried a NUL byte.');
-      return next(nulInChange);
+      return next(ldapRefusal(req, '', 'a modify of ' + dn +
+        ' carried a value with a NUL byte', nulInChange, dn));
     }
     log.debug('ldap: change ' + (i + 1) + ' is ' + operation + ' ' + type +
               ' with ' + values.length + ' value(s).');
@@ -7570,7 +9294,9 @@ server.modify('', function (req, res, next) {
     } else if (operation === 'delete') {
       if (!working[type]) {
         log.debug('Leaving the LDAP modify handler. ' + type + ' is not there.');
-        return next(new ldap.NoSuchAttributeError(type));
+        return next(ldapRefusal(req, 'STS-LDAP-0017', 'a modify of ' + dn +
+          ' deleted the attribute ' + type + ', which the entry does not hold',
+          new ldap.NoSuchAttributeError(type), dn));
       }
       if (values.length === 0) {
         delete working[type];
@@ -7586,8 +9312,26 @@ server.modify('', function (req, res, next) {
       }
     } else {
       log.debug('Leaving the LDAP modify handler. Unknown operation.');
-      return next(new ldap.ProtocolError(
-        'unknown modify operation "' + operation + '"'));
+      return next(ldapRefusal(req, 'STS-LDAP-0016', 'a modify of ' + dn +
+        ' named an unknown change operation',
+        new ldap.ProtocolError('unknown modify operation "' + operation + '"'),
+        dn));
+    }
+  }
+  // AND A PASSWORD THIS MODIFY SETS meets the password policy against the
+  // entry as it was BEFORE the modify — its current password and its history —
+  // and is hashed into the working copy. Here, after every change is applied
+  // and before any is committed, so a refusal leaves the entry untouched.
+  const modifiedPassword = {};
+  if (isPersonEntry(stored)) {
+    const policyRefusal = passwordWriteRefusal(stored.dn, working,
+      stored.attributes, req.changes.map(function (change) {
+        return String(change.modification.type || '').toLowerCase();
+      }), modifiedPassword);
+    if (policyRefusal) {
+      log.debug('Leaving the LDAP modify handler. The password was refused.');
+      return next(ldapRefusal(req, '', 'a modify of ' + dn +
+        ' was refused by the password rules', policyRefusal, dn));
     }
   }
   working.createtimestamp = stored.attributes.createtimestamp;
@@ -7595,6 +9339,9 @@ server.modify('', function (req, res, next) {
   stored.attributes = working;
   touchDirectory();
   stored.modifiedAt = working.modifytimestamp[0];
+  if (modifiedPassword.password) {
+    credentials.passwordWritten(modifiedPassword.name, modifiedPassword.password);
+  }
   if (isPersonEntry(stored)) {
     noteAccountChange('updated', stored.dn, beforeModify,
                       attributeSnapshot(stored));
@@ -7638,20 +9385,30 @@ server.modifyDN('', function (req, res, next) {
   const newSuperior = req.newSuperior ? req.newSuperior.toString() : parentDn(dn);
   const target = newRdn + (newSuperior ? ',' + newSuperior : '');
   log.info('ldap: MODIFYDN ' + dn + ' -> ' + target);
+  const renameRefusal = directoryWriteRefusal(req, 'rename', dn);
+  if (renameRefusal) {
+    log.debug('Leaving the LDAP modifyDN handler. Not authorized.');
+    return next(renameRefusal);
+  }
   const stored = getEntry(dn);
   if (!stored) {
     log.debug('Leaving the LDAP modifyDN handler. There is no such entry.');
-    return next(new ldap.NoSuchObjectError(dn));
+    return next(ldapRefusal(req, 'STS-LDAP-0013', 'a rename named ' + dn +
+      ', which does not exist', new ldap.NoSuchObjectError(dn), dn));
   }
   if (hasChildren(dn)) {
     // Moving a subtree means rewriting every DN below it, which this mock does
     // not do — and doing half of it would leave orphans. Refusing is honest.
     log.debug('Leaving the LDAP modifyDN handler. It has children.');
-    return next(new ldap.NotAllowedOnNonLeafError(dn));
+    return next(ldapRefusal(req, 'STS-LDAP-0014', 'a rename of ' + dn +
+      ' was refused because it has entries beneath it',
+      new ldap.NotAllowedOnNonLeafError(dn), dn));
   }
   if (getEntry(target)) {
     log.debug('Leaving the LDAP modifyDN handler. The target exists.');
-    return next(new ldap.EntryAlreadyExistsError(target));
+    return next(ldapRefusal(req, 'STS-LDAP-0004', 'a rename of ' + dn +
+      ' named ' + target + ', which already exists',
+      new ldap.EntryAlreadyExistsError(target), dn));
   }
   // ROOT_DN, not baseDn(): THIS IS THE SOCKET, and the socket has no realm of
   // its own. An LDAP client operating on `dc=acme,dc=example,dc=com` arrives
@@ -7661,7 +9418,9 @@ server.modifyDN('', function (req, res, next) {
   // by where it sits, and `realmFor()` did that before this handler ran.
   if (!isUnder(target, ROOT_DN)) {
     log.debug('Leaving the LDAP modifyDN handler. Outside the naming context.');
-    return next(new ldap.NoSuchObjectError(ROOT_DN));
+    return next(ldapRefusal(req, 'STS-LDAP-0003', 'a rename of ' + dn +
+      ' named a DN outside this directory\'s naming context',
+      new ldap.NoSuchObjectError(ROOT_DN), dn));
   }
   // A RENAME MAY NOT CROSS A REALM, and this is the one operation that could
   // try. Every handler runs in the realm of the DN it was GIVEN, so a modifyDN
@@ -7677,7 +9436,9 @@ server.modifyDN('', function (req, res, next) {
              realmFor(target).id + '" realm; a rename may not cross a trust ' +
              'realm, because each realm is a separate directory.');
     log.debug('Leaving the LDAP modifyDN handler. It would cross a realm.');
-    return next(new ldap.AffectsMultipleDsasError(target));
+    return next(ldapRefusal(req, 'STS-LDAP-0018', 'a rename of ' + dn +
+      ' would have moved it into another trust realm',
+      new ldap.AffectsMultipleDsasError(target), dn));
   }
   entries.delete(normalizeDn(dn));
   stored.dn = target;
@@ -7723,15 +9484,33 @@ server.compare('', function (req, res, next) {
   log.debug('Entering the LDAP compare handler.');
   const dn = req.dn.toString();
   const type = String(req.attribute || '').toLowerCase();
-  log.info('ldap: COMPARE ' + dn + ' ' + type + '=' + req.value);
+  // The VALUE is not logged, for the reason the audit row below gives: a
+  // compare against userPassword is a password check, and the value is the
+  // password. It was logged at info until 2026-09-12.
+  log.info('ldap: COMPARE ' + dn + ' ' + type + ' (' +
+           String(req.value === undefined ? '' : req.value).length +
+           ' character value)');
+  const compareReadRefusal = directoryReadRefusal(req, 'compare', dn);
+  if (compareReadRefusal) {
+    log.debug('Leaving the LDAP compare handler. Not bound.');
+    return next(compareReadRefusal);
+  }
+  const compareSecretRefusal = secretCompareRefusal(req, dn, type);
+  if (compareSecretRefusal) {
+    log.debug('Leaving the LDAP compare handler. A credential attribute.');
+    return next(compareSecretRefusal);
+  }
   const stored = getEntry(dn);
   if (!stored) {
     log.debug('Leaving the LDAP compare handler. There is no such entry.');
-    return next(new ldap.NoSuchObjectError(dn));
+    return next(ldapRefusal(req, 'STS-LDAP-0013', 'a compare named ' + dn +
+      ', which does not exist', new ldap.NoSuchObjectError(dn), dn));
   }
   if (!stored.attributes[type]) {
     log.debug('Leaving the LDAP compare handler. The attribute is not there.');
-    return next(new ldap.NoSuchAttributeError(type));
+    return next(ldapRefusal(req, 'STS-LDAP-0019', 'a compare on ' + dn +
+      ' named the attribute ' + type + ', which the entry does not hold',
+      new ldap.NoSuchAttributeError(type), dn));
   }
   const matched = stored.attributes[type].some(function (v) {
     // Case-insensitive, which is what the caseIgnoreMatch rule most string
@@ -7792,7 +9571,9 @@ server.search('', function (req, res, next) {
           // 4.1.7), so "this server supports no controls" is said by not
           // publishing the attribute. Sending it empty is not a weaker claim,
           // it is a malformed one.
-          description: ['Every bind succeeds except the password "invalid". ' +
+          description: [(mode.verifiesCredentials()
+                          ? 'Binds are verified, and a read requires one. '
+                          : 'Every bind succeeds except the password "invalid". ') +
                         'This directory has no schema and answers no ' +
                         'controls, extended operations or SASL mechanisms.']
         }
@@ -7815,7 +9596,9 @@ server.search('', function (req, res, next) {
     }
     log.debug('Leaving the LDAP search handler. A non-base search of the ' +
               'root DSE is refused.');
-    return next(new ldap.NoSuchObjectError(''));
+    return next(ldapRefusal(req, 'STS-LDAP-0020', 'a ' + scope + ' search of ' +
+      'the root DSE was refused; only a base search reads it',
+      new ldap.NoSuchObjectError(''), '(root DSE)'));
   }
   // ROOT_DN, and this is the line that makes `ldapsearch -b
   // "dc=acme,dc=example,dc=com"` work: a realm's subtree is INSIDE the naming
@@ -7823,13 +9606,23 @@ server.search('', function (req, res, next) {
   // tree. Comparing against the ambient realm's base instead would have made
   // every realm unreachable from 389 and 636, which is the whole reason the
   // realm is in the DN rather than in a partitioned store.
+  // A BIND BEFORE A READ, in product mode, and asked before anything about
+  // whether the base exists. The root DSE has already been answered above.
+  const readRefusal = directoryReadRefusal(req, 'search', base);
+  if (readRefusal) {
+    log.debug('Leaving the LDAP search handler. Not bound.');
+    return next(readRefusal);
+  }
   if (!isUnder(base, ROOT_DN)) {
     log.debug('Leaving the LDAP search handler. Outside the naming context.');
-    return next(new ldap.NoSuchObjectError(base));
+    return next(ldapRefusal(req, 'STS-LDAP-0003', 'a search based at ' + base +
+      ' named a DN outside this directory\'s naming context',
+      new ldap.NoSuchObjectError(base), base));
   }
   if (!getEntry(base)) {
     log.debug('Leaving the LDAP search handler. The base does not exist.');
-    return next(new ldap.NoSuchObjectError(base));
+    return next(ldapRefusal(req, 'STS-LDAP-0013', 'a search named the base ' +
+      base + ', which does not exist', new ldap.NoSuchObjectError(base), base));
   }
   // ---------------------------------------------------------------------
   // WHICH REALM THIS SEARCH IS IN was decided before this handler ran: every
@@ -7884,13 +9677,16 @@ server.search('', function (req, res, next) {
       // `objectclass`. The symptom is the worst kind — a search that succeeds
       // and returns zero entries, which reads as an empty directory rather than
       // as a filter that could not see it.
-      matches = req.filter.matches(matchable(stored), false);
+      // `matchableForReader()`: a credential is invisible to a filter, or the
+      // filter is an oracle for it. See *THE DIRECTORY'S READ AND BIND SECURITY*.
+      matches = req.filter.matches(matchableForReader(stored), false);
     } catch (e) {
       // A filter this store cannot evaluate is not a match, and it is worth a
       // line: an extensible-match filter or an unknown matching rule lands
       // here, and silently returning nothing would look like an empty
       // directory rather than an unsupported filter.
-      log.warn('ldap: the filter could not be evaluated against ' + stored.dn +
+      log.warn(errorCodes.tag('STS-LDAP-0034') +
+               'ldap: the filter could not be evaluated against ' + stored.dn +
                ': ' + e.message);
       matches = false;
     }
@@ -7903,7 +9699,7 @@ server.search('', function (req, res, next) {
       // this log would cost somebody an afternoon.
       auditLdap(req, {
         action: usersSent ? 'user.query' : 'directory.search',
-        outcome: 'refused',
+        outcome: 'refused', errorCode: 'STS-LDAP-0021',
         target: base,
         summary: 'a search of ' + base + ' hit the size limit of ' + limit +
                  ' after ' + sent + ' entry/entries',
@@ -7945,10 +9741,10 @@ server.search('', function (req, res, next) {
       // already sent stay sent, which is what section 4.5.2 requires: they are
       // a valid partial answer and the code is how the client knows it is
       // partial.
-      return next(new ldap.SizeLimitExceededError(
+      return next(coded('STS-LDAP-0021', new ldap.SizeLimitExceededError(
         'this search returned its limit of ' + limit + ' entry/entries and ' +
         'the answer is INCOMPLETE; ask for less with a filter, or raise ' +
-        'ldap.sizeLimit'));
+        'ldap.sizeLimit')));
     }
     res.send(toSearchEntry(stored, req.attributes, res.messageId));
     sent++;
@@ -8000,6 +9796,19 @@ server.unbind(function (req, res, next) {
   log.debug('Leaving the LDAP unbind handler.');
   return next();
 });
+
+// ---------------------------------------------------------------------------
+// AND NOW THAT EVERY HANDLER IS REGISTERED, OFFER THEM TO THE WORKER POOL.
+//
+// **THE POSITION IS THE WHOLE OF IT.** `LOCAL_HANDLERS` is filled by the
+// registrations above, so a call placed before them would register seven
+// operations that resolve to nothing — and `performOperation()` would throw
+// for every one, in the worker, where the failure reaches a client as
+// LDAP_OPERATIONS_ERROR and reaches a reader as nothing at all. It is here for
+// the reason `sts_metadata.js` is required last: it reads what everything
+// above it registered.
+// ---------------------------------------------------------------------------
+registerWorkerOperations();
 
 // ---------------------------------------------------------------------------
 // The HTTP views.
@@ -8229,7 +10038,7 @@ function description(req) {
 //     `?format=json` still answers with the same payload; the schemas each one
 //     publishes are still read out of the module that owns them.
 //   * **THE PAGING AND THE SHORTENING ARE THE CONSOLE'S, not this file's.**
-//     `admin.pagedRows()`, `admin.pageNavPair()`, `admin.perPageOptions()` and
+//     `adminViews.pagedRows()`, `admin.pageNavPair()`, `admin.perPageOptions()` and
 //     `admin.clipped()` are the same functions `/admin/tokens` and
 //     `/admin/applications` use. A control on one of these pages that behaved
 //     differently from the identical-looking control on the page next door
@@ -8247,7 +10056,7 @@ function description(req) {
 // than inlined five times because the FILTER differs per page and the paging
 // does not.
 function directoryPaging(req, rows, noun, name) {
-  return admin.pagedRows(req.query, rows,
+  return adminViews.pagedRows(req.query, rows,
                          { noun: noun, name: name || null });
 }
 
@@ -8444,7 +10253,11 @@ function ldapDirectoryView(req) {
   eachEntryInRealm(function (stored) {
     const attributes = {};
     Object.keys(stored.attributes).forEach(function (name) {
-      attributes[canonicalName(name)] = stored.attributes[name].slice(0);
+      // A KERBEROS KEY IS WITHHELD, ciphertext included (2026-09-12) — see
+      // `kerberos/krb5_person_keys.js`. This page's job is to show an entry
+      // faithfully and the sentence says exactly what was kept back.
+      attributes[canonicalName(name)] =
+        krb5PersonKeys.withheldValues(name, stored.attributes[name].slice(0));
     });
     listed.push({
       dn: stored.dn,
@@ -8785,14 +10598,16 @@ function writeApplication(identifier, attributes) {
     // authenticates: whatever this application was doing succeeded, and a
     // registry that could fail a token request would be the tail wagging the
     // dog.
-    log.warn('ldap: not creating ' + dn + '; ou=applications holds its maximum of ' +
+    log.warn(errorCodes.tag('STS-LDAP-0035') +
+             'ldap: not creating ' + dn + '; ou=applications holds its maximum of ' +
              maxApplications() + ' entry/entries (applications.max). The application ' +
              'itself is unaffected — it simply goes unrecorded.');
     log.debug('Leaving writeApplication(). The container is full.');
     return false;
   }
   if (totalEntries() >= maxEntries() && !existing) {
-    log.warn('ldap: not creating ' + dn + '; the directory holds its maximum of ' +
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its maximum of ' +
              maxEntries() + ' entries.');
     log.debug('Leaving writeApplication(). The directory is full.');
     return false;
@@ -8951,13 +10766,15 @@ function writeFederation(id, attributes) {
   const existing = federationEntry(id);
   const dn = existing ? existing.dn : federationDn(id);
   if (!existing && federationCount() >= maxFederations()) {
-    log.warn('ldap: not creating ' + dn + '; ou=federations holds its maximum of ' +
+    log.warn(errorCodes.tag('STS-LDAP-0036') +
+             'ldap: not creating ' + dn + '; ou=federations holds its maximum of ' +
              maxFederations() + ' entry/entries (federation.max).');
     log.debug('Leaving writeFederation(). The container is full.');
     return false;
   }
   if (totalEntries() >= maxEntries() && !existing) {
-    log.warn('ldap: not creating ' + dn + '; the directory holds its maximum of ' +
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its maximum of ' +
              maxEntries() + ' entries.');
     log.debug('Leaving writeFederation(). The directory is full.');
     return false;
@@ -9049,13 +10866,15 @@ function writePolicy(name, attributes) {
   const existing = policyEntry(name);
   const dn = existing ? existing.dn : policyDn(name);
   if (!existing && policyCount() >= maxPolicies()) {
-    log.warn('ldap: not creating ' + dn + '; ou=policies holds its maximum ' +
+    log.warn(errorCodes.tag('STS-LDAP-0037') +
+             'ldap: not creating ' + dn + '; ou=policies holds its maximum ' +
              'of ' + maxPolicies() + ' entry/entries (xacml.maxPolicies).');
     log.debug('Leaving writePolicy(). The container is full.');
     return false;
   }
   if (totalEntries() >= maxEntries() && !existing) {
-    log.warn('ldap: not creating ' + dn + '; the directory holds its ' +
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
     log.debug('Leaving writePolicy(). The directory is full.');
     return false;
@@ -9143,13 +10962,15 @@ function writeRole(name, attributes) {
   const existing = roleEntry(name);
   const dn = existing ? existing.dn : roleDn(name);
   if (!existing && roleCount() >= maxRoles()) {
-    log.warn('ldap: not creating ' + dn + '; ou=roles holds its maximum of ' +
+    log.warn(errorCodes.tag('STS-LDAP-0038') +
+             'ldap: not creating ' + dn + '; ou=roles holds its maximum of ' +
              maxRoles() + ' entry/entries (roles.maxRoles).');
     log.debug('Leaving writeRole(). The container is full.');
     return false;
   }
   if (totalEntries() >= maxEntries() && !existing) {
-    log.warn('ldap: not creating ' + dn + '; the directory holds its ' +
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
     log.debug('Leaving writeRole(). The directory is full.');
     return false;
@@ -9178,6 +10999,82 @@ function deleteRole(name) {
   touchDirectory();
   auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
   log.debug('Leaving deleteRole(). ' + entries.size + ' entry/entries left.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// ou=passwordPolicies AS A STORE (2026-09-12).
+//
+// The same three functions a fourth time, named by the PROFILE (`cn=default`).
+// Two things differ from ou=roles and both are small: there is no cap of its
+// own, because `common/password_policy.js` refuses every profile name but one
+// before a write reaches here; and the CONTAINER is put back if it is missing,
+// because a directory restored from a store written before this container
+// existed has none, and a profile whose parent is absent is an entry an
+// `ldapsearch` of the realm cannot reach.
+// ---------------------------------------------------------------------------
+function passwordPolicyDn(name) {
+  return 'cn=' + escapeDnValue(String(name)) + ',' + passwordPoliciesDn();
+}
+
+function allPasswordPolicies() {
+  log.debug('Entering allPasswordPolicies().');
+  const rows = entriesUnder(passwordPoliciesDn()).map(function (stored) {
+    const object = entryObject(stored);
+    object.name = (stored.attributes.cn || [])[0] ||
+                  stored.dn.split(',')[0].replace(/^cn=/i, '');
+    return object;
+  });
+  log.debug('Leaving allPasswordPolicies(). ' + rows.length + ' profile(s).');
+  return rows;
+}
+
+// REPLACED rather than merged, for writeRole()'s reason with a sharper edge:
+// the record is every field of the profile, and a merge could not take a
+// description away — nor, which matters more, notice that a value it was not
+// given should not still be there.
+function writePasswordPolicy(name, attributes) {
+  log.debug('Entering writePasswordPolicy(). name=' + name);
+  const dn = passwordPolicyDn(name);
+  const existing = getEntry(dn);
+  if (!existing && totalEntries() >= maxEntries()) {
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
+             'maximum of ' + maxEntries() + ' entries.');
+    log.debug('Leaving writePasswordPolicy(). The directory is full.');
+    return false;
+  }
+  if (!getEntry(passwordPoliciesDn())) {
+    putEntry(passwordPoliciesDn(), {
+      objectClass: ['top', 'organizationalUnit'],
+      ou: 'passwordPolicies'
+    }, { origin: 'password policy' });
+  }
+  const created = existing ? existing.createdAt : generalizedTime();
+  const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
+                          { origin: existing ? existing.origin : 'password policy' });
+  stored.createdAt = created;
+  stored.attributes.createtimestamp = [created];
+  stored.attributes.modifytimestamp = [generalizedTime()];
+  auditPolicyDirectory(existing ? 'entry.update' : 'entry.create', dn,
+                       stored.attributes, !existing);
+  log.debug('Leaving writePasswordPolicy(). The entry was ' +
+            (existing ? 'updated.' : 'created.'));
+  return true;
+}
+
+function deletePasswordPolicy(name) {
+  log.debug('Entering deletePasswordPolicy(). name=' + name);
+  const stored = getEntry(passwordPolicyDn(name));
+  if (!stored) {
+    log.debug('Leaving deletePasswordPolicy(). It was not here.');
+    return false;
+  }
+  entries.delete(normalizeDn(stored.dn));
+  touchDirectory();
+  auditPolicyDirectory('entry.delete', stored.dn, stored.attributes, false);
+  log.debug('Leaving deletePasswordPolicy(). ' + entries.size +
+            ' entry/entries left.');
   return true;
 }
 
@@ -9239,13 +11136,15 @@ function writePep(name, attributes) {
   const existing = pepEntry(name);
   const dn = existing ? existing.dn : pepDn(name);
   if (!existing && pepCount() >= maxPeps()) {
-    log.warn('ldap: not creating ' + dn + '; ou=peps holds its maximum of ' +
+    log.warn(errorCodes.tag('STS-LDAP-0039') +
+             'ldap: not creating ' + dn + '; ou=peps holds its maximum of ' +
              maxPeps() + ' entry/entries (xacml.maxPeps).');
     log.debug('Leaving writePep(). The container is full.');
     return false;
   }
   if (totalEntries() >= maxEntries() && !existing) {
-    log.warn('ldap: not creating ' + dn + '; the directory holds its ' +
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its ' +
              'maximum of ' + maxEntries() + ' entries.');
     log.debug('Leaving writePep(). The directory is full.');
     return false;
@@ -9261,6 +11160,89 @@ function writePep(name, attributes) {
   log.debug('Leaving writePep(). The entry was ' +
             (existing ? 'updated.' : 'created.'));
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// THE TRUSTSTORE'S DURABLE HALF: read, write and delete one anchor.
+//
+// All three are handed to `tls/tls_server.js` pinned to the DEFAULT realm (see
+// the slot fill), so they read `baseDn()` there whatever realm a request is in.
+// The fingerprint is the RDN, normalised to upper-case hex with no colons, so a
+// second add of one certificate overwrites rather than duplicates and a remove
+// can name the entry without reading the container.
+// ---------------------------------------------------------------------------
+function allTrustAnchors() {
+  log.debug('Entering allTrustAnchors().');
+  const rows = [];
+  const base = normalizeDn(trustAnchorsDn());
+  eachEntryInRealm(function (stored) {
+    if (!isUnder(stored.dn, trustAnchorsDn()) || normalizeDn(stored.dn) === base) {
+      return;
+    }
+    const pem = (stored.attributes.ststrustanchorcertificate || [])[0] || '';
+    if (!pem) {
+      return;
+    }
+    rows.push({
+      fingerprint: (stored.attributes.ststrustanchorfingerprint || [])[0] || '',
+      pem: pem,
+      addedAt: stored.createdAt || '',
+      addedBy: (stored.attributes.ststrustanchoraddedby || [])[0] || ''
+    });
+  });
+  log.debug('Leaving allTrustAnchors(). ' + rows.length + ' stored anchor(s).');
+  return rows;
+}
+
+function writeTrustAnchor(fingerprint, pem, meta) {
+  log.debug('Entering writeTrustAnchor(). fingerprint=' + fingerprint);
+  const dn = trustAnchorDn(fingerprint);
+  const existing = entries.get(normalizeDn(dn));
+  if (!existing && totalEntries() >= maxEntries()) {
+    log.warn('ldap: not storing trust anchor ' + fingerprint + '; the ' +
+             'directory holds its maximum of ' + maxEntries() + ' entries, so ' +
+             'this anchor is in force until the next start and no longer.');
+    log.debug('Leaving writeTrustAnchor(). The directory is full.');
+    return false;
+  }
+  const stored = putEntry(dn, {
+    objectClass: ['top', 'stsTrustAnchor'],
+    cn: String(fingerprint),
+    stsTrustAnchorFingerprint: String(fingerprint),
+    stsTrustAnchorCertificate: String(pem),
+    stsTrustAnchorAddedBy: String((meta && meta.addedBy) || '')
+  }, { origin: 'truststore' });
+  if (existing) {
+    stored.createdAt = existing.createdAt;
+    stored.attributes.createtimestamp = [existing.createdAt];
+  }
+  log.debug('Leaving writeTrustAnchor(). ' + (existing ? 'Replaced.' : 'Created.'));
+  return true;
+}
+
+function deleteTrustAnchor(fingerprint) {
+  log.debug('Entering deleteTrustAnchor(). fingerprint=' + fingerprint);
+  const dn = trustAnchorDn(fingerprint);
+  const gone = entries.delete(normalizeDn(dn));
+  if (gone) {
+    touchDirectory(dn);
+  }
+  log.debug('Leaving deleteTrustAnchor(). ' + (gone ? 'Removed.' : 'It was not stored.'));
+  return gone;
+}
+
+// Whether a directory KEY names an entry in the truststore container of the
+// DEFAULT realm — the test the replication appliers ask, so that an anchor
+// another process added or removed reaches this process's listeners.
+function isTrustAnchorKey(realmId, key) {
+  if (String(realmId || realms.DEFAULT_ID) !== realms.DEFAULT_ID) {
+    return false;
+  }
+  const container = realms.run(realms.DEFAULT_REALM, function () {
+    return normalizeDn(trustAnchorsDn());
+  });
+  const k = String(key || '');
+  return k !== container && k.slice(-(container.length + 1)) === ',' + container;
 }
 
 function deletePep(name) {
@@ -9431,7 +11413,8 @@ function spiffeWrite(containerDn, attributeName, identifier, attributes, originL
     // Warned rather than thrown, as a full directory always is here: whatever
     // the caller was doing succeeded, and a registry that could fail an SVID
     // request would be the tail wagging the dog.
-    log.warn('ldap: not creating ' + dn + '; the directory holds its maximum ' +
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its maximum ' +
              'of ' + maxEntries() + ' entries.');
     log.debug('Leaving spiffeWrite(). The directory is full.');
     return false;
@@ -9682,7 +11665,8 @@ function noteAccountChange(kind, dn, before, after) {
       username: canonicalUsernameOfDn(dn), realm: realmFor(dn).id,
       before: before || {}, after: after || {} });
   } catch (e) {
-    log.error('ldap: the account observer threw and the write stands: ' +
+    log.error(errorCodes.tag('STS-LDAP-0032') +
+              'ldap: the account observer threw and the write stands: ' +
               e.message);
   }
   log.debug('Leaving noteAccountChange().');
@@ -9740,13 +11724,14 @@ function writePerson(dn, attributes) {
   const before = attributeSnapshot(existing);
   if (existing && !isPersonEntry(existing)) {
     log.debug('Leaving writePerson(). ' + dn + ' is not under ' + usersDn() + '.');
-    return { ok: false, reason: 'notAPerson', dn: dn };
+    return coded('STS-LDAP-0048', { ok: false, reason: 'notAPerson', dn: dn });
   }
   if (!existing && totalEntries() >= maxEntries()) {
-    log.warn('ldap: not creating ' + dn + '; the directory holds its maximum of ' +
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its maximum of ' +
              maxEntries() + ' entries (ldap.maxEntries).');
     log.debug('Leaving writePerson(). The directory is full.');
-    return { ok: false, reason: 'full', dn: dn };
+    return coded('STS-LDAP-0007', { ok: false, reason: 'full', dn: dn });
   }
   // The parent has to exist, which is the same structural rule the LDAP add
   // handler enforces. It always does here — seed() creates ou=users — but a
@@ -9754,7 +11739,8 @@ function writePerson(dn, attributes) {
   // unreachable by every search this service answers.
   if (!getEntry(parentDn(dn))) {
     log.debug('Leaving writePerson(). There is no ' + parentDn(dn) + '.');
-    return { ok: false, reason: 'noParent', dn: dn, parent: parentDn(dn) };
+    return coded('STS-LDAP-0006', { ok: false, reason: 'noParent', dn: dn,
+                                    parent: parentDn(dn) });
   }
   const created = existing ? existing.createdAt : generalizedTime();
   const stored = putEntry(dn, attributes, { origin: existing ? existing.origin : 'scim' });
@@ -9777,11 +11763,11 @@ function deletePerson(dn) {
   const stored = getEntry(dn);
   if (!stored || !isPersonEntry(stored)) {
     log.debug('Leaving deletePerson(). It was not a person here.');
-    return { ok: false, reason: 'notFound', dn: dn };
+    return coded('STS-LDAP-0013', { ok: false, reason: 'notFound', dn: dn });
   }
   if (hasChildren(stored.dn)) {
     log.debug('Leaving deletePerson(). It has children.');
-    return { ok: false, reason: 'notLeaf', dn: stored.dn };
+    return coded('STS-LDAP-0014', { ok: false, reason: 'notLeaf', dn: stored.dn });
   }
   const goneAttributes = attributeSnapshot(stored);
   const goneName = usernameOfEntry(stored);
@@ -9870,17 +11856,19 @@ function writeGroupEntry(dn, attributes, origin) {
   const existing = getEntry(dn);
   if (existing && !groupRuleFor(existing)) {
     log.debug('Leaving writeGroupEntry(). ' + dn + ' is an entry and not a group.');
-    return { ok: false, reason: 'notAGroup', dn: dn };
+    return coded('STS-LDAP-0048', { ok: false, reason: 'notAGroup', dn: dn });
   }
   if (!existing && totalEntries() >= maxEntries()) {
-    log.warn('ldap: not creating ' + dn + '; the directory holds its maximum of ' +
+    log.warn(errorCodes.tag('STS-LDAP-0007') +
+             'ldap: not creating ' + dn + '; the directory holds its maximum of ' +
              maxEntries() + ' entries (ldap.maxEntries).');
     log.debug('Leaving writeGroupEntry(). The directory is full.');
-    return { ok: false, reason: 'full', dn: dn };
+    return coded('STS-LDAP-0007', { ok: false, reason: 'full', dn: dn });
   }
   if (!getEntry(parentDn(dn))) {
     log.debug('Leaving writeGroupEntry(). There is no ' + parentDn(dn) + ' in this realm.');
-    return { ok: false, reason: 'noParent', dn: dn, parent: parentDn(dn) };
+    return coded('STS-LDAP-0006', { ok: false, reason: 'noParent', dn: dn,
+                                    parent: parentDn(dn) });
   }
   const created = existing ? existing.createdAt : generalizedTime();
   const stored = putEntry(dn, attributes,
@@ -9897,11 +11885,11 @@ function deleteGroupEntry(dn) {
   const stored = getEntry(dn);
   if (!stored || !groupRuleFor(stored)) {
     log.debug('Leaving deleteGroupEntry(). It was not a group here.');
-    return { ok: false, reason: 'notFound', dn: dn };
+    return coded('STS-LDAP-0013', { ok: false, reason: 'notFound', dn: dn });
   }
   if (hasChildren(stored.dn)) {
     log.debug('Leaving deleteGroupEntry(). It has children.');
-    return { ok: false, reason: 'notLeaf', dn: stored.dn };
+    return coded('STS-LDAP-0014', { ok: false, reason: 'notLeaf', dn: stored.dn });
   }
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
@@ -9955,10 +11943,10 @@ function createGroup(displayName, options) {
   const wanted = String(displayName == null ? '' : displayName).trim();
   if (!wanted) {
     log.debug('Leaving createGroup(). No name.');
-    return { ok: false, errors: ['Which group? Send `group` with the name it ' +
+    return coded('STS-LDAP-0042', { ok: false, errors: ['Which group? Send `group` with the name it ' +
                                  'will be known by — that string becomes both ' +
                                  'the `cn` and the RDN, so it is the whole of ' +
-                                 'what names the entry.'] };
+                                 'what names the entry.'] });
   }
   if (DN_SHAPED.test(wanted)) {
     // The same refusal createUser() makes about a username, and it is worth
@@ -9967,36 +11955,36 @@ function createGroup(displayName, options) {
     // that DN, and what they would get is `cn=cn\=developers\,ou\=groups...`
     // — a second group whose name is the first one's DN.
     log.debug('Leaving createGroup(). That is a DN.');
-    return { ok: false, errors: ['"' + wanted + '" is a DN and not a group ' +
+    return coded('STS-LDAP-0043', { ok: false, errors: ['"' + wanted + '" is a DN and not a group ' +
                                  'name. Send the `cn` alone; this function ' +
                                  'puts it under ' + groupsDn() + '. A group ' +
                                  'somewhere else in the tree is an `ldapadd` ' +
                                  'and is still a group here by the objectClass ' +
-                                 'rule /admin/groups reports.'] };
+                                 'rule /admin/groups reports.'] });
   }
   if (!nameUsableInDn(wanted)) {
     log.debug('Leaving createGroup(). The name carries DN syntax.');
-    return { ok: false, errors: ['"' + wanted + '" cannot name a group here: ' +
+    return coded('STS-LDAP-0046', { ok: false, errors: ['"' + wanted + '" cannot name a group here: ' +
                                  'it carries a character RFC 4514 section 2.4 ' +
                                  'reserves in a DN (one of , = + < > # ; " \\), ' +
                                  'so the entry would be named something other ' +
                                  'than what was typed. Refused rather than ' +
                                  'escaped, exactly as a username is, and for ' +
                                  'the same reason: an `ldapadd` can still ' +
-                                 'create it with the escaping written out.'] };
+                                 'create it with the escaping written out.'] });
   }
   const dn = groupDnFor(wanted);
   const existing = getEntry(dn);
   if (existing) {
     log.debug('Leaving createGroup(). It is already there.');
-    return { ok: false,
+    return coded('STS-LDAP-0004', { ok: false,
              errors: ['There is already an entry at ' + dn + '.' +
                       (groupRuleFor(existing)
                         ? ' Add members to it rather than creating it again.'
                         : ' It is not counted as a group — see /admin/groups ' +
                           'for which rule catches what — so this would be a ' +
                           'create over the top of something else.')],
-             existing: { dn: existing.dn, origin: existing.origin || '' } };
+             existing: { dn: existing.dn, origin: existing.origin || '' } });
   }
   // THE MEMBERS THE CREATE CARRIES, resolved the way addGroupMember() resolves
   // one, so that a group created with three people in it and a group created
@@ -10030,7 +12018,7 @@ function createGroup(displayName, options) {
   const written = writeGroupEntry(dn, attributes, opts.origin || 'console');
   if (!written.ok) {
     log.debug('Leaving createGroup(). The directory refused: ' + written.reason);
-    return { ok: false, reason: written.reason,
+    return coded(errorCodes.codeOf(written), { ok: false, reason: written.reason,
              errors: [written.reason === 'full'
                ? 'This directory holds its maximum of ' + maxEntries() +
                  ' entries (ldap.maxEntries). Nothing was written.'
@@ -10038,7 +12026,7 @@ function createGroup(displayName, options) {
                  ? 'There is no ' + (written.parent || groupsDn()) + ' in this ' +
                    'realm, so there is no container to put a group in.'
                  : 'The entry at ' + dn + ' could not be written (' +
-                   written.reason + ').'] };
+                   written.reason + ').'] });
   }
   log.info('ldap: created the group ' + written.dn + ' with ' + members.length +
            ' member(s) because somebody asked for it.');
@@ -10135,14 +12123,14 @@ function addGroupMember(group, member, options) {
   const wantedMember = String(member == null ? '' : member).trim();
   if (!wantedGroup) {
     log.debug('Leaving addGroupMember(). No group.');
-    return { ok: false, errors: ['Which group? Send `group` with its `cn` or ' +
-                                 'its whole DN.'] };
+    return coded('STS-LDAP-0042', { ok: false, errors: [
+      'Which group? Send `group` with its `cn` or its whole DN.'] });
   }
   if (!wantedMember) {
     log.debug('Leaving addGroupMember(). No member.');
-    return { ok: false, errors: ['Who? Send `member` with a username, or with ' +
+    return coded('STS-LDAP-0049', { ok: false, errors: ['Who? Send `member` with a username, or with ' +
                                  'the DN of any entry — a group can hold ' +
-                                 'another group, and no username names one.'] };
+                                 'another group, and no username names one.'] });
   }
   // A `cn` OR A DN, because the two callers arrive with different things in
   // hand: the console's form is on a page whose rows are DNs, and a script
@@ -10152,7 +12140,7 @@ function addGroupMember(group, member, options) {
   if (!existing) {
     const stored = getEntry(dn);
     log.debug('Leaving addGroupMember(). No such group.');
-    return { ok: false,
+    return coded('STS-LDAP-0050', { ok: false,
              errors: [stored
                ? 'There is an entry at ' + dn + ' and it is not counted as a ' +
                  'group — it neither sits under ' + groupsDn() + ' nor carries ' +
@@ -10161,7 +12149,7 @@ function addGroupMember(group, member, options) {
                : 'There is no group at ' + dn + '. Create it first, or name an ' +
                  'existing one — this does not create a group as a side ' +
                  'effect of adding somebody to it, because a typo in a name ' +
-                 'would then be a new group rather than an error.'] };
+                 'would then be a new group rather than an error.'] });
   }
   const target = memberDnFor(wantedMember);
   // ASKED ACROSS ALL THREE MEMBERSHIP ATTRIBUTES, because the answer has to be
@@ -10211,9 +12199,9 @@ function addGroupMember(group, member, options) {
   if (!written.ok) {
     log.debug('Leaving addGroupMember(). The directory refused: ' +
               written.reason);
-    return { ok: false, reason: written.reason,
+    return coded(errorCodes.codeOf(written), { ok: false, reason: written.reason,
              errors: ['The membership could not be written onto ' + existing.dn +
-                      ' (' + written.reason + ').'] };
+                      ' (' + written.reason + ').'] });
   }
   if (!target.present) {
     log.info('ldap: ' + existing.dn + ' now lists ' + target.dn + ' and ' +
@@ -10321,8 +12309,8 @@ function ldapSpiffeView(req) {
     editable: spiffeRegistry.EDITABLE,
     schema: spiffeRegistry.SCHEMA,
     filter: { entryq: carried.entryq || null, agentq: carried.agentq || null },
-    entriesPaging: admin.pagingJson(pagedEntries.paging),
-    agentsPaging: admin.pagingJson(pagedAgents.paging),
+    entriesPaging: adminViews.pagingJson(pagedEntries.paging),
+    agentsPaging: adminViews.pagingJson(pagedAgents.paging),
     // THE PAGE OF EACH LIST rather than the whole of it, which is the one way
     // this payload differs from what `/ldap/spiffe` answered with before
     // 2026-09-01. The paging members above say which page, and `entries` and
@@ -11416,7 +13404,46 @@ if (typeof admin.setDirectoryPages === 'function') {
 function listen() {
   log.debug('Entering listen().');
   const whenPlain = new Promise(function (resolve, reject) {
-    plainServer.listen(LDAP_PORT, '0.0.0.0', function () {
+    // -------------------------------------------------------------------
+    // THE PLAIN LISTENER CAN BE LEFT UNBOUND (2026-09-12), `ldap.plainListener`.
+    //
+    // It always started. A simple bind on 389 carries its password in the
+    // clear, which did not matter while no bind was checked; in product mode
+    // every bind IS checked against the person's own `userPassword`, so that
+    // socket hands a real credential to anybody on the path. Off leaves LDAPS
+    // as the only way in. It RESOLVES rather than rejecting, with the reason
+    // recorded where a bind failure's would be, because a listener somebody
+    // switched off is not a directory that failed to start — and
+    // `GET /admin/ldap/service` then says which of the two it was.
+    //
+    // Product mode with it ON is allowed and WARNED about, rather than refused:
+    // a deployment terminating LDAP inside a private network may accept the
+    // trade, and the warning names the setting that ends it.
+    // -------------------------------------------------------------------
+    if (!config.value('ldap.plainListener')) {
+      listening = false;
+      listenError = 'not started: ldap.plainListener is off, so this ' +
+        'directory answers over LDAPS only';
+      log.info('ldap: the plain listener on ' + LDAP_PORT + ' was NOT started ' +
+               '(ldap.plainListener is off); LDAPS on ' + LDAPS_PORT + ' is the ' +
+               'only way in.');
+      resolve({ port: null, baseDn: ROOT_DN, plainListener: false });
+      return;
+    }
+    if (mode.verifiesCredentials()) {
+      // Refused rather than merely warned about since 2026-09-12: a bind on
+      // this listener is answered confidentialityRequired before its password
+      // is read. The listener still answers the root DSE, and a client that
+      // sends a password here has still sent it in the clear — which is what
+      // this line is left to say.
+      log.warn('ldap: product mode refuses every bind on the plain listener on ' +
+               LDAP_PORT + ' (confidentialityRequired) and every read that has ' +
+               'not bound, so it answers nothing but the root DSE — and a client ' +
+               'that sends a password to it has still sent that password IN THE ' +
+               'CLEAR. Set ldap.plainListener (LDAP_PLAIN_LISTENER) to false to ' +
+               'answer over LDAPS on ' + LDAPS_PORT + ' only.');
+    }
+    plainServer.listen(LDAP_PORT, ldapListenHost(), function () {
       const address = plainServer.address();
       boundPort = address ? address.port : LDAP_PORT;
       listening = true;
@@ -11437,7 +13464,8 @@ function listen() {
       // that it is visible from outside instead of only in this log.
       listening = false;
       listenError = err.message + (err.code ? ' (' + err.code + ')' : '');
-      log.error('ldap: could not bind TCP ' + LDAP_PORT + ': ' + listenError +
+      log.error(errorCodes.tag('STS-LDAP-0027') +
+                'ldap: could not bind TCP ' + LDAP_PORT + ': ' + listenError +
                 '. The directory will not answer; everything else in this ' +
                 'service is unaffected. Set LDAP_PORT to a free, ' +
                 'unprivileged port if something else owns 389.');
@@ -11481,22 +13509,23 @@ function listen() {
     try {
       const current = tlsServer.serverCertificate();
       Object.assign(serverCertificate, current);
-      secureServer.server.setSecureContext({
+      secureServer.server.setSecureContext(Object.assign({
         cert: (current.chainPem && current.chainPem.length)
           ? [current.certPem].concat(current.chainPem).join('')
           : current.certPem,
         key: current.privateKeyPem
-      });
+      }, tlsProtocolOptions()));
     } catch (e) {
       // The listener still has the context it was built with, so this is a
       // certificate that verifies against a different anchor rather than a
       // directory that does not answer. Named rather than swallowed.
-      log.warn('ldap: LDAPS could not be re-keyed with the certificate this ' +
+      log.warn(errorCodes.tag('STS-LDAP-0030') +
+               'ldap: LDAPS could not be re-keyed with the certificate this ' +
                'service ended up with (' + e.message + '); it is serving the ' +
                'one built at require time, which may not be the one 8443, ' +
                '9443 and the main port present.');
     }
-    secureServer.listen(LDAPS_PORT, '0.0.0.0', function () {
+    secureServer.listen(LDAPS_PORT, ldapListenHost(), function () {
       const address = secureServer.address();
       boundTlsPort = address ? address.port : LDAPS_PORT;
       tlsListening = true;
@@ -11517,7 +13546,8 @@ function listen() {
       // the port. Resolved rather than rejected — see above.
       tlsListening = false;
       tlsListenError = err.message + (err.code ? ' (' + err.code + ')' : '');
-      log.error('ldap: could not bind TCP ' + LDAPS_PORT + ' for LDAPS: ' +
+      log.error(errorCodes.tag('STS-LDAP-0028') +
+                'ldap: could not bind TCP ' + LDAPS_PORT + ' for LDAPS: ' +
                 tlsListenError + '. The plain listener and everything else in ' +
                 'this service are unaffected; set LDAPS_PORT to a free, ' +
                 'unprivileged port for a host run.');
@@ -11590,6 +13620,37 @@ module.exports = {
   writePerson: writePerson,
   deletePerson: deletePerson,
   groupDnFor: groupDnFor,
+  // ---------------------------------------------------------------------
+  // THE OPERATION CODEC, EXPORTED FOR `tests/ldap_operations.js` AND FOR
+  // NOTHING ELSE IN THE SERVICE.
+  //
+  // The socket reaches these through the wrapper installed at registration and
+  // a worker reaches `performOperation()` through the table it registered, so
+  // no module here calls any of them. They are exported because the claim they
+  // carry — that a dispatched operation is the same answer — can only be
+  // checked by running both halves against each other, and a test that reached
+  // into the closure instead would be a test of a copy.
+  //
+  // `localHandler()` is a FUNCTION rather than the table itself, so that a
+  // caller cannot install one: `LOCAL_HANDLERS` is what a worker runs, and a
+  // handle on it would be a second door onto the seven handlers.
+  // ---------------------------------------------------------------------
+  dispatchableOperations: function () {
+    return DISPATCHABLE_OPERATIONS.slice(0);
+  },
+  // Exported so that `tests/ldap_operations.js` can drive the registration in
+  // the one state it happens in — a request worker — without forking one. It
+  // is idempotent (a kind already registered is skipped), which is what makes
+  // calling it a second time safe rather than a throw.
+  registerWorkerOperations: registerWorkerOperations,
+  localHandler: function (operation) {
+    return LOCAL_HANDLERS[operation];
+  },
+  operationRequest: operationRequest,
+  operationContext: operationContext,
+  performOperation: performOperation,
+  applyOperationResult: applyOperationResult,
+  ldapErrorNamed: ldapErrorNamed,
   // The live connections, and the only sign-out LDAP has. Read by
   // ../logout/logout.js, which requires this module in the ordinary direction:
   // server.js loads it long before that one, so the require moves no route and

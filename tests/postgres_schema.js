@@ -214,8 +214,14 @@ function checkTheRoleNameAgrees(t) {
   const url = /STS_DATABASE_URL=\$\{STS_DATABASE_URL:-([^}]+)\}/.exec(compose);
   t.check(!!url, 'docker-compose.yml has a default STS_DATABASE_URL');
   if (url) {
-    t.check(url[1].indexOf('://' + APP_ROLE + ':') === 0 ||
-            url[1].indexOf('://' + APP_ROLE + ':') > 0,
+    // THE PASSWORD IS NO LONGER IN THIS STRING AND THAT IS THE POINT. Since
+    // 2026-09-12 the compose stack reads it from OpenBao and
+    // `persistence.js`'s `resolveDatabaseUrl()` injects it, so the default
+    // reads `sts_app@postgres` where it used to read `sts_app:sts_app@`. What
+    // this assertion is about is the ROLE, so it accepts either spelling —
+    // pinning the colon would have made "the password left the compose file"
+    // look like "the service dials as the schema owner".
+    t.check(new RegExp('://' + APP_ROLE + '[:@]').test(url[1]),
             'and it dials as ' + APP_ROLE + ' rather than as the schema owner',
             url[1]);
     t.check(url[1].indexOf('sslmode=require') > 0,

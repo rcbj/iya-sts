@@ -45,6 +45,10 @@ const { log, parseBody } = require('../common/helpers');
 const config = require('../common/config');
 const pki = require('../common/pki');
 const revocation = require('../common/pki_revocation');
+// The error-code registry (a leaf). Every refusal below is `mark()`ed on the
+// response before it is sent and never written into it: a revocation client
+// is shown exactly the text and the OCSP status it was always shown.
+const errorCodes = require('../common/error_codes');
 
 // ---------------------------------------------------------------------------
 // CACHING. A CRL says how long it is fresh for and a client is entitled to
@@ -58,8 +62,11 @@ const revocation = require('../common/pki_revocation');
 // it on every check is a client hammering this service for a document that has
 // not changed.
 // ---------------------------------------------------------------------------
+// The floor is the setting row's own `min: 1`; see `crlLifetimeMs()` in
+// common/pki_revocation.js for why a second floor of 60 here was a bug.
 function cacheSeconds() {
-  return Math.max(60, Number(config.value('pki.crlLifetimeMinutes')) || 60) * 60;
+  const minutes = Number(config.value('pki.crlLifetimeMinutes'));
+  return Math.max(1, Number.isFinite(minutes) ? minutes : 60) * 60;
 }
 
 function sendDer(res, mediaType, der, cacheable) {
@@ -100,6 +107,7 @@ function crlFor(req, res, scopeSegment, caId) {
   const scope = revocation.scopeFromSegment(scopeSegment);
   const authority = revocation.authorityFor(scope, caId);
   if (!authority) {
+    errorCodes.mark(res, 'STS-PKI-0068');
     refuse(res, 404,
            'There is no "' + caId + '" certificate authority in the "' +
            scopeSegment + '" scope of this service, so there is no revocation ' +
@@ -110,6 +118,7 @@ function crlFor(req, res, scopeSegment, caId) {
   }
   revocation.buildCrl(scope, caId).then(function (made) {
     if (!made.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(made) || 'STS-PKI-0069');
       refuse(res, 500, made.errors.join(' '));
       log.debug('Leaving crlFor(). It could not be built.');
       return;
@@ -117,8 +126,9 @@ function crlFor(req, res, scopeSegment, caId) {
     sendDer(res, 'application/pkix-crl', made.der, true);
     log.debug('Leaving crlFor(). ' + made.count + ' entry(ies).');
   }).catch(function (e) {
-    log.error('pki: the "' + caId + '" CRL could not be built: ' +
+    log.error(errorCodes.tag('STS-PKI-0069') + 'pki: the "' + caId + '" CRL could not be built: ' +
               (e && e.stack ? e.stack : e));
+    errorCodes.mark(res, 'STS-PKI-0069');
     refuse(res, 500, 'That CRL could not be built: ' +
                      (e && e.message ? e.message : e));
   });
@@ -140,6 +150,7 @@ function caCertificateFor(req, res, scopeSegment, caId) {
   const scope = revocation.scopeFromSegment(scopeSegment);
   const authority = revocation.authorityFor(scope, caId);
   if (!authority) {
+    errorCodes.mark(res, 'STS-PKI-0070');
     refuse(res, 404,
            'There is no "' + caId + '" certificate authority in the "' +
            scopeSegment + '" scope of this service.');
@@ -177,6 +188,7 @@ app.get('/pki/ocsp/:scope/:ca/:request', function (req, res) {
     der = null;
   }
   if (!der || !der.length) {
+    errorCodes.mark(res, 'STS-PKI-0071');
     refuse(res, 400,
            'That is not a base64 OCSP request. RFC 6960 appendix A.1.1: the ' +
            'GET form is the base64 of the DER request, URL-encoded, as the ' +
@@ -212,6 +224,7 @@ app.post('/pki/ocsp/:scope/:ca', function (req, res) {
   const der = Buffer.isBuffer(body) ? body
     : (typeof body === 'string' ? Buffer.from(body, 'binary') : null);
   if (!der || !der.length) {
+    errorCodes.mark(res, 'STS-PKI-0072');
     refuse(res, 400,
            'An OCSP request has a body, and it must be sent as ' +
            'application/ocsp-request so that the bytes arrive intact. This ' +
@@ -226,6 +239,7 @@ app.post('/pki/ocsp/:scope/:ca', function (req, res) {
   // because that limit is shared with SOAP and Kerberos and is far too
   // generous for this.
   if (der.length > 65536) {
+    errorCodes.mark(res, 'STS-PKI-0073');
     refuse(res, 413,
            'That OCSP request is larger than this responder accepts (64KB). ' +
            'A request for one certificate is about eighty bytes.');
@@ -238,6 +252,7 @@ app.post('/pki/ocsp/:scope/:ca', function (req, res) {
 function answer(req, res, scopeSegment, caId, der) {
   log.debug('Entering answer(). scope=' + scopeSegment + ' ca=' + caId);
   if (!der || !der.length) {
+    errorCodes.mark(res, 'STS-PKI-0072');
     refuse(res, 400, 'An OCSP request has a body. This one had none.');
     log.debug('Leaving answer(). Empty request.');
     return;
@@ -253,11 +268,18 @@ function answer(req, res, scopeSegment, caId, der) {
     // An OCSP answer is NOT cacheable here: it carries `nextUpdate`, and the
     // interesting thing a person does with this responder is revoke something
     // and ask again.
+    // An OCSP REFUSAL (`unauthorized`, `malformedRequest`, `internalError`)
+    // carries its code on the answer; `good`, `revoked` and `unknown` are
+    // answers rather than failures and carry none.
+    if (errorCodes.codeOf(made)) {
+      errorCodes.mark(res, errorCodes.codeOf(made));
+    }
     sendDer(res, 'application/ocsp-response', made.der, false);
     log.debug('Leaving answer(). ' + made.status + '.');
   }).catch(function (e) {
-    log.error('pki: an OCSP request to the "' + caId + '" responder threw: ' +
+    log.error(errorCodes.tag('STS-PKI-0074') + 'pki: an OCSP request to the "' + caId + '" responder threw: ' +
               (e && e.stack ? e.stack : e));
+    errorCodes.mark(res, 'STS-PKI-0074');
     refuse(res, 500, 'That OCSP request could not be answered.');
   });
 }

@@ -129,12 +129,41 @@ const SIZES = bulk.SIZES;
 // nothing to do with it.
 const STAMP = bulk.stampFor(process.env.BULK_DOOR || "ldap");
 
-// THE BIND. This directory refuses no bind — any DN, any password, anonymous —
-// which `ldap/CLAUDE.md` argues at length, so this is a name in the audit log
-// rather than a credential. It is bound as a DN so that the row says something
-// a reader can act on.
-const BIND_DN = "cn=" + STAMP.prefix + ",ou=users";
-const BIND_PASSWORD = "not-checked-in-development";
+// THE BIND. In development this directory refuses no bind — any DN, any
+// password, anonymous — which `ldap/CLAUDE.md` argues at length, so this is a
+// name in the audit log rather than a credential. It is bound as a DN so that
+// the row says something a reader can act on.
+//
+// **THE BIND IDENTITY IS A PERSON THIS JOB CREATES FIRST (2026-09-12)**, in
+// `createTheBinder()`, with a real password, and the DN bound is that entry's
+// own — read off the service's containers rather than assembled. It was
+// `cn=<prefix>,ou=users` with a password nothing checked, which only a
+// directory that refuses no bind accepts; product mode verifies a simple bind
+// against the entry's `userPassword`. It is one entry, made after the
+// preflight has raised the ceiling and before anything is timed.
+// Named OUTSIDE this run's `uid=<prefix>-*` so no count of the people it adds
+// can ever include it.
+const BIND_USER = "bulk-" + STAMP.door + "-binder-" + STAMP.run;
+const BIND_PASSWORD = "Bulk-ldap-bind-Passw0rd!-" + STAMP.run;
+let BIND_DN = "";
+
+async function createTheBinder(where) {
+  log.debug("Entering createTheBinder().");
+  const made = await http.postJson(http.api("/users/create"), {
+    username: BIND_USER, invent: false,
+    attributes: { cn: "Bulk Load LDAP Binder", givenName: "Bulk",
+                  sn: "LDAP Binder", displayName: "Bulk Load LDAP Binder",
+                  mail: BIND_USER + "@bulk-load.test" },
+    credential: "password", password: BIND_PASSWORD
+  });
+  assert.ok(made.status === 200 && made.body && made.body.ok &&
+            made.body.passwordSet,
+    "POST /admin-api/users/create should create the bind identity " +
+    BIND_USER + " with a password; it answered " + made.status + " " +
+    JSON.stringify(made.body).slice(0, 300));
+  BIND_DN = String(made.body.dn || ("uid=" + BIND_USER + "," + where.usersDn));
+  log.debug("Leaving createTheBinder(). " + BIND_DN);
+}
 
 var http = bulk.httpFor(base, log);
 var checks = bulk.checker(log);
@@ -742,6 +771,7 @@ async function test() {
   const ready = await bulk.preflight({ log: log, assert: assert, http: http,
                                        checks: checks });
   const where = await containers();
+  await createTheBinder(where);
 
   const client = connect();
   try {

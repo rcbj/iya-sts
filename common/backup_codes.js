@@ -46,7 +46,17 @@
 // other.
 //
 // ---------------------------------------------------------------------------
-// WHY THE CODES ARE ENCRYPTED AT REST AND NOT HASHED, WHICH IS THE OPPOSITE OF
+// ~~WHY THE CODES ARE ENCRYPTED AT REST AND NOT HASHED~~ — **REVERSED ON
+// 2026-09-11, AND THIS HEADER WENT ON SAYING IT FOR A DAY.** The two sections
+// below are kept as the record of the argument that lost: since that date a
+// set is SHOWN ONCE and stored as a scrypt HASH per code (see `hash()` and the
+// block above it), nothing can show a stored set again, and a set is generated
+// when the person ASKS rather than by the act of enrolling. `common/CLAUDE.md`
+// rule 3y carries what the reversal cost. `report().atRest` said "ENCRYPTED
+// and not hashed" until 2026-09-12 as well, and `/admin/crypto-metadata`
+// printed it.
+//
+// WHY THE CODES WERE ENCRYPTED AT REST AND NOT HASHED, WHICH IS THE OPPOSITE OF
 // WHAT `userPassword` DOES.
 //
 // `common/crypto.js`'s own comment states this repository's rule: **a secret
@@ -79,7 +89,9 @@
 // of why both are SECOND factors here and neither can be made a first one.
 //
 // ---------------------------------------------------------------------------
-// THEY ARE GENERATED ONCE, AUTOMATICALLY, WHEN A SECOND FACTOR IS ENROLLED.
+// THEY WERE GENERATED ONCE, AUTOMATICALLY, WHEN A SECOND FACTOR WAS ENROLLED —
+// reversed with the section above on 2026-09-11; `recoveryAdvised` is what
+// replaced the automatic issue.
 //
 // Not on request, and not again afterwards. `common/credentials.js` calls
 // `ensureBackupCodes()` from the two places a person comes to hold a second
@@ -108,6 +120,9 @@ const nodeCrypto = require('crypto');
 const { log } = require('./helpers');
 const config = require('./config');
 const crypto = require('./crypto');
+// The error codes. A LEAF that requires nothing, so it cannot close a cycle
+// from here; the one failure this module has is logged with its code.
+const errorCodes = require('./error_codes');
 
 // See the header: the same thirty-two characters as base32 and for a different
 // reason, declared here so that a change to either cannot move the other.
@@ -137,9 +152,21 @@ function settings() {
       Number(config.value('backupCodes.length') || 10))),
     // How the code is broken up for reading. Purely presentational — every
     // door strips it back out before comparing.
+    //
+    // **ZERO IS DOCUMENTED AS "PRINT IT UNBROKEN" AND `|| 5` MADE IT FIVE**
+    // (fixed 2026-09-12). `numberOr()` falls back only where there is no
+    // number at all.
     groupSize: Math.max(0, Math.min(16,
-      Number(config.value('backupCodes.groupSize') || 5)))
+      numberOr(config.value('backupCodes.groupSize'), 5)))
   };
+}
+
+// A setting as a number, or the fallback where it is not one — never `||`,
+// which reads a legal zero as absent.
+function numberOr(value, fallback) {
+  const n = Number(value);
+  return (value === '' || value === null || value === undefined || !isFinite(n))
+    ? fallback : n;
 }
 
 // Is the mechanism offered at all? Read at every door and not only on the page
@@ -211,7 +238,8 @@ function generate(opts) {
     // NAMED rather than returned short. A caller that got eight codes when it
     // asked for ten would write eight to the directory and tell the person
     // they had ten.
-    log.error('backup_codes: only ' + codes.length + ' distinct code(s) could ' +
+    log.error(errorCodes.tag('STS-AUTHN-0083') +
+              'backup_codes: only ' + codes.length + ' distinct code(s) could ' +
               'be generated out of ' + count + ' asked for, in ' + tries +
               ' attempt(s). The alphabet or the length must have been made ' +
               'too small to hold that many.');
@@ -375,10 +403,20 @@ function report() {
             'dividing 256.',
     comparison: 'crypto.constantTimeEquals(), after upper-casing and ' +
                 'dropping the spaces and dashes this service itself prints.',
-    atRest: 'AES-256-GCM under the key-encryption key, through ' +
-            'common/keystore.js, wherever that key outlives the process. ' +
-            'ENCRYPTED and not hashed, because a person may look at their ' +
-            'remaining codes again.'
+    // **THIS SENTENCE SAID "ENCRYPTED and not hashed" FOR A DAY AFTER IT
+    // STOPPED BEING TRUE** (fixed 2026-09-12). The set has been a scrypt hash
+    // per code since 2026-09-11 — `hash()` below — and `/admin/crypto-metadata`
+    // reads this report, so the one page whose subject is what this service
+    // does to a secret was describing the design that had been reversed.
+    atRest: 'A scrypt HASH of each code, through crypto.hashSecret() — the ' +
+            'same function and the same stored form as userPassword — so ' +
+            'this service can check a code and can never show one again, its ' +
+            'owner included. A set written by a build before 2026-09-11 holds ' +
+            'the codes themselves and is still accepted, code by code, until ' +
+            'its owner generates a new one.',
+    comparisonOfAHash: 'crypto.verifySecret() in constant time against each ' +
+                       'stored hash in turn, on the worker pool where the ' +
+                       'door is asynchronous.'
   };
 }
 

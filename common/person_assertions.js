@@ -133,6 +133,9 @@
 // The service's own logger, as every module here takes it.
 const { log } = require('./helpers');
 const keystore = require('./keystore');
+// A leaf. The refusal objects below carry `errorCode` for the caller that
+// sends the response; it is never part of anything serialised.
+const errorCodes = require('./error_codes');
 
 // The declaration, and the six the issue writes. A LIST rather than six
 // constants, because the console's *take the key pair off* control clears
@@ -172,7 +175,8 @@ function setDirectory(hooks) {
     return !hooks || typeof hooks[name] !== 'function';
   });
   if (missing.length) {
-    log.error('person_assertions: setDirectory() was given something without ' +
+    log.error(errorCodes.tag('STS-OAUTH-0084') +
+              'person_assertions: setDirectory() was given something without ' +
               missing.join(', ') + ', so it was refused whole. Half of it ' +
               'would be a register that can verify an assertion and not ' +
               'issue a key to sign one with, or one that can issue a key and ' +
@@ -230,7 +234,8 @@ function openValue(name, value, username) {
   }
   const opened = keystore.open(String(value), SEAL_LABEL);
   if (!opened) {
-    log.warn('person_assertions: the assertion private key on "' + username +
+    log.warn(errorCodes.tag('STS-OAUTH-0088') +
+             'person_assertions: the assertion private key on "' + username +
              '" is sealed and will not open under this process\'s ' +
              'key-encryption key — it was written under a different one. It ' +
              'is reported as it is stored rather than as absent, because ' +
@@ -372,7 +377,7 @@ function write(username, record, opts) {
   const options = opts || {};
   if (!directory) {
     log.debug('Leaving write(). No directory.');
-    return { ok: false,
+    return { ok: false, errorCode: 'STS-OAUTH-0085',
              errors: ['This process has no directory, so there is nowhere to ' +
                       'put a person\'s assertion key pair. `ldap_server.js` ' +
                       'fills the slot at require time; a process without it ' +
@@ -394,11 +399,12 @@ function write(username, record, opts) {
     const attribute = values[i][0];
     const sealed = sealValue(attribute, values[i][1]);
     if (sealed === null) {
-      log.error('person_assertions: a signing key pair was issued to "' +
+      log.error(errorCodes.tag('STS-OAUTH-0086') +
+                'person_assertions: a signing key pair was issued to "' +
                 name + '" and ' + attribute + ' could not be sealed. Nothing ' +
                 'was written and the key pair is lost; issue again.');
       log.debug('Leaving write(). The seal failed.');
-      return { ok: false, written: written,
+      return { ok: false, errorCode: 'STS-OAUTH-0086', written: written,
                errors: ['`' + attribute + '` could not be sealed under this ' +
                         'service\'s key-encryption key, so it was not ' +
                         'written. This service keeps no second copy of a ' +
@@ -407,12 +413,13 @@ function write(username, record, opts) {
                         'wrong with it — and issue again.'] };
     }
     if (!directory.write(name, attribute, sealed)) {
-      log.error('person_assertions: a signing key pair was issued to "' +
+      log.error(errorCodes.tag('STS-OAUTH-0087') +
+                'person_assertions: a signing key pair was issued to "' +
                 name + '" and ' + attribute + ' could not be written. The ' +
                 'private key is not stored anywhere else and is now lost; ' +
                 'issue again.');
       log.debug('Leaving write(). A write failed.');
-      return { ok: false, written: written,
+      return { ok: false, errorCode: 'STS-OAUTH-0087', written: written,
                errors: ['`' + attribute + '` could not be written onto "' +
                         name + '". This service keeps no second copy of a ' +
                         'private key, so that key pair is gone. Issue again.'] };
@@ -452,12 +459,12 @@ function clear(username) {
   const name = String(username || '');
   if (!directory || !name) {
     log.debug('Leaving clear(). No directory or no name.');
-    return { ok: false, removed: 0 };
+    return { ok: false, errorCode: 'STS-OAUTH-0089', removed: 0 };
   }
   const before = recordFor(name);
   if (!before) {
     log.debug('Leaving clear(). Nobody by that name.');
-    return { ok: false, removed: 0, unknown: true };
+    return { ok: false, errorCode: 'STS-OAUTH-0090', removed: 0, unknown: true };
   }
   let removed = 0;
   ATTRIBUTES.forEach(function (attribute) {

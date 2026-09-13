@@ -69,8 +69,17 @@ const app = require('../common/app');
 const bbs2023 = require('../common/vendored/bbs2023.js');
 const { log, logArtifact, STS, baseUrlOf, b64u, b64uDecode, jsonFromB64u, nowSec,
         randomId, xmlEscape, bbsKeyPair, parseBody, oauthError, signJwt,
-        walletBaseUrl } = require('../common/helpers');
+        walletBaseUrl, signingKeyFor, stsKeysFor } = require('../common/helpers');
 const config = require('../common/config');
+// THE MODE (2026-09-12), for one question: may a response go to an address the
+// request named — the `wallet` query parameter. A LEAF requiring only `config`.
+const mode = require('../common/mode');
+// The error codes (common/error_codes.js). A LEAF that requires nothing; a code is
+// marked on the response object and never written into a response.
+const errorCodes = require('../common/error_codes');
+// A library (rule 3) that registers no route: the revocation check a configured
+// trusted issuer certificate gets once it has verified a credential.
+const revocationStatus = require('../common/revocation_status');
 // The identity registry, for ONE call: a presentation that verified names a
 // holder, and this is the funnel every other family here already goes through at
 // the moment a credential is accepted. A library like dpop.js — it registers no
@@ -106,7 +115,169 @@ function vpWalletUrl() {
   return config.value('oid4vp.walletUrl');
 }
 
+// `oid4vp.presentationRequestTtlS` since 2026-09-12; the constant is its
+// default. Read once per request BUILT, and the transaction carries the expiry
+// it was given.
 const VP_TTL_MS = 10 * 60 * 1000;
+
+function vpTtlMs() {
+  const seconds = Number(config.value('oid4vp.presentationRequestTtlS'));
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 : VP_TTL_MS;
+}
+
+// ---------------------------------------------------------------------------
+// WHICH KEYS A PRESENTED CREDENTIAL'S ISSUER SIGNATURE MAY VERIFY AGAINST
+// (2026-09-12).
+//
+// It was `STS.certPem` with jsonwebtoken's RS256 default — this service's own
+// RSA key and nothing else. Two things moved:
+//
+//   * THIS ISSUER may sign with `oid4vci.credentialSigningAlgorithm`, which can
+//     name a curve algorithm, so the realm's own key for the credential's
+//     `alg` is found the way the signer found it: RS/PS against the RSA
+//     certificate, anything else by its `kid` in the realm's key set.
+//   * `oid4vp.trustedIssuerCertificates` names OTHER issuers, as PEM
+//     certificates whose public keys are tried as well. A certificate is used
+//     as a key and nothing more — no path is built and no revocation is
+//     checked — which is what the setting's own description says.
+//
+// The algorithm list is the credential header's `alg` ALONE, and it must be an
+// asymmetric, non-post-quantum JOSE algorithm: a MAC here would verify a
+// signature with a public key used as a secret, and a post-quantum one would
+// block this thread (the Verifier's checks are synchronous). Naming the one
+// algorithm is what stops a key of one family being tried under another.
+// ---------------------------------------------------------------------------
+const ISSUER_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.filter(function (alg) {
+  return stsCrypto.JWS_ALGS[alg].family !== 'pq';
+});
+
+function trustedIssuerKeys() {
+  log.debug("Entering trustedIssuerKeys().");
+  const text = String(config.value('oid4vp.trustedIssuerCertificates') || '');
+  const blocks = text.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+  const out = [];
+  blocks.forEach(function (pem, i) {
+    try {
+      out.push({ label: 'trusted issuer certificate ' + (i + 1), pem: pem,
+                 key: new crypto.X509Certificate(pem).publicKey });
+    } catch (e) {
+      // One unreadable certificate must not take the others with it; it is
+      // named in the log so that an operator can see which entry is wrong.
+      log.error(errorCodes.tag('STS-VC-0031') +
+                'oid4vp.trustedIssuerCertificates: certificate ' + (i + 1) +
+                ' could not be read and is ignored: ' + e.message);
+    }
+  });
+  log.debug("Leaving trustedIssuerKeys(). " + out.length + " key(s).");
+  return out;
+}
+
+function verifyIssuerSignature(token) {
+  log.debug("Entering verifyIssuerSignature().");
+  let header = {};
+  try {
+    header = jsonFromB64u(String(token || '').split('.')[0]);
+  } catch (e) {
+    log.debug("Leaving verifyIssuerSignature(). The header is unreadable.");
+    throw new Error('the issuer-signed JWT header cannot be read: ' + e.message);
+  }
+  const alg = String(header.alg || '');
+  if (ISSUER_ALGS.indexOf(alg) < 0) {
+    log.debug("Leaving verifyIssuerSignature(). Unacceptable alg.");
+    throw new Error('the credential is signed with "' + alg + '", and this Verifier accepts ' +
+                    ISSUER_ALGS.join(', ') + '.');
+  }
+  const candidates = [];
+  const family = stsCrypto.JWS_ALGS[alg].family;
+  if (family === 'rsa' || family === 'rsa-pss' || /^(RS|PS)/.test(alg)) {
+    candidates.push({ label: 'this issuer\'s RSA key', key: STS.certPem });
+  } else {
+    (stsKeysFor().extraKeys || []).forEach(function (one) {
+      if (one.publicJwk && one.alg === alg && (!header.kid || one.publicJwk.kid === header.kid)) {
+        candidates.push({ label: 'this issuer\'s ' + alg + ' key',
+                          key: crypto.createPublicKey({ key: one.publicJwk, format: 'jwk' }) });
+      }
+    });
+  }
+  trustedIssuerKeys().forEach(function (one) { candidates.push(one); });
+  let lastError = 'no key this Verifier trusts can verify a ' + alg + ' signature';
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      const claims = stsCrypto.verifyJws(token, candidates[i].key, { algorithms: [alg] });
+      log.debug("Leaving verifyIssuerSignature(). Verified by " + candidates[i].label + ".");
+      // `certificatePem` is set only for a CONFIGURED trusted issuer
+      // certificate, which the response endpoint then checks for revocation.
+      return { claims: claims, alg: alg, by: candidates[i].label,
+               certificatePem: candidates[i].pem || '' };
+    } catch (e) {
+      lastError = e.message;
+    }
+  }
+  log.debug("Leaving verifyIssuerSignature(). Nothing verified it.");
+  throw new Error(lastError);
+}
+
+// ---------------------------------------------------------------------------
+// THE CONFIGURED TRUSTED ISSUER CERTIFICATE THAT VERIFIED A CREDENTIAL,
+// checked for revocation once it has been used (2026-09-12).
+//
+// It is a certificate an operator wrote into `oid4vp.trustedIssuerCertificates`,
+// so it gets `common/revocation_status.js`'s registered-certificate check — the
+// register for one this service issued, its issuer's OCSP responder and CRL
+// otherwise, under `pki.revocationCheck`. The two verifiers are synchronous and
+// the response endpoint is not, so the check is made THERE, on the certificate
+// the verifier reports having used, rather than inside them. A credential this
+// service signed itself verified against no configured certificate and has
+// nothing to check. It adds a check row either way and turns `ok` off on a
+// refusal; `revocationRefused` is what lets the endpoint name the code.
+// ---------------------------------------------------------------------------
+async function issuerCertificateRevocation(verified) {
+  log.debug("Entering issuerCertificateRevocation().");
+  if (!verified || !verified.ok || !verified.issuerCertificatePem) {
+    log.debug("Leaving issuerCertificateRevocation(). Nothing configured was used.");
+    return verified;
+  }
+  const issuerRevocation = await revocationStatus.registeredVerdictFor({
+    certificate: verified.issuerCertificatePem,
+    source: 'a certificate in oid4vp.trustedIssuerCertificates'
+  });
+  vpCheck(verified.checks, 'Issuer certificate revocation', !issuerRevocation.refused,
+    issuerRevocation.why);
+  verified.ok = !issuerRevocation.refused;
+  verified.revocationRefused = !!issuerRevocation.refused;
+  log.debug("Leaving issuerCertificateRevocation(). " + issuerRevocation.status);
+  return verified;
+}
+
+// ---------------------------------------------------------------------------
+// WHERE THE HOLDER IS SENT (2026-09-12) — `vc_offers.js`'s walletFor() made
+// again for this side, rather than shared, because the two settings are two
+// rows (`oid4vp.*`) and a wallet URL accepted for issuance is not by that fact
+// one accepted for presentation. The page is `oid4vp.walletPresentationPath`;
+// the `wallet` parameter may name any URL in development and, where a realm
+// accepts only registered addresses, only oid4vp.walletUrl or one listed in
+// `oid4vp.allowedWalletUrls` — anything else is an open redirect carrying a
+// presentation request, and is refused by name.
+// ---------------------------------------------------------------------------
+function vpWalletFor(req) {
+  log.debug("Entering vpWalletFor().");
+  const configured = String(vpWalletUrl() || '').replace(/\/+$/, '');
+  const asked = req.query.wallet ? String(req.query.wallet).replace(/\/+$/, '') : '';
+  if (asked && asked !== configured && !mode.acceptsUnregisteredAddresses()) {
+    const allowed = (config.value('oid4vp.allowedWalletUrls') || []).map(function (one) {
+      return String(one).replace(/\/+$/, '');
+    });
+    if (allowed.indexOf(asked) < 0) {
+      log.debug("Leaving vpWalletFor(). An unregistered wallet URL was refused.");
+      return { error: 'The wallet URL "' + asked + '" is neither oid4vp.walletUrl nor one ' +
+                      'listed in oid4vp.allowedWalletUrls, and this realm does not send a ' +
+                      'presentation request to an address the request named. Add it to that ' +
+                      'setting, or leave the wallet parameter off.' };
+    }
+  }
+  log.debug("Leaving vpWalletFor().");
+  return { url: (asked || configured) + String(config.value('oid4vp.walletPresentationPath') || '') };
+}
 
 // How old a Key Binding JWT may be. It is signed for one presentation, so this is
 // short on purpose.
@@ -230,7 +401,7 @@ function buildVpRequest(req, opts) {
     // answers a jwt_vc_json query with an SD-JWT is refused rather than quietly
     // accepted by the other code path.
     format: vpConfig.formatOf(opts.format),
-    expires: Date.now() + VP_TTL_MS, verdict: null
+    expires: Date.now() + vpTtlMs(), verdict: null
   };
   logArtifact('OID4VP Authorization Request', 'as built', request);
   if (opts.byReference) {
@@ -242,7 +413,7 @@ function buildVpRequest(req, opts) {
       iss: clientId,
       aud: 'https://self-issued.me/v2',
       iat: nowSec(),
-      exp: nowSec() + Math.floor(VP_TTL_MS / 1000)
+      exp: nowSec() + Math.floor(vpTtlMs() / 1000)
     }, request);
     record.requestObject = signJwt(Object.assign({ typ: 'oauth-authz-req+jwt' }, payload));
     logArtifact('OID4VP Request Object', 'after signing', record.requestObject);
@@ -321,6 +492,7 @@ app.get('/oid4vp/verifier', function (req, res) {
   const askedPage = validation.check(req, 'query', OID4VC_QUERY);
   if (!askedPage.ok) {
     log.debug('Leaving the verifier web page. ' + askedPage.detail);
+    errorCodes.mark(res, 'STS-VC-0032');
     return res.status(400).type('text/plain').send(askedPage.detail + '\n');
   }
   const pageFormat = String(req.query.format || '');
@@ -424,10 +596,11 @@ app.get('/oid4vp/start', function (req, res) {
   const askedStart = validation.check(req, 'query', OID4VC_QUERY);
   if (!askedStart.ok) {
     log.debug('Leaving the presentation start endpoint. ' + askedStart.detail);
+    errorCodes.mark(res, 'STS-VC-0032');
     return res.status(400).type('text/plain').send(askedStart.detail + '\n');
   }
   const byReference = String(req.query.by || '') === 'reference';
-  const mode = String(req.query.mode || 'same-device');
+  const startMode = String(req.query.mode || 'same-device');
   // Which credential format to ask for. Anything unrecognised — and a link that
   // names none, which is the ordinary case — falls back to the CONFIGURED
   // default rather than to a constant; dc+sd-jwt is what that default starts as,
@@ -435,10 +608,15 @@ app.get('/oid4vp/start', function (req, res) {
   const format = vpConfig.formatOf(String(req.query.format || ''));
   const record = buildVpRequest(req, { byReference: byReference, format: format });
   const query = vpRequestQuery(req, record);
-  const wallet = String(req.query.wallet || vpWalletUrl()).replace(/\/+$/, '') +
-                 '/vc-presentation-1.html';
+  const walletChoice = vpWalletFor(req);
+  if (walletChoice.error) {
+    log.debug("Leaving the presentation start endpoint. " + walletChoice.error);
+    errorCodes.mark(res, 'STS-VC-0033');
+    return res.status(400).type('text/plain').send(walletChoice.error + '\n');
+  }
+  const wallet = walletChoice.url;
 
-  if (mode !== 'cross-device') {
+  if (startMode !== 'cross-device') {
     // Same device: the browser IS the wallet's user agent, so send it there.
     res.redirect(302, wallet + '?' + query);
     log.debug("Leaving the presentation start endpoint. Redirected to the wallet.");
@@ -486,7 +664,9 @@ function renderVpQrPage(res, opts) {
       log.debug("Leaving renderVpQrPage().");
     })
     .catch(function (e) {
-      log.error("could not render the presentation QR code: " + e.message);
+      log.error(errorCodes.tag('STS-VC-0034') +
+                "could not render the presentation QR code: " + e.message);
+      errorCodes.mark(res, 'STS-VC-0034');
       res.status(500).type('text/plain').send('Could not render the Authorization Request QR code: ' + e.message);
     });
 }
@@ -499,6 +679,7 @@ app.get('/oid4vp/request/:id', function (req, res) {
   const record = state ? vpTransactions.get(state) : null;
   if (!record || !record.requestObject) {
     log.debug("Leaving the request object endpoint. No such request.");
+    errorCodes.mark(res, 'STS-VC-0035');
     return oauthError(res, 404, 'invalid_request', 'No such Request Object.');
   }
   res.status(200).type('application/oauth-authz-req+jwt').send(record.requestObject);
@@ -687,7 +868,7 @@ function verifyVpJwt(presentation, record) {
     // a credential presented at the very edge of its validity window was
     // reported to a person as a FAILED ISSUER SIGNATURE, which is the one
     // verdict on this page that reads like an attack rather than like a clock.
-    stsCrypto.verifyJws(vcJwt, STS.certPem);
+    result.issuerCertificatePem = verifyIssuerSignature(vcJwt).certificatePem;
     issuerSignatureOk = true;
   } catch (e) {
     vpCheck(checks, 'Issuer signature', false, 'does not verify: ' + e.message);
@@ -814,7 +995,7 @@ function verifyPresentation(presentation, record) {
   let issuerSignatureOk = false;
   try {
     // The fourth. Same change, same reason as the note above.
-    stsCrypto.verifyJws(issuerJwt, STS.certPem);
+    result.issuerCertificatePem = verifyIssuerSignature(issuerJwt).certificatePem;
     issuerSignatureOk = true;
   } catch (e) {
     // Not signed by us — or expired, which jsonwebtoken reports here too. Both
@@ -822,14 +1003,16 @@ function verifyPresentation(presentation, record) {
     vpCheck(checks, 'Issuer signature', false, 'does not verify: ' + e.message);
   }
   if (issuerSignatureOk) {
-    vpCheck(checks, 'Issuer signature', true, 'verifies against the issuer\'s key (alg RS256).');
+    vpCheck(checks, 'Issuer signature', true, 'verifies against the issuer\'s key (alg ' +
+      header.alg + ').');
   }
   const now = nowSec();
   vpCheck(checks, 'Validity window',
     (!payload.exp || payload.exp > now) && (!payload.nbf || payload.nbf <= now),
     'nbf ' + (payload.nbf || '—') + ', exp ' + (payload.exp || '—') + ', now ' + now + '.');
-  vpCheck(checks, 'Credential type (vct)', payload.vct === VCI_VCT,
-    'vct is "' + payload.vct + '"; this Verifier asked for "' + VCI_VCT + '".');
+  vpCheck(checks, 'Credential type (vct)', payload.vct === vpConfig.expectedVct(),
+    'vct is "' + payload.vct + '"; this Verifier asked for "' + vpConfig.expectedVct() +
+    '" (oid4vp.expectedVct).');
 
   // --- the Disclosures presented -------------------------------------------
   // Every one must hash to a digest the issuer signed. This is the check that
@@ -861,13 +1044,15 @@ function verifyPresentation(presentation, record) {
       arr = JSON.parse(b64uDecode(encoded).toString('utf8'));
     } catch (e) {
       unmatched++;
-      log.error('a presented Disclosure is not base64url JSON: ' + e.message);
+      log.error(errorCodes.tag('STS-VC-0039') +
+                'a presented Disclosure is not base64url JSON: ' + e.message);
       return;
     }
     const digest = nodeAlg ? b64u(crypto.createHash(nodeAlg).update(encoded, 'ascii').digest()) : '';
     if (signedDigests.indexOf(digest) === -1) {
       unmatched++;
-      log.error('a presented Disclosure hashes to a digest the issuer never signed: ' + digest);
+      log.error(errorCodes.tag('STS-VC-0040') +
+                'a presented Disclosure hashes to a digest the issuer never signed: ' + digest);
       return;
     }
     if (Array.isArray(arr) && arr.length === 3) {
@@ -946,8 +1131,17 @@ function verifyPresentation(presentation, record) {
       // is theirs and is named explicitly rather than taking the RS256 default.
       // The clock allowance is still ours to grant, and it comes from the
       // shared verifier for the same reason it does everywhere else.
-      stsCrypto.verifyJws(kbJwt, holderKey,
-                          { algorithms: ['ES256', 'ES384', 'RS256', 'PS256'] });
+      //
+      // THE LIST WAS FOUR ALGORITHMS AND THE ISSUER BINDS TO MORE (2026-09-12,
+      // every mode). The issuer accepts a proof of possession in every
+      // asymmetric algorithm `proof_signing_alg_values_supported` advertises,
+      // so a wallet holding an EdDSA, ES512, ES256K, RS384 or PS512 key was
+      // issued a credential bound to it and then refused at presentation for
+      // signing with the very key the credential names. It is every
+      // asymmetric non-post-quantum algorithm now — the post-quantum ones have
+      // no JWK `cnf` a node KeyObject can be built from, and this check is
+      // synchronous.
+      stsCrypto.verifyJws(kbJwt, holderKey, { algorithms: ISSUER_ALGS });
       vpCheck(checks, 'KB-JWT signature', true,
         'verifies against the cnf key in the credential (' + cnfJwk.kty + ' ' + (cnfJwk.crv || '') + ').');
     } catch (e) {
@@ -992,6 +1186,7 @@ app.post('/oid4vp/response', async function (req, res) {
   const record = vpTransactions.get(state);
   if (!record) {
     log.debug("Leaving the OID4VP response endpoint. Unknown state.");
+    errorCodes.mark(res, 'STS-VC-0036');
     return oauthError(res, 400, 'invalid_request',
       'Unknown or expired state: this Verifier has no such Authorization Request outstanding.');
   }
@@ -1005,6 +1200,7 @@ app.post('/oid4vp/response', async function (req, res) {
     // endpoint a wallet polls may well be answered by another process, which
     // would otherwise report the transaction as still outstanding for ever.
     vpTransactions.set(state, record);
+    errorCodes.mark(res, 'STS-VC-0037');
     res.status(200).type('application/json').send(JSON.stringify({
       redirect_uri: baseUrlOf(req) + '/oid4vp/done?state=' + encodeURIComponent(state)
     }));
@@ -1023,7 +1219,8 @@ app.post('/oid4vp/response', async function (req, res) {
     else if (typeof forQuery === 'string') presentations = [forQuery];
     else tokenShapeOk = false;
   } catch (e) {
-    log.error('the vp_token is not the JSON object OID4VP defines: ' + e.message);
+    log.error(errorCodes.tag('STS-VC-0038') +
+              'the vp_token is not the JSON object OID4VP defines: ' + e.message);
     tokenShapeOk = false;
   }
   if (!tokenShapeOk || !presentations.length) {
@@ -1034,6 +1231,7 @@ app.post('/oid4vp/response', async function (req, res) {
                          VP_DCQL_ID + '"), each value an array of presentations.' }]
     };
     vpTransactions.set(state, record);  // through the store, as above
+    errorCodes.mark(res, 'STS-VC-0038');
     res.status(400).type('application/json').send(JSON.stringify({
       error: 'invalid_request',
       error_description: 'vp_token is not the JSON object OID4VP section 8.1 defines.'
@@ -1050,6 +1248,7 @@ app.post('/oid4vp/response', async function (req, res) {
     : record.format === 'jwt_vc_json'
       ? verifyVpJwt(presentations[0], record)
       : verifyPresentation(presentations[0], record);
+  await issuerCertificateRevocation(verified);
   record.verdict = {
     ok: verified.ok,
     at: new Date().toISOString(),
@@ -1069,6 +1268,11 @@ app.post('/oid4vp/response', async function (req, res) {
     // Section 8.4: an invalid presentation is invalid_request. The failing checks
     // go in the description, because a wallet developer cannot fix "no".
     const failed = verified.checks.filter(function (c) { return !c.ok; });
+    // A refusal whose only failed check is the issuer certificate's revocation
+    // is named for that, so an operator is sent to the certificate rather than
+    // to the wallet.
+    errorCodes.mark(res, (verified.revocationRefused && failed.length === 1)
+      ? 'STS-PKI-0129' : 'STS-VC-0041');
     res.status(400).type('application/json').send(JSON.stringify({
       error: 'invalid_request',
       error_description: 'The presentation was refused: ' +
@@ -1129,6 +1333,7 @@ app.get('/oid4vp/result/:state', function (req, res) {
   const record = vpTransactions.get(String(req.params.state));
   if (!record) {
     log.debug("Leaving the presentation result endpoint. Unknown state.");
+    errorCodes.mark(res, 'STS-VC-0042');
     return oauthError(res, 404, 'invalid_request', 'No such presentation.');
   }
   res.set('Access-Control-Allow-Origin', '*');
@@ -1178,6 +1383,8 @@ app.get('/oid4vp/done', function (req, res) {
 
 module.exports = {
   verifyPresentation: verifyPresentation,
+  // For tests/revocation_status.js, which asks it about a revoked certificate.
+  issuerCertificateRevocation: issuerCertificateRevocation,
   buildVpRequest: buildVpRequest,
   vpDcqlQuery: vpDcqlQuery
 };

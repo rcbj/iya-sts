@@ -609,8 +609,32 @@ function rest(t) {
           'left for a reader to derive from a length and an alphabet');
   t.check(/constantTimeEquals/.test(report.comparison),
           'the comparison is named', report.comparison);
-  t.check(/AES-256-GCM/.test(report.atRest),
-          'and so is what protects them at rest', report.atRest);
+  // THIS ASSERTED /AES-256-GCM/ UNTIL 2026-09-12, which is to say it pinned
+  // the stale sentence in place for a day after the design reversed: the
+  // codes have been scrypt hashes since 2026-09-11. It asserts the design now,
+  // and that the old claim is gone rather than merely joined by the new one.
+  t.check(/scrypt HASH/.test(report.atRest),
+          'and so is what protects them at rest — a hash, since 2026-09-11',
+          report.atRest);
+  t.check(!/ENCRYPTED and not hashed/i.test(report.atRest),
+          'and the report no longer says the codes are encrypted rather than ' +
+          'hashed, which /admin/crypto-metadata was printing', report.atRest);
+
+  // ZERO IS A LEGAL GROUP SIZE. `|| 5` read it as absent and printed every
+  // code broken into fives on a deployment that asked for them unbroken.
+  const config = require('../common/config');
+  try {
+    config.setOverride('backupCodes.groupSize', '0');
+    t.equal(backupCodes.settings().groupSize, 0,
+            'backupCodes.groupSize=0 is honoured as zero rather than read as ' +
+            'absent and replaced with five');
+    t.equal(backupCodes.formatted('ABCDEFGHJK', backupCodes.settings().groupSize),
+            'ABCDEFGHJK', 'and a code is then printed unbroken, as the row says');
+  } finally {
+    config.clearOverride('backupCodes.groupSize');
+  }
+  t.equal(backupCodes.settings().groupSize, 5,
+          'and cleared, the default is five again');
 }
 
 module.exports = {

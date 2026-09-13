@@ -72,8 +72,8 @@ const TYPE = model.TYPE;
 // ASSERTS them (`xacml/xacml_role_pep.js`) and the policy that READS them —
 // which is the one below, and any policy anybody writes afterwards. They are
 // exported so there is ONE spelling of each: a template that built a policy
-// reading `urn:sts-mock:xacml:roles` while the PEP asserted
-// `urn:sts-mock:xacml:role` would produce an empty bag, an empty bag is no
+// reading `urn:sts:xacml:roles` while the PEP asserted
+// `urn:sts:xacml:role` would produce an empty bag, an empty bag is no
 // intersection, and no intersection is a Deny — a policy that refuses
 // everybody for a reason invisible in both files.
 //
@@ -86,28 +86,28 @@ const TYPE = model.TYPE;
 const ISSUANCE_ATTRIBUTE = {
   // On the SUBJECT: the roles the party being authenticated holds, from the
   // register and from the six built-in ones.
-  ROLE: 'urn:sts-mock:xacml:role',
+  ROLE: 'urn:sts:xacml:role',
   // On the SUBJECT: the roles found in a token the caller PRESENTED, read out
   // of the claim `roles.claimName` names. Separate from the above rather than
   // unioned into it, and that separation is the whole reason it is visible in
   // the policy: these two are not equally trustworthy. The register is this
   // service's own record; a claim is whatever was in a token, and this service
   // does not verify access tokens it did not issue.
-  TOKEN_ROLE: 'urn:sts-mock:xacml:role-from-token',
+  TOKEN_ROLE: 'urn:sts:xacml:role-from-token',
   // ON THE SUBJECT: whether anybody actually authenticated for the session the
   // decision is being made in. It is on the SESSION rather than worked out
   // again here — see authn.js — and it is what separates a person who signed
   // in from one who pressed "continue without signing in".
-  AUTHENTICATED: 'urn:sts-mock:xacml:authenticated',
+  AUTHENTICATED: 'urn:sts:xacml:authenticated',
   // ON THE RESOURCE: WHOSE it is, where that is a person. The User Portal sets
   // it; nothing else does yet. It is what lets a policy say "the subject is the
   // owner" — and, later, "or the subject holds a helpdesk role", which is the
   // whole reason the portal's own-data rule goes through a policy at all rather
   // than being an `if` in a handler.
-  OWNER: 'urn:sts-mock:xacml:resource-owner',
+  OWNER: 'urn:sts:xacml:resource-owner',
   // On the RESOURCE: the roles the application demands. `appRequiredRole` on
   // its entry, or EVERYBODY where it names none.
-  REQUIRED_ROLE: 'urn:sts-mock:xacml:required-role'
+  REQUIRED_ROLE: 'urn:sts:xacml:required-role'
 };
 
 // ---------------------------------------------------------------------------
@@ -935,7 +935,7 @@ function build(id, answers, options) {
   });
   const name = settings.name || template.id;
   const policy = template.build(filled, {
-    idBase: settings.idBase || 'urn:sts-mock:xacml:policy:' + slug(name)
+    idBase: settings.idBase || 'urn:sts:xacml:policy:' + slug(name)
   });
   // A PolicySet HAS NO `rules`, and this line said `undefined rule(s)` for
   // one from the moment the blank template could build one. What a document

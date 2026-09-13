@@ -286,6 +286,31 @@ require('../admin-ui/encryption_admin');
 // this line's.
 // ---------------------------------------------------------------------------
 require('../admin-ui/database_admin');
+// ---------------------------------------------------------------------------
+// 18d. THE SECRET-STORE REPORT. `/admin/secrets` — where the key-encryption
+// key and the database password come from, whether this process actually read
+// them, and what the store at the other end is doing.
+//
+// **SAME PLACEMENT ARGUMENT AS 18a, 18b AND 18c, AND IT NEEDS NO SLOT FOR THE
+// SAME REASON.** It requires `admin-ui/admin` for the shell and
+// `common/secrets`, `common/keystore` and `common/mode`, every one of which is
+// a LIBRARY (rule 3) that registers nothing and every one of which is already
+// loaded by this line — `secrets.js` is pulled in by `helpers.js` at 3. So
+// `mgmt-api/admin_api.js` at 19 requires it in the ORDINARY DIRECTION and
+// moves no route.
+//
+// It holds no SDK and makes no request itself: every probe behind the page is
+// in `common/secrets.js`, which owns the providers, the client and the login —
+// so the login a probe makes is the same login a startup read makes, and the
+// page cannot be right about a store nobody is talking to.
+//
+// A MONITORING page rather than a settings one, and rather than a second
+// `/admin/encryption`: that page says what is SEALED and with what, and this
+// says what is at the other end of the one paragraph in it about the key.
+// `admin-ui/admin.js`'s `SECTIONS` states the placement and this line does
+// not.
+// ---------------------------------------------------------------------------
+require('../admin-ui/secrets_admin');
 // The management API: everything that console shows and everything it can
 // change, at /admin-api, over JSON. It must come AFTER admin.js and the order is
 // a dependency rather than a preference — it requires that module for the four
@@ -323,6 +348,25 @@ require('../admin-ui/api_explorer');
 // would load it here whatever this line said. Saying it explicitly is what
 // keeps "the order in this file is the route order" true.
 const tlsServer = require('../tls/tls_server');
+// ---------------------------------------------------------------------------
+// 20-slot. THE CLIENT-CERTIFICATE TRUSTSTORE, HANDED TO THE CONSOLE (2026-09-12).
+//
+// `admin.setTruststore()` is an inverted hook (rule 3e) and this is the one
+// slot in the service filled HERE rather than by the module that owns what it
+// carries. The ordinary shape — `tls/tls_server.js` requiring `admin-ui/admin`
+// at its own top level and filling it — does not work, and the reason is the
+// real load order rather than the one written above: that module is first
+// loaded from INSIDE `admin.js`'s require, through `admin-core/admin_views.js`
+// → `spiffe/spiffe_auth.js`. A require of `admin.js` from there is a cycle and
+// hands back its half-built exports, on which `setTruststore` is not yet
+// defined. Here both modules are whole, and so is every process that runs the
+// stack — `server.js`'s and every request worker's.
+//
+// A process that never loads this file (an in-process test) has an unfilled
+// slot, and `/admin/tls/trust` then says the truststore is not installed
+// rather than drawing an empty one.
+// ---------------------------------------------------------------------------
+require('../admin-ui/admin').setTruststore(tlsServer.truststore);
 // ---------------------------------------------------------------------------
 // GET /admin/crypto-metadata — the console's report on what this service does
 // with cryptography, for every identity service it advertises.
@@ -474,6 +518,17 @@ require('../ssf/ssf');
 //
 // It starts nothing and holds no socket.
 require('../xacml/xacml');
+
+// GNAP (RFC 9635 + RFC 9767), 2026-09-12 — 23d. After `authn` (the resource
+// owner signs in through `beginAuthentication()`), after `oauth2` (the ID Token
+// builder and the authorization server profiles), after `saml/saml2`, after
+// `ssf/ssf` at 23b (its streams take GNAP's subject scope and its CAEP delivery
+// is called at event time) and after the console at 18 (whose shell
+// `gnap_admin.js` draws its two pages with). Before `logout`, which reads every
+// store a sign-out ends, and before `sts_metadata`, which reads the router.
+// `gnap.js` requires `gnap_interact.js` and `gnap_admin.js` itself, so this
+// family has one line here.
+require('../gnap/gnap');
 
 require('../logout/logout');
 require('../sts_metadata');

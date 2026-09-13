@@ -139,4 +139,5 @@ assertion is accepted. See [what is not checked](what-is-not-checked.md).
 - [Encryption at rest](encryption-at-rest.md) — the two different questions behind that phrase: what this service seals before a value reaches a store (and why there is ONE key for every trust realm rather than one each), and what encrypts everything else — LUKS, ZFS, cloud disks, the forks that have TDE, and why column-level encryption leaves plaintext in the WAL
 - [Remote PEP](remote-pep.md) — the second container: a remote XACML Policy Enforcement Point that pulls this service's policy repository and decides in its own process, with a worked authorization decision for an application
 - [What is not checked](what-is-not-checked.md) — the permissive posture, its three exceptions, and the one feature that inverts it
+- [Error codes](error-codes.md) — every way this service can fail or refuse, by subsystem: the `STS-…` code recorded on the audit row and in the log, and what the client is told instead (a code is never sent to a client)
 - [Repository layout](layout.md) — where the code is, for contributors

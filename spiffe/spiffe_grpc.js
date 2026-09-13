@@ -55,7 +55,19 @@ const grpc = require('@grpc/grpc-js');
 const loader = require('@grpc/proto-loader');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// THE REALM REGISTRY, for the one thing an operation has to carry that this
+// file did not know about when the operation seam was written — see
+// `methodRequest()`. A LIBRARY (rule 3), loaded by `app.js` long before this
+// module, so requiring it registers nothing.
+const realms = require('../common/realms');
 const audit = require('../common/audit');
+// THE ERROR CODES. A LEAF. A handler records which condition a refusal is by
+// marking the CALL on the line before it throws — `mark()` puts the code on the
+// object under a Symbol, which is never serialised — and the wrappers below read
+// it back into the one audit row the call already gets. The status the client
+// receives is unchanged: `errorToStatus()` builds `{ code, details }` and nothing
+// else.
+const errorCodes = require('../common/error_codes');
 const stats = require('../common/admin_stats');
 // WHO IS CALLING. A library that decides and never answers — see its header —
 // which is why this module maps its refusal descriptors onto statuses below
@@ -209,6 +221,7 @@ function securityHeaderPresent(call) {
 // one carrying a `.code`, built by `statusError()` below, which is what every
 // deliberate refusal uses.
 // ---------------------------------------------------------------------------
+// error-code: none — the constructor every refusal is built with; each caller marks its own condition
 function statusError(code, message) {
   const err = new Error(message);
   err.code = code;
@@ -216,26 +229,44 @@ function statusError(code, message) {
 }
 
 function invalidArgument(message) {
+  // error-code: none — a constructor; the caller marks the condition
   return statusError(grpc.status.INVALID_ARGUMENT, message);
 }
 
 function notFound(message) {
+  // error-code: none — a constructor; the caller marks the condition
   return statusError(grpc.status.NOT_FOUND, message);
 }
 
 function permissionDenied(message) {
+  // error-code: none — a constructor; the caller marks the condition
   return statusError(grpc.status.PERMISSION_DENIED, message);
 }
 
 function unavailable(message) {
+  // error-code: none — a constructor; the caller marks the condition
   return statusError(grpc.status.UNAVAILABLE, message);
+}
+
+// WHICH CODE THE AUDIT ROW FOR A FAILED CALL CARRIES. A throw that is not a
+// status error is a defect (see errorToStatus() just below), and has a code of
+// its own whatever was marked; otherwise it is what the handler marked on the
+// call, or '' — which means the condition was already recorded on a row of its
+// own (an authorization refusal, a JWT-SVID refused at ValidateJWTSVID) and a
+// second coded row would count one refusal twice.
+function failureCodeOf(call, err) {
+  if (!err || typeof err.code !== 'number') {
+    return 'STS-SPIFFE-0001';
+  }
+  return errorCodes.codeOf(call);
 }
 
 function errorToStatus(err, where) {
   if (err && typeof err.code === 'number') {
     return { code: err.code, details: err.message };
   }
-  log.error('spiffe: ' + where + ' threw something that was not a status ' +
+  log.error(errorCodes.tag('STS-SPIFFE-0001') +
+            'spiffe: ' + where + ' threw something that was not a status ' +
             'error, which is a defect in this service rather than in the ' +
             'call: ' + (err && err.stack ? err.stack : err));
   return { code: grpc.status.UNKNOWN,
@@ -283,11 +314,13 @@ function requireSecurityHeader() {
 function fromDescriptor(descriptor) {
   const code = grpc.status[descriptor.status];
   if (typeof code !== 'number') {
-    log.error('spiffe: spiffe_auth.js returned the status name "' +
+    log.error(errorCodes.tag('STS-SPIFFE-0004') +
+              'spiffe: spiffe_auth.js returned the status name "' +
               descriptor.status + '", which grpc-js does not have. Refusing ' +
               'with PERMISSION_DENIED; this is a defect in this service.');
     return statusError(grpc.status.PERMISSION_DENIED, descriptor.message);
   }
+  // error-code: none — a translation; the descriptor's own errorCode was recorded by prepareCall()
   return statusError(code, descriptor.message);
 }
 
@@ -360,7 +393,8 @@ function sessionForCaller(caller) {
     return session;
   } catch (error) {
     // Nothing about recording a session may be able to fail a call.
-    log.error('spiffe: a session could not be recorded and the call is ' +
+    log.error(errorCodes.tag('STS-SPIFFE-0006') +
+              'spiffe: a session could not be recorded and the call is ' +
               'unaffected: ' + error.message);
     log.debug('Leaving sessionForCaller(). It threw.');
     return null;
@@ -437,7 +471,7 @@ function policyRefusal(caller, method) {
   log.info('spiffe: the access policy refused ' + method + ' for ' +
            auth.describeCaller(caller) + '. ' + answer.why);
   log.debug('Leaving policyRefusal(). Refused.');
-  return { status: 'PERMISSION_DENIED',
+  return { status: 'PERMISSION_DENIED', errorCode: 'STS-SPIFFE-0005',
            message: 'The access policy refused this call. ' + answer.why +
                     ' This is a POLICY decision rather than SPIRE\'s own ' +
                     'per-method rule, which allowed it. The document is on ' +
@@ -448,7 +482,7 @@ function prepareCall(call, surface, method) {
   log.debug('Entering prepareCall(). surface=' + surface + ', method=' + method);
   if (!enabled()) {
     log.debug('Leaving prepareCall(). SPIFFE is off.');
-    return { caller: null,
+    return { caller: null, errorCode: 'STS-SPIFFE-0002',
              refusal: unavailable('SPIFFE is turned off on this service ' +
                        '(spiffe.enabled). The listeners are still bound and ' +
                        'GET /spiffe still says what this is; nothing will be ' +
@@ -458,7 +492,7 @@ function prepareCall(call, surface, method) {
   if (surface === 'workload' && requireSecurityHeader() &&
       !securityHeaderPresent(call)) {
     log.debug('Leaving prepareCall(). No security header.');
-    return { caller: null,
+    return { caller: null, errorCode: 'STS-SPIFFE-0003',
              refusal: invalidArgument('Every call to the SPIFFE Workload API ' +
                            'must carry the metadata header "' +
                            SECURITY_HEADER + ': true" (SPIFFE Workload ' +
@@ -485,7 +519,8 @@ function prepareCall(call, surface, method) {
   } catch (e) {
     // A frozen call object would be a grpc-js change rather than anything a
     // caller did. The check still runs; only the handlers lose the detail.
-    log.error('spiffe: the caller could not be attached to the call (' +
+    log.error(errorCodes.tag('STS-SPIFFE-0007') +
+              'spiffe: the caller could not be attached to the call (' +
               e.message + '), so handlers will see none.');
   }
   if (surface === 'server') {
@@ -515,11 +550,14 @@ function prepareCall(call, surface, method) {
       audit.audit({
         action: 'spiffe.call.refuse', actor: caller.spiffeId || '',
         protocol: 'SPIRE Server API', channel: 'grpc', target: method,
+        // WHICH CONDITION, from the descriptor that decided it. This row is the
+        // one that carries the code, so the call's own row below does not.
+        errorCode: refusal.errorCode || 'STS-SPIFFE-0015',
         summary: method + ' was refused for ' + auth.describeCaller(caller),
         detail: { status: refusal.status, caller: auth.describeCaller(caller) }
       });
       log.debug('Leaving prepareCall(). Not authorized.');
-      return { caller: caller, refusal: fromDescriptor(refusal) };
+      return { caller: caller, refusal: fromDescriptor(refusal), errorCode: '' };
     }
   }
   // An accepted credential is an authentication, and this is where it is
@@ -535,15 +573,20 @@ function prepareCall(call, surface, method) {
 // beside http, ldap, ldaps and internal, and it is a channel rather than a
 // protocol for the same reason those are: it says HOW the call arrived, which
 // is the question a reader of a mixed log is asking.
-function recordCall(surface, method, ok, detail, caller) {
+// `errorCode` is the condition a refused call was refused for — see
+// failureCodeOf() — and '' for a success or for a refusal already recorded on
+// a row of its own.
+function recordCall(surface, method, ok, detail, caller, errorCode) {
   log.debug('Entering recordCall().');
   try {
     stats.recordCall('grpc:' + method, ok ? 200 : 500, 0);
   } catch (e) {
     // Statistics must never be able to fail a call — the same rule the JWT
     // recorder follows in helpers.js.
-    log.error('spiffe: recording a gRPC call threw and was ignored: ' + e.message);
+    log.error(errorCodes.tag('STS-SPIFFE-0008') +
+              'spiffe: recording a gRPC call threw and was ignored: ' + e.message);
   }
+  const code = ok ? '' : String(errorCode || '');
   audit.audit({
     action: 'protocol.call',
     // The identity that made the call, where one was accepted. Empty for an
@@ -553,25 +596,255 @@ function recordCall(surface, method, ok, detail, caller) {
     protocol: surface === 'workload' ? 'SPIFFE Workload API' : 'SPIRE Server API',
     channel: 'grpc',
     target: method,
+    errorCode: code,
+    // A handler that failed rather than refused is this service failing, and is
+    // recorded as an error; every other coded row defaults to a refusal.
+    outcome: code === 'STS-SPIFFE-0001' ? 'error' : undefined,
     summary: (ok ? 'A ' : 'A refused ') + surface + ' gRPC call: ' + method,
     detail: detail || {}
   });
   log.debug('Leaving recordCall().');
 }
 
+// ---------------------------------------------------------------------------
+// THE gRPC SURFACES AS OPERATIONS: WHAT GOES TO A REQUEST WORKER (2026-09-12).
+//
+// `common/request_pool.js` dispatches HTTP by proxying, and non-HTTP work by
+// OPERATION — a `{ kind, args }` pair the front process sends to a worker while
+// keeping the socket and the framing. `ldap/ldap_server.js` was the first
+// family to use it; this is the second, and the cut here is a different one
+// because gRPC has a shape LDAP does not.
+//
+// **THE SEAM IS THIS FUNCTION AND NOT THE HANDLERS**, which is the whole reason
+// it cost two files rather than forty-four. Every method on both surfaces is
+// registered through `unary()`, `serverStream()` or `bidiStream()`, so wrapping
+// here covers all of them by construction — and `spiffe_workload.js` and
+// `spiffe_api.js` are not edited at all. That is `ldap_server.js`'s
+// registration-point argument, met again: forty-two handlers each remembering
+// to offer themselves to the pool is forty-two chances to forget, and what was
+// forgotten would be invisible — the method would simply run in the front
+// process and everything would work, slightly slower, for ever.
+//
+// ---------------------------------------------------------------------------
+// A HANDLER READS EXACTLY TWO THINGS OFF THE CALL, WHICH IS WHAT MAKES THIS
+// SMALLER THAN THE DIRECTORY'S CODEC.
+//
+// Counted across both surfaces: `call.request` (35 uses) and
+// `call.spiffeCaller` (4). Nothing else — no headers, no deadline, no peer, no
+// metadata. So what crosses is those two, and the worker is handed an object
+// with exactly them on it.
+//
+// **AND AN ERROR NEEDS NO TABLE AT ALL.** `statusError()` is an `Error` with a
+// NUMERIC gRPC status code on it, and the number IS the protocol — so a refusal
+// crosses as `{ code, message }` and is rebuilt by the same constructor. The
+// directory's `ldapErrorNamed()` had to look a class up on ldapjs's exports and
+// validate what it found; here there is no class to look up.
+//
+// ---------------------------------------------------------------------------
+// THREE THINGS STAY IN THE FRONT PROCESS, AND EACH IS A DIFFERENT REASON.
+//
+//   * **`prepareCall()`.** It reads the TRANSPORT (unix socket or TCP), the
+//     peer address, the peer certificate and — for the Workload API — the
+//     socket's peer credentials as selectors. Every one of those is a property
+//     of a connection this process accepted, so a worker could not compute
+//     them and must not guess. What crosses is its ANSWER: a plain `caller`
+//     whose DNs `dnRfc4514()` has already rendered to strings.
+//   * **`recordCall()`.** It is called from these wrappers rather than from any
+//     handler, so it simply stays where it is — and that is worth having on
+//     purpose rather than by accident: the counters behind `/admin/metrics` and
+//     the audit row would otherwise land in whichever worker answered, and
+//     `admin_stats.users` is one of the three stores that does not fan in.
+//   * **The CALLBACK.** `callback(null, reply)` and `callback(status)` write to
+//     the connection.
+//
+// ---------------------------------------------------------------------------
+// AND THE STREAMS DO NOT CROSS AT ALL — SEE `serverStream()` BELOW.
+// ---------------------------------------------------------------------------
+const DISPATCHED_SURFACES = ['workload', 'server'];
+
+// The handler behind each dispatched method, captured at registration. It is
+// what a worker runs and what the front process falls back to.
+const LOCAL_METHODS = new Map();
+
+function methodKind(surface, method) {
+  return 'spiffe.' + surface + '.' + method;
+}
+
+// The pool, required LAZILY. `spiffe_server.js` sits at 23 in the require
+// order and the pool is loaded by `app.js` above every route, so a top-level
+// require would be this family reaching up into the process's own bootstrap.
+// By the time a gRPC call arrives it is a cache hit.
+function requestPool() {
+  try {
+    return require('../common/request_pool');
+  } catch (e) {
+    // A process with no pool module cannot dispatch, which is the ordinary
+    // state of every in-process loader of this tree.
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A WORKER IS STUCK TO: NOTHING, DELIBERATELY.
+//
+// LDAP operations hold affinity to the CONNECTION, because RFC 4511 makes the
+// connection the unit of authorization state and a client may have several
+// operations outstanding on one. **A unary gRPC call is the opposite**: it
+// carries its own credential — an X509-SVID, or the socket it arrived on — and
+// is answered on its own. Nothing about one has to be remembered to answer the
+// next, which is the same property `/scim`, `/xacml` and `/admin-api` have and
+// the reason those three are the HTTP side's fanout list.
+//
+// So these FAN OUT, and the read barrier is what makes a write visible to the
+// next call, exactly as it is for a dispatched path.
+// ---------------------------------------------------------------------------
+// WHAT THE WORKER IS SENT, as a function of its own so that a test can drive
+// it. It was inline in `dispatchUnary()` until a mutant that sent `caller:
+// null` survived — the test was building the shape itself and therefore
+// asserting `structuredClone()` rather than this.
+function methodRequest(call) {
+  return {
+    // THE REQUEST AS THE CODEC DECODED IT. It crosses by node's IPC advanced
+    // serialization, so the `bytes` fields in it stay Buffers — see
+    // `request_pool.js`'s fork options for what the default JSON channel did
+    // to one.
+    request: call.request,
+    // THE CALLER, WHICH IS THE ONE THING A WORKER COULD NOT WORK OUT. It is
+    // already plain: `callerOf()` renders both DNs with `dnRfc4514()` and
+    // everything else on it is a string, a boolean or an array.
+    caller: call.spiffeCaller || null,
+    // ---------------------------------------------------------------------
+    // **AND THE REALM, WHICH IS THE SECOND THING A WORKER COULD NOT WORK OUT
+    // (2026-09-12).**
+    //
+    // SPIFFE became per realm the same day this seam was written, and the two
+    // changes met here. A realm with SPIFFE turned on binds a Workload API and
+    // a SPIRE Server API of its OWN, and `spiffe_server.js` enters that realm
+    // around the handler table — so by the time this runs, the ambient realm
+    // is the one whose SOCKET the call arrived on. That is the whole
+    // discriminator: gRPC's path is the method name, so there is nowhere else
+    // for a realm to be.
+    //
+    // A worker has no socket and therefore no way to recover it. Without this
+    // line every dispatched call would be answered in the DEFAULT realm — the
+    // right trust domain on the way in and the wrong authority on the way out,
+    // with nothing failing: an SVID would be minted, signed by the wrong
+    // realm's CA, in the wrong trust domain, and the caller would have no way
+    // to tell until it presented one.
+    //
+    // It crosses as an ID rather than as the record, because a realm record is
+    // a store this worker already has.
+    // ---------------------------------------------------------------------
+    realm: realms.currentId()
+  };
+}
+
+function dispatchUnary(surface, method, call) {
+  const pool = requestPool();
+  if (!pool || typeof pool.runOperation !== 'function') {
+    return Promise.resolve({ dispatched: false });
+  }
+  return pool.runOperation(methodKind(surface, method), methodRequest(call));
+}
+
+// One method, run wherever it is running. The handler is the SAME function the
+// socket would have called, which is what makes "a dispatched method is the
+// same answer" true by construction rather than by a comparison somebody
+// maintains.
+function performMethod(surface, method, args) {
+  log.debug('Entering performMethod(). ' + surface + '.' + method);
+  const handler = LOCAL_METHODS.get(methodKind(surface, method));
+  if (!handler) {
+    throw new Error('this process has no handler registered for the SPIFFE ' +
+      'method "' + surface + '.' + method + '".');
+  }
+  // THE TWO MEMBERS A HANDLER READS, AND NOTHING ELSE. A fuller fake would be
+  // offering a surface no handler uses — and the next handler to reach for one
+  // would find it working in one process and absent in the other.
+  const call = { request: args.request, spiffeCaller: args.caller || null };
+  // IN THE REALM THE CALL ARRIVED IN — see `methodRequest()`. `realms.get()`
+  // answers the DEFAULT realm's record for an empty id and null for a realm
+  // this process has not heard of; the fallback is the default realm, which is
+  // what this file did before realms reached it and is the only answer
+  // available when the registry disagrees.
+  const realm = realms.get(String(args.realm || '')) || realms.DEFAULT_REALM;
+  return Promise.resolve()
+    .then(function () {
+      return realms.run(realm, function () { return handler(call); });
+    })
+    .then(function (reply) {
+      log.debug('Leaving performMethod(). Answered.');
+      return { ok: true, reply: reply || {} };
+    }, function (err) {
+      // A STATUS CROSSES AS ITS CODE. Anything else is a defect in this
+      // service rather than in the call, and it is reported as one at the far
+      // end by `errorToStatus()` — so what travels is enough for that function
+      // to make the same decision it would have made here.
+      log.debug('Leaving performMethod(). Refused.');
+      return { ok: false,
+               code: (err && typeof err.code === 'number') ? err.code : null,
+               message: (err && err.message) || '',
+               stack: (err && err.stack) || '',
+               // THE CONDITION THE HANDLER MARKED, which lives under a Symbol on
+               // this process's call object and would not cross on its own. The
+               // front process marks its own call with it and records the row.
+               errorCode: errorCodes.codeOf(call) };
+    });
+}
+
+// The other end: a result turned back into what the wrapper above expects.
+// A refusal carrying no numeric code was NOT a status error in the worker, so
+// it is rebuilt as a plain Error and `errorToStatus()` logs it as the defect it
+// is — the same answer it would have reached had the handler run here.
+function errorFromResult(result) {
+  if (result && typeof result.code === 'number') {
+    // error-code: none — a rebuild of the worker's refusal; its code travels as result.errorCode
+    return statusError(result.code, result.message);
+  }
+  const err = new Error((result && result.message) ||
+    'the request worker running this method did not say what went wrong');
+  if (result && result.stack) {
+    err.stack = result.stack;
+  }
+  return err;
+}
+
 function unary(surface, method, handler) {
+  // REGISTERED AT WRAP TIME, which is module load. `spiffe_workload.js` and
+  // `spiffe_api.js` call this once per method as they load, so by the time
+  // anything can arrive the table is complete — there is no later moment to
+  // do it in, and no list anywhere that could disagree with the methods that
+  // actually exist.
+  registerWorkerMethod(surface, method, handler);
   return function (call, callback) {
     log.debug('Entering the ' + method + ' handler.');
     const prepared = prepareCall(call, surface, method);
     if (prepared.refusal) {
       recordCall(surface, method, false, { refused: prepared.refusal.message },
-                 prepared.caller);
+                 prepared.caller, prepared.errorCode);
       log.debug('Leaving the ' + method + ' handler. Refused.');
       callback(errorToStatus(prepared.refusal, method));
       return;
     }
     Promise.resolve()
-      .then(function () { return handler(call); })
+      .then(function () { return dispatchUnary(surface, method, call); })
+      .then(function (answer) {
+        if (!answer || !answer.dispatched) {
+          // NOT DISPATCHED: no pool, this method not named in
+          // `workers.dispatch`, or no worker to take it. All three mean the
+          // front process does the work, which is what
+          // `workers.requestCount = 0` means and is a supported configuration
+          // rather than a degraded one.
+          return handler(call);
+        }
+        if (answer.result && answer.result.ok) {
+          return answer.result.reply;
+        }
+        if (answer.result && answer.result.errorCode) {
+          errorCodes.mark(call, answer.result.errorCode);
+        }
+        throw errorFromResult(answer.result);
+      })
       .then(function (reply) {
         recordCall(surface, method, true, {}, prepared.caller);
         callback(null, reply || {});
@@ -579,13 +852,74 @@ function unary(surface, method, handler) {
       })
       .catch(function (err) {
         const status = errorToStatus(err, method);
-        recordCall(surface, method, false, { status: status.code }, prepared.caller);
+        recordCall(surface, method, false, { status: status.code }, prepared.caller,
+                   failureCodeOf(call, err));
         callback(status);
         log.debug('Leaving the ' + method + ' handler. ' + status.details);
       });
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE WORKER SIDE OF THE SEAM.
+//
+// `common/request_worker.js` offers `register(kind, fn)` and its header says
+// the table is filled BY THE MODULE THAT OWNS THE OPERATION — so this is that
+// module doing it, as each method is wrapped, which is exactly when a route
+// module registers its routes (rule 1).
+//
+// **IT IS CALLED FROM `unary()` AND FROM NEITHER STREAM WRAPPER**, which is
+// how the list of what may be dispatched stays the list of what CAN be:
+// there is no table anywhere naming the forty-two, so none can go stale.
+// ---------------------------------------------------------------------------
+// **THE TABLE IS FILLED IN EVERY PROCESS AND THE WORKER MODULE IS REQUIRED IN
+// ONLY ONE OF THEM**, and that distinction is not tidiness — it cost a test.
+//
+// `LOCAL_METHODS` is a plain Map and every process needs it: it is what a
+// worker runs AND what the front process falls back to. Requiring
+// `common/request_worker.js` is a different matter — that module pulls in
+// `common/service_state.js` at module scope (the store, the keys, the minted
+// rows, coordination) and installs `process.on('message')` handlers. In a
+// process that is not a worker that is a table nothing will ever read, bought
+// with a load of half the service's startup machinery.
+//
+// **IT WAS UNCONDITIONAL FOR TEN MINUTES AND `tests/spiffe_pki.js` WENT RED IN
+// THE SUITE WHILE PASSING ALONE** — `run.js` runs every file in one process, so
+// pulling `service_state.js` in at a new point in the load order changed what a
+// later file saw of the certificate hierarchy. That is precisely the
+// process-wide-state hazard `tests/CLAUDE.md` warns about, arriving from the
+// one direction nobody watches: a require added for a feature that is off.
+//
+// So the gate is `STS_REQUEST_WORKER`, which is the marker `request_pool.js`
+// forks a child with and the same one it uses itself to stop a worker proxying
+// to itself.
+function registerWorkerMethod(surface, method, handler) {
+  if (DISPATCHED_SURFACES.indexOf(surface) < 0) {
+    return;
+  }
+  const kind = methodKind(surface, method);
+  LOCAL_METHODS.set(kind, handler);
+  if (!process.env.STS_REQUEST_WORKER) {
+    return;
+  }
+  let worker = null;
+  try {
+    worker = require('../common/request_worker');
+  } catch (e) {
+    // A process with no worker module cannot be a worker. The local table
+    // above is still filled, because it is also the fallback path's handler.
+    return;
+  }
+  if (!worker || typeof worker.register !== 'function' ||
+      (worker.OPERATIONS && worker.OPERATIONS.has(kind))) {
+    return;
+  }
+  worker.register(kind, function (args) {
+    return performMethod(surface, method, args);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // A server-streaming method. `handler` returns the FIRST message; the stream is
 // then held open and nothing further is written unless `onUpdate` is given.
 //
@@ -593,13 +927,48 @@ function unary(surface, method, handler) {
 // See the note above `unary()`: a Workload API client treats the stream ending
 // as a fault. It ends when the client goes away, which is the `cancelled`
 // listener below, or when the process does.
+//
+// ---------------------------------------------------------------------------
+// **AND IT IS NOT DISPATCHED TO A REQUEST WORKER, WHICH IS A DECISION RATHER
+// THAN AN OMISSION (2026-09-12).**
+//
+// Five of the forty-seven methods are server streams and all five are on the
+// Workload API — `FetchX509SVID`, `FetchX509Bundles`, `FetchJWTBundles` among
+// them. Two things about them put them on the socket side of the line that
+// `unbind` is on in `ldap/ldap_server.js`:
+//
+//   * **A STREAM HERE IS A SUBSCRIPTION AND NOT A REQUEST.** It is opened once
+//     and held for the life of the process — the header above says a real
+//     client treats it ending as a FAULT — and what feeds it is a ROTATION
+//     TIMER in whichever process holds the authority, not a caller. There is
+//     no request/response to move. Moving it would mean a worker owning a
+//     stream whose file descriptor is here, every `push()` crossing the
+//     channel, and a worker's death silently turning a live subscription into
+//     one that never updates again: a client would go on holding an SVID it
+//     believes is being renewed. That is the LDAP connection's problem
+//     exactly, and the answer there was to keep it here.
+//   * **DISPATCHING ONLY THE FIRST MESSAGE WOULD BE WORSE THAN NOT
+//     DISPATCHING.** `pushOnRotation()` builds LATER messages with the same
+//     `buildX509SvidResponse()` the first one uses, so the front process has
+//     to be able to build one anyway — and splitting them would put one
+//     response in two processes, which is the thing every codec in this
+//     repository is written to avoid.
+//
+// **WHAT THAT COSTS IS SMALL AND IS WORTH STATING.** The expensive thing on
+// this surface is minting an SVID, and a stream mints one on rotation rather
+// than per call; the per-call work — forty-two unary methods, every one of the
+// SPIRE Server API's among them — does leave this thread. `bidiStream()` is
+// unchanged for the same reason read the other way: `AttestAgent` and
+// `SyncAuthorizedEntries` are request/response in practice, but the stream and
+// its `data`/`end` events belong to the connection.
+// ---------------------------------------------------------------------------
 function serverStream(surface, method, handler) {
   return function (call) {
     log.debug('Entering the ' + method + ' stream handler.');
     const prepared = prepareCall(call, surface, method);
     if (prepared.refusal) {
       recordCall(surface, method, false, { refused: prepared.refusal.message },
-                 prepared.caller);
+                 prepared.caller, prepared.errorCode);
       call.emit('error', errorToStatus(prepared.refusal, method));
       log.debug('Leaving the ' + method + ' stream handler. Refused.');
       return;
@@ -636,7 +1005,8 @@ function serverStream(surface, method, handler) {
       })
       .catch(function (err) {
         const status = errorToStatus(err, method);
-        recordCall(surface, method, false, { status: status.code }, prepared.caller);
+        recordCall(surface, method, false, { status: status.code }, prepared.caller,
+                   failureCodeOf(call, err));
         open = false;
         call.emit('error', status);
         log.debug('Leaving the ' + method + ' stream handler. ' + status.details);
@@ -655,7 +1025,7 @@ function bidiStream(surface, method, handler) {
     const prepared = prepareCall(call, surface, method);
     if (prepared.refusal) {
       recordCall(surface, method, false, { refused: prepared.refusal.message },
-                 prepared.caller);
+                 prepared.caller, prepared.errorCode);
       call.emit('error', errorToStatus(prepared.refusal, method));
       log.debug('Leaving the ' + method + ' bidi handler. Refused.');
       return;
@@ -669,7 +1039,7 @@ function bidiStream(surface, method, handler) {
         .catch(function (err) {
           const status = errorToStatus(err, method);
           recordCall(surface, method, false, { status: status.code },
-                     prepared.caller);
+                     prepared.caller, failureCodeOf(call, err));
           call.emit('error', status);
         });
     });
@@ -703,12 +1073,56 @@ function bidiStream(surface, method, handler) {
 // usually not. Unlinking first is what every Unix socket server does; the cost
 // is that two copies of this service pointed at one path will fight, with the
 // second winning silently, so the path is LOGGED at startup.
+//
 // ---------------------------------------------------------------------------
-function prepareSocketPath(socketPath) {
-  log.debug('Entering prepareSocketPath(). path=' + socketPath);
+// **PERMISSIONS ARE STATED, SINCE 2026-09-12, AND THE TWO SURFACES ARE OPPOSITE
+// CASES.** The directories were made with `mkdirSync(dir, {recursive: true})`
+// and the socket left as grpc-js created it — both at the mercy of the
+// process umask. That was fine for the Workload API and wrong for the other:
+//
+//   * **THE SPIRE SERVER API SOCKET IS THE `local` ENTITY.** A caller there is
+//     trusted outright (`spiffe.trustLocalSocket`, on by default) and may do
+//     everything an admin may — create a registration entry for any identity,
+//     mint an SVID for it. SPIRE's own answer is that "the access control is
+//     the socket's filesystem permissions", and this service had not set any.
+//     So a directory it creates for that socket is 0700, and the socket is
+//     chmod-ed 0600 once bound: connecting to a Unix socket needs WRITE on it,
+//     so 0600 is "this process's uid and nobody else", in every mode — it is
+//     a correctness defect for the authority `local` grants, not a mode policy.
+//     A directory that ALREADY existed is not chmod-ed — it is a path from
+//     configuration and may be shared — but one that is reachable by other
+//     users is reported, because the socket's own mode is then the only lock.
+//   * **THE WORKLOAD API SOCKET MUST BE REACHABLE BY OTHER USERS** — a
+//     workload is typically another uid, and its specification forbids
+//     authenticating the caller — so the socket keeps grpc-js's mode. What IS
+//     fixed is the directory: 0755, never group- or world-WRITABLE, because a
+//     writable directory lets anybody unlink the socket and bind their own in
+//     its place, which would hand every workload an SVID from an authority of
+//     the attacker's choosing.
+// ---------------------------------------------------------------------------
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PUBLIC_DIRECTORY_MODE = 0o755;
+const PRIVATE_SOCKET_MODE = 0o600;
+
+function prepareSocketPath(socketPath, privateSocket) {
+  log.debug('Entering prepareSocketPath(). path=' + socketPath +
+            ' private=' + !!privateSocket);
   const directory = path.dirname(socketPath);
+  const existed = fs.existsSync(directory);
   try {
-    fs.mkdirSync(directory, { recursive: true });
+    // `mode` applies to every directory `recursive` creates and to none that
+    // existed — which is the half this function wants.
+    fs.mkdirSync(directory, { recursive: true,
+                              mode: privateSocket ? PRIVATE_DIRECTORY_MODE
+                                                  : PUBLIC_DIRECTORY_MODE });
+    if (!existed) {
+      // mkdir's mode is filtered through the umask; a chmod is not. Only the
+      // leaf directory is ours to fix, and only because we just made it.
+      fs.chmodSync(directory, privateSocket ? PRIVATE_DIRECTORY_MODE
+                                            : PUBLIC_DIRECTORY_MODE);
+    } else {
+      warnAboutDirectory(directory, privateSocket);
+    }
   } catch (e) {
     // The directory may exist already, which is not an error, or be
     // unwritable, which is — and which `bindAsync` will report in a moment
@@ -728,7 +1142,8 @@ function prepareSocketPath(socketPath) {
       // Something that is not a socket. NOT removed: this is a path from
       // configuration and deleting a regular file somebody named would be a
       // destructive act on the strength of a typo.
-      log.error('spiffe: ' + socketPath + ' exists and is not a socket, so ' +
+      log.error(errorCodes.tag('STS-SPIFFE-0009') +
+                'spiffe: ' + socketPath + ' exists and is not a socket, so ' +
                 'nothing here will bind it. It is left alone deliberately — ' +
                 'removing a file named in configuration on the strength of a ' +
                 'typo is not this service\'s decision to make.');
@@ -739,6 +1154,55 @@ function prepareSocketPath(socketPath) {
     log.debug('prepareSocketPath(): nothing at that path (' + e.code + ').');
   }
   log.debug('Leaving prepareSocketPath().');
+}
+
+// A directory somebody else made, holding a socket that matters. Reported and
+// never changed: the path came from configuration and may be shared on purpose.
+function warnAboutDirectory(directory, privateSocket) {
+  try {
+    const bits = fs.statSync(directory).mode & 0o777;
+    if (privateSocket && (bits & 0o077)) {
+      log.warn('spiffe: ' + directory + ' (mode ' + bits.toString(8) + ') is ' +
+               'reachable by other users and holds the SPIRE Server API ' +
+               'socket, which is the trusted `local` entity. The socket ' +
+               'itself is made 0600 once bound, which is the lock that ' +
+               'matters; make the directory 0700 as well, or point ' +
+               'spiffe.serverSocket somewhere private.');
+    } else if (!privateSocket && (bits & 0o022)) {
+      log.warn('spiffe: ' + directory + ' (mode ' + bits.toString(8) + ') is ' +
+               'WRITABLE by other users and holds the Workload API socket. ' +
+               'Anybody who can write there can unlink it and bind their own, ' +
+               'and every workload would then be answered by them. Remove the ' +
+               'group and world write bits.');
+    }
+  } catch (e) {
+    // Could not stat a directory mkdir just said exists. bindAsync reports
+    // anything that matters about the path; this was only a warning.
+    log.debug('warnAboutDirectory(): stat said ' + e.message);
+  }
+}
+
+// After a SPIRE Server API socket has bound: 0600, so that only this process's
+// uid can connect to the `local` entity. See the block above prepareSocketPath.
+// A failure is LOGGED LOUDLY and not thrown, for bindOne()'s reason — but it is
+// an error, because a `local` socket other users can reach is an administrator
+// credential lying on a filesystem.
+function restrictSocket(socketPath) {
+  log.debug('Entering restrictSocket(). path=' + socketPath);
+  try {
+    fs.chmodSync(socketPath, PRIVATE_SOCKET_MODE);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-SPIFFE-0010') +
+              'spiffe: could not make the SPIRE Server API socket ' +
+              socketPath + ' mode 0600 (' + e.message + '). Other users on ' +
+              'this machine may be able to connect to it as the trusted ' +
+              '`local` entity; turn spiffe.trustLocalSocket off or move the ' +
+              'socket until this is fixed.');
+    log.debug('Leaving restrictSocket(). It failed.');
+    return false;
+  }
+  log.debug('Leaving restrictSocket().');
+  return true;
 }
 
 // Build a server with a set of services on it. One function for both surfaces,
@@ -762,7 +1226,8 @@ function bindOne(server, address, credentials) {
   return new Promise(function (resolve) {
     server.bindAsync(address, credentials, function (err, port) {
       if (err) {
-        log.error('spiffe: could not bind ' + address + ': ' + err.message);
+        log.error(errorCodes.tag('STS-SPIFFE-0011') +
+                  'spiffe: could not bind ' + address + ': ' + err.message);
         resolve({ address: address, listening: false, error: err.message,
                   port: 0 });
         return;
@@ -870,7 +1335,8 @@ async function serverApiCredentials() {
     // kept in step with a library we do not otherwise touch.
     credentials._getConstructorOptions().rejectUnauthorized = false;
   } catch (e) {
-    log.error('spiffe: the SPIRE Server API TLS listener could not be set to ' +
+    log.error(errorCodes.tag('STS-SPIFFE-0012') +
+              'spiffe: the SPIRE Server API TLS listener could not be set to ' +
               'request-but-not-require a client certificate (' + e.message +
               '). It will REFUSE any client that presents none, which means ' +
               'AttestAgent cannot be reached over TCP. This is a grpc-js ' +
@@ -900,6 +1366,7 @@ module.exports = {
   serverStream: serverStream,
   bidiStream: bidiStream,
   prepareSocketPath: prepareSocketPath,
+  restrictSocket: restrictSocket,
   buildServer: buildServer,
   bindOne: bindOne,
   serverApiCredentials: serverApiCredentials,
@@ -909,5 +1376,29 @@ module.exports = {
   // listeners and a certificate to assert one branch. That is the same
   // argument `tests/access_policy.js` makes at its own head.
   policyRefusal: policyRefusal,
-  enabled: enabled
+  enabled: enabled,
+  // ---------------------------------------------------------------------
+  // THE OPERATION SEAM, EXPORTED FOR `tests/spiffe_operations.js` AND FOR
+  // NOTHING ELSE IN THE SERVICE.
+  //
+  // The socket reaches these through `unary()` and a worker reaches
+  // `performMethod()` through the table it registered, so no module here calls
+  // any of them. They are exported because the claim they carry — that a
+  // dispatched method is the same answer — can only be checked by running both
+  // halves against each other.
+  //
+  // `localMethod()` is a FUNCTION rather than the Map, so that a caller cannot
+  // install one: that table is what a worker runs, and a handle on it would be
+  // a second door onto forty-two handlers.
+  // ---------------------------------------------------------------------
+  dispatchedMethodKinds: function () {
+    return Array.from(LOCAL_METHODS.keys()).sort();
+  },
+  localMethod: function (surface, method) {
+    return LOCAL_METHODS.get(methodKind(surface, method));
+  },
+  methodKind: methodKind,
+  methodRequest: methodRequest,
+  performMethod: performMethod,
+  errorFromResult: errorFromResult
 };

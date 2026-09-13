@@ -9,6 +9,11 @@ provider for each of them**.
 | `saml11.js` | The same for SAML 1.1, whose profile splits a claim URI into a namespace and a name. Registers nothing. |
 | `saml2_sso.js` | **The SAML 2.0 Web Browser SSO profile**: the Single Sign-On service over both request bindings, the Response over all three, the SOAP Artifact Resolution Service, Single Logout, the per-service-provider metadata, and a mock service provider. **This one registers routes.** |
 | `saml11_sso.js` | **The SAML 1.1 browser profiles**: the inter-site transfer service, Browser/POST and Browser/Artifact, the SOAP SAML responder behind the second (which is also an attribute authority), the per-relying-party metadata, and a mock relying party. **This one registers routes.** |
+| `sp_metadata.js` | A service provider's metadata: parsing it, and fetching it by an explicit refresh — through `../federation/federation_http.js`'s outbound policy since 2026-09-12. Registers nothing. |
+| `authn_context.js` | **How a session authenticated, in both SAML vocabularies, once** (2026-09-12). Read by both SSO profiles, WS-Federation and WS-Trust. Registers nothing. |
+| `document_settings.js` | **The signature algorithm, the canonicalization and `<md:Organization>`** every signed document here asks the configuration for (2026-09-12). Registers nothing. |
+| `return_address.js` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
+| `person_attributes.js` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
 
 ## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG
 
@@ -80,10 +85,12 @@ change was mostly a prose sweep.
   `WantAuthnRequestsSigned="false"`, and it is why `samlSigningCertificate` is on
   the application entry: so the check has somewhere to READ FROM the day it is
   wanted.
-* **No SP metadata is consumed.** This service PUBLISHES metadata and does not
-  ingest it. Two consequences follow and both are visible: an assertion consumer
-  service URL comes off the request rather than out of a registration, and a
-  service provider's logout return address has to be DECLARED or it is guessed.
+* **No SP metadata is consumed** beyond the encryption certificate an explicit
+  refresh writes. Two consequences follow and both are visible: an assertion
+  consumer service URL comes off the request rather than out of a registration —
+  **in development mode; in product mode it must be registered on the entry**
+  (see the 2026-09-12 section below) — and a service provider's logout return
+  address has to be DECLARED or it is guessed.
 * **No identity-provider-initiated SSO**, no ECP profile and its PAOS binding, no
   Name Identifier Management, and no Assertion Query and Request profile. PAOS is
   refused BY NAME rather than quietly answered over HTTP POST — a service
@@ -102,9 +109,12 @@ implementation:
 * **Nothing authenticates a caller at the responder**, which matters more than
   the equivalent sentence about `/saml2/ars`. An artifact is protected by its
   twenty random bytes and the one-shot rule, but **an AttributeQuery is protected
-  by nothing at all** — anybody who can reach the port can ask for an assertion
-  about anybody, by name. A real attribute authority uses mutual TLS and an
-  attribute release policy. Every query is logged saying so.
+  by nothing at all** — in development mode anybody who can reach the port can ask
+  for an assertion about anybody, by name. A real attribute authority uses mutual
+  TLS and an attribute release policy. Every query is logged saying so. **Product
+  mode refuses both query types outright** (2026-09-12) — not gated on a client
+  certificate, because with no release policy a certificate gate answers any
+  holder of any trusted certificate about anybody.
 * **No Single Logout, and it is not a gap.** SAML 1.1 has none.
   `session.saml11RelyingParties` is still recorded, and nothing reads it — it is
   there so `/admin/saml11` can show which relying parties hold an assertion
@@ -132,7 +142,7 @@ symmetrical with wsfed": the asymmetry is the improvement.
 
 **2. THE METADATA IS PER SERVICE PROVIDER AND IS MINTED FOR ANYTHING ASKED FOR.**
 `/saml2/metadata/{sp}` names an identity provider of its own —
-`urn:sts-mock:idp:{slug}` — with endpoints under that same segment, which is what
+`urn:sts:idp:{slug}` — with endpoints under that same segment, which is what
 Okta and Ping do. It **404s for nothing**: an entityID nobody registered is
 registered by the ask. `saml2.perApplicationEntityId` turns the separate entityID
 off for a service provider library that keys its trust store off the entityID;
@@ -642,3 +652,69 @@ than here for the reason the root `CLAUDE.md`'s *Tests* section gives: a second
 suite in this repository is a second runner, a second report and a second place
 to forget. The 2.0 equivalent should be written the same way and in the same
 directory, and it can borrow that file's whole harness.
+
+---
+
+## THE 2026-09-12 SWEEP FOR HARD-CODED VALUES, AND WHAT IT CHANGED HERE
+
+An audit found development-mode behaviour written as literals with no mode
+check, so product mode shipped it. Four new libraries in this directory carry
+what was fixed, each a leaf that registers no route; `tests/saml_family_hardcoded.js`
+pins all of it (ten mutants, all caught) and the rest of this section is the
+record of the decisions.
+
+### Fixed in EVERY mode, because each was wrong in every mode
+
+* **THE AUTHENTICATION CONTEXT LIED.** Three copies — `saml2_sso.js`,
+  `saml11_sso.js`, `wsfed.js` — plus both builders' defaults called every
+  session that was not two factors or a key alone a PASSWORD: a TLS client
+  certificate (amr `swk`), a Kerberos ticket over SPNEGO, a federated sign-in and
+  the unauthenticated session. `authn_context.js` is the one reading now, in this
+  directory rather than `common/` because both vocabularies are SAML's, and in
+  this direction because `wsfed.js` already required `saml/`. **An ordinary
+  password sign-in, a key alone and two factors produce byte-for-byte what they
+  did** — the contract the parent's paired SAML jobs rest on. The builders'
+  defaults are `unspecified` now; every caller passes a class.
+* **THE SAML 1.1 RESPONDER SIGNED SIGN-INS THAT NEVER HAPPENED.** An
+  AuthenticationQuery about anybody answered `am:password` at the instant of the
+  query; an AttributeQuery's assertion carried the same invented
+  AuthenticationStatement. Now an AuthenticationQuery is answered from a live,
+  authenticated session (`authn.sessionsOf()`) or with Success and NO assertion,
+  and an AttributeQuery omits the AuthenticationStatement
+  (`buildSaml11Assertion`'s new `authenticationStatement: false`). **The vendored
+  `tests/vendored/sts_saml11.js` asserts the old AuthenticationQuery answer** about
+  a person who never signed in and is the parent's to update.
+* **NO SIGNER PASSED AN ALGORITHM.** `saml.signatureAlgorithm` and
+  `saml.canonicalizationAlgorithm` reach all ten signers across `saml/`,
+  `ws-federation/` and `federation/` through `document_settings.js`, and the
+  Redirect binding's `SigAlg` is read ONCE per message for both the parameter
+  and the signature. Exclusive c14n only — the verifier here refuses inclusive
+  c14n on a nested element, and every assertion is nested.
+* **`sp_metadata.js` HAD ITS OWN COPY OF THE OUTBOUND POLICY AND IT WAS WRONG**
+  four ways: `federation.outbound` ignored, `outboundAllowInsecure` applied to the
+  scheme but not the certificate, no User-Agent, and a `|| 5000` timeout fallback
+  that disagreed with the setting's 15000. It asks `federation_http.js` now.
+
+### Product mode only, each behind the predicate that names the question
+
+| What | Predicate | Development |
+|---|---|---|
+| ACS URL / `shire` must be a registered `samlAssertionConsumerService`, exact match, no mock fallback — and an address a development sighting wrote is still marked OBSERVED and does not count until confirmed (`applications.returnAddressesOf()`, `STS-REG-0049`) | `acceptsUnregisteredAddresses()` | unchanged, and the sighting is marked |
+| An empty `saml2.entityId` / `saml11.providerId` is not replaced with `urn:sts:idp[:saml11]`; SSO and metadata refuse, naming the setting | `inventsClaimValues()` | unchanged |
+| Given name, surname, mail, display name come off the directory entry or are omitted | `inventsClaimValues()` (via `userFor()` and `person_attributes.js`) | unchanged |
+| SAML 1.1 AttributeQuery / AuthenticationQuery refused | `opensTestControls()` | answered |
+| SAML 2.0: an assertion configured to be encrypted that cannot be is a Responder status, not plaintext | `opensTestControls()` — the plaintext fallback exists so a test can drive the setting before a certificate exists; no predicate names this exactly | plaintext + WARN |
+
+**A refusal for an unregistered address is a PAGE and not a SAML Response**: the
+address a Response would go to is the address in question.
+
+### The literals that became settings (default = the old literal)
+
+`saml2.requestTtlMin` (10), `saml2.mockSpContextTtlMin` (30),
+`saml2.redirectWarnLength` (8000), `saml2.spMetadataMaxBytes` (524288),
+`saml11.requestTtlMin` (10), `saml11.assertionCacheMax` (500),
+`saml.organizationName` / `saml.organizationDisplayName` / `saml.organizationUrl`
+— an emptied name OMITS `<md:Organization>` in either mode, because half an
+Organization is schema-invalid and a setting silently ignored in one mode would
+be a setting that lies on the console. The two "ten minutes" refusal pages are
+built from the value.

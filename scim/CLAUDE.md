@@ -305,10 +305,12 @@ into the LDAP directory, entry for entry, with **no store of its own**.
   schemes RFC 7644 section 2 names are
   offered, and the OAuth ones must carry `scim:read` or `scim:write` — the first
   scope requirement anywhere in this service. **It is still a turnstile rather
-  than a lock**, which is a different sentence and the one that matters: anybody
-  can get a token with either scope from any grant, any password but `invalid`
-  passes Basic, any username passes Digest with the one shared password, and
-  anybody can register a HOBA key for any name. What it buys is that a client's
+  than a lock** IN DEVELOPMENT MODE, which is a different sentence and the one
+  that matters: anybody can get a token with either scope from any grant, any
+  password but `invalid` passes Basic, any username passes Digest with the one
+  shared password, and anybody can register a HOBA key for any name. **In
+  product mode none of those four halves holds** — see the audit section at the
+  foot of this file. What it buys is that a client's
   401, 403, challenge-response and scope handling can be exercised at all — none
   of which an open endpoint can produce. See rule 6a-ii and `scim_auth.js`.
   **`active: false` DEACTIVATES NOBODY**: it is
@@ -445,3 +447,42 @@ could zero its own monitoring would make every number on the page a number
 somebody might have zeroed, and the audit log — which is the durable record of
 what SCIM was ASKED to do, with the actor and the target — cannot be reset
 either.
+
+## THE 2026-09-12 AUDIT OF HARD-CODED VALUES, AND WHAT IT CHANGED HERE
+
+`tests/ssf_spiffe_scim_hardening.js` holds every item below.
+
+* **HTTP DIGEST IS NOT OFFERED IN PRODUCT MODE**, whatever `scim.authDigest`
+  says. An RFC 7616 response is a hash over `username:realm:password`, so the
+  server must hold the password or that hash; product mode holds a salted
+  scrypt hash, from which neither can be computed. The only Digest left is
+  every user sharing `scim.digestPassword` — a password printed in the
+  configuration table, authenticating any name to endpoints that delete
+  accounts. Storing H(A1) per person was considered and refused: it is a
+  password-equivalent with no work factor, bound to one realm string. A Digest
+  credential in product is refused with that reason; `describe()` carries
+  `refusedByMode` so an ON setting that is not an offer says why.
+* **THE SHARED PASSWORD IS NO LONGER PRINTED IN A 401** unless
+  `mode.opensTestControls()`. (With Digest off in product that branch is only
+  reachable if the predicates ever diverge; it is the right answer then too.)
+* **HOBA REGISTRATION WAS ACCOUNT TAKEOVER.** `POST /.well-known/hoba/register`
+  let anybody add a key to any account, and a registered key authenticates at
+  `/scim/v2` as that person. Outside development a key may be added to an
+  EXISTING account only by somebody whose sign-on session IS that account
+  (`mode.opensTestControls()`, 403 otherwise), and a registration never CREATES
+  one (`mode.autoCreates()`, 404). **In every mode** a `kid` already registered
+  to another account is refused 409: `entryForHobaKid()` takes the first entry
+  holding a kid, so a duplicate made authentication depend on directory order.
+* **CAPS THAT COULD RE-OPEN A REPLAY.** `scim.maxHobaSeen` (5000) replaces a
+  constant, and the seen store maps each triple to its challenge so that
+  evicting a triple forgets the challenge too — the copied signature is then
+  refused rather than accepted twice. Expired triples go first.
+  `scim.maxDigestNonces` (2000) and `scim.maxHobaChallenges` (2000) are safe to
+  lower for a simpler reason: a forgotten nonce or challenge is refused, never
+  accepted.
+* **`scim.digestMd5`** (true) drops MD5 from the challenges and refuses an MD5
+  credential naming the setting. `DIGEST_ALGORITHMS` stays the table of what the
+  BUILD computes, for the crypto report.
+* **`scim.digestNonceSeconds` and `scim.hobaMaxAgeSeconds` carry `min: 1`** and
+  are read straight through; they were `Number(...) || 300` and `|| 600`, which
+  rewrote a value the table accepted without saying so.

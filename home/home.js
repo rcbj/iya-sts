@@ -114,6 +114,8 @@ const mode = require('../common/mode');
 // ever made and told a reader nothing about which one they were looking at.
 // `load()` reads the record the image build stamped. See common/version.js.
 const version = require('../common/version');
+// The registry of failure codes, a LEAF — see common/error_codes.js.
+const errorCodes = require('../common/error_codes');
 const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;
 const BUILD_INFO = version.buildInfo(APP_VERSION);
@@ -172,7 +174,8 @@ try {
   // service that speaks sixteen protocols from starting, so it is reported at
   // error level — where it is visible — and the page is drawn without it.
   logoBytes = null;
-  log.error('home: the logo could not be read from ' + LOGO_PATH + ': ' +
+  log.error(errorCodes.tag('STS-CORE-0037') +
+            'home: the logo could not be read from ' + LOGO_PATH + ': ' +
             e.message + '. The front page will be drawn without it and ' +
             LOGO_ROUTE + ' will answer 404.');
 }
@@ -370,6 +373,7 @@ app.get(LOGO_ROUTE, function (req, res) {
     // load-bearing for the link check in the parent project's
     // tests/vendored/sts_metadata.js, which fails on `Cannot GET` and passes on an
     // endpoint answering for itself — and it is the more useful answer anyway.
+    errorCodes.mark(res, 'STS-CORE-0038');
     res.status(404).type('text/plain')
       .send('The logo could not be read from disk at startup. The service ' +
             'log says why; nothing else about this service is affected.\n');

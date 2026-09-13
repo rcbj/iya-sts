@@ -88,7 +88,7 @@
 // the same string is ONE application that speaks two protocols, and this
 // registry says so by accumulating `appKind` and `appProtocol` rather than
 // filing it twice. That is the same reasoning that makes `alice`,
-// `urn:sts-mock:user:alice` and `alice@REALM` one person on /admin/users, and
+// `urn:sts:user:alice` and `alice@REALM` one person on /admin/users, and
 // it is the shape the federation work will need: a relying party that federates
 // over both OIDC and SAML is one relationship, not two.
 //
@@ -143,8 +143,17 @@ const config = require('./config');
 // The mode. A LEAF (rule 3) requiring only `config`, which is already required
 // here — so it can neither move a route nor close a cycle.
 const mode = require('./mode');
-const { log, nowSec, randomId, numberWord } = require('./helpers');
+const helpers = require('./helpers');
+const { log, nowSec, randomId, numberWord } = helpers;
+// For the ambient realm's prefix when a pinned base names the seeded callbacks.
+// `helpers.js` requires it already, so this closes no cycle and moves no route.
+const realms = require('./realms');
 const audit = require('./audit');
+// The registry of failure codes, a LEAF. A refusal this module hands back to
+// the console or `/admin-api` carries its code NON-ENUMERABLY —
+// `errorCodes.mark()` on the RESULT OBJECT — so a caller can read it with
+// `errorCodes.codeOf(result)` and the JSON a client receives is unchanged.
+const errorCodes = require('./error_codes');
 // THE ROLE REGISTER, for one string and one reason: `DEFAULT_REQUIRED_ROLE`.
 // A plain require in the ordinary direction and it can stay one — `roles.js`
 // is a leaf that requires `helpers` and `config` and nothing else here, so
@@ -204,7 +213,17 @@ const KINDS = [
           'partner as a party, and that one is the arrangement with it.' },
   { kind: 'kerberos-service', label: 'Kerberos service principal',
     what: 'A service principal name a ticket was issued for, or that the acceptor ' +
-          'was asked to be.' }
+          'was asked to be.' },
+  // GNAP (RFC 9635), 2026-09-12. Two kinds because GNAP has two parties that
+  // present keys to the authorization server: a CLIENT INSTANCE asks for grants,
+  // and a RESOURCE SERVER (RFC 9767) introspects tokens, registers resource sets
+  // and derives downstream tokens. One entry may be both — an RS that calls a
+  // second RS is a client too (RFC 9767 section 4).
+  { kind: 'gnap-client', label: 'GNAP client instance',
+    what: 'A key (or instance identifier) that made a GNAP grant request.' },
+  { kind: 'gnap-resource-server', label: 'GNAP resource server',
+    what: 'A key that called the RS-facing API: introspection, resource set ' +
+          'registration, or a downstream token derivation.' }
 ];
 
 const KIND_IDS = KINDS.map(function (one) { return one.kind; });
@@ -423,10 +442,39 @@ const PROTOCOLS = [
           'as when it created the stream, which is the `aud` those SETs carry, and its ' +
           'delivery endpoint is where a push goes. Neither is read as a permission — a stream ' +
           'carries its own delivery endpoint and this entry is where an operator writes down ' +
-          'what a receiver is EXPECTED to be, beside everything else that application is.' }
+          'what a receiver is EXPECTED to be, beside everything else that application is.' },
+  // GNAP (RFC 9635 + RFC 9767), 2026-09-12. The identifier is the STATIC
+  // instance identifier a client may send by reference (section 2.3.1); a
+  // client that sends its key by value is identified by that key's thumbprint,
+  // which `gnapKeyIdentity` records. The redirect attribute is the INTERACTION
+  // FINISH URI (section 2.5.2), so a finish URI gets every return-address rule
+  // this registry applies — observed in development, refused until confirmed in
+  // product — without GNAP writing a rule of its own.
+  { id: 'gnap', label: 'GNAP', kind: 'gnap-client',
+    kinds: ['gnap-client', 'gnap-resource-server'],
+    identifierAttribute: 'gnapInstanceId', redirectAttribute: 'gnapFinishUri',
+    secretAttribute: 'gnapSymmetricKey',
+    what: 'A GNAP client instance, or a GNAP resource server, or both: a party that proves ' +
+          'possession of a key to /gnap (RFC 9635) or to the RS-facing API (RFC 9767). Its ' +
+          'key is gnapKey (a public key object) or gnapKeyReference with a sealed ' +
+          'gnapSymmetricKey; its finish URIs are return addresses like any other; a resource ' +
+          'server carries the locations it answers for and, once it has registered a resource ' +
+          'set, the macaroon root key it verifies with.' }
 ];
 
 const PROTOCOL_IDS = PROTOCOLS.map(function (one) { return one.id; });
+
+// Every attribute a family names as its `redirectAttribute`, deduplicated —
+// the return addresses product mode checks a request against, and so the ones
+// `seen()` refuses to write from a sighting there. Derived from the table so a
+// family added tomorrow is covered the day it is added.
+const RETURN_ADDRESS_ATTRIBUTES = PROTOCOLS
+  .map(function (row) { return row.redirectAttribute; })
+  .filter(function (name, i, all) { return name && all.indexOf(name) === i; });
+
+// Where the PROVENANCE of those addresses is kept — see its schema row and
+// returnAddressesOf() below, which is the one place the mark is read.
+const OBSERVED_ADDRESS_ATTRIBUTE = 'appReturnAddressObserved';
 
 const PROTOCOL_BY_ID = {};
 PROTOCOLS.forEach(function (row) { PROTOCOL_BY_ID[row.id] = row; });
@@ -498,11 +546,11 @@ function normaliseProtocols(value) {
   });
   if (unknown.length) {
     log.debug("Leaving normaliseProtocols(). " + unknown.length + " unknown.");
-    return { ok: false, protocols: [],
+    return errorCodes.mark({ ok: false, protocols: [],
              errors: [unknown.map(function (one) { return '"' + one + '"'; }).join(', ') +
                       (unknown.length > 1 ? ' are not protocol families' : ' is not a protocol family') +
                       ' this registry knows. The ' + PROTOCOL_IDS.length + ' are: ' +
-                      PROTOCOL_IDS.join(', ') + '.'] };
+                      PROTOCOL_IDS.join(', ') + '.'] }, 'STS-REG-0005');
   }
   // Back into TABLE ORDER rather than the order they were ticked in. The table
   // is ordered by how a reader thinks about the families, and an entry whose
@@ -722,6 +770,33 @@ const SCHEMA = {
             'different facts, and RFC 9700 section 2.1 is entirely about not confusing ' +
             'them: an exact-match check reads the registered list, and this one is ' +
             'evidence of what a client actually does.' },
+    // PROVENANCE, NOT A SECOND LIST OF ADDRESSES (2026-09-12). The attribute
+    // above holds what a client USED and nothing ever trusts it. This one is a
+    // MARK on a value that IS in a trusted list — a return address that got
+    // onto `samlAssertionConsumerService`, `wsfedReplyUrl` or `oauthRedirectUri`
+    // because a development-mode request named it rather than because anybody
+    // registered it. ONE attribute carrying `<attribute> <value>` rather than
+    // one per family: the families are RETURN_ADDRESS_ATTRIBUTES, derived from
+    // the PROTOCOLS table, so a family added tomorrow is marked the day it is
+    // added and the schema does not grow a row per family for the privilege.
+    // The attribute name goes FIRST because it has no space in it and the URL
+    // takes the remainder — `consent.js`'s rule about which field is
+    // unconstrained. DERIVED, so it is in no EDITABLE row: it is removed by
+    // confirming, discarding, or writing the address explicitly.
+    { name: 'appReturnAddressObserved', kind: 'multi',
+      from: 'a development-mode sighting',
+      what: 'WHICH RETURN ADDRESSES ON THIS ENTRY WERE NEVER REGISTERED BY ANYBODY. Each ' +
+            'value is `<attribute> <address>` — for example ' +
+            '`samlAssertionConsumerService https://sp.example.com/acs` — and marks an ' +
+            'address a DEVELOPMENT-mode request named, which development writes onto ' +
+            'the entry because it believes every address. PRODUCT mode treats a marked ' +
+            'address as NOT registered and refuses it exactly as it refuses one that is ' +
+            'not on the entry at all, so a realm switched from development to product ' +
+            'does not quietly trust what development learnt. An operator CONFIRMS one ' +
+            '(the mark goes, the address stays), DISCARDS one (both go), or writes the ' +
+            'address explicitly, which confirms it. Addresses recorded BEFORE this ' +
+            'attribute existed carry no mark and cannot be told apart from registered ' +
+            'ones — review those by hand.' },
     { name: 'oauthPostLogoutRedirectUri', kind: 'multi', from: 'POST /oauth2/register',
       what: 'Registered post_logout_redirect_uris, which RP-Initiated Logout matches ' +
             'against in RFC 9700 mode.' },
@@ -1091,8 +1166,13 @@ const SCHEMA = {
             'as well until 2026-08-25; that moved to wsfedReplyUrl, because the SAML pages ' +
             'read this attribute for the Single Logout fallback and a wreply arriving in it ' +
             'made a WS-Federation application look as though it had named a SAML ACS. ' +
-            'RECORDED AND NOT CHECKED: a response goes wherever the request asked, and a ' +
-            'URL that is not on this list is not refused.' },
+            'CHECKED IN PRODUCT MODE ONLY: development sends a response wherever the ' +
+            'request asked and records the address here; product delivers only to an ' +
+            'address already on this list, and a sighting there never adds one. What ' +
+            'development RECORDS here is marked on appReturnAddressObserved, and product ' +
+            'refuses a marked address until an operator confirms it — so a realm switched ' +
+            'from development to product does not trust what development learnt. Values ' +
+            'recorded before that mark existed carry none and still need reviewing.' },
     { name: 'samlSingleLogoutService', kind: 'multi', from: 'by hand',
       what: 'WHERE A <samlp:LogoutResponse> IS SENT for this service provider, and where a ' +
             'LogoutRequest goes when this identity provider starts the logout. DECLARED, ' +
@@ -1484,9 +1564,12 @@ const SCHEMA = {
             'Single Logout fallback — one attribute holding two protocols\' return ' +
             'addresses, so a WS-Federation application appeared to have a SAML ACS it had ' +
             'never named. Two facts, two attributes. Like the SAML one beside it this is ' +
-            'RECORDED AND NOT CHECKED: nothing here refuses a wreply that is not on the ' +
-            'list, because a mock that refused would remove a test case rather than add ' +
-            'one.' },
+            'CHECKED IN PRODUCT MODE ONLY: development refuses no wreply, because a mock ' +
+            'that refused would remove a test case rather than add one; product posts only ' +
+            'to an address on this list and a sighting never adds one. A wreply development ' +
+            'recorded is marked on appReturnAddressObserved and product refuses it until ' +
+            'it is confirmed; values recorded before that mark existed carry none and ' +
+            'still need reviewing before a realm is switched to product.' },
     { name: 'wsfedSignOutUri', kind: 'multi', from: 'by hand',
       what: 'WHERE A wsignoutcleanup1.0 PING IS SENT for this application — ' +
             'WS-Federation\'s logout URI, and the one this table did not have ' +
@@ -1531,6 +1614,30 @@ const SCHEMA = {
             'rather than the unusual one: one service commonly answers to several SPNs — ' +
             'HTTP/host and HTTP/host.example.com — and a real KDC holds them all against ' +
             'one account.' },
+    // THE STORED SERVICE KEY (2026-09-12). Two rows, and the split between
+    // them is the design: one is SECRET and one is not, so that every page
+    // listing service principals can say what is held without opening a key.
+    // Both are DERIVED in `EDITABLE`'s sense — neither is a form field — and
+    // written by `kerberos/krb5_person_keys.js` through the directory slot,
+    // NOT through updateApplication(), whose audit summary and reply quote
+    // the value written. They are rows here for one reason that is not
+    // optional: writeApplication() REPLACES an entry from its record, and an
+    // attribute the schema does not list would be erased by the next
+    // sighting — which for a Kerberos service is the next ticket issued for it.
+    { name: 'krb5ServiceKeys', kind: 'single', from: '/admin/kerberos/principals',
+      secret: true,
+      what: 'A SERVICE PRINCIPAL\'S RANDOM LONG-TERM KEYS, one per enctype, in ONE ' +
+            'value: a JSON document naming the SPN, the realm and the kvno beside the ' +
+            'keys, SEALED under the key-encryption key wherever that key outlives the ' +
+            'process. One value rather than one per enctype so that a key cannot be ' +
+            'moved onto another entry or another kvno without the seal failing. ' +
+            'Password-equivalent: it is WITHHELD from every page and every ' +
+            '/admin-api reply, and the one time it leaves this service is as the ' +
+            'keytab a create or a rotate hands over.' },
+    { name: 'krb5ServiceKeyInfo', kind: 'single', from: '/admin/kerberos/principals',
+      what: 'What `krb5ServiceKeys` holds, without the keys: the kvno, the enctypes, ' +
+            'when the keys were made and whether they are sealed. Written in the same ' +
+            'act as the keys, so the two cannot describe different generations.' },
     { name: 'appRegistrationJson', kind: 'single', from: 'POST /oauth2/register',
       what: 'THE RFC 7591 REGISTRATION VERBATIM, as JSON on one attribute. It is here ' +
             'because RFC 7591 lets a client register arbitrary metadata and RFC 7592\'s read ' +
@@ -1610,6 +1717,83 @@ const SCHEMA = {
             'federation/federation_http.js takes about oauthJwksUri, one family along: a URL ' +
             'recorded here is a note about what a receiver is, and a URL on a stream is a URL ' +
             'this service opens a connection to. The two are deliberately not the same store.' },
+    // ---------------------------------------------------------------------
+    // GNAP (RFC 9635 + RFC 9767), 2026-09-12. See gnap/CLAUDE.md.
+    // ---------------------------------------------------------------------
+    { name: 'gnapInstanceId', kind: 'single', from: 'the console, or by hand',
+      identifier: true,
+      identifierName: 'GNAP instance identifier',
+      what: 'A STATIC instance identifier (RFC 9635 section 2.3.1): the string a client sends ' +
+            'as `client` in place of its key. The key it must then prove is gnapKey or ' +
+            'gnapKeyReference on this entry. Dynamic identifiers the authorization server ' +
+            'hands out (section 3.5) are not written here.' },
+    { name: 'gnapKey', kind: 'single', from: 'GNAP (on first sight, development), the console, or by hand',
+      what: 'The client instance\'s or resource server\'s PUBLIC key, as the JSON key object of ' +
+            'RFC 9635 section 7.1: a proof method and exactly one of jwk, cert or cert#S256. It is ' +
+            'how a request by value is matched to this entry, by the key\'s thumbprint.' },
+    { name: 'gnapKeyIdentity', kind: 'single', from: 'GNAP',
+      what: 'The thumbprint identity of gnapKey (jkt:... for a JWK, x5t:... for a certificate), ' +
+            'written when GNAP creates the entry so the key can be found without re-reading it.' },
+    { name: 'gnapKeyReference', kind: 'single', from: 'the console, or by hand',
+      what: 'A KEY REFERENCE (RFC 9635 section 7.1.1): the opaque string a client sends as ' +
+            '`key`. It resolves to gnapSymmetricKey when that is set, and to gnapKey otherwise.' },
+    { name: 'gnapKeyProof', kind: 'single', from: 'the console, or by hand',
+      what: 'The proofing method a key reference is bound to (section 7.1.1: "MUST be bound to ' +
+            'a single proofing mechanism"): httpsig, jwsd or jws. Default httpsig.' },
+    { name: 'gnapSymmetricKey', kind: 'single', from: 'the console, or by hand',
+      sensitive: true,
+      what: 'A SHARED SECRET for a key reference, base64url, at least 32 bytes — the one case ' +
+            'GNAP allows a symmetric key, because it never crosses the wire (section 7.1.2). ' +
+            'Sealed with the key-encryption key when keys persist, withheld from LDAP readers in ' +
+            'product mode.' },
+    { name: 'gnapSymmetricAlg', kind: 'single', from: 'the console, or by hand',
+      what: 'The algorithm a shared secret signs with: HS256 (default), HS384 or HS512 for jwsd ' +
+            'and jws; hmac-sha256 for httpsig.' },
+    { name: 'gnapClassId', kind: 'single', from: 'GNAP, the console, or by hand',
+      what: 'The client software\'s class_id (section 2.3). A registered value takes precedence ' +
+            'over the one a request carries.' },
+    { name: 'gnapDisplayUri', kind: 'single', from: 'GNAP, the console, or by hand',
+      what: 'The client\'s display.uri, shown on the approval page (section 2.3.2).' },
+    { name: 'gnapLogoUri', kind: 'single', from: 'GNAP, the console, or by hand',
+      what: 'The client\'s display.logo_uri. Only a data: image is drawn; any other URI is shown ' +
+            'as a link (section 11.16).' },
+    { name: 'gnapFinishUri', kind: 'multi', from: 'GNAP (observed, development), the console, or by hand',
+      what: 'An INTERACTION FINISH URI (section 2.5.2) this client may be sent back to or pushed ' +
+            'to. A return address: in product mode a finish URI not listed here is refused.' },
+    { name: 'gnapInteractionStartModes', kind: 'multi', from: 'the console, or by hand',
+      what: 'The interaction start modes this client may use (redirect, app, user_code, ' +
+            'user_code_uri). Empty means every mode the authorization server offers.' },
+    { name: 'gnapAllowedAccess', kind: 'multi', from: 'the console, or by hand',
+      what: 'The access types and reference strings this client may request, or this resource ' +
+            'server may register. Empty means any.' },
+    { name: 'gnapBearerTokens', kind: 'single', from: 'the console, or by hand',
+      what: 'FALSE refuses the bearer flag for this client with invalid_flag.' },
+    { name: 'gnapSkipInteraction', kind: 'single', from: 'the console, or by hand',
+      what: 'TRUE makes this a TRUSTED client instance (section 2.3.3): a grant that asks for no ' +
+            'subject information is approved with no resource owner and no interaction, and one ' +
+            'carrying a verified user assertion is approved for that person. Honoured only for a ' +
+            'registered entry, never one GNAP created on sight.' },
+    { name: 'gnapAccessTokenFormat', kind: 'single', from: 'the console, or by hand',
+      what: 'The RFC 9767 token format for tokens issued to this client, or for this resource ' +
+            'server: jwt-signed, jwt-encrypted, macaroon, biscuit or zcap.' },
+    { name: 'gnapAccessTokenLifetimeS', kind: 'single', from: 'the console, or by hand',
+      overrides: 'gnap.accessTokenLifetimeS',
+      what: 'The lifetime in seconds of access tokens issued to this client.' },
+    { name: 'gnapResourceServerUri', kind: 'multi', from: 'the console, or by hand',
+      what: 'The locations this resource server answers for. An access right whose locations ' +
+            'start with one of these is audienced to this entry, and a token for it is minted ' +
+            'with this resource server\'s format, JWE key and macaroon key.' },
+    { name: 'gnapJweKey', kind: 'single', from: 'the console, or by hand',
+      what: 'This resource server\'s PUBLIC encryption key (a JWK) for jwt-encrypted tokens, so ' +
+            'only this resource server can read them.' },
+    { name: 'gnapMacaroonKey', kind: 'single', from: 'GNAP',
+      sensitive: true,
+      what: 'The macaroon ROOT KEY this resource server verifies its macaroon tokens with, ' +
+            'base64url. Written by the authorization server when the resource server first ' +
+            'registers a resource set; sealed with the key-encryption key when keys persist.' },
+    { name: 'gnapScopedSignals', kind: 'single', from: 'the console, or by hand',
+      what: 'FALSE opts this web application out of Shared Signals scoping: a stream it owns ' +
+            'then carries events about everybody, like any other receiver\'s.' },
     { name: 'spiffeWorkloadId', kind: 'multi', from: 'the console, or by hand',
       identifier: true,
       identifierName: 'SPIFFE ID',
@@ -1950,6 +2134,29 @@ const EDITABLE = {
   // environment.
   ssfReceiverId: 'multi',
   ssfDeliveryEndpoint: 'multi',
+  // GNAP. `gnapKeyIdentity` and `gnapMacaroonKey` are the authorization
+  // server's to write and are deliberately absent: an identity that disagreed
+  // with gnapKey, or a macaroon key that was not the derived one, would be an
+  // entry that verified nothing.
+  gnapInstanceId: 'set',
+  gnapKey: 'set',
+  gnapKeyReference: 'set',
+  gnapKeyProof: 'set',
+  gnapSymmetricKey: 'set',
+  gnapSymmetricAlg: 'set',
+  gnapClassId: 'set',
+  gnapDisplayUri: 'set',
+  gnapLogoUri: 'set',
+  gnapFinishUri: 'multi',
+  gnapInteractionStartModes: 'multi',
+  gnapAllowedAccess: 'multi',
+  gnapBearerTokens: 'set',
+  gnapSkipInteraction: 'set',
+  gnapAccessTokenFormat: 'set',
+  gnapAccessTokenLifetimeS: 'set',
+  gnapResourceServerUri: 'multi',
+  gnapJweKey: 'set',
+  gnapScopedSignals: 'set',
   oauthRedirectUri: 'multi',
   oauthPostLogoutRedirectUri: 'multi',
   oauthFrontchannelLogoutUri: 'set',
@@ -2369,7 +2576,64 @@ function homePageOf(source) {
 // attribute private key material" is one somebody adding a row to SCHEMA has
 // to answer, and a list is where they will look for it.
 const SEALED_FIELDS = ['oauthAssertionPrivateKey',
-                       'oauthSamlAssertionPrivateKey'];
+                       'oauthSamlAssertionPrivateKey',
+                       // GNAP's two credentials (2026-09-12): a client's shared
+                       // secret for a key reference, and a resource server's
+                       // macaroon root key. Sealed under the PROCESS
+                       // key-encryption key — the user's decision, over a
+                       // per-realm derivation that does not exist yet.
+                       'gnapSymmetricKey',
+                       'gnapMacaroonKey'];
+
+// The label each sealed field is sealed under, which is what
+// /admin/encryption counts by (admin-ui/encryption_admin.js DATA_CLASSES). One
+// label per KIND of secret, so the page can say what it is looking at.
+const SEAL_LABELS = {
+  oauthAssertionPrivateKey: 'application-private-key',
+  oauthSamlAssertionPrivateKey: 'application-private-key',
+  gnapSymmetricKey: 'gnap-shared-key',
+  gnapMacaroonKey: 'gnap-macaroon-key'
+};
+
+function sealLabelOf(name) {
+  return SEAL_LABELS[name] || 'application-private-key';
+}
+
+// ---------------------------------------------------------------------------
+// WITHHELD, WHICH IS A STRONGER CLAIM THAN SEALED (2026-09-12).
+//
+// A SEALED_FIELDS value is OPENED for a reader that came through this module,
+// because an application's signing key is something an operator collects from
+// `/admin/applications`. A Kerberos service key is not: it leaves this service
+// exactly once, as the keytab `/admin/kerberos/principals` hands over when it
+// is made, and after that no page and no `/admin-api` reply may carry it in any
+// form — ciphertext included, because a sealed value copied onto another entry
+// is how a key would be planted. So `view()` replaces the value, in `fields`
+// and in `attributes` alike, with a sentence saying how many bytes were kept
+// back. The ENTRY still holds it; that is what the KDC reads, through the
+// directory and not through here.
+// ---------------------------------------------------------------------------
+const WITHHELD_FIELDS = ['krb5ServiceKeys'];
+
+function withheldSentence(value) {
+  return '(withheld: Kerberos key material, ' + String(value || '').length +
+         ' characters, never shown)';
+}
+
+function withholdFields(fields) {
+  let out = fields;
+  WITHHELD_FIELDS.forEach(function (name) {
+    if (!out || out[name] === undefined) {
+      return;
+    }
+    if (out === fields) {
+      out = Object.assign({}, fields);
+    }
+    out[name] = Array.isArray(out[name]) ? out[name].map(withheldSentence)
+                                         : withheldSentence(out[name]);
+  });
+  return out;
+}
 
 function isSealed(value) {
   return String(value == null ? '' : value).indexOf('$aesgcm$') === 0;
@@ -2395,7 +2659,7 @@ function sealFieldValue(name, value) {
   if (!keystore.persists()) {
     return String(value);
   }
-  const out = keystore.seal(String(value), 'application-private-key');
+  const out = keystore.seal(String(value), sealLabelOf(name));
   if (!out) {
     return null;
   }
@@ -2413,9 +2677,10 @@ function openSealedFields(fields, identifier) {
     if (!value || !isSealed(value)) {
       return;
     }
-    const opened = keystore.open(String(value), 'application-private-key');
+    const opened = keystore.open(String(value), sealLabelOf(name));
     if (!opened) {
-      log.warn('applications: the private key on "' + identifier + '" is ' +
+      log.warn(errorCodes.tag('STS-REG-0023') +
+               'applications: the private key on "' + identifier + '" is ' +
                'sealed and will not open under this process\'s ' +
                'key-encryption key — it was written under a different one. It ' +
                'is reported as it is stored rather than as absent, because ' +
@@ -2458,6 +2723,9 @@ function normaliseFields(value) {
   const asked = (value && typeof value === 'object') ? value : {};
   const errors = [];
   const fields = {};
+  // The condition the FIRST refusal was for, which is the one a caller shows
+  // first — see errorCodes.mark() on the result at the foot.
+  let code = '';
   Object.keys(asked).forEach(function (name) {
     const values = valuesOf(asked[name]);
     if (!values.length) {
@@ -2471,6 +2739,7 @@ function normaliseFields(value) {
       errors.push('"' + name + '" is not in the published schema. GET /admin/ldap/applications ' +
                   'lists every attribute an entry may carry; adding one that is not there ' +
                   'means adding a row to SCHEMA.attributes, not writing it through this.');
+      code = code || 'STS-REG-0006';
       return;
     }
     if (!row.editable) {
@@ -2478,12 +2747,14 @@ function normaliseFields(value) {
                   'to this application rather than what it may do — and an entry created ' +
                   'with one would be asserting a past it does not have. It is accumulated ' +
                   'by the protocol endpoints as they accept this identifier.');
+      code = code || 'STS-REG-0007';
       return;
     }
     if (row.kind !== 'multi' && values.length > 1) {
       errors.push('"' + name + '" holds ONE value and ' + values.length + ' were given. ' +
                   'It is single-valued in the published schema, so the alternative to ' +
                   'refusing this is keeping one of them and discarding the rest silently.');
+      code = code || 'STS-REG-0008';
       return;
     }
     // THE ONE VALUE CHECK ON THIS WALK, and it is here rather than left to
@@ -2496,6 +2767,7 @@ function normaliseFields(value) {
       const problem = homePageProblem(values[0]);
       if (problem) {
         errors.push(problem);
+        code = code || 'STS-REG-0011';
         return;
       }
     }
@@ -2511,6 +2783,7 @@ function normaliseFields(value) {
                     'working credential in every directory dump. The ' +
                     'key-encryption key is the one /admin/persistence reports ' +
                     'on.');
+        code = code || 'STS-REG-0019';
         return;
       }
       fields[name] = sealedValue;
@@ -2520,7 +2793,8 @@ function normaliseFields(value) {
   });
   log.debug("Leaving normaliseFields(). " + Object.keys(fields).length + " field(s), " +
             errors.length + " error(s).");
-  return { ok: !errors.length, fields: fields, errors: errors };
+  const normalised = { ok: !errors.length, fields: fields, errors: errors };
+  return code ? errorCodes.mark(normalised, code) : normalised;
 }
 
 // ---------------------------------------------------------------------------
@@ -2589,7 +2863,8 @@ function store() {
   }
   if (!warnedAboutNoDirectory) {
     warnedAboutNoDirectory = true;
-    log.warn('applications: ldap_server.js was never required, so there is no ' +
+    log.warn(errorCodes.tag('STS-REG-0002') +
+             'applications: ldap_server.js was never required, so there is no ' +
              'ou=applications container and therefore no application registry. ' +
              'This module keeps no store of its own on purpose — a fallback Map ' +
              'would be a second source of truth, and it would be the one that ' +
@@ -2834,7 +3109,8 @@ function setField(record, name, value) {
   log.debug("Entering setField().");
   const row = ATTRIBUTE_BY_NAME[name];
   if (!row) {
-    log.warn('applications: "' + name + '" is not in the schema and was not recorded. ' +
+    log.warn(errorCodes.tag('STS-REG-0006') +
+             'applications: "' + name + '" is not in the schema and was not recorded. ' +
              'Add a row to SCHEMA.attributes rather than writing an attribute nothing ' +
              'publishes.');
     log.debug("Leaving setField().");
@@ -2861,6 +3137,158 @@ function setField(record, name, value) {
   record.fields[name] = text;
   log.debug("Leaving setField().");
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// WHO PUT A RETURN ADDRESS ON THE ENTRY, AND THE ONE FUNCTION THAT DECIDES
+// WHETHER IT COUNTS AS REGISTERED (2026-09-12).
+//
+// Development mode writes the return address a request NAMED — a SAML ACS URL,
+// a SAML 1.1 `shire`, a WS-Federation `wreply`, the callback the console and
+// portal learn from a Host header — onto the very attribute product mode
+// checks a request against. That is fine while nothing trusts it. It stopped
+// being fine the moment a realm could be switched to product: every address
+// development had learnt came across as though an operator had registered it,
+// and the root CLAUDE.md's answer was a sentence — "review them before the
+// switch" — which is documentation and not enforcement.
+//
+// **SO THE ENTRY RECORDS PROVENANCE**, on `appReturnAddressObserved`, one
+// value per marked address, `<attribute> <address>`. A development sighting
+// that ADDS an address marks it; an operator who confirms it, discards it or
+// writes it explicitly removes the mark.
+//
+// **`returnAddressesOf()` IS THE WHOLE RULE AND EVERY CHECK ASKS IT.** Four
+// places decide whether a return address is registered — both SAML profiles,
+// WS-Federation, and the console's and portal's own OIDC client through
+// `clientConfigOf()` — and teaching four call sites to read a mark would be
+// four places for one of them to forget. They ask for an attribute's addresses
+// and get two lists back: `registered`, what the check may believe in the mode
+// this realm is in, and `unconfirmed`, what it refused to believe because the
+// mark is still there, so that a refusal can say how to confirm it rather than
+// reading as though the address were not on the entry at all.
+//
+// **DEVELOPMENT BELIEVES EVERYTHING, MARKED OR NOT**, which is the
+// development behaviour this change is not allowed to move: `unconfirmed` is
+// always empty there. **PRODUCT BELIEVES ONLY THE UNMARKED.**
+//
+// **WHAT IT CANNOT DO IS TELL AN ADDRESS RECORDED BEFORE THE MARK EXISTED
+// FROM A REGISTERED ONE.** Neither carries a mark, and guessing — "anything a
+// sighting could have written" — would refuse addresses operators really did
+// register. That half stays a review, and every surface that describes this
+// says so.
+// ---------------------------------------------------------------------------
+function observedMarkFor(attribute, value) {
+  return String(attribute) + ' ' + String(value);
+}
+
+// One stored mark back into its two halves, or null for a value this service
+// did not write — an `ldapmodify` reaches this attribute like every other, and
+// a mark naming an attribute that is not a return address, or naming nothing,
+// is not a mark on anything. It is skipped rather than refused because a
+// READ must not fail over something only a write could have prevented.
+function parseObservedMark(text) {
+  const raw = String(text == null ? '' : text);
+  const at = raw.indexOf(' ');
+  if (at <= 0) {
+    return null;
+  }
+  const attribute = raw.slice(0, at);
+  const value = raw.slice(at + 1).trim();
+  if (RETURN_ADDRESS_ATTRIBUTES.indexOf(attribute) < 0 || !value) {
+    return null;
+  }
+  return { attribute: attribute, value: value };
+}
+
+// A `view()`, a record or a bare fields object — the three shapes a caller has
+// in hand, which is identifiersOf()'s reason for taking all three.
+function fieldsOfSource(source) {
+  const holder = source || {};
+  return holder.fields || holder;
+}
+
+// Every readable mark on an entry, with whether the address it marks is still
+// ON the attribute. A mark whose address is gone (an `ldapmodify` removed the
+// value and left the mark) is `held: false`: it decides nothing, because there
+// is no address for it to withhold, and it is listed so that it can be tidied.
+function observedReturnAddresses(source) {
+  log.debug("Entering observedReturnAddresses().");
+  const fields = fieldsOfSource(source);
+  const rows = [];
+  valuesOf(fields[OBSERVED_ADDRESS_ATTRIBUTE]).forEach(function (mark) {
+    const parsed = parseObservedMark(mark);
+    if (!parsed) {
+      return;
+    }
+    rows.push({ attribute: parsed.attribute, value: parsed.value,
+                held: valuesOf(fields[parsed.attribute]).indexOf(parsed.value) >= 0 });
+  });
+  log.debug("Leaving observedReturnAddresses(). " + rows.length + " mark(s).");
+  return rows;
+}
+
+function returnAddressesOf(source, attribute) {
+  log.debug("Entering returnAddressesOf(). attribute=" + attribute);
+  const fields = fieldsOfSource(source);
+  const values = valuesOf(fields[attribute]);
+  const marked = observedReturnAddresses(fields)
+    .filter(function (row) { return row.attribute === attribute; })
+    .map(function (row) { return row.value; });
+  if (mode.acceptsUnregisteredAddresses()) {
+    log.debug("Leaving returnAddressesOf(). Development believes all " +
+              values.length + ".");
+    return { attribute: attribute, registered: values, unconfirmed: [] };
+  }
+  const registered = values.filter(function (one) { return marked.indexOf(one) < 0; });
+  const unconfirmed = values.filter(function (one) { return marked.indexOf(one) >= 0; });
+  log.debug("Leaving returnAddressesOf(). Product: " + registered.length +
+            " registered, " + unconfirmed.length + " still marked observed.");
+  return { attribute: attribute, registered: registered, unconfirmed: unconfirmed };
+}
+
+// Mark what a sighting ADDED. `before` is the attribute's values before the
+// write, so an address that was already on the entry — registered by hand, or
+// recorded before the mark existed — is never marked by being seen again: a
+// sighting may not demote a registration.
+function markObservedAddresses(record, attribute, before) {
+  let changed = false;
+  valuesOf(record.fields[attribute]).forEach(function (one) {
+    if (before.indexOf(one) >= 0) {
+      return;
+    }
+    if (setField(record, OBSERVED_ADDRESS_ATTRIBUTE, observedMarkFor(attribute, one))) {
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+// Take one mark off, whatever it holds. Answers whether anything was there.
+// The last mark takes the attribute with it, which is what the remove branch
+// of updateApplication() does for every other multi-valued attribute.
+function clearObservedMark(record, attribute, value) {
+  const have = valuesOf(record.fields[OBSERVED_ADDRESS_ATTRIBUTE]);
+  const left = have.filter(function (mark) {
+    const parsed = parseObservedMark(mark);
+    return !(parsed && parsed.attribute === attribute && parsed.value === String(value));
+  });
+  if (left.length === have.length) {
+    return false;
+  }
+  if (left.length) {
+    record.fields[OBSERVED_ADDRESS_ATTRIBUTE] = left;
+  } else {
+    delete record.fields[OBSERVED_ADDRESS_ATTRIBUTE];
+  }
+  return true;
+}
+
+// The mode question, under a name of its own for the one function that needs
+// it: updateApplication() has a local called `mode` (the change's verb) that
+// shadows this module's `mode`, and reaching through the shadow is a bug that
+// reads correctly.
+function acceptsSightedAddresses() {
+  return mode.acceptsUnregisteredAddresses();
 }
 
 // ---------------------------------------------------------------------------
@@ -2969,8 +3397,43 @@ function seen(detail) {
   }
   if (info.note && addTo(record.descriptions, info.note)) changed = true;
 
+  // **A SIGHTING MAY NOT WRITE A RETURN ADDRESS WHERE ONLY A REGISTERED ONE IS
+  // BELIEVED** (2026-09-12). A family's `redirectAttribute` — an ACS URL, a
+  // wreply, a redirect URI — is what product mode checks a request's return
+  // address AGAINST (`mode.acceptsUnregisteredAddresses()`). Development writes
+  // what it observed into that same attribute, and that is fine while nothing
+  // trusts it; in product it would make the check circular, since the request
+  // being judged would be the one that put the address on the list. So a
+  // sighting's value for any of those attributes is dropped here, in the one
+  // funnel every protocol site reaches, and the entry holds only what was
+  // DECLARED.
+  //
+  // **AND WHAT DEVELOPMENT DOES WRITE IS MARKED AS OBSERVED (2026-09-12).**
+  // This comment used to end: "What this does not undo is a realm switched from
+  // development to product, whose entries still carry the addresses development
+  // observed — … the thing an operator has to review by hand before the
+  // switch." Every address a development sighting ADDS now gets a mark on
+  // `appReturnAddressObserved`, and returnAddressesOf() — which every
+  // return-address check asks — withholds a marked address in product until an
+  // operator confirms it. What is still a review by hand is an address recorded
+  // before the mark existed, because nothing can tell it from a registration.
+  const guarded = mode.acceptsUnregisteredAddresses() ? [] : RETURN_ADDRESS_ATTRIBUTES;
   Object.keys(info.fields || {}).forEach(function (name) {
+    if (guarded.indexOf(name) >= 0) {
+      log.info('applications: product mode, so a sighting of "' + identifier + '" ' +
+               'did not write ' + name + ' — a return address is registered, ' +
+               'never learnt from the request it would be checked against.');
+      return;
+    }
+    const isAddress = RETURN_ADDRESS_ATTRIBUTES.indexOf(name) >= 0;
+    const before = isAddress ? valuesOf(record.fields[name]) : [];
     if (setField(record, name, info.fields[name])) changed = true;
+    if (isAddress && markObservedAddresses(record, name, before)) {
+      log.info('applications: a sighting of "' + identifier + '" wrote a new ' + name +
+               ' and marked it OBSERVED. Development uses it as it is; product will ' +
+               'refuse it until it is confirmed on the application\'s page.');
+      changed = true;
+    }
   });
 
   record.firstAt = record.firstAt || now;
@@ -2998,7 +3461,20 @@ function seen(detail) {
     log.debug("Leaving seen().");
     return record;
   }
-  save(record);
+  if (!save(record) && store()) {
+    // A directory is there and would not take the entry — the container is at
+    // applications.max. Nothing else records it: the protocol exchange that
+    // made this sighting goes on regardless, and the audit row below describes
+    // what was SEEN rather than what was written.
+    audit.failure('STS-REG-0020', {
+      protocol: String(info.protocol || 'unstated'), channel: 'internal',
+      actor: info.user || '', target: identifier,
+      summary: 'The application registry could not write "' + identifier +
+               '": the ou=applications container is full (applications.max) ' +
+               'or the directory refused the entry.',
+      outcome: 'error'
+    });
+  }
 
   if (!known) {
     log.info('applications: first sight of "' + identifier + '"' +
@@ -3068,6 +3544,14 @@ function applyRegistrationFields(record, registration) {
   setField(record, 'oauthJwksUri', meta.jwks_uri);
   setField(record, 'oauthTlsClientAuthSubjectDn', meta.tls_client_auth_subject_dn);
   setField(record, 'oauthRedirectUri', meta.redirect_uris);
+  // A REGISTRATION IS AN EXPLICIT STATEMENT, so a redirect URI it names is
+  // registered however it first got onto the entry — the same rule an
+  // explicit `add` follows in updateApplication(). Without this a client that
+  // re-registered through RFC 7592 the callback development had learnt would
+  // still be refused in product for a mark its own registration contradicts.
+  valuesOf(meta.redirect_uris).forEach(function (uri) {
+    clearObservedMark(record, 'oauthRedirectUri', uri);
+  });
   setField(record, 'oauthPostLogoutRedirectUri', meta.post_logout_redirect_uris);
   // Front-Channel Logout 1.0 section 2. The boolean is written as the string
   // TRUE/FALSE the directory holds, and only when the registration SAID
@@ -3125,7 +3609,8 @@ function register(clientId, registration) {
               storedInDirectory: written }
   });
   if (!written) {
-    log.warn('applications: client "' + clientId + '" was registered but could not be ' +
+    log.warn(errorCodes.tag(store() ? 'STS-REG-0020' : 'STS-REG-0002') +
+             'applications: client "' + clientId + '" was registered but could not be ' +
              'stored — there is no directory (see store()) or it is full. The response ' +
              'to the client is still correct; the RFC 7592 management operations on it ' +
              'will answer 404, because the directory is where they read from.');
@@ -3212,7 +3697,8 @@ function registrationOf(clientId) {
       // rebuilt from them alone rather than the client being told it does not
       // exist — and the reason is logged, because a hand-edited entry silently
       // losing half its members is worse than either outcome.
-      log.warn('applications: appRegistrationJson on "' + clientId + '" is not valid ' +
+      log.warn(errorCodes.tag('STS-REG-0024') +
+               'applications: appRegistrationJson on "' + clientId + '" is not valid ' +
                'JSON and was ignored; the registration is rebuilt from the attributes ' +
                'beside it. ' + e.message);
       document = {};
@@ -3285,10 +3771,21 @@ function clientConfigOf(identifier) {
   const method = fields.oauthTokenEndpointAuthMethod !== undefined
     ? String(fields.oauthTokenEndpointAuthMethod)
     : (loaded.record.registered ? 'client_secret_basic' : '');
+  // THE REDIRECT URIs GO THROUGH returnAddressesOf() (2026-09-12), so that a
+  // callback development LEARNT — `common/oidc_rp.js` teaches the console's and
+  // portal's own clients the address they were reached at — is not a registered
+  // redirect URI in product until somebody confirms it. That is what every
+  // reader of this member gets, RFC 9700 mode's exact-match check included,
+  // and `unconfirmed_redirect_uris` is beside it so a refusal can say why. In
+  // development the two lists are what they always were: all of them, and none.
+  const redirects = returnAddressesOf(fields, 'oauthRedirectUri');
   const config = {
     known: true,
     registered: loaded.record.registered,
-    redirect_uris: (fields.oauthRedirectUri || []).slice(0),
+    redirect_uris: redirects.registered.slice(0),
+    // Not an RFC 7591 member, and spelled like one only so that it sits beside
+    // the member it qualifies. Nothing serialises this object to a client.
+    unconfirmed_redirect_uris: redirects.unconfirmed.slice(0),
     post_logout_redirect_uris: (fields.oauthPostLogoutRedirectUri || []).slice(0),
     // Where a sign-out notifies this client, and whether it wants to be told
     // WHICH session ended. The boolean defaults FALSE per RFC 7591 section 2's
@@ -3431,22 +3928,23 @@ function createApplication(detail) {
   if (problem) {
     log.debug("Leaving createApplication(). " + problem);
     log.debug("Leaving createApplication().");
-    return { ok: false, errors: [problem] };
+    return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0001');
   }
   if (!store()) {
     log.debug("Leaving createApplication(). There is no directory to create it in.");
     log.debug("Leaving createApplication().");
-    return { ok: false, errors: ['There is no directory loaded in this process, so there is ' +
+    return errorCodes.mark({ ok: false, errors: ['There is no directory loaded in this process, so there is ' +
                                  'no ou=applications container and nothing to create. The ' +
-                                 'registry has no store of its own on purpose.'] };
+                                 'registry has no store of its own on purpose.'] }, 'STS-REG-0002');
   }
   const loaded = load(identifier);
   if (loaded.known) {
     log.debug("Leaving createApplication(). It is already here.");
     log.debug("Leaving createApplication().");
-    return { ok: false, errors: ['"' + identifier + '" is already in this registry. Change ' +
+    return errorCodes.mark({ ok: false, errors: ['"' + identifier + '" is already in this registry. Change ' +
                                  'what it holds instead of creating it again — an identifier ' +
-                                 'names one application here whatever protocol brought it.'] };
+                                 'names one application here whatever protocol brought it.'] },
+                           'STS-REG-0003');
   }
   const kind = String(info.kind || '').trim();
   if (kind && KIND_IDS.indexOf(kind) < 0) {
@@ -3455,9 +3953,9 @@ function createApplication(detail) {
     // "eight" over nine kinds from the day `kerberos-service` was added — a
     // sentence that is wrong about the one thing it exists to explain, in the
     // reply somebody reads precisely when they are guessing at the vocabulary.
-    return { ok: false, errors: ['"' + kind + '" is not one of the kinds this registry knows. ' +
+    return errorCodes.mark({ ok: false, errors: ['"' + kind + '" is not one of the kinds this registry knows. ' +
                                  'The ' + numberWord(KIND_IDS.length) +
-                                 ' are: ' + KIND_IDS.join(', ') + '.'] };
+                                 ' are: ' + KIND_IDS.join(', ') + '.'] }, 'STS-REG-0004');
   }
   // THE DECLARED PROTOCOL FAMILIES, validated before anything is written, for
   // the reason the kind above is: a create that half-succeeded — the entry
@@ -3467,7 +3965,7 @@ function createApplication(detail) {
   if (!asked.ok) {
     log.debug("Leaving createApplication(). Unknown protocol family.");
     log.debug("Leaving createApplication().");
-    return { ok: false, errors: asked.errors };
+    return errorCodes.mark({ ok: false, errors: asked.errors }, 'STS-REG-0005');
   }
   // THE ATTRIBUTES THE CREATE CARRIES — the per-family identifiers and the
   // redirect URIs the form asks for, and anything else editable a caller sends.
@@ -3485,7 +3983,7 @@ function createApplication(detail) {
   if (!given.ok) {
     log.debug("Leaving createApplication(). " + given.errors.length + " bad field(s).");
     log.debug("Leaving createApplication().");
-    return { ok: false, errors: given.errors };
+    return errorCodes.mark({ ok: false, errors: given.errors }, errorCodes.codeOf(given));
   }
   // AND THE FAMILY RULE, against the families this create is ABOUT TO WRITE
   // rather than against an entry that does not exist yet. That is the whole
@@ -3501,7 +3999,7 @@ function createApplication(detail) {
     log.debug("Leaving createApplication(). " + wrongFamily.length +
               " field(s) do not apply to the families declared.");
     log.debug("Leaving createApplication().");
-    return { ok: false, errors: wrongFamily };
+    return errorCodes.mark({ ok: false, errors: wrongFamily }, 'STS-REG-0010');
   }
   const record = loaded.record;
   const now = Date.now();
@@ -3577,8 +4075,8 @@ function createApplication(detail) {
   if (!save(record)) {
     log.debug("Leaving createApplication(). The container would not take it.");
     log.debug("Leaving createApplication().");
-    return { ok: false, errors: ['The ou=applications container is full (applications.max) or ' +
-                                 'the directory is. Nothing was created.'] };
+    return errorCodes.mark({ ok: false, errors: ['The ou=applications container is full (applications.max) or ' +
+                                 'the directory is. Nothing was created.'] }, 'STS-REG-0020');
   }
   audit.audit({
     action: 'application.create', actor: info.actor || '', protocol: 'console',
@@ -3627,47 +4125,48 @@ function updateApplication(identifier, change) {
   if (!loaded.known) {
     log.debug("Leaving updateApplication(). No such application.");
     log.debug("Leaving updateApplication().");
-    return { ok: false, errors: ['There is no application called "' + identifier + '" in this ' +
+    return errorCodes.mark({ ok: false, errors: ['There is no application called "' + identifier + '" in this ' +
                                  'registry. An entry appears when an identifier is ACCEPTED by ' +
-                                 'a protocol, or when one is created here.'] };
+                                 'a protocol, or when one is created here.'] }, 'STS-REG-0021');
   }
   const row = ATTRIBUTE_BY_NAME[attribute];
   if (!row) {
     log.debug("Leaving updateApplication(). Not in the schema.");
     log.debug("Leaving updateApplication().");
-    return { ok: false, errors: ['"' + attribute + '" is not in the published schema. ' +
+    return errorCodes.mark({ ok: false, errors: ['"' + attribute + '" is not in the published schema. ' +
                                  'GET /admin/ldap/applications lists every attribute an entry may ' +
                                  'carry; adding one that is not there means adding a row to ' +
-                                 'SCHEMA.attributes, not writing it through this.'] };
+                                 'SCHEMA.attributes, not writing it through this.'] }, 'STS-REG-0006');
   }
   if (!row.editable) {
     log.debug("Leaving updateApplication(). Not editable.");
     log.debug("Leaving updateApplication().");
-    return { ok: false, errors: ['"' + attribute + '" is not editable here. It is DERIVED — ' +
+    return errorCodes.mark({ ok: false, errors: ['"' + attribute + '" is not editable here. It is DERIVED — ' +
                                  'what happened rather than what this application may do — and ' +
                                  'a form that could rewrite it would make this page lie about ' +
                                  'the service\'s own behaviour. The ' +
                                  editableAttributes().length + ' that are editable are: ' +
                                  editableAttributes().map(function (one) {
                                    return one.name;
-                                 }).join(', ') + '.'] };
+                                 }).join(', ') + '.'] }, 'STS-REG-0007');
   }
   if (row.editable === 'set' && mode !== 'set') {
     log.debug("Leaving updateApplication().");
-    return { ok: false, errors: ['"' + attribute + '" holds ONE value, so it is set rather ' +
-                                 'than added to or removed from.'] };
+    return errorCodes.mark({ ok: false, errors: ['"' + attribute + '" holds ONE value, so it is set rather ' +
+                                 'than added to or removed from.'] }, 'STS-REG-0008');
   }
   if (row.editable === 'multi' && mode !== 'add' && mode !== 'remove') {
     log.debug("Leaving updateApplication().");
-    return { ok: false, errors: ['"' + attribute + '" holds a LIST, so values are added and ' +
+    return errorCodes.mark({ ok: false, errors: ['"' + attribute + '" holds a LIST, so values are added and ' +
                                  'removed rather than set — a set would replace the list with ' +
                                  'one value and read afterwards as the others having been ' +
-                                 'forgotten.'] };
+                                 'forgotten.'] }, 'STS-REG-0008');
   }
   let value = String(asked.value == null ? '' : asked.value);
   if (mode !== 'set' && !value) {
     log.debug("Leaving updateApplication().");
-    return { ok: false, errors: ['A value is required to ' + mode + '.'] };
+    return errorCodes.mark({ ok: false, errors: ['A value is required to ' + mode + '.'] },
+                           'STS-REG-0009');
   }
   // THE ONE EDITABLE ATTRIBUTE WITH A CLOSED VOCABULARY, checked here so that
   // this edit and the create form cannot disagree about what a protocol family
@@ -3683,7 +4182,7 @@ function updateApplication(identifier, change) {
     const known = normaliseProtocols(value);
     if (!known.ok) {
       log.debug("Leaving updateApplication(). Unknown protocol family.");
-      return { ok: false, errors: known.errors };
+      return errorCodes.mark({ ok: false, errors: known.errors }, 'STS-REG-0005');
     }
   }
 
@@ -3708,7 +4207,7 @@ function updateApplication(identifier, change) {
                                       identifier);
     if (wrongFamily) {
       log.debug("Leaving updateApplication(). The attribute does not apply to this entry.");
-      return { ok: false, errors: [wrongFamily] };
+      return errorCodes.mark({ ok: false, errors: [wrongFamily] }, 'STS-REG-0010');
     }
   }
 
@@ -3746,14 +4245,14 @@ function updateApplication(identifier, change) {
     const problem = homePageProblem(value);
     if (problem) {
       log.debug("Leaving updateApplication(). The home page is not a usable URL.");
-      return { ok: false, errors: [problem] };
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0011');
     }
   }
   if (attribute === 'oauthPermissionBaseUri' && mode === 'set' && value) {
     const problem = permissionBaseProblem(value);
     if (problem) {
       log.debug("Leaving updateApplication(). The base URI is not absolute.");
-      return { ok: false, errors: [problem] };
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0012');
     }
   }
   if (attribute === 'oauthPermission' && mode === 'add') {
@@ -3761,7 +4260,7 @@ function updateApplication(identifier, change) {
     const problem = permissionNameProblem(parsed.name);
     if (problem) {
       log.debug("Leaving updateApplication(). The permission name is not usable.");
-      return { ok: false, errors: [problem] };
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0013');
     }
     const already = permissionsOf(loaded.record).filter(function (one) {
       return one.name === parsed.name;
@@ -3773,29 +4272,29 @@ function updateApplication(identifier, change) {
       // unreachable. Remove and re-add is how a description is changed, and the
       // message says so rather than leaving somebody to discover it.
       log.debug("Leaving updateApplication(). That permission is already defined.");
-      return { ok: false, errors: ['This application already defines a permission called "' +
+      return errorCodes.mark({ ok: false, errors: ['This application already defines a permission called "' +
                                    parsed.name + '"' +
                                    (already.description ? ' (' + already.description + ')' : '') +
                                    '. A permission has one description, so change it by ' +
                                    'removing "' + already.raw + '" and adding the new value — ' +
                                    'adding a second would put two rows with one name on every ' +
-                                   'page that lists them.'] };
+                                   'page that lists them.'] }, 'STS-REG-0014');
     }
     if (!permissionBaseOf((loaded.record.fields || {}).oauthPermissionBaseUri)) {
       log.debug("Leaving updateApplication(). No base URI on the entry.");
-      return { ok: false, errors: ['This application has no `oauthPermissionBaseUri`, so a ' +
+      return errorCodes.mark({ ok: false, errors: ['This application has no `oauthPermissionBaseUri`, so a ' +
                                    'permission on it would have no identifier: a permission is ' +
                                    'named by its base URI followed by its name, and a client ' +
                                    'asks for it by putting that whole string in a `scope`. Set ' +
                                    'the base first — `https://example.com/` is the shape, and ' +
-                                   'Entra ID spells the same thing `api://<guid>`.'] };
+                                   'Entra ID spells the same thing `api://<guid>`.'] }, 'STS-REG-0015');
     }
   }
   if (attribute === 'oauthDelegatedPermission' && mode === 'add') {
     const defines = forPermission(value);
     if (!defines) {
       log.debug("Leaving updateApplication(). No application defines that permission.");
-      return { ok: false, errors: ['No application in this registry defines the permission "' +
+      return errorCodes.mark({ ok: false, errors: ['No application in this registry defines the permission "' +
                                    value + '", and a permission must be DEFINED before it can ' +
                                    'be GRANTED — that is the one ordering rule this feature ' +
                                    'has. Give the resource application an ' +
@@ -3805,7 +4304,8 @@ function updateApplication(identifier, change) {
                                    'client cannot address a token to somebody\'s API by ' +
                                    'inventing a word after their base URI. `ldapmodify` reaches ' +
                                    'this attribute like every other and is not checked, which ' +
-                                   'is what /admin/delegation reports as a DANGLING grant.'] };
+                                   'is what /admin/delegation reports as a DANGLING grant.'] },
+                             'STS-REG-0016');
     }
     if (defines.identifier === identifier) {
       // AN APPLICATION GRANTING ITSELF ITS OWN PERMISSION. Refused because the
@@ -3815,11 +4315,11 @@ function updateApplication(identifier, change) {
       // about a client naming its own client_id as a scope, made here so that
       // the two cannot disagree.
       log.debug("Leaving updateApplication(). An application cannot grant itself.");
-      return { ok: false, errors: ['"' + identifier + '" is the application that DEFINES "' +
+      return errorCodes.mark({ ok: false, errors: ['"' + identifier + '" is the application that DEFINES "' +
                                    value + '", so granting it to itself would address a token ' +
                                    'to its own API — which is what an ID Token already is, and ' +
                                    'which draws as a line from a box back to the same box. A ' +
-                                   'grant is between two applications.'] };
+                                   'grant is between two applications.'] }, 'STS-REG-0017');
     }
   }
   // A GLOBAL CONSENT MUST BE A LEGAL SCOPE TOKEN, and that is the whole of the
@@ -3837,7 +4337,7 @@ function updateApplication(identifier, change) {
     const problem = scopeTokenProblem(value);
     if (problem) {
       log.debug("Leaving updateApplication(). The consented scope is not a scope token.");
-      return { ok: false, errors: [problem] };
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0018');
     }
   }
   // ---------------------------------------------------------------------------
@@ -3855,18 +4355,19 @@ function updateApplication(identifier, change) {
   if (SEALED_FIELDS.indexOf(attribute) >= 0 && value) {
     const sealedValue = sealFieldValue(attribute, value);
     if (sealedValue === null) {
-      log.error('applications: a private key for "' + identifier + '" could ' +
+      log.error(errorCodes.tag('STS-REG-0019') +
+                'applications: a private key for "' + identifier + '" could ' +
                 'not be sealed, so it was NOT written. Storing it in the ' +
                 'clear in product mode would put a working signing credential ' +
                 'in every directory dump.');
       log.debug("Leaving updateApplication(). The private key could not be sealed.");
-      return { ok: false,
+      return errorCodes.mark({ ok: false,
                errors: ['`' + attribute + '` is private key material and this ' +
                         'service could not encrypt it, so it was not stored. ' +
                         'Nothing was written and no key pair is on the entry. ' +
                         'The key-encryption key is the one ' +
                         '/admin/persistence reports on; product mode cannot ' +
-                        'run without it.'] };
+                        'run without it.'] }, 'STS-REG-0019');
     }
     value = sealedValue;
   }
@@ -3904,12 +4405,53 @@ function updateApplication(identifier, change) {
     }
     what = value ? attribute + ' is now "' + value + '"' : attribute + ' was cleared';
   } else if (mode === 'add') {
+    const before = valuesOf(record.fields[attribute]);
     changed = setField(record, attribute, value);
     what = 'added "' + value + '" to ' + attribute;
+    // -----------------------------------------------------------------------
+    // PROVENANCE, for the three return-address attributes. See
+    // returnAddressesOf(). Two callers reach this branch meaning opposite
+    // things, and `asked.observed` is how they are told apart:
+    //
+    //   * an OPERATOR — the console form, `POST /admin-api/applications/add`,
+    //     every caller that does not pass the flag — is REGISTERING the
+    //     address, so a mark on it is taken off. Adding an address that is
+    //     already on the entry as observed is therefore how an explicit write
+    //     confirms it, and it is a change even though the value was there.
+    //   * `common/oidc_rp.js` teaching its own client the address it was
+    //     reached at, which is a SIGHTING wearing an update's shape. It passes
+    //     `observed: true` and the address is marked — but only where it was
+    //     newly added (a sighting may not demote a registration) and only in a
+    //     mode that accepts unregistered addresses, since product learns
+    //     nothing and a flag arriving there must not be able to mark anything.
+    //
+    // Neither admin door passes the flag through: `applicationsAction()`
+    // builds the change from `mode`, `attribute` and `value` alone, so a body
+    // carrying `observed` cannot demote a registration from outside.
+    // -----------------------------------------------------------------------
+    if (RETURN_ADDRESS_ATTRIBUTES.indexOf(attribute) >= 0) {
+      if (asked.observed === true && acceptsSightedAddresses()) {
+        if (markObservedAddresses(record, attribute, before)) {
+          changed = true;
+          what += ', marked as OBSERVED rather than registered';
+        }
+      } else if (clearObservedMark(record, attribute, value)) {
+        changed = true;
+        what = before.indexOf(value) >= 0
+          ? 'confirmed "' + value + '" on ' + attribute + ' (it was there as an ' +
+            'OBSERVED address and is registered now)'
+          : what;
+      }
+    }
   } else {
+    // A REMOVE TAKES THE ADDRESS'S PROVENANCE MARK WITH IT — which is what
+    // makes a discard and a plain remove one outcome — before the value itself
+    // goes, so that a mark is never left naming an address that is not there.
+    const unmarked = RETURN_ADDRESS_ATTRIBUTES.indexOf(attribute) >= 0 &&
+      clearObservedMark(record, attribute, value);
     const have = record.fields[attribute] || [];
     const left = have.filter(function (one) { return one !== value; });
-    changed = left.length !== have.length;
+    changed = unmarked || left.length !== have.length;
     if (left.length) {
       record.fields[attribute] = left;
     } else {
@@ -3949,6 +4491,154 @@ function updateApplication(identifier, change) {
            message: what + '.' };
 }
 
+// ---------------------------------------------------------------------------
+// CONFIRM AND DISCARD: WHAT AN OPERATOR DOES WITH AN OBSERVED RETURN ADDRESS
+// (2026-09-12).
+//
+// Two actions rather than one with a flag, because they are opposite answers
+// to one question — *is this address this application's?* — and a console
+// that drew them as one control with a checkbox would be a control whose
+// wrong setting is the dangerous one. CONFIRM takes the mark off and keeps the
+// address, so product believes it from the next request. DISCARD takes both
+// off, so no mode believes it.
+//
+// **BOTH REFUSE AN ADDRESS THAT IS NOT MARKED**, by name. Confirming a
+// registered address would be a no-op that reads as having done something,
+// and discarding one would be a REMOVE of a registration by a control labelled
+// as tidying up a sighting — `remove` is the door for that and says so.
+//
+// **A MARK WHOSE ADDRESS HAS GONE IS DISCARDABLE AND CONFIRMABLE ALIKE**, and
+// both just take the mark off: an `ldapmodify` can remove the value and leave
+// the mark, and a confirm that refused would leave the one row nothing else
+// could tidy. The message says the address is not on the entry.
+//
+// They go through the same load, save and audit as updateApplication(), and
+// are not branches of it because neither is a write of the attribute's own
+// value in any mode that function has.
+// ---------------------------------------------------------------------------
+function observedAddressRequest(identifier, change, verb) {
+  log.debug("Entering observedAddressRequest(). verb=" + verb);
+  const asked = change || {};
+  const attribute = String(asked.attribute || '').trim();
+  const value = String(asked.value == null ? '' : asked.value).trim();
+  const loaded = load(identifier);
+  if (!loaded.known) {
+    log.debug("Leaving observedAddressRequest(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application called "' + identifier +
+                             '" in this registry.'] }, 'STS-REG-0021');
+  }
+  if (RETURN_ADDRESS_ATTRIBUTES.indexOf(attribute) < 0) {
+    log.debug("Leaving observedAddressRequest(). Not a return-address attribute.");
+    return errorCodes.mark({ ok: false, errors: ['"' + (attribute || '(none)') + '" is not a ' +
+                             'return-address attribute, so nothing on it is ever marked ' +
+                             'as observed. The ' + numberWord(RETURN_ADDRESS_ATTRIBUTES.length) +
+                             ' that are: ' + RETURN_ADDRESS_ATTRIBUTES.join(', ') + '.'] },
+                           'STS-REG-0051');
+  }
+  if (!value) {
+    log.debug("Leaving observedAddressRequest(). No address named.");
+    return errorCodes.mark({ ok: false, errors: ['A value is required to ' + verb + ': the ' +
+                             'address, exactly as appReturnAddressObserved holds it.'] },
+                           'STS-REG-0052');
+  }
+  const row = observedReturnAddresses(loaded.record.fields).filter(function (one) {
+    return one.attribute === attribute && one.value === value;
+  })[0];
+  if (!row) {
+    const marked = observedReturnAddresses(loaded.record.fields).map(function (one) {
+      return observedMarkFor(one.attribute, one.value);
+    });
+    const onEntry = valuesOf(loaded.record.fields[attribute]).indexOf(value) >= 0;
+    log.debug("Leaving observedAddressRequest(). That address is not marked.");
+    return errorCodes.mark({ ok: false, errors: ['"' + value + '" on ' + attribute + ' of "' +
+                             identifier + '" is not marked as observed, so there is nothing ' +
+                             'to ' + verb + '. ' +
+                             (onEntry
+                               ? 'It is on the entry with no mark, which is what a ' +
+                                 'registered address looks like — ' +
+                                 (verb === 'discard'
+                                   ? 'take it off with `remove` if it should not be there.'
+                                   : 'product mode already believes it.')
+                               : 'It is not on the entry either.') +
+                             (marked.length
+                               ? ' The addresses marked observed are: ' + marked.join(', ') + '.'
+                               : ' Nothing on this entry is marked observed.')] },
+                           'STS-REG-0050');
+  }
+  log.debug("Leaving observedAddressRequest(). Marked, held=" + row.held + ".");
+  return { ok: true, loaded: loaded, attribute: attribute, value: value, held: row.held };
+}
+
+function saveObservedAddressChange(identifier, found, record, verb, what, actor) {
+  record.lastAt = record.lastAt || Date.now();
+  save(record);
+  audit.audit({
+    action: 'application.update', actor: actor || '', protocol: 'console',
+    channel: 'internal', target: String(identifier),
+    summary: 'Application "' + identifier + '": ' + what,
+    // The attribute and the verb, and — unlike updateApplication(), which
+    // names no value because two editable attributes are credentials — the
+    // address too: a return address is never a credential, and an audit row
+    // that said "an observed address was confirmed" without saying which would
+    // be the one row an operator reviewing a mode switch could not use.
+    detail: { identifier: String(identifier), attribute: found.attribute,
+              mode: verb + '-address', address: found.value, editedByHand: true }
+  });
+  log.info('applications: "' + identifier + '" — ' + what + '.');
+  return { ok: true, changed: true, application: viewAfterWrite(identifier, record),
+           message: what + '.' };
+}
+
+function confirmReturnAddress(identifier, change) {
+  log.debug("Entering confirmReturnAddress(). identifier=" + identifier);
+  const found = observedAddressRequest(identifier, change, 'confirm');
+  if (!found.ok) {
+    log.debug("Leaving confirmReturnAddress(). Refused.");
+    return found;
+  }
+  const record = found.loaded.record;
+  clearObservedMark(record, found.attribute, found.value);
+  const what = found.held
+    ? 'confirmed "' + found.value + '" on ' + found.attribute + '. It was recorded ' +
+      'from a request in development mode and is now a registered address, which ' +
+      'product mode believes from the next request'
+    : 'took the observed mark off "' + found.value + '" on ' + found.attribute +
+      '. The address itself is no longer on the entry, so there was nothing to ' +
+      'confirm and nothing is registered by this';
+  const answer = saveObservedAddressChange(identifier, found, record, 'confirm', what,
+                                           (change || {}).actor);
+  log.debug("Leaving confirmReturnAddress(). held=" + found.held + ".");
+  return answer;
+}
+
+function discardReturnAddress(identifier, change) {
+  log.debug("Entering discardReturnAddress(). identifier=" + identifier);
+  const found = observedAddressRequest(identifier, change, 'discard');
+  if (!found.ok) {
+    log.debug("Leaving discardReturnAddress(). Refused.");
+    return found;
+  }
+  const record = found.loaded.record;
+  clearObservedMark(record, found.attribute, found.value);
+  const left = valuesOf(record.fields[found.attribute]).filter(function (one) {
+    return one !== found.value;
+  });
+  if (left.length) {
+    record.fields[found.attribute] = left;
+  } else {
+    delete record.fields[found.attribute];
+  }
+  const what = 'discarded "' + found.value + '" from ' + found.attribute + '. It was ' +
+    'recorded from a request in development mode and nobody confirmed it, so it is ' +
+    'gone from the entry: product mode refuses it, and development records it again, ' +
+    'marked, if a request names it again' +
+    (found.held ? '' : ' (the address had already gone; only its mark was left)');
+  const answer = saveObservedAddressChange(identifier, found, record, 'discard', what,
+                                           (change || {}).actor);
+  log.debug("Leaving discardReturnAddress().");
+  return answer;
+}
+
 // The entry goes entirely. Different from forgetRegistration(), which keeps it
 // and takes only the registration away: this is for an application that should
 // not be in the registry at all — a client_id somebody typed wrong, a realm from
@@ -3962,19 +4652,21 @@ function deleteApplication(identifier, options) {
   if (!backing || !backing.deleteApplication) {
     log.debug("Leaving deleteApplication(). There is no directory.");
     log.debug("Leaving deleteApplication().");
-    return { ok: false, errors: ['There is no directory loaded in this process, so there is ' +
-                                 'nothing to delete from.'] };
+    return errorCodes.mark({ ok: false, errors: ['There is no directory loaded in this process, so there is ' +
+                                 'nothing to delete from.'] }, 'STS-REG-0002');
   }
   const loaded = load(identifier);
   if (!loaded.known) {
     log.debug("Leaving deleteApplication(). No such application.");
     log.debug("Leaving deleteApplication().");
-    return { ok: false, errors: ['There is no application called "' + identifier + '" here.'] };
+    return errorCodes.mark({ ok: false, errors: ['There is no application called "' + identifier + '" here.'] },
+                           'STS-REG-0021');
   }
   const gone = backing.deleteApplication(String(identifier));
   if (!gone) {
     log.debug("Leaving deleteApplication().");
-    return { ok: false, errors: ['The directory would not delete "' + identifier + '".'] };
+    return errorCodes.mark({ ok: false, errors: ['The directory would not delete "' + identifier + '".'] },
+                           'STS-REG-0022');
   }
   audit.audit({
     action: 'application.delete', actor: opts.actor || '', protocol: 'console',
@@ -4055,6 +4747,19 @@ function view(record, entry) {
     // whether anything has actually happened.
     allowedProtocols: valuesOf(record.fields.appAllowedProtocol),
     recordedProtocols: protocolIdsForKinds(record.kinds),
+    // THE RETURN ADDRESSES A DEVELOPMENT-MODE REQUEST PUT HERE AND NOBODY HAS
+    // CONFIRMED (2026-09-12), lifted out of `fields` for the reason
+    // `allowedProtocols` is: a caller should not have to parse
+    // `<attribute> <address>` to learn which addresses product will refuse.
+    // `trusted` is the answer in THIS realm's mode, from returnAddressesOf() —
+    // true in development, false in product — so a reader never has to know
+    // which mode decides it.
+    returnAddressesObserved: observedReturnAddresses(record.fields).map(function (row) {
+      return { attribute: row.attribute, value: row.value, held: row.held,
+               trusted: row.held &&
+                 returnAddressesOf(record.fields, row.attribute).registered
+                   .indexOf(row.value) >= 0 };
+    }),
     registered: record.registered,
     firstSeen: record.firstAt ? new Date(record.firstAt).toISOString() : '',
     lastSeen: record.lastAt ? new Date(record.lastAt).toISOString() : '',
@@ -4069,7 +4774,8 @@ function view(record, entry) {
     createdAt: entry ? entry.createdAt : null,
     modifiedAt: entry ? entry.modifiedAt : null,
     operational: entry ? entry.operational.slice(0) : [],
-    attributes: entry ? entry.attributes : {},
+    // WITHHELD as well as spelled canonically — see WITHHELD_FIELDS.
+    attributes: entry ? withholdFields(entry.attributes) : {},
     // The schema half on its own, kept because it is a different question —
     // "what has this module recorded about it" rather than "what does the entry
     // carry" — and because dropping it would silently change what a caller of
@@ -4079,7 +4785,7 @@ function view(record, entry) {
     // about the application and `attributes` above is what the ENTRY carries,
     // so a caller that came through this module gets the PEM and a dump of the
     // store gets the ciphertext the store holds.
-    fields: openSealedFields(record.fields, record.identifier)
+    fields: withholdFields(openSealedFields(record.fields, record.identifier))
   };
 }
 
@@ -4160,7 +4866,8 @@ function settingFor(identifier, settingKey, config) {
   }
   const parsed = config.parseAs(settingKey, raw);
   if (!parsed.ok) {
-    log.warn('applications: ' + identifier + ' carries ' + attribute + '="' + raw +
+    log.warn(errorCodes.tag('STS-REG-0025') +
+             'applications: ' + identifier + ' carries ' + attribute + '="' + raw +
              '", which is not usable — ' + parsed.problem + '. The service-wide ' +
              settingKey + ' is being used instead. Fix the attribute or remove it; ' +
              'nothing here refuses an assertion over it.');
@@ -4491,7 +5198,8 @@ function forPermissionBase(base) {
     // identifier is base + name, so two entries under one base means one string
     // naming two permissions and `forPermission()` answering with whichever it
     // walked into first.
-    log.warn('applications: ' + found.length + ' applications expose their ' +
+    log.warn(errorCodes.tag('STS-REG-0026') +
+             'applications: ' + found.length + ' applications expose their ' +
              'permissions under the base URI "' + wanted + '" (' +
              found.map(function (row) { return row.identifier; }).join(', ') +
              '). A base URI names one API; a permission identifier is that base ' +
@@ -4583,7 +5291,8 @@ function forAudience(audience) {
     // a state to resolve here, and the first is as good an answer as any — but
     // it is said out loud, because the consequence is a delegation filed under
     // one of two applications with nothing on the page to say the other exists.
-    log.warn('applications: ' + found.length + ' applications have registered ' +
+    log.warn(errorCodes.tag('STS-REG-0026') +
+             'applications: ' + found.length + ' applications have registered ' +
              'the audience "' + wanted + '" (' +
              found.map(function (row) { return row.identifier; }).join(', ') +
              '). The first is what a token exchange for it will be recorded ' +
@@ -4637,7 +5346,8 @@ function forClientId(clientId) {
     // audience, and with a sharper consequence: a client_id is what a Token
     // Request authenticates as, so two entries answering to one mean two sets of
     // registration facts for one caller.
-    log.warn('applications: ' + found.length + ' applications have registered ' +
+    log.warn(errorCodes.tag('STS-REG-0026') +
+             'applications: ' + found.length + ' applications have registered ' +
              'the client_id "' + wanted + '" (' +
              found.map(function (row) { return row.identifier; }).join(', ') +
              '). The first is the one anything looking a client up by id will ' +
@@ -4713,7 +5423,8 @@ function forAppliesTo(appliesTo) {
       // Said out loud for the reason its two neighbours say it: the act is
       // filed against one of two applications and nothing on the page says the
       // other exists.
-      log.warn('applications: ' + found.length + ' applications have ' +
+      log.warn(errorCodes.tag('STS-REG-0026') +
+               'applications: ' + found.length + ' applications have ' +
                'registered "' + wanted + '" on ' + attribute + ' (' +
                found.map(function (row) { return row.identifier; }).join(', ') +
                '). The first is what a token issued for it will be recorded ' +
@@ -4869,8 +5580,23 @@ function maxApplications() {
 // 'localhost:' + PORT at the same wall. It is a starting value and not a fact:
 // a deployment behind a proxy wants its own name, and putting one there is an
 // ldapmodify of oauthRedirectUri.
+//
+// **`global.publicBaseUrl` IS THAT NAME WHEN IT IS SET** (2026-09-12), with the
+// ambient realm's prefix — `seedInternalApplications()` runs inside
+// `realms.run()` for a realm being built, so the prefix is the realm's. That
+// matters in product mode, where `common/oidc_rp.js` no longer LEARNS a callback
+// from a request: a seeded entry naming `localhost` would be a console nobody
+// reaching the service by its real name could sign in to. Unset, this is the
+// localhost starting value it always was, prefix and all left off, which is
+// what development then learns past.
 function internalBaseUrl() {
   log.debug("Entering internalBaseUrl().");
+  const pinned = helpers.pinnedBaseUrl();
+  if (pinned) {
+    const realmBase = pinned + realms.currentPrefix();
+    log.debug("Leaving internalBaseUrl(). base=" + realmBase + " (global.publicBaseUrl)");
+    return realmBase;
+  }
   const scheme = config.value('global.https') ? 'https' : 'http';
   const base = scheme + '://localhost:' + config.value('global.port');
   log.debug("Leaving internalBaseUrl(). base=" + base);
@@ -5054,7 +5780,8 @@ function seedInternalApplication(spec) {
     setField(record, name, spec.attributes[name]);
   });
   if (!save(record)) {
-    log.warn('applications: "' + spec.identifier + '" was not seeded — the ' +
+    log.warn(errorCodes.tag('STS-REG-0020') +
+             'applications: "' + spec.identifier + '" was not seeded — the ' +
              'ou=applications container is full (applications.max) or the ' +
              'directory is. Nothing else is affected; the surface it names ' +
              'answers exactly as it did.');
@@ -5090,7 +5817,8 @@ function seedInternalApplications(options) {
     return 0;
   }
   if (!store()) {
-    log.warn('applications: the console and the management API were not ' +
+    log.warn(errorCodes.tag('STS-REG-0002') +
+             'applications: the console and the management API were not ' +
              'seeded — there is no directory in this process, so there is no ' +
              'ou=applications container to put them in. See store().');
     log.debug("Leaving seedInternalApplications(). There is no directory.");
@@ -5161,6 +5889,8 @@ module.exports = {
   // page is headed "the registry as the directory sees it", and an opened
   // value there would be a page lying about its own subject.
   SEALED_FIELDS: SEALED_FIELDS,
+  WITHHELD_FIELDS: WITHHELD_FIELDS,
+  withholdFields: withholdFields,
   isSealed: isSealed,
   normaliseFields: normaliseFields,
   SCHEMA: SCHEMA,
@@ -5190,6 +5920,17 @@ module.exports = {
   createApplication: createApplication,
   seedInternalApplications: seedInternalApplications,
   updateApplication: updateApplication,
+  // THE PROVENANCE OF A RETURN ADDRESS (2026-09-12). `returnAddressesOf()` is
+  // the one decision every return-address check asks — both SAML profiles,
+  // WS-Federation and `clientConfigOf()` — and the two actions are what an
+  // operator does with an address it withholds. See the block above
+  // observedMarkFor().
+  RETURN_ADDRESS_ATTRIBUTES: RETURN_ADDRESS_ATTRIBUTES,
+  OBSERVED_ADDRESS_ATTRIBUTE: OBSERVED_ADDRESS_ATTRIBUTE,
+  returnAddressesOf: returnAddressesOf,
+  observedReturnAddresses: observedReturnAddresses,
+  confirmReturnAddress: confirmReturnAddress,
+  discardReturnAddress: discardReturnAddress,
   deleteApplication: deleteApplication,
   list: list,
   get: get,

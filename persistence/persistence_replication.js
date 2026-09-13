@@ -99,6 +99,9 @@
 const bunyan = require('bunyan');
 const config = require('../common/config');
 const realms = require('../common/realms');
+// A LEAF with no requires: the failure codes on the log lines below. NOT
+// audit.js, which requires THIS file — a require back would close a cycle.
+const errorCodes = require('../common/error_codes');
 
 const log = bunyan.createLogger({ name: 'sts-persistence-replication' });
 
@@ -226,7 +229,8 @@ function start(theDriver, theAppliers) {
     // keeps trying on the timer.
     driver = theDriver;
     lastError = err.message;
-    log.error('persistence: the change log could not be read at startup (' +
+    log.error(errorCodes.tag('STS-STORE-0037') +
+              'persistence: the change log could not be read at startup (' +
               err.message + '). This process is running UNCOORDINATED: it ' +
               'holds its own copy and will not see another process\'s ' +
               'writes. It will keep trying.');
@@ -243,7 +247,8 @@ function schedule() {
   timer = setTimeout(function () {
     timer = null;
     pull().catch(function (err) {
-      log.error('persistence: a scheduled change pull failed: ' + err.message);
+      log.error(errorCodes.tag('STS-STORE-0038') +
+                'persistence: a scheduled change pull failed: ' + err.message);
     }).then(function () {
       schedule();
     });
@@ -267,7 +272,8 @@ function wake() {
     return;
   }
   pull().catch(function (err) {
-    log.error('persistence: a nudged change pull failed: ' + err.message);
+    log.error(errorCodes.tag('STS-STORE-0038') +
+              'persistence: a nudged change pull failed: ' + err.message);
   });
 }
 
@@ -394,7 +400,8 @@ function syncNow() {
         // with the store rather than that more time is needed, and a request
         // held for ever is worse than one answered from a copy that is a
         // moment behind.
-        log.warn('persistence: a read barrier gave up at ' + applied +
+        log.warn(errorCodes.tag('STS-STORE-0039') +
+                 'persistence: a read barrier gave up at ' + applied +
                  ' of ' + want + '. The request is being answered from what ' +
                  'this process has.');
         return { caughtUp: false, applied: applied, target: want,
@@ -417,7 +424,8 @@ function syncNow() {
     return step(200);
     });
   }).catch(function (err) {
-    log.warn('persistence: a read barrier could not read the change log: ' +
+    log.warn(errorCodes.tag('STS-STORE-0040') +
+             'persistence: a read barrier could not read the change log: ' +
              err.message + '. The request is being answered from what this ' +
              'process has.');
     return { caughtUp: false, applied: applied, coordinating: true };
@@ -530,7 +538,8 @@ function pull() {
     // path is swallowed: a database that blinked must not take down a service
     // that is answering perfectly well out of memory. The high-water mark was
     // not advanced, so the next pull retries exactly the same rows.
-    log.error('persistence: could not apply another process\'s changes: ' +
+    log.error(errorCodes.tag('STS-STORE-0038') +
+              'persistence: could not apply another process\'s changes: ' +
               err.message + '. This process is serving its own copy and will ' +
               'retry; it is BEHIND until it succeeds.');
     log.debug('Leaving pull(). It failed.');
@@ -589,7 +598,8 @@ function applyRows(rows) {
     if (applier && typeof applier.prepare === 'function') {
       chain = chain.then(function () {
         return Promise.resolve(applier.prepare(rowsOfKind)).catch(function (e) {
-          log.warn('replication: preparing ' + rowsOfKind.length + ' "' + kind +
+          log.warn(errorCodes.tag('STS-STORE-0041') +
+                   'replication: preparing ' + rowsOfKind.length + ' "' + kind +
                    '" row(s) failed (' + e.message + '); they are applied one ' +
                    'at a time.');
         });
@@ -631,7 +641,8 @@ function applyRows(rows) {
         // exercised.
         // -----------------------------------------------------------------
         function failed(err) {
-          log.error('persistence: a "' + row.kind + '" change for "' +
+          log.error(errorCodes.tag('STS-STORE-0042') +
+                    'persistence: a "' + row.kind + '" change for "' +
                     row.key + '" in realm "' + (row.realm || 'default') +
                     '" could not be applied: ' + err.message +
                     '. The rest of the page is unaffected.');
@@ -657,7 +668,8 @@ function applyRows(rows) {
         try {
           applier.done();
         } catch (e) {
-          log.warn('replication: clearing the "' + kind + '" page state ' +
+          log.warn(errorCodes.tag('STS-STORE-0043') +
+                   'replication: clearing the "' + kind + '" page state ' +
                    'failed: ' + e.message);
         }
       }

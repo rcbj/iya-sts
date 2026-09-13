@@ -63,9 +63,9 @@ const streams = require('../ssf/ssf_streams');
 const events = require('../ssf/ssf_events');
 const receivers = require('../ssf/ssf_receivers');
 
-const ALICE = { username: 'alice', sub: 'urn:sts-mock:user:alice',
+const ALICE = { username: 'alice', sub: 'urn:sts:user:alice',
                 mail: 'alice@example.com' };
-const BOB = { username: 'bob', sub: 'urn:sts-mock:user:bob', mail: '' };
+const BOB = { username: 'bob', sub: 'urn:sts:user:bob', mail: '' };
 
 // A delivered entry in the shape `accept()` records one, with only the members
 // `isAbout()` reads filled in. Written here rather than by pushing a real SET
@@ -200,6 +200,109 @@ function run(t) {
           'for one logical copy of this service does not open another\'s');
 
   // -----------------------------------------------------------------------
+  // -----------------------------------------------------------------------
+  // B2. ONE STREAM PER SURFACE HOWEVER MANY PROCESSES SEED IT (2026-09-12).
+  //
+  // The check above — seed, seed again, nothing made — passes in ONE process
+  // and always will: the second call finds the first call's record in the same
+  // in-memory store. What it cannot see is the arrangement that actually
+  // happens, and the one this service runs in `dispatch` mode: the front
+  // process and every request worker load the protocol stack and each calls
+  // `seedStreams()`, against a store that is SHARED because it is persisted
+  // and coordinated.
+  //
+  // With a random id each of them created a stream of its own and the store
+  // kept them all. Measured on a four-hour test stack: fourteen streams in the
+  // default realm where two belong, seven pairs at seven timestamps, and a
+  // bulk load pushing every one of 16,421 events to twelve of them.
+  //
+  // The three claims below are what makes that impossible rather than
+  // unlikely.
+  // -----------------------------------------------------------------------
+  t.log.info('B2. one stream per surface, however many processes seed it');
+
+  const consoleSurface = receivers.SURFACES.filter(function (one) {
+    return one.id === 'admin-console';
+  })[0];
+  const derivedId = 'ssf-internal-' + realms.currentId() + '-admin-console';
+  t.equal(consoleStream.stream_id, derivedId,
+          'THE ID IS DERIVED FROM THE REALM AND THE SURFACE, so every ' +
+          'process of this service computes the same one without being told ' +
+          '— which is `receiverToken()`\'s argument, one member along');
+
+  // A SECOND PROCESS, simulated where it matters: the store has the record and
+  // this process has never set the marker on it. That is what a freshly forked
+  // request worker sees, and with the old lookup it seeded a duplicate.
+  const marker = consoleStream.internalSurface;
+  delete consoleStream.internalSurface;
+  const madeWithoutMarker = receivers.seedStreams();
+  t.equal(madeWithoutMarker, 0,
+          'A PROCESS THAT NEVER SET THE MARKER STILL FINDS THE STREAM, ' +
+          'because the lookup asks for the derived id first — the marker is ' +
+          'not an SSF member and is the half of this that a persisted ' +
+          'round-trip can lose');
+  t.equal(streams.listStreams().filter(function (record) {
+    return record.stream_id === derivedId;
+  }).length, 1, 'and there is still exactly one of it');
+  consoleStream.internalSurface = marker;
+
+  // THE ONES THAT ACCUMULATED BEFORE THE ID WAS DERIVED. A store carried over
+  // holds several per surface, with random ids, all delivering to the same
+  // loopback path — and every event went to all of them.
+  const legacy = streams.createStream({
+    aud: consoleSurface.audience,
+    events_requested: [events.CAEP_EVENT_URIS[0]],
+    description: 'a duplicate from before the id was derived',
+    delivery: { method: streams.DELIVERY_PUSH,
+                endpoint_url: transport.loopbackOrigin() +
+                              realms.currentPrefix() +
+                              consoleSurface.receivePath,
+                authorization_header: 'Bearer whatever' }
+  }, { issuer: 'https://example.test', principal: 'internal' });
+  t.check(legacy.ok, 'a legacy duplicate can be created for the test to sweep',
+          legacy.ok ? 'made ' + legacy.stream.stream_id
+                    : legacy.errors.join(' '));
+  const sweptAway = receivers.seedStreams();
+  t.equal(sweptAway, 0, 'seeding over a legacy duplicate creates nothing new');
+  t.equal(streams.listStreams().filter(function (record) {
+    return record.stream_id === legacy.stream.stream_id;
+  }).length, 0,
+          'AND THE DUPLICATE IS GONE. It is identified by where it DELIVERS ' +
+          'rather than by the marker, because the marker is exactly what may ' +
+          'not have survived the round-trip that produced it');
+  t.equal(streams.listStreams().filter(function (record) {
+    return record.stream_id === derivedId;
+  }).length, 1, 'and the derived stream is the one left standing');
+
+  // AND THE ID MUST NOT MOVE WITH THE PER-RUN SECRET. `receiverToken()` is
+  // derived from `internalSecret()`, which is regenerated at every start and
+  // inherited through the environment — right for a credential, and fatal
+  // here: an id that changed per start would agree across the processes of one
+  // run and accumulate a fresh set on the next, which is the whole defect
+  // moved one level along.
+  //
+  // Asserted THROUGH seedStreams() rather than by rebuilding the id here: a
+  // test that recomputes the string it is checking proves only that two copies
+  // of one expression agree, which is what the first version of this did.
+  const before = process.env.STS_SSF_RECEIVER_SECRET;
+  process.env.STS_SSF_RECEIVER_SECRET =
+    require('crypto').randomBytes(32).toString('base64');
+  const madeAfterRotation = receivers.seedStreams();
+  t.equal(madeAfterRotation, 0,
+          'THE ID DOES NOT MOVE WITH THE PER-RUN SECRET — rotating it seeds ' +
+          'nothing, because the id is the realm and the surface. An id ' +
+          'derived from that secret would agree across the processes of one ' +
+          'run and mint a fresh set on the next start, which is this whole ' +
+          'defect moved one level along');
+  t.equal(streams.listStreams().filter(function (record) {
+    return record.stream_id === derivedId;
+  }).length, 1, 'and it is still the same single stream');
+  if (before === undefined) {
+    delete process.env.STS_SSF_RECEIVER_SECRET;
+  } else {
+    process.env.STS_SSF_RECEIVER_SECRET = before;
+  }
+
   t.log.info('C. isOwnLoopback(), and the two exemptions it carries');
   // -----------------------------------------------------------------------
   const mine = transport.loopbackOrigin();
@@ -226,7 +329,7 @@ function run(t) {
   // CAEP: SSF's complex subject, whose `user` member names the person and
   // whose `session` member names one session of theirs.
   const complex = { user: { format: 'issuer_subject_id',
-      iss: 'https://sts.example.com', sub: 'urn:sts-mock:user:alice' },
+      iss: 'https://sts.example.com', sub: 'urn:sts:user:alice' },
     session: { format: 'opaque', id: 'sess-1' } };
   t.check(receivers.isAbout(delivered(complex), ALICE),
           'A COMPLEX SUBJECT IS READ ONE LEVEL IN. Every CAEP event names a ' +

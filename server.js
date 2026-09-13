@@ -127,6 +127,10 @@ const requestPool = require('./common/request_pool');
 // reports the build it came from and restarting it does not renumber it. See
 // common/version.js and CLAUDE.md, *Versioning*.
 const version = require('./common/version');
+// The registry of failure codes, a LEAF. Every failure this file reports is
+// either about to end the process or is a listener that did not come up, and
+// each is logged with its code at the front — see common/error_codes.js.
+const errorCodes = require('./common/error_codes');
 const APP_VERSION = version.load();
 
 // ---------------------------------------------------------------------------
@@ -332,7 +336,7 @@ function announce() {
   }).catch(function (err) {
     // Reported rather than thrown: the rest of this service is still useful, and a
     // silent failure to bind would surface later as a KDC that never answers.
-    log.error('krb5: the KDC could not start: ' + err.message);
+    log.error(errorCodes.tag('STS-CORE-0029') + 'krb5: the KDC could not start: ' + err.message);
   });
   krb5Service.listen();
   // The LDAP directory's socket, started here for the same reason the KDC's is.
@@ -359,7 +363,7 @@ function announce() {
     // Reported rather than thrown, exactly as the KDC's failure is: the rest of
     // this service is still useful, and a silent failure to bind would surface
     // later as a directory that never answers.
-    log.error('ldap: the directory could not start: ' + err.message);
+    log.error(errorCodes.tag('STS-CORE-0030') + 'ldap: the directory could not start: ' + err.message);
   });
   // The two HTTPS listeners, started here for the same reason the other two
   // sockets are. GET /tls describes them and hands out the server certificate;
@@ -390,7 +394,8 @@ function announce() {
              'trust domain.');
   }).catch(function (err) {
     // Reported rather than thrown, exactly as the other three are.
-    log.error('spiffe: the SPIFFE listeners could not start: ' + err.message);
+    log.error(errorCodes.tag('STS-CORE-0031') +
+              'spiffe: the SPIFFE listeners could not start: ' + err.message);
   });
   const tlsListeners = tlsServer.listen();
   tlsListeners.whenReady.then(function (ready) {
@@ -407,7 +412,7 @@ function announce() {
     // Reported rather than thrown, as the other two are: the rest of this
     // service is still useful, and a silent failure to bind would surface
     // later as a TLS endpoint that never answers.
-    log.error('tls: the TLS endpoint could not start: ' + err.message);
+    log.error(errorCodes.tag('STS-CORE-0032') + 'tls: the TLS endpoint could not start: ' + err.message);
   });
   log.debug('Leaving announce().');
 }
@@ -480,7 +485,7 @@ function shutdown(signal) {
     // stop() already logs its own failure and does not reject in the ordinary
     // case; this exists so that an unexpected one still ends the process
     // rather than leaving it hanging with no listener and no explanation.
-    log.error('sts: the shutdown flush failed: ' + err.message);
+    log.error(errorCodes.tag('STS-CORE-0033') + 'sts: the shutdown flush failed: ' + err.message);
     process.exit(1);
   });
   log.debug('Leaving shutdown().');
@@ -646,7 +651,8 @@ serviceState.start().then(function (both) {
   return bbsKeyPairForSharing().then(function (encoded) {
     requestPool.setBbsKeyPair(encoded);
   }).catch(function (e) {
-    log.error('sts: the BBS key pair could not be shared with the request ' +
+    log.error(errorCodes.tag('STS-CORE-0034') +
+              'sts: the BBS key pair could not be shared with the request ' +
               'workers (' + e.message + '); each will generate its own and a ' +
               'did:web document may name a key its siblings did not sign with.');
   }).then(function () {
@@ -675,7 +681,7 @@ serviceState.start().then(function (both) {
   // keystore.js writes a complete explanation and this only has to choose which
   // paragraph follows it.
   if (/key material|key-encryption key|signing key|minted state/i.test(err.message || '')) {
-    log.fatal('sts: NOT STARTING. ' + err.message +
+    log.fatal(errorCodes.tag('STS-CORE-0035') + 'sts: NOT STARTING. ' + err.message +
               '\n\nThis service will not generate a replacement signing key ' +
               'and carry on. Doing that would silently stop every token, ' +
               'assertion and signed document it has ever issued from ' +
@@ -686,7 +692,7 @@ serviceState.start().then(function (both) {
               'start, which is what development mode does.');
     process.exit(1);
   }
-  log.fatal('sts: NOT STARTING. ' + err.message +
+  log.fatal(errorCodes.tag('STS-CORE-0036') + 'sts: NOT STARTING. ' + err.message +
             '\n\nThis service is configured to persist (persistence.mode=' +
             persistence.mode() + '), so it will not run without its store: a ' +
             'process answering out of a seeded directory while presenting ' +
@@ -704,7 +710,7 @@ serviceState.start().then(function (both) {
 function bind() {
 if (useHttps) {
   const serverCert = tlsServer.serverCertificate();
-  const mainServer = https.createServer({
+  const mainServer = https.createServer(Object.assign({
     cert: serverCert.certPem,
     key: serverCert.privateKeyPem,
     // THE CLIENT TRUSTSTORE, THE SAME ONE /tls/trust FILLS FOR 8443 AND 9443
@@ -735,7 +741,10 @@ if (useHttps) {
     // truststore at /tls/trust starts empty by design.
     requestCert: true,
     rejectUnauthorized: false
-  }, app);
+  // `tls.minVersion` and `tls.ciphers` (2026-09-12), from the module that states
+  // them for every TLS listener — at creation as well as on every truststore
+  // change, so the first handshake is held to the same floor as the hundredth.
+  }, tlsServer.protocolOptions()), app);
   // REGISTERED SO THAT A LATER `POST /tls/trust` REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It

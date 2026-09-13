@@ -310,7 +310,10 @@ async function test() {
           assert.ok(view.body.revocation &&
                     Array.isArray(view.body.revocation.authorities),
             JSON.stringify(view.body.revocation).slice(0, 200));
-          assert.ok(/PUBLISHED, NOT ENFORCED/.test(view.body.revocationNote),
+          // `PUBLISHED AND CONSULTED` since 2026-09-12, when the service
+          // started checking the revocation of a presented certificate. It
+          // read `PUBLISHED, NOT ENFORCED` until then.
+          assert.ok(/PUBLISHED AND CONSULTED/.test(view.body.revocationNote),
             String(view.body.revocationNote).slice(0, 200));
         });
   check("the register offers the nine RFC 5280 section 5.3.1 reasons — not " +
@@ -332,13 +335,27 @@ async function test() {
             "and renaming it to make room would break every caller that has it");
         });
 
+  // **A LEAF OF THE JOSE AUTHORITY, AND NEVER A CERTIFICATE AUTHORITY
+  // (2026-09-12).** This picked the first authority with anything unrevoked,
+  // which is the ROOT — so it revoked an INTERMEDIATE, keyCompromise, in the
+  // one service every job in the run shares. That cost nothing while
+  // revocation was only published. Since this service CONSULTS it for a
+  // presented certificate, a revoked Intermediate refuses every X509-SVID and
+  // every x5c assertion under it, and the job that did it would be failing
+  // other jobs in whatever order they happened to run. A signing-key leaf is
+  // presented to this service by nothing, so revoking it tests the register
+  // and the documents and changes no other job's answer.
+  const isLeaf = function (cert) {
+    return !cert.revoked && cert.kind === "leaf";
+  };
   const authority = view.body.revocation.authorities.filter(function (one) {
-    return one.issued.some(function (cert) { return !cert.revoked; });
+    return one.ca === "jose" && one.issued.some(isLeaf);
+  })[0] || view.body.revocation.authorities.filter(function (one) {
+    return one.ca !== "root" && one.ca !== "intermediate" &&
+           one.ca !== "spiffe" && one.issued.some(isLeaf);
   })[0];
-  assert.ok(authority, "no authority has an unrevoked certificate to work with");
-  const target = authority.issued.filter(function (one) {
-    return !one.revoked;
-  })[0];
+  assert.ok(authority, "no Issuing CA has an unrevoked leaf to work with");
+  const target = authority.issued.filter(isLeaf)[0];
 
   log.info("=== E. revoking through the API, and every refusal ===");
 
@@ -431,7 +448,7 @@ async function test() {
   log.info("=== F. the hold, which is the only reason that can be undone ===");
 
   const second = authority.issued.filter(function (one) {
-    return !one.revoked && one.serialHex !== target.serialHex;
+    return isLeaf(one) && one.serialHex !== target.serialHex;
   })[0];
   if (second) {
     const held = await post("/pki/revoke-certificate", {

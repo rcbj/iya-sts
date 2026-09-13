@@ -306,6 +306,30 @@ async function completeCeremony(b, page, authenticator) {
                      credential: JSON.stringify(credential) }));
 }
 
+// ---------------------------------------------------------------------------
+// THE PERSON IS CREATED FIRST, WITH A PASSWORD AND THE ATTRIBUTES A REAL
+// ACCOUNT CARRIES (2026-09-12). In product mode this service creates nobody
+// because a sign-in named them, invents no persona onto an entry, and verifies
+// the password — so every password step below presents the one set here, of at
+// least twelve characters, rather than a word nothing checks.
+// ---------------------------------------------------------------------------
+var PASSWORD = "webauthn-second-factor-Passw0rd!-" + String(Date.now()).slice(-6);
+
+async function createThePerson() {
+  log.debug("Entering createThePerson().");
+  const r = await post("/users/create", {
+    username: PERSON, invent: false,
+    attributes: { cn: "Security Key Person " + PERSON, givenName: "Security",
+                  sn: PERSON, displayName: "Security Key Person " + PERSON,
+                  mail: PERSON + "@webauthn-second-factor.test" },
+    credential: "password", password: PASSWORD
+  });
+  assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
+    "POST /admin-api/users/create should create " + PERSON + " with a " +
+    "password; it answered " + r.status + " " + String(r.raw).slice(0, 300));
+  log.debug("Leaving createThePerson().");
+}
+
 async function factorsFor(who) {
   const r = await get("/users?user=" + encodeURIComponent(who));
   assert.strictEqual(r.status, 200,
@@ -324,7 +348,7 @@ async function enrollingAKeyAtTheSignInScreen(authenticator) {
   const authnId = await reachTheSignInScreen(b);
 
   const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: "anything",
+    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
            use_webauthn: "1", action: "login" }));
   check("a person holding no key is offered the ENROLMENT ceremony — which is " +
         "this service's enrol-on-first-use behaviour and is unchanged",
@@ -413,7 +437,7 @@ async function theSecondSignInDemandsItWithoutBeingAsked(authenticator) {
   const authnId = await reachTheSignInScreen(b);
 
   const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: "anything",
+    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
            action: "login" }));
   check("A PASSWORD ALONE NO LONGER SIGNS THEM IN. The checkbox is untouched " +
         "and the security-key step is demanded anyway, because the account is " +
@@ -469,7 +493,7 @@ async function somebodyElsesAuthenticatorIsRefused() {
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
   const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: "anything",
+    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
            action: "login" }));
   assert.ok(/wa-data/.test(page.text),
     "the security-key page was not drawn for the refusal case.");
@@ -504,7 +528,7 @@ async function theUseYourKeyInsteadLinkWorks() {
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
   const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: "anything",
+    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
            action: "login" }));
   const mfaId = hidden(page.text, "mfa_id");
   const drawn = await b.go("GET", "/authn/webauthn?mfa=" +
@@ -549,7 +573,7 @@ async function anOperatorCanClearItAndTheDemandStops(authenticator) {
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
   const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: "anything",
+    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
            action: "login" }));
   check("SO A PASSWORD ALONE SIGNS THEM IN AGAIN, which is what makes the " +
         "clear the way back for somebody who lost their key rather than a " +
@@ -566,6 +590,7 @@ async function test() {
            " (origin " + ORIGIN + ", rpId " + RP_ID + ").");
   const authenticator = makeAuthenticator();
 
+  await createThePerson();
   await enrollingAKeyAtTheSignInScreen(authenticator);
   await theKeyIsInTheStoreEverythingElseReads(authenticator);
   await theSecondSignInDemandsItWithoutBeingAsked(authenticator);

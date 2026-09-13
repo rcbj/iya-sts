@@ -178,6 +178,13 @@ async function createThePeople(catalogue) {
       // is what the catalogue loop in the shared preflight is for. The header
       // says what the other two doors do instead.
       invent: false,
+      // `credential` DEFAULTS TO `generate` since 2026-09-12, which is a scrypt
+      // hash per create — about 70ms on the one thread every socket is answered
+      // from, so roughly six minutes added to five thousand creates and a
+      // measurement of the hash rather than of the door. The other two doors
+      // set no credential either, so `none` is also what keeps the three
+      // comparable.
+      credential: "none",
       attributes: bulk.attributesFor(person, catalogue)
     });
     watch.lap(reply.ms);

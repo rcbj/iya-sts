@@ -365,6 +365,15 @@ runs the same protocol implementations with that permissiveness taken out, and
 additionally gates `/admin-api`. It is settable per trust realm, so one process
 can serve a development realm and a product realm at once.
 
+**Switching a realm from `development` to `product` does not carry over the
+return addresses development learnt.** A SAML ACS URL, a SAML 1.1 `shire`, a
+WS-Federation `wreply` or a console/portal callback that a development-mode
+request put on an application entry is marked *observed*, and product refuses it
+until somebody confirms it on that application's page (or with
+`POST /admin-api/applications/confirm-address`). Confirm or discard them before
+the switch; addresses recorded before the marking existed carry no mark and need
+reviewing by hand. See [what is not checked](what-is-not-checked.md).
+
 Each gate is explained under [what is not checked](what-is-not-checked.md).
 
 ### `admin.readGroup`, `admin.writeGroup` and `admin.openWhenEmpty`

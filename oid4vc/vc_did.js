@@ -21,7 +21,8 @@ const forge = require('node-forge');
 const stsCrypto = require('../common/crypto');
 const app = require('../common/app');
 const bbs2023 = require('../common/vendored/bbs2023.js');
-const { log, logArtifact, PORT, STS, baseUrlOf, bbsKeyPair } = require('../common/helpers');
+const { log, logArtifact, PORT, STS, baseUrlOf, bbsKeyPair, signingKeyFor,
+        stsKeysFor } = require('../common/helpers');
 // The identity registry, for ONE call at the generator endpoint below: a DID this
 // service mints is an identity it has created, and this is the funnel the embedded
 // directory grows an entry off. A library — it registers no route and requires only
@@ -31,6 +32,9 @@ const stats = require('../common/admin_stats');
 // others here: it registers no route and requires nothing from this repository,
 // so it cannot join a cycle wherever it is required from.
 const config = require('../common/config');
+// The error codes (common/error_codes.js). A LEAF that requires nothing; a code is
+// marked on the response object and never written into a response.
+const errorCodes = require('../common/error_codes');
 const { VCI_CONFIGS } = require('./vc_configs');
 // ---------------------------------------------------------------------------
 // This issuer's DECENTRALIZED IDENTIFIER (W3C DID Core 1.0).
@@ -83,9 +87,69 @@ const LDP_VC_ISSUER_DID = config.value('oid4vci.ldpVcIssuerDid');
 // did:web for whatever host this request arrived on, so the same container
 // works at localhost:8081, sts:8081 and behind a published port without being
 // told which it is.
+//
+// ---------------------------------------------------------------------------
+// DERIVED FROM `baseUrlOf(req)` SINCE 2026-09-12, AND THE PATH IS PART OF IT.
+//
+// It read the raw Host header, which was wrong three ways at once:
+//
+//   * A TRUST REALM'S DID WAS THE DEFAULT REALM'S. /realm/acme/.well-known/did.json
+//     published `did:web:host%3A8081` with acme's keys in it, so resolving the
+//     DID a realm's credential names fetched the DEFAULT realm's document and
+//     the signature failed against the wrong key — or, worse, two realms
+//     claimed one DID.
+//   * `global.publicBaseUrl` and `global.trustProxy` were ignored, so behind a
+//     proxy the DID named the last hop while the issuer identifier beside it
+//     named the public origin.
+//   * A base URL WITH A PATH has a did:web of its own shape. The did:web method
+//     specification turns path segments into `:`-separated components —
+//     `did:web:example.com:realm:acme` — and resolves that to
+//     `https://example.com/realm/acme/did.json`, NOT to a well-known path.
+//
+// So the host is `baseUrlOf()`'s host, its port colon percent-encoded as
+// before, and every path segment of the base becomes a component. With no
+// realm prefix and nothing pinned the base has no path, and the DID is
+// byte-for-byte what the Host header produced — which is the compatibility
+// line every existing caller rests on. The document for a path-ful DID is
+// served at `<base>/did.json` below.
+// ---------------------------------------------------------------------------
 function stsDid(req) {
-  const host = String((req && req.get && req.get('host')) || ('localhost:' + PORT));
-  return 'did:web:' + host.replace(/:/g, '%3A');
+  if (!req || !req.get) {
+    return 'did:web:' + ('localhost:' + PORT).replace(/:/g, '%3A');
+  }
+  const parts = didWebPartsOf(baseUrlOf(req));
+  return 'did:web:' + [parts.host.replace(/:/g, '%3A')].concat(parts.segments.map(function (one) {
+    return one.replace(/:/g, '%3A');
+  })).join(':');
+}
+
+// A base URL as did:web sees it: the authority, and the path segments. Parsed
+// by hand rather than through `new URL()`, which would drop a default port the
+// Host header carried and change the DID for a caller who sent one.
+function didWebPartsOf(base) {
+  const rest = String(base || '').replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  const slash = rest.indexOf('/');
+  return {
+    host: slash < 0 ? rest : rest.slice(0, slash),
+    segments: slash < 0 ? [] : rest.slice(slash).split('/').filter(Boolean)
+  };
+}
+
+// The algorithm and key this issuer's DID-named artefacts are signed with —
+// `oid4vci.credentialSigningAlgorithm`, the same setting the credentials use,
+// because a credential whose `iss` is this DID is verified against a key the
+// DID document publishes, and the Domain Linkage Credential is the same DID
+// signing. RS256 is the RSA key exactly as before.
+function didSigner() {
+  log.debug("Entering didSigner().");
+  const alg = String(config.value('oid4vci.credentialSigningAlgorithm') || 'RS256');
+  if (alg === 'RS256') {
+    log.debug("Leaving didSigner(). RS256.");
+    return { alg: 'RS256', key: STS.privateKey, kid: STS.kid };
+  }
+  const signer = signingKeyFor(alg);
+  log.debug("Leaving didSigner(). " + alg + ".");
+  return { alg: alg, key: signer.key, kid: signer.kid };
 }
 
 // The DID Document. Two verification methods, because this issuer signs two
@@ -113,6 +177,27 @@ async function stsDidDocument(req) {
       n: b64uHex(pub.n.toString(16)), e: b64uHex(pub.e.toString(16))
     }
   }];
+  // THE CREDENTIAL KEY, WHERE IT IS NOT THE RSA ONE (2026-09-12). A realm
+  // whose `oid4vci.credentialSigningAlgorithm` names a curve algorithm signs its
+  // DID-named credentials and its Domain Linkage Credential with that curve
+  // key, and a verifier resolving this DID must find it here. Its public JWK is
+  // read off the realm's key set — the same object /oauth2/jwks publishes — so
+  // the two documents cannot describe different keys. Nothing is added for
+  // RS256, which keeps the document exactly as it was.
+  const signer = didSigner();
+  if (signer.alg !== 'RS256' && signer.kid !== STS.kid) {
+    const extra = (stsKeysFor().extraKeys || []).filter(function (one) {
+      return one.publicJwk && one.publicJwk.kid === signer.kid;
+    })[0];
+    if (extra) {
+      methods.push({ id: did + '#' + signer.kid, type: 'JsonWebKey2020', controller: did,
+                     publicKeyJwk: extra.publicJwk });
+    } else {
+      log.error(errorCodes.tag('STS-VC-0043') +
+                'the ' + signer.alg + ' key credentials are signed with is not in this ' +
+                'realm\'s key set, so the DID document cannot publish it.');
+    }
+  }
   try {
     const keys = await bbsKeyPair();
     methods.push({
@@ -127,7 +212,8 @@ async function stsDidDocument(req) {
   } catch (e) {
     // The BBS half is optional here: an ldp_vc issued while it is unavailable
     // would fail earlier and louder than a missing verification method.
-    log.error('the BBS key could not be published in the DID document: ' + e.message);
+    log.error(errorCodes.tag('STS-VC-0044') +
+              'the BBS key could not be published in the DID document: ' + e.message);
   }
   log.debug("Leaving stsDidDocument().");
   return {
@@ -139,16 +225,55 @@ async function stsDidDocument(req) {
   };
 }
 
+// Is this request's DID one with a PATH — a trust realm, or a pinned base URL
+// with a path in it? Such a DID resolves to `<base>/did.json` rather than to the
+// well-known location.
+function didHasPath(req) {
+  return didWebPartsOf(baseUrlOf(req)).segments.length > 0;
+}
+
 // did:web resolution is a plain GET of this document. no-store for the same
 // reason the JWKS is: the keys it describes are regenerated on every start, so a
 // cached copy outlives them.
-app.get('/.well-known/did.json', async function (req, res) {
+async function sendDidDocument(req, res) {
   log.debug("Entering the did:web document endpoint.");
   const doc = await stsDidDocument(req);
   logArtifact('DID Document', 'as served', doc);
   res.set('Cache-Control', 'no-store');
   res.status(200).type('application/did+json').send(JSON.stringify(doc, null, 2));
   log.debug("Leaving the did:web document endpoint. " + doc.verificationMethod.length + " method(s).");
+}
+
+app.get('/.well-known/did.json', sendDidDocument);
+
+// ---------------------------------------------------------------------------
+// THE did:web LOCATION FOR A DID WITH A PATH (2026-09-12). The method
+// specification resolves `did:web:example.com:realm:acme` to
+// `https://example.com/realm/acme/did.json`, so a realm's DID — see stsDid() —
+// is only resolvable if its document is there. The realm middleware strips
+// the prefix, so this route is `/did.json` and it answers in the realm the
+// request named.
+//
+// Where the DID has NO path this answers 404 with the location that does
+// resolve, rather than serving the document at a second address: a DID of the
+// bare-host shape is resolved at the well-known path and nowhere else, and a
+// document served where no resolver looks is a document that disagrees with
+// nothing until the day it does.
+// ---------------------------------------------------------------------------
+app.get('/did.json', async function (req, res) {
+  log.debug("Entering the path-form did:web document endpoint.");
+  if (!didHasPath(req)) {
+    log.debug("Leaving the path-form did:web document endpoint. This DID has no path.");
+    res.set('Cache-Control', 'no-store');
+    errorCodes.mark(res, 'STS-VC-0045');
+    return res.status(404).type('application/json').send(JSON.stringify({
+      error: 'not_found',
+      error_description: 'This DID (' + stsDid(req) + ') has no path, so did:web resolves it at ' +
+        baseUrlOf(req) + '/.well-known/did.json.'
+    }, null, 2));
+  }
+  log.debug("Leaving the path-form did:web document endpoint. Handing over.");
+  return sendDidDocument(req, res);
 });
 
 // ---------------------------------------------------------------------------
@@ -191,7 +316,8 @@ async function domainLinkageCredential(req) {
   const did = stsDid(req);
   const origin = baseUrlOf(req);
   const now = Math.floor(Date.now() / 1000);
-  const exp = now + 365 * 24 * 3600;
+  // `oid4vci.domainLinkageLifetimeS`, a year by default (2026-09-12).
+  const exp = now + (Number(config.value('oid4vci.domainLinkageLifetimeS')) || 365 * 24 * 3600);
   // issuer and credentialSubject.id are both the DID: a domain linkage credential
   // is self-issued by definition — nobody else is in a position to say which
   // origin a DID controls. `id` is deliberately absent at the credential root,
@@ -205,10 +331,14 @@ async function domainLinkageCredential(req) {
     credentialSubject: { id: did, origin: origin }
   };
   logArtifact('Domain Linkage Credential', 'before signing', vc);
-  const token = stsCrypto.signJws({ iss: did, sub: did, nbf: now, exp: exp, vc: vc }, STS.privateKey, {
-    algorithm: 'RS256',
+  // The configured credential algorithm — see didSigner() — with the kid still
+  // a DID URL into this DID's own document, which is what the DIF specification
+  // requires of the JWT form.
+  const signer = didSigner();
+  const token = stsCrypto.signJws({ iss: did, sub: did, nbf: now, exp: exp, vc: vc }, signer.key, {
+    algorithm: signer.alg,
     noTimestamp: true,
-    header: { alg: 'RS256', kid: did + '#' + STS.kid, typ: undefined }
+    header: { alg: signer.alg, kid: did + '#' + signer.kid, typ: undefined }
   });
   logArtifact('Domain Linkage Credential', 'after signing (JWT form)', token);
   log.debug("Leaving domainLinkageCredential(). did=" + did + ", origin=" + origin);
@@ -296,7 +426,10 @@ function credentialSignedBy(issuerDid, privateKey, alg, kid) {
   const holder = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
   const holderJwk = holder.publicKey.export({ format: 'jwk' });
   const payload = {
-    iss: issuerDid, nbf: now, exp: now + 3600, vct: 'urn:idptools:did-tools:generated',
+    iss: issuerDid, nbf: now,
+    // `oid4vci.generatedDidCredentialLifetimeS`, an hour by default (2026-09-12).
+    exp: now + (Number(config.value('oid4vci.generatedDidCredentialLifetimeS')) || 3600),
+    vct: 'urn:idptools:did-tools:generated',
     sub: 'urn:uuid:' + crypto.randomUUID(),
     cnf: { jwk: { kty: holderJwk.kty, crv: holderJwk.crv, x: holderJwk.x, y: holderJwk.y } },
     _sd_alg: 'sha-256', _sd: [digest]
@@ -314,6 +447,7 @@ app.get('/did/generate', async function (req, res) {
   log.debug("Entering the DID generator endpoint.");
   const method = String(req.query.method || 'jwk').toLowerCase();
   if (method !== 'jwk' && method !== 'web') {
+    errorCodes.mark(res, 'STS-VC-0046');
     res.status(400).type('application/json').send(JSON.stringify({
       error: 'invalid_request',
       error_description: 'method must be jwk or web. did:key is not generated here: encoding one ' +
@@ -366,15 +500,18 @@ app.get('/did/generate', async function (req, res) {
     };
   } else {
     const did = stsDid(req);
+    const signer = didSigner();
     body = {
       method: 'web',
       did: did,
       document: await stsDidDocument(req),
-      documentUrl: baseUrlOf(req) + '/.well-known/did.json',
+      // Where did:web actually resolves this DID: the well-known path for a bare
+      // host, `<base>/did.json` for one with a path (a trust realm).
+      documentUrl: baseUrlOf(req) + (didHasPath(req) ? '/did.json' : '/.well-known/did.json'),
       didConfigurationUrl: baseUrlOf(req) + '/.well-known/did-configuration.json',
       origin: baseUrlOf(req),
-      verificationMethod: did + '#' + STS.kid,
-      credential: credentialSignedBy(did, STS.privateKey, 'RS256', STS.kid)
+      verificationMethod: did + '#' + signer.kid,
+      credential: credentialSignedBy(did, signer.key, signer.alg, signer.kid)
     };
   }
   logArtifact('generated DID', 'as returned', { method: body.method, did: body.did });
@@ -408,6 +545,7 @@ function issuerDidFor(configId, req) {
 
 module.exports = {
   stsDid: stsDid,
+  didWebPartsOf: didWebPartsOf,
   stsDidDocument: stsDidDocument,
   domainLinkageCredential: domainLinkageCredential,
   issuerDidFor: issuerDidFor,

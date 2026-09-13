@@ -132,9 +132,24 @@ const authn = require('./../authn/authn');
 const federation = require('./federation');
 const fedMap = require('./federation_map');
 const fedHttp = require('./federation_http');
+// THE ERROR CODES. Every refusal here is a SECURITY refusal, so each check has a
+// code of its own, marked on the response before refuse() draws the page — the
+// code is never on the page. And the audit log, for the one failure that does
+// not refuse: an optional UserInfo call that did not answer.
+const errorCodes = require('./../common/error_codes');
+// A library (rule 3) that registers no route: the revocation check
+// `fedSigningCertificate` gets when it has verified a response. See
+// `signerStillAccepted()`.
+const revocationStatus = require('./../common/revocation_status');
+const audit = require('./../common/audit');
 // For the context store below only. `realms.js` requires config.js and nothing
 // else here, so it registers no route and cannot join a cycle — rule 3m.
 const realms = require('./../common/realms');
+// The configured XML signature algorithms, for a signed outbound AuthnRequest.
+// A leaf in saml/ that registers nothing — the same answer every SAML signer in
+// this service reads, so a partner verifying our request and our assertions is
+// told one algorithm. See saml/document_settings.js.
+const documentSettings = require('./../saml/document_settings');
 const {
   log, logArtifact, STS, xmlEscape, firstByLocal, textByLocal, iso, baseUrlOf,
   jsonFromB64u, randomId, parseBody
@@ -183,14 +198,21 @@ const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 // which is the denial of service the cap exists to bound arriving through the
 // door it was meant to close.
 const contexts = realms.map({ persist: 'federation_sp.contexts' });
-const MAX_CONTEXTS = 500;
+// `federation.maxContexts` since 2026-09-12; it was the constant MAX_CONTEXTS,
+// 500. Read per use so the console can move it.
+function maxContexts() {
+  return Number(config.value('federation.maxContexts'));
+}
 
 // The longest `application` a context will carry. A client_id has no length
 // limit in any specification this service implements, and this value is written
 // into a directory attribute at the far end — so it is bounded where it is
 // accepted rather than where it is spent. It is generous: the longest identifier
 // anything here files an application under is a SAML entityID, which is a URL.
-const MAX_APPLICATION_LEN = 256;
+// `federation.maxApplicationLength` since 2026-09-12; it was the constant 256.
+function maxApplicationLength() {
+  return Number(config.value('federation.maxApplicationLength'));
+}
 
 function contextTtlMs() {
   return config.value('federation.requestTtlMin') * 60 * 1000;
@@ -203,7 +225,8 @@ function putContext(record) {
   contexts.forEach(function (value, key) {
     if (value.expires < now) contexts.delete(key);
   });
-  if (contexts.size >= MAX_CONTEXTS) {
+  const cap = maxContexts();
+  if (contexts.size >= cap) {
     // The OLDEST goes, and it is a sweep rather than a refusal because the
     // alternative is a login endpoint anybody can reach that stops working for
     // everybody once it is hit enough times. What is lost is one person's
@@ -215,7 +238,7 @@ function putContext(record) {
     });
     if (oldestKey) {
       contexts.delete(oldestKey);
-      log.warn('federation: ' + MAX_CONTEXTS + ' sign-ins are in flight, so the oldest ' +
+      log.warn('federation: ' + cap + ' sign-ins are in flight (federation.maxContexts), so the oldest ' +
                'was dropped. Whoever it belonged to will be told their response was ' +
                'unsolicited, which is the truth as far as this service can tell.');
     }
@@ -346,7 +369,28 @@ function refuse(res, record, status, what, why, extra) {
 // reason: a partner keying its trust store off an entityID must be able to be
 // given one that is only ours-with-them.
 // ---------------------------------------------------------------------------
+//
+// **AND IT IS DERIVED FROM THE BASE URL, WHICH IS THE ONE THING TO KNOW ABOUT IT
+// (2026-09-12).** `base` is `helpers.baseUrlOf(req)`, so an unpinned service
+// names itself after whatever Host header the browser sent — and the same
+// derivation is what the inbound `<Audience>` is compared against, so the two
+// stay in step by construction: the Issuer this service SENDS and the audience
+// it EXPECTS are one call to this function with one base. What that does not
+// give is a name that is stable across hostnames, which a partner keying its
+// trust store off an entityID needs. Two ways to pin it, in order:
+//
+//   * `fedLocalEntityId` on the relationship — the entityID a partner was
+//     given, used verbatim for this relationship alone;
+//   * `global.publicBaseUrl` — which pins `baseUrlOf()` for every relationship
+//     at once, and every other URL this service publishes with it.
+//
+// The ACS URL below stays derived: it is an ADDRESS a browser posts to, and it
+// must follow the base it can actually reach.
 function ourEntityId(base, record) {
+  const pinned = String((record && record.fedLocalEntityId) || '').trim();
+  if (pinned) {
+    return pinned;
+  }
   return base + ACS_PATH + '/' + encodeURIComponent(record.fedId);
 }
 
@@ -374,6 +418,68 @@ function certPemOf(record) {
   const wrapped = der.replace(/(.{64})/g, '$1\n').replace(/\n$/, '');
   log.debug('Leaving certPemOf(). ' + der.length + ' base64 characters.');
   return '-----BEGIN CERTIFICATE-----\n' + wrapped + '\n-----END CERTIFICATE-----\n';
+}
+
+// ---------------------------------------------------------------------------
+// THE CONFIGURED CERTIFICATE, CHECKED FOR REVOCATION ONCE IT HAS VERIFIED
+// SOMETHING (2026-09-12).
+//
+// `fedSigningCertificate` is what an administrator wrote onto the relationship,
+// and `verifyXmlSignature()` is right to trust it over anything in the
+// document. What that trust cannot know is that the partner's CA has since
+// REVOKED it — a compromised signing key is exactly the event a partner
+// publishes on its CRL and does not ring anybody about. So after every other
+// check has passed and before the session is started, the certificate is
+// looked up exactly as a presented one is: the register when this service
+// issued it, its issuer's OCSP responder and CRL otherwise, under
+// `pki.revocationCheck`. `common/revocation_status.js`'s
+// `registeredVerdictFor()` argues why its addresses may be dialled.
+//
+// **THE PATH BECAME ASYNCHRONOUS FOR IT**, rather than taking the register-only
+// door, because a partner's certificate is by definition somebody else's and
+// the register would answer nothing about it. `consume()` already returns the
+// OAuth branch's promise, so a promise from these two branches changes nothing
+// for express; a throw inside it is caught here into the same refusal page
+// `consume()`'s own catch draws.
+// ---------------------------------------------------------------------------
+//
+// **AN OIDC OR OAUTH 2.0 PARTNER'S KEY IS THE SAME QUESTION ASKED OF A JWK.**
+// `jwk` is the key out of `fedJwks` or `fedJwksUri` that verified the token; its
+// `x5c`, where it has one, is checked the same way, and a key with none is a
+// bare key with nothing to look up — reported as such on the log line rather
+// than called good.
+function signerStillAccepted(req, res, record, proceed, jwk) {
+  log.debug('Entering signerStillAccepted(). id=' + record.fedId);
+  const checked = false
+    ? revocationStatus.registeredKeyVerdictFor(jwk, 'the key "' + (jwk.kid || '(no kid)') +
+        '" in the relationship "' + record.fedId + '"\'s key set')
+    : revocationStatus.registeredVerdictFor({
+      certificate: record.fedSigningCertificate,
+      source: 'fedSigningCertificate on the relationship "' + record.fedId + '"'
+    });
+  log.debug('Leaving signerStillAccepted(). The verdict is pending.');
+  return checked.then(function (verdict) {
+    if (verdict.refused) {
+      log.warn('federation: ' + record.fedId + ': the configured signing certificate verified ' +
+               'the response and is refused: ' + verdict.why);
+      errorCodes.mark(res, 'STS-PKI-0129');
+      return refuse(res, record, 401, 'The partner\'s signing certificate may no longer be used',
+        verdict.why + ' The signature verified against it, and a signature from a withdrawn ' +
+        'key is worth nothing: replace ' + (jwk ? 'the key' : 'fedSigningCertificate') +
+        ' with the partner\'s current one.');
+    }
+    log.debug('signerStillAccepted(): ' + revocationStatus.registeredSummary(verdict) + '.');
+    return proceed();
+  }).catch(function (e) {
+    log.error(errorCodes.tag('STS-FED-0042') + 'federation: ' + record.fedId +
+              ' threw while completing a verified response: ' + e.stack);
+    if (res.headersSent) {
+      // The sign-in already answered; there is nothing left to refuse with.
+      return undefined;
+    }
+    errorCodes.mark(res, 'STS-FED-0042');
+    return refuse(res, record, 500, 'This service failed while reading the response', e.message);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -497,9 +603,12 @@ function assertionContents(assertion) {
 }
 
 // The validity window, as a check with a sentence. `Conditions` is optional in
-// both versions and an assertion with none is ACCEPTED — refusing it would
+// both versions and an assertion with none is ACCEPTED HERE — refusing it would
 // refuse a perfectly ordinary AD FS assertion — but the fact is reported rather
 // than hidden, because "this assertion can never expire" is worth knowing.
+// (A SAML 2.0 assertion with no Conditions is refused by audienceCheck() since
+// 2026-09-12, for having no audience restriction — a different rule, argued
+// there, and not a change to what this function decides.)
 function conditionsCheck(assertion) {
   log.debug('Entering conditionsCheck().');
   const conditions = firstByLocal(assertion, 'Conditions');
@@ -520,13 +629,13 @@ function conditionsCheck(assertion) {
   const skew = config.value('oauth2.clockSkewS') * 1000;
   if (notBefore && Date.parse(notBefore) - skew > now) {
     log.debug('Leaving conditionsCheck(). Not yet valid.');
-    return { ok: false, why: 'the assertion is not valid until ' + notBefore +
+    return { ok: false, errorCode: 'STS-FED-0017', why: 'the assertion is not valid until ' + notBefore +
                              ', which is in the future even allowing ' +
                              config.value('oauth2.clockSkewS') + 's of clock skew' };
   }
   if (notOnOrAfter && Date.parse(notOnOrAfter) + skew <= now) {
     log.debug('Leaving conditionsCheck(). Expired.');
-    return { ok: false, why: 'the assertion expired at ' + notOnOrAfter +
+    return { ok: false, errorCode: 'STS-FED-0018', why: 'the assertion expired at ' + notOnOrAfter +
                              ' (allowing ' + config.value('oauth2.clockSkewS') +
                              's of clock skew). A partner and this service disagreeing ' +
                              'about the time is the usual cause; the other is a replay' };
@@ -534,6 +643,111 @@ function conditionsCheck(assertion) {
   log.debug('Leaving conditionsCheck(). Inside its window.');
   return { ok: true, why: (notBefore || '(no NotBefore)') + ' to ' +
                           (notOnOrAfter || '(no NotOnOrAfter)') };
+}
+
+// ---------------------------------------------------------------------------
+// THE AUDIENCE, AS A CHECK WITH A SENTENCE — AND A REFUSAL (2026-09-12).
+//
+// **IT WAS A WARNING AND IT IS A REFUSAL, IN EVERY MODE.** An <Audience> naming
+// a different service provider was logged and ACCEPTED, on the argument that a
+// partner configured with a different name for this service is the ordinary
+// case. That is true of a partner and fatal at this endpoint: an assertion a
+// partner minted for SOMEBODY ELSE — any other service provider it signs for —
+// verifies against the same `fedSigningCertificate`, names the same issuer, and
+// is inside its window, so accepting it lets anybody holding an assertion for
+// another relying party of that partner sign in HERE as its subject. The
+// directory's own header calls this the one surface whose bugs are security
+// bugs, and this was one. The remedy for a partner that calls us something
+// else is `fedLocalEntityId` on the relationship, which says what that name is.
+//
+// What counts as ours is ourEntityId() — the same call that names this service
+// in the outbound AuthnRequest's Issuer, the WS-Federation wtrealm and the SAML
+// 1.1 providerId, with the same base URL — or `fedClientId` where the
+// relationship has one.
+//
+// Every AudienceRestriction must be satisfied, and one is satisfied by ANY of
+// its Audience values: saml-core-2.0-os section 2.5.1.4 (and its SAML 1.1
+// predecessor, AudienceRestrictionCondition) — several restrictions are an AND,
+// several audiences inside one are an OR. Reading only the first <Audience>, as
+// this did, refused a legitimate multi-audience assertion and accepted nothing
+// better for it.
+//
+// AN ASSERTION WITH NO AUDIENCE RESTRICTION: refused for SAML 2.0, whose Web
+// Browser SSO profile makes one a MUST (saml-profiles-2.0-os section 4.1.4.2);
+// accepted with a warning for SAML 1.1 and WS-Federation, whose profiles make it
+// optional and whose deployed identity providers routinely omit it.
+// ---------------------------------------------------------------------------
+function audienceCheck(assertion, base, record, required) {
+  log.debug('Entering audienceCheck(). required=' + required);
+  const ours = ourEntityId(base, record);
+  const accepted = [ours];
+  if (String(record.fedClientId || '').trim()) {
+    accepted.push(String(record.fedClientId).trim());
+  }
+  const conditions = firstByLocal(assertion, 'Conditions');
+  const restrictions = [];
+  if (conditions) {
+    const all = conditions.getElementsByTagName('*');
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].localName === 'AudienceRestriction' ||
+          all[i].localName === 'AudienceRestrictionCondition') {
+        restrictions.push(all[i]);
+      }
+    }
+  }
+  if (!restrictions.length) {
+    if (required) {
+      log.debug('Leaving audienceCheck(). None, and this profile requires one.');
+      return { ok: false, errorCode: 'STS-FED-0019',
+               why: 'the assertion carries no <AudienceRestriction>, so it is not addressed to ' +
+                    'any service provider in particular. The SAML 2.0 Web Browser SSO profile ' +
+                    'requires one (saml-profiles-2.0-os section 4.1.4.2), and an assertion any ' +
+                    'service provider may accept is one minted for somebody else as readily ' +
+                    'as for this service' };
+    }
+    log.warn('federation: the assertion from ' + record.fedId + ' carries no audience ' +
+             'restriction. It is ACCEPTED, because this profile makes one optional — but it ' +
+             'is not addressed to this service in particular.');
+    log.debug('Leaving audienceCheck(). None, and this profile allows that.');
+    return { ok: true, why: '' };
+  }
+  for (let r = 0; r < restrictions.length; r++) {
+    const values = [];
+    const audiences = restrictions[r].getElementsByTagName('*');
+    for (let a = 0; a < audiences.length; a++) {
+      if (audiences[a].localName === 'Audience') {
+        values.push((audiences[a].textContent || '').trim());
+      }
+    }
+    const matched = values.some(function (value) { return accepted.indexOf(value) >= 0; });
+    if (!matched) {
+      log.debug('Leaving audienceCheck(). A restriction names somebody else.');
+      return { ok: false, errorCode: 'STS-FED-0020',
+               why: 'the assertion is addressed to ' +
+                    (values.length ? values.join(', ') : '(an empty audience restriction)') +
+                    ' and this service calls itself ' + accepted.join(' or ') + ' to this ' +
+                    'partner. An assertion minted for a different service provider verifies ' +
+                    'against the same key, so it is refused rather than accepted. If the ' +
+                    'partner was configured with a different name for this service, set ' +
+                    'fedLocalEntityId on the relationship to that name' };
+    }
+  }
+  log.debug('Leaving audienceCheck(). Every restriction names this service.');
+  return { ok: true, why: '' };
+}
+
+// The partner's own amr, carried BESIDE `federated` rather than replaced by it
+// (2026-09-12). It was `amr.length ? ['federated'] : ['federated']` — both arms
+// identical — so a partner's authentication context was read and then thrown
+// away. `federated` stays FIRST, because it is the fact about what THIS service
+// did (it verified a partner's signature), and it is what `saml/authn_context.js`
+// keys on to read everything after it as the PARTNER's statement rather than
+// this service's own sign-in.
+function federatedAmr(partner) {
+  const values = (Array.isArray(partner) ? partner : [])
+    .map(function (value) { return String(value || '').trim(); })
+    .filter(function (value) { return value !== '' && value !== 'federated'; });
+  return ['federated'].concat(values);
 }
 
 // ---------------------------------------------------------------------------
@@ -577,6 +791,7 @@ function completeSignIn(req, res, record, result) {
   const mapped = fedMap.mapIncoming(record, result.bag, result.subject);
   if (!mapped.username) {
     log.debug('Leaving completeSignIn(). There is no username.');
+    errorCodes.mark(res, 'STS-FED-0043');
     return refuse(res, record, 400, 'The partner named nobody',
                   'The assertion verified, but nothing in it could be read as a username: ' +
                   (record.fedUsernameSource
@@ -589,9 +804,11 @@ function completeSignIn(req, res, record, result) {
   const protocolLabel = (federation.protocolRow(record.fedProtocol) || {}).label ||
     record.fedProtocol;
   const via = 'Federation (' + protocolLabel + ')';
-  // What the PARTNER said it did. See decision 1: `federated` is not an RFC
-  // 8176 value and deliberately is not one.
-  const amr = result.amr && result.amr.length ? result.amr : ['federated'];
+  // What the PARTNER said it did, behind `federated`. See decision 1:
+  // `federated` is not an RFC 8176 value and deliberately is not one. See
+  // federatedAmr() for why it now LEADS the partner's values rather than
+  // replacing them — and why every protocol branch goes through that function.
+  const amr = federatedAmr(result.amr);
 
   // WHAT THE FUNNEL IS TOLD, and it goes through `startSession()` rather than
   // through a `stats.recordAuthentication()` call of its own. That was written
@@ -661,7 +878,7 @@ function completeSignIn(req, res, record, result) {
       fields: samlFieldsFor(record)
     });
   } catch (e) {
-    log.error('federation: the application registry threw and was ignored; the ' +
+    log.error(errorCodes.tag('STS-FED-0045') + 'federation: the application registry threw and was ignored; the ' +
               'sign-in itself stands: ' + e.message);
   }
 
@@ -696,6 +913,7 @@ function completeSignIn(req, res, record, result) {
   if (!session) {
     log.info('federation: the issuance policy refused a session for ' +
              mapped.username + ' arriving through ' + record.fedId + '.');
+    errorCodes.mark(res, 'STS-FED-0044');
     return refuse(res, record, 403, 'The issuance policy refused the session',
       'The assertion verified and the partner is configured — this service ' +
       'will not start a session for ' + mapped.username + ' because the ' +
@@ -855,9 +1073,13 @@ function authnRequestXml(base, record) {
   // and where a partner will look for it. A signer with no placement appends it
   // to the document element instead, which is schema-invalid and which several
   // identity providers refuse without saying why.
+  // The configured algorithms since 2026-09-12 — see saml/document_settings.js.
+  const how = documentSettings.signatureOptions();
   const signed = stsCrypto.signXml(xml, {
     privateKeyPem: STS.privateKeyPem,
     certPem: STS.certPem,
+    sigAlg: how.sigAlg,
+    c14nAlg: how.c14nAlg,
     placement: stsCrypto.PLACEMENT.AFTER_ISSUER,
     refUri: '#' + id,
     what: 'federated SAML 2.0 AuthnRequest'
@@ -946,6 +1168,7 @@ function pkcePair() {
 app.get(LOGIN_PATH + '/:id', function (req, res) {
   log.debug('Entering the federation login endpoint. id=' + req.params.id);
   if (!enabled()) {
+    errorCodes.mark(res, 'STS-FED-0001');
     res.status(404).type('html').send(page('Not here',
       '<h1>Federation is off</h1><p><code>federation.enabled</code> is off, so no ' +
       'federation endpoint answers. No relationship was changed.</p>'));
@@ -955,6 +1178,7 @@ app.get(LOGIN_PATH + '/:id', function (req, res) {
   const id = String(req.params.id || '');
   const record = federation.get(id);
   if (!record) {
+    errorCodes.mark(res, 'STS-FED-0002');
     res.status(404).type('html').send(page('No such relationship',
       '<h1>No such federation relationship</h1><p>There is no relationship called <code>' +
       xmlEscape(id) + '</code>. The configured ones are at <a href="' + BASE_PATH + '">' +
@@ -963,6 +1187,7 @@ app.get(LOGIN_PATH + '/:id', function (req, res) {
     return;
   }
   if (record.fedRole !== 'service-provider') {
+    errorCodes.mark(res, 'STS-FED-0004');
     return refuse(res, null, 400, 'That relationship goes the other way',
       '"' + id + '" is an identity-provider-side relationship: this service ASSERTS to ' +
       'that partner rather than consuming from it. There is nothing to sign in to here. ' +
@@ -970,6 +1195,7 @@ app.get(LOGIN_PATH + '/:id', function (req, res) {
       'see federation/CLAUDE.md.');
   }
   if (!federation.isEnabled(record)) {
+    errorCodes.mark(res, 'STS-FED-0005');
     return refuse(res, record, 403, 'That relationship is disabled',
       'It exists and is configured, and <code>fedEnabled</code> is FALSE. Every ' +
       'relationship is created disabled deliberately: a partner that half-exists and ' +
@@ -978,6 +1204,7 @@ app.get(LOGIN_PATH + '/:id', function (req, res) {
   }
   const readiness = federation.readinessOf(record);
   if (!readiness.ready) {
+    errorCodes.mark(res, 'STS-FED-0006');
     return refuse(res, record, 409, 'That relationship is not fully configured',
       'It is enabled, but ' + readiness.missing.join(', ') + ' ' +
       (readiness.missing.length === 1 ? 'is' : 'are') + ' still empty. It refuses rather ' +
@@ -1007,7 +1234,7 @@ app.get(LOGIN_PATH + '/:id', function (req, res) {
     // `federation.recordUse()` checks the pair against the live register before
     // writing anything anywhere. Neither check is sufficient alone: this one
     // bounds the MAP, that one bounds the DIRECTORY.
-    application: String(req.query.application || '').slice(0, MAX_APPLICATION_LEN),
+    application: String(req.query.application || '').slice(0, maxApplicationLength()),
     nonce: 'n-' + randomId(16),
     pkceVerifier: pkce.verifier, pkceChallenge: pkce.challenge
   };
@@ -1067,11 +1294,24 @@ app.get(LOGIN_PATH + '/:id', function (req, res) {
     // perfectly and never returns. Sending both is what a real SAML 1.1 service
     // provider does, and it makes the flow independent of what is registered at
     // the far end.
+    //
+    // AND `providerId` WHEN THE CONFIGURED URL DOES NOT ALREADY CARRY ONE
+    // (2026-09-12). It is Shibboleth's parameter for the relying party naming
+    // itself, and SAML 1.1 has no other: without it a partner guesses the
+    // audience — this service's own identity provider takes the ORIGIN of the
+    // TARGET — and the assertion comes back audienced to a bare origin. That
+    // was accepted with a warning until the audience check below became a
+    // refusal, so it is sent now as ourEntityId(), which is what that check
+    // compares against. A fedSsoUrl that names a providerId of its own is left
+    // alone: the operator said what the partner calls us, and a second
+    // parameter would arrive as an array at most servers.
     const handle = putContext(contextRecord);
     const target = acsUrl(base, record) + '?fedctx=' + encodeURIComponent(handle);
     const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
+    const namesProvider = /[?&]providerId=/.test(String(record.fedSsoUrl));
     const url = record.fedSsoUrl + joiner + 'TARGET=' + encodeURIComponent(target) +
-      '&shire=' + encodeURIComponent(target);
+      '&shire=' + encodeURIComponent(target) +
+      (namesProvider ? '' : '&providerId=' + encodeURIComponent(ourEntityId(base, record)));
     res.redirect(302, url);
     log.debug('Leaving the federation login endpoint. SAML 1.1 inter-site transfer.');
     return;
@@ -1133,6 +1373,7 @@ function consumeSamlResponse(req, res, record, params, version) {
   const encoded = String(params.SAMLResponse || '');
   if (!encoded) {
     log.debug('Leaving consumeSamlResponse(). No SAMLResponse.');
+    errorCodes.mark(res, 'STS-FED-0007');
     return refuse(res, record, 400, 'Nothing arrived',
       'This is the assertion consumer service for "' + record.fedId + '" and the request ' +
       'carried no SAMLResponse. A browser that reached it by hand will see this; so will a ' +
@@ -1143,6 +1384,7 @@ function consumeSamlResponse(req, res, record, params, version) {
     xml = Buffer.from(encoded, 'base64').toString('utf8');
   } catch (e) {
     log.debug('Leaving consumeSamlResponse(). Not base64.');
+    errorCodes.mark(res, 'STS-FED-0008');
     return refuse(res, record, 400, 'The SAMLResponse is not base64',
                   'It could not be decoded: ' + e.message);
   }
@@ -1153,10 +1395,12 @@ function consumeSamlResponse(req, res, record, params, version) {
     doc = new DOMParser().parseFromString(xml, 'text/xml');
   } catch (e) {
     log.debug('Leaving consumeSamlResponse(). Not XML.');
+    errorCodes.mark(res, 'STS-FED-0009');
     return refuse(res, record, 400, 'The SAMLResponse is not XML', e.message);
   }
   const root = doc && doc.documentElement;
   if (!root) {
+    errorCodes.mark(res, 'STS-FED-0009');
     return refuse(res, record, 400, 'The SAMLResponse is empty',
                   'It decoded to something with no document element.');
   }
@@ -1173,6 +1417,7 @@ function consumeSamlResponse(req, res, record, params, version) {
     : /Success$/.test(status);
   if (!succeeded) {
     log.debug('Leaving consumeSamlResponse(). The partner refused.');
+    errorCodes.mark(res, 'STS-FED-0010');
     return refuse(res, record, 400, 'The partner refused to authenticate them',
       'It answered ' + (status || '(no StatusCode)') +
       (statusMessage ? ' — "' + statusMessage + '"' : '') +
@@ -1182,6 +1427,7 @@ function consumeSamlResponse(req, res, record, params, version) {
 
   const assertion = firstByLocal(root, 'Assertion');
   if (!assertion) {
+    errorCodes.mark(res, 'STS-FED-0011');
     return refuse(res, record, 400, 'There is no assertion in it',
       'The Response reported success and carried no <Assertion>. If the partner is ' +
       'configured to ENCRYPT the assertion, that is the cause: this service does not ' +
@@ -1197,6 +1443,8 @@ function consumeSamlResponse(req, res, record, params, version) {
   const responseSig = verifyXmlSignature(xml, record, 'Response');
   if (!assertionSig.ok && !responseSig.ok) {
     log.debug('Leaving consumeSamlResponse(). The signature did not verify.');
+    errorCodes.mark(res, !certPemOf(record) ? 'STS-FED-0014'
+      : ((!assertionSig.present && !responseSig.present) ? 'STS-FED-0012' : 'STS-FED-0013'));
     return refuse(res, record, 401, 'The signature did not verify',
       (!assertionSig.present && !responseSig.present)
         ? 'Neither the <Response> nor the <Assertion> carries a ds:Signature at all. An ' +
@@ -1217,44 +1465,42 @@ function consumeSamlResponse(req, res, record, params, version) {
   // THE ISSUER. It has to be the partner this relationship names — otherwise
   // any partner whose certificate is configured anywhere could assert for any
   // other, which is the flaw that has broken more than one real federation.
+  //
+  // **AN EMPTY `fedPeer` NO LONGER SKIPS THIS (2026-09-12).** It was logged and
+  // skipped, so a relationship with no peer accepted any issuer the configured
+  // key signed for. `fedPeer` is now a field every protocol NEEDS
+  // (federation.js's PROTOCOLS table), so a relationship without one is not
+  // usable and never reaches here — and this refuses anyway rather than relying
+  // on that, because the two checks are in two files.
   const issuer = textByLocal(root, 'Issuer') || (assertion.getAttribute('Issuer') || '');
   const expectedIssuer = String(record.fedPeer || '').trim();
-  if (expectedIssuer && issuer !== expectedIssuer) {
-    log.debug('Leaving consumeSamlResponse(). Wrong issuer.');
+  if (!expectedIssuer || issuer !== expectedIssuer) {
+    log.debug('Leaving consumeSamlResponse(). Wrong or unchecked issuer.');
+    errorCodes.mark(res, expectedIssuer ? 'STS-FED-0015' : 'STS-FED-0016');
     return refuse(res, record, 401, 'It was issued by somebody else',
-      'The assertion names <code>' + issuer + '</code> as its issuer and this relationship ' +
-      'expects <code>' + expectedIssuer + '</code>. The signature verified, which means ' +
-      'the key configured here signed an assertion claiming to be from a different party.');
-  }
-  if (!expectedIssuer) {
-    log.warn('federation: ' + record.fedId + ' has no fedPeer configured, so the ' +
-             'assertion\'s issuer ("' + issuer + '") was not checked. Set fedPeer: without ' +
-             'it, any assertion the configured key signed is accepted whoever it claims to ' +
-             'be from.');
+      expectedIssuer
+        ? 'The assertion names ' + (issuer || '(no issuer)') + ' as its issuer and this ' +
+          'relationship expects ' + expectedIssuer + '. The signature verified, which means ' +
+          'the key configured here signed an assertion claiming to be from a different party.'
+        : 'This relationship has no fedPeer, so there is no issuer to check the assertion\'s (' +
+          (issuer || 'none') + ') against, and nothing is accepted until there is. Set fedPeer ' +
+          'to the partner\'s own identifier.');
   }
 
   const validity = conditionsCheck(assertion);
   if (!validity.ok) {
     log.debug('Leaving consumeSamlResponse(). Outside its validity window.');
+    errorCodes.mark(res, validity.errorCode || 'STS-FED-0018');
     return refuse(res, record, 401, 'The assertion is not valid now', validity.why);
   }
 
-  // THE AUDIENCE. Optional in practice — plenty of identity providers omit it
-  // — so an absent one is accepted with a warning and a PRESENT one that names
-  // somebody else is refused. Those two are different facts and collapsing them
-  // would mean either refusing half the partners in the world or accepting an
-  // assertion minted for a different service provider.
-  const conditions = firstByLocal(assertion, 'Conditions');
-  const audience = conditions ? textByLocal(conditions, 'Audience') : '';
-  const base = baseUrlOf(req);
-  const ours = ourEntityId(base, record);
-  if (audience && audience !== ours && audience !== record.fedClientId) {
-    log.warn('federation: the assertion from ' + record.fedId + ' names <Audience>' +
-             audience + '</Audience> and this service calls itself ' + ours + ' to that ' +
-             'partner. It is ACCEPTED, because a partner that was configured with a ' +
-             'different name for us is the ordinary case and refusing it would make this ' +
-             'feature unusable — but an assertion minted for somebody ELSE looks exactly ' +
-             'like this, so it is worth checking what the partner was configured with.');
+  // THE AUDIENCE — a refusal since 2026-09-12, where it was a warning. See
+  // audienceCheck(), which argues why and what `fedLocalEntityId` is for.
+  const audience = audienceCheck(assertion, baseUrlOf(req), record, version === '2.0');
+  if (!audience.ok) {
+    log.debug('Leaving consumeSamlResponse(). The audience is somebody else.');
+    errorCodes.mark(res, audience.errorCode || 'STS-FED-0020');
+    return refuse(res, record, 401, 'It was issued for somebody else', audience.why);
   }
 
   const contents = assertionContents(assertion);
@@ -1270,6 +1516,7 @@ function consumeSamlResponse(req, res, record, params, version) {
       root.getAttribute('InResponseTo') || '';
     if (!context) {
       log.debug('Leaving consumeSamlResponse(). Unsolicited.');
+      errorCodes.mark(res, handle ? 'STS-FED-0022' : 'STS-FED-0021');
       return refuse(res, record, 401, 'This service did not ask for that assertion',
         handle
           ? 'The RelayState "' + handle + '" is not one this service minted, or the ' +
@@ -1282,22 +1529,28 @@ function consumeSamlResponse(req, res, record, params, version) {
     }
     if (inResponseTo && inResponseTo !== context.requestId) {
       log.debug('Leaving consumeSamlResponse(). InResponseTo does not match.');
+      errorCodes.mark(res, 'STS-FED-0023');
       return refuse(res, record, 401, 'It answers a different request',
         'The assertion says InResponseTo="' + inResponseTo + '" and the sign-in this ' +
         'RelayState belongs to sent "' + context.requestId + '".');
     }
   }
 
-  const amr = [];
-  if (contents.context) amr.push(contents.context);
-  log.debug('Leaving consumeSamlResponse(). Verified; completing the sign-in.');
-  return completeSignIn(req, res, record, {
-    subject: contents.subject,
-    bag: contents.bag,
-    amr: amr.length ? ['federated'] : ['federated'],
-    acr: contents.context || '',
-    returnTo: fromContext(context).returnTo,
-    application: fromContext(context).application
+  // A SAML partner states its authentication context as a class or a method
+  // URI, not as RFC 8176 values, so nothing joins `federated` in the amr — the
+  // statement travels on `acr`, where saml/authn_context.js reads it. The old
+  // code pushed the context onto an amr and then discarded the list.
+  log.debug('Leaving consumeSamlResponse(). Verified; completing the sign-in once the ' +
+            'signing certificate is known not to be revoked.');
+  return signerStillAccepted(req, res, record, function () {
+    return completeSignIn(req, res, record, {
+      subject: contents.subject,
+      bag: contents.bag,
+      amr: federatedAmr([]),
+      acr: contents.context || '',
+      returnTo: fromContext(context).returnTo,
+      application: fromContext(context).application
+    });
   });
 }
 
@@ -1315,6 +1568,7 @@ function consumeWsFedResponse(req, res, record, params) {
   const wa = String(params.wa || '');
   if (wa && wa !== 'wsignin1.0') {
     log.debug('Leaving consumeWsFedResponse(). Not a sign-in response.');
+    errorCodes.mark(res, 'STS-FED-0024');
     return refuse(res, record, 400, 'That is not a sign-in response',
       'wa=' + wa + '. This endpoint consumes wa=wsignin1.0. A wsignout1.0 arriving here ' +
       'is a partner configured to send its sign-out where its sign-in goes — this service ' +
@@ -1323,6 +1577,7 @@ function consumeWsFedResponse(req, res, record, params) {
   }
   const wresult = String(params.wresult || '');
   if (!wresult) {
+    errorCodes.mark(res, 'STS-FED-0007');
     return refuse(res, record, 400, 'Nothing arrived',
       'The request carried no wresult. That is what a wsignin1.0 response puts the token in.');
   }
@@ -1331,11 +1586,13 @@ function consumeWsFedResponse(req, res, record, params) {
   try {
     doc = new DOMParser().parseFromString(wresult, 'text/xml');
   } catch (e) {
+    errorCodes.mark(res, 'STS-FED-0009');
     return refuse(res, record, 400, 'The wresult is not XML', e.message);
   }
   const root = doc && doc.documentElement;
   const assertion = root ? firstByLocal(root, 'Assertion') : null;
   if (!assertion) {
+    errorCodes.mark(res, 'STS-FED-0011');
     return refuse(res, record, 400, 'There is no assertion in the wresult',
       'The RequestSecurityTokenResponse carried no <Assertion>. An ENCRYPTED token looks ' +
       'exactly like this from here; this service does not decrypt one.');
@@ -1346,6 +1603,8 @@ function consumeWsFedResponse(req, res, record, params) {
   const sig = verifyXmlSignature(wresult, record, 'Assertion');
   if (!sig.ok) {
     log.debug('Leaving consumeWsFedResponse(). The signature did not verify.');
+    errorCodes.mark(res, !certPemOf(record) ? 'STS-FED-0014'
+      : (sig.present ? 'STS-FED-0013' : 'STS-FED-0012'));
     return refuse(res, record, 401, 'The signature did not verify',
       sig.present
         ? sig.why + '. It is checked against fedSigningCertificate on this relationship ' +
@@ -1353,21 +1612,40 @@ function consumeWsFedResponse(req, res, record, params) {
         : 'The assertion carries no ds:Signature at all, which makes it an ' +
           'unauthenticated HTTP request with XML in it.');
   }
+  // THE ISSUER, and since 2026-09-12 an assertion with NO issuer is refused too:
+  // it used to skip the comparison when either side was empty, so an assertion
+  // that named nobody passed an issuer check it never took. See the SAML
+  // branch above for the empty-fedPeer half.
   const issuer = textByLocal(assertion, 'Issuer') || assertion.getAttribute('Issuer') || '';
   const expectedIssuer = String(record.fedPeer || '').trim();
-  if (expectedIssuer && issuer && issuer !== expectedIssuer) {
+  if (!expectedIssuer || issuer !== expectedIssuer) {
+    errorCodes.mark(res, expectedIssuer ? 'STS-FED-0015' : 'STS-FED-0016');
     return refuse(res, record, 401, 'It was issued by somebody else',
-      'The assertion names <code>' + issuer + '</code> and this relationship expects ' +
-      '<code>' + expectedIssuer + '</code>.');
+      expectedIssuer
+        ? 'The assertion names ' + (issuer || '(no issuer)') + ' and this relationship ' +
+          'expects ' + expectedIssuer + '.'
+        : 'This relationship has no fedPeer, so there is no issuer to check against. Set ' +
+          'fedPeer to the partner\'s own identifier.');
   }
   const validity = conditionsCheck(assertion);
   if (!validity.ok) {
+    errorCodes.mark(res, validity.errorCode || 'STS-FED-0018');
     return refuse(res, record, 401, 'The assertion is not valid now', validity.why);
+  }
+  // THE AUDIENCE, which this branch never checked at all until 2026-09-12. A
+  // wsignin1.0 response is issued for the wtrealm this service sent — which is
+  // ourEntityId() — so a token for another relying party of the same partner is
+  // refused here exactly as it is on the SAML path. See audienceCheck().
+  const audience = audienceCheck(assertion, baseUrlOf(req), record, false);
+  if (!audience.ok) {
+    errorCodes.mark(res, audience.errorCode || 'STS-FED-0020');
+    return refuse(res, record, 401, 'It was issued for somebody else', audience.why);
   }
   const contents = assertionContents(assertion);
   const context = takeContext(String(params.wctx || ''));
   if (!context && !federation.boolOf(record.fedAllowUnsolicited, false)) {
     log.debug('Leaving consumeWsFedResponse(). Unsolicited.');
+    errorCodes.mark(res, params.wctx ? 'STS-FED-0022' : 'STS-FED-0021');
     return refuse(res, record, 401, 'This service did not ask for that token',
       params.wctx
         ? 'The wctx "' + params.wctx + '" is not one this service minted, or the sign-in ' +
@@ -1376,12 +1654,15 @@ function consumeWsFedResponse(req, res, record, params) {
           'is not misbehaving — set fedAllowUnsolicited on the relationship to accept its ' +
           'responses anyway, and note that doing so removes this check for every response.');
   }
-  log.debug('Leaving consumeWsFedResponse(). Verified; completing the sign-in.');
-  return completeSignIn(req, res, record, {
-    subject: contents.subject, bag: contents.bag,
-    amr: ['federated'], acr: contents.context || '',
-    returnTo: fromContext(context).returnTo,
-    application: fromContext(context).application
+  log.debug('Leaving consumeWsFedResponse(). Verified; completing the sign-in once the ' +
+            'signing certificate is known not to be revoked.');
+  return signerStillAccepted(req, res, record, function () {
+    return completeSignIn(req, res, record, {
+      subject: contents.subject, bag: contents.bag,
+      amr: federatedAmr([]), acr: contents.context || '',
+      returnTo: fromContext(context).returnTo,
+      application: fromContext(context).application
+    });
   });
 }
 
@@ -1410,26 +1691,38 @@ function keysFor(record) {
       return Promise.resolve({ ok: true, keys: keys, from: 'fedJwks' });
     } catch (e) {
       log.debug('Leaving keysFor(). fedJwks will not parse.');
-      return Promise.resolve({ ok: false, keys: [],
+      return Promise.resolve({ ok: false, keys: [], errorCode: 'STS-FED-0030',
                                why: 'fedJwks on this relationship is not JSON: ' + e.message });
     }
   }
   if (!String(record.fedJwksUri || '').trim()) {
     log.debug('Leaving keysFor(). Neither is configured.');
-    return Promise.resolve({ ok: false, keys: [],
+    return Promise.resolve({ ok: false, keys: [], errorCode: 'STS-FED-0031',
                              why: 'neither fedJwks nor fedJwksUri is configured, so there ' +
                                   'is no key to verify the token with' });
   }
   return fedHttp.fetchJson(record, 'fedJwksUri', { method: 'GET' }).then(function (answer) {
     if (!answer.ok || !answer.json) {
       log.debug('Leaving keysFor(). The JWKS could not be fetched.');
-      return { ok: false, keys: [],
+      return { ok: false, keys: [], errorCode: answer.errorCode || 'STS-FED-0056',
                why: 'the JWKS at ' + answer.url + ' could not be fetched: ' + answer.why };
     }
     const keys = Array.isArray(answer.json.keys) ? answer.json.keys : [];
     log.debug('Leaving keysFor(). ' + keys.length + ' fetched key(s).');
     return { ok: true, keys: keys, from: 'fedJwksUri' };
   });
+}
+
+// The algorithms a partner key of this type may verify, as the family the key
+// admits intersected with `federation.jwtAlgorithms`. See the note at the call.
+function familyAlgorithms(kty) {
+  const family = kty === 'EC'
+    ? ['ES256', 'ES384', 'ES512']
+    : ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512'];
+  const allowed = config.value('federation.jwtAlgorithms');
+  const list = Array.isArray(allowed) ? allowed : String(allowed || '').split(',');
+  const wanted = list.map(function (one) { return String(one).trim(); });
+  return family.filter(function (alg) { return wanted.indexOf(alg) >= 0; });
 }
 
 function verifyForeignJwt(token, record, keys, options) {
@@ -1439,15 +1732,15 @@ function verifyForeignJwt(token, record, keys, options) {
     header = jsonFromB64u(String(token).split('.')[0]);
   } catch (e) {
     log.debug('Leaving verifyForeignJwt(). The header will not decode.');
-    return { ok: false, why: 'its header is not base64url JSON: ' + e.message };
+    return { ok: false, errorCode: 'STS-FED-0032', why: 'its header is not base64url JSON: ' + e.message };
   }
   if (!header || !header.alg) {
-    return { ok: false, why: 'it has no alg in its header' };
+    return { ok: false, errorCode: 'STS-FED-0032', why: 'it has no alg in its header' };
   }
   if (String(header.alg).toLowerCase() === 'none') {
     // Named rather than lumped in with "no key matched", because `alg: none` is
     // an attack with a name and somebody seeing it should know which one.
-    return { ok: false,
+    return { ok: false, errorCode: 'STS-FED-0033',
              why: 'its header says alg=none, which is an unsigned token presented as a ' +
                   'signed one. It is refused by name rather than by failing to find a key' };
   }
@@ -1457,7 +1750,7 @@ function verifyForeignJwt(token, record, keys, options) {
     return true;
   });
   if (!candidates.length) {
-    return { ok: false,
+    return { ok: false, errorCode: kid ? 'STS-FED-0034' : 'STS-FED-0035',
              why: kid
                ? 'its header names kid "' + kid + '" and the partner\'s key set has no such ' +
                  'key. That is what a key rotation looks like — refetch or repaste ' +
@@ -1465,12 +1758,14 @@ function verifyForeignJwt(token, record, keys, options) {
                : 'the partner\'s key set is empty' };
   }
   let lastWhy = '';
+  let lastCode = 'STS-FED-0036';
   for (let i = 0; i < candidates.length; i++) {
     let pem = null;
     try {
       pem = crypto.createPublicKey({ key: candidates[i], format: 'jwk' });
     } catch (e) {
       lastWhy = 'a key in the set could not be read: ' + e.message;
+      lastCode = 'STS-FED-0036';
       continue;
     }
     try {
@@ -1479,19 +1774,30 @@ function verifyForeignJwt(token, record, keys, options) {
         // `client_auth.js`'s rule and it is the classic JWT forgery: without
         // it, a token nominating HS256 would be verified using the partner's
         // PUBLIC key as an HMAC secret, which anybody can do.
-        algorithms: candidates[i].kty === 'EC'
-          ? ['ES256', 'ES384', 'ES512']
-          : ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512'],
+        //
+        // AND `federation.jwtAlgorithms` NARROWS THAT FAMILY (2026-09-12) — it
+        // was a fixed list. The intersection, never the setting alone: a
+        // setting naming HS256 must not be able to put the family rule back.
+        algorithms: familyAlgorithms(candidates[i].kty),
         clockTolerance: config.value('oauth2.clockSkewS')
       }, options || {}));
       log.debug('Leaving verifyForeignJwt(). Verified.');
-      return { ok: true, payload: payload, kid: candidates[i].kid || '' };
+      return { ok: true, payload: payload, kid: candidates[i].kid || '', jwk: candidates[i] };
     } catch (e) {
       lastWhy = e.message;
+      // Which check failed, for the error code only — the sentence is unchanged.
+      if (e.name === 'TokenExpiredError' || e.name === 'NotBeforeError' ||
+          /expired|not active|nbf|exp\b/i.test(String(e.message))) {
+        lastCode = 'STS-FED-0037';
+      } else if (/audience|issuer|\baud\b|\biss\b/i.test(String(e.message))) {
+        lastCode = 'STS-FED-0038';
+      } else {
+        lastCode = 'STS-FED-0036';
+      }
     }
   }
   log.debug('Leaving verifyForeignJwt(). Nothing verified it: ' + lastWhy);
-  return { ok: false, why: lastWhy || 'no key in the partner\'s set verified it' };
+  return { ok: false, errorCode: lastCode, why: lastWhy || 'no key in the partner\'s set verified it' };
 }
 
 // ---------------------------------------------------------------------------
@@ -1505,6 +1811,7 @@ function consumeOauthResponse(req, res, record, params) {
   log.debug('Entering consumeOauthResponse(). protocol=' + record.fedProtocol);
   if (params.error) {
     log.debug('Leaving consumeOauthResponse(). The partner returned an error.');
+    errorCodes.mark(res, 'STS-FED-0025');
     return refuse(res, record, 400, 'The partner refused',
       'It answered <code>' + xmlEscape(String(params.error)) + '</code>' +
       (params.error_description ? ' — "' + xmlEscape(String(params.error_description)) + '"' : '') +
@@ -1516,6 +1823,7 @@ function consumeOauthResponse(req, res, record, params) {
   const context = takeContext(String(params.state || ''));
   if (!context) {
     log.debug('Leaving consumeOauthResponse(). No state.');
+    errorCodes.mark(res, params.state ? 'STS-FED-0022' : 'STS-FED-0021');
     return refuse(res, record, 401, 'This service did not start that sign-in',
       params.state
         ? 'The state "' + xmlEscape(String(params.state)) + '" is not one this service ' +
@@ -1533,6 +1841,7 @@ function consumeOauthResponse(req, res, record, params) {
   if (responseType !== 'code') {
     const idToken = String(params.id_token || '');
     if (!idToken) {
+      errorCodes.mark(res, 'STS-FED-0026');
       return refuse(res, record, 400, 'No ID Token arrived',
         'This relationship asks for response_type=' + responseType + ' with ' +
         'response_mode=form_post, so the answer should have POSTed an id_token here.');
@@ -1542,6 +1851,7 @@ function consumeOauthResponse(req, res, record, params) {
 
   const code = String(params.code || '');
   if (!code) {
+    errorCodes.mark(res, 'STS-FED-0027');
     return refuse(res, record, 400, 'No authorization code arrived',
       'The partner redirected here with neither a code nor an error, which is not a ' +
       'response RFC 6749 section 4.1.2 describes.');
@@ -1570,6 +1880,7 @@ function consumeOauthResponse(req, res, record, params) {
   return fedHttp.fetchJson(record, 'fedTokenUrl', options).then(function (answer) {
     if (!answer.ok || !answer.json) {
       log.debug('Leaving consumeOauthResponse(). The token request failed.');
+      errorCodes.mark(res, answer.errorCode || 'STS-FED-0056');
       return refuse(res, record, 502, 'The code could not be redeemed',
         'The token request to ' + (answer.url || 'the partner') + ' failed: ' + answer.why +
         (answer.text && !answer.json
@@ -1584,6 +1895,7 @@ function consumeOauthResponse(req, res, record, params) {
     const tokens = answer.json;
     if (record.fedProtocol === 'oidc') {
       if (!tokens.id_token) {
+        errorCodes.mark(res, 'STS-FED-0028');
         return refuse(res, record, 502, 'The partner returned no ID Token',
           'The code was redeemed and the response carried ' +
           Object.keys(tokens).join(', ') + ' but no <code>id_token</code>. That is an ' +
@@ -1601,7 +1913,8 @@ function consumeOauthResponse(req, res, record, params) {
     // — and it has to be caught, because an unhandled rejection in the middle
     // of a browser redirect leaves the person on a blank page with the failure
     // only in this process's log.
-    log.error('federation: the ' + record.fedProtocol + ' callback threw: ' + e.stack);
+    log.error(errorCodes.tag('STS-FED-0042') + 'federation: the ' + record.fedProtocol + ' callback threw: ' + e.stack);
+    errorCodes.mark(res, 'STS-FED-0042');
     return refuse(res, record, 500, 'This service failed while finishing the sign-in',
                   e.message);
   });
@@ -1612,6 +1925,7 @@ function finishOidc(req, res, record, context, idToken, accessToken) {
   return keysFor(record).then(function (keySet) {
     if (!keySet.ok) {
       log.debug('Leaving finishOidc(). No keys.');
+      errorCodes.mark(res, keySet.errorCode || 'STS-FED-0031');
       return refuse(res, record, 500, 'There is no key to verify the ID Token with',
                     keySet.why);
     }
@@ -1621,10 +1935,16 @@ function finishOidc(req, res, record, context, idToken, accessToken) {
       // than after it, so a token that fails either is never parsed into
       // anything this service acts on.
       audience: String(record.fedClientId || '') || undefined,
+      // `fedPeer` is REQUIRED since 2026-09-12 (federation.js's PROTOCOLS), so
+      // this is never undefined for a usable relationship — the `|| undefined`
+      // that let an empty one skip the issuer check is kept only as the
+      // defence in depth readinessOf() already gives, and verifyForeignJwt()
+      // is never reached without it.
       issuer: String(record.fedPeer || '') || undefined
     });
     if (!verified.ok) {
       log.debug('Leaving finishOidc(). The ID Token did not verify.');
+      errorCodes.mark(res, verified.errorCode || 'STS-FED-0036');
       return refuse(res, record, 401, 'The ID Token did not verify', verified.why +
         '. It is checked against the keys in ' + keySet.from + ' on this relationship, ' +
         'with aud=' + (record.fedClientId || '(unset)') + ' and iss=' +
@@ -1637,6 +1957,7 @@ function finishOidc(req, res, record, context, idToken, accessToken) {
       // side because nothing there can observe a client doing it. Here this
       // service IS the client, so it does it.
       log.debug('Leaving finishOidc(). The nonce does not match.');
+      errorCodes.mark(res, 'STS-FED-0039');
       return refuse(res, record, 401, 'The ID Token answers a different request',
         'Its nonce is "' + xmlEscape(String(payload.nonce)) + '" and this sign-in sent "' +
         xmlEscape(context.nonce) + '". A replayed ID Token looks exactly like this.');
@@ -1657,17 +1978,22 @@ function finishOidc(req, res, record, context, idToken, accessToken) {
            'azp', 'auth_time', 'sid', 'sub', 'acr', 'amr'].indexOf(name) !== -1) return;
       bag[name] = payload[name];
     });
-    const amr = Array.isArray(payload.amr) && payload.amr.length ? payload.amr : ['federated'];
+    // The partner's amr BEHIND `federated`, not instead of it — see federatedAmr().
+    const amr = federatedAmr(payload.amr);
     const finish = function (extra) {
       Object.keys(extra || {}).forEach(function (name) {
         if (bag[name] === undefined) bag[name] = extra[name];
       });
-      return completeSignIn(req, res, record, {
-        subject: String(payload.sub || ''), bag: bag, amr: amr,
-        acr: String(payload.acr || ''),
-        returnTo: fromContext(context).returnTo,
-        application: fromContext(context).application
-      });
+      // The key that verified the ID Token is checked for revocation here,
+      // on the one path into the sign-in, whether or not UserInfo was asked.
+      return signerStillAccepted(req, res, record, function () {
+        return completeSignIn(req, res, record, {
+          subject: String(payload.sub || ''), bag: bag, amr: amr,
+          acr: String(payload.acr || ''),
+          returnTo: fromContext(context).returnTo,
+          application: fromContext(context).application
+        });
+      }, verified.jwk);
     };
     if (!accessToken || !String(record.fedUserinfoUrl || '').trim()) {
       log.debug('Leaving finishOidc(). No UserInfo call.');
@@ -1685,6 +2011,16 @@ function finishOidc(req, res, record, context, idToken, accessToken) {
                  record.fedId + ' (' + answer.why + '). The sign-in STANDS on the ID ' +
                  'Token, which has already verified — what is lost is whatever ' +
                  'attributes that endpoint would have added.');
+        // Not a refusal, so no response carries it: the sign-in goes on. The
+        // row names the relationship and the reason, never the access token.
+        audit.failure('STS-FED-0040', {
+          protocol: 'Federation', channel: 'http', target: record.fedId,
+          summary: 'the optional UserInfo request for the federation relationship ' +
+                   record.fedId + ' failed (' + answer.why + '); the sign-in continued ' +
+                   'on the verified ID Token without those attributes',
+          outcome: 'error',
+          detail: { cause: answer.errorCode || 'STS-FED-0056' }
+        });
         return finish(null);
       }
       log.debug('Leaving finishOidc(). UserInfo added ' +
@@ -1726,6 +2062,7 @@ function finishOauth2(req, res, record, context, tokens) {
   const accessToken = String(tokens.access_token || '');
   if (!accessToken) {
     log.debug('Leaving finishOauth2(). No access token.');
+    errorCodes.mark(res, 'STS-FED-0029');
     return refuse(res, record, 502, 'The partner returned no access token',
       'The token response carried ' + Object.keys(tokens).join(', ') + '.');
   }
@@ -1739,6 +2076,7 @@ function finishOauth2(req, res, record, context, tokens) {
   if (!useUserinfo) {
     return keysFor(record).then(function (keySet) {
       if (!keySet.ok) {
+        errorCodes.mark(res, keySet.errorCode || 'STS-FED-0031');
         return refuse(res, record, 500, 'There is no key to verify the access token with',
                       keySet.why);
       }
@@ -1746,6 +2084,7 @@ function finishOauth2(req, res, record, context, tokens) {
         issuer: String(record.fedPeer || '') || undefined
       });
       if (!verified.ok) {
+        errorCodes.mark(res, verified.errorCode || 'STS-FED-0036');
         return refuse(res, record, 401, 'The access token did not verify', verified.why);
       }
       const payload = verified.payload;
@@ -1756,17 +2095,20 @@ function finishOauth2(req, res, record, context, tokens) {
         bag[name] = payload[name];
       });
       log.debug('Leaving finishOauth2(). A verified JWT access token.');
-      return completeSignIn(req, res, record, {
-        subject: String(payload.sub || ''), bag: bag, amr: ['federated'],
-        acr: '',
-        returnTo: fromContext(context).returnTo,
-        application: fromContext(context).application
-      });
+      return signerStillAccepted(req, res, record, function () {
+        return completeSignIn(req, res, record, {
+          subject: String(payload.sub || ''), bag: bag, amr: federatedAmr([]),
+          acr: '',
+          returnTo: fromContext(context).returnTo,
+          application: fromContext(context).application
+        });
+      }, verified.jwk);
     });
   }
 
   if (!String(record.fedUserinfoUrl || '').trim()) {
     log.debug('Leaving finishOauth2(). Opaque token and no userinfo endpoint.');
+    errorCodes.mark(res, 'STS-FED-0041');
     return refuse(res, record, 500, 'There is no way to learn who this is',
       'The partner returned an ' + (looksLikeJwt ? 'access token this relationship has no ' +
       'keys to verify' : 'OPAQUE access token') + ', and no fedUserinfoUrl is configured. ' +
@@ -1777,6 +2119,7 @@ function finishOauth2(req, res, record, context, tokens) {
                            { method: 'GET', bearer: accessToken }).then(function (answer) {
     if (!answer.ok || !answer.json) {
       log.debug('Leaving finishOauth2(). The userinfo call failed.');
+      errorCodes.mark(res, answer.errorCode || 'STS-FED-0056');
       return refuse(res, record, 502, 'The partner would not say who this is',
         'The request to ' + answer.url + ' failed: ' + answer.why + '. Unlike the OIDC ' +
         'case, this call is NOT optional here — it is the only thing that names the ' +
@@ -1791,7 +2134,7 @@ function finishOauth2(req, res, record, context, tokens) {
     log.debug('Leaving finishOauth2(). The profile endpoint answered.');
     return completeSignIn(req, res, record, {
       subject: String(profile.sub || profile.id || profile.user_id || ''),
-      bag: bag, amr: ['federated'], acr: '',
+      bag: bag, amr: federatedAmr([]), acr: '',
       returnTo: fromContext(context).returnTo,
       application: fromContext(context).application
     });
@@ -1807,6 +2150,7 @@ function finishOauth2(req, res, record, context, tokens) {
 function consume(req, res) {
   log.debug('Entering the federation assertion consumer service. id=' + req.params.id);
   if (!enabled()) {
+    errorCodes.mark(res, 'STS-FED-0001');
     res.status(404).type('html').send(page('Not here',
       '<h1>Federation is off</h1><p><code>federation.enabled</code> is off.</p>'));
     log.debug('Leaving the assertion consumer service. Federation is off.');
@@ -1815,6 +2159,7 @@ function consume(req, res) {
   const id = String(req.params.id || '');
   const record = federation.get(id);
   if (!record || record.fedRole !== 'service-provider') {
+    errorCodes.mark(res, 'STS-FED-0002');
     res.status(404).type('html').send(page('No such relationship',
       '<h1>No such assertion consumer service</h1><p>There is no service-provider-side ' +
       'relationship called <code>' + xmlEscape(id) + '</code>.</p>'));
@@ -1822,6 +2167,7 @@ function consume(req, res) {
     return;
   }
   if (!federation.isUsable(record)) {
+    errorCodes.mark(res, federation.isEnabled(record) ? 'STS-FED-0006' : 'STS-FED-0005');
     return refuse(res, record, 403, 'That relationship is not usable',
       federation.isEnabled(record)
         ? 'It is enabled but not fully configured: ' +
@@ -1840,7 +2186,8 @@ function consume(req, res) {
     // reaches express's error handler as a 500 with a stack trace in it. This
     // catches it into the same refusal page every other failure draws, so that
     // the relationship records what happened and the person sees a sentence.
-    log.error('federation: ' + id + ' threw while consuming a response: ' + e.stack);
+    log.error(errorCodes.tag('STS-FED-0042') + 'federation: ' + id + ' threw while consuming a response: ' + e.stack);
+    errorCodes.mark(res, 'STS-FED-0042');
     return refuse(res, record, 500, 'This service failed while reading the response',
                   e.message);
   }
@@ -1871,6 +2218,7 @@ app.get(METADATA_PATH + '/:id', function (req, res) {
   const record = federation.get(id);
   if (!record || record.fedRole !== 'service-provider' ||
       (record.fedProtocol !== 'saml2' && record.fedProtocol !== 'saml11')) {
+    errorCodes.mark(res, 'STS-FED-0003');
     res.status(404).type('html').send(page('No such metadata',
       '<h1>No metadata here</h1><p>There is no SAML service-provider-side relationship ' +
       'called <code>' + xmlEscape(id) + '</code>. Metadata is a SAML thing, so an OIDC, ' +
@@ -1892,7 +2240,10 @@ app.get(METADATA_PATH + '/:id', function (req, res) {
       (record.fedProtocol === 'saml11' ? NS_SAMLP11 : NS_SAMLP) + '">' +
     '<md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>' +
       der + '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>' +
-    '<md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified</md:NameIDFormat>' +
+    // `federation.spNameIdFormat` since 2026-09-12; the literal before it is the
+    // setting's default.
+    '<md:NameIDFormat>' + xmlEscape(String(config.value('federation.spNameIdFormat') || '')) +
+      '</md:NameIDFormat>' +
     '<md:AssertionConsumerService Binding="' + BINDING_POST + '" ' +
       'Location="' + xmlEscape(acsUrl(base, record)) + '" index="0" isDefault="true"/>' +
     '</md:SPSSODescriptor></md:EntityDescriptor>';
@@ -2004,11 +2355,17 @@ app.get(BASE_PATH, function (req, res) {
 });
 
 module.exports = {
+  audienceCheck: audienceCheck,
+  federatedAmr: federatedAmr,
+  familyAlgorithms: familyAlgorithms,
   BASE_PATH: BASE_PATH,
   LOGIN_PATH: LOGIN_PATH,
   ACS_PATH: ACS_PATH,
   METADATA_PATH: METADATA_PATH,
   ourEntityId: ourEntityId,
   acsUrl: acsUrl,
-  certPemOf: certPemOf
+  certPemOf: certPemOf,
+  // For tests/revocation_status.js: the check a configured signing certificate
+  // or partner key gets once it has verified a response.
+  signerStillAccepted: signerStillAccepted
 };

@@ -64,6 +64,11 @@
 const config = require('../common/config');
 const { log } = require('../common/helpers');
 const webauthn = require('./webauthn');
+// The error codes. A LEAF that requires nothing, so it cannot close a cycle
+// from here. A refusal this module RETURNS carries its code non-enumerably,
+// under the Symbol `mark()` uses, so a caller's `errorCodes.codeOf()` reads it
+// and nothing that serialises the answer can send it anywhere.
+const errorCodes = require('../common/error_codes');
 
 // JOSE spelling -> COSE identifier, INVERTED from the verifier's own table
 // rather than written out. That table is what decides whether a signature can
@@ -218,27 +223,65 @@ function roleAllowed(role) {
   const live = settings();
   if (!live.enabled) {
     log.debug('Leaving roleAllowed(). WebAuthn is not offered here.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'Security keys are switched off in this realm ' +
                   '(webauthn.enabled). A key already enrolled goes on ' +
-                  'working; no new one can be enrolled.' };
+                  'working; no new one can be enrolled.' }, 'STS-AUTHN-0044');
   }
   if (String(role) === 'primary' && !live.primaryAllowed) {
     log.debug('Leaving roleAllowed(). Primary keys are not allowed here.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'A security key cannot be the only credential on an account ' +
                   'in this realm (webauthn.primaryAllowed). Enrol it as a ' +
-                  'second factor beside a password instead.' };
+                  'second factor beside a password instead.' }, 'STS-AUTHN-0045');
   }
   if (String(role) === 'mfa' && !live.mfaAllowed) {
     log.debug('Leaving roleAllowed(). Second-factor keys are not allowed here.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'A security key cannot be a second factor in this realm ' +
                   '(webauthn.mfaAllowed). An authenticator app is the other ' +
-                  'one, where totp.enabled is on.' };
+                  'one, where totp.enabled is on.' }, 'STS-AUTHN-0046');
   }
   log.debug('Leaving roleAllowed(). Allowed.');
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// WHICH CHECK A CEREMONY FAILED, AS AN ERROR CODE (2026-09-12).
+//
+// `authn/webauthn.js` names every check it makes and reports the ones that
+// failed, in order. It cannot carry a code itself: it is copied, one file, into
+// the debugger's cross-implementation test, where `../common/error_codes` does
+// not exist. So the mapping from its check NAMES to codes lives here, beside
+// the verifier's other policy, and both ceremony doors — the sign-in screen and
+// `credentials.confirmKeyEnrolment()` — ask it. The FIRST failed check decides,
+// because the verifier lists them in the order a relying party makes them.
+//
+// A name this table does not know answers the generic code rather than
+// nothing, so a check added to the verifier still reaches the log with a code
+// — one that says the table is behind.
+// ---------------------------------------------------------------------------
+const FAILED_CHECK_CODES = {
+  'clientData.type is webauthn.create': 'STS-AUTHN-0028',
+  'clientData.type is webauthn.get': 'STS-AUTHN-0028',
+  'challenge matches': 'STS-AUTHN-0029',
+  'origin matches': 'STS-AUTHN-0030',
+  'rpIdHash is SHA-256 of the RP ID': 'STS-AUTHN-0031',
+  'user presence': 'STS-AUTHN-0032',
+  'user verification': 'STS-AUTHN-0033',
+  'attested credential data present': 'STS-AUTHN-0034',
+  'signature counter advanced': 'STS-AUTHN-0035',
+  'signature verifies': 'STS-AUTHN-0036'
+};
+
+function failureCodeFor(verdict) {
+  const failed = (verdict && Array.isArray(verdict.failed)) ? verdict.failed : [];
+  for (let i = 0; i < failed.length; i++) {
+    if (FAILED_CHECK_CODES[failed[i]]) {
+      return FAILED_CHECK_CODES[failed[i]];
+    }
+  }
+  return 'STS-AUTHN-0037';
 }
 
 // ---------------------------------------------------------------------------
@@ -372,6 +415,7 @@ module.exports = {
   requestOptions,
   requireUserVerification,
   report,
+  failureCodeFor,
   // The JOSE-name-to-COSE-identifier map, exported for the tests that assert
   // the offer cannot name something the verifier does not know. DATA, like the
   // two tables it is derived from.

@@ -1124,7 +1124,7 @@ function applyEdit(policy, path, action, params) {
     const list = advice ? 'advice' : 'obligations';
     node[list] = node[list] || [];
     node[list].push({
-      id: 'urn:sts-mock:xacml:' + (advice ? 'advice' : 'obligation') + ':' +
+      id: 'urn:sts:xacml:' + (advice ? 'advice' : 'obligation') + ':' +
           ((node[list].length) + 1),
       on: given.on === model.EFFECT.DENY ? model.EFFECT.DENY
                                          : model.EFFECT.PERMIT,
@@ -1149,7 +1149,7 @@ function applyEdit(policy, path, action, params) {
   if (action === 'add-assignment') {
     node.assignments = node.assignments || [];
     node.assignments.push({
-      attributeId: 'urn:sts-mock:xacml:assignment:' +
+      attributeId: 'urn:sts:xacml:assignment:' +
                    (node.assignments.length + 1),
       category: null, issuer: null,
       expression: { kind: 'value', type: TYPE.STRING, lexical: '' }

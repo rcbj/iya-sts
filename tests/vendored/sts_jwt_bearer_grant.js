@@ -87,6 +87,30 @@ var OTHER_CLIENT = "assert-issuer-2";
 var ISS = "https://issuer.example.test/jwtbearer";
 var OTHER_ISS = "https://other-issuer.example.test/jwtbearer";
 
+// ---------------------------------------------------------------------------
+// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT (2026-09-12).
+//
+// Product mode seeds no `alice`, invents no persona onto an entry, and holds
+// every OAuth application to a client secret. So both asserting applications
+// are created with one, and the person every assertion below is ABOUT is a
+// directory entry this job makes — with the attributes a real account carries
+// and nothing invented — rather than a seeded name or a name nobody created.
+//
+// **WHAT IS NOT SUPPLIED, AND WHY.** Product mode also refuses a token request
+// that authenticates no client, and none of the grant requests here carries a
+// client credential: RFC 7521 section 4.2 makes client authentication OPTIONAL
+// for an authorization grant, and adding it to every request would change the
+// grant under test (a request that authenticates CLIENT is judged partly by who
+// CLIENT is). That is a decision for this job's author rather than a sweep.
+// ---------------------------------------------------------------------------
+var ASSERTED_PERSON = usernameFor("asserted");
+var MAIL_DOMAIN = "jwt-bearer-grant.test";
+
+function personFields(who) {
+  return { cn: "Asserted Person " + who, givenName: "Asserted", sn: who,
+           displayName: "Asserted Person " + who, mail: who + "@" + MAIL_DOMAIN };
+}
+
 var checks = 0;
 function check(what, fn) {
   fn();
@@ -244,12 +268,21 @@ async function test() {
   // this realm's leaf must not verify against it, which is section 6 below.
   await ok(realmApi + "/applications/create",
            { identifier: CLIENT, protocols: ["oauth2"],
-             fields: { oauthClientId: CLIENT } },
+             fields: { oauthClientId: CLIENT,
+                       oauthClientSecret: CLIENT + "-secret-" + REALM,
+                       oauthTokenEndpointAuthMethod: "client_secret_post" } },
            "created the asserting application");
   await ok(realmApi + "/applications/create",
            { identifier: OTHER_CLIENT, protocols: ["oauth2"],
-             fields: { oauthClientId: OTHER_CLIENT } },
+             fields: { oauthClientId: OTHER_CLIENT,
+                       oauthClientSecret: OTHER_CLIENT + "-secret-" + REALM,
+                       oauthTokenEndpointAuthMethod: "client_secret_post" } },
            "created the second application");
+  // The resource owner the assertions below name as `sub`.
+  await ok(realmApi + "/users/create",
+           { username: ASSERTED_PERSON, invent: false,
+             attributes: personFields(ASSERTED_PERSON) },
+           "created the person the assertions are about");
 
   // -------------------------------------------------------------------------
   // 1. ISSUING A KEY PAIR, AND WHERE IT LANDS.
@@ -342,7 +375,7 @@ async function test() {
   const undeclared = await tokenRequest({
     grant_type: GRANT,
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: kid },
-      { iss: ISS, sub: "alice", aud: TOKEN_ENDPOINT, iat: now(),
+      { iss: ISS, sub: ASSERTED_PERSON, aud: TOKEN_ENDPOINT, iat: now(),
         exp: now() + 120, jti: jti() }, privateKeyPem) });
   const why = refused(undeclared, "invalid_grant",
                       "an assertion from an issuer nobody has declared");
@@ -369,7 +402,7 @@ async function test() {
   // 4. THE GRANT.
   // -------------------------------------------------------------------------
   log.info("=== 4. the grant itself ===");
-  const person = usernameFor("asserted");
+  const person = ASSERTED_PERSON;
   const goodJti = jti();
   const assertion = signJws({ alg: "RS256", typ: "JWT", kid: kid },
     { iss: ISS, sub: person, aud: TOKEN_ENDPOINT, iat: now(),
@@ -732,14 +765,18 @@ async function test() {
   // clause about what this service does not CONSULT — so a substring test
   // over prose reported green against prose saying the opposite. It is
   // `revocationNote` now; `revocation` is the REGISTER.
+  // **AND AGAIN ON 2026-09-12**, when a presented certificate started being
+  // checked: "consulted by nothing" became the policy in force, by name.
   check("it states what revocation here MEANS in words — published by every " +
-        "authority, consulted by nothing — and where the CA keys live",
+        "authority, consulted for a presented certificate under a named " +
+        "policy — and where the CA keys live",
         function () {
-          assert.ok(/PUBLISHED, NOT ENFORCED/.test(apiView.body.revocationNote),
+          assert.ok(/PUBLISHED AND CONSULTED/.test(apiView.body.revocationNote),
             JSON.stringify(apiView.body.revocationNote).slice(0, 200));
-          assert.ok(/CONSULT/.test(apiView.body.revocationNote),
-            "the note must keep the other half in the same breath: a " +
-            "certificate revoked here still authenticates here");
+          assert.ok(/CONSULTED, (SOFT|HARD)-FAIL|CONSULTED NOWHERE/
+                      .test(apiView.body.revocationNote),
+            "the note must keep the other half in the same breath: what a " +
+            "PRESENTED certificate is held to, by policy name");
           assert.ok(!/^NONE/.test(apiView.body.revocationNote),
             "the report still opens with the claim that reversed");
           assert.ok(String(apiView.body.residency).length > 40);
@@ -826,9 +863,12 @@ async function test() {
   log.info("=== 13. a person as the issuer ===");
   const SIGNER = usernameFor("selfassert");
   const SOMEBODY = usernameFor("elseentirely");
-  await ok(realmApi + "/users/create", { username: SIGNER, invent: false },
+  await ok(realmApi + "/users/create",
+           { username: SIGNER, invent: false, attributes: personFields(SIGNER) },
            "created the person who will sign");
-  await ok(realmApi + "/users/create", { username: SOMEBODY, invent: false },
+  await ok(realmApi + "/users/create",
+           { username: SOMEBODY, invent: false,
+             attributes: personFields(SOMEBODY) },
            "created somebody else for them to try to speak for");
 
   const mine = await ok(realmApi + "/pki/issue",

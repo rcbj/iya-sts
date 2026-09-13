@@ -219,7 +219,7 @@ function hidden(html, name) {
 // Set-Cookie>`, which is right for a job that only ever holds ONE — and this
 // one holds TWO. `/portal` is an OpenID Connect relying party of this service's
 // own authorization server, so a signed-in browser carries the SIGN-ON cookie
-// (`sts_mock_session`) and the portal's own (`sts_mock_portal`), and whichever
+// (`sts_session`) and the portal's own (`sts_portal`), and whichever
 // arrived last would silently evict the other.
 //
 // **IT COSTS AN HOUR AND IT LOOKS LIKE A SERVER BUG.** With the portal cookie
@@ -278,6 +278,65 @@ async function get(path) {
   return { status: r.status, body: body, raw: raw };
 }
 
+// The management API taking JSON, for the one thing no browser door here does:
+// creating the person before they sign in.
+async function apiPost(path, payload) {
+  const r = await fetch(api + path, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const raw = await r.text();
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch (e) {
+    // An HTML page from a door that answers JSON is worth quoting whole.
+    body = raw;
+  }
+  return { status: r.status, body: body, raw: raw };
+}
+
+// ---------------------------------------------------------------------------
+// EVERY PERSON THIS JOB SIGNS IN IS CREATED FIRST, WITH A PASSWORD AND THE
+// ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12).
+//
+// In product mode this service invents no persona for a name that signs in,
+// creates nobody because a sign-in named them, and verifies the password
+// against the person's own entry. The suite runs in development, where none of
+// that is enforced — which is why a job leaning on it would go on passing
+// while testing the invention. So `ensurePerson()` makes each account through
+// `/admin-api/users/create` with `invent: false`, its own `cn`, `sn`,
+// `givenName`, `displayName` and `mail`, and a password of at least twelve
+// characters, and that password is what the sign-in screen is sent.
+// ---------------------------------------------------------------------------
+var PASSWORD = "portal-backup-keys-Passw0rd!-" + String(Date.now()).slice(-6);
+var MAIL_DOMAIN = "portal-backup-keys.test";
+
+function personAttributes(who) {
+  return { cn: "Backup Keys Person " + who, givenName: "Backup", sn: who,
+           displayName: "Backup Keys Person " + who, mail: who + "@" + MAIL_DOMAIN };
+}
+
+// Create `who` with a password and real attributes, once per run.
+var createdPeople = {};
+async function ensurePerson(who) {
+  log.debug("Entering ensurePerson(). who=" + who);
+  if (createdPeople[who]) {
+    log.debug("Leaving ensurePerson(). Already created by this run.");
+    return;
+  }
+  const r = await apiPost("/users/create", {
+    username: who, invent: false, attributes: personAttributes(who),
+    credential: "password", password: PASSWORD
+  });
+  assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
+    "POST /admin-api/users/create should create " + who + " with a password " +
+    "before they sign in; it answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  createdPeople[who] = true;
+  log.debug("Leaving ensurePerson(). Created " + who + ".");
+}
+
 async function factorsFor(who) {
   const r = await get("/users?user=" + encodeURIComponent(who));
   assert.strictEqual(r.status, 200,
@@ -301,7 +360,7 @@ async function signIn(door, authenticator) {
   assert.ok(authnId, "the sign-in screen carries no authn_id.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: PERSON,
-                        password: "any-password", action: "login",
+                        password: PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
   if (r.status === 200) {
     assert.ok(authenticator,
@@ -506,7 +565,7 @@ async function eitherKeySignsThemIn(first, second) {
   r = await b.go("GET", r.location);
   r = await b.go("POST", "/authn/login",
     form({ authn_id: hidden(r.text, "authn_id"), username: PERSON,
-           password: "any-password", action: "login",
+           password: PASSWORD, action: "login",
            csrf_token: csrfOf(r.text) }));
   const refused = await b.go("POST", "/authn/webauthn",
     form({ mfa_id: hidden(r.text, "mfa_id"), mode: "get",
@@ -574,6 +633,7 @@ async function test() {
            " (origin " + ORIGIN + ", rpId " + RP_ID + ").");
   const first = makeAuthenticator("at my desk");
   const second = makeAuthenticator("on my keyring");
+  await ensurePerson(PERSON);
 
   await thePortalCanEnrolAKey(first);
   await aSecondKeyIsABackupAndTheSameOneIsNot(first, second);

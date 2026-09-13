@@ -50,6 +50,10 @@
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
+// For `inventsClaimValues()`: whether an address may be made up for somebody
+// whose entry carries none. A leaf requiring only config, so this file stays a
+// library that can join no cycle.
+const mode = require('../common/mode');
 
 // ---------------------------------------------------------------------------
 // THE EIGHT FORMATS OF RFC 9493 SECTION 3, EACH WITH ITS CLOSED MEMBER SET.
@@ -511,19 +515,53 @@ function describeSubject(subject) {
 // format a stream asked for. `format` comes off the stream configuration's own
 // `format` member (SSF 1.0's "default subjects" arrangement), so a receiver
 // that asked for `opaque` never sees an email address.
-function subjectForUser(userid, format, issuer) {
+//
+// ---------------------------------------------------------------------------
+// **`facts` IS WHAT THE CALLER KNOWS ABOUT THE PERSON, AND IT WINS (2026-09-12).**
+// `{ mail, phone, did }`, each optional. This function used to know only the
+// username, so an `email` subject was `<name>@example.com` and a DID was
+// `did:example:<name>` WHEREVER the person had a real address on their entry —
+// `risc.js` holds `mail` on its row and was not passing it. A Security Event
+// Token sent to a real receiver saying that `alice@example.com`'s account was
+// disabled is about somebody at a domain nobody here owns.
+//
+// **AND WHERE THERE IS NO REAL VALUE, `mode.inventsClaimValues()` DECIDES.**
+// Development invents, exactly as before, so a client has something to parse.
+// Product does not: a format with no real value falls back to the
+// issuer/subject pair — which is composed from this service's own issuer and
+// the person's own name, and invents nothing — the way `phone_number` always
+// has. An invented fact a receiver acts on is worse than a different format it
+// can handle. A username that is itself an address is a real value in both.
+// ---------------------------------------------------------------------------
+function realOrInventedMail(name, facts) {
+  const mail = String((facts || {}).mail || '').trim();
+  if (mail) {
+    return mail;
+  }
+  if (name.indexOf('@') > 0) {
+    return name;
+  }
+  return mode.inventsClaimValues() ? name + '@example.com' : '';
+}
+
+function subjectForUser(userid, format, issuer, facts) {
   log.debug('Entering subjectForUser(). ' + format);
   const name = String(userid || '');
+  const known = facts || {};
   const chosen = FORMAT_BY_NAME[format] ? format : 'issuer_subject_id';
+  const fallback = { format: 'issuer_subject_id', iss: String(issuer || ''),
+    sub: name };
   if (chosen === 'email') {
-    log.debug('Leaving subjectForUser(). email.');
-    return { format: 'email', email: name.indexOf('@') > 0
-      ? name : name + '@example.com' };
+    const mail = realOrInventedMail(name, known);
+    log.debug('Leaving subjectForUser(). email' + (mail ? '.' : ': none, ' +
+              'and none is invented here; issuer_subject_id.'));
+    return mail ? { format: 'email', email: mail } : fallback;
   }
   if (chosen === 'account') {
-    log.debug('Leaving subjectForUser(). account.');
-    return { format: 'account', uri: 'acct:' + (name.indexOf('@') > 0
-      ? name : name + '@example.com') };
+    const mail = realOrInventedMail(name, known);
+    log.debug('Leaving subjectForUser(). account' + (mail ? '.' : ': none; ' +
+              'issuer_subject_id.'));
+    return mail ? { format: 'account', uri: 'acct:' + mail } : fallback;
   }
   if (chosen === 'opaque') {
     log.debug('Leaving subjectForUser(). opaque.');
@@ -534,30 +572,46 @@ function subjectForUser(userid, format, issuer) {
     return { format: 'uri', uri: String(issuer || '') + '/users/' + name };
   }
   if (chosen === 'decentralized_identifier') {
-    log.debug('Leaving subjectForUser(). did.');
-    return { format: 'decentralized_identifier',
-      url: 'did:example:' + name };
+    const did = String(known.did || '').trim();
+    if (did) {
+      log.debug('Leaving subjectForUser(). did, a real one.');
+      return { format: 'decentralized_identifier', url: did };
+    }
+    if (mode.inventsClaimValues()) {
+      log.debug('Leaving subjectForUser(). did, invented.');
+      return { format: 'decentralized_identifier',
+        url: 'did:example:' + name };
+    }
+    log.debug('Leaving subjectForUser(). No DID; issuer_subject_id.');
+    return fallback;
   }
   if (chosen === 'phone_number') {
-    // There is no phone number on a directory entry here and inventing one
-    // per user would be inventing a fact. A stream that asked for this format
-    // gets the issuer/subject pair and the caller says so — see
-    // ssf.js's defaultSubjectNote().
+    // A number is used where the caller HOLDS one — `risc.js` keeps
+    // `telephoneNumber` / `mobile` on its row — and never invented, in either
+    // mode: a made-up phone number is a fact about somebody else's phone.
+    const phone = String(known.phone || '').trim();
+    if (phone) {
+      log.debug('Leaving subjectForUser(). phone_number.');
+      return { format: 'phone_number', phone_number: phone };
+    }
+    // A stream that asked for this format gets the issuer/subject pair and the
+    // caller says so — see ssf.js's defaultSubjectNote().
     log.debug('Leaving subjectForUser(). No number; issuer_subject_id.');
-    return { format: 'issuer_subject_id', iss: String(issuer || ''),
-      sub: name };
+    return fallback;
   }
   if (chosen === 'aliases') {
-    log.debug('Leaving subjectForUser(). aliases.');
-    return { format: 'aliases', identifiers: [
-      { format: 'issuer_subject_id', iss: String(issuer || ''), sub: name },
-      { format: 'email', email: name.indexOf('@') > 0
-        ? name : name + '@example.com' }
-    ] };
+    const mail = realOrInventedMail(name, known);
+    const identifiers = [
+      { format: 'issuer_subject_id', iss: String(issuer || ''), sub: name }
+    ];
+    if (mail) {
+      identifiers.push({ format: 'email', email: mail });
+    }
+    log.debug('Leaving subjectForUser(). aliases, ' + identifiers.length + '.');
+    return { format: 'aliases', identifiers: identifiers };
   }
   log.debug('Leaving subjectForUser(). issuer_subject_id.');
-  return { format: 'issuer_subject_id', iss: String(issuer || ''),
-    sub: name };
+  return fallback;
 }
 
 module.exports = {

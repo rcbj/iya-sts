@@ -21,7 +21,7 @@
 //
 // It requires helpers.js, config.js and admin_stats.js — that last one for
 // identityOf()'s normalisation only, which is what makes `alice`,
-// `alice@STS.MOCK` and `urn:sts-mock:user:alice` one person on a chain rather
+// `alice@STS.MOCK` and `urn:sts:user:alice` one person on a chain rather
 // than three. admin_stats.js requires nothing here, so there is no cycle and
 // none of rule 3e's slots is needed. Keep it that way: this file is called from
 // the KDC, from WS-Trust and from the token endpoint, and anything it required
@@ -75,6 +75,9 @@ const { log } = require('./helpers');
 // config.js and nothing else here, so it cannot join a cycle and it registers
 // no route, so its position is not a position at all.
 const realms = require('./realms');
+// The registry of failure codes, a LEAF — see common/error_codes.js. This file
+// writes no audit row (see its header), so a failure here is logged with one.
+const errorCodes = require('./error_codes');
 const config = require('./config');
 const stats = require('./admin_stats');
 // THE FAN-IN FOR OTHER PROCESSES' ACTS. A LIBRARY (rule 3) that registers no
@@ -458,7 +461,8 @@ function record(detail) {
   } catch (e) {
     // Swallowed on purpose, and loudly: see the header above. A malformed call
     // here must cost a row on a console page and nothing else.
-    log.error('delegation: an act could not be recorded and the protocol was ' +
+    log.error(errorCodes.tag('STS-REG-0033') +
+              'delegation: an act could not be recorded and the protocol was ' +
               'left alone: ' + e.message);
     return null;
   }
@@ -1153,7 +1157,7 @@ function actsOfChain(rows, chainKey) {
 // `AppliesTo`, the SPN — because "everything delegated through this client" is a
 // question about the client. A person is keyed on the identity they PRESENTED,
 // normalised by `identityKeyOf()`, because `alice`, `alice@STS.MOCK` and
-// `urn:sts-mock:user:alice` are one person and the console files them under one
+// `urn:sts:user:alice` are one person and the console files them under one
 // row on /admin/users. Using one key for both would lose exactly the case each
 // is for: an RFC 8693 exchange's intermediary is an ACTOR (a party) beside a
 // `client_id` (an application), and they are two different strings naming two

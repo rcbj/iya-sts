@@ -69,10 +69,15 @@
 
 const { log, xmlEscape, parseBody, randomId, oauthError, baseUrlOf } = require('../common/helpers');
 const app = require('../common/app');
+// The pending-record clock, shared with the sign-in screen. See consentTtlMs().
+const config = require('../common/config');
 const realms = require('../common/realms');
 const consent = require('../common/consent');
 const applications = require('../common/applications');
 const audit = require('../common/audit');
+// The registry of error codes, a leaf. A refusal is MARKED on the response
+// and never written into it.
+const errorCodes = require('../common/error_codes');
 
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
 const validation = require('../common/validation');
@@ -89,7 +94,30 @@ const CONSENT_PATH = '/oauth2/consent';
 // the two records are two halves of one interrupted request, and a consent that
 // expired while the sign-in beside it had not would strand somebody halfway
 // with no way to tell which half had gone.
+//
+// **SO IT READS THE SAME SETTING, SINCE 2026-09-12** — `authn.pendingTtlS`,
+// which is that module's clock made configurable — rather than a second copy
+// of the number. A consent row of its own was drafted and withdrawn the same
+// day for exactly the sentence above: two settings that must agree are a
+// setting and a comment claiming a match. The constant is the fallback for a
+// process whose table predates the row.
 const CONSENT_TTL_MS = 10 * 60 * 1000;
+
+function consentTtlMs() {
+  log.debug('Entering consentTtlMs().');
+  let seconds = NaN;
+  try {
+    seconds = Number(config.value('authn.pendingTtlS'));
+  } catch (e) {
+    // A table without the row — an older `config.js` beside this file. The
+    // fallback is the number both clocks had before either was a setting, so
+    // the two halves of an interrupted request still expire together.
+    log.debug('consentTtlMs(): authn.pendingTtlS is not in this table (' +
+              e.message + '); using the ten-minute default.');
+  }
+  log.debug('Leaving consentTtlMs().');
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 : CONSENT_TTL_MS;
+}
 
 // ---------------------------------------------------------------------------
 // PER REALM, BECAUSE EVERYTHING THIS RECORD POINTS AT IS.
@@ -143,7 +171,7 @@ function beginConsent(opts) {
     already: Array.isArray(info.already) ? info.already : [],
     details: Array.isArray(info.details) ? info.details : [],
     protocol: String(info.protocol || 'OAuth 2.0 / OIDC'),
-    expires: Date.now() + CONSENT_TTL_MS
+    expires: Date.now() + consentTtlMs()
   };
   pending.set(record.id, record);
   pending.forEach(function (v, k) {
@@ -343,11 +371,13 @@ app.get(CONSENT_PATH, function (req, res) {
   const asked = validation.check(req, 'query', CONSENT_QUERY);
   if (!asked.ok) {
     log.debug("Leaving the consent screen. The request is malformed.");
+    errorCodes.mark(res, 'STS-OAUTH-0148');
     return oauthError(res, 400, 'invalid_request', asked.detail);
   }
   const record = pendingFor(asked.value.consent);
   if (!record) {
     log.debug("Leaving the consent screen. Nothing is pending under that id.");
+    errorCodes.mark(res, 'STS-OAUTH-0149');
     return oauthError(res, 400, 'invalid_request',
       'There is no consent waiting under that id, or it has expired. Start the request ' +
       'again from the application that sent you here — nothing was issued and nothing ' +
@@ -356,6 +386,7 @@ app.get(CONSENT_PATH, function (req, res) {
   const who = answeredBy(req, record);
   if (!who.ok) {
     log.debug("Leaving the consent screen. " + who.why + ".");
+    errorCodes.mark(res, who.why === 'nosession' ? 'STS-OAUTH-0150' : 'STS-OAUTH-0151');
     return oauthError(res, 400, 'invalid_request',
       who.why === 'nosession'
         ? 'Nobody is signed in here any more, so there is nobody to record an answer ' +
@@ -384,12 +415,14 @@ app.post(CONSENT_PATH, function (req, res) {
   const posted = validation.checkParsed(parseBody(req), 'body', CONSENT_FORM);
   if (!posted.ok) {
     log.debug("Leaving the consent endpoint. The request is malformed.");
+    errorCodes.mark(res, 'STS-OAUTH-0148');
     return oauthError(res, 400, 'invalid_request', posted.detail);
   }
   const body = posted.value;
   const record = pendingFor(body.consent_id);
   if (!record) {
     log.debug("Leaving the consent endpoint. The form had expired.");
+    errorCodes.mark(res, 'STS-OAUTH-0149');
     return oauthError(res, 400, 'invalid_request',
       'This consent form has expired, or it has already been answered. Start the request ' +
       'again from the application that sent you here.');
@@ -397,6 +430,7 @@ app.post(CONSENT_PATH, function (req, res) {
   const who = answeredBy(req, record);
   if (!who.ok) {
     log.debug("Leaving the consent endpoint. " + who.why + ".");
+    errorCodes.mark(res, who.why === 'nosession' ? 'STS-OAUTH-0150' : 'STS-OAUTH-0151');
     return oauthError(res, 400, 'invalid_request',
       who.why === 'nosession'
         ? 'Nobody is signed in here any more, so this answer belongs to nobody. Nothing ' +
@@ -411,12 +445,14 @@ app.post(CONSENT_PATH, function (req, res) {
     audit.record({
       action: 'consent.deny', actor: record.username, target: record.clientId,
       protocol: 'OAuth 2.0 / OIDC', channel: 'http', outcome: 'refused',
+      errorCode: 'STS-OAUTH-0152',
       detail: 'refused ' + names.join(', ')
     });
     log.info('consent: "' + record.username + '" refused "' + record.clientId +
              '" the scope(s) ' + names.join(', ') + '. Nothing was recorded and ' +
              'nothing was issued; the client is told access_denied.');
     log.debug("Leaving the consent endpoint. Denied.");
+    errorCodes.mark(res, 'STS-OAUTH-0152');
     return backToCaller(res, record, 'access_denied',
       'The user did not consent to ' + names.join(' ') + '.');
   }

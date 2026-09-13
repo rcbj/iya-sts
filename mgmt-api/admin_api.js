@@ -24,7 +24,8 @@
 // Two things make that cheap rather than a matter of discipline:
 //
 //   * **This module decides nothing.** Every POST here calls the SAME action
-//     function the console's form posts to — admin.tokenAction, claimsAction,
+//     function the console's form posts to — adminActions.tokenAction,
+//     claimsAction,
 //     vcAction, vpConfigAction — with `action` taken from the URL instead of
 //     from a hidden input, and every GET calls the same JSON view the page's
 //     `?format=json` answers. So adding an action to the console's switch is
@@ -84,6 +85,9 @@
 // ---------------------------------------------------------------------------
 
 const app = require('../common/app');
+// The error-code registry, a leaf. A refusal here is MARKED on the response for
+// the call log and never written into the JSON a caller receives.
+const errorCodes = require('../common/error_codes');
 const { log, parseBody, baseUrlOf, STS } = require('../common/helpers');
 // BOTH ARE LIBRARIES (rule 3): they register no route, so requiring them here
 // cannot move one or join a cycle. `crypto.js` is THE one place this service
@@ -91,7 +95,32 @@ const { log, parseBody, baseUrlOf, STS } = require('../common/helpers');
 // into the roles the access policy asks for — see the gate below.
 const stsCrypto = require('../common/crypto');
 const roles = require('../common/roles');
+// The password policy's FIELD TABLE, which the request schema of
+// `save-password-policy` is generated from — for `narrowDoorProperties()`'s
+// reason: a hand-written list of what an operation accepts is a second
+// definition of the table and goes stale in the document a caller trusts most.
+const passwordPolicy = require('../common/password_policy');
 const admin = require('../admin-ui/admin');
+// ---------------------------------------------------------------------------
+// THE ACTION LAYER (2026-09-12). Every operation below that CHANGES something
+// calls a function here rather than one on the console module.
+//
+// **THAT IS THE WHOLE OF WHY THIS FILE STILL REQUIRES BOTH.** Rule 7 says a
+// console control and an API operation must not be able to disagree, and the
+// way that was enforced until today was that this file called the console's
+// own functions — which worked, and which made the surface a machine drives
+// downstream of the surface a person reads. The DECISIONS moved to
+// admin-core/, which neither surface owns; what is still reached for on
+// `admin` is what the console genuinely owns — the JSON views it renders
+// beside its pages, and `respondToAction()`, which is transport.
+// ---------------------------------------------------------------------------
+const adminActions = require('../admin-core/admin_actions');
+// AND THE READ HALF (2026-09-12). Thirty-eight functions that answer a
+// question and build no markup; `admin-core/admin_views.js` argues the line.
+// What is still reached for on `admin` below is the console's own structure
+// — which pages exist, where a settings group is edited — and the views that
+// draw HTML, whose json half is still computed in the same pass as the page.
+const adminViews = require('../admin-core/admin_views');
 // THE PKI PAGE'S VIEW AND ITS FOUR ACTIONS. A PLAIN REQUIRE IN THE ORDINARY
 // DIRECTION, which is what rule 3e asks for when one is available: that module
 // is loaded at 18a — before this file — so this is a cache hit, and it
@@ -105,6 +134,7 @@ const pkiAdmin = require('../admin-ui/pki_admin');
 const encryptionAdmin = require('../admin-ui/encryption_admin');
 // 18c, same ordinary-direction require and the same reason.
 const databaseAdmin = require('../admin-ui/database_admin');
+const secretsAdmin = require('../admin-ui/secrets_admin');
 // The setting table, for the two narrow doors' request schemas: their
 // properties are BUILT from the keys those doors refuse against, and the
 // TYPE of each comes from the row config.js already holds for it. See
@@ -282,7 +312,8 @@ function compileRequestSchemas() {
         // operation so it names the row to fix; the operation goes on working
         // unvalidated, because a management API that would not start is worse
         // than one operation whose body is unchecked.
-        log.error('admin-api: the request schema for ' + action.operationId +
+        log.error(errorCodes.tag('STS-API-0010') +
+                  'admin-api: the request schema for ' + action.operationId +
                   ' would not compile and that operation is unvalidated: ' +
                   e.message);
       }
@@ -292,7 +323,8 @@ function compileRequestSchemas() {
         validators.set(validatorKeyOf(route, ''), ajv.compile(compilable(entry.requestBody)));
         built = built + 1;
       } catch (e) {
-        log.error('admin-api: the request schema for ' + (entry.operationId || route) +
+        log.error(errorCodes.tag('STS-API-0010') +
+                  'admin-api: the request schema for ' + (entry.operationId || route) +
                   ' would not compile and that operation is unvalidated: ' +
                   e.message);
       }
@@ -956,7 +988,7 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
     operationId: 'getPersistenceSettings',
     summary: 'What survives a restart, where it is written, and whether that ' +
              'is working',
-    description: 'The six `persistence.*` settings AND — unlike every other ' +
+    description: 'The `persistence.*` settings AND — unlike every other ' +
                  'operation in this group — a `status` member saying what the ' +
                  'store is actually doing: which mode is in force, whether it ' +
                  'FELL BACK to memory because it could not be opened, where ' +
@@ -998,6 +1030,18 @@ const PROTOCOL_SETTINGS_OPERATIONS = [
                  'so a missed notification costs latency and never a ' +
                  'change. `status.coordinates` and `status.replication` ' +
                  'report it; `persistence.coordinate` turns it off.\n\n' +
+                 'THE DATABASE PASSWORD NEED NOT BE IN THE CONNECTION ' +
+                 'STRING SINCE 2026-09-12. ' +
+                 '`persistence.databasePasswordProvider` reads it from the ' +
+                 'five places the key-encryption key comes from — a mounted ' +
+                 'file, AWS Secrets Manager, Google Secret Manager, Azure ' +
+                 'Key Vault, HashiCorp Vault — and by default out of the ' +
+                 'SAME file or secret, told apart by a field. ' +
+                 '`status.database.passwordFrom` says WHERE it came from and ' +
+                 'never what it is, which is the rule this whole reply ' +
+                 'follows about the connection string: the host, port, ' +
+                 'database and user are parsed out of it and the string ' +
+                 'itself is never returned.\n\n' +
                  'IT SHARES STATE AND NOT SOCKETS. The KDC, both LDAP ' +
                  'listeners, the two TLS ports and SPIFFE\'s four are ' +
                  'bound per process. And the replay caches and DPoP jti ' +
@@ -1218,7 +1262,7 @@ const ROUTES = [
     } },
 
   // ---------------------------------------------------------------------
-  // THE CRYPTO REPORT. It calls `admin.cryptoView()` and computes nothing of
+  // THE CRYPTO REPORT. It calls `adminViews.cryptoView()` and computes nothing of
   // its own, which is rule 7 read strictly: the page and this operation must
   // not be able to disagree about what this service's cryptography is, and the
   // way to make that impossible is for there to be one function.
@@ -1258,8 +1302,9 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/CryptoMetadata' },
     handler: function (req, res) {
       log.debug("Entering the management API crypto metadata endpoint.");
-      const report = admin.cryptoView(req);
+      const report = adminViews.cryptoView(req);
       if (!report) {
+        errorCodes.mark(res, 'STS-API-0011');
         sendJson(res, 503, { ok: false, errors: [
           'The crypto report is not installed in this process. ' +
           'admin-ui/crypto_metadata.js fills it at its own require time, and ' +
@@ -1434,10 +1479,90 @@ const ROUTES = [
         sendJson(res, 200, report);
         log.debug("Leaving the management API database report endpoint.");
       }).catch(function (e) {
+        errorCodes.mark(res, 'STS-API-0012');
         sendJson(res, 500, { ok: false, errors: [
           'The database report could not be built: ' +
           (e && e.message ? e.message : String(e))] });
         log.debug("Leaving the management API database report endpoint. It threw.");
+      });
+    } },
+
+  // ---------------------------------------------------------------------
+  // THE SECRET-STORE REPORT. `secretsAdmin.secretsView()` and nothing else,
+  // which is rule 7 read the strict way: the page and this operation must not
+  // be able to report a different state of the same store.
+  //
+  // **NOTHING IN THE REPLY IS A SECRET AND NOTHING IN IT CAME FROM READING
+  // ONE.** Every probe behind it is a metadata read — a stat of the key file,
+  // a `sys` endpoint, a KV version history, a `DescribeSecret`, a listing of
+  // version properties — and `common/secrets.js` deletes a deny-list of
+  // member names from whatever a provider hands back before it leaves that
+  // module. This operation is `admin:read`, like every other read here, and
+  // there is deliberately no write beside it: a rotate would destroy
+  // everything sealed under the key.
+  // ---------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/secrets', tag: 'Service',
+    operationId: 'getSecrets',
+    summary: 'Where the key-encryption key and the database password come ' +
+             'from, and what the store holding them is doing',
+    description: 'The two primordial secrets this service READS and never ' +
+                 'writes: the key-encryption key everything it seals is ' +
+                 'sealed under, and the database password. For each — the ' +
+                 'provider, the location, the field taken out of a JSON ' +
+                 'value, whether it is sharing the other one\'s location, ' +
+                 'and whether THIS PROCESS has actually read it, with the ' +
+                 'instant and the error if the last attempt failed. That ' +
+                 'last one is the fact no settings row can carry: a ' +
+                 'development-mode service never asks for the key, so a ' +
+                 'perfectly broken configuration and a working one look ' +
+                 'identical until the mode changes.\n\n`stores` is one ' +
+                 'member per STORE rather than per secret, because two ' +
+                 'secrets kept in one place share its state. What is in it ' +
+                 'depends on the provider: `file` answers the path, mode, ' +
+                 'owner, mtime and which members the file holds if it is ' +
+                 'JSON; `vault` answers the seal status, the health summary, ' +
+                 'the leader, the certificate this service presents and when ' +
+                 'it expires, the token the login produced, **what that ' +
+                 'identity may actually do — asked of the store rather than ' +
+                 'quoted from a policy file** — and the engines it can see; ' +
+                 '`aws`, `gcp` and `azure` publish their metadata against the ' +
+                 'secret itself.\n\n**NO PROBE FETCHES A SECRET VALUE AND ' +
+                 'NONE IS IN THE REPLY.** Every one is a metadata read, and ' +
+                 'the module they live in deletes a deny-list of member names ' +
+                 '— `value`, `data`, `token`, `id` among them — from ' +
+                 'whatever a provider answers before it leaves.\n\n**A ' +
+                 'PROBE THAT FAILED IS A MEMBER AND NOT AN ABSENCE**, with ' +
+                 '`ok: false` and, where the store gave one, the HTTP status ' +
+                 'in `status`. Here half of them are SUPPOSED to fail: the ' +
+                 'identity this service holds is bound to two read paths, so ' +
+                 'a 403 against anything else is the policy working. Each is ' +
+                 'bounded by `keys.storeProbeTimeoutMs` and they run in ' +
+                 'parallel, so an unreachable store costs that bound once.',
+    mirrors: 'GET /admin/secrets',
+    responseDescription: 'The whole report.',
+    responseSchema: { type: 'object',
+      description: 'The secret-store report: `secrets` (one per secret, with ' +
+                   '`configured`, `provider`, `where`, `field`, `shared`, ' +
+                   '`lastRead` and its own `probes`), `stores` (one per ' +
+                   'store, with `probes`), `mode`, `persistingKeys`, ' +
+                   '`timeoutMs` and `failed`.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API secret store report endpoint.");
+      // **AWAITED, AND THE HANDLER CATCHES**, for `getDatabase`'s reason:
+      // express 4 does not look at what a handler returns, so a rejection
+      // would be an unhandled rejection and a request that never gets an
+      // answer. This is the other operation here that talks to something
+      // outside this process.
+      secretsAdmin.secretsView().then(function (report) {
+        sendJson(res, 200, report);
+        log.debug("Leaving the management API secret store report endpoint.");
+      }).catch(function (e) {
+        errorCodes.mark(res, 'STS-API-0013');
+        sendJson(res, 500, { ok: false, errors: [
+          'The secret store report could not be built: ' +
+          (e && e.message ? e.message : String(e))] });
+        log.debug("Leaving the management API secret store report endpoint. " +
+                  "It threw.");
       });
     } },
 
@@ -1462,8 +1587,9 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/KeyList' },
     handler: function (req, res) {
       log.debug("Entering the management API key list endpoint.");
-      const report = admin.keysView(req);
+      const report = adminViews.keysView(req);
       if (!report) {
+        errorCodes.mark(res, 'STS-API-0011');
         sendJson(res, 503, { ok: false, errors: [
           'The crypto reporter is not installed in this process. ' +
           'admin-ui/crypto_metadata.js fills it at its own require time.'] });
@@ -1493,6 +1619,7 @@ const ROUTES = [
         // because `admin_api.js` uses the same sentence to check that every
         // console action has an operation here. A handler that stopped writing
         // it would turn that check off with nothing failing.
+        errorCodes.mark(res, 'STS-API-0014');
         sendJson(res, 400, { ok: false, errors: [
           'Unknown action "' + body.action + '". The actions here are: ' +
           'export.'] });
@@ -1500,10 +1627,11 @@ const ROUTES = [
                   "Unknown action.");
         return;
       }
-      const pending = admin.keysExport(String(body.key || ''),
+      const pending = adminViews.keysExport(String(body.key || ''),
                                        String(body.format || 'pem'),
                                        String(body.password || ''));
       if (!pending) {
+        errorCodes.mark(res, 'STS-API-0011');
         sendJson(res, 503, { ok: false, errors: [
           'The crypto reporter is not installed in this process.'] });
         log.debug("Leaving the management API key export endpoint. No reporter.");
@@ -1511,6 +1639,7 @@ const ROUTES = [
       }
       pending.then(function (result) {
         if (!result.ok) {
+          errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0015');
           sendJson(res, 400, result);
           log.debug("Leaving the management API key export endpoint. Refused.");
           return;
@@ -1531,6 +1660,7 @@ const ROUTES = [
         log.debug("Leaving the management API key export endpoint. " +
                   result.files.length + " file(s).");
       }).catch(function (e) {
+        errorCodes.mark(res, 'STS-API-0016');
         sendJson(res, 400, { ok: false, errors: ['The export failed: ' +
                                                  e.message] });
         log.debug("Leaving the management API key export endpoint. Threw.");
@@ -1697,7 +1827,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Metrics' },
     handler: function (req, res) {
       log.debug("Entering the management API metrics endpoint.");
-      sendJson(res, 200, admin.metricsJson());
+      sendJson(res, 200, adminViews.metricsJson());
       log.debug("Leaving the management API metrics endpoint.");
     } },
 
@@ -1765,7 +1895,7 @@ const ROUTES = [
     ] },
     handler: function (req, res) {
       log.debug("Entering the management API users endpoint.");
-      sendJson(res, 200, admin.usersView(req).json);
+      sendJson(res, 200, adminViews.usersJson(req));
       log.debug("Leaving the management API users endpoint.");
     } },
 
@@ -1815,7 +1945,8 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/NewUserForm' },
     handler: function (req, res) {
       log.debug("Entering the management API new-user endpoint.");
-      sendJson(res, 200, admin.newUserView(req).json);
+      // STRAIGHT TO THE LAYER, like the new-application resource beside it.
+      sendJson(res, 200, adminViews.newUserJson(req));
       log.debug("Leaving the management API new-user endpoint.");
     } },
 
@@ -1836,8 +1967,11 @@ const ROUTES = [
       // the two second-factor clears write — the same honesty `rbacAction`'s
       // caller keeps: this API authenticates a CLIENT rather than a person, so
       // an empty actor is the true answer rather than an inconvenient one.
-      const result = admin.usersAction(withAction(req, body),
+      const result = adminActions.usersAction(withAction(req, body),
                                        { via: 'api', actor: '' });
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0030');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API users action endpoint.");
     },
@@ -1973,12 +2107,19 @@ const ROUTES = [
             },
             credential: {
               type: 'string',
-              description: 'How they first get in. `none` (the default, and ' +
-                           'what this operation did before there were any — in ' +
-                           'development mode it is enough, since no password is ' +
-                           'checked anywhere here); `password`, hashing the ' +
-                           '`password` field onto the entry; `generate`, ' +
-                           'making one up and RETURNING IT ONCE in `password`; ' +
+              description: 'How they first get in. **`generate` is the ' +
+                           'DEFAULT since 2026-09-12**: a password drawn to ' +
+                           'satisfy this realm\'s password policy ' +
+                           '(`GET /admin-api/policies`), set, and RETURNED ONCE ' +
+                           'in `password` — this service stores a scrypt hash ' +
+                           'and cannot produce it again. It costs one hash per ' +
+                           'create, about 70ms, so a bulk load that wants ' +
+                           'nobody holding anything sends `none`. `none` was ' +
+                           'the default before, and in development mode it is ' +
+                           'enough to sign in, since no password is checked ' +
+                           'there; `password`, hashing the `password` field ' +
+                           'onto the entry, and refused by the password policy ' +
+                           'in product mode when it does not meet it; ' +
                            '`activation`, issuing a single-use link and ' +
                            'returning it ONCE in `activationUrl` for you to ' +
                            'send them, at which they choose a password, a ' +
@@ -2230,8 +2371,10 @@ const ROUTES = [
                  'section 4.2 makes a Bind the authorization state of a ' +
                  'CONNECTION.\n\n**THE EXPIRY IS WORKED OUT DIFFERENTLY IN ' +
                  'EACH AND `expiryRule` SAYS HOW.** A browser session expires ' +
-                 'at an absolute instant fixed when it was created and is NOT ' +
-                 'extended by use — there is no idle timeout here. A TGT ' +
+                 'at an absolute instant fixed when it was created ' +
+                 '(`authn.sessionLifetimeS`) and is NOT extended by use; ' +
+                 '`authn.sessionIdleTimeoutS`, off by default, ends one ' +
+                 'earlier when it goes unused. A TGT ' +
                  'expires at the `endtime` the KDC sealed into the ticket, ' +
                  'which nothing can move. An LDAP connection has NO EXPIRY ' +
                  'and answers `expiresAt: 0`, which is not an expiry of the ' +
@@ -2258,7 +2401,13 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/SessionList' },
     handler: function (req, res) {
       log.debug("Entering the management API sessions endpoint.");
-      sendJson(res, 200, admin.sessionsView(req));
+      // `.json`, because sessionsView() returns the whole MODEL — the rows,
+      // the paging and the filters the page needs, with the machine answer
+      // inside it. The console used to export a wrapper that unwrapped it
+      // here, and repointing this call at the layer without the unwrap
+      // answered the model: `/admin-api/sessions` reported 0 sessions for a
+      // person holding nine, with nothing erroring.
+      sendJson(res, 200, adminViews.sessionsView(req).json);
       log.debug("Leaving the management API sessions endpoint.");
     } },
 
@@ -2273,8 +2422,11 @@ const ROUTES = [
       // `admin` or `console` in that string. "the management API" alone
       // reported a person signing themselves out, which is the one
       // distinction that member exists to draw.
-      const result = admin.sessionsAction(withAction(req, body),
+      const result = adminActions.sessionsAction(withAction(req, body),
         { by: 'the management API at /admin-api/sessions' });
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0031');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API sessions action endpoint.");
     },
@@ -2373,7 +2525,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/LogoutInventory' },
     handler: function (req, res) {
       log.debug("Entering the management API sign-out endpoint.");
-      sendJson(res, 200, admin.logoutView(req).json);
+      sendJson(res, 200, adminViews.logoutJson(req).json);
       log.debug("Leaving the management API sign-out endpoint.");
     } },
 
@@ -2382,7 +2534,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API sign-out action endpoint.");
       const body = parseBody(req);
-      const result = admin.logoutAction(withAction(req, body));
+      const result = adminActions.logoutAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0032');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API sign-out action endpoint.");
     },
@@ -2543,7 +2698,7 @@ const ROUTES = [
     ] },
     handler: function (req, res) {
       log.debug("Entering the management API groups endpoint.");
-      sendJson(res, 200, admin.groupsView(req).json);
+      sendJson(res, 200, adminViews.groupsJson(req));
       log.debug("Leaving the management API groups endpoint.");
     } },
 
@@ -2566,7 +2721,7 @@ const ROUTES = [
   // fifty groups on a service whose own management API creates users five
   // thousand at a time.
   //
-  // THE ACTION SWITCH IS IN `admin.groupsAction()` and not here, exactly as the
+  // THE ACTION SWITCH IS IN `adminActions.groupsAction()` and not here, exactly as the
   // users one is: two doors onto one action must not be two readings of what
   // was sent.
   // ---------------------------------------------------------------------------
@@ -2575,7 +2730,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API groups action endpoint.");
       const body = parseBody(req);
-      const result = admin.groupsAction(withAction(req, body));
+      const result = adminActions.groupsAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0033');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API groups action endpoint.");
     },
@@ -2722,7 +2880,7 @@ const ROUTES = [
   // client can be driven through 302 / 401 / 403.
   //
   // EVERY ONE OF THEM CALLS THE FUNCTION THAT DRAWS THE PAGE, through
-  // `admin.directoryPageJson()` and the slot `ldap/ldap_server.js` fills — see
+  // `adminViews.directoryPageJson()` and the slot `ldap/ldap_server.js` fills — see
   // the block above `setDirectoryPages()` in `admin-ui/admin.js` for why it
   // cannot be a plain require from here. So a page and its operation cannot
   // come to disagree about what is in the directory: there is one function and
@@ -2758,7 +2916,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/DirectoryEntryList' },
     handler: function (req, res) {
       log.debug("Entering the management API directory entries endpoint.");
-      sendJson(res, 200, admin.directoryPageJson('directory', req));
+      sendJson(res, 200, adminViews.directoryPageJson('directory', req));
       log.debug("Leaving the management API directory entries endpoint.");
     } },
 
@@ -2792,7 +2950,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/DirectoryApplicationList' },
     handler: function (req, res) {
       log.debug("Entering the management API directory applications endpoint.");
-      sendJson(res, 200, admin.directoryPageJson('applications', req));
+      sendJson(res, 200, adminViews.directoryPageJson('applications', req));
       log.debug("Leaving the management API directory applications endpoint.");
     } },
 
@@ -2825,7 +2983,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/DirectoryFederationList' },
     handler: function (req, res) {
       log.debug("Entering the management API directory federations endpoint.");
-      sendJson(res, 200, admin.directoryPageJson('federations', req));
+      sendJson(res, 200, adminViews.directoryPageJson('federations', req));
       log.debug("Leaving the management API directory federations endpoint.");
     } },
 
@@ -2860,7 +3018,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/DirectorySpiffe' },
     handler: function (req, res) {
       log.debug("Entering the management API directory SPIFFE endpoint.");
-      sendJson(res, 200, admin.directoryPageJson('spiffe', req));
+      sendJson(res, 200, adminViews.directoryPageJson('spiffe', req));
       log.debug("Leaving the management API directory SPIFFE endpoint.");
     } },
 
@@ -2906,7 +3064,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/DirectoryRoleList' },
     handler: function (req, res) {
       log.debug("Entering the management API directory roles endpoint.");
-      sendJson(res, 200, admin.directoryPageJson('roles', req));
+      sendJson(res, 200, adminViews.directoryPageJson('roles', req));
       log.debug("Leaving the management API directory roles endpoint.");
     } },
 
@@ -2939,7 +3097,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/DirectoryPolicyList' },
     handler: function (req, res) {
       log.debug("Entering the management API directory policies endpoint.");
-      sendJson(res, 200, admin.directoryPageJson('policies', req));
+      sendJson(res, 200, adminViews.directoryPageJson('policies', req));
       log.debug("Leaving the management API directory policies endpoint.");
     } },
 
@@ -2971,7 +3129,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/DirectoryPepList' },
     handler: function (req, res) {
       log.debug("Entering the management API directory PEPs endpoint.");
-      sendJson(res, 200, admin.directoryPageJson('peps', req));
+      sendJson(res, 200, adminViews.directoryPageJson('peps', req));
       log.debug("Leaving the management API directory PEPs endpoint.");
     } },
 
@@ -3007,7 +3165,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/DirectoryService' },
     handler: function (req, res) {
       log.debug("Entering the management API directory service endpoint.");
-      sendJson(res, 200, admin.directoryPageJson('service', req));
+      sendJson(res, 200, adminViews.directoryPageJson('service', req));
       log.debug("Leaving the management API directory service endpoint.");
     } },
 
@@ -3066,7 +3224,9 @@ const ROUTES = [
     responseDescription: 'The roster, the settings, and who is asking.',
     handler: function (req, res) {
       log.debug("Entering the management API admin roles endpoint.");
-      sendJson(res, 200, admin.rbacView(req).json);
+      // The layer, not the page: rbacView() built two tables and four forms
+      // and this resource used none of them.
+      sendJson(res, 200, adminViews.rbacListJson(req).json);
       log.debug("Leaving the management API admin roles endpoint.");
     } },
 
@@ -3080,8 +3240,11 @@ const ROUTES = [
       // actor is empty unless the caller carried one — which is honest rather
       // than convenient, and is exactly what the audit row should say about an
       // unauthenticated management API call.
-      const result = admin.rbacAction(withAction(req, body),
+      const result = adminActions.rbacAction(withAction(req, body),
                                       { via: 'api', actor: '' });
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0034');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API admin roles action endpoint.");
     },
@@ -3174,7 +3337,7 @@ const ROUTES = [
   // operation whose page moved, and deleting a working one to tidy a table
   // would be a regression dressed as consistency — the same argument `GET
   // /admin-api/users/new` is kept on. So this stays, `mirrors` points at the
-  // page that absorbed it, and `admin.mfaView()` answers OUT OF THAT VIEW so
+  // page that absorbed it, and `adminViews.mfaRosterJson()` answers OUT OF THAT VIEW so
   // there is one tally rather than two scans that agree until they do not.
   //
   // **THE READ IS A REPORT AND THE WRITE IS A RESET**, and there is
@@ -3225,7 +3388,7 @@ const ROUTES = [
     responseDescription: 'The roster, the counts, and the RFC 6238 settings.',
     handler: function (req, res) {
       log.debug("Entering the management API multi-factor endpoint.");
-      sendJson(res, 200, admin.mfaView(req).json);
+      sendJson(res, 200, adminViews.mfaRosterJson(req));
       log.debug("Leaving the management API multi-factor endpoint.");
     } },
 
@@ -3239,8 +3402,11 @@ const ROUTES = [
       // the same honesty `rbacAction`'s caller keeps: this API authenticates a
       // CLIENT rather than a person, so an empty actor is the true answer
       // rather than an inconvenient one.
-      const result = admin.mfaAction(withAction(req, body),
+      const result = adminActions.mfaAction(withAction(req, body),
                                      { via: 'api', actor: '' });
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0035');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API multi-factor action endpoint.");
     },
@@ -3376,7 +3542,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/IssuedList' },
     handler: function (req, res) {
       log.debug("Entering the management API issued-list endpoint.");
-      sendJson(res, 200, admin.tokensView(req.query).json);
+      sendJson(res, 200, adminViews.tokensView(req.query).json);
       log.debug("Leaving the management API issued-list endpoint.");
     } },
 
@@ -3405,7 +3571,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/IssuedSetDetail' },
     handler: function (req, res) {
       log.debug("Entering the management API issued-set endpoint.");
-      sendJson(res, 200, admin.tokenSetView(req.query).json);
+      sendJson(res, 200, adminViews.tokenSetView(req.query).json);
       log.debug("Leaving the management API issued-set endpoint.");
     } },
 
@@ -3414,7 +3580,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API token action endpoint.");
       const body = parseBody(req);
-      const result = admin.tokenAction(withAction(req, body));
+      const result = adminActions.tokenAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0036');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API token action endpoint.");
     },
@@ -3637,7 +3806,7 @@ const ROUTES = [
           type: 'object',
           properties: { subject: { type: 'string' } },
           required: ['subject'],
-          examples: [{ subject: 'urn:sts-mock:user:alice' }],
+          examples: [{ subject: 'urn:sts:user:alice' }],
           additionalProperties: false
         },
         responseDescription: 'How many were revoked, in `revoked`.' },
@@ -3645,7 +3814,7 @@ const ROUTES = [
       { action: 'revoke-user', operationId: 'revokeTokensByUser',
         summary: 'Revoke everything for one identity, under every spelling',
         description: 'The users list\'s `key`, and every spelling of it — ' +
-                     '`alice`, `urn:sts-mock:user:alice` and ' +
+                     '`alice`, `urn:sts:user:alice` and ' +
                      '`alice@STS.MOCK` are one identity here, so revoking ' +
                      '"for alice" means all of them. Use `revoke-subject` ' +
                      'when you want an exact string instead.',
@@ -3742,7 +3911,7 @@ const ROUTES = [
     responseDescription: 'The realms, and the support table.',
     handler: function (req, res) {
       log.debug("Entering the management API trust realms endpoint.");
-      sendJson(res, 200, admin.realmsJson(req));
+      sendJson(res, 200, adminViews.realmsJson(req));
       log.debug("Leaving the management API trust realms endpoint.");
     } },
 
@@ -3751,7 +3920,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API trust realms action endpoint.");
       const body = parseBody(req);
-      const result = admin.realmsAction(withAction(req, body));
+      const result = adminActions.realmsAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0037');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API trust realms action endpoint.");
     },
@@ -3939,7 +4111,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API configuration action endpoint.");
       const body = parseBody(req);
-      const result = admin.configAction(withAction(req, body));
+      const result = adminActions.configAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0038');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API configuration action endpoint.");
     },
@@ -4047,7 +4222,7 @@ const ROUTES = [
   // Rule 7 is satisfied twice over here and it is worth saying which way
   // round. `/admin/token-lifetimes` grew a form, so it gets its operations —
   // that is the rule as written. What it does NOT get is a second store: the
-  // handler calls `admin.tokenLifetimesAction`, which writes through
+  // handler calls `adminActions.tokenLifetimesAction`, which writes through
   // `config.setOverride()`, which is the same function `POST /config/set`
   // calls against the same override map. So these two operations and the four
   // Configuration ones are two doors onto one thing, deliberately, in the way
@@ -4086,7 +4261,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/TokenLifetimes' },
     handler: function (req, res) {
       log.debug("Entering the management API token lifetimes endpoint.");
-      sendJson(res, 200, admin.tokenLifetimesJson());
+      sendJson(res, 200, adminViews.tokenLifetimesJson());
       log.debug("Leaving the management API token lifetimes endpoint.");
     } },
 
@@ -4114,7 +4289,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API token lifetimes action.");
       const body = parseBody(req);
-      const result = admin.tokenLifetimesAction(withAction(req, body));
+      const result = adminActions.tokenLifetimesAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0039');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API token lifetimes action.");
     },
@@ -4158,7 +4336,7 @@ const ROUTES = [
                        'posting a section and wrong for a caller who ' +
                        'misspelt a lifetime. A document short by one is then ' +
                        'a caller refused for following it.',
-          properties: narrowDoorProperties(admin.tokenLifetimeKeys()),
+          properties: narrowDoorProperties(adminActions.tokenLifetimeKeys()),
           examples: [{ 'oauth2.accessTokenTtlS': 60,
                        'oauth2.idTokenTtlS': 60,
                        'oauth2.refreshTokenTtlS': 86400,
@@ -4197,7 +4375,7 @@ const ROUTES = [
   // Rule 7 is satisfied the same way /token-lifetimes satisfies it, and the
   // parallel is exact: /admin/saml-assertions grew a form, so it gets its
   // operations. It gets no second store either — the handler calls
-  // admin.samlAssertionsAction, which writes through config.setOverride()
+  // adminActions.samlAssertionsAction, which writes through config.setOverride()
   // against the same override map POST /config/set writes to, and the same
   // map the two identity provider pages' own forms write to. Four doors, one
   // thing.
@@ -4246,7 +4424,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/SamlAssertions' },
     handler: function (req, res) {
       log.debug("Entering the management API SAML assertions endpoint.");
-      sendJson(res, 200, admin.samlAssertionsJson());
+      sendJson(res, 200, adminViews.samlAssertionsJson());
       log.debug("Leaving the management API SAML assertions endpoint.");
     } },
 
@@ -4274,7 +4452,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API SAML assertions action.");
       const body = parseBody(req);
-      const result = admin.samlAssertionsAction(withAction(req, body));
+      const result = adminActions.samlAssertionsAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0040');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API SAML assertions action.");
     },
@@ -4317,7 +4498,7 @@ const ROUTES = [
                        'lifetimes are in MINUTES and the skew and the ' +
                        'artifact lifetimes are in SECONDS; each row of the ' +
                        'GET carries its own unit and bounds.',
-          properties: narrowDoorProperties(admin.samlAssertionKeys()),
+          properties: narrowDoorProperties(adminActions.samlAssertionKeys()),
           examples: [{ 'saml2.assertionLifetimeMin': 1,
                        'saml11.assertionLifetimeMin': 1,
                        'saml.clockSkewS': 30 }],
@@ -4382,7 +4563,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/ClaimSets' },
     handler: function (req, res) {
       log.debug("Entering the management API claims endpoint.");
-      sendJson(res, 200, admin.claimsJson(admin.claimsPreviewUser(req.query)));
+      sendJson(res, 200, adminViews.claimsJson(adminViews.claimsPreviewUser(req.query)));
       log.debug("Leaving the management API claims endpoint.");
     } },
 
@@ -4399,8 +4580,11 @@ const ROUTES = [
       // `saml2` here is refused by name and sent to /admin-api/saml-attributes,
       // exactly as the console's own form post is. The action function, the
       // store and the audit row are the same ones either way.
-      const result = admin.claimsAction(withAction(req, body), names,
+      const result = adminActions.claimsAction(withAction(req, body), names,
                                         stats.JWT_CLAIM_SET_IDS);
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0041');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API claims action endpoint.");
     },
@@ -4481,8 +4665,8 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API UserInfo claims endpoint.");
       sendJson(res, 200,
-               admin.userinfoClaimsJson(admin.claimsPreviewUser(req.query),
-                                        admin.claimsRequestParameter(req.query)));
+               adminViews.userinfoClaimsJson(adminViews.claimsPreviewUser(req.query),
+                                        adminViews.claimsRequestParameter(req.query)));
       log.debug("Leaving the management API UserInfo claims endpoint.");
     } },
 
@@ -4493,8 +4677,11 @@ const ROUTES = [
       log.debug("Entering the management API UserInfo claims action endpoint.");
       const body = parseBody(req);
       const names = namesOf(req, body, 'attribute', 'attributes');
-      const result = admin.claimsAction(withAction(req, body), names,
+      const result = adminActions.claimsAction(withAction(req, body), names,
                                         stats.USERINFO_CLAIM_SET_IDS);
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0042');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API UserInfo claims action endpoint.");
     },
@@ -4553,7 +4740,7 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API SAML attributes endpoint.");
       sendJson(res, 200,
-               admin.samlAttributesJson(admin.claimsPreviewUser(req.query)));
+               adminViews.samlAttributesJson(adminViews.claimsPreviewUser(req.query)));
       log.debug("Leaving the management API SAML attributes endpoint.");
     } },
 
@@ -4564,8 +4751,11 @@ const ROUTES = [
       log.debug("Entering the management API SAML attributes action endpoint.");
       const body = parseBody(req);
       const names = namesOf(req, body, 'attribute', 'attributes');
-      const result = admin.claimsAction(withAction(req, body), names,
+      const result = adminActions.claimsAction(withAction(req, body), names,
                                         stats.SAML_CLAIM_SET_IDS);
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0043');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API SAML attributes action endpoint.");
     },
@@ -4593,7 +4783,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/CredentialClaims' },
     handler: function (req, res) {
       log.debug("Entering the management API credential-claims endpoint.");
-      sendJson(res, 200, admin.vcJson(admin.vcPreviewUser(req.query)));
+      sendJson(res, 200, adminViews.vcJson(adminViews.vcPreviewUser(req.query)));
       log.debug("Leaving the management API credential-claims endpoint.");
     } },
 
@@ -4604,7 +4794,10 @@ const ROUTES = [
       log.debug("Entering the management API credential-claims action.");
       const body = parseBody(req);
       const names = namesOf(req, body, 'attribute', 'attributes');
-      const result = admin.vcAction(withAction(req, body), names);
+      const result = adminActions.vcAction(withAction(req, body), names);
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0044');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API credential-claims action.");
     },
@@ -4726,7 +4919,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/VerifierRequest' },
     handler: function (req, res) {
       log.debug("Entering the management API verifier-request endpoint.");
-      sendJson(res, 200, admin.vpConfigJson());
+      sendJson(res, 200, adminViews.vpConfigJson());
       log.debug("Leaving the management API verifier-request endpoint.");
     } },
 
@@ -4737,7 +4930,10 @@ const ROUTES = [
       log.debug("Entering the management API verifier-request action.");
       const body = parseBody(req);
       const names = namesOf(req, body, 'claim', 'claims');
-      const result = admin.vpConfigAction(withAction(req, body), names);
+      const result = adminActions.vpConfigAction(withAction(req, body), names);
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0045');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API verifier-request action.");
     },
@@ -4936,7 +5132,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/FederationRelationshipList' },
     handler: function (req, res) {
       log.debug("Entering the management API federation endpoint.");
-      sendJson(res, 200, admin.federationView(req).json);
+      sendJson(res, 200, adminViews.federationJson(req));
       log.debug("Leaving the management API federation endpoint.");
     } },
 
@@ -4946,7 +5142,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API federation action endpoint.");
       const body = parseBody(req);
-      const result = admin.federationAction(withAction(req, body));
+      const result = adminActions.federationAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0046');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API federation action endpoint.");
     },
@@ -5201,7 +5400,8 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Saml2ServiceProviderList' },
     handler: function (req, res) {
       log.debug("Entering the management API SAML 2.0 endpoint.");
-      sendJson(res, 200, admin.saml2View(req).json);
+      // The layer decides list-or-detail off `?sp=` exactly as the page does.
+      sendJson(res, 200, adminViews.saml2Json(req));
       log.debug("Leaving the management API SAML 2.0 endpoint.");
     } },
 
@@ -5211,7 +5411,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API SAML 2.0 action endpoint.");
       const body = parseBody(req);
-      const result = admin.saml2Action(withAction(req, body));
+      const result = adminActions.saml2Action(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0047');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API SAML 2.0 action endpoint.");
     },
@@ -5356,7 +5559,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Saml11RelyingPartyList' },
     handler: function (req, res) {
       log.debug("Entering the management API SAML 1.1 endpoint.");
-      sendJson(res, 200, admin.saml11View(req).json);
+      sendJson(res, 200, adminViews.saml11Json(req));
       log.debug("Leaving the management API SAML 1.1 endpoint.");
     } },
 
@@ -5366,7 +5569,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API SAML 1.1 action endpoint.");
       const body = parseBody(req);
-      const result = admin.saml11Action(withAction(req, body));
+      const result = adminActions.saml11Action(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0048');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API SAML 1.1 action endpoint.");
     },
@@ -5435,7 +5641,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/AuthorizationServerList' },
     handler: function (req, res) {
       log.debug("Entering the management API authorization servers endpoint.");
-      sendJson(res, 200, admin.authorizationServersView(req).json);
+      sendJson(res, 200, adminViews.authorizationServersJson(req));
       log.debug("Leaving the management API authorization servers endpoint.");
     } },
 
@@ -5445,7 +5651,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API authorization servers action endpoint.");
       const body = parseBody(req);
-      const result = admin.authorizationServersAction(withAction(req, body));
+      const result = adminActions.asAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0049');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API authorization servers action endpoint.");
     },
@@ -5658,7 +5867,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/ApplicationList' },
     handler: function (req, res) {
       log.debug("Entering the management API applications endpoint.");
-      sendJson(res, 200, admin.applicationsView(req).json);
+      sendJson(res, 200, adminViews.applicationsJson(req));
       log.debug("Leaving the management API applications endpoint.");
     } },
 
@@ -5709,7 +5918,10 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/NewApplicationForm' },
     handler: function (req, res) {
       log.debug("Entering the management API new-application endpoint.");
-      sendJson(res, 200, admin.newApplicationView(req).json);
+      // STRAIGHT TO THE LAYER (2026-09-12). This used to go through the
+      // console's newApplicationView(), which built the whole page and threw
+      // the markup away — so every call here rendered a form nobody read.
+      sendJson(res, 200, adminViews.newApplicationJson(req));
       log.debug("Leaving the management API new-application endpoint.");
     } },
 
@@ -5727,16 +5939,22 @@ const ROUTES = [
       // Ignored by every action but `create`, which is where the vocabulary is
       // validated.
       const protocols = namesOf(req, body, 'protocol', 'protocols');
-      const result = admin.applicationsAction(withAction(req, body), protocols);
+      const result = adminActions.applicationsAction(withAction(req, body), protocols);
       // `refresh-metadata` is asynchronous — it dials the service provider's
       // metadata URL — and every other action is not. See that action's comment
       // in admin.js for why one promise is cheaper than forty awaits.
       if (result && typeof result.then === 'function') {
         result.then(function (answer) {
+          if (!answer.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-API-0050');
+          }
           sendJson(res, answer.ok ? 200 : 400, answer);
           log.debug("Leaving the management API applications action endpoint. Fetched.");
         });
         return;
+      }
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0050');
       }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API applications action endpoint.");
@@ -5952,6 +6170,85 @@ const ROUTES = [
         },
         responseDescription: 'The application as it now stands.' },
 
+      // THE PROVENANCE PAIR (2026-09-12). The console's application page draws
+      // a Confirm and a Discard button beside every return address a
+      // development-mode request put on the entry; rule 7 owes each an
+      // operation here, and both call the one action function that page posts
+      // to. `applications.returnAddressesOf()` is the rule they change the
+      // answer of.
+      { action: 'confirm-address', operationId: 'confirmApplicationReturnAddress',
+        summary: 'Confirm a return address a development-mode request recorded',
+        description: 'A return address — a SAML ACS URL or `shire` on ' +
+                     '`samlAssertionConsumerService`, a WS-Federation `wreply` on ' +
+                     '`wsfedReplyUrl`, or a callback this service learnt for its ' +
+                     'own console or portal on `oauthRedirectUri` — that a ' +
+                     'request NAMED while the realm was in DEVELOPMENT mode is ' +
+                     'written onto the entry and MARKED on ' +
+                     '`appReturnAddressObserved` (`<attribute> <address>`). ' +
+                     '**PRODUCT mode refuses a marked address** exactly as it ' +
+                     'refuses one that is not on the entry, so a realm switched ' +
+                     'from development to product does not trust what ' +
+                     'development learnt.\n\nThis takes the mark OFF and keeps ' +
+                     'the address, so product believes it from the next request. ' +
+                     'An address that is not marked is REFUSED by name rather ' +
+                     'than confirmed silently — it is already registered, or it ' +
+                     'is not on the entry. `add` of the same address confirms it ' +
+                     'too, because an explicit write is a registration.\n\n' +
+                     'GET /admin-api/applications?application=… lists the marked ' +
+                     'addresses as `returnAddressesObserved`, each with `trusted` ' +
+                     'saying whether THIS realm\'s mode believes it. Addresses ' +
+                     'recorded before this service marked sightings carry no ' +
+                     'mark and cannot be told apart from registered ones.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            application: { type: 'string',
+                           description: 'The identifier, exactly as the ' +
+                                        'registry holds it.' },
+            attribute: { type: 'string', enum: applications.RETURN_ADDRESS_ATTRIBUTES,
+                         description: 'The return-address attribute the address ' +
+                                      'is on.' },
+            value: { type: 'string',
+                     description: 'The address, exactly as the entry holds it.' }
+          },
+          required: ['application', 'attribute', 'value'],
+          examples: [{ application: 'https://sp.example.com',
+                       attribute: 'samlAssertionConsumerService',
+                       value: 'https://sp.example.com/acs' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The application as it now stands, with the mark ' +
+                             'gone from `returnAddressesObserved`.' },
+
+      { action: 'discard-address', operationId: 'discardApplicationReturnAddress',
+        summary: 'Discard a return address a development-mode request recorded',
+        description: 'The opposite answer to `confirm-address`: the address was ' +
+                     'recorded from a request in DEVELOPMENT mode and is NOT this ' +
+                     'application\'s, so the mark on `appReturnAddressObserved` ' +
+                     'AND the address itself are taken off the entry. Product ' +
+                     'mode then refuses it as an address that is not there; ' +
+                     'development records it again, marked, if a request names ' +
+                     'it again.\n\nAn address that is not marked is REFUSED rather ' +
+                     'than removed — discarding is not the door for taking a ' +
+                     'REGISTERED address off an entry, and `remove` is, which ' +
+                     'says so.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            application: { type: 'string' },
+            attribute: { type: 'string', enum: applications.RETURN_ADDRESS_ATTRIBUTES },
+            value: { type: 'string' }
+          },
+          required: ['application', 'attribute', 'value'],
+          examples: [{ application: 'urn:example:crm', attribute: 'wsfedReplyUrl',
+                       value: 'https://evil.example/wsfed' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The application as it now stands, without the ' +
+                             'address or its mark.' },
+
       { action: 'revoke-registration', operationId: 'revokeApplicationRegistration',
         summary: 'Withdraw an RFC 7591 registration, keeping the entry',
         description: 'RFC 7592\'s delete reached from here instead of from the ' +
@@ -5973,7 +6270,7 @@ const ROUTES = [
           type: 'object',
           properties: { application: { type: 'string' } },
           required: ['application'],
-          examples: [{ application: 'sts-mock-client-Ab12Cd34' }],
+          examples: [{ application: 'sts-client-Ab12Cd34' }],
           additionalProperties: false
         },
         responseDescription: 'The application as it now stands, with ' +
@@ -6090,7 +6387,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Xacml' },
     handler: function (req, res) {
       log.debug("Entering the management API XACML endpoint.");
-      sendJson(res, 200, admin.xacmlView(req));
+      sendJson(res, 200, adminViews.xacmlView(req));
       log.debug("Leaving the management API XACML endpoint.");
     } },
 
@@ -6113,7 +6410,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/XacmlPolicies' },
     handler: function (req, res) {
       log.debug("Entering the management API XACML policies endpoint.");
-      sendJson(res, 200, admin.xacmlPoliciesView(req));
+      sendJson(res, 200, adminViews.xacmlPoliciesView(req));
       log.debug("Leaving the management API XACML policies endpoint.");
     } },
 
@@ -6135,7 +6432,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/XacmlEditor' },
     handler: function (req, res) {
       log.debug("Entering the management API XACML editor endpoint.");
-      sendJson(res, 200, admin.xacmlEditorView(req));
+      sendJson(res, 200, adminViews.xacmlEditorView(req));
       log.debug("Leaving the management API XACML editor endpoint.");
     } },
 
@@ -6163,7 +6460,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/XacmlDecision' },
     handler: function (req, res) {
       log.debug("Entering the management API XACML decision endpoint.");
-      sendJson(res, 200, admin.xacmlDecideView(req));
+      sendJson(res, 200, adminViews.xacmlDecideView(req));
       log.debug("Leaving the management API XACML decision endpoint.");
     } },
 
@@ -6178,6 +6475,96 @@ const ROUTES = [
   // forgotten — a console that could zero its own monitoring would make every
   // number on it a number somebody might have zeroed, and the audit log, which
   // is the durable record, cannot be reset either.
+  // -------------------------------------------------------------------------
+  // GNAP (RFC 9635 + RFC 9767), 2026-09-12. Three operations mirroring the two
+  // pages `gnap/gnap_admin.js` draws and the one form on the first of them.
+  // Both doors call `gnap/gnap_console.js`, the view and action layer of this
+  // family, so a page and its operation cannot disagree (rule 7). REQUIRED
+  // LAZILY: this module is 19 in the require order and GNAP is 23d, and every
+  // module that file loads is a library — but a lazy require keeps that true
+  // by construction rather than by a reading of today's require graph.
+  // -------------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/gnap', tag: 'GNAP', operationId: 'getGnap',
+    summary: 'The GNAP authorization server: endpoints, capabilities, grants, resource sets, settings',
+    description: 'Everything /admin/gnap draws. The endpoints of this realm\'s GNAP authorization ' +
+                 'server (RFC 9635) and its RS-facing API (RFC 9767); the section 9 capabilities of ' +
+                 'the default authorization server and of every named one, after that profile\'s ' +
+                 'GNAP overrides — which are what each grant endpoint ENFORCES; the five token ' +
+                 'formats and the public material that verifies the self-contained ones; the grants ' +
+                 'this realm holds (paged, `grantsPage`, and filtered by `state`); the registered ' +
+                 'resource sets (paged, `resourcesPage`); and the `gnap.*` settings, which are ' +
+                 'written through POST /admin-api/config/set-many.',
+    mirrors: 'GET /admin/gnap',
+    responseDescription: 'The authorization server as the page draws it.',
+    responseSchema: { $ref: '#/components/schemas/GnapServer' },
+    handler: function (req, res) {
+      log.debug("Entering the management API GNAP endpoint.");
+      sendJson(res, 200, require('../gnap/gnap_console').gnapView(req));
+      log.debug("Leaving the management API GNAP endpoint.");
+    } },
+
+  { method: 'GET', path: BASE + '/gnap/monitor', tag: 'GNAP', operationId: 'getGnapMonitor',
+    summary: 'Every application that uses GNAP, and what each has done',
+    description: 'Everything /admin/gnap/monitor draws: one row per application declared for GNAP, ' +
+                 'seen speaking it, or counted — client instances and resource servers — with the ' +
+                 'grants it holds by state, its live tokens, and its counters since the process ' +
+                 'started: grants requested, approved and denied, tokens issued by format, ' +
+                 'rotations, revocations, failed key proofs, introspections, registrations, ' +
+                 'derivations, and the GNAP error codes it was answered with. Per trust realm, and ' +
+                 'with no reset: the durable record is GET /admin-api/audit.',
+    mirrors: 'GET /admin/gnap/monitor',
+    responseDescription: 'The totals, and one row per application.',
+    responseSchema: { $ref: '#/components/schemas/GnapMonitor' },
+    handler: function (req, res) {
+      log.debug("Entering the management API GNAP monitor endpoint.");
+      sendJson(res, 200, require('../gnap/gnap_console').gnapMonitorView(req));
+      log.debug("Leaving the management API GNAP monitor endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/gnap/:action', tag: 'GNAP',
+    mirrors: 'POST /admin/gnap',
+    handler: function (req, res) {
+      log.debug("Entering the management API GNAP action endpoint.");
+      const result = require('../gnap/gnap_console').gnapAction(withAction(req, parseBody(req)),
+                                                                 { via: 'api', req: req });
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-GNAP-0665');
+      }
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API GNAP action endpoint.");
+    },
+    actions: [
+      { action: 'revoke-grant', operationId: 'revokeGnapGrant',
+        summary: 'Revoke a GNAP grant, as its client could (RFC 9635 section 5.4)',
+        description: 'Finalizes the grant and revokes every access token issued under it, through the ' +
+                     'same path the client\'s own DELETE on the continuation URI takes — so the client ' +
+                     'sees exactly what it would have seen had it revoked the grant itself, and a CAEP ' +
+                     'session-revoked is sent to every stream that takes it. A grant already finalized ' +
+                     'is reported unchanged rather than refused.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: { grant: { type: 'string', description: 'The grant identifier, from GET /admin-api/gnap.' } },
+          required: ['grant'],
+          examples: [{ grant: 'no-such-grant-example' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The grant as it now stands.' },
+      { action: 'delete-resource-set', operationId: 'deleteGnapResourceSet',
+        summary: 'Delete a registered resource set (RFC 9767 section 3.4)',
+        description: 'Removes the resource set, after which its reference no longer resolves in a grant ' +
+                     'request. Tokens already issued keep the rights they carry.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: { reference: { type: 'string', description: 'The resource reference, from GET /admin-api/gnap.' } },
+          required: ['reference'],
+          examples: [{ reference: 'no-such-reference' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The reference that was deleted.' }
+    ] },
+
   { method: 'GET', path: BASE + '/xacml/monitor', tag: 'XACML',
     operationId: 'getXacmlMonitor',
     summary: 'How many authorization decisions are being made, by which ' +
@@ -6222,7 +6609,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/XacmlMonitor' },
     handler: function (req, res) {
       log.debug("Entering the management API XACML monitor endpoint.");
-      sendJson(res, 200, admin.xacmlMonitorView(req));
+      sendJson(res, 200, adminViews.xacmlMonitorView(req));
       log.debug("Leaving the management API XACML monitor endpoint.");
     } },
 
@@ -6257,7 +6644,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/XacmlPeps' },
     handler: function (req, res) {
       log.debug("Entering the management API XACML remote PEPs endpoint.");
-      sendJson(res, 200, admin.xacmlPepsView(req));
+      sendJson(res, 200, adminViews.xacmlPepsView(req));
       log.debug("Leaving the management API XACML remote PEPs endpoint.");
     } },
 
@@ -6267,7 +6654,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API XACML action endpoint.");
       const body = parseBody(req);
-      const result = admin.xacmlAction(withAction(req, body));
+      const result = adminActions.xacmlAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0051');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API XACML action endpoint.");
     },
@@ -6543,7 +6933,7 @@ const ROUTES = [
                                    'access-subject.' },
             attributeId: { type: 'string',
                       description: 'The attribute to read. A bare name or the ' +
-                                   '`urn:sts-mock:xacml:attribute:` prefix ' +
+                                   '`urn:sts:xacml:attribute:` prefix ' +
                                    'reaches the directory through the PIP; ' +
                                    'anything else must be in the request.' },
             mustBePresent: { type: 'boolean',
@@ -6651,7 +7041,7 @@ const ROUTES = [
                                    'access-subject.' },
             attributeId: { type: 'string',
                       description: 'The attribute to read. A bare name or the ' +
-                                   '`urn:sts-mock:xacml:attribute:` prefix ' +
+                                   '`urn:sts:xacml:attribute:` prefix ' +
                                    'reaches the directory through the PIP; ' +
                                    'anything else must be in the request.' }
           },
@@ -6698,7 +7088,7 @@ const ROUTES = [
                                    'access-subject.' },
             attributeId: { type: 'string',
                       description: 'The attribute to read. A bare name or the ' +
-                                   '`urn:sts-mock:xacml:attribute:` prefix ' +
+                                   '`urn:sts:xacml:attribute:` prefix ' +
                                    'reaches the directory through the PIP; ' +
                                    'anything else must be in the request.' }
           },
@@ -6748,7 +7138,7 @@ const ROUTES = [
                                    'access-subject.' },
             attributeId: { type: 'string',
                       description: 'The attribute to read. A bare name or the ' +
-                                   '`urn:sts-mock:xacml:attribute:` prefix ' +
+                                   '`urn:sts:xacml:attribute:` prefix ' +
                                    'reaches the directory through the PIP; ' +
                                    'anything else must be in the request.' }
           },
@@ -6911,7 +7301,7 @@ const ROUTES = [
         description: 'An `<AttributeDesignator>`: reads an attribute out of ' +
                      'the REQUEST, or out of the directory through the PIP ' +
                      'when the id is a bare name or carries the ' +
-                     '`urn:sts-mock:xacml:attribute:` prefix.\n\n**IT ' +
+                     '`urn:sts:xacml:attribute:` prefix.\n\n**IT ' +
                      'RETURNS A BAG**, always, even when it finds exactly ' +
                      'one value — which is why `string-one-and-only` exists ' +
                      'and why most functions need it wrapped. Nothing in ' +
@@ -7848,7 +8238,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Ssf' },
     handler: function (req, res) {
       log.debug("Entering the management API Shared Signals endpoint.");
-      sendJson(res, 200, admin.ssfView(req));
+      sendJson(res, 200, adminViews.ssfJson(req));
       log.debug("Leaving the management API Shared Signals endpoint.");
     } },
 
@@ -7862,7 +8252,10 @@ const ROUTES = [
       // worker pool — and then POSTs it to somebody else's endpoint. Neither
       // can be done synchronously, and answering before either had happened
       // would be this API reporting "sent" about nothing.
-      admin.ssfAction(withAction(req, body)).then(function (result) {
+      adminActions.ssfAction(withAction(req, body)).then(function (result) {
+        if (!result.ok) {
+          errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0052');
+        }
         sendJson(res, result.ok ? 200 : 400, result);
         log.debug("Leaving the management API Shared Signals action " +
                   "endpoint.");
@@ -7871,6 +8264,7 @@ const ROUTES = [
         // request can cause — its action function resolves a refusal rather
         // than throwing one — so it is reported as a refusal instead of
         // becoming an unhandled rejection that ends the process.
+        errorCodes.mark(res, 'STS-API-0018');
         log.error('admin-api: the Shared Signals action threw: ' + e.message);
         sendJson(res, 500, { ok: false,
           errors: ['The action failed: ' + e.message] });
@@ -8051,7 +8445,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Caep' },
     handler: function (req, res) {
       log.debug("Entering the management API CAEP endpoint.");
-      sendJson(res, 200, admin.caepView(req));
+      sendJson(res, 200, adminViews.caepJson(req));
       log.debug("Leaving the management API CAEP endpoint.");
     } },
 
@@ -8129,7 +8523,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Caep' },
     handler: function (req, res) {
       log.debug("Entering the management API CAEP sessions endpoint.");
-      sendJson(res, 200, admin.caepSessionsView(req));
+      sendJson(res, 200, adminViews.caepSessionsJson(req));
       log.debug("Leaving the management API CAEP sessions endpoint.");
     } },
 
@@ -8142,10 +8536,14 @@ const ROUTES = [
       // reason: emitting a CAEP event signs a JWS — possibly ML-DSA or
       // SLH-DSA on the worker pool — and then POSTs it to somebody else's
       // endpoint.
-      admin.caepAction(withAction(req, body)).then(function (result) {
+      adminActions.caepAction(withAction(req, body)).then(function (result) {
+        if (!result.ok) {
+          errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0053');
+        }
         sendJson(res, result.ok ? 200 : 400, result);
         log.debug("Leaving the management API CAEP action endpoint.");
       }).catch(function (e) {
+        errorCodes.mark(res, 'STS-API-0019');
         log.error('admin-api: the CAEP action threw: ' + e.message);
         sendJson(res, 500, { ok: false,
           errors: ['The action failed: ' + e.message] });
@@ -8302,7 +8700,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Risc' },
     handler: function (req, res) {
       log.debug("Entering the management API RISC endpoint.");
-      sendJson(res, 200, admin.riscView(req));
+      sendJson(res, 200, adminViews.riscJson(req));
       log.debug("Leaving the management API RISC endpoint.");
     } },
 
@@ -8370,7 +8768,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Risc' },
     handler: function (req, res) {
       log.debug("Entering the management API RISC accounts endpoint.");
-      sendJson(res, 200, admin.riscAccountsView(req));
+      sendJson(res, 200, adminViews.riscAccountsJson(req));
       log.debug("Leaving the management API RISC accounts endpoint.");
     } },
 
@@ -8380,10 +8778,14 @@ const ROUTES = [
       log.debug("Entering the management API RISC action endpoint.");
       const body = parseBody(req);
       // AWAITS, like the CAEP handler above and for the same reason.
-      admin.riscAction(withAction(req, body)).then(function (result) {
+      adminActions.riscAction(withAction(req, body)).then(function (result) {
+        if (!result.ok) {
+          errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0054');
+        }
         sendJson(res, result.ok ? 200 : 400, result);
         log.debug("Leaving the management API RISC action endpoint.");
       }).catch(function (e) {
+        errorCodes.mark(res, 'STS-API-0020');
         log.error('admin-api: the RISC action threw: ' + e.message);
         sendJson(res, 500, { ok: false,
           errors: ['The action failed: ' + e.message] });
@@ -8538,7 +8940,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Scim' },
     handler: function (req, res) {
       log.debug("Entering the management API SCIM endpoint.");
-      sendJson(res, 200, admin.scimJson(req));
+      sendJson(res, 200, adminViews.scimJson(req));
       log.debug("Leaving the management API SCIM endpoint.");
     } },
 
@@ -8655,9 +9057,13 @@ const ROUTES = [
       // then POSTs). Express 4 does not look at what a handler returns, so an
       // unhandled rejection here would be a request that never gets an answer.
       pkiAdmin.pkiAction(withAction(req, body)).then(function (result) {
+        if (!result.ok) {
+          errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0055');
+        }
         sendJson(res, result.ok ? 200 : 400, result);
         log.debug("Leaving the management API PKI action endpoint.");
       }).catch(function (e) {
+        errorCodes.mark(res, 'STS-API-0021');
         log.error('the management API PKI action threw: ' +
                   (e && e.stack ? e.stack : e));
         sendJson(res, 500, { ok: false,
@@ -8829,7 +9235,7 @@ const ROUTES = [
                      'anything else: a key issued to one resource owner is ' +
                      'that person\'s credential rather than permission to ' +
                      'speak for the others, and the certificate carries ' +
-                     '`urn:sts-mock:person:<name>` as a URI subjectAltName so ' +
+                     '`urn:sts:person:<name>` as a URI subjectAltName so ' +
                      'that the rule holds for an assertion presented on its ' +
                      '`x5c` alone. A party that may assert about OTHER people ' +
                      'is an application with `oauthAssertionIssuer` declared ' +
@@ -9588,7 +9994,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/ScimMonitor' },
     handler: function (req, res) {
       log.debug("Entering the management API SCIM monitor endpoint.");
-      sendJson(res, 200, admin.scimMonitorJson(req));
+      sendJson(res, 200, adminViews.scimMonitorJson(req));
       log.debug("Leaving the management API SCIM monitor endpoint.");
     } },
 
@@ -9651,7 +10057,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/Signals' },
     handler: function (req, res) {
       log.debug("Entering the management API signals endpoint.");
-      sendJson(res, 200, admin.signalsView(req));
+      sendJson(res, 200, adminViews.signalsJson(req));
       log.debug("Leaving the management API signals endpoint.");
     } },
 
@@ -9660,7 +10066,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API signals action endpoint.");
       const body = parseBody(req);
-      const result = admin.signalsAction(withAction(req, body));
+      const result = adminActions.signalsAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0056');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API signals action endpoint.");
     },
@@ -9689,6 +10098,376 @@ const ROUTES = [
         requestBody: { type: 'object', properties: {}, examples: [{}],
                        additionalProperties: true },
         responseDescription: 'How many delivered events were dropped.' }
+    ] },
+
+  // ---------------------------------------------------------------------------
+  // THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12).
+  //
+  // Rule 7: `/admin/tls/trust` has two controls, so this resource has the same
+  // two, through `truststoreAction()` and `truststoreJson()` in `admin-core/`,
+  // which reach `tls/tls_server.js` through `admin.setTruststore()`.
+  //
+  // **BOTH OPERATIONS ARE PINNED TO THE FRONT PROCESS** in `workers.dispatch`
+  // mode (`common/request_pool.js`'s `NEVER_DISPATCHED`): the anchors are the
+  // configuration of listeners only that process holds, and a worker changing
+  // its own copy would change nothing a handshake reads. They are FANNED out
+  // nowhere, answered nowhere else, and carry no realm: the array is the
+  // process's, so every realm prefix reads and writes the same one.
+  //
+  // **THIS IS THE RUNTIME DOOR PRODUCT MODE HAD NONE OF.** `POST /tls/trust`
+  // needs no credential and product mode refuses it; this API's own access
+  // token is the credential here, `admin:read` to list and `admin:write` to
+  // change — the gate below every operation, by method, so nothing in these two
+  // rows re-checks it.
+  // ---------------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/tls/trust', tag: 'TLS',
+    operationId: 'getTruststore',
+    summary: 'Every client-certificate trust anchor, and where each came from',
+    description: 'The anchors 8443, 9443, LDAPS 636 and the main HTTPS port ' +
+                 'verify a CLIENT certificate against. A certificate that ' +
+                 'chains to one of these is verified, and a verified ' +
+                 'certificate is an identity here — it starts a sign-on ' +
+                 'session and it is what admits a remote XACML PEP to ' +
+                 '`/xacml/pep/*` — so this list is whose certificates this ' +
+                 'service believes.\n\nEach row carries the subject, issuer, ' +
+                 'serial, validity, SHA-256 fingerprint (the colon form ' +
+                 '`openssl x509 -fingerprint -sha256` prints), whether it is ' +
+                 'a CA, the PEM, and `source`: `file` for one read from ' +
+                 '`tls.trustAnchorsFile` at startup, `runtime` for one added ' +
+                 'while the process was running, with `persisted` saying ' +
+                 'whether it was written down.\n\n**A RUNTIME ANCHOR IS ' +
+                 'PERSISTED** in `ou=trustAnchors` in the default realm\'s ' +
+                 'directory, so it survives a restart wherever the directory ' +
+                 'does (`persistence.mode` ldif or postgres) and reaches every ' +
+                 'other process against the same store. A `file` anchor is ' +
+                 'not stored there and comes back at the next start however ' +
+                 'it was removed.\n\n**ONE TRUSTSTORE FOR THE PROCESS, NOT PER ' +
+                 'REALM.** The listeners are shared by every trust realm, so ' +
+                 'this answers the same list under every realm prefix.\n\n' +
+                 '**NO PRIVATE KEY IS IN THIS REPLY** — the truststore holds ' +
+                 'certificates and nothing else.',
+    mirrors: 'GET /admin/tls/trust',
+    parameters: pagingParameters(),
+    responseDescription: 'The anchors on this page with their paging, the ' +
+                         'counts by source, the configured anchors file, and ' +
+                         'which doors can change the list.',
+    responseSchema: { type: 'object',
+                      description: 'The truststore, paged.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API truststore endpoint.");
+      const json = adminViews.truststoreJson(req);
+      if (!json.installed) {
+        errorCodes.mark(res, 'STS-API-0017');
+      }
+      sendJson(res, json.installed ? 200 : 503, json);
+      log.debug("Leaving the management API truststore endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/tls/trust/:action', tag: 'TLS',
+    mirrors: 'POST /admin/tls/trust',
+    handler: function (req, res) {
+      log.debug("Entering the management API truststore action endpoint.");
+      const body = parseBody(req);
+      const result = adminActions.truststoreAction(withAction(req, body),
+                                                   { via: 'api' });
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0057');
+      }
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API truststore action endpoint.");
+    },
+    actions: [
+      { action: 'add', operationId: 'addTrustAnchors',
+        summary: 'Trust client certificates issued by one or more CAs',
+        description: 'Adds every `-----BEGIN CERTIFICATE-----` block in ' +
+                     '`certificates` — the root, or the whole chain above the ' +
+                     'leaf — and applies the new truststore to every listener ' +
+                     'with `setSecureContext()`. The next handshake is judged ' +
+                     'against it; connections already open keep the ' +
+                     'truststore they were made under.\n\n**ALL OR NOTHING ON ' +
+                     'A BLOCK OPENSSL CANNOT READ.** If any block does not ' +
+                     'parse, none is added: an anchor the listener cannot ' +
+                     'parse makes the next truststore change throw on every ' +
+                     'listener. A certificate already held is counted in ' +
+                     '`duplicates` and not added twice. The truststore holds ' +
+                     'at most 32 anchors; an add that fills it keeps what went ' +
+                     'in and says why the rest did not in `warning`.\n\n' +
+                     '**PERSISTED** in `ou=trustAnchors` wherever the ' +
+                     'directory is; `persisted` in the reply says whether ' +
+                     'every anchor this call added was written down.\n\n**THIS IS THE GATED TWIN OF ' +
+                     '`POST /tls/trust`**, which needs no credential and is ' +
+                     'refused in product mode. This operation answers in both ' +
+                     'modes. The reply names what was added and carries no ' +
+                     'private key, because none is involved.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            certificates: { type: 'string',
+                            description: 'One or more PEM certificates, ' +
+                                         'concatenated. An array of PEM ' +
+                                         'strings is accepted too.' }
+          },
+          required: ['certificates'],
+          examples: [{ certificates: '-----BEGIN CERTIFICATE-----\n' +
+                       'MIIBszCCAVmgAwIBAgIU…the Root CA of the client ' +
+                       'certificates to trust…\n-----END CERTIFICATE-----\n' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many anchors were added, how many were ' +
+                             'already held, the new total, and the subject and ' +
+                             'fingerprint of each one added.' },
+
+      { action: 'remove', operationId: 'removeTrustAnchor',
+        summary: 'Stop trusting one anchor, named by its fingerprint',
+        description: 'Removes the ONE anchor whose SHA-256 fingerprint is ' +
+                     '`fingerprint` — colon-separated or plain hex, either ' +
+                     'case — and applies the smaller truststore to every ' +
+                     'listener.\n\n**THERE IS NO BULK CLEAR ON THIS API, AND ' +
+                     'THAT IS DELIBERATE.** A clear is the one change whose ' +
+                     'reach is every client certificate every other caller ' +
+                     'relies on; `POST /tls/trust/clear` exists as a ' +
+                     'development test control and is refused in product ' +
+                     'mode. Remove the rows you mean.\n\n**A `file` ANCHOR MAY ' +
+                     'BE REMOVED AND COMES BACK AT THE NEXT START**, when ' +
+                     '`tls.trustAnchorsFile` is read again; the reply says so. ' +
+                     'A fingerprint this truststore does not hold is refused ' +
+                     'and removes nothing.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            fingerprint: { type: 'string',
+                           description: 'The anchor\'s SHA-256 fingerprint, ' +
+                                        'as `GET /admin-api/tls/trust` lists ' +
+                                        'it in `fingerprint256`.' }
+          },
+          required: ['fingerprint'],
+          examples: [{ fingerprint: '3F:1A:9C:00:5B:7E:12:D4:88:6A:0B:C2:' +
+                       '4E:91:7D:33:A0:5F:E6:21:9B:48:C7:0D:2E:84:16:F9:' +
+                       '5A:C3:77:B0' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The anchor that was removed, where it came from, ' +
+                             'and the new total.' }
+    ] },
+
+  // ---------------------------------------------------------------------------
+  // THE STORED KERBEROS KEYS (2026-09-12).
+  //
+  // Rule 7: `/admin/kerberos/principals` has six controls — the two "Drop previous
+  // versions" buttons joined the four on 2026-09-12 — so this resource has
+  // the same six, through `kerberosPrincipalsAction()` and
+  // `kerberosPrincipalsJson()` in `admin-core/`, which reach
+  // `kerberos/krb5_person_keys.js` by a plain require.
+  //
+  // **NO KEY IS IN ANY REPLY BUT TWO**, and those two are the whole reason a
+  // service principal can be created from a machine: `create-service` and
+  // `rotate-service` return the KEYTAB, base64, ONCE. Nothing reads a stored key
+  // back out afterwards — a lost keytab is replaced by rotating. The GET is built
+  // from the public half of each pair of attributes and opens nothing.
+  //
+  // **ONE KDC FOR THE PROCESS**, so every realm prefix reads and writes the
+  // DEFAULT trust realm's principals, and each reply says `trustRealm`.
+  // ---------------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/kerberos/principals', tag: 'Kerberos',
+    operationId: 'getKerberosPrincipals',
+    summary: 'Who the KDC holds a stored long-term key for',
+    description: 'Two lists, paged separately with `?peoplePage=` and ' +
+                 '`?servicesPage=` and one `?per=`.\n\n`people` — the ' +
+                 'directory people whose Kerberos keys were derived from their ' +
+                 'own password when it was set or verified (PRODUCT MODE): the ' +
+                 'principal, the kvno, the enctypes, when and on what event the ' +
+                 'keys were derived, whether they are sealed, and `current` — ' +
+                 'whether they still match the password the entry holds. A ' +
+                 'person whose keys are not current is refused by the KDC until ' +
+                 'their next verified sign-in derives new ones.\n\n`services` — ' +
+                 'the service principals created with a RANDOM key: the ' +
+                 'principal, the kvno, the enctypes, when created and last ' +
+                 'rotated.\n\n**NO KEY MATERIAL IS IN THIS REPLY**, sealed or ' +
+                 'otherwise — both lists are built from the public info ' +
+                 'attributes. The KDC is the process\'s, so this answers the ' +
+                 'default trust realm\'s principals under every realm prefix.',
+    mirrors: 'GET /admin/kerberos/principals',
+    parameters: pagingParameters(),
+    responseDescription: 'Both lists with their paging, whether this is a ' +
+                         'product KDC, whether krb5.personKeys is on, the ' +
+                         'enctypes and starting kvno, and the acceptor\'s SPN.',
+    responseSchema: { type: 'object',
+                      description: 'The stored Kerberos principals, paged.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API Kerberos principals endpoint.");
+      sendJson(res, 200, adminViews.kerberosPrincipalsJson(req));
+      log.debug("Leaving the management API Kerberos principals endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/kerberos/principals/:action', tag: 'Kerberos',
+    mirrors: 'POST /admin/kerberos/principals',
+    handler: function (req, res) {
+      log.debug("Entering the management API Kerberos principals action endpoint.");
+      const body = parseBody(req);
+      const result = adminActions.kerberosPrincipalsAction(withAction(req, body),
+                                                           { via: 'api' });
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0065');
+      }
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API Kerberos principals action endpoint.");
+    },
+    actions: [
+      { action: 'create-service', operationId: 'createKerberosServicePrincipal',
+        summary: 'Create a service principal with a random key, and get its keytab once',
+        description: 'Makes a RANDOM key for every enctype in `krb5.enctypes`, at ' +
+                     'kvno `krb5.kvno`, for `spn` in this KDC\'s realm, stores ' +
+                     'them SEALED on the application entry for `<spn>@<realm>` ' +
+                     '(creating that entry if it is not there), and answers with ' +
+                     'an MIT keytab (format 0x502) in `keytab`, base64.\n\n' +
+                     '**THE KEYTAB IS IN THIS REPLY AND NOWHERE ELSE**: it cannot ' +
+                     'be downloaded again. A lost one is replaced by ' +
+                     '`rotate-service`.\n\nThe KDC issues tickets for that SPN ' +
+                     'under the stored key from the next request, in both modes, ' +
+                     'and this service\'s own acceptor prefers it when the SPN is ' +
+                     '`krb5.servicePrincipal`. Refused for an SPN that already ' +
+                     'holds a stored key, for `krbtgt/*`, for another realm, and ' +
+                     'for anything that is not two or more `/`-separated ' +
+                     'components.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            spn: { type: 'string',
+                   description: 'The service principal name, e.g. ' +
+                                '`HTTP/web.example.com`, with or without ' +
+                                '`@<realm>`.' }
+          },
+          required: ['spn'],
+          examples: [{ spn: 'HTTP/app.example.com' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The principal, kvno, enctypes, the keytab (base64) ' +
+                             'and a file name for it.' },
+
+      { action: 'rotate-service', operationId: 'rotateKerberosServicePrincipal',
+        summary: 'Replace a service principal\'s key, and get the new keytab once',
+        description: 'New random keys at the stored kvno PLUS ONE, and the new ' +
+                     'keytab in `keytab`, base64.\n\n**THE VERSION IT REPLACES ' +
+                     'IS KEPT** — at most `krb5.retainedKeyVersions` previous ' +
+                     'versions, each for `krb5.retainedKeyTtlS` (by default the ' +
+                     'ticket lifetime plus the clock skew) — and **the keytab ' +
+                     'carries them too**, as MIT\'s `ktadd` leaves one: ' +
+                     '`keytabKvnos` lists every version in it and `retained` ' +
+                     'says until when each is accepted. A ticket already issued ' +
+                     'under a kept version is still accepted by this KDC and its ' +
+                     'acceptor; nothing new is issued under it, and past its ' +
+                     'window it is refused KRB_AP_ERR_BADKEYVER. ' +
+                     '`drop-previous-service-keys` ends the window at once. ' +
+                     'Refused for an SPN with no stored key.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            spn: { type: 'string', description: 'The service principal name.' }
+          },
+          required: ['spn'],
+          examples: [{ spn: 'HTTP/app.example.com' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The principal, the new kvno, the enctypes and the ' +
+                             'new keytab (base64).' },
+
+      { action: 'delete-service', operationId: 'deleteKerberosServicePrincipal',
+        summary: 'Delete a service principal\'s stored key',
+        description: 'Removes the stored key and its info from the application ' +
+                     'entry. The entry itself stays, as every entry this registry ' +
+                     'records does. A ticket for that SPN is then keyed as it was ' +
+                     'before a key was stored: from `krb5.servicePassword` if it is ' +
+                     'the acceptor\'s own name, and not at all in product mode ' +
+                     'otherwise.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            spn: { type: 'string', description: 'The service principal name.' }
+          },
+          required: ['spn'],
+          examples: [{ spn: 'HTTP/app.example.com' }],
+          additionalProperties: false
+        },
+        responseDescription: 'The principal whose key was deleted.' },
+
+      { action: 'clear-person-keys', operationId: 'clearKerberosPersonKeys',
+        summary: 'Clear a directory person\'s Kerberos keys',
+        description: 'Removes the Kerberos keys derived from `username`\'s ' +
+                     'password. Their next AS-REQ is refused with "sign in once"; ' +
+                     'their next verified sign-in derives new keys at the next ' +
+                     'kvno. Somebody with no keys answers `cleared: false` rather ' +
+                     'than a refusal, so a script may clear on every run. There is ' +
+                     'no operation that SETS a person\'s keys: they come from the ' +
+                     'person\'s password and from nothing else.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            username: { type: 'string',
+                        description: 'The person, as they sign in — in the ' +
+                                     'default trust realm\'s directory.' }
+          },
+          required: ['username'],
+          examples: [{ username: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether anything was cleared.' },
+
+      { action: 'drop-previous-service-keys',
+        operationId: 'dropKerberosServicePreviousKeys',
+        summary: 'Stop accepting tickets under a service principal\'s previous key versions, now',
+        description: 'Removes the PREVIOUS key versions a rotation kept for `spn`, ' +
+                     'leaving the current key and its keytab untouched. A ticket ' +
+                     'issued under a dropped version is refused ' +
+                     'KRB_AP_ERR_BADKEYVER from the next request, rather than when ' +
+                     '`krb5.retainedKeyTtlS` would have ended its window — which is ' +
+                     'what an operator wants after a keytab is compromised. ' +
+                     'Nothing kept answers `dropped: 0` rather than a refusal. ' +
+                     'Refused for an SPN with no stored key, and for a key this ' +
+                     'service cannot open.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            spn: { type: 'string', description: 'The service principal name.' }
+          },
+          required: ['spn'],
+          examples: [{ spn: 'HTTP/app.example.com' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many previous versions were dropped, their ' +
+                             'kvnos, and the current kvno.' },
+
+      { action: 'drop-previous-person-keys',
+        operationId: 'dropKerberosPersonPreviousKeys',
+        summary: 'Stop accepting tickets under a person\'s previous key versions, now',
+        description: 'Removes the PREVIOUS key versions a password change kept for ' +
+                     '`username`, leaving their current keys — and so their ' +
+                     'sign-in — untouched. A ticket sealed under a dropped version ' +
+                     'is refused KRB_AP_ERR_BADKEYVER from the next request. A ' +
+                     'previous version was never a way in: pre-authentication ' +
+                     'uses the current keys only, so an old password is refused ' +
+                     'whether or not this is called. Nothing kept answers ' +
+                     '`dropped: 0`.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: {
+            username: { type: 'string',
+                        description: 'The person, as they sign in — in the ' +
+                                     'default trust realm\'s directory.' }
+          },
+          required: ['username'],
+          examples: [{ username: 'alice' }],
+          additionalProperties: false
+        },
+        responseDescription: 'How many previous versions were dropped, their ' +
+                             'kvnos, and the current kvno.' }
     ] },
 
   { method: 'GET', path: BASE + '/audit', tag: 'Audit log',
@@ -9722,8 +10501,9 @@ const ROUTES = [
       { name: 'category', in: 'query', required: false,
         schema: { type: 'string',
                   enum: ['authentication', 'session', 'directory', 'admin',
-                         'api', 'protocol'] },
-        description: 'One of the six categories. The reply\'s `categories` ' +
+                         'api', 'application', 'protocol', 'spiffe',
+                         'signals', 'authorization', 'service'] },
+        description: 'One of the categories. The reply\'s `categories` ' +
                      'member describes each of them.' },
       { name: 'action', in: 'query', required: false,
         schema: { type: 'string' },
@@ -9748,15 +10528,74 @@ const ROUTES = [
                      'and a directory row\'s actor is a DN.' },
       { name: 'q', in: 'query', required: false, schema: { type: 'string' },
         description: 'Substring of the summary, the target or the action, ' +
-                     'case-insensitive.' }
+                     'case-insensitive.' },
+      { name: 'code', in: 'query', required: false, schema: { type: 'string' },
+        description: 'The FRONT of an error code: a whole code is one ' +
+                     'failure condition and `STS-OAUTH` every failure in that ' +
+                     'subsystem. docs/error-codes.md lists them. Every refused ' +
+                     'or failed request carries a code; no code is ever sent ' +
+                     'to the client that made the request.' }
     ].concat(pagingParameters()),
     responseDescription: 'The matching events, with the paging that found ' +
                          'them and the vocabulary the filters take.',
     responseSchema: { $ref: '#/components/schemas/AuditList' },
     handler: function (req, res) {
       log.debug("Entering the management API audit endpoint.");
-      sendJson(res, 200, admin.auditView(req.query).json);
+      sendJson(res, 200, adminViews.auditView(req.query).json);
       log.debug("Leaving the management API audit endpoint.");
+    } },
+
+  // THE ERROR CODES (2026-09-12). A read with no write beside it, which is rule
+  // 7 read exactly: the page it mirrors has no control, because the table is
+  // source and a code's meaning cannot change at runtime without making every
+  // alert rule written against it a statement about something else.
+  { method: 'GET', path: BASE + '/error-codes', tag: 'Audit log',
+    operationId: 'getErrorCodes',
+    summary: 'Every failure condition this service can produce, and how often ' +
+             'each is on the held audit log',
+    description: 'The central table of error codes, `STS-<SUBSYSTEM>-<NNNN>`, ' +
+                 'filtered and paged: each code with the subsystem it belongs ' +
+                 'to, what failed, and what the CLIENT is told in its ' +
+                 'protocol\'s own vocabulary (`spec`).\n\n**A CODE IS NEVER ' +
+                 'SENT TO A CLIENT.** It is recorded on the audit row ' +
+                 '(`errorCode` on GET /admin-api/audit, filterable there with ' +
+                 '`?code=`) and at the front of the service log line; every ' +
+                 'protocol response is exactly what it was.\n\n`seen` counts ' +
+                 'the rows the audit log holds IN THIS REALM right now, so it ' +
+                 'falls as the log\'s cap discards the oldest, and it is zero ' +
+                 'for a failure recorded only as a log line — a startup refusal, ' +
+                 'or anything the remote PEP container records. ' +
+                 '`unregisteredSeen` lists codes found on held rows that the ' +
+                 'table does not hold, each a failure site whose code was never ' +
+                 'registered.\n\nThe same table is published as ' +
+                 'docs/error-codes.md, generated from common/error_codes.js.',
+    mirrors: 'GET /admin/error-codes',
+    parameters: [
+      { name: 'subsystem', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'One subsystem id — `OAUTH`, `LDAP`, `XPEP` — as ' +
+                     '`subsystems[].id` lists them. Case-insensitive.' },
+      { name: 'q', in: 'query', required: false, schema: { type: 'string' },
+        description: 'Substring of the code, the summary or what the client ' +
+                     'sees, case-insensitive — a code pasted out of a log ' +
+                     'line, or a protocol error name such as `invalid_grant`.' },
+      { name: 'seen', in: 'query', required: false, schema: { type: 'string' },
+        description: '`1` for only the codes on at least one held audit row.' }
+    ].concat(pagingParameters()),
+    responseDescription: 'The matching codes, the subsystems with their counts, ' +
+                         'and the paging that found them.',
+    responseSchema: { type: 'object',
+      description: 'The error code table: `codes` (this page, each with `code`, ' +
+                   '`subsystem`, `summary`, `spec`, `retired`, `seen` and ' +
+                   '`lastSeenAt`), `subsystems` (each with `id`, `prefix`, ' +
+                   '`label`, `where`, `what`, `codes` and `seen`), ' +
+                   '`unregisteredSeen`, `registered`, `retired`, ' +
+                   '`auditRowsHeld`, `auditRowsWithCode`, `distinctCodesSeen`, ' +
+                   '`filter` and the paging members.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API error codes endpoint.");
+      sendJson(res, 200, adminViews.errorCodesView(req.query).json);
+      log.debug("Leaving the management API error codes endpoint.");
     } },
 
   // Delegation. THE SECOND READ-ONLY RESOURCE HERE, and for a related reason to
@@ -9849,7 +10688,7 @@ const ROUTES = [
     responseSchema: { $ref: '#/components/schemas/DelegationList' },
     handler: function (req, res) {
       log.debug("Entering the management API delegation endpoint.");
-      sendJson(res, 200, admin.delegationView(req.query).json);
+      sendJson(res, 200, adminViews.delegationView(req.query).json);
       log.debug("Leaving the management API delegation endpoint.");
     } },
 
@@ -9931,7 +10770,7 @@ const ROUTES = [
                                    'register, both directions.' },
     handler: function (req, res) {
       log.debug("Entering the management API permissions endpoint.");
-      const view = admin.permissionsView();
+      const view = adminViews.permissionsView();
       sendJson(res, 200, Object.assign({}, view.register, { graph: view.graph }));
       log.debug("Leaving the management API permissions endpoint.");
     } },
@@ -10039,7 +10878,7 @@ const ROUTES = [
                                    'another, direction ignored.' },
     handler: function (req, res) {
       log.debug("Entering the management API permission groups endpoint.");
-      sendJson(res, 200, admin.permissionGroupsView(req.query));
+      sendJson(res, 200, adminViews.permissionGroupsView(req.query));
       log.debug("Leaving the management API permission groups endpoint.");
     } },
 
@@ -10048,7 +10887,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API permissions action endpoint.");
       const body = parseBody(req);
-      const result = admin.permissionsAction(withAction(req, body));
+      const result = adminActions.permissionsAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0058');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API permissions action endpoint.");
     },
@@ -10251,8 +11093,8 @@ const ROUTES = [
   // the wrong one asks the wrong people again.
   // -------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
-  // ROLES. Three operations against `admin.rolesView()`, `admin.rolesPreview()`
-  // and `admin.rolesAction()` — the same three functions the console calls, so
+  // ROLES. Three operations against `adminViews.rolesView()`, `adminViews.rolesPreview()`
+  // and `adminActions.rolesAction()` — the same three functions the console calls, so
   // rule 7's parity is a property of the wiring rather than of two lists
   // agreeing.
   //
@@ -10311,7 +11153,7 @@ const ROUTES = [
                       description: 'The role register, both relations.' },
     handler: function (req, res) {
       log.debug("Entering the management API roles endpoint.");
-      sendJson(res, 200, admin.rolesView());
+      sendJson(res, 200, adminViews.rolesView());
       log.debug("Leaving the management API roles endpoint.");
     } },
 
@@ -10375,7 +11217,7 @@ const ROUTES = [
                                    'away.' },
     handler: function (req, res) {
       log.debug("Entering the management API role preview endpoint.");
-      const answer = admin.rolesPreview(req.query);
+      const answer = adminViews.rolesPreview(req.query);
       if (!answer) {
         // NOTHING ASKED IS `answered: false` AND NOT A 400, and that is this
         // operation MIRRORING ITS PAGE rather than being lenient. A GET of
@@ -10390,7 +11232,7 @@ const ROUTES = [
         // is no `decision` member on this reply at all, and why `answered` is
         // the first thing to read.
         sendJson(res, 200, {
-          answered: false, available: !!admin.rolesView().gated,
+          answered: false, available: !!adminViews.rolesView().gated,
           why: '`application` and `subject` are both needed. A decision ' +
                'needs something being issued FOR and somebody it is being ' +
                'issued TO, and an issuance named with neither is allowed by ' +
@@ -10408,7 +11250,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API roles action endpoint.");
       const body = parseBody(req);
-      const result = admin.rolesAction(withAction(req, body), { via: 'api' });
+      const result = adminActions.rolesAction(withAction(req, body), { via: 'api' });
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0059');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API roles action endpoint.");
     },
@@ -10560,6 +11405,133 @@ const ROUTES = [
         responseDescription: 'Who no longer holds what.' }
     ] },
 
+  // ---------------------------------------------------------------------------
+  // POLICIES (2026-09-12). Two operations over `adminViews.passwordPoliciesView()`
+  // and `adminActions.passwordPoliciesAction()` — the same two functions
+  // /admin/policies calls, so the page and this resource cannot disagree.
+  //
+  // **THE SAVE'S REQUEST SCHEMA IS BUILT FROM `password_policy.FIELDS`**, so a
+  // rule added there is a property here the same day. Each field takes its JSON
+  // type OR a string, because a form-encoded body copied from the console
+  // carries `"12"` and `"TRUE"`, and `coerceTypes` is off in this file's ajv for
+  // a reason stated beside it; the module parses both spellings and refuses
+  // anything else by name.
+  // ---------------------------------------------------------------------------
+  { method: 'GET', path: BASE + '/policies', tag: 'Policies',
+    operationId: 'getPolicies',
+    summary: 'The policies this realm holds a credential to',
+    description: 'Every kind of policy and its profiles — today the PASSWORD ' +
+                 'POLICY and its one profile, `default`.\n\n**`password.profile` ' +
+                 'is the profile IN FORCE**, which is the stored ' +
+                 '`cn=default,ou=passwordPolicies` entry where there is one ' +
+                 '(`stored: true`) and the built-in defaults where there is ' +
+                 'not. `sources` says which of the two each value came from, ' +
+                 'and `problems` names any stored value that could not be read ' +
+                 '— the built-in default is in force for that field.\n\n' +
+                 '**`enforced` is whether this realm checks it**, which is ' +
+                 'product mode: development checks no password at any door, so ' +
+                 'the rules are recorded and not applied there. A GENERATED ' +
+                 'password meets the profile in both modes.\n\n`password.rules` ' +
+                 'is the profile as a person reads it — the same sentences the ' +
+                 'user portal prints — and `password.doors` names every door ' +
+                 'that sets a password and the one function each ends in.\n\n' +
+                 'It is NOT the XACML policy repository, which is ' +
+                 '`GET /admin-api/xacml/policies`.',
+    mirrors: 'GET /admin/policies',
+    parameters: pagingParameters(),
+    responseDescription: 'The kinds of policy, the password profile in force ' +
+                         'with its field table and schema, where it is ' +
+                         'enforced, the generator, and the paged profiles.',
+    responseSchema: { type: 'object',
+                      description: 'The policies register.' },
+    handler: function (req, res) {
+      log.debug("Entering the management API policies endpoint.");
+      sendJson(res, 200, adminViews.passwordPoliciesView(req.query));
+      log.debug("Leaving the management API policies endpoint.");
+    } },
+
+  { method: 'POST', route: BASE + '/policies/:action', tag: 'Policies',
+    mirrors: 'POST /admin/policies',
+    handler: function (req, res) {
+      log.debug("Entering the management API policies action endpoint.");
+      const body = parseBody(req);
+      const result = adminActions.passwordPoliciesAction(withAction(req, body),
+                                                         { via: 'api' });
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0060');
+      }
+      sendJson(res, result.ok ? 200 : 400, result);
+      log.debug("Leaving the management API policies action endpoint.");
+    },
+    actions: [
+      { action: 'save-password-policy', operationId: 'savePasswordPolicy',
+        summary: 'Set the password policy profile',
+        description: 'Writes `cn=default,ou=passwordPolicies` in this realm\'s ' +
+                     'directory, REPLACING what is there. **Every field is ' +
+                     'required** and one left out is refused by name rather ' +
+                     'than reset to a default, because a save that quietly ' +
+                     'loosened a rule nobody mentioned is the mistake nobody ' +
+                     'sees.\n\nTwo rules relate fields: `generatedLength` must be ' +
+                     'at least `minLength`, and at least twice `minSymbols` plus ' +
+                     'two. **A change applies to the NEXT password set in this ' +
+                     'realm and to nothing already stored**, which is a hash and ' +
+                     'cannot be re-checked.\n\nThe only profile is `default`: ' +
+                     'nothing assigns a profile to a person yet, so another ' +
+                     'name is refused rather than stored.',
+        requestBodyRequired: true,
+        requestBody: {
+          type: 'object',
+          properties: (function () {
+            const out = {
+              profile: { type: 'string', enum: [passwordPolicy.DEFAULT_PROFILE],
+                         description: 'Which profile. Only `default` exists.' },
+              description: { type: 'string',
+                             description: 'What the profile is for, for the ' +
+                                          'next person. Optional.' }
+            };
+            passwordPolicy.FIELDS.forEach(function (field) {
+              out[field.key] = field.type === 'bool'
+                ? { oneOf: [{ type: 'boolean' }, { type: 'string' }],
+                    description: field.what + ' (`true`/`false`, or `TRUE`/' +
+                                 '`FALSE` from a form.) Default ' +
+                                 field.dflt + '.' }
+                : { oneOf: [{ type: 'integer', minimum: field.min,
+                              maximum: field.max },
+                            { type: 'string' }],
+                    description: field.what + ' Between ' + field.min + ' and ' +
+                                 field.max + '. Default ' + field.dflt + '.' };
+            });
+            return out;
+          })(),
+          required: passwordPolicy.FIELDS.map(function (field) {
+            return field.key;
+          }),
+          examples: [Object.assign({ profile: passwordPolicy.DEFAULT_PROFILE },
+                                   passwordPolicy.DEFAULTS, { minLength: 14 })],
+          additionalProperties: false
+        },
+        responseDescription: 'The profile now in force, the rules as a person ' +
+                             'reads them, and whether this realm enforces them.' },
+
+      { action: 'reset-password-policy', operationId: 'resetPasswordPolicy',
+        summary: 'Put the built-in password policy back',
+        description: 'Deletes the stored profile, after which the built-in ' +
+                     'defaults are in force. `removed: false` means nothing was ' +
+                     'stored, so the defaults already were. Nothing already ' +
+                     'stored is touched, as with a save.',
+        requestBody: {
+          type: 'object',
+          properties: {
+            profile: { type: 'string', enum: [passwordPolicy.DEFAULT_PROFILE],
+                       description: 'Which profile. Only `default` exists.' }
+          },
+          examples: [{ profile: passwordPolicy.DEFAULT_PROFILE }],
+          additionalProperties: false
+        },
+        responseDescription: 'Whether anything was removed, and the profile now ' +
+                             'in force.' }
+    ] },
+
   { method: 'GET', path: BASE + '/consent', tag: 'Delegation',
     operationId: 'getConsent',
     summary: 'What people agreed applications may ask for on their behalf',
@@ -10606,7 +11578,7 @@ const ROUTES = [
                       description: 'The consent register, both halves.' },
     handler: function (req, res) {
       log.debug("Entering the management API consent endpoint.");
-      sendJson(res, 200, admin.consentView());
+      sendJson(res, 200, adminViews.consentView());
       log.debug("Leaving the management API consent endpoint.");
     } },
 
@@ -10615,7 +11587,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API consent action endpoint.");
       const body = parseBody(req);
-      const result = admin.consentAction(withAction(req, body));
+      const result = adminActions.consentAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0061');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API consent action endpoint.");
     },
@@ -10715,7 +11690,7 @@ const ROUTES = [
                         description: 'The person, exactly as /admin/users ' +
                                      'names them. It is normalised the same ' +
                                      'way every identity here is, so `alice` ' +
-                                     'and `urn:sts-mock:user:alice` are one ' +
+                                     'and `urn:sts:user:alice` are one ' +
                                      'person.' },
             client: { type: 'string',
                       description: 'The application they consented it to.' },
@@ -10802,7 +11777,13 @@ const ROUTES = [
                                    'holds it.' },
     handler: function (req, res) {
       log.debug("Entering the management API SPIFFE endpoint.");
-      sendJson(res, 200, admin.spiffeView(req).json);
+      // NO `.json` HERE, where its two siblings need one: `spiffeJson()`
+      // returns the answer itself, and `spiffeEntriesJson()` and
+      // `spiffeAgentsJson()` return `{ json, paging }` because their pages
+      // need the paging beside it. The console hid that difference behind
+      // one export shape; repointing all three the same way sent this
+      // resource `undefined`, which reaches a caller as a string.
+      sendJson(res, 200, adminViews.spiffeJson(req));
       log.debug("Leaving the management API SPIFFE endpoint.");
     } },
 
@@ -10815,10 +11796,14 @@ const ROUTES = [
       // authority generates a key pair, and key generation is async. Every
       // other handler here is synchronous, so the await is local rather than a
       // change to the shape of all of them.
-      admin.spiffeAction(withAction(req, body)).then(function (result) {
+      adminActions.spiffeAction(withAction(req, body)).then(function (result) {
+        if (!result.ok) {
+          errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0062');
+        }
         sendJson(res, result.ok ? 200 : 400, result);
         log.debug("Leaving the management API SPIFFE action endpoint.");
       }).catch(function (err) {
+        errorCodes.mark(res, 'STS-API-0022');
         log.error('The SPIFFE management API action threw: ' + err.message);
         sendJson(res, 500, { ok: false, errors: [err.message] });
         log.debug("Leaving the management API SPIFFE action endpoint. It threw.");
@@ -10865,7 +11850,13 @@ const ROUTES = [
                      'then verify credentials, is a server-side request ' +
                      'forgery with a citation attached. The same refusal this ' +
                      'service gives WS-Federation\'s `wreqptr` and a ' +
-                     'client\'s `jwks_uri`.\n\nThe document is CHECKED, ' +
+                     'client\'s `jwks_uri`.\n\n**A trust domain this service ' +
+                     'itself serves is REFUSED** — any realm\'s, whether or not ' +
+                     'SPIFFE is on in it (2026-09-12). The bundles are held ' +
+                     'per realm, and a federated entry naming a served domain ' +
+                     'would let an authority somebody registered in one realm ' +
+                     'authenticate workloads as another realm\'s.\n\nThe ' +
+                     'document is CHECKED, ' +
                      'which is unusual for this service: every JWK needs a ' +
                      '`use` of `x509-svid`, `jwt-svid` or `wit-svid`, because ' +
                      'a consumer MUST IGNORE one without it — so a bundle of ' +
@@ -10977,7 +11968,7 @@ const ROUTES = [
                       description: 'Registration entries and their paging.' },
     handler: function (req, res) {
       log.debug("Entering the management API SPIFFE entries endpoint.");
-      sendJson(res, 200, admin.spiffeEntriesView(req).json);
+      sendJson(res, 200, adminViews.spiffeEntriesJson(req).json);
       log.debug("Leaving the management API SPIFFE entries endpoint.");
     } },
 
@@ -10986,7 +11977,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API SPIFFE entries action endpoint.");
       const body = parseBody(req);
-      const result = admin.spiffeEntriesAction(withAction(req, body));
+      const result = adminActions.spiffeEntriesAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0063');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API SPIFFE entries action endpoint.");
     },
@@ -11158,7 +12152,7 @@ const ROUTES = [
                       description: 'Attested agents and their paging.' },
     handler: function (req, res) {
       log.debug("Entering the management API SPIFFE agents endpoint.");
-      sendJson(res, 200, admin.spiffeAgentsView(req).json);
+      sendJson(res, 200, adminViews.spiffeAgentsJson(req).json);
       log.debug("Leaving the management API SPIFFE agents endpoint.");
     } },
 
@@ -11167,7 +12161,10 @@ const ROUTES = [
     handler: function (req, res) {
       log.debug("Entering the management API SPIFFE agents action endpoint.");
       const body = parseBody(req);
-      const result = admin.spiffeAgentsAction(withAction(req, body));
+      const result = adminActions.spiffeAgentsAction(withAction(req, body));
+      if (!result.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0064');
+      }
       sendJson(res, result.ok ? 200 : 400, result);
       log.debug("Leaving the management API SPIFFE agents action endpoint.");
     },
@@ -11361,6 +12358,7 @@ app.use(BASE, function (req, res, next) {
     const scopesWanted = req.method === 'GET' ? 'admin:read' : 'admin:write';
     const presented = bearerOf(req);
     if (!presented) {
+      errorCodes.mark(res, 'STS-API-0001');
       res.set('WWW-Authenticate',
               'Bearer realm="' + BASE + '", scope="admin:read admin:write"');
       return sendJson(res, 401, { error: 'unauthorized', errors: [
@@ -11400,6 +12398,7 @@ app.use(BASE, function (req, res, next) {
       claims = null;
     }
     if (!claims) {
+      errorCodes.mark(res, 'STS-API-0002');
       res.set('WWW-Authenticate',
               'Bearer error="invalid_token", scope="' + scopesWanted + '"');
       return sendJson(res, 401, { error: 'invalid_token', errors: [
@@ -11409,6 +12408,7 @@ app.use(BASE, function (req, res, next) {
     }
     const now = Math.floor(Date.now() / 1000);
     if (claims.exp && Number(claims.exp) <= now) {
+      errorCodes.mark(res, 'STS-API-0003');
       res.set('WWW-Authenticate',
               'Bearer error="invalid_token", scope="' + scopesWanted + '"');
       return sendJson(res, 401, { error: 'invalid_token', errors: [
@@ -11416,6 +12416,7 @@ app.use(BASE, function (req, res, next) {
         new Date(Number(claims.exp) * 1000).toISOString() + '.'] });
     }
     if (!audienceAccepted(claims, req)) {
+      errorCodes.mark(res, 'STS-API-0004');
       return sendJson(res, 403, { error: 'forbidden', errors: [
         'That access token is for a different audience. It carries ' +
         JSON.stringify(claims.aud || null) + ' and this API answers to "' +
@@ -11444,6 +12445,7 @@ app.use(BASE, function (req, res, next) {
       log.info('admin-api: the access policy refused ' + req.method + ' ' +
                (req.originalUrl || req.url) + ' for ' + who + '. ' +
                policy.why);
+      errorCodes.mark(res, 'STS-API-0005');
       return sendJson(res, 403, { error: 'forbidden', errors: [
         'The access policy refused this request. ' + policy.why +
         ' This token carries the scope(s) ' +
@@ -11459,7 +12461,7 @@ app.use(BASE, function (req, res, next) {
   if (!mode.gatesManagementApi()) {
     return next();
   }
-  const gate = admin.gateStateFor(req);
+  const gate = adminViews.gateStateFor(req);
   // THE SAME TWO ROLES THE CONSOLE USES, and the same asymmetry: a GET needs
   // Admin Read and anything else needs Admin Write. Asking `admin.js` rather
   // than re-deriving it is what stops this becoming a second answer to who may
@@ -11472,7 +12474,7 @@ app.use(BASE, function (req, res, next) {
     // and not a replacement for them.
     //
     // The two console roles decide who may administer this service and stay
-    // exactly where they are — `admin.gateStateFor()` is still the one answer
+    // exactly where they are — `adminViews.gateStateFor()` is still the one answer
     // to that, which is what stops this becoming a second one. What the gate
     // adds is that a deployment can narrow this surface by POLICY, with the
     // subject taken from the SESSION that got the caller through the check
@@ -11504,6 +12506,7 @@ app.use(BASE, function (req, res, next) {
       log.info('admin-api: the access policy refused ' + req.method + ' ' +
                (req.originalUrl || req.url) + ' for ' +
                (gate.username || '(nobody)') + '. ' + policy.why);
+      errorCodes.mark(res, 'STS-API-0006');
       return sendJson(res, 403, {
         error: 'forbidden',
         errors: ['The access policy refused this request. ' + policy.why +
@@ -11524,6 +12527,7 @@ app.use(BASE, function (req, res, next) {
             : 'nobody is signed in') + '.');
   const wantsHtml = /html/i.test(String(req.headers.accept || ''));
   if (wantsHtml) {
+    errorCodes.mark(res, gate.username ? 'STS-API-0008' : 'STS-API-0007');
     return res.status(403).type('html').send(
       '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
       '<title>Forbidden</title></head><body><h1>403 Forbidden</h1>' +
@@ -11531,6 +12535,7 @@ app.use(BASE, function (req, res, next) {
       'management API requires the same sign-in and roles the console does. ' +
       '<a href="/admin">Sign in</a>.</p></body></html>');
   }
+  errorCodes.mark(res, gate.username ? 'STS-API-0008' : 'STS-API-0007');
   return sendJson(res, gate.username ? 403 : 401, {
     error: 'forbidden',
     errors: ['This service is in product mode, where ' + BASE + ' requires ' +
@@ -11576,6 +12581,7 @@ ROUTES.forEach(function (entry) {
     if (!checked.ok) {
       log.debug("The management API refused a request body against " +
                 (entry.operationId || path) + "'s schema.");
+      errorCodes.mark(res, 'STS-API-0009');
       sendJson(res, 400, { ok: false, errors: checked.errors });
       return undefined;
     }

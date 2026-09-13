@@ -186,6 +186,13 @@ const config = require('../common/config');
 // A LEAF (rule 3) that registers no route; it requires `config`, `crypto`,
 // `mode` and `secrets` and none of them requires this module back.
 const keystore = require('../common/keystore');
+// WHERE A SECRET COMES FROM (2026-09-12). A LEAF (rule 3) requiring only
+// `config` and its own logger, and this module reaches it for ONE thing: the
+// database password, when a deployment keeps it in the same place it keeps the
+// key-encryption key rather than in the connection string. `keystore.js`
+// already requires it for the key itself, so this is a second reader of one
+// mechanism rather than a second mechanism.
+const secrets = require('../common/secrets');
 // WHAT THIS PROCESS MINTED, in product mode. A LIBRARY (rule 3) that registers
 // no route and requires this module for nothing — it is HANDED the driver
 // below, the way `keystore.setStore()` is, so the two can be tested apart.
@@ -198,6 +205,9 @@ const replication = require('./persistence_replication');
 // rather than a third slot: realms.js requires config.js and async_hooks and
 // nothing else, registers no route, and does not require this module.
 const realms = require('../common/realms');
+// A LEAF with no requires: the failure codes on the log lines and the fatal
+// refusals below. See common/error_codes.js.
+const errorCodes = require('../common/error_codes');
 
 const log = bunyan.createLogger({ name: 'sts-persistence' });
 config.registerLogger(log);
@@ -447,7 +457,8 @@ function schedule() {
       // unhandled rejection from a timer cannot take the process down. A mock
       // that exits because a database blinked would be worse than one that
       // stopped persisting.
-      log.error('persistence: a scheduled flush failed: ' + err.message);
+      log.error(errorCodes.tag('STS-STORE-0001') +
+                'persistence: a scheduled flush failed: ' + err.message);
     });
   }, delay);
   // The timer must not hold the process open on its own — a service with
@@ -719,7 +730,7 @@ function flush() {
   // the more entries there already were — see entryAt() above. A full walk is
   // still right for a writer that did not say where (`dirtyEverything`), for
   // the first flush, and for a restore.
-  const live = (wantDirectory && !wanted) ? liveDirectory() : null;
+  let live = (wantDirectory && !wanted) ? liveDirectory() : null;
   const changes = wantDirectory ? diff(live, wanted) : null;
 
   flushing = Promise.resolve().then(function () {
@@ -729,6 +740,35 @@ function flush() {
     if (!changes.upserts.length && !changes.deletes.length &&
         !changes.removedRealms.length) {
       return null;
+    }
+    // ---------------------------------------------------------------------
+    // A SNAPSHOT DRIVER STILL GETS ITS SNAPSHOT (2026-09-12).
+    //
+    // The journalled flush above skips `liveDirectory()` and hands the driver
+    // `all: null`, which is right for `postgres` — it writes the rows that
+    // moved and nothing else. The `ldif` driver writes a WHOLE FILE per
+    // touched realm and reads `change.all.get(realmId)` to do it, so from the
+    // day the journal arrived every ldif flush that named its DNs failed with
+    // "Cannot read properties of null (reading 'get')" — logged, retried on
+    // the next change, and failing again, so the file on disk stopped moving
+    // while the service answered correctly out of memory. Nothing showed it:
+    // `tests/appconfig_persistence.js` fills the directory slot with a stub
+    // that never names a DN, so every flush it drove took the full-walk path.
+    // `tests/truststore_persistence.js` found it, writing a real entry through
+    // the real directory and reading it back from a second process.
+    //
+    // Only the TOUCHED realms are walked, which is what that driver writes:
+    // the journal's saving is kept for every realm nothing happened in.
+    // ---------------------------------------------------------------------
+    if (!live && driver.name === 'ldif') {
+      live = new Map();
+      changes.touched.forEach(function (realmId) {
+        const rows = new Map();
+        directory.realmEntries(realmId).forEach(function (row) {
+          rows.set(row.key, row.entry);
+        });
+        live.set(realmId, rows);
+      });
     }
     return driver.saveDirectory({
       upserts: changes.upserts,
@@ -791,7 +831,8 @@ function flush() {
     directoryDirty = directoryDirty || wantDirectory;
     realmsDirty = realmsDirty || wantRealms;
     configDirty = configDirty || wantConfig;
-    log.error('persistence: could not write to the ' + activeMode +
+    log.error(errorCodes.tag('STS-STORE-0002') +
+              'persistence: could not write to the ' + activeMode +
               ' store: ' + err.message + '. The service is unaffected and is ' +
               'still answering from memory; the next change will try again.');
     log.debug('Leaving flush(). It failed.');
@@ -836,6 +877,82 @@ function flush() {
 //      the store gets exactly those rows; a realm with none keeps its seed,
 //      which is what a first run looks like.
 // ---------------------------------------------------------------------------
+// ===========================================================================
+// THE CONNECTION STRING, WITH THE PASSWORD PUT BACK INTO IT (2026-09-12).
+//
+// `persistence.databaseUrl` carries a password in plain text, which is right
+// for a throwaway database of mock identities and is not a deployment. When
+// `persistence.databasePasswordProvider` names a secret store, the password is
+// read from there — the SAME five providers and the same mechanism the
+// key-encryption key uses, by default out of the SAME file or secret — and
+// injected here.
+//
+// **IT IS INJECTED INTO THE STRING RATHER THAN PASSED BESIDE IT, AND THAT IS
+// `pg`'s DOING RATHER THAN A PREFERENCE.** `ConnectionParameters` does
+// `Object.assign({}, config, parse(config.connectionString))`, so everything
+// parsed out of the string WINS over an explicit field — and `parse()` returns
+// `password: ''` as an own property even for a string that carries none, so a
+// `password` passed beside a `connectionString` is silently overwritten with
+// the empty one. There is no arrangement of those two options that works.
+//
+// **`encodeURIComponent` AND NOT THE RAW VALUE**, which is the part that looks
+// like fussiness and is not. `URL.password = value` percent-encodes the
+// userinfo set and leaves `%`, `&` and `+` alone, and `pg` then runs
+// `decodeURIComponent()` over what it finds — so a password containing a `%`
+// arrives mangled, or throws `URI malformed` inside the driver. Encoding first
+// and letting the setter pass the escapes through round-trips every byte:
+// `tests/database_password.js` asserts it through `pg`'s own parser for a
+// password made of every character that has ever caused this.
+//
+// **A PASSWORD ALREADY IN THE STRING IS REPLACED**, and the log says so
+// without saying what with. Two passwords for one connection is a question
+// with no good answer, and the configured provider is the one somebody chose
+// deliberately — a leftover in the URL is what they are moving away from.
+//
+// A string that is not a URL (libpq's keyword/value form, which `pg` also
+// accepts) cannot be edited safely, so it is REFUSED rather than dialled
+// without the password somebody configured — the same direction every other
+// refusal in this file takes.
+// ===========================================================================
+function resolveDatabaseUrl() {
+  log.debug('Entering resolveDatabaseUrl().');
+  const raw = databaseUrl();
+  if (!secrets.configuredFor(secrets.DATABASE_PASSWORD)) {
+    log.debug('Leaving resolveDatabaseUrl(). No provider is configured.');
+    return Promise.resolve(raw);
+  }
+  return secrets.readDatabasePassword().then(function (password) {
+    if (!password) {
+      log.debug('Leaving resolveDatabaseUrl(). Nothing was read.');
+      return raw;
+    }
+    let parsed = null;
+    try {
+      parsed = new URL(raw);
+    } catch (e) {
+      throw new Error(errorCodes.tag('STS-STORE-0005') +
+                      'persistence.databasePasswordProvider is set, so the ' +
+                      'password has to be put into persistence.databaseUrl — ' +
+                      'and that value is not a URL this service can edit (it ' +
+                      'looks like libpq\'s keyword/value form). Write it as ' +
+                      'postgres://user@host:5432/database and leave the ' +
+                      'password out; the store is what supplies it.');
+    }
+    const had = !!parsed.password;
+    // See the header: encode FIRST, because the setter does not encode the
+    // three characters `pg`'s own decode will then choke on.
+    parsed.password = encodeURIComponent(password);
+    log.info('persistence: the database password was read from ' +
+             secrets.describeDatabasePassword().label + ' and put into the ' +
+             'connection string' +
+             (had ? ', replacing the one persistence.databaseUrl carried.'
+                  : '. The connection string carries none, which is the ' +
+                    'arrangement to want.'));
+    log.debug('Leaving resolveDatabaseUrl(). Injected.');
+    return parsed.toString();
+  });
+}
+
 function start() {
   log.debug('Entering start().');
   const chosen = mode();
@@ -844,7 +961,8 @@ function start() {
     // else. Checked anyway because the two lists — MODES here and enumValues
     // in config.js — are two copies of one fact, and this is the line that
     // notices they have drifted.
-    log.error('persistence: "' + chosen + '" is not a mode this module knows ' +
+    log.error(errorCodes.tag('STS-STORE-0003') +
+              'persistence: "' + chosen + '" is not a mode this module knows ' +
               '(' + MODES.join(', ') + '). Nothing will be persisted.');
     activeMode = 'memory';
     log.debug('Leaving start(). The mode was not recognised.');
@@ -864,7 +982,7 @@ function start() {
     activeMode = 'memory';
     lastError = 'no directory is installed';
     log.debug('Leaving start(). No directory.');
-    return Promise.reject(new Error(
+    return Promise.reject(new Error(errorCodes.tag('STS-STORE-0004') +
       'persistence.mode is "' + chosen + '" and no directory is installed: ' +
       'ldap/ldap_server.js has not been required, so there is nothing to ' +
       'persist. This is a module-assembly problem rather than a store ' +
@@ -874,6 +992,35 @@ function start() {
       'refusal exists to prevent.'));
   }
 
+  // -------------------------------------------------------------------------
+  // THE PASSWORD COMES BEFORE THE POOL (2026-09-12), AND THAT IS WHY THIS
+  // FUNCTION SPLITS HERE.
+  //
+  // `persistence.databasePasswordProvider` can put the database password in
+  // the same secret store as the key-encryption key, and reading one is a
+  // network call to somebody else's service. The pool is built SYNCHRONOUSLY
+  // out of a connection string, so the string has to be finished first —
+  // which is the same ordering `keystore.start()` has with its own secret,
+  // and the same reason: a `require` and a constructor cannot await.
+  //
+  // **THE SPLIT IS A FUNCTION AND NOT AN `await` IN THIS ONE** so that the
+  // driver-load `try` below keeps answering with the driver's own message. A
+  // rejection raised inside the chain would be caught at the foot of this
+  // file and wrapped in *the store could not be read*, which for a missing
+  // `pg` package is the sentence twice — the exact thing the comment on that
+  // catch says not to do.
+  //
+  // Only postgres has a password to resolve; ldif has a directory.
+  // -------------------------------------------------------------------------
+  return chosen === 'postgres'
+    ? resolveDatabaseUrl().then(function (url) { return openStore(chosen, url); })
+    : openStore(chosen, '');
+}
+
+// The half of `start()` that runs once the connection string is final. Split
+// out above; `resolvedUrl` is what postgres dials and is ignored by ldif.
+function openStore(chosen, resolvedUrl) {
+  log.debug('Entering openStore(). mode=' + chosen);
   try {
     driver = chosen === 'postgres'
       // `verifyTls` is READ HERE AND PASSED IN, rather than read in the
@@ -881,7 +1028,7 @@ function start() {
       // reaches for nothing, which is what lets a test construct one against
       // any database without this file's settings existing at all.
       ? require('./persistence_postgres').create({
-          url: databaseUrl(), log: log,
+          url: resolvedUrl, log: log,
           verifyTls: !!config.value('persistence.databaseTlsRejectUnauthorized')
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
@@ -893,7 +1040,7 @@ function start() {
     driver = null;
     activeMode = 'memory';
     lastError = err.message;
-    log.debug('Leaving start(). The driver would not load.');
+    log.debug('Leaving openStore(). The driver would not load.');
     // The driver's own message already names the mode and says what to do —
     // it is written for exactly this moment — so it is passed through rather
     // than wrapped. A wrapper here produced "persistence.mode is postgres and
@@ -989,7 +1136,7 @@ function start() {
     realmsDirty = persistsRealms();
     configDirty = false;
     schedule();
-    log.debug('Leaving start(). Restored.');
+    log.debug('Leaving openStore(). Restored.');
     return { mode: activeMode, restored: restoredCounts };
   }).catch(function (err) {
     restoring = false;
@@ -1024,7 +1171,8 @@ function start() {
     // thing the operator will see, and "connect ECONNREFUSED" on its own does
     // not say which of the six settings to look at.
     // ---------------------------------------------------------------------
-    const explanation = 'persistence.mode is "' + chosen + '" and the store ' +
+    const explanation = errorCodes.tag('STS-STORE-0006') +
+              'persistence.mode is "' + chosen + '" and the store ' +
               'could not be read: ' + err.message + '. Nothing in the store ' +
               'was changed.' +
               // -------------------------------------------------------------
@@ -1050,7 +1198,7 @@ function start() {
                   'persistence.databaseUrl in your appconfig file, to point ' +
                   'at the database you meant.'
                 : '');
-    log.debug('Leaving start(). The store could not be read.');
+    log.debug('Leaving openStore(). The store could not be read.');
     throw new Error(explanation);
   });
 }
@@ -1099,13 +1247,17 @@ function restoreRealms(rows, replicated) {
       id: row.id,
       name: row.name,
       description: row.description,
-      overrides: row.overrides || {}
+      overrides: row.overrides || {},
+      // Told so, for the watchers that must not treat a realm another process
+      // made — or the last run made — as one made here. `pki.js` is why.
+      restored: true
     });
     if (!result.ok) {
       // Reported and skipped rather than fatal: one unrestorable realm must
       // not cost the others. The realistic cause is an id that was valid when
       // it was written and is not now — a reserved word added since.
-      log.error('persistence: the stored realm "' + row.id + '" could not be ' +
+      log.error(errorCodes.tag('STS-STORE-0007') +
+                'persistence: the stored realm "' + row.id + '" could not be ' +
                 'restored: ' + result.errors.join(' '));
       return;
     }
@@ -1138,7 +1290,8 @@ function restoreDirectory(byRealm) {
       // dropped because the entries are still IN the store and will be deleted
       // by the first flush's diff — which is a real data loss and somebody
       // should get to see it coming.
-      log.warn('persistence: the store holds ' + list.length + ' entry/ies ' +
+      log.warn(errorCodes.tag('STS-STORE-0009') +
+               'persistence: the store holds ' + list.length + ' entry/ies ' +
                'for the realm "' + realmId + '", which is not defined. They ' +
                'are not loaded, and the next write will remove them. Turn ' +
                'persistence.realms on to restore realm definitions too.');
@@ -1236,7 +1389,8 @@ function stop() {
     log.debug('Leaving stop().');
   }).catch(function (err) {
     stopped = true;
-    log.error('persistence: the final flush or close failed: ' + err.message +
+    log.error(errorCodes.tag('STS-STORE-0008') +
+              'persistence: the final flush or close failed: ' + err.message +
               '. Anything changed since the last successful write is lost.');
     log.debug('Leaving stop(). It failed.');
   });
@@ -1511,11 +1665,25 @@ function describeDatabase() {
       .toLowerCase();
     const encrypted = ['require', 'verify-ca', 'verify-full', 'prefer']
       .indexOf(sslmode) >= 0;
+    // WHERE THE PASSWORD COMES FROM (2026-09-12) — never what it is. A
+    // deployment that moved the password into a secret store has no other way
+    // to see that this process agreed: the connection string on the page
+    // looks the same either way, because the page never printed the password
+    // in the first place.
+    const password = secrets.describeDatabasePassword();
     return {
       host: parsed.hostname,
       port: parsed.port || '5432',
       database: String(parsed.pathname || '').replace(/^\//, ''),
       user: parsed.username || null,
+      passwordFrom: password.configured
+        ? (password.label +
+           (password.where && password.where.from
+             ? ' (' + password.where.from + ')' : '') +
+           (password.shared ? ', shared with the key-encryption key' : ''))
+        : 'the connection string',
+      passwordProvider: password.provider,
+      passwordSecret: password.configured ? password : undefined,
       sslmode: sslmode || 'not set',
       encrypted: encrypted,
       verifyCertificate:
@@ -1585,6 +1753,14 @@ realms.onChange(function (id, what) {
 });
 
 module.exports = {
+  // FOR `tests/database_password.js` ONLY, and it is worth saying why a
+  // private function is exported at all. The claim this feature makes is that
+  // a password read from a secret store REACHES THE CONNECTION STRING — and
+  // the only other way to see that is to dial a real database, which an
+  // in-process test has none of. What the test asserts is the string this
+  // returns, put through `pg`'s own parser: two implementations meeting, which
+  // is the arrangement `tests/webauthn_cross_impl.js` describes.
+  resolveDatabaseUrl: resolveDatabaseUrl,
   MODES: MODES,
   mode: mode,
   activeMode: function () { return activeMode; },

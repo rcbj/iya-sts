@@ -1507,6 +1507,12 @@ const SCHEMAS = {
           'federation partner. It is NOT "has authenticated": a create takes a kind ' +
           'too, so a hand-made entry can be recorded in a family it has never ' +
           'connected in, and `authentications` is the figure that answers that), ' +
+          '`returnAddressesObserved` (the return addresses a DEVELOPMENT-mode ' +
+          'request put on this entry and nobody has confirmed, each ' +
+          '`{attribute, value, held, trusted}` — `trusted` is whether THIS ' +
+          'realm\'s mode believes it, which product never does; confirm or ' +
+          'discard one with POST /admin-api/applications/confirm-address or ' +
+          '/discard-address), ' +
           '`registered`, `firstSeen`, `lastSeen`, ' +
           '`authentications`, `sessions`, `users`, `descriptions`, `origin`, ' +
           '`createdAt` and `modifiedAt` (the ENTRY\'s own, which an ldapmodify ' +
@@ -1536,7 +1542,20 @@ const SCHEMAS = {
                      'directory is schemaless.',
         items: openObject('One attribute of the directory entry.', {})
       },
-      attributesPaging: pagingObject('attributesShown')
+      attributesPaging: pagingObject('attributesShown'),
+      returnAddressesObservedShown: {
+        type: 'array',
+        description: 'On the ?application= reply only: one page of ' +
+                     '`returnAddressesObserved` — the return addresses a ' +
+                     'development-mode request wrote onto this entry and ' +
+                     'nobody has confirmed, which product mode refuses. It is ' +
+                     'the table the console draws its Confirm and Discard ' +
+                     'buttons in; the whole list is on the application itself.',
+        items: openObject('One observed address: `attribute`, `value`, `held` ' +
+                          '(whether the address is still on the attribute) and ' +
+                          '`trusted` (whether this realm\'s mode believes it).', {})
+      },
+      returnAddressesObservedPaging: pagingObject('returnAddressesObservedShown')
     }, PAGING_PROPERTIES, {
       matched: { type: 'integer', description: 'How many the filter matched.' }
     })),
@@ -3048,6 +3067,34 @@ const SCHEMAS = {
   // Every other XACML schema here describes the repository; this one describes
   // TRAFFIC, and the two things it is careful about are the two things a
   // caller would otherwise get wrong.
+  GnapServer: openObject(
+    'The GNAP authorization server of this realm (RFC 9635 and RFC 9767), as /admin/gnap draws it.',
+    {
+      page: { type: 'string', description: '`/admin/gnap`.' },
+      enabled: { type: 'boolean', description: 'gnap.enabled in this realm.' },
+      endpoints: openObject('Every GNAP endpoint of this realm, absolute.', {}),
+      capabilities: openObject('The default authorization server\'s RFC 9635 section 9 document.', {}),
+      authorizationServers: { type: 'array', items: openObject('A named authorization server and its GNAP capabilities.', {}) },
+      tokenFormats: { type: 'array', items: { type: 'string' } },
+      verificationMaterial: openObject('The public material that verifies the self-contained formats ' +
+                                       '(absent until the realm has an Ed25519 key).', {}),
+      grants: openObject('`state`, `states`, `paging` and `rows`: the grants this realm holds.', {}),
+      resourceSets: openObject('`paging` and `rows`: the registered resource sets.', {}),
+      actions: { type: 'array', items: { type: 'string' } },
+      settings: { type: 'array', items: openObject('A gnap.* setting.', {}) }
+    }),
+  GnapMonitor: openObject(
+    'Every application that uses GNAP and what each has done, as /admin/gnap/monitor draws it.',
+    {
+      page: { type: 'string', description: '`/admin/gnap/monitor`.' },
+      since: { type: 'string', description: 'When the counters started (this process).' },
+      events: { type: 'array', items: openObject('One counted event: `event`, `counter`, `label`.', {}) },
+      totals: openObject('Every counter summed over the applications.', {}),
+      tokensByFormat: openObject('Tokens issued, by RFC 9767 format.', {}),
+      applications: { type: 'integer', description: 'How many applications are listed.' },
+      paging: openObject('`page`, `pages`, `perPage`, `firstRow`, `lastRow`, `total`.', {}),
+      rows: { type: 'array', items: openObject('One application and its counters.', {}) }
+    }),
   XacmlMonitor: openObject(
     'How many decisions this service\'s authorization is making, by which ' +
     'enforcement point, and how many are refusals. Mirrors ' +
@@ -4138,7 +4185,7 @@ const SCHEMAS = {
         type: 'string',
         description: 'The NORMALISED local name, so a party here and a row on ' +
                      '/admin-api/users name the same person — `alice`, ' +
-                     '`urn:sts-mock:user:alice` and `alice@STS.MOCK` are one ' +
+                     '`urn:sts:user:alice` and `alice@STS.MOCK` are one ' +
                      'identity. Empty where this layer is an application ' +
                      'rather than a person, or where nothing named it.'
       },
@@ -4542,7 +4589,8 @@ const SCHEMAS = {
             description: 'When it happened, in milliseconds since the epoch.' },
       category: { type: 'string',
                   enum: ['authentication', 'session', 'directory', 'admin',
-                         'api', 'protocol'],
+                         'api', 'application', 'protocol', 'spiffe',
+                         'signals', 'authorization', 'service'],
                   description: 'Derived from `action` and never set ' +
                                'independently, so the two cannot disagree.' },
       action: { type: 'string',
@@ -4551,11 +4599,20 @@ const SCHEMAS = {
       outcome: { type: 'string', enum: ['success', 'refused', 'error'],
                  description: 'A `refused` is this service saying no and ' +
                               'working; an `error` is this service failing.' },
+      errorCode: {
+        type: 'string',
+        description: 'Which failure condition this row is about — ' +
+                     '`STS-<SUBSYSTEM>-<NNNN>`, listed in docs/error-codes.md ' +
+                     '— or empty for a row that is not a failure. Every ' +
+                     'refused or failed request carries one. It is an ' +
+                     'operator\'s name for the condition and is never sent to ' +
+                     'the client whose request produced it.'
+      },
       actor: {
         type: 'string',
         description: 'The NORMALISED local name, so a row here and a row on ' +
                      '/admin-api/users name the same person — `alice`, ' +
-                     '`urn:sts-mock:user:alice` and `alice@STS.MOCK` are one ' +
+                     '`urn:sts:user:alice` and `alice@STS.MOCK` are one ' +
                      'identity. Empty where nothing named an actor, which an ' +
                      'unauthenticated protocol call and an anonymous LDAP ' +
                      'bind both are.'
@@ -5016,6 +5073,9 @@ function buildSpec(routes, options) {
 
 const TAG_DESCRIPTIONS = {
   Service: 'What this API is, its document, and the explorer that calls it.',
+  GNAP: 'The Grant Negotiation and Authorization Protocol (RFC 9635) and its resource server ' +
+        'connections (RFC 9767): the authorization server of this realm, what the applications ' +
+        'using it have done, and the two things an operator does to its state by hand.',
   Metrics: 'What this service has done since it started.',
   Users: 'Who it has authenticated, and what each of them holds.',
   Groups: 'The embedded LDAP directory\'s groups. A group here GRANTS ' +
@@ -5029,7 +5089,13 @@ const TAG_DESCRIPTIONS = {
          '`if` in an issuance site, so a refusal is a document somebody can ' +
          'read. It is not Admin roles either: those are two directory groups ' +
          'that grant the /admin console and nothing else.',
-  Tokens: 'What has been issued, and the revocation of the three kinds that ' +
+  Policies: 'The rules this realm holds a credential to — the password policy ' +
+            'first: its minimum length, how many previous passwords may not be ' +
+            'reused, and the symbol, uppercase and digit rules, stored as ' +
+            '`cn=default,ou=passwordPolicies` in the directory and ENFORCED IN ' +
+            'PRODUCT MODE at every door that sets a password. Not the XACML ' +
+            'policy repository, which is under XACML.',
+  Tokens:'What has been issued, and the revocation of the three kinds that ' +
           'can be revoked.',
   SCIM: 'The SCIM 2.0 provisioning endpoints under /scim/v2 — what they have ' +
         'been asked to do, and what they will and will not do. READ-ONLY ' +

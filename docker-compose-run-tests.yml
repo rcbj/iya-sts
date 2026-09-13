@@ -172,6 +172,82 @@ services:
   # installs a package with no `main`, a module present in the tree and excluded
   # from the build context, a dependency `omit=dev` quietly did not install.
   # ---------------------------------------------------------------------------
+  # ===========================================================================
+  # THE SECRET STORE (2026-09-12), AND IT IS HERE FOR THE SAME REASON POSTGRES
+  # IS: THIS FILE IS A SECOND STACK RATHER THAN AN OVERLAY ON THE FIRST.
+  #
+  # `docker-compose.yml` grew an OpenBao service the same day, and the
+  # `dispatch` mode reads its key-encryption key out of it — which is what
+  # `tests/tools/modes.sh` sets `STS_KEYS_SOURCE=persisted` for. This file is
+  # what CI runs, so a stack without the store would be a CI run that could not
+  # start that mode at all, and the feature would be covered only on a
+  # developer's machine.
+  #
+  # The three services and their argument are docker-compose.yml's, and the
+  # duplication is this file's existing bargain — it carries its own postgres
+  # and its own sts for the same reason. `openbao/CLAUDE.md` is where the
+  # design is argued; neither copy repeats it.
+  # ===========================================================================
+  openbao-tls:
+    container_name: ${STS_BAO_TLS_CONTAINER_NAME:-sts-docker-tests-openbao-tls}
+    image: rcbj/sts
+    build:
+      context: .
+    restart: "no"
+    environment:
+      - STS_BAO_TLS_DIR=/openbao/file/tls
+      - STS_BAO_TLS_NAMES=${STS_BAO_TLS_NAMES:-openbao,localhost}
+      - STS_BAO_TLS_IPS=${STS_BAO_TLS_IPS:-127.0.0.1}
+    volumes:
+      - sts-bao-file:/openbao/file
+      - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
+    command: ["node", "openbao/generate-tls.js"]
+
+  openbao:
+    container_name: ${STS_BAO_CONTAINER_NAME:-sts-docker-tests-openbao}
+    hostname: openbao
+    image: openbao/openbao:${OPENBAO_TAG:-latest}
+    depends_on:
+      openbao-tls:
+        condition: service_completed_successfully
+    cap_add:
+      - IPC_LOCK
+    environment:
+      - BAO_STATIC_SEAL_CURRENT_KEY_ID=${STS_BAO_SEAL_KEY_ID:-sts}
+      - BAO_STATIC_SEAL_CURRENT_KEY=${STS_BAO_SEAL_KEY:-KSVmckTNY246XdLbpfIzGbuXvgZqAOPzsrF4itdFTvo=}
+    volumes:
+      - ./openbao/bao.hcl:/openbao/config/bao.hcl:ro
+      - sts-bao-file:/openbao/file
+    command: ["server", "-config=/openbao/config/bao.hcl"]
+    healthcheck:
+      test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/root.token"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  openbao-seed:
+    container_name: ${STS_BAO_SEED_CONTAINER_NAME:-sts-docker-tests-openbao-seed}
+    image: rcbj/sts
+    build:
+      context: .
+    restart: "no"
+    depends_on:
+      openbao:
+        condition: service_started
+    environment:
+      - STS_BAO_ADDR=https://openbao:8200
+      - STS_BAO_CA_FILE=/openbao/file/tls/server.crt
+      - STS_BAO_POLICY_FILE=/usr/src/sts/openbao/read-only.hcl
+      - STS_BAO_CLIENT_CN=${STS_BAO_CLIENT_CN:-sts}
+      - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+    volumes:
+      - sts-bao-file:/openbao/file
+      - sts-bao-client:/openbao/client
+      - ./openbao/seed.js:/usr/src/sts/openbao/seed.js:ro
+      - ./openbao/read-only.hcl:/usr/src/sts/openbao/read-only.hcl:ro
+    command: ["node", "openbao/seed.js"]
+
   sts:
     # Named, so that a `docker logs` while a run is going has something to name,
     # and DIFFERENT from docker-compose.yml's `sts` so that a test run can never
@@ -184,6 +260,33 @@ services:
     # every job that verifies one.
     hostname: sts
     image: rcbj/sts
+    # ---------------------------------------------------------------------
+    # THE SECONDARY ADDRESSES THE PER-REALM SPIFFE LISTENERS BIND
+    # (2026-09-12), and the reason this stack needs them as much as
+    # docker-compose.yml does: the runner container is ON this network, so a
+    # protocol job can dial a realm's Workload API at the address that realm
+    # was configured with. Nothing is published to the host — a published port
+    # maps to ONE container address, so it would answer for one realm and
+    # silently not for the others.
+    #
+    # `NET_ADMIN` is what adding an address to an interface needs. A failure is
+    # printed and the service starts anyway, for the reason every listener here
+    # follows.
+    # ---------------------------------------------------------------------
+    cap_add:
+      - NET_ADMIN
+    networks:
+      default:
+        ipv4_address: ${STS_ADDRESS:-172.30.0.10}
+    command: >
+      sh -c 'IFACE="$$(ip -o -4 route show to default | awk "{print \$$5}" | head -1)";
+      for CIDR in $$STS_EXTRA_IPS; do
+      if ip addr add "$$CIDR" dev "$$IFACE" 2>/dev/null; then
+      echo "sts: added $$CIDR to $$IFACE for a realm SPIFFE listener";
+      else
+      echo "sts: COULD NOT add $$CIDR to $$IFACE — a realm configured to bind
+      it will report that its listener did not come up."; fi; done;
+      exec node server.js'
     build:
       # The repository root, and the root .dockerignore applies — the SERVICE
       # image carries no tests. The tests image is built from the same context
@@ -215,6 +318,18 @@ services:
       # `debug` default stays HERE so that `docker compose -f this up` by hand
       # is still the loudest way to watch the mock.
       - CONFIG_FILE=${CONFIG_FILE:-./env/docker-tests.js}
+      # THE ADDRESSES A REALM'S SPIFFE LISTENERS MAY BIND — see `cap_add` and
+      # the `command` above.
+      # AND THE DEFAULT REALM BINDS THIS CONTAINER'S OWN ADDRESS RATHER THAN
+      # THE WILDCARD (2026-09-12). `spiffe.grpcHost` defaults to 0.0.0.0,
+      # which is EVERY address on the machine — so the default realm's
+      # Workload API port would be taken on all three addresses above and
+      # a realm given one of them fails to bind with `EADDRINUSE` on an
+      # address nothing appears to be using. Measured, and then fixed in
+      # two places: `spiffe_server.js` recognises the wildcard and names
+      # the realm holding it, and this line stops it happening.
+      - STS_SPIFFE_GRPC_HOST=${STS_SPIFFE_GRPC_HOST:-172.30.0.10}
+      - STS_EXTRA_IPS=${STS_EXTRA_IPS:-172.30.0.11/24 172.30.0.12/24 172.30.0.13/24}
       # THE BARE FORM IS LOAD-BEARING and the obvious alternative breaks the
       # container. With no `=`, compose passes this through ONLY if the shell
       # that ran the launcher has it, and leaves it unset otherwise, so the
@@ -274,7 +389,24 @@ services:
       # connection failure that reads as something else.
       #
       # Ignored entirely in `memory` mode, where nothing opens a store.
-      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app:sts_app@postgres:5432/sts?sslmode=require}
+      # NO PASSWORD IN THIS STRING (2026-09-12): it comes from the secret
+      # store above, like docker-compose.yml's. The service dials the same
+      # database as the same role either way.
+      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=require}
+      - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault}
+      - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
+      - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-secret/data/sts}
+      - STS_KEYS_KEK_FIELD=${STS_KEYS_KEK_FIELD:-kek}
+      - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/bao/client.crt}
+      - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/bao/client.key}
+      - STS_KEYS_VAULT_CA_CERT=${STS_KEYS_VAULT_CA_CERT:-/run/secrets/bao/bao-ca.crt}
+      - STS_DATABASE_PASSWORD_PROVIDER=${STS_DATABASE_PASSWORD_PROVIDER:-vault}
+      - STS_DATABASE_PASSWORD_FIELD=${STS_DATABASE_PASSWORD_FIELD:-databasePassword}
+      # Per mode, from tests/tools/modes.sh: `persisted` in `dispatch`, which
+      # is what makes the key-encryption key really come out of the store.
+      # BARE, so that an unset variable leaves the setting at whatever the
+      # mode's own default is rather than pinning it to the empty string.
+      - STS_KEYS_SOURCE
       # TLS ON THE MAIN PORT (2026-08-30), so that the suite drives the mock
       # over the scheme every stack in this ecosystem drives it over. It was
       # http here and https in the parent project's three compose files, which
@@ -316,6 +448,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # SEEDED, not merely running — docker-compose.yml's line and its reason.
+      openbao-seed:
+        condition: service_completed_successfully
+    volumes:
+      # WHAT THE STORE ISSUED THIS SERVICE: the client certificate it
+      # authenticates with, its key, and the CA that signs the store's own
+      # listener. Read-only, and the identity they carry can read two values
+      # and change nothing.
+      - sts-bao-client:/run/secrets/bao:ro
     healthcheck:
       # The scheme follows the mode in this service — oauth2.rfc9700 derives
       # global.https — so the probe decides which module to use the same way
@@ -595,8 +736,45 @@ services:
         # to read `docker logs` on it.
         condition: service_started
 
+# ---------------------------------------------------------------------------
+# THE SECRET STORE'S TWO VOLUMES, AND THEY ARE THE ONLY NAMED ONES IN THIS FILE
+# (2026-09-12).
+#
+# Every other service here keeps its state in the container: this stack is
+# built, run once and thrown away, and postgres starting empty is what a test
+# run WANTS. The store is the exception for one reason — the client certificate
+# it issues has to reach the service's container, and a volume is how two
+# containers share a file.
+#
+# They are per project, like every other volume compose makes, so two runs on
+# one machine do not share a key-encryption key. `docker-run-tests.sh` tears
+# them down with `--volumes` at the end of a run.
+volumes:
+  sts-bao-file:
+  sts-bao-client:
+
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.
+#
+# **WITH A SUBNET THIS FILE CHOOSES SINCE 2026-09-12**, and a DIFFERENT one
+# from docker-compose.yml's: a realm's `spiffe.grpcHost` is a literal address,
+# so the addresses have to exist and have to be the same on every start — and
+# the two stacks are routinely up at the same moment on a developer's machine,
+# which is the one way two fixed subnets can collide.
+#
+# **A NAME IS NOT AN ADDRESS, AND THE SENTENCE ABOVE READ AS THOUGH IT WERE
+# FOR A DAY.** Two projects cannot share a network NAME and can absolutely
+# collide on the address space, which is machine-wide: two runs of this
+# launcher — a CI agent with two workspaces, the case `STS_DOCKER_TEST_PROJECT`
+# exists for — were refused with `invalid pool request: Pool overlaps with
+# other one on this address space` before either brought up a container. The
+# launcher scans for a free /24 and names all four variables now; the default
+# below is the first candidate that scan offers, so nothing moves on an idle
+# machine. See freeSubnet() in tests/tools/compose.sh and tests/
+# stack_network.js.
 networks:
   default:
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${STS_NETWORK_SUBNET:-172.30.0.0/24}

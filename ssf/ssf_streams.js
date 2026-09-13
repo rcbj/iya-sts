@@ -55,6 +55,7 @@
 
 const { log, randomId, iso } = require('../common/helpers');
 const config = require('../common/config');
+const errorCodes = require('../common/error_codes');
 const realms = require('../common/realms');
 const subjects = require('./ssf_subjects');
 const events = require('./ssf_events');
@@ -174,7 +175,20 @@ function createStream(asked, context) {
 
   const now = iso();
   const record = {
-    stream_id: 'ssf-' + randomId(12),
+    // THE ID IS THE CALLER'S ONLY WHEN THE CALLER IS THIS SERVICE, AND IT
+    // RIDES ON `ctx` RATHER THAN ON `body` FOR ONE REASON (2026-09-12): `body`
+    // is the REQUEST BODY at ssf.js's POST /ssf/streams, so a `stream_id` read
+    // from there would let a receiver name its own stream — and therefore name
+    // somebody else's, which is a stream takeover with a string as the only
+    // input. `contextOf()` builds its object from the request's identity and
+    // never from what was sent, so nothing a client writes can reach this.
+    //
+    // What supplies it is `ssf_receivers.js`, which DERIVES the id for its two
+    // internal streams so that every process of this service arrives at the
+    // same one. See that file for why a random id was the wrong shape there.
+    stream_id: ctx && ctx.streamId
+      ? String(ctx.streamId)
+      : 'ssf-' + randomId(12),
     iss: String(ctx.issuer || ''),
     aud: audience,
     delivery: delivery,
@@ -605,6 +619,48 @@ function removeSubject(id, subject) {
 
 // Whether an event about this subject belongs on this stream. `defaultSubjects`
 // is what decides it when the list is empty; see the header above.
+// ---------------------------------------------------------------------------
+// SUBJECT SCOPES (2026-09-12): a narrowing a PROTOCOL family puts on the streams
+// its own applications own.
+//
+// GNAP's web applications are receivers whose streams carry events only about
+// people who approved a grant to that application (gnap/gnap_signals.js). That
+// is a fact about GNAP's grants, which this module must not know, so it is a
+// registered function consulted HERE — the one function CAEP, RISC and a
+// by-hand emission all ask — rather than a filter at each of those call sites,
+// which is the third place a new call site would forget.
+//
+// A scope answers `true`, `false` or `undefined` ("not my stream"). Only a
+// `false` narrows: a scope can take events AWAY from a stream it owns and can
+// never add one to a stream whose subject list did not cover it. Keyed by
+// family so a module loaded twice (a test, a worker) replaces its own entry.
+// ---------------------------------------------------------------------------
+const subjectScopes = {};
+
+function setSubjectScope(family, fn) {
+  if (typeof fn !== 'function') {
+    delete subjectScopes[String(family)];
+    return;
+  }
+  subjectScopes[String(family)] = fn;
+}
+
+function scopeRefuses(record, subject) {
+  return Object.keys(subjectScopes).some(function (family) {
+    let answer;
+    try {
+      answer = subjectScopes[family](record, subject);
+    } catch (e) {
+      // A scope that throws narrows nothing: delivery is not allowed to fail
+      // on another family's bookkeeping. Logged, because it is a defect there.
+      log.warn(errorCodes.tag('STS-SSF-0076') + 'ssf: the ' + family +
+               ' subject scope threw and was ignored: ' + e.message);
+      return false;
+    }
+    return answer === false;
+  });
+}
+
 function streamCoversSubject(record, subject) {
   log.debug('Entering streamCoversSubject().');
   if (!subject) {
@@ -612,6 +668,10 @@ function streamCoversSubject(record, subject) {
     // goes to it whatever its subject list says.
     log.debug('Leaving streamCoversSubject(). No subject; always.');
     return true;
+  }
+  if (scopeRefuses(record, subject)) {
+    log.debug('Leaving streamCoversSubject(). A family\'s subject scope refuses it.');
+    return false;
   }
   if (record.subjects.length) {
     const key = subjects.subjectKey(subject);
@@ -865,6 +925,7 @@ function streamConfiguration(record, options) {
 }
 
 module.exports = {
+  setSubjectScope: setSubjectScope,
   DELIVERY_PUSH: DELIVERY_PUSH,
   DELIVERY_POLL: DELIVERY_POLL,
   DELIVERY_METHODS: DELIVERY_METHODS,

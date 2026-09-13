@@ -36,10 +36,18 @@ const stsCrypto = require('../common/crypto');
 // saml.issuer, read per assertion rather than captured at require time so
 // that /admin/config can change what the next one says it came from.
 const config = require('../common/config');
+// The error-code registry, a leaf; the signing failure below is tagged with its code.
+const errorCodes = require('../common/error_codes');
 // The custom attributes an admin configured, and the register every assertion is
 // counted in. A library like dpop.js: it registers no route and requires only
 // helpers.js, so it cannot join a cycle with this file.
 const stats = require('../common/admin_stats');
+// The configured signature and canonicalization algorithms, and the one reading
+// of how a session authenticated. Both LIBRARIES in this directory that
+// register nothing and require only common/ leaves, so neither can join a
+// cycle with this file. See each one's header.
+const documentSettings = require('./document_settings');
+const authnContext = require('./authn_context');
 // Sign a SAML assertion enveloped (signature after Issuer), like api/server.js.
 function signAssertion(xml) {
   log.debug("Entering signAssertion().");
@@ -47,10 +55,17 @@ function signAssertion(xml) {
   // AFTER the <Issuer>, which is where the SAML 2.0 schema puts a signature on
   // an assertion. The reference is worked out from the root's own `ID` by the
   // signer; passing one here would only be a second place for it to be wrong.
+  //
+  // THE ALGORITHMS ARE THE CONFIGURED ONES (2026-09-12) — `saml.signatureAlgorithm`
+  // and `saml.canonicalizationAlgorithm`. Until then this call passed neither and
+  // the signer's defaults decided, which is a choice no page could report.
+  const how = documentSettings.signatureOptions();
   const signed = stsCrypto.signXml(xml, {
     privateKeyPem: STS.privateKeyPem,
     certPem: STS.certPem,
     placement: stsCrypto.PLACEMENT.AFTER_ISSUER,
+    sigAlg: how.sigAlg,
+    c14nAlg: how.c14nAlg,
     what: 'SAML 2.0 assertion'
   });
   logArtifact('SAML assertion', 'after signing', signed);
@@ -165,8 +180,14 @@ function buildSamlAssertion(subject, audience, lifetimeMin, opts) {
   const audienceEl = audience
     ? '<saml:AudienceRestriction><saml:Audience>' + xmlEscape(audience) + '</saml:Audience></saml:AudienceRestriction>'
     : '';
-  const authnContextClassRef = opts.authnContextClassRef ||
-    'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport';
+  // THE DEFAULT IS `unspecified` SINCE 2026-09-12, and it was
+  // PasswordProtectedTransport. A caller that names no class has not said a
+  // password was used, and this builder putting one in the AuthnStatement on
+  // its behalf is how WS-Trust came to assert a password sign-in for an
+  // anonymous request. Every caller in this service now passes the class
+  // `saml/authn_context.js` computed; the default is what an unknown caller
+  // gets, and it overstates nothing.
+  const authnContextClassRef = opts.authnContextClassRef || authnContext.AC_UNSPECIFIED;
   // Who signed it. Read once, because it appears in the Issuer element and in
   // the default `issuedBy` attribute, and two reads of a runtime-changeable
   // setting inside one document can disagree with each other.
@@ -261,7 +282,7 @@ function buildSamlAssertion(subject, audience, lifetimeMin, opts) {
     // counted before the attempt would be a page that agrees with itself and not
     // with what went out.
     record.signed = false;
-    log.error('sign failed, returning unsigned: ' + e.message);
+    log.error(errorCodes.tag('STS-SAML-0023') + 'sign failed, returning unsigned: ' + e.message);
     return xml;
   }
 }

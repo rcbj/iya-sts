@@ -83,8 +83,15 @@
 
 const app = require('../common/app');
 const { log, baseUrlOf } = require('../common/helpers');
+// The error codes (common/error_codes.js), a leaf: requiring it moves nothing.
+const errorCodes = require('../common/error_codes');
 const realms = require('../common/realms');
 const admin = require('./admin');
+// `gateStateFor()` moved to the read layer on 2026-09-12 with the other
+// thirty-seven pure answers — see admin-core/admin_views.js. This page asks
+// it which roles the reader holds, so the token it mints carries those
+// scopes and no others.
+const adminViews = require('../admin-core/admin_views');
 const adminApi = require('../mgmt-api/admin_api');
 const spec = require('../mgmt-api/admin_api_spec');
 const docs = require('../mgmt-api/admin_api_docs');
@@ -154,7 +161,8 @@ function tokenFor(req, gate) {
     // operation is still described and the curl line is still shown — and a
     // console page that 500s because a credential could not be minted would be
     // a worse answer than one that renders and says so.
-    log.error('api-explorer: an access token could not be minted for ' +
+    log.error(errorCodes.tag('STS-ADMIN-0597') +
+              'api-explorer: an access token could not be minted for ' +
               (gate.username || 'this session') + ': ' + e.message +
               '. The page will draw and Try it will be refused.');
     log.debug("Leaving tokenFor(). It failed.");
@@ -166,7 +174,7 @@ function tokenFor(req, gate) {
 // document: that is what the route below serves, and repeating it here would be
 // a second copy of a large thing in a reply whose subject is the PAGE.
 function explorerJson(req) {
-  const gate = admin.gateStateFor(req);
+  const gate = adminViews.gateStateFor(req);
   const document = spec.buildSpec(adminApi.ROUTES, adminApi.specOptions(req));
   const paths = Object.keys(document.paths || {});
   let operations = 0;
@@ -210,7 +218,7 @@ app.get(PATH, function (req, res) {
     'script-src': "'self'",
     'connect-src': "'self'"
   }));
-  const gate = admin.gateStateFor(req);
+  const gate = adminViews.gateStateFor(req);
   const token = tokenFor(req, gate);
   const prefix = realms.currentPrefix() || '';
   const inner = docs.consoleBody({

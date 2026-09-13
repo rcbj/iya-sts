@@ -82,6 +82,9 @@
 const crypto = require('crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// For `seedsDemoData()` alone. A leaf (it requires only config), so it can join
+// no cycle.
+const mode = require('../common/mode');
 const audit = require('../common/audit');
 const spiffeId = require('./spiffe_id');
 // ---------------------------------------------------------------------------
@@ -1024,11 +1027,29 @@ function auditEntry(action, id, record, actor, summary) {
 // because nothing here is persisted, but an operator who deleted all three
 // meant it, and re-creating them on the next request would make the delete
 // button appear not to work.
+//
+// **NOT IN PRODUCT MODE (2026-09-12).** `mode.seedsDemoData()` is the question,
+// read in the realm being seeded (the caller runs this inside it). Three
+// registration entries are three identities this authority will ISSUE to
+// whoever matches their selectors — and the first selects `unix:uid:1000`, a
+// selector nothing here can verify and a spelling this directory's own rule
+// otherwise refuses to invent (see spiffe/CLAUDE.md). In a deployment that is
+// a credential nobody configured, handed to a workload nobody attested. A
+// product registry holds what an operator or the SPIRE Server API put in it,
+// and nothing else.
 // ---------------------------------------------------------------------------
 function seed(trustDomain) {
   log.debug('Entering seed().');
   if (!directory) {
     log.debug('Leaving seed(). No store.');
+    return 0;
+  }
+  if (!mode.seedsDemoData()) {
+    log.info('spiffe: no sample registration entries were seeded — this ' +
+             'realm is in product mode (global.mode), where the registry ' +
+             'holds only what was created through /admin/spiffe, ' +
+             '/admin-api/spiffe or the SPIRE Server API.');
+    log.debug('Leaving seed(). Product mode seeds nothing.');
     return 0;
   }
   if (entryCount() > 0) {

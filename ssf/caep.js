@@ -52,14 +52,24 @@
 // first, which is the same trade the api's push inbox makes for the same
 // reason: whoever is reading wants what happened lately.
 //
-// It is in memory and dies with the process, like everything else this service
-// mints. `persistence/CLAUDE.md`'s rule decides that and the reason it gives
-// everywhere applies here too — the signing key is regenerated on every start,
-// so a register restored from disk would count tokens nothing can verify.
+// **IT IS PER TRUST REALM, AND PERSISTED WHERE MINTED STATE IS, SINCE
+// 2026-09-12.** This paragraph said it was in memory and died with the process
+// "like everything else this service mints", which stopped being true of
+// everything else in product mode on 2026-09-06 — the sessions it describes
+// and the streams it counts against are both written down there — and it was
+// one `new Map()` for the whole process, so `/realm/acme/admin/caep-sessions`
+// listed every realm's sessions and a session id minted in one realm could be
+// reset from another's console. `realms.map()` is the partition and
+// `persistence/persistence_minted.js` carries it, `merge: 'replace'`: a row is
+// whole-valued, the later write wins, and `touch()` below is what reports a row
+// edited in place. In development nothing minted is written down, which is
+// unchanged.
 // ---------------------------------------------------------------------------
 
 const { log, nowSec, iso } = require('../common/helpers');
 const config = require('../common/config');
+// The partition. A LEAF requiring `config` and nothing else here.
+const realms = require('../common/realms');
 const audit = require('../common/audit');
 const events = require('./ssf_events');
 const subjects = require('./ssf_subjects');
@@ -82,11 +92,46 @@ const AUTO_ACTS = {
 // reader can see the last few `jti`s and the counts exist so that a reader can
 // see how many there have been, and conflating the two would make a page that
 // says "3 events" under a list of three when there were nine.
-const EVENTS_PER_SESSION = 25;
+//
+// `caep.eventsPerSession` since 2026-09-12 (25, the old constant, is its
+// default); read per event. `caep.historyPerSession` is the same thing for the
+// credential-change list below, which was a literal 10.
+function eventsPerSession() {
+  return config.value('caep.eventsPerSession');
+}
+
+function historyPerSession() {
+  return config.value('caep.historyPerSession');
+}
 
 // sessionId -> row. Insertion-ordered, which is what makes "the oldest goes"
 // one `keys().next()` rather than a sort by a timestamp two rows can share.
-const register = new Map();
+//
+// PER TRUST REALM — a session belongs to the realm that minted it, and so does
+// what CAEP has said about it. The realm is the AMBIENT one: `observe()` is
+// reached from `authn.js`'s session store inside the request or the realm-scoped
+// expiry sweep, and `noteTransmitted()` from `ssf.js`'s `transmit()`, whose
+// streams are per realm already. `caep.maxSessionsTracked` caps each realm's
+// partition rather than the process, which is what a cap read in a realm means.
+const register = realms.map({ persist: 'caep.register' });
+
+// A ROW EDITED IN PLACE, REPORTED TO THE JOURNAL. `realms.map()` journals a
+// `set()` and a `delete()`; almost everything this file does to a row is
+// `row.counts[uri] += 1` on an object already in the map, which nothing sees.
+// Re-setting the same key reports it — and keeps its place in the map's
+// insertion order, so "the oldest goes" still means the oldest. A row trimmed
+// out before the edit is NOT put back, and neither is a row another process's
+// write has since REPLACED — which is why this asks whether the object it was
+// handed is still the one held: the edit belongs to a row the register has
+// already let go.
+function touch(row) {
+  if (!row || !row.sessionId) {
+    return;
+  }
+  if (register.get(row.sessionId) === row) {
+    register.set(row.sessionId, row);
+  }
+}
 
 function enabled() {
   log.debug('Entering enabled().');
@@ -452,7 +497,7 @@ function applyToState(row, uri, payload) {
       changeType: String(body.change_type || ''),
       friendlyName: String(body.friendly_name || '')
     });
-    row.credentials = row.credentials.slice(0, 10);
+    row.credentials = row.credentials.slice(0, historyPerSession());
   } else if (short === 'assurance-level-change') {
     if (row.assurance.level && typeof body.previous_level === 'string' &&
         body.previous_level !== row.assurance.level) {
@@ -491,6 +536,7 @@ function applyToState(row, uri, payload) {
   }
 
   row.updatedAt = iso();
+  touch(row);
   log.debug('Leaving applyToState(). ' + errors.length + ' error(s), ' +
             warnings.length + ' warning(s).');
   return { ok: errors.length === 0, errors: errors, warnings: warnings,
@@ -545,11 +591,12 @@ function noteTransmitted(record, claims) {
     streamId: String((record && record.stream_id) || ''),
     warnings: verdict.warnings
   });
-  row.events = row.events.slice(0, EVENTS_PER_SESSION);
+  row.events = row.events.slice(0, eventsPerSession());
   const streamId = String((record && record.stream_id) || '');
   if (streamId && row.streams.indexOf(streamId) < 0) {
     row.streams.push(streamId);
   }
+  touch(row);
   log.debug('Leaving noteTransmitted(). ' + row.total + ' event(s) on ' +
             row.sessionId + '.');
   return row;
@@ -593,6 +640,7 @@ function observe(notice) {
     row.iss = String(asked.issuer);
   }
   row.updatedAt = iso();
+  touch(row);
 
   const short = AUTO_ACTS[act];
   if (!short) {
@@ -611,6 +659,7 @@ function observe(notice) {
     row.notes.push('A ' + short + ' was NOT emitted for this act: ' +
         'caep.autoEmit or caep.autoEmitTypes excludes it.');
     row.notes = row.notes.slice(-5);
+    touch(row);
     log.debug('Leaving observe(). Emission is off for ' + act + '.');
     return null;
   }
@@ -712,6 +761,7 @@ function reset(sessionId) {
   row.streams = [];
   row.notes = ['Reset from the console; the sign-in itself is untouched.'];
   row.updatedAt = iso();
+  touch(row);
   audit.audit({ action: 'caep.session.reset', category: 'signals',
     protocol: 'CAEP', channel: 'http', target: row.sessionId,
     summary: 'The CAEP state of session ' + row.sessionId + ' was reset' });

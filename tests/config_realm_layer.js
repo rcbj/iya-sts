@@ -106,6 +106,34 @@ function withRealm(t, id, overrides, fn) {
   }
 }
 
+// A VALID value for a setting that is not the one it currently has. It was
+// `!config.value(key)` while every realmRuntime row was a boolean, and a
+// negated port is `false` — which the realm refuses on type grounds, so the
+// realm was never created and the derived-settings check below silently
+// checked nothing. The point of the flip is only that the realm carries
+// SOMETHING different, so each type gets the cheapest other legal value.
+function differentValue(setting) {
+  if (setting.type === 'bool') {
+    return !config.value(setting.key);
+  }
+  if (setting.type === 'enum') {
+    const now = config.text(setting.key);
+    const other = (setting.enumValues || []).filter(function (v) {
+      return v !== now;
+    })[0];
+    return other === undefined ? now : other;
+  }
+  if (setting.type === 'port' || setting.type === 'int') {
+    const now = Number(config.value(setting.key)) || 0;
+    const max = setting.max === undefined ? 65535 : setting.max;
+    return now + 1 <= max ? now + 1 : Math.max(setting.min || 0, now - 1);
+  }
+  // A string. Suffixed rather than replaced so that a row with a grammar —
+  // `spiffe.trustDomain` takes letters, digits, dots, dashes and underscores —
+  // is still given something it accepts.
+  return String(config.text(setting.key) || 'x') + '-other';
+}
+
 // ---------------------------------------------------------------------------
 // 1. THE MARKER ITSELF.
 //
@@ -118,14 +146,42 @@ function withRealm(t, id, overrides, fn) {
 // ---------------------------------------------------------------------------
 function checkMarker(t) {
   t.log.info('the realmRuntime marker');
+  // **THE LIST AND NOT THE COUNT, SINCE 2026-09-12.** It was `length === 1`
+  // and `oauth2.rfc9700` while there was one holder, and the point of the
+  // assertion was never the number: it is that adding one is a DECISION taken
+  // in the same commit, at the line somebody has to edit. Naming them keeps
+  // that exactly as strict — an eighth still fails here — and says what the
+  // seven are.
+  //
+  // SPIFFE's six arrived together and are one argument, made at the head of
+  // that group in config.js: this process binds four SPIFFE listeners and
+  // builds one trust domain's authorities WHEN IT STARTS, and a realm's SPIFFE
+  // is not started then — it is created OFF, its authorities are built on
+  // first use and its listeners are bound when it is turned on. So for a realm
+  // none of the six was consumed at any startup.
+  const EXPECTED_REALM_RUNTIME = [
+    'oauth2.rfc9700',
+    'spiffe.trustDomain',
+    'spiffe.x509KeyType',
+    'spiffe.jwtKeyType',
+    'spiffe.workloadSocketEnabled',
+    'spiffe.workloadSocket',
+    'spiffe.workloadPort',
+    'spiffe.serverSocketEnabled',
+    'spiffe.serverSocket',
+    'spiffe.serverPort',
+    'spiffe.grpcHost'
+  ];
   const marked = config.SETTINGS.filter(function (s) {
     return s.realmRuntime;
-  });
-  t.equal(marked.length, 1,
-          'exactly one setting is marked realmRuntime');
-  t.equal(marked.length === 1 ? marked[0].key : null, 'oauth2.rfc9700',
-          'and it is oauth2.rfc9700');
-  marked.forEach(function (s) {
+  }).map(function (s) { return s.key; });
+  t.equal(marked.slice(0).sort().join(','),
+          EXPECTED_REALM_RUNTIME.slice(0).sort().join(','),
+          'the realmRuntime rows are exactly the ones this file names — add ' +
+          'one and this is the line that makes it a decision',
+          marked.join(','));
+  config.SETTINGS.filter(function (s) { return s.realmRuntime; })
+    .forEach(function (s) {
     // The marker only means anything on a row that is restart-only for the
     // process. On a runtime row it would be noise, and a reader would take it
     // for a rule that had been relaxed.
@@ -290,7 +346,7 @@ function checkReadingEnd(t) {
   const flipped = {};
   config.SETTINGS.filter(function (s) { return s.realmRuntime; })
     .forEach(function (s) {
-      flipped[s.key] = !config.value(s.key);
+      flipped[s.key] = differentValue(s);
     });
   withRealm(t, 'trl-flip', flipped, function (realm) {
     derived.forEach(function (s) {

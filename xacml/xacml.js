@@ -95,6 +95,9 @@ const validation = require('../common/validation');
 const websecurity = require('../common/websecurity');
 const config = require('../common/config');
 const audit = require('../common/audit');
+// The error-code registry (a leaf). A code is marked on the RESPONSE and never
+// written into it — every refusal below keeps the body it always had.
+const errorCodes = require('../common/error_codes');
 const model = require('./xacml_model');
 const json = require('./xacml_json');
 const pdp = require('./xacml_pdp');
@@ -170,6 +173,7 @@ function offCheck(res) {
     log.debug('Leaving offCheck(). On.');
     return false;
   }
+  errorCodes.mark(res, 'STS-XACML-0001');
   res.status(501).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify({
        error: 'not_implemented',
@@ -253,6 +257,17 @@ function xacmlAccess(req, res, action, what) {
   // and which setting names that group. A 403 saying "access_denied" and
   // nothing else would make the one endpoint that documents this family
   // unreachable by exactly the people who need it.
+  if (!identity.authenticated) {
+    errorCodes.mark(res, 'STS-XACML-0003');
+  } else if (identity.revocationRefused) {
+    errorCodes.mark(res, errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
+  } else if (!identity.verified) {
+    errorCodes.mark(res, 'STS-XACML-0004');
+  } else if (held.indexOf(XACML_USER_ROLE) < 0) {
+    errorCodes.mark(res, 'STS-XACML-0005');
+  } else {
+    errorCodes.mark(res, 'STS-XACML-0006');
+  }
   fail(res, 403, 'access_denied',
     'The access policy refused this request. ' + policy.why +
     ' The XACML endpoints are reached by presenting a client certificate ' +
@@ -310,11 +325,15 @@ function decide(request) {
     policy = store.parseDocument(root.document);
   } catch (error) {
     log.debug('Leaving decide(). The root policy will not load.');
-    return { decision: model.DECISION.INDETERMINATE,
+    // MARKED ON THE ANSWER, NOT IN IT: a non-enumerable property that neither
+    // `json.writeResponse()` nor anything else serialises, so a handler that
+    // sends this answer can mark its response with the condition behind it.
+    return errorCodes.mark({ decision: model.DECISION.INDETERMINATE,
              status: { code: error.xacmlStatus || model.STATUS.SYNTAX_ERROR,
                        message: 'The root policy "' + root.name + '" does ' +
                                 'not load: ' + error.message },
-             obligations: [], advice: [], policyIdentifiers: [] };
+             obligations: [], advice: [], policyIdentifiers: [] },
+             'STS-XACML-0012');
   }
   if (config.value('xacml.returnPolicyIdList') === true) {
     request.returnPolicyIdList = true;
@@ -323,6 +342,14 @@ function decide(request) {
     repository: store.repository(),
     resolver: pip.resolverFor(request)
   });
+  // AN INDETERMINATE THE ENGINE REACHED THROUGH A PROCESSING OR SYNTAX ERROR is
+  // a fault somebody has to fix, where a missing attribute is an answer about
+  // the request; only the first two carry a code.
+  if (answer && answer.decision === model.DECISION.INDETERMINATE &&
+      answer.status && (answer.status.code === model.STATUS.PROCESSING_ERROR ||
+                        answer.status.code === model.STATUS.SYNTAX_ERROR)) {
+    errorCodes.mark(answer, 'STS-XACML-0013');
+  }
   log.debug('Leaving decide(). ' + answer.decision);
   return answer;
 }
@@ -381,10 +408,16 @@ app.post('/xacml/pdp', function (req, res) {
     // request and a 400 says there was no request to answer about. Collapsing
     // them would have a PEP enforce its bias over somebody's typo.
     log.debug('Leaving POST /xacml/pdp. The request would not parse.');
+    errorCodes.mark(res, 'STS-XACML-0011');
     fail(res, 400, 'invalid_request', error.message);
     return;
   }
   const answer = decide(request);
+  // A Permit, a Deny or a NotApplicable is the ANSWER and carries no code; an
+  // Indeterminate this service reached through a fault does.
+  if (errorCodes.codeOf(answer)) {
+    errorCodes.mark(res, errorCodes.codeOf(answer));
+  }
   // COUNTED AS A DECISION AND NOT AS AN ENFORCEMENT, which is the distinction
   // `/admin/xacml/monitor` is built around. Somebody else's PEP asked; this
   // service produced the decision and never saw what was done with it, so the
@@ -564,6 +597,16 @@ app.get('/xacml/protected', function (req, res) {
   if (answer.note) {
     body.note = answer.note;
   }
+  if (!enforcement.allowed) {
+    errorCodes.mark(res, (enforcement.undischargeable || []).length &&
+                         answer.decision === model.DECISION.PERMIT
+      ? 'STS-XACML-0015' : 'STS-XACML-0014');
+  }
+  // A fault behind the decision is the more specific condition, and the last
+  // mark wins.
+  if (errorCodes.codeOf(answer)) {
+    errorCodes.mark(res, errorCodes.codeOf(answer));
+  }
   res.status(enforcement.allowed ? 200 : 403)
      .type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify(body, null, 2));
@@ -587,7 +630,7 @@ app.get('/xacml/protected', function (req, res) {
 //      success. This PEP can discharge exactly one obligation — the one it
 //      knows about, below — and refuses on any other, loudly.
 // ---------------------------------------------------------------------------
-const DISCHARGEABLE = ['urn:sts-mock:xacml:obligation:log'];
+const DISCHARGEABLE = ['urn:sts:xacml:obligation:log'];
 
 function enforce(answer) {
   log.debug('Entering enforce(). decision=' + answer.decision);
@@ -730,6 +773,7 @@ function remotePepOffCheck(res) {
     log.debug('Leaving remotePepOffCheck(). On.');
     return false;
   }
+  errorCodes.mark(res, 'STS-XACML-0002');
   res.status(501).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify({
        error: 'not_implemented',
@@ -778,6 +822,13 @@ function callerIdentity(req) {
   const identity = {
     authenticated: true,
     verified: verdict.verified,
+    // A chain that built and was REFUSED ON REVOCATION (2026-09-12) is
+    // `verified: false` — `mtls.peerVerified()` decides that — and carries the
+    // verdict so the two refusals below can mark the revocation code rather
+    // than the "did not verify" one, which would send an operator looking at
+    // the truststore for a certificate that is in it.
+    revocationRefused: !!(verdict.revocation && verdict.revocation.refused),
+    revocation: verdict.revocation || null,
     why: verdict.why,
     subject: named.subject,
     // RFC 8705 x5t#S256, through the same function the token endpoint binds a
@@ -856,6 +907,17 @@ function pepAccess(req, res, action, what, known) {
   }
   log.info('xacml: the access policy refused ' + what + ' for ' +
            (name || 'an unidentified caller') + '. ' + policy.why);
+  if (!identity.authenticated) {
+    errorCodes.mark(res, 'STS-XACML-0007');
+  } else if (identity.revocationRefused) {
+    errorCodes.mark(res, errorCodes.codeOf(identity.revocation) || 'STS-PKI-0118');
+  } else if (!identity.verified) {
+    errorCodes.mark(res, 'STS-XACML-0008');
+  } else if (held.indexOf(REMOTE_PEP_ROLE) < 0) {
+    errorCodes.mark(res, 'STS-XACML-0009');
+  } else {
+    errorCodes.mark(res, 'STS-XACML-0010');
+  }
   fail(res, 403, 'access_denied',
     'The access policy refused this request. ' + policy.why +
     ' A remote Policy Enforcement Point reaches these endpoints by ' +
@@ -913,6 +975,7 @@ app.post('/xacml/pep/register', function (req, res) {
     const plain = !(req.socket &&
                     typeof req.socket.getPeerCertificate === 'function');
     log.debug('Leaving POST /xacml/pep/register. No client certificate.');
+    errorCodes.mark(res, plain ? 'STS-XACML-0017' : 'STS-XACML-0018');
     fail(res, 401, 'invalid_client', plain
       ? 'This registration arrived on a PLAIN HTTP connection, which cannot ' +
         'carry a client certificate at all — so there is nothing a better ' +
@@ -968,6 +1031,7 @@ app.post('/xacml/pep/register', function (req, res) {
   });
   if (!result.ok) {
     log.debug('Leaving POST /xacml/pep/register. Refused.');
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0019');
     fail(res, 400, 'invalid_request', result.why);
     return;
   }
@@ -1103,7 +1167,7 @@ app.get('/xacml/pep/policies', function (req, res) {
   // **A REMOTE PEP MUST NOT ENFORCE EITHER, AND THE REASON IS NOT SECRECY.** A
   // PEP evaluates what it pulls against ITS OWN requests, and those two
   // documents are written against attributes only this process can supply —
-  // `urn:sts-mock:xacml:attribute:required-role` off an application entry, the
+  // `urn:sts:xacml:attribute:required-role` off an application entry, the
   // resource owner off a portal session. Enforced out there they would answer
   // NotApplicable to everything a remote PEP ever asks, and a deny-biased PEP
   // turns NotApplicable into a refusal: shipping them would silently make every
@@ -1208,6 +1272,7 @@ app.post('/xacml/pep/heartbeat', function (req, res) {
     : String(body.name || ''));
   if (!name) {
     log.debug('Leaving POST /xacml/pep/heartbeat. Nameless.');
+    errorCodes.mark(res, 'STS-XACML-0020');
     fail(res, 400, 'invalid_request',
          'A heartbeat says which PEP it is from — by the client certificate ' +
          'it arrives with, or by `name` when it carries none.');
@@ -1227,6 +1292,7 @@ app.post('/xacml/pep/heartbeat', function (req, res) {
   });
   if (!result.ok) {
     log.debug('Leaving POST /xacml/pep/heartbeat. Refused.');
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0021');
     fail(res, 404, 'invalid_request', result.why);
     return;
   }
@@ -1383,7 +1449,7 @@ app.post('/xacml/pep/heartbeat', function (req, res) {
 // argument above made mechanical: everything a caller is invited to splice is
 // in OASIS's namespace and everything invented here is in this one, so the two
 // can never be confused by a parser or by a reader.
-const PIP_NS = 'urn:sts-mock:xacml:pip:1.0';
+const PIP_NS = 'urn:sts:xacml:pip:1.0';
 
 // The designators a caller may ask about, per call. A cap for the reason every
 // other container here has one: this endpoint walks a list a caller supplies,
@@ -1391,7 +1457,17 @@ const PIP_NS = 'urn:sts-mock:xacml:pip:1.0';
 // spend this service's single thread. It is generous — no real policy
 // designates fifty attributes about one subject — so reaching it is a sign of
 // something else.
+//
+// **`xacml.pipMaxDesignators` SINCE 2026-09-12**, beside `xacml.pipMaxPerWindow`
+// — that one bounds how many queries and this bounds one query, so they are
+// the two halves of what one enforcement point may cost. This constant is the
+// default, read per query so a change reaches the next one.
 const PIP_MAX_DESIGNATORS = 50;
+
+function pipMaxDesignators() {
+  const n = Number(config.value('xacml.pipMaxDesignators'));
+  return isFinite(n) && n > 0 ? Math.floor(n) : PIP_MAX_DESIGNATORS;
+}
 
 // ---------------------------------------------------------------------------
 // WHY A BAG IS EMPTY. Five reasons, five different fixes, and the resolver
@@ -1623,6 +1699,7 @@ app.post('/xacml/pip', function (req, res) {
   if (!within.ok) {
     log.debug('Leaving POST /xacml/pip. Rate limited.');
     res.set('Retry-After', String(within.retryAfterS));
+    errorCodes.mark(res, 'STS-XACML-0022');
     pipFail(res, 429, 'too_many_requests',
       'Too many PIP queries. ' + within.detail + ' The limit is ' +
       within.limit + ' per ' + config.value('security.rateLimitWindowS') +
@@ -1701,10 +1778,12 @@ app.post('/xacml/pip', function (req, res) {
         'entry — a PIP resolves designators, and a directory dump is a ' +
         'different and much larger thing.');
     }
-    if (nodes.length > PIP_MAX_DESIGNATORS) {
+    const most = pipMaxDesignators();
+    if (nodes.length > most) {
+      errorCodes.mark(res, 'STS-XACML-0024');
       throw model.syntaxError('A PIP query may name at most ' +
-        PIP_MAX_DESIGNATORS + ' designators; this one named ' + nodes.length +
-        '.');
+        most + ' designators (xacml.pipMaxDesignators); this one named ' +
+        nodes.length + '.');
     }
     // `readExpression()` AND NOT A READER WRITTEN HERE. It is the function
     // that reads an <AttributeDesignator> out of a POLICY, so a designator
@@ -1735,6 +1814,7 @@ app.post('/xacml/pip', function (req, res) {
         const problem = pipScalarProblem(field, read[field],
                                          validation.CAP.IDENTIFIER);
         if (problem) {
+          errorCodes.mark(res, 'STS-XACML-0025');
           throw model.syntaxError(problem);
         }
       });
@@ -1747,6 +1827,9 @@ app.post('/xacml/pip', function (req, res) {
     // reader that answered one for a typo would be indistinguishable from the
     // attribute being absent, and the caller's PDP would go on to decide on it.
     log.debug('Leaving POST /xacml/pip. The query would not parse.');
+    // The two bounds above marked their own condition before throwing; any
+    // other throw here is a query that is not a well-formed <PIPRequest>.
+    errorCodes.mark(res, errorCodes.codeOf(res) || 'STS-XACML-0023');
     pipFail(res, 400, 'invalid_request', error.message);
     return;
   }
@@ -1761,6 +1844,7 @@ app.post('/xacml/pip', function (req, res) {
                                           validation.CAP.NAME);
   if (subjectProblem) {
     log.debug('Leaving POST /xacml/pip. The subject is not a name.');
+    errorCodes.mark(res, 'STS-XACML-0025');
     pipFail(res, 400, 'invalid_request', subjectProblem);
     return;
   }
@@ -1865,7 +1949,8 @@ function nudgeRegisteredPeps(what) {
     // reaching here means a defect in this file rather than an unreachable
     // PEP. Logged and swallowed regardless: a policy that was written stays
     // written.
-    log.warn('xacml: the nudge dispatcher threw, which is a bug here rather ' +
+    log.warn(errorCodes.tag('STS-XACML-0065') +
+             'xacml: the nudge dispatcher threw, which is a bug here rather ' +
              'than a PEP being unreachable: ' + error.message);
   });
   log.debug('Leaving nudgeRegisteredPeps(). Dispatched.');
@@ -1992,6 +2077,7 @@ app.get('/xacml', function (req, res) {
   const askedFormat = validation.check(req, 'query', XACML_QUERY);
   if (!askedFormat.ok) {
     log.debug('Leaving the XACML page. ' + askedFormat.detail);
+    errorCodes.mark(res, 'STS-XACML-0016');
     return res.status(400).type('text/plain').send(askedFormat.detail + '\n');
   }
   if (String(req.query.format || '').toLowerCase() === 'json') {
@@ -2107,4 +2193,7 @@ app.get('/xacml', function (req, res) {
 });
 
 module.exports = { decide: decide, enforce: enforce, description: description,
-                   enabled: enabled };
+                   enabled: enabled,
+                   // The designator cap a PIP query is held to, for
+                   // `tests/scan_and_rate_limits.js` (2026-09-12).
+                   pipMaxDesignators: pipMaxDesignators };

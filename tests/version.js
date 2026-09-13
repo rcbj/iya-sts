@@ -297,7 +297,7 @@ function run(t) {
     t.check(/version'\)\.userAgent\(/.test(src) ||
             /userAgent\(/.test(src),
             rel + ' builds its User-Agent from common/version.js');
-    t.check(!/'User-Agent':\s*'mock-sts /.test(src),
+    t.check(!/'User-Agent':\s*'(mock-)?sts[ \/]/.test(src),
             rel + ' does not carry a hand-written product token');
   });
 }

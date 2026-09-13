@@ -129,6 +129,9 @@ const realms = require('../common/realms');
 // THE FAN-IN FOR `merge: 'own'` STORES. A LIBRARY, like this one, and required
 // in the ordinary direction: it does not require this file back.
 const replication = require('./persistence_replication');
+// A LEAF with no requires: the failure codes on the log lines and the fatal
+// refusals below. NOT audit.js, which requires persistence_replication.js.
+const errorCodes = require('../common/error_codes');
 
 const log = bunyan.createLogger({ name: 'sts-persistence-minted' });
 
@@ -287,7 +290,48 @@ function enabled() {
   // is every run that does not configure a pool — so "development persists
   // nothing it minted" is unchanged for everybody who has not asked for
   // workers, and unchanged ACROSS RESTARTS for those who have.
-  return mode.isProduct() || keystore.hasEphemeralKek();
+  //
+  // **AND A THIRD ARM SINCE 2026-09-12, BECAUSE THE SECOND ONE TESTS FOR THE
+  // WRONG THING AND WENT SILENTLY FALSE.** `hasEphemeralKek()` is a proxy for
+  // *the processes in this run share a key and must therefore agree*, and it
+  // was exact while the only way to get a KEK in development was for the pool
+  // to generate one. `keys.source=persisted` is the other way — it turns the
+  // keystore on WITHOUT product mode, which is what `tests/keystore.js`
+  // records as the reason that setting exists — and `useEphemeralKek()`
+  // correctly REFUSES to substitute a per-run key when a real one has been
+  // read. So a dispatched run that reads its KEK from a secret store had a
+  // REAL key, no ephemeral one, and every arm of this condition false: each
+  // worker went back to keeping its own minted state.
+  //
+  // **Nothing failed loudly, which is why this comment is long.** What it
+  // measured was `sts_jwt_bearer_grant` accepting a REPLAYED RFC 7523
+  // assertion — `assertion_grant.seen` is a declared persistable store, the
+  // second POST landed on a worker that had never seen the jti, and a
+  // credential meant to be spendable once was spent twice. Sessions, codes and
+  // tokens diverge the same way; the replay is simply the one that noticed.
+  //
+  // **THE ARM ASKS THE QUESTION THE SECOND ONE WAS ASKING BADLY, AND NOT A
+  // WIDER ONE.** Not `keystore.persists()`: that is true of a single-process
+  // development service with `keys.source=persisted` too, and turning minted
+  // persistence on there would reverse "development persists nothing it
+  // minted" for a deployment that never asked for a pool and never had a
+  // second process to disagree with. What matters is SEVERAL PROCESSES
+  // ANSWERING ONE PORT, which is two config values and is read the same way in
+  // the front process and in every worker. `sealed()` is the other half: there
+  // has to be a key to seal the rows with, whoever supplied it.
+  return mode.isProduct() || keystore.hasEphemeralKek() ||
+         (severalProcesses() && keystore.sealed());
+}
+
+// Is this process one of several answering one port? Dispatch needs BOTH a
+// worker count and a path to dispatch — `workers.dispatch` empty means nothing
+// is dispatched however many workers were forked — and dispatch without
+// coordination is refused at startup, so this being true means the store is
+// shared as well.
+function severalProcesses() {
+  const count = Number(config.value('workers.requestCount')) || 0;
+  const paths = String(config.value('workers.dispatch') || '').trim();
+  return count > 0 && paths !== '';
 }
 
 // Rows older than this are neither restored nor kept. Without it a store that
@@ -330,7 +374,8 @@ function setDriver(theDriver, activeMode) {
       'directory somebody types into and wrong for a session table and an ' +
       'audit ring that change on every request';
     if (mode.isProduct() && config.value('persistence.minted')) {
-      log.warn('persistence: PRODUCT MODE, AND ' +
+      log.warn(errorCodes.tag('STS-STORE-0012') +
+               'persistence: PRODUCT MODE, AND ' +
                unsupportedReason.toUpperCase() + '. The directory, the realm ' +
                'registry, the runtime settings and the signing keys are ' +
                'still written down and restored; sessions, tokens, codes, ' +
@@ -494,7 +539,8 @@ function prefetch(changes) {
     // correct. A catch-up that failed entirely because a batch read failed
     // would be worse than a slow one.
     prefetched = null;
-    log.warn('persistence: a batched minted read failed (' + e.message +
+    log.warn(errorCodes.tag('STS-STORE-0013') +
+             'persistence: a batched minted read failed (' + e.message +
              '); this page falls back to one query per row.');
     return 0;
   });
@@ -541,7 +587,8 @@ function applyChange(change) {
   const text = String(change.key);
   const at = text.indexOf('.');
   if (at < 0) {
-    log.error('persistence: a minted change names "' + change.key + '", ' +
+    log.error(errorCodes.tag('STS-STORE-0014') +
+              'persistence: a minted change names "' + change.key + '", ' +
               'which carries no handle. Skipped.');
     return Promise.resolve(false);
   }
@@ -551,7 +598,8 @@ function applyChange(change) {
     handle = Buffer.from(text.slice(0, at), 'base64url').toString('utf8');
     storedName = Buffer.from(text.slice(at + 1), 'base64url').toString('utf8');
   } catch (e) {
-    log.error('persistence: a minted change names "' + change.key + '", ' +
+    log.error(errorCodes.tag('STS-STORE-0014') +
+              'persistence: a minted change names "' + change.key + '", ' +
               'which is not the shape recordChanges() writes. Skipped.');
     return Promise.resolve(false);
   }
@@ -586,7 +634,8 @@ function applyChange(change) {
         return applyLocally(store, change.realm, split.key, undefined, true);
       }
       if (!keystore.sealed()) {
-        log.error('persistence: another process\'s minted row cannot be ' +
+        log.error(errorCodes.tag('STS-STORE-0015') +
+                  'persistence: another process\'s minted row cannot be ' +
                   'opened — no key-encryption key. This process is behind.');
         return false;
       }
@@ -595,7 +644,8 @@ function applyChange(change) {
         // Written under a different key-encryption key. Reported once per row
         // rather than thrown: the alternative is replication wedging for ever
         // at the same seq over a row it will never be able to read.
-        log.warn('persistence: another process\'s "' + handle + '" row will ' +
+        log.warn(errorCodes.tag('STS-STORE-0016') +
+                 'persistence: another process\'s "' + handle + '" row will ' +
                  'not open under this key-encryption key. Skipped.');
         return false;
       }
@@ -603,7 +653,8 @@ function applyChange(change) {
       try {
         value = JSON.parse(text);
       } catch (e) {
-        log.warn('persistence: another process\'s "' + handle + '" row ' +
+        log.warn(errorCodes.tag('STS-STORE-0017') +
+                 'persistence: another process\'s "' + handle + '" row ' +
                  'opened and is not JSON. Skipped.');
         return false;
       }
@@ -671,7 +722,8 @@ function flush() {
     journal.clear();
     lastError = 'no key-encryption key is available, so nothing minted can ' +
                 'be sealed';
-    log.error('persistence: ' + lastError + '. Minted state is not being ' +
+    log.error(errorCodes.tag('STS-STORE-0018') +
+              'persistence: ' + lastError + '. Minted state is not being ' +
               'written down.');
     log.debug('Leaving flush(). Nothing to seal with.');
     return Promise.resolve({ written: false, error: lastError });
@@ -688,7 +740,8 @@ function flush() {
       // Unreachable unless a handle is journalled by something that is not a
       // declared store. Counted rather than thrown, for the reason every
       // failure on this path is counted rather than thrown.
-      log.error('persistence: "' + handle + '" reported a write and is not a ' +
+      log.error(errorCodes.tag('STS-STORE-0019') +
+                'persistence: "' + handle + '" reported a write and is not a ' +
                 'declared store. Its rows cannot be written.');
       return;
     }
@@ -708,7 +761,8 @@ function flush() {
           // A value with a cycle in it, or a BigInt. Counted and skipped:
           // failing the whole transaction because one store holds something
           // unserialisable would stop every other store persisting too.
-          log.error('persistence: "' + handle + '" holds a value under "' +
+          log.error(errorCodes.tag('STS-STORE-0020') +
+                    'persistence: "' + handle + '" holds a value under "' +
                     key + '" that will not serialise: ' + e.message);
         }
         if (body === null) {
@@ -762,7 +816,8 @@ function flush() {
     lastError = err.message;
     upserts.forEach(function (row) { note(row.handle, row.realm, row.key); });
     deletes.forEach(function (row) { note(row.handle, row.realm, row.key); });
-    log.error('persistence: minted state could not be written: ' + err.message +
+    log.error(errorCodes.tag('STS-STORE-0021') +
+              'persistence: minted state could not be written: ' + err.message +
               '. The service is unaffected and is still answering from ' +
               'memory; the next change will try again.');
     log.debug('Leaving flush(). It failed.');
@@ -804,7 +859,7 @@ function restore() {
     // itself as the process that was persisting. `server.js` treats a
     // rejection here the way it treats a keystore failure.
     log.debug('Leaving restore(). No key-encryption key.');
-    return Promise.reject(new Error(
+    return Promise.reject(new Error(errorCodes.tag('STS-STORE-0022') +
       'minted state is persisted (persistence.minted) but no key-encryption ' +
       'key is available to open it. The stored sessions, tokens, codes and ' +
       'artifacts cannot be read.'));
@@ -843,7 +898,8 @@ function restore() {
     }).catch(function (e) {
       // NOT FATAL. Everything this run mints is written and shared regardless;
       // what is left behind is unreadable rows that retention collects by age.
-      log.warn('persistence: an earlier run\'s minted rows could not be ' +
+      log.warn(errorCodes.tag('STS-STORE-0023') +
+               'persistence: an earlier run\'s minted rows could not be ' +
                'cleared: ' + e.message + '. They are unreadable and will be ' +
                'swept by persistence.mintedRetention.');
       return { restored: 0, cleared: 0 };
@@ -916,7 +972,8 @@ function restore() {
         // A store that refuses a row it wrote. Logged with the handle, because
         // the shape of the record is that store's business and this file has
         // no way to say what was wrong with it.
-        log.error('persistence: "' + row.handle + '" refused a restored row ' +
+        log.error(errorCodes.tag('STS-STORE-0024') +
+                  'persistence: "' + row.handle + '" refused a restored row ' +
                   'under "' + row.key + '": ' + e.message);
         droppedUnreadable++;
       }
@@ -960,7 +1017,8 @@ function restore() {
                  'from the store.');
         return { restored: restored };
       }).catch(function (err) {
-        log.warn('persistence: the stale minted rows could not be removed: ' +
+        log.warn(errorCodes.tag('STS-STORE-0025') +
+                 'persistence: the stale minted rows could not be removed: ' +
                  err.message + '. They are skipped on every start until they ' +
                  'can be.');
         return { restored: restored };
@@ -971,7 +1029,7 @@ function restore() {
   }).catch(function (err) {
     restoring = false;
     log.debug('Leaving restore(). It failed.');
-    return Promise.reject(new Error(
+    return Promise.reject(new Error(errorCodes.tag('STS-STORE-0026') +
       'the minted state in the store could not be read: ' + err.message));
   });
 }

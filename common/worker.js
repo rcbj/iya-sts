@@ -78,6 +78,8 @@ const bunyan = require('bunyan');
 const nodeCrypto = require('crypto');
 const config = require('./config');
 const pqJose = require('./pq_jose');
+// A LEAF with no requires, so this child stays a leaf too. The failure codes.
+const errorCodes = require('./error_codes');
 
 // The module's own logger, made the way pq_jose.js makes its own. A worker's
 // lines are named `worker` and carry the pid, because the whole point of
@@ -228,7 +230,8 @@ function handleMessage(message) {
   try {
     result = runJob(message.kind, message.job);
   } catch (e) {
-    log.warn('worker ' + process.pid + ': the ' +
+    log.warn(errorCodes.tag('STS-WORKER-0006') +
+             'worker ' + process.pid + ': the ' +
              (message && message.kind ? message.kind : 'unknown') +
              ' job failed: ' + e.message);
     process.send({ id: id, ok: false, error: e.message,

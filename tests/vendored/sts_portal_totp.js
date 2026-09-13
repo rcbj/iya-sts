@@ -222,6 +222,47 @@ function csrfOf(text) {
   return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
 }
 
+// ---------------------------------------------------------------------------
+// EVERY PERSON THIS JOB SIGNS IN IS CREATED FIRST, WITH A PASSWORD AND THE
+// ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12).
+//
+// In product mode this service invents no persona for a name that signs in,
+// creates nobody because a sign-in named them, and verifies the password
+// against the person's own entry. The suite runs in development, where none of
+// that is enforced — which is why a job leaning on it would go on passing
+// while testing the invention. So `ensurePerson()` makes each account through
+// `/admin-api/users/create` with `invent: false`, its own `cn`, `sn`,
+// `givenName`, `displayName` and `mail`, and a password of at least twelve
+// characters, and that password is what the sign-in screen is sent.
+// ---------------------------------------------------------------------------
+var PASSWORD = "portal-totp-Passw0rd!-" + String(Date.now()).slice(-6);
+var MAIL_DOMAIN = "portal-totp.test";
+
+function personAttributes(who) {
+  return { cn: "TOTP Person " + who, givenName: "TOTP", sn: who,
+           displayName: "TOTP Person " + who, mail: who + "@" + MAIL_DOMAIN };
+}
+
+// Create `who` with a password and real attributes, once per run.
+var createdPeople = {};
+async function ensurePerson(who) {
+  log.debug("Entering ensurePerson(). who=" + who);
+  if (createdPeople[who]) {
+    log.debug("Leaving ensurePerson(). Already created by this run.");
+    return;
+  }
+  const r = await apiPost("/users/create", {
+    username: who, invent: false, attributes: personAttributes(who),
+    credential: "password", password: PASSWORD
+  });
+  assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
+    "POST /admin-api/users/create should create " + who + " with a password " +
+    "before they sign in; it answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  createdPeople[who] = true;
+  log.debug("Leaving ensurePerson(). Created " + who + ".");
+}
+
 // The secret as the page prints it for manual entry — groups of four inside a
 // <code>. Read off the PAGE and not out of the otpauth URI, deliberately: the
 // transcribable form is what somebody without a camera uses, and a page whose
@@ -247,6 +288,7 @@ function qrShownOn(text) {
 // ---------------------------------------------------------------------------
 async function signIn(door, who, onSecondFactor) {
   log.debug("Entering signIn(). door=" + door + " who=" + who);
+  await ensurePerson(who);
   const b = browser(who);
   let r = await b.go("GET", door);
   assert.ok(/\/oauth2\/authorize\?/.test(r.location),
@@ -262,7 +304,7 @@ async function signIn(door, who, onSecondFactor) {
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: who,
-                        password: "any-password", action: "login",
+                        password: PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
   if (r.status === 200) {
     assert.ok(onSecondFactor,
@@ -641,7 +683,15 @@ async function oneUserCannotEnrolForAnother() {
 // ===========================================================================
 async function anActivationLinkCanSetOneUp() {
   log.info("=== 4. setting one up while spending an activation link ===");
-  const created = await apiPost("/users/create", { username: NEWCOMER });
+  // Created with the attributes a real account carries and `invent: false`,
+  // so nothing on the entry is a persona this service made up; the password
+  // and the authenticator arrive through the activation link below — which is
+  // why `credential: "none"` is said: a create naming no credential GENERATES a
+  // password since 2026-09-12, and the person this section provisions is one
+  // who holds nothing until the link is spent.
+  const created = await apiPost("/users/create",
+    { username: NEWCOMER, invent: false, credential: "none",
+      attributes: personAttributes(NEWCOMER) });
   assert.ok(created.status === 200 || created.status === 201,
     "creating " + NEWCOMER + " answered " + created.status + " " +
     String(created.raw).slice(0, 300));
@@ -669,8 +719,8 @@ async function anActivationLinkCanSetOneUp() {
 
   let r = await b.go("POST", "/portal/activate",
                      form({ user: NEWCOMER, token: token,
-                            password: "first-password",
-                            confirm: "first-password",
+                            password: "First-Passw0rd!",
+                            confirm: "First-Passw0rd!",
                             key_role: "none", totp: "1" }));
   const secret = secretShownOn(r.text);
   check("setting a password with the box ticked shows the secret rather than " +

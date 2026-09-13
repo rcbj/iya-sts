@@ -215,6 +215,47 @@ function csrfOf(text) {
   return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
 }
 
+// ---------------------------------------------------------------------------
+// EVERY PERSON THIS JOB SIGNS IN IS CREATED FIRST, WITH A PASSWORD AND THE
+// ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12).
+//
+// In product mode this service invents no persona for a name that signs in,
+// creates nobody because a sign-in named them, and verifies the password
+// against the person's own entry. The suite runs in development, where none of
+// that is enforced — which is why a job leaning on it would go on passing
+// while testing the invention. So `ensurePerson()` makes each account through
+// `/admin-api/users/create` with `invent: false`, its own `cn`, `sn`,
+// `givenName`, `displayName` and `mail`, and a password of at least twelve
+// characters, and that password is what the sign-in screen is sent.
+// ---------------------------------------------------------------------------
+var PASSWORD = "portal-backup-codes-Passw0rd!-" + String(Date.now()).slice(-6);
+var MAIL_DOMAIN = "portal-backup-codes.test";
+
+function personAttributes(who) {
+  return { cn: "Recovery Person " + who, givenName: "Recovery", sn: who,
+           displayName: "Recovery Person " + who, mail: who + "@" + MAIL_DOMAIN };
+}
+
+// Create `who` with a password and real attributes, once per run.
+var createdPeople = {};
+async function ensurePerson(who) {
+  log.debug("Entering ensurePerson(). who=" + who);
+  if (createdPeople[who]) {
+    log.debug("Leaving ensurePerson(). Already created by this run.");
+    return;
+  }
+  const r = await apiPost("/users/create", {
+    username: who, invent: false, attributes: personAttributes(who),
+    credential: "password", password: PASSWORD
+  });
+  assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
+    "POST /admin-api/users/create should create " + who + " with a password " +
+    "before they sign in; it answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  createdPeople[who] = true;
+  log.debug("Leaving ensurePerson(). Created " + who + ".");
+}
+
 function secretShownOn(text) {
   const cell = String(text).match(/<th>Secret<\/th><td><code>([^<]+)<\/code>/);
   return cell ? cell[1].replace(/\s+/g, "") : "";
@@ -267,6 +308,7 @@ function remainingShownOn(text) {
 // ---------------------------------------------------------------------------
 async function signIn(door, who, onSecondFactor) {
   log.debug("Entering signIn(). door=" + door + " who=" + who);
+  await ensurePerson(who);
   const b = browser(who);
   let r = await b.go("GET", door);
   assert.ok(/\/oauth2\/authorize\?/.test(r.location),
@@ -282,7 +324,7 @@ async function signIn(door, who, onSecondFactor) {
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: who,
-                        password: "any-password", action: "login",
+                        password: PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
   if (r.status === 200) {
     assert.ok(onSecondFactor,

@@ -65,6 +65,9 @@
 
 const { log } = require('./helpers');
 const config = require('./config');
+// The error-code registry. A LEAF that requires nothing here, so this file stays
+// one; the one failure below is tagged in the log rather than audited.
+const errorCodes = require('./error_codes');
 
 // The kinds of issuance a caller may ask about. They become the XACML
 // `action-id` of the request, so this list is a VOCABULARY that policies are
@@ -165,7 +168,8 @@ function check(request) {
     // module threw would be unusable and, worse, unfixable: the console that
     // would let somebody correct the policy is reached through a session this
     // service would then refuse to mint.
-    log.error('issuance_gate: the decider threw and issuance was ALLOWED; ' +
+    log.error(errorCodes.tag('STS-XACML-0052') +
+              'issuance_gate: the decider threw and issuance was ALLOWED; ' +
               'this is a defect in the embedded PEP rather than a decision. ' +
               error.message);
     return allow('The embedded PEP threw, which is a defect rather than a ' +

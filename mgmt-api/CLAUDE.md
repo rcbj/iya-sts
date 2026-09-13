@@ -5,7 +5,7 @@ browser-side explorer.
 
 | File | What it is |
 |---|---|
-| `admin_api.js` | The table of operations. Every one calls a function in `../admin-ui/admin.js`. |
+| `admin_api.js` | The table of operations. Every one that CHANGES something calls an action in `../admin-core/admin_actions.js`; every one that READS calls a view on `../admin-ui/admin.js`, which is where the JSON half of a console page is computed. **It said "every one calls a function in `../admin-ui/admin.js`" until 2026-09-12**, which was true for as long as this file existed — see *THE DECISIONS MOVED OUT OF THE CONSOLE* below. |
 | `admin_api_spec.js` | The OpenAPI document, GENERATED from that table. |
 | `admin_api_docs.js` | The docs page, and the route that serves the explorer. |
 | `admin_api_explorer.js` | **BROWSER code.** Not a node module — read off disk by `admin_api_docs.js` and served verbatim. Its own header says so at length. |
@@ -88,6 +88,57 @@ about that line had to change.
    what `/admin/users?format=json` has always done, it is a string concatenation
    on a mock, and the alternative — a second set of builders for the same data —
    is the thing this whole arrangement exists to prevent.
+
+
+
+## THE DECISIONS MOVED OUT OF THE CONSOLE ON 2026-09-12, AND THIS FILE SAID THEY WERE THERE
+
+Every operation here that CHANGES something used to call a function on
+`admin-ui/admin.js`. They call `admin-core/admin_actions.js` now, and this file
+requires both modules for two different reasons.
+
+**What was wrong with the old arrangement was not the enforcement, it was the
+direction.** Rule 7 says a console control and an API operation must not be
+able to disagree, and calling the console's own function is the strongest
+possible way to guarantee that — they were one call. The price was that the
+surface a machine drives sat downstream of the surface a person reads, and the
+console was the declared home of logic that was never the console's.
+
+**The move was possible because the functions were already right.** Not one of
+the thirty-one touched `req`, `res` or markup: each took a parsed body and an
+actor and returned `{ ok, errors, … }`. `admin-core/CLAUDE.md` argues the
+split, including why `respondToAction()` and `listField()` stayed behind.
+
+**THE READ HALF FOLLOWED THE SAME DAY**, into `admin-core/admin_views.js`:
+thirty-eight functions that answer a question and build no markup. Forty-four
+call sites here were repointed at it.
+
+**THE INTERLEAVED VIEWS FOLLOWED, ONE FAMILY AT A TIME**, and this file now
+calls exactly FOUR functions on the console module:
+
+| | |
+|---|---|
+| `consoleJson()` | which pages this console has |
+| `configJson()` | every setting, and which page edits each group |
+| `protocolSettingsJsonFor()` | the settings one protocol page owns |
+| `listField()` | the repeated-checkbox parse, which reads `req` |
+
+The first three are the console describing ITSELF — a layer beneath it could
+not know which pages exist — and the fourth is transport. **Purity was not the
+test; ownership was**: all four are perfectly pure and all four belong here.
+
+**RULE 7 IS STRONGER AFTER THE SPLIT THAN BEFORE IT, WHICH IS NOT THE OBVIOUS
+OUTCOME.** Before, a page and its operation could not disagree because one
+function happened to build both halves, and nothing stopped a later edit
+computing the json from something else. Now the page renders the model the
+resource answers from: `xListPage()` calls `adminViews.xListJson(req)` and
+hands back `view.json` unchanged. The agreement is structural rather than
+incidental.
+
+**A REGRESSION HERE WOULD BE SILENT**, which is why it is pinned: adding one
+`admin.somethingAction()` call back would restore the old direction for that
+one operation, and nothing whatsoever would fail.
+`tests/admin_actions_layer.js` is the guard.
 
 
 ### EIGHT MORE GETs WITH NO POST BESIDE THEM (2026-08-27), and they are the same sentence eight times
@@ -1062,6 +1113,79 @@ the refusal that matters: it will not remove the last way in. An operator must
 not be able to do what the owner is stopped from doing.
 
 
+## `/admin-api/tls/trust` — THE TRUSTSTORE'S GATED RUNTIME DOOR (2026-09-12)
+
+`GET /admin-api/tls/trust` (paged with `page` / `per`) and `POST
+/admin-api/tls/trust/{add,remove}`, mirroring `/admin/tls/trust` through
+`adminViews.truststoreJson()` and `adminActions.truststoreAction()`, which reach
+`tls/tls_server.js` through the console's thirteenth slot. **This file's own
+middleware is the whole of the credential**: `admin:read` lists and
+`admin:write` changes, by method, so nothing in the two rows re-checks it — and
+that is exactly what `tls/tls_server.js` said the runtime door had to be built
+behind rather than copied.
+
+Four things a caller has to be told, and the descriptions tell them:
+
+* **IT IS THE PROCESS'S TRUSTSTORE**, so every realm prefix reads and writes the
+  same array; and with request workers both operations are answered by the front
+  process (`NEVER_DISPATCHED`), because a worker's copy of the array configures
+  no listener.
+* **A RUNTIME ANCHOR IS PERSISTED** (2026-09-12; this bullet read *nothing is
+  persisted* until then) — in `ou=trustAnchors` in the default realm's
+  directory, so it survives a restart wherever the directory does and reaches
+  every other process against the same store. `persisted` in each reply says
+  whether it was written down. A removed `file` anchor still comes back.
+* **NO BULK CLEAR, AND `add` IS ALL OR NOTHING** on a block OpenSSL cannot
+  read. `remove` takes ONE fingerprint and a bodyless POST removes nothing —
+  which matters because `tests/vendored/sts_metadata.js` posts to every route
+  with no body.
+* **NO PRIVATE KEY IS IN ANY REPLY** — the truststore holds certificates only.
+
+**`sts_admin_api_operations.js` HOLDS BOTH ACTIONS OUT OF ITS EXAMPLE REPLAY**
+(`REPLAY_HELD_BACK`), for the reason `spiffe/rotate` is held back: the replay
+runs in a throwaway realm and this array has no realm, so an example that were
+ever a real certificate would be left in every later job's handshakes. Its
+`theTruststoreRoundTrips()` drives them instead, at the root, with a CA it mints,
+and asserts a read-only token is refused the write.
+
+
+## `/admin-api/kerberos/principals` — THE STORED KERBEROS KEYS (2026-09-12)
+
+`GET /admin-api/kerberos/principals` (paged with `per`, `peoplePage` and
+`servicesPage`) and `POST /admin-api/kerberos/principals/{create-service,
+rotate-service,delete-service,clear-person-keys}`, mirroring
+`/admin/kerberos/principals` through `adminViews.kerberosPrincipalsJson()` and
+`adminActions.kerberosPrincipalsAction()`, which require
+`kerberos/krb5_person_keys.js` in the ordinary direction — it registers no route,
+so neither a cycle nor a route move is possible and no slot was added (and no
+forwarded collaborator, so `tests/admin_actions_layer.js` did not change).
+
+Four things a caller is told, and the descriptions tell them:
+
+* **CREATE AND ROTATE ARE THE ONLY REPLIES CARRYING KEY MATERIAL**, as an MIT
+  keytab in base64 under `keytab`, handed over once: nothing can read a stored
+  key back afterwards, the GET included. A lost keytab is a rotation, not a read.
+* **NEITHER LIST CARRIES A KEY** — people and services are enctypes, kvno, salt
+  and when, which is the public half (`stsKrb5KeyInfo`, `krb5ServiceKeyInfo`).
+* **IT IS THE DEFAULT TRUST REALM'S**, under every prefix, and every reply says
+  `trustRealm: "default"`: the KDC's sockets and `krb5.realm` are the process's.
+* **`clear-person-keys` for somebody with no keys is `ok` with `cleared: false`**
+  rather than a refusal, because the state asked for is the state that holds.
+* **SIX ACTIONS SINCE LATER THE SAME DAY**: `drop-previous-service-keys` (`spn`)
+  and `drop-previous-person-keys` (`username`) end the window in which a ticket
+  under a PREVIOUS key version is still accepted. A rotate's reply grew
+  `keytabKvnos` and `retained`, and every row of the GET grew `retained` (kvno,
+  enctypes, expiry — never a key), with `retention` at the top saying the bounds
+  in force. A drop with nothing kept answers `dropped: 0`; one for a principal
+  holding no stored key is refused. `kerberos/CLAUDE.md` argues the design.
+
+**`sts_admin_api_operations.js` HOLDS ALL SIX OUT OF ITS EXAMPLE REPLAY**
+(`REPLAY_HELD_BACK`) — for the same reason as the truststore's: the replay runs
+in a throwaway realm and these write in the default one. Its
+`theKerberosPrincipalsRoundTrip()` drives them at the root instead, with a read
+back after every write.
+
+
 ## `/admin-api/pki` — FOUR OPERATIONS, AND A MODULE REQUIRED IN THE ORDINARY DIRECTION (2026-09-10)
 
 `GET /admin-api/pki` and `POST /admin-api/pki/{build,issue,revoke,clear}`,
@@ -1153,3 +1277,27 @@ this service cannot reach. Nothing here is told to anybody — a recovery code i
 a string compared against a stored string — so shortening `backupCodes.length`
 changes what the next set looks like and leaves an existing one matching exactly
 as it did.
+
+## `/admin-api/policies`, AND `users/create` GENERATING A PASSWORD BY DEFAULT (2026-09-12)
+
+Two operations mirroring `/admin/policies`: `GET /admin-api/policies` over
+`adminViews.passwordPoliciesView()` and `POST /admin-api/policies/{save-password-policy,reset-password-policy}`
+over `adminActions.passwordPoliciesAction()`. **The action names stutter** for
+`/permissions/define-permission`'s reason: they are the console's hidden
+`action` values, and the page will hold more than one kind of policy.
+
+**THE SAVE'S REQUEST SCHEMA IS BUILT FROM `password_policy.FIELDS`**, for
+`narrowDoorProperties()`'s reason, and each field is `oneOf` its JSON type or a
+string: this file's ajv runs with `coerceTypes` off, and a body copied from the
+console carries `"12"` and `"TRUE"`. The module parses both and refuses anything
+else by name. `required` is published and — as everywhere here — enforced by the
+handler, which says WHICH field was missing and why a save needs all of them.
+
+**`POST /admin-api/users/create` DEFAULTS `credential` TO `generate`**, which is
+a behaviour change for every caller that sent none: the reply now carries
+`password` once, and each create costs one scrypt hash. rcbj chose it for both
+doors. A caller that means nobody to hold anything sends `credential: "none"`;
+`sts_directory_bulk_load_api.js`, `sts_second_factor_pages.js` and
+`sts_portal_totp.js` were changed to say so. A typed password on this door, and
+a generated one, meet the realm's password policy in product mode, and
+`set-password` does the same.

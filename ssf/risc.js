@@ -81,14 +81,23 @@
 // /admin/risc-accounts answers. `risc.maxAccountsTracked` caps it and the
 // oldest goes first.
 //
-// It is in memory and dies with the process, like everything else this service
-// mints. `persistence/CLAUDE.md`'s rule decides that, and its reason applies
-// here too: the signing key is regenerated on every start, so a register
-// restored from disk would count tokens nothing can verify.
+// **IT IS PER TRUST REALM, AND PERSISTED WHERE MINTED STATE IS, SINCE
+// 2026-09-12** — `caep.js`'s register's change, made the same day and for the
+// same two reasons. It was one `new Map()` for the process while the directory
+// whose writes it observes has been a subtree per realm since 2026-08-25, so
+// deleting `alice` in `acme` put a `purged` row on the DEFAULT realm's
+// /admin/risc-accounts beside a directory that still held its own `alice`. And
+// "in memory like everything else this service mints" stopped being true in
+// product mode on 2026-09-06. `touch()` below reports a row edited in place.
 // ---------------------------------------------------------------------------
 
 const { log, nowSec, iso } = require('../common/helpers');
 const config = require('../common/config');
+// The partition. A LEAF requiring `config` and nothing else here.
+const realms = require('../common/realms');
+// For `inventsClaimValues()` in `defaultEmailFor()`. A leaf requiring only
+// config.
+const mode = require('../common/mode');
 const audit = require('../common/audit');
 const events = require('./ssf_events');
 const subjects = require('./ssf_subjects');
@@ -134,7 +143,17 @@ const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 // How many events one row remembers. A RING, and the counters are not — see
 // noteTransmitted() — because "how many account-disabled have gone out about
 // this person" and "what were the last few jtis" are two different questions.
-const EVENTS_PER_ACCOUNT = 25;
+//
+// `risc.eventsPerAccount` since 2026-09-12 (25, the old constant, is its
+// default); read per event. `risc.historyPerAccount` bounds the credential and
+// identifier-change lists below, which were a literal 10 each.
+function eventsPerAccount() {
+  return config.value('risc.eventsPerAccount');
+}
+
+function historyPerAccount() {
+  return config.value('risc.historyPerAccount');
+}
 
 // The directory attributes this file reads, LOWER-CASED, because that is how
 // `ldap_server.js`'s store keys them. Naming them here rather than inline is
@@ -154,7 +173,27 @@ const PHONE_ATTRIBUTES = ['telephonenumber', 'mobile'];
 
 // accountId -> row. Insertion-ordered, which is what makes "the oldest goes"
 // one `keys().next()` rather than a sort by a timestamp two rows can share.
-const register = new Map();
+//
+// PER TRUST REALM. An account is a person in ONE realm's directory — the same
+// username in two realms is two people — so the row about it belongs to that
+// realm. The realm is the AMBIENT one, and that is right on every door a write
+// arrives by: SCIM and the console are inside the request that made them, and
+// `ldap_server.js` wraps every socket operation in `realms.run(realmFor(dn))`
+// at registration — the directory's own `entries` are read ambiently, so a
+// write outside its realm would not have found the entry to observe.
+const register = realms.map({ persist: 'risc.register' });
+
+// A row edited in place, reported to the journal — `caep.js`'s `touch()`, for
+// its reason. Re-setting the key keeps the row's place in the insertion order,
+// and a row trimmed out or replaced by another process's write is not put back.
+function touch(row) {
+  if (!row || !row.accountId) {
+    return;
+  }
+  if (register.get(row.accountId) === row) {
+    register.set(row.accountId, row);
+  }
+}
 
 function enabled() {
   log.debug('Entering enabled().');
@@ -253,13 +292,32 @@ function subjectFor(row, uri) {
     ? catalogue.subjectFormats : null;
   let subject;
   if (formats && formats.indexOf('email') >= 0) {
-    subject = { format: 'email',
-      email: String(row.email || defaultEmailFor(row)) };
+    const email = String(row.email || defaultEmailFor(row));
+    if (email) {
+      subject = { format: 'email', email: email };
+    } else if (row.phone && formats.indexOf('phone_number') >= 0) {
+      // RISC permits either for the two identifier events, and a number the
+      // entry really holds is better than an address nobody has.
+      subject = { format: 'phone_number', phone_number: String(row.phone) };
+    } else {
+      // PRODUCT MODE WITH NOTHING REAL TO NAME. RISC says these two events'
+      // subject MUST be an address or a number, so the honest answer is no
+      // subject at all — `transmit()` refuses a `subject: 'required'` event
+      // that carries none, with a sentence, rather than this file inventing an
+      // address to satisfy the shape.
+      log.debug('Leaving subjectFor(). No real address or number, and none ' +
+                'is invented in product mode.');
+      return null;
+    }
   } else {
+    // THE ROW'S REAL `mail` AND NUMBER GO WITH IT (2026-09-12). This passed the
+    // name alone, so `risc.subjectFormat=email` sent `<name>@example.com` for a
+    // person whose entry this register had read a real address off.
     subject = subjects.subjectForUser(
       row.sub || row.accountId,
       String(config.value('risc.subjectFormat') || 'iss_sub'),
-      String(row.iss || ''));
+      String(row.iss || ''),
+      { mail: row.email, phone: row.phone });
   }
   const out = googleSubjectType(subject);
   log.debug('Leaving subjectFor(). ' + subjects.describeSubject(subject));
@@ -271,10 +329,15 @@ function subjectFor(row, uri) {
 // rather than left plausible, for the reason `caep.js` marks a generated
 // session id: an event naming an address nobody has is well-formed, delivers,
 // and is about nothing at the far end.
+//
+// **DEVELOPMENT ONLY SINCE 2026-09-12** (`mode.inventsClaimValues()`): product
+// answers the empty string for a name that is not itself an address, and
+// `subjectFor()` then sends no subject rather than an invented one.
 function defaultEmailFor(row) {
   log.debug('Entering defaultEmailFor().');
   const name = String(row.accountId || row.sub || 'unknown');
-  const out = name.indexOf('@') > 0 ? name : name + '@example.com';
+  const out = name.indexOf('@') > 0 ? name
+    : (mode.inventsClaimValues() ? name + '@example.com' : '');
   log.debug('Leaving defaultEmailFor(). ' + out);
   return out;
 }
@@ -731,7 +794,7 @@ function applyToState(row, uri, payload) {
       credentialType: String(body.credential_type || ''),
       discoveredAt: typeof body.event_timestamp === 'number'
         ? body.event_timestamp : 0 });
-    row.credentials = row.credentials.slice(0, 10);
+    row.credentials = row.credentials.slice(0, historyPerAccount());
   } else if (short === 'identifier-changed') {
     // THE SUBJECT CARRIED THE OLD VALUE and the payload carries the new one,
     // which is the reverse of every other event here. The old address goes on
@@ -749,7 +812,7 @@ function applyToState(row, uri, payload) {
       row.formerIdentifiers.push(row.email);
     }
     row.identifierChanges.unshift({ at: iso(), from: row.email, to: now });
-    row.identifierChanges = row.identifierChanges.slice(0, 10);
+    row.identifierChanges = row.identifierChanges.slice(0, historyPerAccount());
     if (now) {
       row.email = now;
     }
@@ -781,6 +844,7 @@ function applyToState(row, uri, payload) {
 
   row.notes = row.notes.slice(-5);
   row.updatedAt = iso();
+  touch(row);
   log.debug('Leaving applyToState(). ' + errors.length + ' error(s), ' +
             warnings.length + ' warning(s).');
   return { ok: errors.length === 0, errors: errors, warnings: warnings,
@@ -858,11 +922,12 @@ function noteTransmitted(record, claims) {
     streamId: String((record && record.stream_id) || ''),
     warnings: verdict.warnings
   });
-  row.events = row.events.slice(0, EVENTS_PER_ACCOUNT);
+  row.events = row.events.slice(0, eventsPerAccount());
   const streamId = String((record && record.stream_id) || '');
   if (streamId && row.streams.indexOf(streamId) < 0) {
     row.streams.push(streamId);
   }
+  touch(row);
   log.debug('Leaving noteTransmitted(). ' + row.total + ' event(s) on ' +
             row.accountId + '.');
   return row;
@@ -927,6 +992,7 @@ function observe(notice) {
   const acts = deleted ? [{ act: 'purged', values: {} }]
     : actsFor(before, after);
   if (!acts.length) {
+    touch(row);
     log.debug('Leaving observe(). Nothing RISC has a word for.');
     return [];
   }
@@ -972,6 +1038,10 @@ function observe(notice) {
     due.push({ uri: uri, payload: payload, subject: subject, row: row,
       act: act.act });
   });
+  // ONE REPORT FOR EVERYTHING ABOVE — the seed's `iss` and `dn`, the notes and
+  // the suppressed count — rather than one per branch, which would be the
+  // branch somebody adds next forgetting it.
+  touch(row);
   log.debug('Leaving observe(). ' + due.length + ' event(s) due.');
   return due;
 }
@@ -1020,6 +1090,7 @@ function applyActLocally(row, act) {
     row.email = String(act.values['new-value']);
   }
   row.updatedAt = iso();
+  touch(row);
   log.debug('Leaving applyActLocally().');
 }
 
@@ -1177,6 +1248,7 @@ function reset(accountId) {
   row.streams = [];
   row.notes = ['Reset from the console; the directory entry is untouched.'];
   row.updatedAt = iso();
+  touch(row);
   audit.audit({ action: 'risc.account.reset', category: 'signals',
     protocol: 'RISC', channel: 'http', target: row.accountId,
     summary: 'The RISC state of account ' + row.accountId + ' was reset' });
@@ -1272,7 +1344,9 @@ module.exports = {
   OPT_OUT_EVENTS: OPT_OUT_EVENTS,
   OPT_STATES: OPT_STATES,
   LIFECYCLE_STATES: LIFECYCLE_STATES,
-  EVENTS_PER_ACCOUNT: EVENTS_PER_ACCOUNT,
+  // A GETTER: `tests/risc_register.js` reads this to know how long the ring
+  // is, and the answer is the setting now rather than a constant.
+  get EVENTS_PER_ACCOUNT() { return eventsPerAccount(); },
   enabled: enabled,
   supportedEventUris: supportedEventUris,
   autoEmitActs: autoEmitActs,

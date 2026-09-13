@@ -83,7 +83,12 @@ name is refused while being fully authenticated, because **the certificate says
 who and the group says whether**:
 
 1. **A client certificate this service verifies.** The issuing CA goes into the
-   truststore with `POST /tls/trust`, which starts empty.
+   truststore with `POST /tls/trust`, which starts empty — in development mode.
+   In product mode that endpoint is refused; add the CA at runtime on the admin
+   console's `/admin/tls/trust` page (Admin Write) or with
+   `POST /admin-api/tls/trust/add` (a token carrying `admin:write`), or put it
+   in a PEM file named by `tls.trustAnchorsFile`, read at startup. Only the file
+   survives a restart — the two runtime doors persist nothing.
 2. **A subject DN that resolves to a directory entry.** A certificate resolving
    to no entry is an unauthenticated caller however well it verifies.
 3. **That entry in the group `roles.remotePepGroup` names** — `remote-peps` by
@@ -92,6 +97,10 @@ who and the group says whether**:
 `cn=remote-pep-1` and `cn=remote-peps` are **seeded in every realm** with the
 first already a member of the second, so using that common name costs you only
 step 1. A second enforcement point needs its own entry and its own membership.
+**In development mode.** In product mode the group (named by
+`roles.remotePepGroup`) is seeded EMPTY and `cn=remote-pep-1` is not seeded at all —
+a predictable identity printed in this repository is not a grant a deployment should
+inherit — so every enforcement point needs its entry and its membership.
 
 ### Minting the certificate
 
@@ -214,7 +223,7 @@ curl -s "http://localhost:9090/protected?subject=alice&resource=https://expenses
   "advice": [],
   "applicablePolicies": [
     { "kind": "Policy",
-      "id": "urn:sts-mock:xacml:policy:expense-app-access",
+      "id": "urn:sts:xacml:policy:expense-app-access",
       "version": "1.0" }
   ],
   "decidedBy": {
@@ -258,7 +267,7 @@ on every answer.
 
 Every query parameter other than `subject`, `resource` and `action` becomes a
 **subject attribute the caller asserted**, under both the bare name and the
-`urn:sts-mock:xacml:attribute:` form the mock's own PIP answers to.
+`urn:sts:xacml:attribute:` form the mock's own PIP answers to.
 
 ```bash
 curl -s ".../protected?subject=carol&resource=https://expenses.example.test&action=GET&employeeType=staff"

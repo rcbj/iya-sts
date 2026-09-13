@@ -61,6 +61,9 @@
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
+// For the two limits below. `helpers.js` above already requires it, so this
+// adds no file to the parent project's copy set.
+const config = require('../common/config');
 const prim = require('./krb5_primitives.js');
 const gss = require('./krb5_gss.js');
 const spnego = require('./krb5_spnego.js');
@@ -70,6 +73,12 @@ const krb5Service = require('./krb5_service.js');
 // `sharedMap()`, and it is a LEAF that registers no route, so this cannot
 // move a route or join a cycle.
 const realms = require('../common/realms');
+// ERROR CODES. A LEAF, already in this closure through common/audit.js. Every
+// refusing verdict below carries `errorCode` in its facts, and applyVerdict()
+// marks the response with it — the verdict is never serialised whole, and
+// record() copies named fields only, so the code reaches the call log and
+// nothing a client receives.
+const errorCodes = require('../common/error_codes');
 
 // What this acceptor supports, in ITS order of preference. Kerberos first
 // because it is the only thing here that works — NTLM is listed by every real
@@ -153,6 +162,9 @@ function volunteerTheSpn(res) {
 // that is not prose.
 function applyVerdict(res, verdict) {
   log.debug('Entering applyVerdict(). code=' + verdict.code);
+  if (verdict.errorCode) {
+    errorCodes.mark(res, verdict.errorCode);
+  }
   if (verdict.wwwAuthenticate) {
     res.set('WWW-Authenticate', verdict.wwwAuthenticate);
   }
@@ -184,8 +196,16 @@ function applyVerdict(res, verdict) {
 // session would be minted for. Keying the door in does not make the stand-in a
 // connection; it stops one door from spending the other's state.
 // ---------------------------------------------------------------------------
-const PENDING_TTL_MS = 120000;
-const MAX_PENDING = 64;
+// Both are settings since 2026-09-12 — `krb5.spnegoPendingTtlSeconds` and
+// `krb5.spnegoMaxPending`, defaulting to the 120 seconds and 64 entries these
+// were written as — and functions, because both are runtime.
+function pendingTtlMs() {
+  return config.value('krb5.spnegoPendingTtlSeconds') * 1000;
+}
+
+function maxPending() {
+  return config.value('krb5.spnegoMaxPending');
+}
 // -------------------------------------------------------------------------
 // PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
 // is a plain Map that reports its writes so product mode can write them down;
@@ -208,11 +228,11 @@ function pendingKey(req, door, mechListDer) {
 function prunePending(nowMs) {
   log.debug('Entering prunePending().');
   for (const [key, entry] of pending) {
-    if (nowMs - entry.at > PENDING_TTL_MS) {
+    if (nowMs - entry.at > pendingTtlMs()) {
       pending.delete(key);
     }
   }
-  while (pending.size > MAX_PENDING) {
+  while (pending.size > maxPending()) {
     pending.delete(pending.keys().next().value);
   }
   log.debug('Leaving prunePending().');
@@ -306,6 +326,7 @@ function bareVerdict(door, code, facts) {
 // structure has no field for one — so everything a caller prints about WHY is
 // out of band and a real server tells a client none of it.
 function rejection(door, code, facts) {
+  // error-code: none — the helper's own call; every caller puts its code in facts.errorCode
   return tokenVerdict(door, code,
     spnego.encodeNegTokenResp({ negState: spnego.NEG_STATE.REJECT }), facts);
 }
@@ -345,7 +366,8 @@ async function negotiate(req, opts) {
       ' — answering 401 with a bare Negotiate challenge');
     log.debug('Leaving negotiate(). Challenged.');
     return bareVerdict(door, 'no-authorization',
-      { reason: 'no Authorization header; challenged' });
+      { reason: 'no Authorization header; challenged',
+        errorCode: 'STS-KRB-0082' });
   }
 
   const match = /^Negotiate\s+([A-Za-z0-9+/=]*)\s*$/i.exec(header.trim());
@@ -356,12 +378,13 @@ async function negotiate(req, opts) {
     log.info('krb5-spnego: refusing Authorization scheme ' + scheme + ' at ' + door);
     log.debug('Leaving negotiate(). Wrong scheme.');
     return bareVerdict(door, 'wrong-scheme',
-      { reason: 'Authorization scheme ' + scheme, scheme: scheme });
+      { reason: 'Authorization scheme ' + scheme, scheme: scheme,
+        errorCode: 'STS-KRB-0083' });
   }
   if (!match[1]) {
     log.debug('Leaving negotiate(). Empty token.');
     return bareVerdict(door, 'empty-token',
-      { reason: 'an empty Negotiate token' });
+      { reason: 'an empty Negotiate token', errorCode: 'STS-KRB-0084' });
   }
 
   const tokenBytes = new Uint8Array(Buffer.from(match[1], 'base64'));
@@ -372,6 +395,7 @@ async function negotiate(req, opts) {
     log.debug('Leaving negotiate(). Undecodable.');
     return rejection(door, 'undecodable',
       { reason: 'the Negotiate token does not decode: ' + e.message,
+        errorCode: 'STS-KRB-0085',
         error: e.message });
   }
 
@@ -402,6 +426,7 @@ async function negotiate(req, opts) {
       log.debug('Leaving negotiate(). No common mechanism.');
       return rejection(door, 'no-common-mechanism',
         { reason: 'no mechanism in common',
+          errorCode: 'STS-KRB-0086',
           offered: parsed.mechTypes,
           offeredNames: parsed.mechTypeNames,
           supported: supported });
@@ -416,13 +441,15 @@ async function negotiate(req, opts) {
           negState: spnego.NEG_STATE.ACCEPT_INCOMPLETE,
           supportedMech: selected
         }),
-        { reason: 'no optimistic mechToken; asked for one', selected: selected });
+        { reason: 'no optimistic mechToken; asked for one', selected: selected,
+          errorCode: 'STS-KRB-0087' });
     }
     mechToken = parsed.mechToken;
     if (!spnego.isKerberosMech(selected)) {
       log.debug('Leaving negotiate(). Non-Kerberos mechanism.');
       return rejection(door, 'non-kerberos-mechanism',
         { reason: 'the selected mechanism is not one this service performs',
+          errorCode: 'STS-KRB-0088',
           selected: selected });
     }
   }
@@ -441,10 +468,12 @@ async function negotiate(req, opts) {
       record: options.record !== false
     });
   } catch (e) {
-    log.error('krb5-spnego: the acceptor threw: ' + (e.stack || e.message));
+    log.error(errorCodes.tag('STS-KRB-0089') + 'krb5-spnego: the acceptor threw: ' +
+              (e.stack || e.message));
     log.debug('Leaving negotiate(). Acceptor threw.');
     return rejection(door, 'acceptor-threw',
       { reason: 'the Kerberos acceptor failed: ' + e.message,
+        errorCode: 'STS-KRB-0089',
         error: e.message });
   }
 
@@ -462,6 +491,9 @@ async function negotiate(req, opts) {
           : null
       }),
       { reason: 'the Kerberos AP-REQ was refused', checks: result.checks,
+        // The acceptor's own condition (a replay, a skew, a stale kvno) rather
+        // than one code for every way a ticket can be refused.
+        errorCode: result.errorCode || 'STS-KRB-0090',
         selected: selected });
   }
 
@@ -494,6 +526,7 @@ async function negotiate(req, opts) {
       return rejection(door, 'bad-mech-list-mic',
         { reason: 'the mechListMIC does not verify' +
                   (verdict.error ? ': ' + verdict.error : ''),
+          errorCode: 'STS-KRB-0091',
           error: verdict.error || '', checks: result.checks });
     }
     log.info('krb5-spnego: the mechListMIC verifies (' + verdict.senderRole +
@@ -502,6 +535,7 @@ async function negotiate(req, opts) {
     log.debug('Leaving negotiate(). Missing required mechListMIC.');
     return rejection(door, 'mic-required',
       { reason: 'a mechListMIC was required and none was sent',
+        errorCode: 'STS-KRB-0092',
         requirement: requirement, checks: result.checks });
   } else if (wantMic && !rawKerberos) {
     // The knob: force the exchange even though section 5 would let it be
@@ -525,6 +559,7 @@ async function negotiate(req, opts) {
         responseToken: result.reply || null
       }),
       { reason: 'request-mic sent; awaiting the client MIC',
+        errorCode: 'STS-KRB-0093',
         client: result.client, selected: selected });
   }
 
@@ -558,13 +593,15 @@ async function continuation(req, door, parsed) {
   if (!entry) {
     log.debug('Leaving continuation(). Nothing pending.');
     return rejection(door, 'no-pending-continuation',
-      { reason: 'there is no negotiation in progress to continue' });
+      { reason: 'there is no negotiation in progress to continue',
+        errorCode: 'STS-KRB-0094' });
   }
   pending.delete(entryKey);
   if (!parsed.mechListMic) {
     log.debug('Leaving continuation(). No MIC.');
     return rejection(door, 'continuation-no-mic',
-      { reason: 'the continuation carried no mechListMIC' });
+      { reason: 'the continuation carried no mechListMIC',
+        errorCode: 'STS-KRB-0095' });
   }
   let verdict;
   try {
@@ -587,6 +624,7 @@ async function continuation(req, door, parsed) {
     return rejection(door, 'bad-mech-list-mic',
       { reason: 'the mechListMIC does not verify' +
                 (verdict.error ? ': ' + verdict.error : ''),
+        errorCode: 'STS-KRB-0091',
         error: verdict.error || '', continuation: true });
   }
   const accepted = await accept(door, {
@@ -655,6 +693,7 @@ async function accept(door, ctx) {
     ' at ' + door + ' over ' + spnego.mechName(ctx.selected) +
     (ctx.micVerified ? ', mechListMIC verified' : '') +
     (ctx.rawKerberos ? ' (a bare Kerberos token, no negotiation)' : ''));
+  // error-code: none — the one verdict that is not a refusal: the context is established
   const verdict = tokenVerdict(door, 'accepted', token, {
     status: 200,
     reason: 'the context is established',

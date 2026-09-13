@@ -94,6 +94,13 @@
 // It does NOT check request signatures, does not implement FAST, does not implement kpasswd,
 // and does not apply SID filtering across a trust. The AS and TGS exchanges are both served;
 // the AP exchange belongs to a SERVICE rather than to a KDC and lives in krb5_service.js.
+//
+// **THE TWO REALMS, THE FIXTURE ACCOUNTS AND THE PUBLISHED PASSWORDS ARE DEVELOPMENT MODE
+// (2026-09-12).** In product mode krb5_principals.js builds a database without them, this
+// KDC answers for one realm, and GET /krb5/principals withholds both passwords. The ticket
+// lifetimes, the TCP request cap, the UDP reply threshold and the PAC's LogonServer are
+// settings; the PAC's invented passwordLastSet and logonCount are not invented there.
+// See kerberos/CLAUDE.md.
 // ---------------------------------------------------------------------------
 
 const net = require('net');
@@ -129,6 +136,17 @@ const delegation = require('../common/delegation');
 // `COPY sts/common/issuance_gate.js ./sts/common/` in the commit that bumps
 // the pin across this change. `docs/parent-project-migration.md` records it.
 const gate = require('../common/issuance_gate');
+// THE MODE. A LEAF (rule 3) requiring only `config`, and already in the parent
+// project's copy set: `common/helpers.js` requires it, and `krb5_principals.js`
+// below does too — so this line adds no file to that closure.
+const mode = require('../common/mode');
+// ERROR CODES (common/error_codes.js) and the audit log. Both are already in
+// this module's closure through admin_stats.js, so neither adds a file to the
+// parent project's copy set. A KRB-ERROR on TCP or UDP 88 has no HTTP funnel to
+// carry its code, so the transport records it with audit.failure(); over
+// /KdcProxy the code is marked on the response instead, which is ONE row.
+const audit = require('../common/audit');
+const errorCodes = require('../common/error_codes');
 const asn1 = require('./krb5_asn1.js');
 const msgs = require('./krb5_messages.js');
 const kcrypto = require('./krb5_crypto.js');
@@ -147,8 +165,17 @@ const REALM = principals.REALM;
 function clockSkewSeconds() {
   return config.value('krb5.clockSkew');
 }
-const TICKET_LIFETIME_SECONDS = 10 * 3600;
-const RENEW_LIFETIME_SECONDS = 7 * 24 * 3600;
+// Functions for the same reason, and settings since 2026-09-12: they were the
+// constants 10 * 3600 and 7 * 24 * 3600 — Active Directory's defaults, which
+// are still the settings' defaults — and a deployment's ticket policy is a
+// deployment's to state.
+function ticketLifetimeSeconds() {
+  return config.value('krb5.ticketLifetimeSeconds');
+}
+
+function renewLifetimeSeconds() {
+  return config.value('krb5.renewLifetimeSeconds');
+}
 
 // A test can ask this KDC to lie about its clock, so the client's skew handling
 // can be exercised without changing anybody's system time.
@@ -156,10 +183,32 @@ function clockOffsetSeconds() {
   return config.value('krb5.clockOffset');
 }
 
-// Replies larger than this are a bug in this service rather than a legitimate
-// message; the cap exists so a mistake surfaces here rather than as a truncated
-// datagram at the far end.
-const MAX_REPLY_BYTES = 128 * 1024;
+// The most a client may send on one TCP connection before it is closed. It was
+// `MAX_REPLY_BYTES = 128 * 1024` with a comment about REPLIES, and the one place
+// it is read caps the INBOUND buffer — memory an unauthenticated caller controls
+// — so the name and the comment described a different limit from the one it
+// enforced. `krb5.maxRequestBytes`, default unchanged.
+function maxRequestBytes() {
+  return config.value('krb5.maxRequestBytes');
+}
+
+// The largest reply sent in one UDP datagram; past it the KDC answers
+// KRB_ERR_RESPONSE_TOO_BIG and the client retries over TCP. `krb5.udpMaxReplyBytes`,
+// default the 1465 this used to be written as.
+function udpMaxReplyBytes() {
+  return config.value('krb5.udpMaxReplyBytes');
+}
+
+// Where the KDC's sockets bind: `global.host`, which every other listener in
+// this service honours. It was the literal '0.0.0.0', so a service configured
+// to listen on 127.0.0.1 still offered its KDC on every interface — wrong in
+// every mode, and the default is unchanged. Read from `config` rather than
+// through `helpers.listenHost()` because this module takes only `log` from
+// helpers, and the parent project's in-process Kerberos jobs load it.
+function listenHost() {
+  // Brackets are URL syntax and not socket syntax: `[::]` must reach bind() as `::`.
+  return String(config.value('global.host') || '0.0.0.0').replace(/^\[|\]$/g, '');
+}
 
 function now() {
   return new Date(Date.now() + clockOffsetSeconds() * 1000);
@@ -167,6 +216,51 @@ function now() {
 
 function kdcTime(offsetSeconds) {
   return new Date(now().getTime() + (offsetSeconds || 0) * 1000);
+}
+
+// ---------------------------------------------------------------------------
+// THE KEY A PRESENTED TICKET IS OPENED WITH (2026-09-12).
+//
+// A ticket names the key version it was sealed under. For a STORED-key
+// principal — a directory person, a service principal created at
+// /admin/kerberos/principals — that number means a different key after a
+// password change or a rotation, and `krb5_person_keys.js` keeps the previous
+// version for as long as a ticket under it can still be presented. So:
+//
+//   * the CURRENT kvno, or no kvno, or a principal built from a password in the
+//     configuration (whose key does not change with its number, and which this
+//     KDC has never refused on a number) — the current key, exactly as before;
+//   * a kvno the principal still KEEPS — that version's key, said at info;
+//   * any other kvno of a stored-key principal — `{ key: null, eText }`, which
+//     the caller answers KRB_AP_ERR_BADKEYVER (44).
+//
+// **ONLY FOR OPENING A TICKET.** Nothing this KDC ISSUES reads a previous
+// version: every ticket it seals and every AS-REP it encrypts goes through
+// `principals.longTermKey()`, which holds the current keys and nothing else.
+// ---------------------------------------------------------------------------
+async function ticketKeyFor(principal, encPart) {
+  const kvno = encPart.kvno;
+  if (!principal.directoryKeys || kvno === null || kvno === undefined ||
+      kvno === principal.kvno) {
+    return { key: await principals.longTermKey(principal, encPart.etype) };
+  }
+  const name = principal.name.join('/') + '@' + principal.realm;
+  const retained = principals.retainedKeyFor(principal, encPart.etype, kvno);
+  if (retained) {
+    log.info('krb5: opening a ticket for ' + name + ' under its PREVIOUS key version ' +
+             kvno + ' (current ' + principal.kvno + '), kept until ' +
+             new Date(retained.expiresAt).toISOString() + '.');
+    return { key: retained.key, retained: retained };
+  }
+  const kept = principals.retainedKvnosOf(principal);
+  return {
+    key: null,
+    eText: 'the ticket was encrypted with key version ' + kvno + ' of ' + name +
+           ', which holds version ' + principal.kvno +
+           (kept.length ? ' and keeps previous version ' + kept.join(', ')
+                        : ' and keeps no previous version') +
+           ' (krb5.retainedKeyVersions, krb5.retainedKeyTtlS)'
+  };
 }
 
 // Is the ticket being asked for a ticket-granting ticket? It decides which of the
@@ -216,11 +310,19 @@ async function buildPacFor(client, opts) {
     includeTicketSignature: false,
     logonInfo: {
       logonTime: options.authtime,
-      passwordLastSet: new Date(options.authtime.getTime() - 30 * 24 * 3600 * 1000),
+      // INVENTED IN DEVELOPMENT AND ABSENT IN PRODUCT (2026-09-12). Nothing here
+      // records when a password was set, so "thirty days before this logon" is
+      // a value made up to give a PAC reader something to render. Product mode
+      // (`mode.inventsClaimValues()` false) writes the FILETIME zero, which is
+      // [MS-PAC] 2.5's encoding for a field with no value; there is no "never"
+      // encoding for PasswordLastSet the way there is for PasswordMustChange.
+      passwordLastSet: mode.inventsClaimValues()
+        ? new Date(options.authtime.getTime() - 30 * 24 * 3600 * 1000) : null,
       passwordMustChange: identity.passwordMustChange || undefined,
       effectiveName: client.name[0],
       fullName: identity.fullName,
-      logonServer: 'DC01',
+      // `krb5.logonServer`, which was the literal 'DC01'.
+      logonServer: config.value('krb5.logonServer'),
       // The CLIENT's domain, not the KDC's. They differ for a client of the other realm,
       // and the domain SID is what a service authorizes on — a PAC that named the
       // resource domain would describe an account that does not exist.
@@ -231,7 +333,9 @@ async function buildPacFor(client, opts) {
       groups: identity.groups.map(function (rid) { return { relativeId: rid }; }),
       extraSids: identity.extraSids.map(function (sid) { return { sid: sid }; }),
       userAccountControl: identity.userAccountControl,
-      logonCount: 1
+      // Invented too: nothing counts logons. Zero in product mode, which is the
+      // count of logons this KDC has a record of.
+      logonCount: mode.inventsClaimValues() ? 1 : 0
     },
     clientInfo: {
       // The INITIAL authentication time, which is the same in every service ticket
@@ -318,6 +422,7 @@ async function issueReferral(ctx) {
       principals.supportedEtypes(trust).join(', ') + '] and the client offered [' +
       (body.etypes || []).join(', ') + ']');
     return errorReply(14, {
+      errorCode: 'STS-KRB-0001',
       crealm: ctx.ticketPart.crealm, cname: ctx.ticketPart.cname,
       realm: ctx.answeringRealm, sname: body.sname,
       eText: 'a referral to ' + ctx.targetRealm + ' would be sealed with the trust key, and the ' +
@@ -336,7 +441,7 @@ async function issueReferral(ctx) {
   const flags = ticketFlagsForReferral(ctx.ticketPart.flags);
   const sessionKey = kcrypto.randomBytes(profile.keyBytes);
   const endtime = new Date(Math.min(
-    (body.till && body.till > ctx.at ? body.till : kdcTime(TICKET_LIFETIME_SECONDS)).getTime(),
+    (body.till && body.till > ctx.at ? body.till : kdcTime(ticketLifetimeSeconds())).getTime(),
     ctx.ticketPart.endtime.getTime()));
 
   const encTicketPart = msgs.encEncTicketPart({
@@ -530,6 +635,7 @@ async function resolveS4u(ctx) {
   if (forUserPa) {
     if (wantsProxy) {
       return refuseS4u(intent, 13, {
+        errorCode: 'STS-KRB-0002',
         crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
         sname: body.sname,
         eText: 'PA-FOR-USER and cname-in-addl-tkt were BOTH sent. Those are the two halves of ' +
@@ -542,6 +648,7 @@ async function resolveS4u(ctx) {
       forUser = msgs.readPaForUser(forUserPa.value);
     } catch (e) {
       return refuseS4u(intent, 13, {
+        errorCode: 'STS-KRB-0003',
         crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
         sname: body.sname, eText: 'PA-FOR-USER does not decode: ' + e.message
       });
@@ -569,6 +676,7 @@ async function resolveS4u(ctx) {
     if (!prim.equalConstantTime(expected, forUser.cksum.checksum)) {
       log.info('krb5: the PA-FOR-USER checksum does not verify for ' + requesterName);
       return refuseS4u(intent, 13, {
+        errorCode: 'STS-KRB-0004',
         crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
         sname: body.sname,
         eText: 'the PA-FOR-USER checksum does not verify. It is HMAC-MD5 (not the session key\'s ' +
@@ -587,6 +695,7 @@ async function resolveS4u(ctx) {
     const user = principals.findOrCreateUser(forUser.userName.name, forUser.userRealm);
     if (!user) {
       return refuseS4u(intent, 6, {
+        errorCode: 'STS-KRB-0005',
         crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
         sname: body.sname,
         eText: 'S4U2Self named ' + forUser.userName.name.join('/') + '@' + forUser.userRealm +
@@ -598,6 +707,7 @@ async function resolveS4u(ctx) {
     // A service may only ask for a ticket to ITSELF this way.
     if (body.sname.name.join('/') !== requesterName) {
       return refuseS4u(intent, 13, {
+        errorCode: 'STS-KRB-0006',
         crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
         sname: body.sname,
         eText: 'S4U2Self is a request for a ticket to YOURSELF: ' + requesterName + ' asked for ' +
@@ -647,6 +757,7 @@ async function resolveS4u(ctx) {
   const additional = body.additionalTickets || [];
   if (!additional.length) {
     return refuseS4u(intent, 13, {
+      errorCode: 'STS-KRB-0007',
       crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
       sname: body.sname,
       eText: 'cname-in-addl-tkt was set but additional-tickets is empty. That option means "read ' +
@@ -660,6 +771,7 @@ async function resolveS4u(ctx) {
   const evidenceService = principals.find(evidence.sname.name, evidence.realm);
   if (!evidenceService || evidence.sname.name.join('/') !== requesterName) {
     return refuseS4u(intent, 13, {
+      errorCode: 'STS-KRB-0008',
       crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
       sname: body.sname,
       eText: 'the evidence ticket is for ' + evidence.sname.name.join('/') + ' but the request ' +
@@ -668,16 +780,32 @@ async function resolveS4u(ctx) {
     });
   }
   let evidencePart;
+  // A PREVIOUS key version of the requester still opens its own evidence, for
+  // the TGT's reason — see ticketKeyFor().
+  let evidenceKeyVersion = '';
   try {
     const evidenceProfile = kcrypto.etypeById(evidence.encPart.etype);
-    evidencePart = msgs.readEncTicketPart(await evidenceProfile.decrypt(
-      await principals.longTermKey(evidenceService, evidence.encPart.etype),
-      kcrypto.KEY_USAGE.KDC_REP_TICKET, evidence.encPart.cipher));
+    const opening = await ticketKeyFor(evidenceService, evidence.encPart);
+    if (opening.key) {
+      evidencePart = msgs.readEncTicketPart(await evidenceProfile.decrypt(
+        opening.key, kcrypto.KEY_USAGE.KDC_REP_TICKET, evidence.encPart.cipher));
+    } else {
+      evidenceKeyVersion = opening.eText;
+    }
   } catch (e) {
     return refuseS4u(intent, 13, {
+      errorCode: 'STS-KRB-0009',
       crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
       sname: body.sname,
       eText: 'the evidence ticket does not decrypt with ' + requesterName + '\'s key: ' + e.message
+    });
+  }
+  if (evidenceKeyVersion) {
+    return refuseS4u(intent, 44, {
+      errorCode: 'STS-KRB-0115',
+      crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
+      sname: body.sname,
+      eText: 'the evidence ticket: ' + evidenceKeyVersion
     });
   }
 
@@ -731,6 +859,7 @@ async function resolveS4u(ctx) {
       '. Neither its own msDS-AllowedToDelegateTo nor that target\'s ' +
       'msDS-AllowedToActOnBehalfOfOtherIdentity permits it.');
     return refuseS4u(intent, 13, {
+      errorCode: 'STS-KRB-0010',
       crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
       sname: body.sname,
       eText: requesterName + ' is not authorized to reach ' + targetName + ' on anybody\'s ' +
@@ -746,6 +875,7 @@ async function resolveS4u(ctx) {
   if (!classicAllowed && rbcdAllowed && !resourceBased) {
     log.info('krb5: REFUSING S4U2Proxy — only RBCD permits this and PA-PAC-OPTIONS is missing');
     return refuseS4u(intent, 13, {
+      errorCode: 'STS-KRB-0011',
       crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
       sname: body.sname,
       eText: 'this delegation is permitted only by resource-based constrained delegation, and ' +
@@ -761,6 +891,7 @@ async function resolveS4u(ctx) {
   if (classicAllowed && !rbcdAllowed && !evidenceForwardable) {
     log.info('krb5: REFUSING S4U2Proxy — the evidence ticket is not forwardable');
     return refuseS4u(intent, 13, {
+      errorCode: 'STS-KRB-0012',
       crealm: ticketPart.crealm, cname: ticketPart.cname, realm: ctx.answeringRealm,
       sname: body.sname,
       eText: 'the evidence ticket is not forwardable, which classic constrained delegation ' +
@@ -836,8 +967,10 @@ function s4uByteArray(userName, userRealm, authPackage) {
 function refuseS4u(intent, code, options) {
   const opts = options || {};
   return {
+    // error-code: none — the helper's own call; every caller passes its code in opts.errorCode
     error: errorReply(code, opts),
     intent: Object.assign({}, intent, {
+      // error-code: none — a delegation-register intent, not an audit row; the KRB-ERROR above carries the code
       outcome: 'refused',
       reason: opts.eText || 'the KDC refused it without stating a reason.'
     })
@@ -846,14 +979,21 @@ function refuseS4u(intent, code, options) {
 
 // Every refusal goes through here, so every one of them carries the KDC's own
 // clock (which is how a client measures skew) and names the principals involved.
+//
+// `opts.errorCode` names the condition (common/error_codes.js) and is NEVER
+// encoded: it rides on the returned bytes under a non-enumerable Symbol, so the
+// TRANSPORT that sends the reply can record it — audit.failure() on TCP and
+// UDP, a mark on the response over /KdcProxy. Recording it here instead would
+// write a second row for a KdcProxy refusal the call log already records.
+const REFUSAL = Symbol('krb5.kdc.refusal');
+
 function errorReply(code, options) {
   log.debug('Entering errorReply().');
   const opts = options || {};
   const stime = now();
   log.info('krb5: refusing with ' + msgs.describeError(code).name + ' (' + code + ')' +
     (opts.eText ? ' — ' + opts.eText : ''));
-  log.debug('Leaving errorReply().');
-  return msgs.encKrbError({
+  const bytes = msgs.encKrbError({
     ctime: opts.ctime || null,
     cusec: opts.ctime ? 0 : null,
     stime: stime,
@@ -866,6 +1006,51 @@ function errorReply(code, options) {
     eText: opts.eText || null,
     eData: opts.eData || null
   });
+  if (opts.errorCode) {
+    try {
+      Object.defineProperty(bytes, REFUSAL, {
+        enumerable: false, configurable: true,
+        value: {
+          code: String(opts.errorCode),
+          krbError: msgs.describeError(code).name + ' (' + code + ')',
+          actor: opts.cname && opts.cname.name
+            ? opts.cname.name.join('/') + (opts.crealm ? '@' + opts.crealm : '') : '',
+          target: ((opts.sname && opts.sname.name) || ['krbtgt', REALM]).join('/') +
+                  '@' + (opts.realm || REALM)
+        }
+      });
+    } catch (e) {
+      // Swallowed with a reason: the reply is correct without its code, and a
+      // bookkeeping failure must not stop a KRB-ERROR reaching the client.
+      log.debug('krb5: the error code could not be attached to a reply: ' + e.message);
+    }
+  }
+  log.debug('Leaving errorReply().');
+  return bytes;
+}
+
+// The condition a reply carries, if it is a refusal this module coded.
+function refusalOf(reply) {
+  return (reply && reply[REFUSAL]) || null;
+}
+
+// A refusal sent on a raw socket has no HTTP funnel, so it is recorded here —
+// once, by the transport, and never for a reply that is not a coded refusal.
+function recordRawRefusal(reply, transport) {
+  log.debug('Entering recordRawRefusal(). transport=' + transport);
+  const refusal = refusalOf(reply);
+  if (!refusal) {
+    log.debug('Leaving recordRawRefusal(). Not a coded refusal.');
+    return;
+  }
+  audit.failure(refusal.code, {
+    protocol: 'Kerberos', channel: 'kerberos',
+    actor: refusal.actor, target: refusal.target,
+    summary: 'the KDC refused a request over ' + transport + ' with ' + refusal.krbError,
+    // error-code: none — the code is the one errorReply() was given at the refusal site
+    outcome: 'refused'
+  });
+  log.debug('Leaving recordRawRefusal(). Recorded.');
 }
 
 // KDC_ERR_PREAUTH_REQUIRED, with the ETYPE-INFO2 that makes it useful rather than
@@ -882,6 +1067,7 @@ function preAuthRequiredReply(client, request) {
         '3962 default). Set KRB5_S2KPARAMS=send to advertise it explicitly.'));
   log.debug('Leaving preAuthRequiredReply().');
   return errorReply(25, {
+    errorCode: 'STS-KRB-0013',
     crealm: request.reqBody.realm,
     cname: request.reqBody.cname,
     sname: request.reqBody.sname,
@@ -942,7 +1128,7 @@ async function checkEncTimestamp(client, etype, padata) {
   } catch (e) {
     log.warn('krb5: PA-ENC-TIMESTAMP does not decode as EncryptedData: ' + e.message);
     log.debug('Leaving checkEncTimestamp().');
-    return { code: 24, eText: 'PA-ENC-TIMESTAMP is not well formed' };
+    return { code: 24, errorCode: 'STS-KRB-0014', eText: 'PA-ENC-TIMESTAMP is not well formed' };
   }
   if (encrypted.etype !== etype) {
     // The client encrypted with a key of a different type from the one it asked
@@ -951,7 +1137,8 @@ async function checkEncTimestamp(client, etype, padata) {
     log.warn('krb5: PA-ENC-TIMESTAMP is ' + encrypted.etypeName + ' but the request negotiated ' +
              profile.name);
     log.debug('Leaving checkEncTimestamp().');
-    return { code: 24, eText: 'PA-ENC-TIMESTAMP was encrypted with a different etype' };
+    return { code: 24, errorCode: 'STS-KRB-0015',
+             eText: 'PA-ENC-TIMESTAMP was encrypted with a different etype' };
   }
   let plaintext;
   try {
@@ -962,21 +1149,23 @@ async function checkEncTimestamp(client, etype, padata) {
     // exactly why the debugger showing the salt matters.
     log.info('krb5: pre-authentication failed for ' + client.name.join('/') + ': ' + e.message);
     log.debug('Leaving checkEncTimestamp().');
-    return { code: 24, eText: 'PREAUTH_FAILED' };
+    return { code: 24, errorCode: 'STS-KRB-0016', eText: 'PREAUTH_FAILED' };
   }
   let stamp;
   try {
     stamp = msgs.readPaEncTsEnc(plaintext);
   } catch (e) {
     log.debug('Leaving checkEncTimestamp().');
-    return { code: 24, eText: 'the decrypted PA-ENC-TS-ENC is not well formed' };
+    return { code: 24, errorCode: 'STS-KRB-0014',
+             eText: 'the decrypted PA-ENC-TS-ENC is not well formed' };
   }
   const skew = Math.abs(now().getTime() - stamp.patimestamp.getTime()) / 1000;
   if (skew > clockSkewSeconds()) {
     log.info('krb5: clock skew ' + Math.round(skew) + 's exceeds the ' + clockSkewSeconds() +
              's tolerance for ' + client.name.join('/'));
     log.debug('Leaving checkEncTimestamp().');
-    return { code: 37, eText: 'clock skew is ' + Math.round(skew) + ' seconds' };
+    return { code: 37, errorCode: 'STS-KRB-0017',
+             eText: 'clock skew is ' + Math.round(skew) + ' seconds' };
   }
   log.info('krb5: pre-authentication succeeded for ' + client.name.join('/') +
            ' (' + profile.name + ', skew ' + Math.round(skew) + 's)');
@@ -995,6 +1184,7 @@ async function handleAsReq(request) {
     log.info('krb5: wrong realm ' + JSON.stringify(body.realm) + '; this KDC serves ' +
       principals.realmsServed().join(' and '));
     return errorReply(68, {
+      errorCode: 'STS-KRB-0018',
       // This KDC's OWN realm, not the one asked for: `asRealm` does not exist yet, and
       // could not — the request named a realm we do not serve, so there is no answering
       // realm to speak of. A KRB-ERROR's `realm` is the sender's identity.
@@ -1004,7 +1194,8 @@ async function handleAsReq(request) {
   }
   const asRealm = body.realm;
   if (!body.cname) {
-    return errorReply(6, { realm: REALM, sname: body.sname, eText: 'no client name in the request' });
+    return errorReply(6, { errorCode: 'STS-KRB-0019',
+      realm: REALM, sname: body.sname, eText: 'no client name in the request' });
   }
 
   // Any username authenticates here, so a name that is not in the table gets an account
@@ -1012,9 +1203,25 @@ async function handleAsReq(request) {
   // krb5_principals.js. It still returns null for the two cases that must keep failing:
   // a reserved name (so this error stays reachable on purpose) and a service-shaped
   // multi-component name, which is not a user and is nobody's to invent.
-  const client = principals.findOrCreateUser(body.cname.name, asRealm);
+  //
+  // IN PRODUCT MODE A PERSON COMES FROM THE DIRECTORY (2026-09-12), keyed from
+  // their own password — see krb5_principals.js's KEY SOURCE. `lookupUser()`
+  // hands back the REASON beside a refusal, because "no such principal" is the
+  // wrong sentence for somebody who exists and simply has no keys yet: that
+  // person is told to sign in once, which is the thing that derives them.
+  const lookup = principals.lookupUser(body.cname.name, asRealm);
+  const client = lookup.principal;
+  if (!client && lookup.refusal) {
+    return errorReply(6, {
+      // error-code: none — the code is the refusal's own, STS-KRB-0101..0105, chosen in krb5_principals.js
+      errorCode: lookup.refusal.errorCode,
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      eText: lookup.refusal.eText
+    });
+  }
   if (!client) {
     return errorReply(6, {
+      errorCode: 'STS-KRB-0020',
       crealm: body.realm, cname: body.cname, sname: body.sname,
       // No em dash and no other non-ASCII in an eText: KerberosString is a GeneralString,
       // and a client that decodes it as Latin-1 renders the UTF-8 bytes as mojibake in the
@@ -1028,6 +1235,7 @@ async function handleAsReq(request) {
   const service = principals.find((body.sname || {}).name || [], asRealm);
   if (!service) {
     return errorReply(7, {
+      errorCode: 'STS-KRB-0021',
       crealm: body.realm, cname: body.cname, sname: body.sname,
       eText: 'no such service principal: ' + ((body.sname || {}).name || []).join('/') +
              ' in ' + asRealm
@@ -1039,8 +1247,10 @@ async function handleAsReq(request) {
   if (!krbtgt) {
     // Not reachable with the shipped principal table, and worth saying rather than
     // failing later inside the PAC builder with something about a missing key.
-    log.error('krb5: there is no krbtgt principal, so no ticket can be signed');
+    log.error(errorCodes.tag('STS-KRB-0022') +
+              'krb5: there is no krbtgt principal, so no ticket can be signed');
     return errorReply(7, { crealm: body.realm, cname: body.cname, sname: body.sname,
+      errorCode: 'STS-KRB-0022',
       eText: 'this KDC has no krbtgt principal' });
   }
   // MS-KILE's PA-PAC-REQUEST: the client may ask for a PAC or ask for none. Which of
@@ -1067,10 +1277,12 @@ async function handleAsReq(request) {
   });
   if (client.revoked) {
     return errorReply(18, { crealm: body.realm, cname: body.cname, sname: body.sname,
+      errorCode: 'STS-KRB-0023',
       eText: 'the account is disabled or locked out' });
   }
   if (client.passwordExpired) {
     return errorReply(23, { crealm: body.realm, cname: body.cname, sname: body.sname,
+      errorCode: 'STS-KRB-0024',
       eText: 'the password has expired and must be changed' });
   }
 
@@ -1081,6 +1293,7 @@ async function handleAsReq(request) {
       principals.supportedEtypes(client).map(kcrypto.etypeName).join(', ') + '], the client asked for [' +
       (body.etypes || []).map(kcrypto.etypeName).join(', ') + ']');
     return errorReply(14, {
+      errorCode: 'STS-KRB-0025',
       crealm: body.realm, cname: body.cname, sname: body.sname,
       eText: 'no common encryption type: this principal supports ' +
              principals.supportedEtypes(client).map(kcrypto.etypeName).join(', ')
@@ -1099,6 +1312,7 @@ async function handleAsReq(request) {
     const failure = await checkEncTimestamp(client, etype, encTimestamp);
     if (failure) {
       return errorReply(failure.code, {
+        errorCode: failure.errorCode || 'STS-KRB-0016',
         crealm: body.realm, cname: body.cname, sname: body.sname, eText: failure.eText,
         // A KDC re-sends ETYPE-INFO2 with PREAUTH_FAILED as well, because the
         // client may have used the wrong salt and this is how it finds out.
@@ -1133,9 +1347,9 @@ async function handleAsReq(request) {
   if (config.value('logout.kerberosSignOut')) {
     principals.clearSignOut(client.name, client.realm);
   }
-  const requestedTill = body.till && body.till > authtime ? body.till : kdcTime(TICKET_LIFETIME_SECONDS);
+  const requestedTill = body.till && body.till > authtime ? body.till : kdcTime(ticketLifetimeSeconds());
   const endtime = new Date(Math.min(requestedTill.getTime(),
-    kdcTime(TICKET_LIFETIME_SECONDS).getTime()));
+    kdcTime(ticketLifetimeSeconds()).getTime()));
 
   const wantsForwardable = (body.kdcOptions || []).indexOf(msgs.KDC_OPTION.FORWARDABLE) !== -1;
   const wantsRenewable = (body.kdcOptions || []).indexOf(msgs.KDC_OPTION.RENEWABLE) !== -1;
@@ -1157,7 +1371,7 @@ async function handleAsReq(request) {
   // with security consequences.
   if (encTimestamp) flags.push(msgs.TICKET_FLAG.PRE_AUTHENT);
   if (service.okAsDelegate) flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
-  const renewTill = wantsRenewable ? kdcTime(RENEW_LIFETIME_SECONDS) : null;
+  const renewTill = wantsRenewable ? kdcTime(renewLifetimeSeconds()) : null;
 
   const serviceKey = await principals.longTermKey(service, etype);
 
@@ -1299,6 +1513,7 @@ async function handleTgsReq(request) {
     // Without the TGT there is nothing to verify. This is not a policy refusal but a
     // structural one, and saying which is useful.
     return errorReply(25, {
+      errorCode: 'STS-KRB-0026',
       realm: REALM, sname: body.sname,
       eText: 'a TGS-REQ must carry the TGT in a PA-TGS-REQ; this request carries none'
     });
@@ -1309,6 +1524,7 @@ async function handleTgsReq(request) {
     apReq = msgs.readApReq(paTgs.value);
   } catch (e) {
     return errorReply(60, { realm: REALM, sname: body.sname,
+      errorCode: 'STS-KRB-0027',
       eText: 'the PA-TGS-REQ does not contain a readable AP-REQ: ' + e.message });
   }
 
@@ -1325,20 +1541,34 @@ async function handleTgsReq(request) {
   const ticketService = principals.find(apReq.ticket.sname.name, apReq.ticket.realm);
   if (!ticketService) {
     return errorReply(7, { realm: REALM, sname: apReq.ticket.sname,
+      errorCode: 'STS-KRB-0028',
       eText: 'the ticket presented is for ' + apReq.ticket.sname.name.join('/') +
              ', which this KDC does not know' });
   }
   const ticketProfile = kcrypto.etypeById(apReq.ticket.encPart.etype);
   let ticketPart;
+  // The current key, or a PREVIOUS version still kept — see ticketKeyFor().
+  let badKeyVersion = '';
   try {
-    ticketPart = msgs.readEncTicketPart(await ticketProfile.decrypt(
-      await principals.longTermKey(ticketService, apReq.ticket.encPart.etype),
-      kcrypto.KEY_USAGE.KDC_REP_TICKET, apReq.ticket.encPart.cipher));
+    const opening = await ticketKeyFor(ticketService, apReq.ticket.encPart);
+    if (opening.key) {
+      ticketPart = msgs.readEncTicketPart(await ticketProfile.decrypt(
+        opening.key, kcrypto.KEY_USAGE.KDC_REP_TICKET, apReq.ticket.encPart.cipher));
+    } else {
+      badKeyVersion = opening.eText;
+    }
   } catch (e) {
     log.info('krb5: the presented ticket will not decrypt: ' + e.message);
     return errorReply(31, { realm: REALM, sname: body.sname,
+      errorCode: 'STS-KRB-0029',
       eText: 'the ticket does not decrypt with this KDC\'s key for ' +
              apReq.ticket.sname.name.join('/') });
+  }
+  if (badKeyVersion) {
+    log.info('krb5: refusing a TGS-REQ: ' + badKeyVersion + '. KRB_AP_ERR_BADKEYVER.');
+    return errorReply(44, { realm: REALM, sname: body.sname,
+      errorCode: 'STS-KRB-0115',
+      eText: badKeyVersion });
   }
 
   // 2. The Authenticator, under the ticket's SESSION key at key usage 7.
@@ -1351,6 +1581,7 @@ async function handleTgsReq(request) {
   } catch (e) {
     log.info('krb5: the TGS-REQ Authenticator will not decrypt: ' + e.message);
     return errorReply(31, { realm: REALM, sname: body.sname,
+      errorCode: 'STS-KRB-0030',
       eText: 'the Authenticator does not decrypt with the ticket\'s session key at key usage 7' });
   }
 
@@ -1361,6 +1592,7 @@ async function handleTgsReq(request) {
     log.warn('krb5: the Authenticator names ' + authenticator.cname.name.join('/') +
              ' but the ticket names ' + ticketPart.cname.name.join('/'));
     return errorReply(36, { realm: REALM, sname: body.sname,
+      errorCode: 'STS-KRB-0031',
       eText: 'the Authenticator and the ticket name different clients' });
   }
 
@@ -1368,11 +1600,13 @@ async function handleTgsReq(request) {
   const at = now();
   if (ticketPart.endtime <= at) {
     return errorReply(32, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+      errorCode: 'STS-KRB-0032',
       realm: REALM, sname: body.sname,
       eText: 'the ticket expired at ' + ticketPart.endtime.toISOString() });
   }
   if (ticketPart.starttime && ticketPart.starttime > new Date(at.getTime() + clockSkewSeconds() * 1000)) {
-    return errorReply(33, { realm: REALM, sname: body.sname, eText: 'the ticket is not yet valid' });
+    return errorReply(33, { errorCode: 'STS-KRB-0033',
+      realm: REALM, sname: body.sname, eText: 'the ticket is not yet valid' });
   }
 
   // ---------------------------------------------------------------------
@@ -1417,6 +1651,7 @@ async function handleTgsReq(request) {
                'clears the instant; a service ticket already in the cache is untouched, ' +
                'because accepting one never reaches this KDC.');
       return errorReply(20, {
+        errorCode: 'STS-KRB-0034',
         crealm: ticketPart.crealm, cname: ticketPart.cname, realm: REALM, sname: body.sname,
         eText: 'the ticket was authenticated at ' + ticketPart.authtime.toISOString() +
                ' and ' + ticketPart.cname.name.join('/') + '@' + ticketPart.crealm +
@@ -1428,6 +1663,7 @@ async function handleTgsReq(request) {
   const authSkew = Math.abs(at.getTime() - authenticator.ctime.getTime()) / 1000;
   if (authSkew > clockSkewSeconds()) {
     return errorReply(37, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+      errorCode: 'STS-KRB-0035',
       realm: REALM, sname: body.sname,
       eText: 'the Authenticator\'s clock is ' + Math.round(authSkew) + ' seconds out' });
   }
@@ -1437,6 +1673,7 @@ async function handleTgsReq(request) {
   // something else, which is indistinguishable from tampering.
   if (!authenticator.cksum) {
     return errorReply(50, { realm: REALM, sname: body.sname,
+      errorCode: 'STS-KRB-0036',
       eText: 'the TGS-REQ Authenticator carries no checksum over the request body' });
   }
   let checksumOk = false;
@@ -1449,6 +1686,7 @@ async function handleTgsReq(request) {
   if (!checksumOk) {
     log.info('krb5: the Authenticator\'s checksum does not cover this request body');
     return errorReply(50, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+      errorCode: 'STS-KRB-0037',
       realm: REALM, sname: body.sname,
       eText: 'the Authenticator\'s checksum does not match the request body (checksum type ' +
              authenticator.cksum.type + ', key usage 6)' });
@@ -1493,6 +1731,7 @@ async function handleTgsReq(request) {
         answeringRealm);
     if (!created) {
       return errorReply(7, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+        errorCode: 'STS-KRB-0038',
         realm: answeringRealm, sname: body.sname,
         eText: 'no such service principal: ' + ((body.sname || {}).name || []).join('/') +
                '. On Active Directory this is an SPN that is not registered, or registered on a ' +
@@ -1548,21 +1787,24 @@ async function handleTgsReq(request) {
              ((ticketPart.cname || {}).name || []).join('/') + ' to ' +
              serviceName + '. ' + kerberosRoleAnswer.why);
     return errorReply(12, { crealm: ticketPart.crealm,
+      errorCode: 'STS-KRB-0039',
       cname: ticketPart.cname, realm: answeringRealm, sname: body.sname,
       eText: kerberosRoleAnswer.why });
   }
 
   const krbtgt = principals.find(['krbtgt', answeringRealm], answeringRealm);
   if (!krbtgt) {
-    log.error('krb5: there is no krbtgt principal for ' + answeringRealm + ', so no ticket can ' +
-      'be signed');
+    log.error(errorCodes.tag('STS-KRB-0022') + 'krb5: there is no krbtgt principal for ' +
+      answeringRealm + ', so no ticket can be signed');
     return errorReply(7, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+      errorCode: 'STS-KRB-0022',
       realm: answeringRealm, sname: body.sname,
       eText: 'this KDC has no krbtgt principal for ' + answeringRealm });
   }
   const etype = principals.chooseEtype(service, body.etypes);
   if (etype === null) {
     return errorReply(14, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+      errorCode: 'STS-KRB-0040',
       realm: answeringRealm, sname: body.sname,
       eText: 'no common encryption type for ' + service.name.join('/') + ': it supports ' +
              principals.supportedEtypes(service).map(kcrypto.etypeName).join(', ') });
@@ -1634,6 +1876,7 @@ async function handleTgsReq(request) {
       delegation.record(Object.assign({}, forwardedIntent,
         { outcome: 'refused', reason: eText }));
       return errorReply(13, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+        errorCode: 'STS-KRB-0041',
         realm: answeringRealm, sname: body.sname, eText: eText });
     }
     const forwardingClient = principals.find(ticketPart.cname.name, ticketPart.crealm);
@@ -1646,6 +1889,7 @@ async function handleTgsReq(request) {
       delegation.record(Object.assign({}, forwardedIntent,
         { outcome: 'refused', reason: eText }));
       return errorReply(13, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+        errorCode: 'STS-KRB-0042',
         realm: answeringRealm, sname: body.sname, eText: eText });
     }
     log.info('krb5: forwarding ' + ticketPart.cname.name.join('/') + '@' + ticketPart.crealm +
@@ -1674,6 +1918,7 @@ async function handleTgsReq(request) {
   if (wantsRenew) {
     if ((ticketPart.flags || []).indexOf(msgs.TICKET_FLAG.RENEWABLE) === -1) {
       return errorReply(13, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+        errorCode: 'STS-KRB-0043',
         realm: answeringRealm, sname: body.sname,
         eText: 'the RENEW option was set but this ticket is not renewable. Renewability is asked ' +
                'for when the ticket is FIRST obtained (the RENEWABLE option on the AS-REQ) and ' +
@@ -1681,12 +1926,14 @@ async function handleTgsReq(request) {
     }
     if (!ticketPart.renewTill) {
       return errorReply(13, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+        errorCode: 'STS-KRB-0044',
         realm: answeringRealm, sname: body.sname,
         eText: 'the ticket is flagged renewable but carries no renew-till, so there is no limit ' +
                'to renew it up to' });
     }
     if (ticketPart.renewTill <= at) {
       return errorReply(32, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+        errorCode: 'STS-KRB-0045',
         realm: answeringRealm, sname: body.sname,
         eText: 'renew-till passed at ' + ticketPart.renewTill.toISOString() + '. A renewable ' +
                'ticket can be renewed repeatedly but only up to that instant, which does not ' +
@@ -1694,6 +1941,7 @@ async function handleTgsReq(request) {
     }
     if (body.sname.name.join('/') !== apReq.ticket.sname.name.join('/')) {
       return errorReply(13, { crealm: ticketPart.crealm, cname: ticketPart.cname,
+        errorCode: 'STS-KRB-0046',
         realm: answeringRealm, sname: body.sname,
         eText: 'a renewal must name the SAME service as the ticket being renewed (' +
                apReq.ticket.sname.name.join('/') + '), not ' + body.sname.name.join('/') });
@@ -1760,7 +2008,7 @@ async function handleTgsReq(request) {
 
   const newSessionKey = kcrypto.randomBytes(profile.keyBytes);
   const authtime = ticketPart.authtime;
-  const requestedTill = body.till && body.till > at ? body.till : kdcTime(TICKET_LIFETIME_SECONDS);
+  const requestedTill = body.till && body.till > at ? body.till : kdcTime(ticketLifetimeSeconds());
   // A service ticket cannot outlive the TGT that bought it — EXCEPT on a renewal, where
   // the presented ticket's own endtime is the thing being extended and capping against it
   // would make every renewal a no-op. There the cap is renew-till.
@@ -2043,12 +2291,14 @@ async function handleMessage(bytes) {
       return await handleTgsReq(request);
     }
     log.info('krb5: received ' + identified.name + ', which is not a request a KDC answers');
-    return errorReply(40, { eText: identified.name + ' is not a request this KDC answers' });
+    return errorReply(40, { errorCode: 'STS-KRB-0047',
+      eText: identified.name + ' is not a request this KDC answers' });
   } catch (e) {
     log.warn('krb5: could not handle the message: ' + (e.stack || e.message));
     // KRB_ERR_GENERIC with the reason in e-text, which is where a KDC says what it
     // actually objected to.
-    return errorReply(60, { eText: 'could not decode the request: ' + e.message });
+    return errorReply(60, { errorCode: 'STS-KRB-0048',
+      eText: 'could not decode the request: ' + e.message });
   }
 }
 
@@ -2066,8 +2316,16 @@ function startTcp(port) {
     });
     socket.on('data', function (chunk) {
       buffer = Buffer.concat([buffer, chunk]);
-      if (buffer.length > MAX_REPLY_BYTES) {
-        log.warn('krb5: a TCP client sent more than ' + MAX_REPLY_BYTES + ' bytes; closing');
+      if (buffer.length > maxRequestBytes()) {
+        log.warn('krb5: a TCP client sent more than ' + maxRequestBytes() +
+                 ' bytes (krb5.maxRequestBytes); closing');
+        audit.failure('STS-KRB-0049', {
+          protocol: 'Kerberos', channel: 'kerberos',
+          target: 'KDC TCP ' + port,
+          summary: 'a TCP request to the KDC exceeded krb5.maxRequestBytes and ' +
+                   'the connection was closed',
+          outcome: 'refused'
+        });
         socket.destroy();
         return;
       }
@@ -2075,6 +2333,13 @@ function startTcp(port) {
       const declared = buffer.readUInt32BE(0);
       if (declared & 0x80000000) {
         log.warn('krb5: a TCP client sent a length prefix with the reserved top bit set; closing');
+        audit.failure('STS-KRB-0050', {
+          protocol: 'Kerberos', channel: 'kerberos',
+          target: 'KDC TCP ' + port,
+          summary: 'a TCP request to the KDC carried a length prefix with the ' +
+                   'reserved top bit set and the connection was closed',
+          outcome: 'refused'
+        });
         socket.destroy();
         return;
       }
@@ -2086,22 +2351,25 @@ function startTcp(port) {
         framed.writeUInt32BE(reply.length, 0);
         Buffer.from(reply).copy(framed, 4);
         socket.write(framed);
+        recordRawRefusal(reply, 'TCP');
       }).catch(function (e) {
         // handleMessage catches its own errors; this is the last resort, and it
         // must still answer rather than leave the client waiting.
-        log.error('krb5: failed to build a reply: ' + (e.stack || e.message));
+        log.error(errorCodes.tag('STS-KRB-0051') + 'krb5: failed to build a reply: ' +
+                  (e.stack || e.message));
         socket.destroy();
       });
     });
   });
   server.on('error', function (err) {
-    log.error('krb5: the TCP listener on port ' + port + ' failed: ' + err.message +
+    log.error(errorCodes.tag('STS-KRB-0052') +
+      'krb5: the TCP listener on port ' + port + ' failed: ' + err.message +
       (err.code === 'EACCES'
         ? ' — port 88 is privileged. Set KRB5_KDC_PORT to something above 1024 for a host run, ' +
           'and add that port to the api\'s krb5AllowedPorts or the relay will refuse to reach it.'
         : ''));
   });
-  server.listen(port, '0.0.0.0', function () {
+  server.listen(port, listenHost(), function () {
     // The BOUND port, not the requested one: asked for 0 the OS picks, and logging
     // the request would print "listening on TCP 0".
     log.info('krb5: KDC listening on TCP ' + server.address().port + ' for realm ' + REALM);
@@ -2112,9 +2380,12 @@ function startTcp(port) {
 
 function startUdp(port) {
   log.debug('Entering startUdp().');
-  const socket = dgram.createSocket('udp4');
+  // udp6 for an IPv6 bind address: a udp4 socket cannot bind '::', and
+  // global.host is where the address comes from now.
+  const socket = dgram.createSocket(listenHost().indexOf(':') >= 0 ? 'udp6' : 'udp4');
   socket.on('error', function (err) {
-    log.error('krb5: the UDP listener on port ' + port + ' failed: ' + err.message);
+    log.error(errorCodes.tag('STS-KRB-0053') + 'krb5: the UDP listener on port ' + port +
+              ' failed: ' + err.message);
   });
   socket.on('message', function (message, rinfo) {
     handleMessage(message).then(function (reply) {
@@ -2122,18 +2393,22 @@ function startUdp(port) {
       // a datagram, and a client then retries over TCP. Reproducing that is worth
       // more than sending an oversized datagram, because the retry is the
       // behaviour a client has to get right.
-      if (reply.length > 1465) {
+      if (reply.length > udpMaxReplyBytes()) {
         log.info('krb5: the reply is ' + reply.length + ' bytes, too big for UDP; answering ' +
                  'KRB_ERR_RESPONSE_TOO_BIG so the client retries over TCP');
-        const tooBig = errorReply(52, { eText: 'the reply is ' + reply.length + ' bytes; retry over TCP' });
+        const tooBig = errorReply(52, { errorCode: 'STS-KRB-0054',
+          eText: 'the reply is ' + reply.length + ' bytes; retry over TCP' });
+        recordRawRefusal(tooBig, 'UDP');
         return socket.send(Buffer.from(tooBig), rinfo.port, rinfo.address);
       }
       socket.send(Buffer.from(reply), rinfo.port, rinfo.address);
+      recordRawRefusal(reply, 'UDP');
     }).catch(function (e) {
-      log.error('krb5: failed to build a UDP reply: ' + (e.stack || e.message));
+      log.error(errorCodes.tag('STS-KRB-0051') + 'krb5: failed to build a UDP reply: ' +
+                (e.stack || e.message));
     });
   });
-  socket.bind(port, '0.0.0.0', function () {
+  socket.bind(port, listenHost(), function () {
     log.info('krb5: KDC listening on UDP ' + socket.address().port + ' for realm ' + REALM);
   });
   log.debug('Leaving startUdp().');
@@ -2153,6 +2428,7 @@ app.post('/KdcProxy', function (req, res) {
   const body = req.body;
   if (!body || !body.length) {
     log.debug('Leaving POST /KdcProxy. Empty body.');
+    errorCodes.mark(res, 'STS-KRB-0055');
     return res.status(400).type('text/plain').send('a KDC-PROXY-MESSAGE is required');
   }
   let framed;
@@ -2164,10 +2440,12 @@ app.post('/KdcProxy', function (req, res) {
   } catch (e) {
     log.warn('krb5: KdcProxy body does not decode: ' + e.message);
     log.debug('Leaving POST /KdcProxy. Undecodable.');
+    errorCodes.mark(res, 'STS-KRB-0056');
     return res.status(400).type('text/plain').send('the KDC-PROXY-MESSAGE does not decode: ' + e.message);
   }
   if (framed.length < 4) {
     log.debug('Leaving POST /KdcProxy. Too short.');
+    errorCodes.mark(res, 'STS-KRB-0057');
     return res.status(400).type('text/plain').send('the kerb-message is too short to be framed');
   }
   const declared = (framed[0] << 24 | framed[1] << 16 | framed[2] << 8 | framed[3]) >>> 0;
@@ -2181,10 +2459,18 @@ app.post('/KdcProxy', function (req, res) {
     replyFramed.set(reply, 4);
     const envelope = asn1.encSequence([asn1.encContext(0, asn1.encOctetString(replyFramed))]);
     log.debug('Leaving POST /KdcProxy. reply=' + reply.length + ' bytes');
+    // A KRB-ERROR over MS-KKDCP is still an HTTP 200. Marking the response is
+    // what makes the call log's ONE row for it a refusal carrying the KDC's
+    // condition, rather than a success beside a second row from audit.failure().
+    const refusal = refusalOf(reply);
+    if (refusal) {
+      errorCodes.mark(res, refusal.code);
+    }
     res.status(200).type('application/kerberos').send(Buffer.from(envelope));
   }).catch(function (e) {
     log.error('krb5: KdcProxy failed: ' + (e.stack || e.message));
     log.debug('Leaving POST /KdcProxy. Failed.');
+    errorCodes.mark(res, 'STS-KRB-0051');
     res.status(500).type('text/plain').send('the KDC could not answer: ' + e.message);
   });
 });
@@ -2217,16 +2503,48 @@ app.get('/krb5/principals', function (req, res) {
       // name nobody registered. Flagged so a reader is not left wondering why the table
       // has entries the documentation does not describe.
       autoCreated: p.autoCreated,
+      // A person keyed from their own password (product mode, 2026-09-12). The
+      // KEYS are never listed — they are not on the record at all — and this
+      // says only where they come from.
+      directoryKeys: !!p.directoryKeys,
       description: p.description
     };
   });
+  // -------------------------------------------------------------------------
+  // THE TWO PASSWORDS ARE A TEST CONTROL, AND PRODUCT MODE WITHHOLDS THEM
+  // (2026-09-12).
+  //
+  // In development they are published on purpose — see the paragraph below —
+  // because they are a POLICY of the mock that every account shares. In
+  // product mode (`mode.opensTestControls()` false) that reasoning is gone:
+  // nothing is created on demand, and a password printed on an unauthenticated
+  // page is a long-term key printed on an unauthenticated page. So both are
+  // replaced by a sentence saying they are withheld and why, rather than
+  // omitted — a field that silently vanished would read as a bug.
+  // -------------------------------------------------------------------------
+  // BOTH answers must allow it: the database was built in the PROCESS's mode
+  // (`seedsDemoPrincipals`), and this request may be in a realm whose own mode
+  // is product. Asking only the ambient realm would let a development realm
+  // inside a product process publish the process's passwords.
+  const published = principals.seedsDemoPrincipals && mode.opensTestControls();
+  const withheld = 'withheld: this service is in product mode, where a ' +
+    'password on an unauthenticated page is a long-term key anybody can use. ' +
+    'Development mode publishes it because every account there shares it.';
+  const service = principals.serviceAccount();
   log.debug('Leaving GET /krb5/principals. ' + list.length + ' principals.');
   res.status(200).json({
     realm: REALM,
     kdcPort: KDC_PORT,
     clockSkewSeconds: clockSkewSeconds(),
     clockOffsetSeconds: clockOffsetSeconds(),
-    ticketLifetimeSeconds: TICKET_LIFETIME_SECONDS,
+    ticketLifetimeSeconds: ticketLifetimeSeconds(),
+    renewLifetimeSeconds: renewLifetimeSeconds(),
+    realmsServed: principals.realmsServed(),
+    // Whether the fixture accounts are here, and — where product mode refused
+    // one of the two accounts the service needs — why.
+    fixtureAccounts: principals.seedsDemoPrincipals,
+    serviceAccount: service,
+    krbtgtUnavailable: principals.krbtgtUnavailableReason() || null,
     // The one thing about this KDC a client cannot discover from the protocol, and the
     // one that stops somebody guessing at passwords: any username authenticates, and
     // they all share one. Publishing it is not the leak it would be elsewhere on this
@@ -2234,8 +2552,8 @@ app.get('/krb5/principals', function (req, res) {
     // mock, not a secret, and a debugger whose accounts are unusable without reading the
     // source is worse than one that says so here.
     accountPolicy: {
-      anyUsernameAuthenticates: true,
-      userPassword: principals.USER_PASSWORD,
+      anyUsernameAuthenticates: mode.autoCreates(),
+      userPassword: published ? principals.USER_PASSWORD : withheld,
       // The names that are refused instead, so KDC_ERR_C_PRINCIPAL_UNKNOWN stays
       // reachable, plus the shape rule that keeps a missing SPN an error.
       neverCreated: principals.reservedUnknown(),
@@ -2246,22 +2564,36 @@ app.get('/krb5/principals', function (req, res) {
       // ticket's own EncTicketPart and read the PAC inside it, which is the one
       // structure a client can otherwise never see. Configured service accounts
       // keep their own separate passwords.
-      serviceHosts: principals.SERVICE_DOMAINS,
+      // Empty in product mode, where no service is created on demand for any host.
+      serviceHosts: mode.autoCreates() ? principals.SERVICE_DOMAINS : [],
       serviceHostRule: 'an SPN\'s host matches when it IS one of serviceHosts ' +
         'or ends with a dot and one of them; anything else stays ' +
         'KDC_ERR_S_PRINCIPAL_UNKNOWN',
-      autoServicePassword: principals.AUTO_SERVICE_PASSWORD,
-      note: 'A username not in this table is created on first sight as an ordinary user, ' +
-            'with the salt Active Directory would use (realm + name) and this password. ' +
-            'A multi-component name is a SERVICE, and one is created on first sight too ' +
-            'when its host matches serviceHosts above — with autoServicePassword, so a ' +
-            'reader can open the ticket. An SPN outside those hosts is still ' +
-            'KDC_ERR_S_PRINCIPAL_UNKNOWN, which is how that error stays reachable on ' +
-            'purpose (try HTTP/app.elsewhere.invalid). The CONFIGURED service, computer ' +
-            'and krbtgt accounts keep their own passwords, which are not published here.'
+      autoServicePassword: published ? principals.AUTO_SERVICE_PASSWORD : withheld,
+      note: mode.autoCreates()
+        ? 'A username not in this table is created on first sight as an ordinary user, ' +
+          'with the salt Active Directory would use (realm + name) and this password. ' +
+          'A multi-component name is a SERVICE, and one is created on first sight too ' +
+          'when its host matches serviceHosts above — with autoServicePassword, so a ' +
+          'reader can open the ticket. An SPN outside those hosts is still ' +
+          'KDC_ERR_S_PRINCIPAL_UNKNOWN, which is how that error stays reachable on ' +
+          'purpose (try HTTP/app.elsewhere.invalid). The CONFIGURED service, computer ' +
+          'and krbtgt accounts keep their own passwords, which are not published here.'
+        : 'Product mode: nothing is created on demand, so a name not in this table is ' +
+          'KDC_ERR_C_PRINCIPAL_UNKNOWN (a user) or KDC_ERR_S_PRINCIPAL_UNKNOWN (a ' +
+          'service), and serviceHosts is not consulted. No password is published.'
     },
-    implemented: ['AS exchange', 'TGS exchange'],
-    notImplementedYet: ['PAC', 'FAST', 'PKINIT', 'cross-realm referrals', 'S4U2Self', 'S4U2Proxy'],
+    // What this KDC serves, and what it does not. `notImplementedYet` said
+    // PAC, cross-realm referrals, S4U2Self and S4U2Proxy for as long as all four
+    // had been implemented — it was written before them and never revisited.
+    implemented: ['AS exchange', 'TGS exchange', 'PAC ([MS-PAC], all four signatures)',
+                  'cross-realm referrals (development mode)', 'S4U2Self',
+                  'S4U2Proxy (classic and resource-based)', 'forwarded TGTs',
+                  'renewal', 'MS-KKDCP (/KdcProxy)'],
+    notImplementedYet: ['FAST (RFC 6113)', 'PKINIT (RFC 4556)',
+                        'kpasswd (RFC 3244)', 'user-to-user (ENC-TKT-IN-SKEY)',
+                        'SID filtering across a trust',
+                        'key rotation (one kvno per account)'],
     principals: list
   });
 });

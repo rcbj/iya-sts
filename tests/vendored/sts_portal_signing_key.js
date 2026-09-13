@@ -216,6 +216,22 @@ function csrfOf(text) {
   return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
 }
 
+// ---------------------------------------------------------------------------
+// BOTH PEOPLE ARE CREATED WITH THE ATTRIBUTES A REAL ACCOUNT CARRIES
+// (2026-09-12), and the one who signs in with a password of at least twelve
+// characters — which is what the sign-in screen is then sent. In product mode
+// this service invents no persona onto an entry and verifies the password
+// against it; a job that leaned on either would be testing the invention.
+// ---------------------------------------------------------------------------
+var PASSWORD = "portal-signing-key-Passw0rd!-" + String(Date.now()).slice(-6);
+var MAIL_DOMAIN = "portal-signing-key.test";
+
+function personAttributes(who) {
+  return { cn: "Signing Key Person " + who, givenName: "Signing", sn: who,
+           displayName: "Signing Key Person " + who,
+           mail: who + "@" + MAIL_DOMAIN };
+}
+
 // The PEM as the page prints it. Anchored on the BEGIN line rather than on the
 // block, because the page carries a second <pre> holding a curl command and a
 // regex that matched any <pre> would read that one on the day the order
@@ -263,7 +279,7 @@ async function signIn(door, who) {
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  formBody({ authn_id: authnId, username: who,
-                            password: "any-password", action: "login",
+                            password: PASSWORD, action: "login",
                             csrf_token: csrfOf(r.text) }));
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
@@ -285,12 +301,21 @@ async function test() {
   //    the second.
   // -------------------------------------------------------------------------
   log.info("=== 0. two people ===");
-  const made = await apiPost("/users/create", { username: OWNER });
-  const madeOther = await apiPost("/users/create", { username: OTHER });
-  check("both people are created through the management API", function () {
+  const made = await apiPost("/users/create",
+    { username: OWNER, invent: false, attributes: personAttributes(OWNER),
+      credential: "password", password: PASSWORD });
+  const madeOther = await apiPost("/users/create",
+    { username: OTHER, invent: false, attributes: personAttributes(OTHER),
+      credential: "password", password: PASSWORD });
+  check("both people are created through the management API, with their " +
+        "attributes and a password, and nothing invented", function () {
     assert.strictEqual(made.status, 200, JSON.stringify(made.body).slice(0, 300));
     assert.strictEqual(madeOther.status, 200,
       JSON.stringify(madeOther.body).slice(0, 300));
+    assert.ok(made.body.passwordSet && madeOther.body.passwordSet,
+      "a password was not set: " + JSON.stringify(made.body).slice(0, 300));
+    assert.strictEqual(made.body.invented, false,
+      "the create invented attributes: " + JSON.stringify(made.body).slice(0, 300));
   });
 
   // -------------------------------------------------------------------------

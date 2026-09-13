@@ -24,8 +24,11 @@ In **product mode** — and only where the key-encryption key outlives the
 process — this service encrypts a specific list of values with **AES-256-GCM**
 before they reach the persistence store: its own signing keys, the certificate
 authority's key pairs, the private key of every assertion key pair it issues to
-an application or to a person, authenticator-app shared secrets, and every row
-it mints (sessions, tokens, codes, artifacts, the audit log).
+an application or to a person, authenticator-app shared secrets, the Kerberos
+long-term keys it stores for directory people and service principals (since
+2026-09-12 — password-equivalent, and withheld from every page and search even
+as ciphertext), and every row it mints (sessions, tokens, codes, artifacts, the
+audit log).
 
 **`/admin/encryption` is the list and this page is deliberately not a second
 copy of it.** That page names each kind, where it lives, and whether it is
@@ -72,11 +75,164 @@ Three operational consequences, which are the reason this section exists:
 
 ---
 
+## The stack ships with a secret store
+
+Since 2026-09-12, `docker compose up` brings up **OpenBao** beside the service
+and the database, and the service reads BOTH secrets out of it. Nothing is
+configured for that: it is what the stack does.
+
+What the bootstrap builds, in three one-shot steps you can watch in the log:
+
+1. a TLS listener certificate, minted before the store starts by this
+   repository's own X.509 encoder;
+2. the store, with **`seal "static"`** — a real auto-unseal, so it comes up
+   unsealed with no operator and no key ceremony, and keeps its storage across
+   restarts (dev mode would lose the key-encryption key on every start, and a
+   service whose KEK changes cannot read back anything it sealed);
+3. the secrets, a certificate authority **inside** the store, a client
+   certificate issued from it for this service, and a policy binding that
+   certificate to **read on two paths and write nothing**.
+
+The service then authenticates with that certificate rather than a token — the
+store issued the identity, can revoke it, and no bearer credential sits in a
+file waiting to be copied.
+
+**The policy is verified rather than asserted.** The seeder finishes by logging
+in as the service, reading what it reads, and attempting the write it must never
+be able to make; if that write is accepted the stack does not start. A widened
+capability list therefore fails at boot rather than in an audit.
+
+```
+sts-bao-seed: proved it with the certificate itself: policies [default, sts-read],
+              the two secrets readable, a write to them refused 403, and no other
+              path reachable.
+```
+
+**What it does not protect you from, said plainly:** the unseal key travels in
+the stack's environment, so the store protects its contents from a reader of the
+database and not from somebody who can read the stack. Set `STS_BAO_SEAL_KEY`
+from your orchestrator's own secret, or replace the seal stanza in
+`openbao/bao.hcl` with `transit`, `awskms`, `gcpckms` or `azurekeyvault` — one
+stanza, same behaviour, key somewhere the stack cannot read.
+
+## Seeing the state of it: `/admin/secrets`
+
+Under **Monitoring** in the admin console, since 2026-09-12. It answers the
+question none of the settings pages can: *did this service actually get its
+secrets, and is the thing holding them healthy?*
+
+* For a **mounted file** — the path, whether it is there, its mode, owner and
+  mtime, its symlink target if it has one (a Kubernetes Secret mount is a
+  symlink that is replaced on rotation, so the target is how you see that a
+  rotation landed), and which members it holds if it is JSON. **The member
+  names, never the values.**
+* For **OpenBao or HashiCorp Vault** — initialised or not, sealed or unsealed
+  and the seal type, the version and build, the cluster and which node leads
+  it, the store's clock against this service's, the client certificate this
+  service presents and **how many days before it expires**, the policies the
+  token it obtained carries, and every version of the secret the store has
+  kept. And the row worth opening first: **what this identity may actually do,
+  asked of the store** rather than read off `openbao/read-only.hcl` — the
+  seeder's final proof, repeated by the running service against the running
+  store.
+* For **AWS, GCP and Azure** — whatever each publishes about the secret:
+  rotation and its schedule, the KMS key, version states, staging labels,
+  replication. Through a *describe* rather than a *get*.
+
+Beside each secret it says whether **this process has read it**, when, and —
+if the last attempt failed — why. That row matters more than it looks: in
+development mode nothing is persisted, so the key-encryption key is never asked
+for, and a completely broken provider configuration looks exactly like a working
+one until the day you set `global.mode=product`.
+
+**Three things it will not do**, and all three are deliberate: it will not show
+you a secret, it has no rotate button (this service has no re-sealing pass —
+replacing the key makes everything sealed under it unreadable, which is why the
+seeder writes it once), and it has no test-read, because that would be a console
+page causing the key to be in memory. Every probe behind it reads metadata only.
+
+**A probe refused with 403 is usually good news** and the page says so: the
+identity is bound to two read paths, so a refusal anywhere else is the policy
+working.
+
+`GET /admin-api/secrets` is the same report as JSON.
+
+## The database password comes from the same place, if you want it to
+
+Since 2026-09-12. `persistence.databaseUrl` carries its password in plain text
+— right for a throwaway database of mock identities, wrong for anything you
+would call a deployment — and **`persistence.databasePasswordProvider` reads it
+from a secret store instead**, using the same five providers and the same code
+as the key-encryption key above.
+
+```yaml
+# One mounted file holding both secrets:
+#   { "kek": "…32 bytes base64…", "databasePassword": "…" }
+STS_KEYS_KEK_PROVIDER: file
+STS_KEYS_KEK_FILE: /run/secrets/sts
+STS_KEYS_KEK_FIELD: kek
+STS_DATABASE_PASSWORD_PROVIDER: file
+# no location: empty means "wherever the key-encryption key is"
+STS_DATABASE_URL: postgres://sts_app@postgres:5432/sts?sslmode=require
+```
+
+**The location defaults to the key's**, which is the whole point: a deployment
+already mounts one file, or already keeps one secret in AWS, and being made to
+provision a second one is work this service would have invented. What tells the
+two apart inside it is `persistence.databasePasswordField`, `databasePassword`
+by default.
+
+A secret of its **own** needs no field — point `persistence.databasePasswordRef`
+at a Vault path or a file holding nothing but the password and it is taken
+whole. For the `{"username": …, "password": …}` shape AWS Secrets Manager writes
+for a database credential, set the field to `password`.
+
+### What it refuses, and why each one
+
+* **A shared location holding something that is not a JSON object.** What is
+  in a plain key file is the *key*, and returning it as a password would send
+  this service's master key to a database server as a credential, in the clear,
+  on the wire — with a failed connection as the only symptom. This is the
+  refusal the feature is built around.
+* **An empty secret.** An empty password is not a password; dialling with one
+  fails at the database as *authentication failed*, which sends you to look at
+  the wrong end.
+* **A connection string in libpq's `host=… user=…` keyword/value form.** `pg`
+  accepts it and this cannot edit one safely, so it says so rather than dialling
+  without the password you configured. Write it as a URL and leave the password
+  out.
+* **A read that fails at startup.** The service does not start, exactly as it
+  does not start for a store it cannot open: a process that was told where the
+  password lives and carried on with the one in the URL would be ignoring the
+  configuration that exists to keep it out of the URL.
+
+### Two details you would otherwise find the hard way
+
+**A password already in the URL is replaced**, and the log says so without
+saying what with. Two passwords for one connection is a question with no good
+answer, and the configured provider is the one somebody chose deliberately.
+
+**The password is injected into the string rather than passed beside it**, and
+that is `pg`'s doing rather than a preference: its `ConnectionParameters` lets
+everything parsed out of a `connectionString` override an explicit field, and
+its parser returns `password: ''` even for a string carrying none — so a
+`password` option beside a `connectionString` is silently thrown away. The value
+is percent-encoded on the way in, because `pg` decodes what it finds; a password
+containing `%` is mangled or throws without it. `tests/database_password.js`
+asserts the round-trip through `pg`'s own parser for every character that has
+ever caused this.
+
+`/admin/persistence` and `GET /admin-api/persistence` report **where** the
+password came from and never what it is — a Password row naming the provider,
+the location and whether it is shared with the key.
+
 ## The rest of the store: four layers, and what each one is worth
 
 Everything this service does **not** seal — directory entries, group
 memberships, applications, realms, settings, and in development mode the lot —
-is plaintext in whatever store you configured. PostgreSQL has no encryption of
+is plaintext in whatever store you configured. (The section above is about the
+credential this service USES to reach that store; this one is about what is
+inside it.) PostgreSQL has no encryption of
 its own in the community build, so the options are underneath it or beside it.
 
 | Layer | Protects against | Useless against |

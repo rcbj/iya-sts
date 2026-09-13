@@ -362,6 +362,18 @@ async function run(t) {
           'one copy of the module in this tree, the way the engine is copied ' +
           'rather than checked in');
 
+  // THE ERROR-CODE REGISTRY, ON THE SAME ARGUMENT. Every failure this
+  // container logs leads with an `STS-XPEP-` code from `common/error_codes.js`,
+  // and `pep.js` falls back to a local tag when the module is absent — written
+  // to survive, like the version, so nothing at runtime goes red when the COPY
+  // line goes. This is where it goes red instead.
+  t.check(/^COPY\s+common\/error_codes\.js\s+\.\/error_codes\.js\s*$/m
+            .test(dockerfile),
+          'and copies common/error_codes.js to the container ROOT as ' +
+          'error_codes.js',
+          'the one table of error codes, copied at build time beside ' +
+          'version.js and never into ./common/, which is the shim');
+
   // AND IT IS STAMPED, which is the whole reason the build number means
   // anything: an unstamped container computes its number when the process
   // starts, so it renumbers itself on every restart and comparing it against
@@ -417,6 +429,17 @@ async function run(t) {
           'image, ../common/version in a checkout',
           'neither layout has both, so a single hard-coded path is broken in ' +
           'one of the two places this file is read');
+  // AND THE REGISTRY THE SAME WAY, for the same reason — `./error_codes` is
+  // where the COPY line above puts it and `../common/error_codes` is where a
+  // checkout has it. A resolution that named one would log every failure in
+  // the other layout under the fallback tag and say so on every start.
+  t.check(/loadErrorCodes\s*\(\)/.test(pepSource) &&
+          pepSource.indexOf("'../common/error_codes'") >= 0 &&
+          pepSource.indexOf("'./error_codes'") >= 0,
+          'and it resolves the error-code registry across BOTH layouts — ' +
+          './error_codes in the image, ../common/error_codes in a checkout',
+          'neither layout has both, so a single hard-coded path is broken in ' +
+          'one of the two places this file is read');
 
   // -------------------------------------------------------------------------
   // 3b. THE PIP CLIENT'S WALK, WHICH IS THE HALF OF IT THAT NEEDS NO NETWORK.
@@ -444,7 +467,7 @@ async function run(t) {
   t.log.info('--- The PIP client, in the container, with no network ---');
   const OUTER_POLICY = "<PolicySet xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" PolicySetId=\"outer\" Version=\"1.0\" PolicyCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:policy-combining-algorithm:deny-unless-permit\"><Target><AnyOf><AllOf><Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">x</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inTarget\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></Match></AllOf></AnyOf></Target><Policy PolicyId=\"inner\" Version=\"1.0\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\"><VariableDefinition VariableId=\"v\"><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inVariable\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></VariableDefinition><Rule RuleId=\"r\" Effect=\"Permit\"><Condition><Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\"><Function FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">y</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inCondition\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></Apply></Condition><ObligationExpressions><ObligationExpression ObligationId=\"o\" FulfillOn=\"Permit\"><AttributeAssignmentExpression AttributeId=\"a\"><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inObligation\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></AttributeAssignmentExpression></ObligationExpression></ObligationExpressions></Rule></Policy><PolicyIdReference>referenced</PolicyIdReference></PolicySet>";
   const REFERENCED_POLICY = "<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" PolicyId=\"referenced\" Version=\"1.0\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-unless-permit\"><Target><AnyOf><AllOf><Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:anyURI-equal\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\">r</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:3.0:attribute-category:resource\" AttributeId=\"inResource\" DataType=\"http://www.w3.org/2001/XMLSchema#anyURI\" MustBePresent=\"false\"/></Match></AllOf></AnyOf></Target><Rule RuleId=\"r2\" Effect=\"Permit\"><Condition><Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:any-of\"><Function FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\"/><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">z</AttributeValue><AttributeDesignator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"inReference\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/></Apply></Condition></Rule></Policy>";
-  const PIP_REPLY = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><PIPResponse xmlns=\"urn:sts-mock:xacml:pip:1.0\"><Attributes xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\"><Attribute AttributeId=\"employeeType\" IncludeInResult=\"false\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">admin</AttributeValue><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">staff</AttributeValue></Attribute></Attributes><Unresolved><Designator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"departmentNumber\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"><Reason>the entry does not hold it</Reason></Designator></Unresolved></PIPResponse>";
+  const PIP_REPLY = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><PIPResponse xmlns=\"urn:sts:xacml:pip:1.0\"><Attributes xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\"><Attribute AttributeId=\"employeeType\" IncludeInResult=\"false\"><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">admin</AttributeValue><AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">staff</AttributeValue></Attribute></Attributes><Unresolved><Designator Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" AttributeId=\"departmentNumber\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"><Reason>the entry does not hold it</Reason></Designator></Unresolved></PIPResponse>";
 
   const walk = askTheContainer(
     'const pip = require("./pip");\n' +
@@ -477,7 +500,7 @@ async function run(t) {
           walk.ids.join(','));
 
   t.check(walk.query.indexOf('<PIPRequest') >= 0 &&
-          walk.query.indexOf('urn:sts-mock:xacml:pip:1.0') > 0,
+          walk.query.indexOf('urn:sts:xacml:pip:1.0') > 0,
           'the query it builds is a <PIPRequest> in the PDP\'s own namespace');
   t.check(walk.query.indexOf('subject:subject-id') > 0 &&
           walk.query.indexOf('>carol<') > 0,
@@ -550,7 +573,7 @@ async function run(t) {
     { decision: model.DECISION.INDETERMINATE, obligations: [] },
     { decision: model.DECISION.NOT_APPLICABLE, obligations: [] },
     { decision: model.DECISION.PERMIT,
-      obligations: [{ id: 'urn:sts-mock:xacml:obligation:log',
+      obligations: [{ id: 'urn:sts:xacml:obligation:log',
                       assignments: [] }] },
     { decision: model.DECISION.PERMIT,
       obligations: [{ id: 'urn:test:cannot-do-this', assignments: [] }] },

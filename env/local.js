@@ -215,7 +215,7 @@ var config = {
 
   // --- OID4VP ------------------------------------------------------------
   oid4vp: {
-    clientId: "sts-mock-verifier",
+    clientId: "sts-verifier",
     // walletUrl: falls back to oid4vci.walletUrl. Uncomment to point the mock
     //   Verifier at a different wallet from the issuer's.
     kbMaxAgeS: 600,

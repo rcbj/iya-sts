@@ -164,9 +164,34 @@ const STAMP = bulk.stampFor("scim");
 // SCIM needs a credential (RFC 7644 section 2 — `scim/CLAUDE.md` argues it).
 // In development mode any username and any password but one is accepted, so
 // this is a turnstile rather than a lock and the name is what it authenticates.
+//
+// **THE CALLER IS A PERSON THIS JOB CREATES FIRST, WITH A REAL PASSWORD
+// (2026-09-12)**, in `createTheCaller()`, because product mode verifies a SCIM
+// Basic credential against the named person's own `userPassword` — so a name
+// nobody created, with a word nothing checks, is a credential only development
+// accepts. It is one entry, made after the preflight has raised the ceiling and
+// before anything is timed.
 const SCIM_USER = "bulk-load-" + STAMP.run;
+const SCIM_PASSWORD = "bulk-load-scim-Passw0rd!-" + STAMP.run;
 const SCIM_AUTH = "Basic " +
-    Buffer.from(SCIM_USER + ":not-checked-in-development").toString("base64");
+    Buffer.from(SCIM_USER + ":" + SCIM_PASSWORD).toString("base64");
+
+async function createTheCaller() {
+  log.debug("Entering createTheCaller().");
+  const made = await http.postJson(http.api("/users/create"), {
+    username: SCIM_USER, invent: false,
+    attributes: { cn: "Bulk Load SCIM Caller", givenName: "Bulk",
+                  sn: "SCIM Caller", displayName: "Bulk Load SCIM Caller",
+                  mail: SCIM_USER + "@bulk-load.test" },
+    credential: "password", password: SCIM_PASSWORD
+  });
+  assert.ok(made.status === 200 && made.body && made.body.ok &&
+            made.body.passwordSet,
+    "POST /admin-api/users/create should create the SCIM caller " + SCIM_USER +
+    " with a password; it answered " + made.status + " " +
+    JSON.stringify(made.body).slice(0, 300));
+  log.debug("Leaving createTheCaller().");
+}
 
 const ENTERPRISE = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 
@@ -686,6 +711,7 @@ async function test() {
 
   const ready = await bulk.preflight({ log: log, assert: assert, http: http,
                                        checks: checks });
+  await createTheCaller();
   const mapping = await readTheMapping(ready.catalogue);
   const people = await createThePeople(mapping.sendable, mapping.byLdap);
   const groups = await createTheGroups();

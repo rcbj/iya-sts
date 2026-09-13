@@ -23,6 +23,87 @@ which is last for everybody.
 
 ---
 
+## ONE STREAM PER SURFACE, HOWEVER MANY PROCESSES SEED IT (2026-09-12)
+
+**This is the second half of the fix the receiver TOKEN got on 2026-09-11, and
+the first half is why the second was needed at all.** That day made the token
+derived — an HMAC over the realm and the surface — because each process seeded
+its own random one and every loopback push was refused as the wrong
+authorization header: 132,546 refused pushes in half an hour.
+
+What it left random was the stream's IDENTITY. `createStream()` minted `'ssf-'
++ randomId(12)`, so each process still created a stream **of its own**. In
+development mode that is invisible: minted state is per process, nothing
+reconciles it, and the token fix made the pushes land. With a **persisted,
+coordinated store** the duplicates are shared and they SURVIVE — the front
+process and every request worker seed a pair per start, and every start adds
+more.
+
+**AND `emitProtocolEvent()` FANS OUT TO EVERY STREAM THAT ASKS FOR THE TYPE**,
+so the cost of a single session event grows with how many times this service
+has ever started. Measured on a four-hour test stack in `dispatch` mode:
+
+| | |
+|---|---|
+| streams in the default realm | **14**, where 2 belong — seven pairs, at seven timestamps |
+| events in one bulk-load run | 16,421, each logged `went to 12 of 12 stream(s)` |
+| loopback pushes that implies | ~197,000, each signing a JWS and opening a TLS connection to this service from itself |
+| `connect EAGAIN` on the worker sockets | **19,737** in the worst run, and it appeared in all eight dispatch runs that day (3,930 to 19,737) |
+
+The front process pinned at a full core and stopped answering; four bulk-load
+jobs failed on a **10-second connect timeout** rather than on any assertion,
+which reads as a hang rather than as a fan-out.
+
+### The fix is to derive the id, and its two rules are NOT the token's
+
+`internalStreamId()` is `'ssf-internal-' + realm + '-' + surface`, and
+`createStream()` takes it **on the context and never from the body** — that
+argument is in `ssf_streams.js` beside the line: `body` is the request body at
+`POST /ssf/streams`, so an id read from there would let a receiver name its own
+stream and therefore somebody else's. The store writes with
+`store.set(stream_id, …)`, so a second process seeding the same id overwrites
+rather than adds.
+
+Two rules it has to satisfy that the token does not:
+
+* **IT MUST NOT USE `internalSecret()`.** That secret is per RUN — generated at
+  startup, put in the environment so a forked worker inherits it — which is
+  right for a credential and fatal here: an id derived from it agrees across
+  the processes of ONE run and mints a fresh set on the next start, which is
+  this defect moved one level along.
+* **IT IS NOT A SECRET AND MUST NOT LOOK LIKE ONE.** A stream id is published
+  on `/admin/ssf` and in every stream configuration, so it is the realm and the
+  surface written out rather than a hash of them. A reader who sees
+  `ssf-internal-default-admin-console` knows what it is; a hash would only have
+  hidden which of fourteen streams was which.
+
+### Two things came with it
+
+**`streamFor()` asks for the derived id FIRST and the marker second**, and the
+order is the point. `internalSurface` is set on the record after
+`createStream()` returns and is not an SSF member, so it is the half of that
+lookup a persisted round-trip can lose — and a lookup that missed would now
+seed again, which with a derived id means OVERWRITING the stream that is there.
+That would quietly undo a pause, and *an existing stream is left exactly as it
+is* is that function's whole job.
+
+**`sweepDuplicates()` removes what already accumulated**, because the fix stops
+new duplicates and does nothing about a store carried over. It identifies them
+by **where they deliver** rather than by the marker — the endpoint is a core
+member of every stream configuration and cannot have been lost, which the
+marker can — refuses to touch anything carrying the derived id, and says out
+loud what it removed, since a stream disappearing is otherwise
+indistinguishable from a receiver that was never registered.
+
+**What `tests/ssf_receivers.js` could not see before, and now does.** Its
+existing check seeds twice and asserts nothing is made — which passes in ONE
+process and always will, because the second call finds the first call's record
+in the same in-memory store. Section B2 is the arrangement that actually
+happens: a process that never set the marker, a legacy duplicate delivering to
+the same path, and the per-run secret rotated under it. Three mutants, all
+caught.
+
+
 ## THE ONE PARAGRAPH TO READ FIRST: SSF IS THE PIPE AND NOT THE VOCABULARY
 
 SSF says how a RECEIVER and a TRANSMITTER agree a **stream**, who the events on
@@ -468,18 +549,24 @@ address a caller chose, and these are the four bounds:
 **One thing is NOT a bound and must not be mistaken for one.** The management
 API is gated unconditionally — `mode.gatesSharedSignals()`, where this was
 `ssf.authRequired` until 2026-09-06 — but every credential this
-service accepts is a turnstile: anybody can get a token with either SSF scope,
-and any username with any password but `invalid` passes Basic. "A receiver
+service accepts is a turnstile in development: anybody can get a token with
+either SSF scope, and any username with any password but `invalid` passes Basic
+(in product mode the Basic password is verified — see *Two schemes* below). "A receiver
 created the stream" is therefore not evidence of much.
 
 ---
 
-## IT DOES NOT RETRY A FAILED PUSH, AND THAT IS DELIBERATE
+## IT DOES NOT RETRY A FAILED PUSH BY DEFAULT, AND THAT IS DELIBERATE
 
-RFC 8935 section 2.4 lets a transmitter retry. This service does not, because a
-mock that retried would make a receiver's ONE-SHOT failure invisible: a client
-under test that answers 500 to the first push and 202 to the second looks, from
-its own logs, like a client that works.
+RFC 8935 section 2.4 lets a transmitter retry. This service does not unless
+`ssf.pushRetries` says to — **0 by default since that setting arrived on
+2026-09-12, which is exactly the old behaviour** — because a mock that retried
+would make a receiver's ONE-SHOT failure invisible: a client under test that
+answers 500 to the first push and 202 to the second looks, from its own logs,
+like a client that works. A deployment is the other case, and
+`ssf_http.js`'s `pushSetWithRetries()` retries only what could go differently
+(no connection, a timeout, a 5xx, a 429) and never a 400 refusal, with a linear
+`ssf.pushRetryDelayMs` between attempts.
 
 The failure is recorded on the stream's own log, the event stays on the queue,
 and `POST /admin-api/ssf/transmit` sends another when somebody asks. It is on
@@ -590,6 +677,14 @@ Basic grants BOTH, and says so: a scheme with no scope in it cannot express the
 difference, and returning a read-only decision would be a refusal with nothing
 a client could send to get past it.
 
+**IN PRODUCT MODE THE BASIC PASSWORD IS VERIFIED, SINCE 2026-09-12**, through
+`common/credentials.js` — the call `scim_auth.js` makes. Until then this file
+never asked the mode, so a product deployment's streams could be driven with
+any name and any password. A verified person still gets both scopes, which is
+SCIM's identical grant; `ssf.authBasic` turns the scheme off (and out of
+`authorization_schemes`) for a deployment that wants the scope split enforced
+for every caller.
+
 ---
 
 ## WHAT THIS FAMILY DELIBERATELY DOES NOT DO
@@ -635,10 +730,12 @@ the half a reader cannot discover from a protocol trace.
 * **A `verified: true` on an Add Subject request is believed.** SSF lets a
   receiver say it has already confirmed the subject; a real transmitter may then
   skip a confirmation step, and there is none here to skip.
-* **Streams are in memory and die with the process**, like everything else this
-  service mints. `persistence/CLAUDE.md`'s rule decides it and the reason is the
-  one it gives everywhere: the signing key is regenerated on every start, so a
-  queue restored from disk would be tokens nothing can verify.
+* **Streams are in memory and die with the process IN DEVELOPMENT**, like
+  everything else this service mints. `persistence/CLAUDE.md`'s rule decides it:
+  the signing key is regenerated there, so a queue restored from disk would be
+  tokens nothing can verify. In product mode on postgres `ssf_streams.streams`
+  persists with the rest — and so, since 2026-09-12, do the CAEP and RISC
+  registers (below).
 
 ---
 
@@ -858,6 +955,23 @@ whose row says `revoked` means somebody emitted a revocation by hand — and the
 page says so rather than reconciling, because which of the two is wrong is
 exactly the question.
 
+**BOTH REGISTERS ARE PER TRUST REALM AND PERSISTED WHERE MINTED STATE IS, SINCE
+2026-09-12, AND BOTH WERE ONE `new Map()` FOR THE PROCESS.** The streams they
+count against have been per realm since this family arrived and the session
+store and the directory they describe are too, so every realm's
+`/admin/caep-sessions` listed every realm's sessions and a deletion in `acme`'s
+directory put a `purged` row on the default realm's `/admin/risc-accounts`. They
+are `realms.map({ persist: 'caep.register' })` and `'risc.register'`, merged by
+replacement (a row is whole-valued), and the cap is per realm. **The ambient
+realm is the right one on every path**: `observe()` is reached from inside the
+request or the realm-scoped expiry sweep, `noteTransmitted()` from `transmit()`,
+and a directory write on the LDAP socket runs inside
+`realms.run(realmFor(dn))`. **Each file has a `touch()`**, because the state
+machines edit a row already in the map and `realms.map()` journals only a
+`set()` — without it product mode would write every row as it was created.
+`tests/realm_isolation.js` holds both registers both ways round, across a purge,
+and against a real persistence observer.
+
 ---
 
 ## THE COUNTS ARE NOT THE LIST
@@ -989,3 +1103,52 @@ with silence. And a row for streams belonging to no application at all is what
 a stream agreed unauthenticated produces — no principal, nothing recorded, and the events
 are real; dropping them would make this table's totals disagree with the two
 above it.
+
+## THE 2026-09-12 AUDIT OF HARD-CODED VALUES, AND WHAT IT CHANGED HERE
+
+`tests/ssf_spiffe_scim_hardening.js` holds every item below.
+
+* **THE REALM PREFIX WAS ADDED TWICE.** `helpers.baseUrlOf()` already carries
+  it, and `ssf.js` appended `realms.currentPrefix()` again for the issuer, every
+  endpoint in the metadata, `jwks_uri` and `metadataUrl`, as did the seeded
+  streams' issuer in `ssf_receivers.js`. In any realm but the default one a
+  receiver discovered `…/realm/acme/realm/acme/ssf/stream` and matched every
+  SET's `iss` against a string no SET carried. Fixed in every mode.
+* **THE ISSUER WITH NO REQUEST** was `baseUrlOf(null)` — `http://localhost:<port>`
+  whatever `global.https` said — for a seeded stream and for the CAEP expiry
+  sweep. `ssf_http.js`'s `ownBaseUrl()` is `global.publicBaseUrl` where set,
+  else the loopback origin in the listener's own scheme, prefixed once; and
+  `transmitterIssuer()` beside it is now the ONE computation `ssf.js` and
+  `ssf_receivers.js` share.
+* **A CONFIGURED `ssf.issuer` IS PER REALM.** It was returned verbatim in every
+  realm — two transmitters under one name. A value the REALM carries is used as
+  it stands; a process-wide one gets the realm's prefix. Not in `realms.js`'s
+  NAMED_BY_REALM, which seeds at creation and would miss every realm created
+  before the setting was pinned.
+* **THE INTERNAL PUSH DIALLED `127.0.0.1` LITERALLY**, which reaches nothing when
+  `global.host` binds one interface or IPv6 only. `loopbackOrigin()` uses
+  `helpers.loopbackHost()` and `hostForUrl()`.
+* **SUBJECTS INVENTED ADDRESSES.** `subjectForUser()` knew only a username, so
+  an `email` subject was `<name>@example.com` and a DID `did:example:<name>`
+  even where RISC's row held a real `mail`. It takes `facts` (`mail`, `phone`,
+  `did`) and a real value wins in both modes; where there is none,
+  `mode.inventsClaimValues()` decides — development invents as before, product
+  falls back to the issuer/subject pair. RISC's two identifier events, whose
+  subject MUST be an address or a number, get NO subject in product when there
+  is neither, and `transmit()` refuses them. The portal filter's invented-address
+  match is development-only for the same reason.
+* **A FOREIGN RS256 SET READ "INVALID".** `publicKeyForHeader()` sent every
+  RS256 SET to this service's RSA key whatever its `kid`; it matches on the
+  `kid` and falls back to the algorithm only when there is none, so a SET
+  somebody else signed is *not verifiable here*.
+* **SETTINGS FOR LITERALS**: `ssf.pushMaxResponseBytes` (65536),
+  `ssf.pushRetries` (0), `ssf.pushRetryDelayMs` (1000), `ssf.authBasic` (true),
+  `caep.eventsPerSession` (25), `caep.historyPerSession` (10),
+  `risc.eventsPerAccount` (25), `risc.historyPerAccount` (10).
+  `risc.EVENTS_PER_ACCOUNT` is a getter over the setting now.
+
+**Left alone and said so**: the two internal surfaces' audiences
+(`sts-admin-console`, `sts-user-portal`) and receive paths. They are the seeded
+client ids and the routes the surfaces register; deriving them from
+`common/oidc_rp.js`'s table would put a require from this directory into a
+module at 8b for two strings that change only with those files.

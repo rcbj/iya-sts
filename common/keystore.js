@@ -110,6 +110,9 @@ const mode = require('./mode');
 // this file registers no route so it cannot move one.
 const realms = require('./realms');
 const secrets = require('./secrets');
+// A LEAF with no requires: the failure codes on the log lines and the fatal
+// refusals below. NOT audit.js, which requires helpers.js, which requires this.
+const errorCodes = require('./error_codes');
 
 // The KEK, read once in `start()` and held for the life of the process. Never
 // written anywhere, never logged, and never handed out — `encryptWithKek()` and
@@ -177,7 +180,8 @@ function setStore(hooks) {
     return !hooks || typeof hooks[name] !== 'function';
   });
   if (missing.length) {
-    log.error('keystore: setStore() was given something without ' +
+    log.error(errorCodes.tag('STS-KEYS-0026') +
+              'keystore: setStore() was given something without ' +
               missing.join(', ') + ', so it was refused whole. Half of it ' +
               'would be a service that reads its keys and cannot write them, ' +
               'or writes them and cannot read them back — and the second one ' +
@@ -323,6 +327,43 @@ function armPurge(realmId) {
 }
 
 // ---------------------------------------------------------------------------
+// THE REFRESH-TOKEN ENCRYPTION KEYS, AS THE STORED BLOB CARRIES THEM
+// (2026-09-12). Three members because the JWE algorithms are three kinds:
+// RSA-OAEP needs an RSA pair, ECDH-ES an EC pair, and the symmetric families a
+// shared secret. PEM for the two private keys, for `extraKeys`' reason; base64
+// for the secret, because a Buffer does not survive JSON. Null when a set has
+// none, which `deserialiseRefreshTokenKeys()` reads back as nothing to restore.
+// ---------------------------------------------------------------------------
+function serialiseRefreshTokenKeys(held) {
+  if (!held || !held.rsa || !held.ec || !held.secret) {
+    return null;
+  }
+  return {
+    rsa: { privateKeyPem: held.rsa.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+           publicJwk: held.rsa.publicJwk },
+    ec: { privateKeyPem: held.ec.privateKey.export({ type: 'pkcs8', format: 'pem' }),
+          publicJwk: held.ec.publicJwk },
+    secret: Buffer.from(held.secret).toString('base64'),
+    secretKid: held.secretKid
+  };
+}
+
+function deserialiseRefreshTokenKeys(blob, nodeCryptoModule) {
+  if (!blob || !blob.rsa || !blob.ec || !blob.secret ||
+      !blob.rsa.privateKeyPem || !blob.ec.privateKeyPem) {
+    return null;
+  }
+  return {
+    rsa: { privateKey: nodeCryptoModule.createPrivateKey(blob.rsa.privateKeyPem),
+           publicJwk: blob.rsa.publicJwk },
+    ec: { privateKey: nodeCryptoModule.createPrivateKey(blob.ec.privateKeyPem),
+          publicJwk: blob.ec.publicJwk },
+    secret: Buffer.from(String(blob.secret), 'base64'),
+    secretKid: blob.secretKid
+  };
+}
+
+// ---------------------------------------------------------------------------
 // SERIALISING A KEY SET. PEM in, PEM out — `makeStsKeys()` already produces
 // PEM for the RSA pair, and node's `KeyObject.export()` gives it for the other
 // eight, so nothing here has to know what an EC key looks like.
@@ -387,7 +428,33 @@ function serialise(keys) {
         privateKeyPem: one.privateKey.export({ type: 'pkcs8', format: 'pem' }),
         publicJwk: one.publicJwk
       };
-    })
+    }),
+    // **THE OPENID4VCI REQUEST-ENCRYPTION KEY TRAVELS AND IS WRITTEN DOWN WITH
+    // THE SET (2026-09-12)** — which is the whole of what making it a member
+    // bought: sealed in `sts_keys` in product mode, shared over the pool's key
+    // channel in every mode, per realm because the set is. `helpers.js`'s
+    // makeRequestEncryptionKey() argues why it is here at all.
+    //
+    // NULL rather than absent when a set has none, so that "a blob from before
+    // this existed" and "a blob that says it has no such key" read the same on
+    // the way back — `deserialise()` and `privateMaterialFor()` both treat a
+    // missing member as nothing to restore, and `helpers.js` backfills.
+    vciRequestEncKey: (keys.vciRequestEncKey && keys.vciRequestEncKey.publicJwk)
+      ? {
+          privateKeyPem: keys.vciRequestEncKey.privateKey.export({
+            type: 'pkcs8', format: 'pem' }),
+          publicJwk: keys.vciRequestEncKey.publicJwk
+        }
+      : null,
+    // **THE REFRESH-TOKEN ENCRYPTION KEYS (2026-09-12)** — the realm's own RSA
+    // pair, EC pair and symmetric secret that `oauth-oidc/refresh_token_crypto.js`
+    // encrypts every refresh token to. Written down and shared exactly as the
+    // request-encryption key above is, and for its reason: a refresh token
+    // outlives the process that minted it in product mode, and a request worker
+    // that encrypted to a key another worker does not hold would mint a token
+    // nothing else can open. NULL rather than absent for the same reason too;
+    // `helpers.js`'s refreshTokenKeysFor() backfills a set written before it.
+    refreshTokenEncKeys: serialiseRefreshTokenKeys(keys.refreshTokenEncKeys)
   };
   log.debug('Leaving serialise(). ' + out.extraKeys.length + ' extra key(s).');
   return out;
@@ -418,7 +485,16 @@ function deserialise(blob, nodeCrypto) {
         privateKey: nodeCrypto.createPrivateKey(one.privateKeyPem),
         publicJwk: one.publicJwk
       };
-    })
+    }),
+    // THE REQUEST-ENCRYPTION KEY, put back. Null on a blob written before it
+    // joined the set, which `helpers.js`'s requestEncryptionKeyFor() backfills.
+    vciRequestEncKey: (blob.vciRequestEncKey && blob.vciRequestEncKey.privateKeyPem)
+      ? {
+          privateKey: nodeCrypto.createPrivateKey(blob.vciRequestEncKey.privateKeyPem),
+          publicJwk: blob.vciRequestEncKey.publicJwk
+        }
+      : null,
+    refreshTokenEncKeys: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys, nodeCrypto)
   };
   log.debug('Leaving deserialise(). ' + out.extraKeys.length + ' extra key(s).');
   return out;
@@ -445,7 +521,8 @@ async function start() {
                : 'development mode generates a signing key on every start' };
   }
   if (!store) {
-    throw new Error('key material is configured to persist (keys.source=' +
+    throw new Error(errorCodes.tag('STS-KEYS-0027') +
+                    'key material is configured to persist (keys.source=' +
                     config.value('keys.source') + ') and no persistence store ' +
                     'is open. Product mode requires one: set persistence.mode ' +
                     'to ldif or postgres.');
@@ -458,7 +535,8 @@ async function start() {
   try {
     rows = (await store.loadKeys()) || [];
   } catch (e) {
-    throw new Error('the stored key material could not be read: ' + e.message);
+    throw new Error(errorCodes.tag('STS-KEYS-0028') +
+                    'the stored key material could not be read: ' + e.message);
   }
   let loaded = 0;
   let pkiLoaded = 0;
@@ -472,7 +550,8 @@ async function start() {
       // is the wrong key-encryption key — a rotated secret, a different
       // provider, the wrong file mounted — and the overwhelmingly wrong
       // response is to generate a new signing key and carry on.
-      throw new Error('the stored key material for the "' + realmId + '" realm ' +
+      throw new Error(errorCodes.tag('STS-KEYS-0029') +
+                      'the stored key material for the "' + realmId + '" realm ' +
                       'could not be decrypted. The key-encryption key is ' +
                       'almost certainly not the one it was encrypted with ' +
                       '(provider: ' + secrets.describe().provider + '). This ' +
@@ -645,6 +724,44 @@ function adoptShared(realmId, blob) {
   const id = String(realmId || '');
   const replacing = shared.has(id) && shared.get(id) !== blob;
   shared.set(id, blob);
+  // ---------------------------------------------------------------------
+  // **AND THE STORED SET HAS TO GO TOO, OR THE ADOPTION IS UNDONE ON THE
+  // NEXT READ (2026-09-12).** The paragraph below is about the CACHED key
+  // set; this is about the one this process persisted, and until this line
+  // existed the second silently won.
+  //
+  // `helpers.js` looks a realm's keys up in three places in a fixed order —
+  // STORED, then a SIBLING'S, then generate — and that order is right. What
+  // it means here is that a process which generated its own set, wrote it to
+  // `sts_keys` and THEN lost the race would drop its cached set, rebuild, and
+  // find its own material in the store again. Adopting became a no-op with a
+  // log line saying it had happened.
+  //
+  // **MEASURED, on a dispatched run with `keys.source=persisted`:** a realm
+  // created at runtime got FOUR key sets in four processes — three generated
+  // within 43ms of each other and each written down — so `/oauth2/jwks`
+  // answered a different `kid` per worker and an assertion encrypted to the
+  // key one worker published would not decrypt on another. In development
+  // with no keystore `storedFor()` answers null, so the channel worked and
+  // this was invisible; it is PRODUCT MODE WITH REQUEST WORKERS that had it
+  // all along.
+  //
+  // Writing the winner down from here is deliberate as well: the loser's row
+  // is in the store, and every process that adopts writes the same plaintext
+  // over it, so the row converges on the set everybody is using rather than on
+  // whichever process wrote last.
+  // ---------------------------------------------------------------------
+  if (persists() && store && kek) {
+    try {
+      hold(id, blob, 'adopted from another process in this service');
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KEYS-0030') +
+                'keystore: the "' + id + '" realm\'s adopted signing keys ' +
+                'could not be held: ' + e.message + '. This process will go ' +
+                'on using its own, which means it disagrees with the rest of ' +
+                'this service.');
+    }
+  }
   // **AND THE CACHED SET HAS TO GO, OR ADOPTING IS A NO-OP.** `helpers.js`
   // holds the built key set in a `realms.keyed()` map, so a process that
   // generated its own and then lost the race would go on signing with what it
@@ -655,7 +772,8 @@ function adoptShared(realmId, blob) {
     try {
       adoptListener(id);
     } catch (e) {
-      log.error('keystore: the "' + id + '" realm\'s cached key set could ' +
+      log.error(errorCodes.tag('STS-KEYS-0030') +
+                'keystore: the "' + id + '" realm\'s cached key set could ' +
                 'not be dropped after adopting another process\'s: ' +
                 e.message + '. This process is still signing with its own.');
     }
@@ -691,31 +809,113 @@ function publishShared(realmId, keys) {
     // certificate is what identifies the set, so a blob carrying the same one
     // and more content replaces what is held and is published on; a different
     // certificate is the race and still loses.
-    let enriches = false;
+    let enriching = false;
     try {
-      enriches = serialise(keys).certB64 === held.certB64 &&
-                 (keys.pqKeys || []).length > (held.pqKeys || []).length;
+      enriching = enriches(serialise(keys), held);
     } catch (e) {
-      enriches = false;
+      // A set that cannot be serialised is not an enrichment of anything; the
+      // branch below reports the serialisation failure on the path that
+      // actually tries to share it.
+      enriching = false;
     }
-    if (!enriches) {
-      return;
+    if (!enriching) {
+      // **FALSE AND NOT undefined SINCE 2026-09-12**, and it is read: the
+      // caller that warms a realm's post-quantum keys writes them to the
+      // STORE as well, and a process whose offer lost the race must not write
+      // the set it is about to be told to discard. See `pqKeysForAsync()`.
+      return false;
     }
   }
   let blob;
   try {
     blob = serialise(keys);
   } catch (e) {
-    log.error('keystore: the "' + id + '" realm\'s keys could not be ' +
+    log.error(errorCodes.tag('STS-KEYS-0031') +
+              'keystore: the "' + id + '" realm\'s keys could not be ' +
               'serialised for sharing: ' + e.message + '. This process will ' +
               'use them alone, which means a second process holds different ' +
               'ones.');
-    return;
+    return false;
   }
   shared.set(id, blob);
   if (publisher) {
     publisher(id, blob);
   }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// IS `candidate` THE SAME KEY SET AS `held`, CARRYING MORE? (2026-09-12)
+//
+// The enrichment rule, in ONE place, because both ends of the key channel
+// apply it — `publishShared()` above in the process that offers, and
+// `request_pool.js`'s `receivePublishedKeys()` in the process that arbitrates —
+// and it was written out twice with ONE member in it (the post-quantum count).
+// A second member arriving is exactly how two copies of a rule come to
+// disagree.
+//
+// **THE SAME SET** is the certificate the key was born with (see serialise()).
+// **CARRYING MORE** is "at least everything held has, and strictly more of
+// something" — never "more of one thing": a set gaining its request-encryption
+// key before its post-quantum keys, offered against a held blob that already
+// has the post-quantum keys, would otherwise replace the held blob with one
+// that has lost them, and every process would go back to generating its own.
+// ---------------------------------------------------------------------------
+function enriches(candidate, held) {
+  if (!candidate || !held || candidate.certB64 !== held.certB64) {
+    return false;
+  }
+  const pqHere = (candidate.pqKeys || []).length;
+  const pqThere = (held.pqKeys || []).length;
+  const vciHere = candidate.vciRequestEncKey ? 1 : 0;
+  const vciThere = held.vciRequestEncKey ? 1 : 0;
+  // The refresh-token encryption keys are the THIRD member, and the rule is
+  // unchanged: at least everything held has, and strictly more of something.
+  const rtHere = candidate.refreshTokenEncKeys ? 1 : 0;
+  const rtThere = held.refreshTokenEncKeys ? 1 : 0;
+  if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere) {
+    return false;
+  }
+  return pqHere > pqThere || vciHere > vciThere || rtHere > rtThere;
+}
+
+// ---------------------------------------------------------------------------
+// A REQUEST-ENCRYPTION KEY SOME PROCESS OF THIS SERVICE ALREADY MADE FOR THIS
+// REALM, as `{ privateKey, publicJwk }`, or null. It READS and never makes.
+//
+// Asked by `helpers.js`'s backfill before it generates, for the case the key
+// channel cannot see: a process holding a set built before the key existed,
+// whose realm has since been backfilled somewhere else and ADOPTED here —
+// into the stored material in product mode, into `shared` in every mode —
+// without the set it already built being dropped. Stored first, then shared,
+// which is `stsKeysFor`'s own order and for its reason.
+// ---------------------------------------------------------------------------
+function requestEncryptionKeyHeldFor(realmId) {
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && fromStore.vciRequestEncKey)
+    ? fromStore
+    : shared.get(id);
+  const member = blob && blob.vciRequestEncKey;
+  if (!member || !member.privateKeyPem || !member.publicJwk) {
+    return null;
+  }
+  return { privateKey: nodeCrypto.createPrivateKey(member.privateKeyPem),
+           publicJwk: member.publicJwk };
+}
+
+// ---------------------------------------------------------------------------
+// THE REFRESH-TOKEN ENCRYPTION KEYS SOME PROCESS ALREADY MADE FOR THIS REALM,
+// deserialised, or null. It READS and never makes — `requestEncryptionKeyHeldFor()`
+// above, for the same backfill, in the same order: stored, then shared.
+// ---------------------------------------------------------------------------
+function refreshTokenKeysHeldFor(realmId) {
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && fromStore.refreshTokenEncKeys)
+    ? fromStore
+    : shared.get(id);
+  return deserialiseRefreshTokenKeys(blob && blob.refreshTokenEncKeys, nodeCrypto);
 }
 
 // Every realm this process holds keys for, for the fork-time seed.
@@ -746,7 +946,8 @@ function storedFor(realmId) {
     // KEK, so reaching here means somebody called `reset()` and did not start
     // again — which is a test, and a null answer sends `helpers.js` down the
     // generate path rather than throwing out of a property read.
-    log.error('keystore: the "' + id + '" realm\'s key material is held ' +
+    log.error(errorCodes.tag('STS-KEYS-0032') +
+              'keystore: the "' + id + '" realm\'s key material is held ' +
               'encrypted and there is no key-encryption key to open it with. ' +
               'A new signing key will be generated, and every token issued ' +
               'under the stored one stops verifying.');
@@ -759,7 +960,8 @@ function storedFor(realmId) {
   } catch (e) {
     // The wrong KEK cannot be the cause here — `start()` decrypted this very
     // record — so this is corruption or a bug, and it is louder for that.
-    log.error('keystore: the "' + id + '" realm\'s key material decrypted at ' +
+    log.error(errorCodes.tag('STS-KEYS-0033') +
+              'keystore: the "' + id + '" realm\'s key material decrypted at ' +
               'startup and does NOT decrypt now: ' + e.message);
     return null;
   }
@@ -793,7 +995,63 @@ function privateMaterialFor(realmId) {
   const parsed = {
     privateKeyPem: blob.privateKeyPem,
     privateKey: nodeCrypto.createPrivateKey(blob.privateKeyPem),
-    extra: new Map()
+    extra: new Map(),
+    // ---------------------------------------------------------------------
+    // **THE POST-QUANTUM SET, WHICH THIS FUNCTION DID NOT CARRY UNTIL
+    // 2026-09-12 AND `lazyKeySet()` THEREFORE COULD NOT RESTORE.**
+    //
+    // `serialise()` has written these since 2026-09-07 and `deserialise()`
+    // has read them back — and the RESTORED path threw them away, because
+    // `helpers.js`'s `lazyKeySet()` had nowhere to get them from. So a
+    // process that built its key set from the STORE generated eleven
+    // post-quantum keys of its own and published them; the sibling channel
+    // refused the offer (another process had got there first) and it kept
+    // them anyway.
+    //
+    // **MEASURED IN A DISPATCHED STACK**: three workers, three different
+    // ML-DSA and SLH-DSA kids for the default realm, so a UserInfo response
+    // signed by one could not be verified against the JWKS served by another
+    // — `No key in the set has kid "sts-slh-dsa-shake-128s-…"`. It is
+    // the same defect `publishShared()`'s enrichment branch was written for,
+    // arriving by the one door that branch cannot see.
+    //
+    // They are RAW BYTES rather than KeyObjects — `pq_jose.js` signs with the
+    // bytes — so there is nothing to parse, and they live here rather than on
+    // the key set for the residency reason every other private key here does:
+    // this record is purged on the same timer.
+    // ---------------------------------------------------------------------
+    // **DECODED HERE, AND THE FIRST VERSION OF THIS LINE DID NOT.**
+    // `storedFor()` hands back the SERIALISED blob — `deserialise()` is a
+    // different door — so a post-quantum private key is 44 characters of
+    // base64 at this point and 32 bytes after it. Handing the string on
+    // reached `pq_jose.js` as *an ML-DSA "priv" is the 32-byte seed of RFC
+    // 9964 section 3.2; this one is 44 bytes*, which is the encoding trap
+    // this file's own header records having been caught by twice.
+    pq: (blob.pqKeys || []).length
+      ? blob.pqKeys.map(function (one) {
+          return {
+            alg: one.alg,
+            privateKey: Buffer.isBuffer(one.privateKey)
+              ? one.privateKey
+              : Buffer.from(String(one.privateKey), 'base64'),
+            publicJwk: one.publicJwk
+          };
+        })
+      : null,
+    // THE OPENID4VCI REQUEST-ENCRYPTION KEY, parsed and purged on the same
+    // timer as everything else on this record — the line `pq` above had to be
+    // added for the post-quantum half, added here on the day the key joined
+    // the set rather than a day later. `helpers.js`'s lazy key set reads it
+    // through a getter; the PUBLIC JWK is kept on the set and never comes
+    // through here, so publishing the issuer metadata decrypts nothing.
+    vci: (blob.vciRequestEncKey && blob.vciRequestEncKey.privateKeyPem)
+      ? nodeCrypto.createPrivateKey(blob.vciRequestEncKey.privateKeyPem)
+      : null,
+    // THE REFRESH-TOKEN ENCRYPTION KEYS — both private keys AND the secret,
+    // parsed and purged on this record's timer. The secret is private material
+    // exactly as a private key is: anybody holding it opens every refresh token
+    // encrypted under a symmetric algorithm.
+    rt: deserialiseRefreshTokenKeys(blob.refreshTokenEncKeys, nodeCrypto)
   };
   (blob.extraKeys || []).forEach(function (one) {
     parsed.extra.set(one.publicJwk && one.publicJwk.kid,
@@ -835,7 +1093,8 @@ function remember(realmId, keys) {
   const id = String(realmId || '');
   const blob = serialise(keys);
   if (!store || !kek) {
-    log.error('keystore: the "' + id + '" realm\'s signing keys were ' +
+    log.error(errorCodes.tag('STS-KEYS-0034') +
+              'keystore: the "' + id + '" realm\'s signing keys were ' +
               'generated and CANNOT BE WRITTEN — ' +
               (!store ? 'no persistence store is open'
                       : 'no key-encryption key was read') + '. They will be ' +
@@ -856,6 +1115,16 @@ function remember(realmId, keys) {
   // caller is `helpers.js` in the middle of building a key set and is about to
   // read it, and purging under that would decrypt the record we just made.
   // ---------------------------------------------------------------------
+  hold(id, blob, 'generated');
+  log.debug('Leaving remember(). Queued a write.');
+}
+
+// The half of `remember()` that takes an ALREADY SERIALISED blob: seal it,
+// hold it as this process's material for that realm, and queue the write.
+// Split out for `adoptShared()`, which has a blob and must never re-serialise
+// a key set it did not build.
+function hold(id, blob, why) {
+  log.debug('Entering hold(). realm=' + id + ' why=' + why);
   const cipher = crypto.encryptWithKek(kek, JSON.stringify(blob),
                                        'signing-keys');
   material.set(id, { cipher: cipher, createdAt: blob.createdAt || Date.now(),
@@ -868,14 +1137,15 @@ function remember(realmId, keys) {
     })
     .then(function () {
       log.info('keystore: the "' + id + '" realm\'s signing keys were ' +
-               'generated and written to the store, encrypted.');
+               why + ' and written to the store, encrypted.');
     })
     .catch(function (e) {
-      log.error('keystore: the "' + id + '" realm\'s signing keys could not ' +
+      log.error(errorCodes.tag('STS-KEYS-0035') +
+                'keystore: the "' + id + '" realm\'s signing keys could not ' +
                 'be written: ' + e.message + '. They will be different after ' +
                 'the next restart.');
     });
-  log.debug('Leaving remember(). Queued a write.');
+  log.debug('Leaving hold().');
 }
 
 // ---------------------------------------------------------------------------
@@ -914,7 +1184,8 @@ async function rotate(realmId) {
     try {
       await store.deleteKeys(id);
     } catch (e) {
-      log.error('keystore: the stored keys for "' + id + '" could not be ' +
+      log.error(errorCodes.tag('STS-KEYS-0036') +
+                'keystore: the stored keys for "' + id + '" could not be ' +
                 'removed: ' + e.message);
       return { ok: false, errors: ['The stored keys could not be removed: ' +
                                    e.message] };
@@ -987,7 +1258,8 @@ realms.onRemove(function (id) {
              'stored signing keys went with it.');
     log.debug('Leaving the keystore realm purge.');
   }).catch(function (e) {
-    log.error('keystore: the "' + realmId + '" realm was removed but its ' +
+    log.error(errorCodes.tag('STS-KEYS-0037') +
+              'keystore: the "' + realmId + '" realm was removed but its ' +
               'stored signing keys could not be: ' + e.message + '. A realm ' +
               'later created under the same name would inherit them.');
   });
@@ -1103,7 +1375,8 @@ let ephemeral = false;
 
 function useEphemeralKek(hex) {
   if (persists()) {
-    log.error('keystore: an ephemeral key-encryption key was offered while ' +
+    log.error(errorCodes.tag('STS-KEYS-0038') +
+              'keystore: an ephemeral key-encryption key was offered while ' +
               'the keystore persists. Refused: in product mode the KEK is the ' +
               'operator\'s and the store outlives this process.');
     return false;
@@ -1117,7 +1390,8 @@ function useEphemeralKek(hex) {
     crypto.kekBytes(kek);
   } catch (e) {
     kek = null;
-    log.error('keystore: the ephemeral key-encryption key was not usable: ' +
+    log.error(errorCodes.tag('STS-KEYS-0039') +
+              'keystore: the ephemeral key-encryption key was not usable: ' +
               e.message);
     return false;
   }
@@ -1162,7 +1436,8 @@ function seal(plaintext, label) {
     log.debug('Leaving seal(). Sealed.');
     return out;
   } catch (e) {
-    log.error('keystore: something could not be sealed: ' + e.message);
+    log.error(errorCodes.tag('STS-KEYS-0040') +
+              'keystore: something could not be sealed: ' + e.message);
     log.debug('Leaving seal(). It threw.');
     return null;
   }
@@ -1284,7 +1559,8 @@ function attachPki(realmId, chain) {
     return;
   }
   if (!store || !kek) {
-    log.error('keystore: the "' + id + '" realm\'s certificate authority ' +
+    log.error(errorCodes.tag('STS-KEYS-0041') +
+              'keystore: the "' + id + '" realm\'s certificate authority ' +
               'CANNOT BE WRITTEN — ' +
               (!store ? 'no persistence store is open'
                       : 'no key-encryption key was read') + '. It will be ' +
@@ -1315,7 +1591,8 @@ function attachPki(realmId, chain) {
                                : 'removed from the store') + '.');
     })
     .catch(function (e) {
-      log.error('keystore: the "' + id + '" realm\'s certificate authority ' +
+      log.error(errorCodes.tag('STS-KEYS-0042') +
+                'keystore: the "' + id + '" realm\'s certificate authority ' +
                 'could not be written: ' + e.message + '. It will be ' +
                 'different after the next restart.');
     });
@@ -1347,6 +1624,11 @@ module.exports = {
   adoptShared: adoptShared,
   publishShared: publishShared,
   sharedAll: sharedAll,
+  // The enrichment rule both ends of that channel apply, and the read-only
+  // question `helpers.js` asks before it backfills a request-encryption key.
+  enriches: enriches,
+  requestEncryptionKeyHeldFor: requestEncryptionKeyHeldFor,
+  refreshTokenKeysHeldFor: refreshTokenKeysHeldFor,
   reset: reset,
   setStore: setStore,
   persists: persists,
@@ -1361,6 +1643,9 @@ module.exports = {
   retention: retention,
   retentionSentence: retentionSentence,
   remember: remember,
+  // `serialise()` beside it (2026-09-12), so a test can hold a blob's shape
+  // without driving the key channel to get one. Pure; it writes nothing.
+  serialise: serialise,
   deserialise: deserialise,
   rotate: rotate,
   // The certificate authority material. See the block above attachPki() for

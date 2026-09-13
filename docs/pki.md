@@ -302,7 +302,7 @@ Issuing CA is shortened to the CA's own expiry: the ordinary cause is a five-yea
 Issuing CA in its fifth year, and an operator who asked for a year should get
 eleven months rather than an error about arithmetic.
 
-## Revocation is published, and never consulted
+## Revocation is published, and consulted
 
 **This section said *nothing is ever revoked* until 2026-09-11.** It read *this
 service publishes no CRL and answers no OCSP; a certificate it issued is good
@@ -320,15 +320,87 @@ Now:
 | **A pane on `/admin/pki`** | Pick an authority, see what it has issued, revoke with any of the nine RFC 5280 reasons, release a `certificateHold`. |
 | **Rotation revokes automatically** | Reissuing a use case's Issuing CA puts every leaf it had signed on its own list and the replaced CA on the Intermediate's, as `superseded`. |
 
-**What it does NOT do is CONSULT a revocation list — its own included.** A
-client certificate presented to this service is checked against the anchors on
-`/tls/trust`, and no CRL is fetched and no responder is asked. So **a
-certificate revoked here still authenticates here**, which is the one sentence
-on this page most worth not skimming.
+**AND SINCE 2026-09-12 IT CONSULTS THEM.** This paragraph read *what it does
+NOT do is CONSULT a revocation list — its own included … so a certificate
+revoked here still authenticates here*. A certificate PRESENTED to this service
+is now checked under `pki.revocationCheck`:
 
-That is not an oversight and it is tracked as outstanding in `common/mode.js`:
-checking needs a fetch with a timeout, a cache, and a soft-fail-or-hard-fail
-policy for an unreachable responder, and none of that is mock behaviour.
+| Where a certificate is presented | What is checked |
+|---|---|
+| **8443 and 9443** (a verified client certificate) | the whole chain. A refused one starts no session and is not recorded as an authentication; **9443 answers 403** with the report, 8443 answers 200 and says *refused on revocation* |
+| **The main port** — the remote XACML PEP and XACML user chains, SCIM's client-certificate scheme, RFC 8705 `tls_client_auth` / `self_signed_tls_client_auth` | the whole chain, computed once per request before any route; each of those doors refuses a certificate the policy refuses |
+| **An RFC 7523 assertion's `x5c`** | the register only — the path is this realm's own by construction |
+| **The SPIRE Server API** (an X509-SVID) | the register only, whatever the policy — a federated SVID has no revocation mechanism but its bundle |
+| **LDAPS 636** | nothing — it asks for no client certificate |
+
+**A certificate REGISTERED rather than presented is checked too, when it is
+USED** — the same sources and the same policy, refused as `STS-PKI-0129`:
+
+| Where a registered certificate verifies something | What is checked |
+|---|---|
+| **An RFC 7523 grant or `private_key_jwt` client authentication** | the `x5c` of the key in `jwks` / `oauthAssertionJwks` / a person's `stsAssertionJwks` that verified the assertion. A key with **no** `x5c` is a bare key: nothing to look up, and the result says `bare` rather than good |
+| **An RFC 7522 grant or client authentication** | the registered or issued certificate that verified the assertion |
+| **A federated sign-in** (SAML 2.0, SAML 1.1, WS-Federation, OpenID Connect, OAuth 2.0 with a JWT access token) | `fedSigningCertificate`, or the `x5c` of the partner key that verified the token — before the session starts |
+| **The OID4VP response endpoint** | the certificate in `oid4vp.trustedIssuerCertificates` that verified the credential, as a check row |
+
+A registered certificate usually arrives with nothing above it, so its issuer is
+**fetched from its own caIssuers address**, hop by hop, each certificate
+believed only because its key verifies the one below. One naming no such address
+is refused only under `pki.revocationRequireDistributionPoint`; one naming an
+address that did not answer is refused under hard-fail.
+
+**Where the answer comes from depends on who signed the certificate.** One of
+this service's own authorities is answered from the REGISTER — the list this
+page revokes into — with no network in it, for every certificate on the chain,
+**including the tiers the client did not send**: revoke an Issuing CA and every
+leaf under it is refused. Anybody else's is answered by the **OCSP responder**
+its Authority Information Access names and by the **CRL** its
+`cRLDistributionPoints` names — in the order `pki.revocationOcsp` chooses, each
+the other's fallback — fetched over **http, https or `ldaps:`** (plain `ldap:`
+only with `pki.revocationLdap=ldaps-and-ldap`; never `file:`; OCSP over http(s)
+only), with a timeout, a size cap, no redirects or referrals, and a cache that
+honours the document's own validity. An `ldaps:` directory's certificate must
+chain to node's CA store or `pki.revocationLdapCaFile`; the URL is read per RFC
+4516 with a host, base scope and no critical extension, and only a list's or a CA
+certificate's attribute is read. A distribution point named **relative to its CRL
+issuer** is looked up in the directory `pki.revocationLdapDirectory` names, when
+every RDN of the whole name is single-valued. **A URL is dialled only for a chain that VERIFIED
+against this service's truststore** — an unverified certificate can name
+anything.
+
+**Whose signature is believed:**
+
+| Document | Signed by |
+|---|---|
+| An OCSP response | the certificate's issuer, or a **delegated responder** whose certificate is in the response, was issued by that issuer, carries `id-kp-OCSPSigning`, is inside its validity period — and **is not itself revoked**: its own status comes from the CRL its certificate names (never from OCSP), unless it carries `id-pkix-ocsp-nocheck`. A revoked responder's answers are unusable; one whose status could not be established is not believed under hard-fail |
+| A CRL | the certificate's issuer — or, for an **indirect** CRL, the `cRLIssuer` the certificate's distribution point names, whose certificate must carry `cRLSign` and chain to an authority the presented chain passes through. It is found in that chain, among this service's own authorities, in `pki.revocationCrlIssuersFile`, or at the **caIssuers address the CRL's own Authority Information Access names** — which also verifies a list the issuer signed with a rollover key |
+| A delta CRL | the same signer as its base |
+
+**What else is checked:**
+
+| | |
+|---|---|
+| OCSP freshness | `thisUpdate` not in the future and `nextUpdate` not past, within `pki.revocationClockSkewS`; a response with no `nextUpdate` is fresh for `pki.revocationOcspMaxAgeS` |
+| OCSP nonce | always sent; a response echoing a **different** one is a replay and refused; one echoing **none** is believed (RFC 5019 responders cannot echo one) unless `pki.revocationOcspRequireNonce` is on |
+| A responder's `unknown` | is **unknown** — refused under hard-fail, and not turned into good by a CRL that does not list the certificate. A CRL that lists it still wins |
+| A delta CRL | fetched from the `freshestCRL` on the certificate or its base; merged only when it is from the same issuer and scope, its `BaseCRLNumber` is no newer than the base's `cRLNumber` and its own number is greater. `removeFromCRL` takes an entry off. A delta that cannot be applied leaves a base's **permanent** revocation standing and makes everything else unknown |
+| An indirect CRL | must declare `indirectCRL`; each entry belongs to the `certificateIssuer` before it, so a serial is matched only under the right issuer |
+| The issuing distribution point | its name must match the point the certificate named; `onlyContainsUserCerts` / `onlyContainsCACerts` / `onlyContainsAttributeCerts` decide whether the list is about this certificate at all; `onlySomeReasons` and the point's own `reasons` narrow what it covers, and a certificate is good only once its lists cover **every** reason between them |
+
+| `pki.revocationCheck` | Refuses |
+|---|---|
+| `off` | nothing |
+| `soft-fail` | a certificate that is revoked |
+| `hard-fail` | that, and one whose status could not be fetched, did not verify, was stale, or that its issuer's responder does not know. A certificate naming **no** CRL and **no** responder is still accepted unless `pki.revocationRequireDistributionPoint` is on — there is nothing an attacker could block |
+| `auto` (default) | `hard-fail` in product mode, `soft-fail` in development |
+
+**What remains are limits, and `common/mode.js` carries them**: a bare registered
+key names no list, so only taking it off stops it verifying; plain `ldap:` is
+dialled only when allowed; a relative distribution point needs
+`pki.revocationLdapDirectory` and single-valued RDNs; LDAPS 636 asks for no client
+certificate. The verdict for a
+connection is on `GET /tls/whoami`; the policy is on `GET /tls` and
+`/admin/crypto-metadata`.
 
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
 control labelled *Take the key pair off*, and it is **not** revocation:
@@ -633,5 +705,5 @@ never a certificate that exists.
 | `pki.autoBuild` | `true` | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off is how this service behaved before 2026-09-11. |
 | `pki.keyAlgorithm` | `rsa-2048` | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
 | `pki.signatureAlgorithm` | *(empty)* | Empty means "the right one for the key algorithm". See above. |
-| `pki.organisation` | `mock-sts` | The `O=` every tier carries, and what the tiers are named after when no common name is given. |
+| `pki.organisation` | `sts` | The `O=` every tier carries, and what the tiers are named after when no common name is given. |
 | `pki.leafLifetimeDays` | `365` | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |

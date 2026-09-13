@@ -164,13 +164,17 @@ sign-on in none of the four browser profiles — `/saml2`'s own page lists it
 among what is not implemented — so a link that began one would have to invent a
 request the application never asked for and is not expecting. The page says so.
 
-### It is paginated, and the cap is a guard rather than a setting
+### It is paginated, and the cap is a setting since 2026-09-12
 
-Twenty rows a page. The scan stops at 1,000 entries and says when it bit: each
-entry costs a policy evaluation per distinct kind, on the one thread that
-answers every socket this service holds, which is the stall `CLAUDE.md`'s
-worker-pool section is about. A configuration row would be a knob nobody turns
-until the day the page is already slow.
+Twenty rows a page. The scan stops at `portal.applicationScanLimit` entries —
+1,000 by default — and says when it bit, with the number in force: each entry
+costs a policy evaluation per distinct kind, on the one thread that answers
+every socket this service holds, which is the stall `CLAUDE.md`'s worker-pool
+section is about. **This heading said "a guard rather than a setting"** on the
+argument that a configuration row would be a knob nobody turns until the day
+the page is already slow. The half about the page being slow still holds; what
+it left out is the deployment whose registry is past a thousand on purpose,
+which could not see its own applications at all short of editing the source.
 
 **THERE IS NO `/admin-api` MIRROR, WHICH IS A DEPARTURE FROM THE STANDING
 CONVENTION AND IS ARGUED RATHER THAN OVERLOOKED.** A console page gets a
@@ -358,6 +362,14 @@ blocked it posts a `finish` with no credential, and the handler answers *your
 browser did not run the ceremony* — naming the one step that needs it and saying
 the rest of the portal runs no script at all.
 
+### It is held to the same two address rules as the sign-in screen (2026-09-12)
+
+`authn.rpIdProblem()` refuses a ceremony whose configured `webauthn.rpId` does
+not fit the host in product mode, and `authn.expectedOriginFor()` decides the
+origin from `webauthn.allowedOrigins` where it is set. The `finish` action asks
+both rather than `authn.originOf(base)`, so a key enrolled here and a key used
+at `/authn/webauthn` are held to one answer. `authn/CLAUDE.md` argues them.
+
 ### What is still not done
 
 **`/portal/activate`'s `key_role` radio still enrols nothing.** Choosing *a
@@ -523,7 +535,7 @@ under `ou=applications`, seeded at startup in every realm. It does not reach for
 the sign-on session at all: the browser goes to `/oauth2/authorize`, the sign-in
 screen is reached only because the AUTHORIZATION ENDPOINT decides it needs one,
 and what comes back is a code that buys an ID Token that establishes the
-portal's OWN session in its own cookie (`sts_mock_portal`).
+portal's OWN session in its own cookie (`sts_portal`).
 `common/oidc_rp.js` runs it and argues it.
 
 Three things about it are this directory's:
@@ -951,9 +963,16 @@ through `/admin-api`.
 this service counts attempts at something secret — a password, a code, an
 activation token. This one counts key generations, because an RSA key pair is
 hundreds of milliseconds of CPU in a process that answers six socket families
-on one thread. The limit is passed explicitly (five) rather than taken from the
-shared default, because what is being protected is the SERVICE and not the
-account.
+on one thread. The limit is passed explicitly rather than taken from the shared
+default, because what is being protected is the SERVICE and not the account.
+
+**IT WAS THE LITERAL FIVE FOR BOTH BUCKETS UNTIL 2026-09-12**, which made the
+ADDRESS bucket five key generations a window for everybody behind one NAT or
+proxy. It is `pki.personSelfServicePerIdentity` and
+`pki.personSelfServicePerAddress` now, both five by default, passed to
+`websecurity.attempt()` as `{ identity, address }` — which that function learnt
+to accept beside a bare number, a member left out falling back to the shared
+setting for its bucket. `tests/scan_and_rate_limits.js` pins it.
 
 **AND IT HAS AN OFF SWITCH, WHICH `/portal/password` AND `/portal/keys` DO
 NOT.** `pki.personSelfService`, on by default, checked at the DOOR as well as
@@ -972,3 +991,30 @@ signs anybody IN, since there is no browser session at the end of it — was
 considered and refused: it is an argument about the section's TITLE rather than
 about what the section holds, and moving the heading's meaning to fit one page
 would misfile the other three.
+
+## THE SIGN-IN CAN BE REFUSED FOR A SECOND REASON, AND THE 503 SAYS WHICH (2026-09-12)
+
+`oidcRp.beginSignIn()` used to fail for one reason — `sts-user-portal` gone or
+without a secret — and the page said *which is what has happened*. In product
+mode it can also refuse because this portal is being reached at an address that
+entry does not carry as a redirect URI, which `common/oidc_rp.js` now refuses
+rather than writing the address onto the entry (an invented `Host` header would
+otherwise plant a callback on this service's own client). The reason is in
+`started.why` either way; `started.reason` says which kind it is, and the note
+under it names the kind of fix — an administrator registering the address, or
+restoring the entry.
+
+**A PASSWORD SET HERE IS HELD TO THE REALM'S PASSWORD POLICY IN PRODUCT
+MODE** — its length, symbol, uppercase and digit rules and its history — on
+`/portal/password` and on `/portal/activate` alike, because both go through
+`credentials.setPassword()`, which is the one place the rule is asked. It was
+`security.passwordMinLength` for a few hours on 2026-09-12; `common/CLAUDE.md`
+3ac argues the profile. Both pages already drew `set.errors[0]`; what they
+gained is `passwordRulesNote()`, which prints the rules ABOVE the button from
+`credentials.passwordRules()` — the function the refusal is built beside — so
+the sentence read before typing and the rule applied afterwards cannot differ.
+In development mode the note says nothing is checked rather than listing rules
+nobody applies. **An activation link still sets up somebody provisioned with no
+credential**: `/admin-api/users/create` generates a password by default since the
+same day, so a caller that means to send a link creates with
+`credential: "activation"` or `"none"`.

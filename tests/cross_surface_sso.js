@@ -136,10 +136,10 @@ function consoleSessionFrom(parent, parentRealmId, username) {
       res: res, username: username, claims: {}, via: 'Admin console',
       parent: parent.id, parentRealm: parentRealmId,
       surface: 'admin', label: 'Admin console',
-      clientId: 'sts-admin-console', cookie: 'sts_mock_admin'
+      clientId: 'sts-admin-console', cookie: 'sts_admin'
     });
   });
-  return { session: session, cookie: cookieFrom(res, 'sts_mock_admin') };
+  return { session: session, cookie: cookieFrom(res, 'sts_admin') };
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ function checkParentAcrossRealms(t) {
     // when a person is looking at /realm/sso-parent/admin.
     const read = realms.run(realm, function () {
       return authn.relyingPartySessionOf(
-        reqWith({ sts_mock_admin: made.cookie }), 'sts_mock_admin', realms.DEFAULT_ID);
+        reqWith({ sts_admin: made.cookie }), 'sts_admin', realms.DEFAULT_ID);
     });
     t.check(!!read, 'and it is honoured when read from inside that realm — the ' +
             'parent check looks in the parent\'s partition and not in this one',
@@ -259,7 +259,7 @@ function checkCascadeAcrossRealms(t) {
     // asserted SECOND and never instead of the line above.
     const after = realms.run(realm, function () {
       return authn.relyingPartySessionOf(
-        reqWith({ sts_mock_admin: made.cookie }), 'sts_mock_admin', realms.DEFAULT_ID);
+        reqWith({ sts_admin: made.cookie }), 'sts_admin', realms.DEFAULT_ID);
     });
     t.check(!after, 'and the cookie no longer admits anybody',
             after ? 'the console session ' + after.id + ' is still honoured' : '');
@@ -303,7 +303,7 @@ function checkOtherRealmsSignOutLeavesItAlone(t) {
 
     const still = realms.run(realms.DEFAULT_REALM, function () {
       return authn.relyingPartySessionOf(
-        reqWith({ sts_mock_admin: made.cookie }), 'sts_mock_admin', realms.DEFAULT_ID);
+        reqWith({ sts_admin: made.cookie }), 'sts_admin', realms.DEFAULT_ID);
     });
     t.check(!!still,
             'the console session derived from the DEFAULT realm\'s sign-on ' +
@@ -337,17 +337,17 @@ function checkDefaultRealmUnchanged(t) {
     return authn.startRelyingPartySession({
       res: res, username: 'cross-erin', claims: {}, via: 'User portal',
       parent: parent.id, surface: 'portal', label: 'User portal',
-      clientId: 'sts-user-portal', cookie: 'sts_mock_portal'
+      clientId: 'sts-user-portal', cookie: 'sts_portal'
     });
   });
   t.equal(session.derivedFromRealm, realms.DEFAULT_ID,
           'a caller that names no parent realm gets its own, which is what an ' +
           'absent field has always meant');
 
-  const cookie = cookieFrom(res, 'sts_mock_portal');
+  const cookie = cookieFrom(res, 'sts_portal');
   t.check(!!realms.run(realms.DEFAULT_REALM, function () {
             return authn.relyingPartySessionOf(
-              reqWith({ sts_mock_portal: cookie }), 'sts_mock_portal');
+              reqWith({ sts_portal: cookie }), 'sts_portal');
           }),
           'and it reads back with no realm named at all, which is every caller ' +
           'in a service with no realms defined');
@@ -357,7 +357,7 @@ function checkDefaultRealmUnchanged(t) {
   });
   t.check(!realms.run(realms.DEFAULT_REALM, function () {
             return authn.relyingPartySessionOf(
-              reqWith({ sts_mock_portal: cookie }), 'sts_mock_portal');
+              reqWith({ sts_portal: cookie }), 'sts_portal');
           }),
           'and the cascade inside one realm still works, which is the case that ' +
           'existed before any of this');

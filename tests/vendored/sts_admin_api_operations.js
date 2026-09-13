@@ -702,8 +702,25 @@ function documentedActions(doc) {
 //   * `spiffe/rotate` — it replaces the signing authority for the whole
 //                    process and has no opposite. Exercised once, deliberately,
 //                    in the SPIFFE section.
+//   * `tls/trust/*` (2026-09-12) — the client-certificate truststore is ONE
+//                    array for the process, whatever realm prefix a call
+//                    carries, and every job after this one has its TLS
+//                    handshakes judged against it. The documented examples
+//                    are placeholders a replay would only see refused, and a
+//                    rule that depended on that staying true would be one edit
+//                    to a description away from leaving an anchor behind.
+//                    Exercised in theTruststoreRoundTrips(), with a CA this
+//                    file mints and removes.
 // ---------------------------------------------------------------------------
-const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/];
+//   * `kerberos/principals/*` (2026-09-12) — the KDC is ONE for the process,
+//                    so a service principal created under any realm prefix is
+//                    the DEFAULT realm's, and the documented example names a
+//                    fixed SPN a replay would leave holding a random key for
+//                    every later run to meet as "already holds a stored key".
+//                    Exercised in theKerberosPrincipalsRoundTrip(), with an SPN
+//                    carrying this run's realm id, created and deleted.
+const REPLAY_HELD_BACK = [/^\/realms\//, /^\/rbac\//, /^\/spiffe\/rotate$/,
+                          /^\/tls\/trust\//, /^\/kerberos\/principals\//];
 
 async function everyDocumentedExampleIsAccepted(doc) {
   log.debug("Entering everyDocumentedExampleIsAccepted().");
@@ -1142,6 +1159,240 @@ async function theApplicationsRegistryRoundTrips() {
   log.debug("Leaving theApplicationsRegistryRoundTrips().");
 }
 
+// ---------------------------------------------------------------------------
+// A RETURN ADDRESS A DEVELOPMENT-MODE REQUEST PUT ON AN ENTRY, CONFIRMED AND
+// DISCARDED (2026-09-12).
+//
+// Development writes the SAML 1.1 `shire` a browser flow names onto the relying
+// party's `samlAssertionConsumerService` and MARKS it on
+// `appReturnAddressObserved`; product refuses a marked address until an operator
+// confirms it. `confirm-address` and `discard-address` are the two operations
+// that decide which way it goes, and neither can be driven with a fixture of
+// this file's own making: the mark is DERIVED, so no write through this API can
+// put one there. The sighting has to come from a PROTOCOL, and it is SAML 1.1's
+// inter-site transfer service because that is the one door that records a
+// return address before it needs a session — one POST, no browser.
+//
+// A POST and not a GET, and that is about the pool rather than the protocol:
+// in `dispatch` mode what counts as a write for read-your-write is the METHOD,
+// so a GET sighting could be answered by a worker the read below has not heard
+// from. The read is POLLED anyway, for the modes with no barrier.
+//
+// **THE PRODUCT HALF IS DRIVEN TOO**, through the ROOT API's realm setting so
+// that this realm's own `/admin-api` is never asked anything while the realm is
+// in product mode. Each probe carries the routing cookie the pool hands out, so
+// the probes that compare "refused" with "accepted" are answered by one worker;
+// and each waits until a probe for an address that was NEVER on the entry is
+// refused, which is what says that worker has the product setting at all.
+// ---------------------------------------------------------------------------
+async function theObservedReturnAddressesAreDecided() {
+  log.debug("Entering theObservedReturnAddressesAreDecided().");
+  log.info("=== Applications: confirm-address and discard-address ===");
+  const rpId = "urn:test:" + REALM + ":observed-rp";
+  const ONE = "https://observed-one.example.test/acs";
+  const TWO = "https://observed-two.example.test/acs";
+  const NEVER = "https://never-registered.example.test/acs";
+  const sso = base + "/realm/" + REALM + "/saml11/sso";
+  const jar = {};
+
+  async function sight(shire) {
+    const headers = { "Content-Type": "application/x-www-form-urlencoded" };
+    const cookie = Object.keys(jar).map(function (k) { return k + "=" + jar[k]; }).join("; ");
+    if (cookie) {
+      headers.Cookie = cookie;
+    }
+    const r = await fetch(sso, {
+      method: "POST", redirect: "manual", headers: headers,
+      body: new URLSearchParams({ providerId: rpId, shire: shire,
+                                  TARGET: "https://observed-one.example.test/app" }).toString()
+    });
+    const set = typeof r.headers.getSetCookie === "function" ? r.headers.getSetCookie() : [];
+    set.forEach(function (line) {
+      const pair = String(line).split(";")[0];
+      const at = pair.indexOf("=");
+      if (at > 0) {
+        jar[pair.slice(0, at)] = pair.slice(at + 1);
+      }
+    });
+    return { status: r.status, text: await r.text() };
+  }
+
+  async function observedOn() {
+    const entry = await application(rpId);
+    return { entry: entry, rows: (entry && entry.returnAddressesObserved) || [] };
+  }
+
+  async function until(what, predicate, ms) {
+    const deadline = Date.now() + (ms || 8000);
+    let last;
+    while (Date.now() < deadline) {
+      last = await predicate();
+      if (last && last.done) {
+        return last;
+      }
+      await new Promise(function (resolve) { setTimeout(resolve, 250); });
+    }
+    assert.fail(what + " did not happen within " + (ms || 8000) + "ms. Last: " +
+                JSON.stringify(last && last.detail).slice(0, 400));
+  }
+
+  // --- the sightings, in DEVELOPMENT --------------------------------------
+  for (const shire of [ONE, TWO]) {
+    const seen = await sight(shire);
+    assert.ok(seen.status < 400,
+      "POST " + sso + " naming shire " + shire + " should be accepted in development " +
+      "(a redirect to the sign-in screen); it answered " + seen.status + " " +
+      seen.text.slice(0, 200));
+  }
+  const both = await until("both sighted addresses marked observed on " + rpId, async function () {
+    const now = await observedOn();
+    const values = now.rows.map(function (row) { return row.value; });
+    return { done: values.indexOf(ONE) >= 0 && values.indexOf(TWO) >= 0,
+             detail: now.rows, now: now };
+  });
+  both.now.rows.forEach(function (row) {
+    assert.strictEqual(row.attribute, "samlAssertionConsumerService",
+      "an observed row names the attribute the address is on; it said " + row.attribute);
+    assert.ok(row.held === true && row.trusted === true,
+      "in DEVELOPMENT an observed address is on the entry and still trusted — the mode's " +
+      "behaviour is unchanged — and the row should say both; it said " + JSON.stringify(row));
+  });
+  assert.ok(Array.isArray(both.now.entry.returnAddressesObservedShown) &&
+            both.now.entry.returnAddressesObservedPaging &&
+            both.now.entry.returnAddressesObservedPaging.total === both.now.rows.length,
+    "the drill-down should carry the page the console draws its buttons from and its " +
+    "paging, totalling the whole list; it carried " +
+    JSON.stringify(both.now.entry.returnAddressesObservedPaging));
+
+  // A mark is DERIVED: nothing may write one.
+  await refused("/applications/add",
+    { application: rpId, attribute: "appReturnAddressObserved",
+      value: "samlAssertionConsumerService " + NEVER },
+    /appReturnAddressObserved|not editable|DERIVED/i, "writing a provenance mark by hand");
+
+  // --- product refuses the observed address ------------------------------
+  await ok("/realms/set", { id: REALM, key: "global.mode", value: "product" },
+    "put the realm in product mode", true);
+  assert.strictEqual(realmSetting(await realmRow(), "global.mode"), "product",
+    "the realm's registry row should carry global.mode=product after `set`.");
+  try {
+    await until("a product-mode worker refusing an address never on the entry", async function () {
+      const probe = await sight(NEVER);
+      return { done: probe.status === 400, detail: probe.status };
+    }, 15000);
+    const observed = await sight(ONE);
+    assert.strictEqual(observed.status, 400,
+      "in PRODUCT mode the shire development recorded must be refused; it answered " +
+      observed.status);
+    assert.ok(/nobody has confirmed it/.test(observed.text) &&
+              /confirm-address/.test(observed.text),
+      "and the refusal should say the address was learnt in development and how to " +
+      "confirm it, rather than that it is not registered anywhere: " +
+      observed.text.replace(/<[^>]+>/g, " ").slice(0, 400));
+  } finally {
+    await ok("/realms/unset", { id: REALM, key: "global.mode" },
+      "put the realm back in development mode", true);
+  }
+  // Outside the `finally`, because an assertion thrown there would replace
+  // whatever failure got the run into it.
+  assert.notStrictEqual(realmSetting(await realmRow(), "global.mode"), "product",
+    "after `unset` the realm's row must no longer carry global.mode=product.");
+  await until("the realm back in development mode", async function () {
+    const probe = await sight(NEVER);
+    return { done: probe.status < 400, detail: probe.status };
+  }, 15000);
+  // That development probe was itself a sighting, which is the behaviour being
+  // kept: it is discarded below rather than left to read as a real address.
+
+  // --- confirm -----------------------------------------------------------
+  await refused("/applications/confirm-address",
+    { application: rpId, attribute: "samlAssertionConsumerService",
+      value: "https://not-on-the-entry.example.test/acs" },
+    /not marked as observed/, "confirming an address that is not marked");
+  await refused("/applications/confirm-address",
+    { application: rpId, attribute: "oauthPostLogoutRedirectUri", value: ONE },
+    /not a return-address attribute|must be equal to one of the allowed values|attribute/i,
+    "confirming on an attribute that holds no return address");
+  const confirmed = await ok("/applications/confirm-address",
+    { application: rpId, attribute: "samlAssertionConsumerService", value: ONE },
+    "confirmed a development-recorded shire");
+  assert.ok(/confirmed/.test(confirmed.message || ""),
+    "the confirm should say what it did; it said " + confirmed.message);
+  const afterConfirm = await until("the confirm read back", async function () {
+    const now = await observedOn();
+    return { done: now.rows.every(function (row) { return row.value !== ONE; }), detail: now.rows,
+             now: now };
+  });
+  assert.ok(fieldValues(afterConfirm.now.entry, "samlAssertionConsumerService").indexOf(ONE) >= 0,
+    "CONFIRM takes the mark off and KEEPS the address; " + ONE + " is gone from " +
+    JSON.stringify(fieldValues(afterConfirm.now.entry, "samlAssertionConsumerService")));
+
+  // --- product now believes the confirmed one -----------------------------
+  await ok("/realms/set", { id: REALM, key: "global.mode", value: "product" },
+    "put the realm in product mode again", true);
+  assert.strictEqual(realmSetting(await realmRow(), "global.mode"), "product",
+    "the realm's registry row should carry global.mode=product after the second `set`.");
+  try {
+    await until("a product-mode worker refusing an address never registered", async function () {
+      const probe = await sight("https://still-never.example.test/acs");
+      return { done: probe.status === 400, detail: probe.status };
+    }, 15000);
+    const believed = await sight(ONE);
+    assert.ok(believed.status < 400,
+      "in PRODUCT mode the CONFIRMED shire must be delivered to (a redirect to the sign-in " +
+      "screen), from the same worker that has just refused an unregistered one; it answered " +
+      believed.status + " " + believed.text.replace(/<[^>]+>/g, " ").slice(0, 300));
+  } finally {
+    await ok("/realms/unset", { id: REALM, key: "global.mode" },
+      "put the realm back in development mode", true);
+  }
+  // Outside the `finally`, because an assertion thrown there would replace
+  // whatever failure got the run into it.
+  assert.notStrictEqual(realmSetting(await realmRow(), "global.mode"), "product",
+    "after `unset` the realm's row must no longer carry global.mode=product.");
+  await until("the realm back in development mode", async function () {
+    const probe = await sight(ONE);
+    return { done: probe.status < 400 && (await sight(NEVER)).status < 400, detail: probe.status };
+  }, 15000);
+
+  // --- discard -----------------------------------------------------------
+  await ok("/applications/discard-address",
+    { application: rpId, attribute: "samlAssertionConsumerService", value: TWO },
+    "discarded a development-recorded shire");
+  const afterDiscard = await until("the discard read back", async function () {
+    const now = await observedOn();
+    const acs = fieldValues(now.entry, "samlAssertionConsumerService");
+    return { done: now.rows.every(function (row) { return row.value !== TWO; }) &&
+                   acs.indexOf(TWO) < 0,
+             detail: { rows: now.rows, acs: acs }, now: now };
+  });
+  assert.ok(fieldValues(afterDiscard.now.entry, "samlAssertionConsumerService").indexOf(ONE) >= 0,
+    "a discard takes only the address it named; the confirmed one must still be there");
+  await refused("/applications/discard-address",
+    { application: rpId, attribute: "samlAssertionConsumerService", value: ONE },
+    /not marked as observed/, "discarding a REGISTERED address, which `remove` is the door for");
+
+  // The probes used to find out which mode a worker was in are sightings too
+  // whenever development answered one, which is the development behaviour this
+  // section is not allowed to change. Every mark they left is discarded, so the
+  // entry left standing in the realm says only what the section meant it to.
+  const leftovers = (await observedOn()).rows;
+  for (const row of leftovers) {
+    await ok("/applications/discard-address",
+      { application: rpId, attribute: row.attribute, value: row.value },
+      "discarded a probe's sighting of " + row.value);
+  }
+  await until("every probe sighting discarded", async function () {
+    const now = await observedOn();
+    return { done: now.rows.length === 0, detail: now.rows };
+  });
+
+  log.info("[applications] OK — two shires recorded in development were marked observed, " +
+           "the first refused in product, confirmed and then delivered to in product, and " +
+           "the second discarded; both operations read back through the drill-down.");
+  log.debug("Leaving theObservedReturnAddressesAreDecided().");
+}
+
 async function application(identifier) {
   log.debug("Entering application(). identifier=" + identifier);
   const reply = await get("/applications?application=" + encodeURIComponent(identifier));
@@ -1244,12 +1495,16 @@ async function aClaimSetBelongsToItsRealm() {
 
   // The default realm's own token endpoint, which nothing in this section
   // configured.
+  const elsewhereUser = names.usernameFor("stsapi-elsewhere");
+  await ensureTokenParties(elsewhereUser, "claim-realm-elsewhere", true);
   const elsewhere = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=password&username=" +
-        encodeURIComponent(names.usernameFor("stsapi-elsewhere")) +
-        "&password=x&client_id=claim-realm-elsewhere&scope=openid"
+    body: "grant_type=password&username=" + encodeURIComponent(elsewhereUser) +
+        "&password=" + encodeURIComponent(MINT_PASSWORD) +
+        "&client_id=claim-realm-elsewhere" +
+        "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
+        "&scope=openid"
   });
   assert.strictEqual(elsewhere.status, 200,
     "the default realm's token endpoint should still mint a token; it " +
@@ -1511,9 +1766,18 @@ async function theFederationRegisterRoundTrips() {
 
   const id = "fed-" + names.usernameFor("stsapi-fed").toLowerCase()
       .replace(/[^a-z0-9-]/g, "");
+  // WITH ITS PEER, which the create takes as `peer` (2026-09-12). A
+  // relationship naming no partner identifier is not fully configured in ANY
+  // mode now — `fedPeer` is what a service-provider-side relationship checks an
+  // assertion's issuer against — so a create that left it for `set` below would
+  // be building the half-configured relationship this register exists to
+  // refuse. `set` still drives the attribute afterwards, to a different value.
   const created = await ok("/federation/create", {
-    id: id, name: "Test relationship", role: roles[0], protocol: protocols[0]
+    id: id, name: "Test relationship", role: roles[0], protocol: protocols[0],
+    peer: "urn:partner:" + id
   }, "created a federation relationship");
+  assert.strictEqual((await relationship(id)).peer, "urn:partner:" + id,
+    "the peer given to the create should be on the relationship it made.");
   assert.ok(created.relationship,
     "the create should answer with the relationship it made.");
 
@@ -1659,8 +1923,9 @@ async function theDelegatedPermissionsRoundTrip() {
     "created the resource application");
   await ok("/applications/create",
     { identifier: client, name: "Portal", protocols: ["oauth2", "oidc"],
-      fields: { oauthClientId: client } },
-    "created the client application");
+      fields: { oauthClientId: client, oauthClientSecret: MINT_CLIENT_SECRET,
+                oauthTokenEndpointAuthMethod: "client_secret_post" } },
+    "created the client application, with the secret its token request presents");
 
   const base = "https://" + resource + ".example.com/";
 
@@ -1869,8 +2134,9 @@ async function permissionRegister() {
 async function mintPermissionToken(client, wanted) {
   log.debug("Entering mintPermissionToken(). client=" + client);
   const body = "grant_type=client_credentials&client_id=" +
-      encodeURIComponent(client) + "&scope=" +
-      encodeURIComponent(wanted.join(" "));
+      encodeURIComponent(client) +
+      "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
+      "&scope=" + encodeURIComponent(wanted.join(" "));
   const reply = await common.httpJson(base + "/realm/" + REALM + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -2655,11 +2921,69 @@ async function theIssuedListGroupsByIssuance() {
 // grant is used because this service checks no password anywhere and it needs
 // no browser — which is the same reason every other node-only job in this
 // suite reaches for it.
+// ---------------------------------------------------------------------------
+// THE PERSON AND THE CLIENT A TOKEN IS MINTED FOR, CREATED FIRST (2026-09-12).
+//
+// This used to name a person nobody had created and a client nobody had
+// registered, with the username as the password — and it worked because
+// development mode creates both on sight, invents a persona for the person,
+// and checks neither the password nor a client secret. Product mode does none
+// of that. So each party is created through this API before the grant names
+// it: the person with the attributes a real account carries, `invent: false`
+// and a password of at least twelve characters; the client with its identifier,
+// a secret and the method that presents it. Both creates are READ BACK through
+// the resource's own GET straight away, which is this file's rule for every
+// accepted write and what keeps the ledger's pairing check true for them.
+// `root` names the default realm's scope, for the one token minted there.
+// ---------------------------------------------------------------------------
+const MINT_PASSWORD = "admin-api-operations-Passw0rd!-" + REALM;
+const MINT_CLIENT_SECRET = "admin-api-operations-client-secret-" + REALM;
+const mintedParties = {};
+
+async function ensureTokenParties(username, client, root) {
+  log.debug("Entering ensureTokenParties(). username=" + username +
+            ", client=" + client);
+  const scope = root ? "root:" : "realm:";
+  if (!mintedParties[scope + "user:" + username]) {
+    await ok("/users/create", {
+      username: username, invent: false,
+      attributes: { cn: "Operations " + username, givenName: "Operations",
+                    sn: username, displayName: "Operations " + username,
+                    mail: username + "@admin-api-operations.test" },
+      credential: "password", password: MINT_PASSWORD
+    }, "created " + username + " before a token is minted for them", root);
+    const back = await get("/users?user=" + encodeURIComponent(username), root);
+    assert.strictEqual(back.status, 200,
+      "GET /users?user=" + username + " should read the person just created; " +
+      "it answered " + back.status);
+    mintedParties[scope + "user:" + username] = true;
+  }
+  if (!mintedParties[scope + "client:" + client]) {
+    await ok("/applications/create", {
+      identifier: client, name: client, protocols: ["oauth2", "oidc"],
+      fields: { oauthClientId: [client], oauthClientSecret: MINT_CLIENT_SECRET,
+                oauthTokenEndpointAuthMethod: "client_secret_post",
+                oauthGrantType: ["password", "client_credentials",
+                                 "refresh_token"] }
+    }, "registered " + client + " before it asks for a token", root);
+    const back = await get("/applications?application=" +
+                           encodeURIComponent(client), root);
+    assert.strictEqual(back.status, 200,
+      "GET /applications?application=" + client + " should read the client " +
+      "just registered; it answered " + back.status);
+    mintedParties[scope + "client:" + client] = true;
+  }
+  log.debug("Leaving ensureTokenParties().");
+}
+
 async function mintTokens(username, client) {
   log.debug("Entering mintTokens(). username=" + username);
+  await ensureTokenParties(username, client, false);
   const body = "grant_type=password&username=" + encodeURIComponent(username) +
-      "&password=" + encodeURIComponent(username) +
-      "&client_id=" + encodeURIComponent(client) + "&scope=openid";
+      "&password=" + encodeURIComponent(MINT_PASSWORD) +
+      "&client_id=" + encodeURIComponent(client) +
+      "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
+      "&scope=openid";
   const reply = await common.httpJson(base + "/realm/" + REALM + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -2691,7 +3015,7 @@ async function mintAssertion(username) {
     '<soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/' +
     '2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
     '<wsse:UsernameToken><wsse:Username>' + username + '</wsse:Username>' +
-    '<wsse:Password>whatever</wsse:Password></wsse:UsernameToken>' +
+    '<wsse:Password>' + MINT_PASSWORD + '</wsse:Password></wsse:UsernameToken>' +
     '</wsse:Security></soap:Header><soap:Body>' +
     '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/' +
     'ws-trust/200512"><wst:RequestType>http://docs.oasis-open.org/ws-sx/' +
@@ -2769,8 +3093,17 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
   log.debug("Entering theDirectoryAndSignOutDoorsRoundTrip().");
   log.info("=== Users, and the sign-out resource's four actions ===");
   const username = names.usernameFor("stsapi-directory");
-  const created = await ok("/users/create", { username: username },
-    "created a person in the directory");
+  // With the attributes a real account carries, nothing invented, and the
+  // password the token minted for them below presents — see
+  // ensureTokenParties(), which then finds this person already made.
+  const created = await ok("/users/create", {
+    username: username, invent: false,
+    attributes: { cn: "Operations " + username, givenName: "Operations",
+                  sn: username, displayName: "Operations " + username,
+                  mail: username + "@admin-api-operations.test" },
+    credential: "password", password: MINT_PASSWORD
+  }, "created a person in the directory");
+  mintedParties["realm:user:" + username] = true;
   assert.ok(String(created.dn || "").indexOf("dc=" + REALM + ",") > 0,
     "the entry should land in THIS realm's ou=users; its DN is " + created.dn);
   const listedUsers = await get("/users?q=" + encodeURIComponent(username));
@@ -2900,6 +3233,334 @@ async function theDirectoryAndSignOutDoorsRoundTrip() {
            "selection while `global` means everything, and both non-spec " +
            "restores reach the protocol endpoint.");
   log.debug("Leaving theDirectoryAndSignOutDoorsRoundTrip().");
+}
+
+// ---------------------------------------------------------------------------
+// THE CLIENT-CERTIFICATE TRUSTSTORE (2026-09-12): add a freshly minted CA,
+// read it back, remove it, read back its absence — and touch nothing else.
+//
+// **THE TRUSTSTORE IS THE PROCESS'S AND NOT THE REALM'S**, so this is the second
+// section here that works at the ROOT and has to clean up by hand. Every job
+// after this one has its client certificates judged against that array — the
+// remote PEP's among them — so two rules are not optional: the anchor this
+// section adds is removed in a `finally` whatever happened above it, and the
+// only anchor it ever removes is the one it added. It names that anchor by the
+// fingerprint of a CA minted a moment earlier, which nobody else can hold.
+//
+// It also asserts the one refusal the gate is responsible for rather than
+// this resource: a token carrying only `admin:read` may LIST the truststore and
+// may not change it. That is `mgmt-api/admin_api.js`'s middleware, by method,
+// and it is asserted HERE because a truststore anybody with a read token could
+// add to would be `POST /tls/trust` all over again with a credential in front.
+// ---------------------------------------------------------------------------
+function trustFingerprintOf(pem) {
+  return new (require("crypto").X509Certificate)(pem).fingerprint256;
+}
+
+async function trustAnchorsHeld() {
+  // `per` at the API's cap: the truststore holds at most 32, so one page is
+  // all of it and a fingerprint cannot hide on page two.
+  const reply = await get("/tls/trust?per=100", true);
+  assert.strictEqual(reply.status, 200,
+    "GET /admin-api/tls/trust should answer 200; it answered " + reply.status +
+    " " + String(reply.raw).slice(0, 300));
+  assert.ok(Array.isArray(reply.body.anchors) && reply.body.installed === true,
+    "the truststore resource should be installed and list `anchors`: " +
+    String(reply.raw).slice(0, 300));
+  return reply;
+}
+
+async function theTruststoreRoundTrips() {
+  log.debug("Entering theTruststoreRoundTrips().");
+  log.info("=== The client-certificate truststore: add, read, remove, read ===");
+  const credentials = require("../tools/pep-credential.js");
+  const minted = await credentials.mint({
+    rootSubject: "CN=admin-api-operations truststore " + REALM +
+                 ",O=mock-sts tests",
+    subject: "CN=admin-api-operations-truststore-leaf,O=mock-sts tests" });
+  const mine = trustFingerprintOf(minted.anchorPem);
+  const notMine = trustFingerprintOf(minted.issuing.pem);
+
+  const before = await trustAnchorsHeld();
+  const heldBefore = before.body.anchors.map(function (one) {
+    return one.fingerprint256;
+  });
+  assert.ok(heldBefore.indexOf(mine) < 0,
+    "a CA minted this second is already in the truststore, which cannot " +
+    "happen — the read is reporting something other than the truststore");
+
+  let added = false;
+  try {
+    // A READ TOKEN LISTS AND DOES NOT CHANGE.
+    const tokens = require("../tools/admin-api-token.js");
+    const readOnly = await tokens.tokenFor(base, { scope: "admin:read" });
+    const refusedWrite = await common.httpJson(rootApi + "/tls/trust/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json",
+                 Authorization: "Bearer " + readOnly },
+      body: JSON.stringify({ certificates: minted.anchorPem })
+    });
+    assert.strictEqual(refusedWrite.status, 403,
+      "POST /admin-api/tls/trust/add with a token carrying only admin:read " +
+      "must be refused 403 by the gate; it answered " + refusedWrite.status +
+      " " + String(refusedWrite.raw).slice(0, 300));
+
+    // A BLOCK OPENSSL CANNOT READ IS REFUSED, AND ADDS NOTHING.
+    await refused("/tls/trust/add",
+      { certificates: "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydA==\n" +
+                      "-----END CERTIFICATE-----\n" },
+      /could not be read by OpenSSL/,
+      "a PEM block OpenSSL cannot parse", true);
+    // A FINGERPRINT THIS TRUSTSTORE DOES NOT HOLD REMOVES NOTHING.
+    await refused("/tls/trust/remove", { fingerprint: notMine },
+      /holds no anchor/, "a fingerprint the truststore does not hold", true);
+
+    const add = await ok("/tls/trust/add", { certificates: minted.anchorPem },
+                         "added a freshly minted CA", true);
+    added = true;
+    assert.strictEqual(add.added, 1,
+      "the add should report one anchor added: " + JSON.stringify(add));
+    // PERSISTED SINCE 2026-09-12: a service with a directory writes a runtime
+    // anchor to ou=trustAnchors, so the reply says so.
+    assert.strictEqual(add.persisted, true,
+      "the add should say the anchor was written down: " + JSON.stringify(add));
+
+    const afterAdd = await trustAnchorsHeld();
+    const row = afterAdd.body.anchors.filter(function (one) {
+      return one.fingerprint256 === mine;
+    })[0];
+    assert.ok(row && row.source === "runtime" && row.ca === true &&
+              /CN=admin-api-operations truststore/.test(row.subject) &&
+              row.pem.replace(/\s+/g, "") === minted.anchorPem.replace(/\s+/g, ""),
+      "READ BACK THROUGH GET /admin-api/tls/trust, the CA just added must be " +
+      "listed as a runtime CA carrying its own subject and PEM. It listed: " +
+      JSON.stringify(row || null).slice(0, 400));
+    assert.ok(afterAdd.raw.indexOf("PRIVATE KEY") < 0,
+      "the truststore resource must carry no private key");
+    assert.strictEqual(afterAdd.body.total, heldBefore.length + 1,
+      "exactly one anchor should have been added: " + afterAdd.body.total +
+      " against " + heldBefore.length + " before");
+
+    // THE SAME ARRAY UNDER THIS REALM'S PREFIX: the truststore has no realm.
+    const inRealm = await get("/tls/trust?per=100");
+    assert.ok(inRealm.status === 200 && inRealm.body.anchors.some(function (one) {
+      return one.fingerprint256 === mine;
+    }), "GET /realm/" + REALM + "/admin-api/tls/trust must list the same " +
+      "anchor — the listeners are shared by every realm, so a realm-scoped " +
+      "truststore would be a filter over something with no realm in it.");
+
+    const dup = await ok("/tls/trust/add", { certificates: minted.anchorPem },
+                         "answered a duplicate add", true);
+    assert.ok(dup.added === 0 && dup.duplicates === 1,
+      "the same CA again must be counted as a duplicate and not added twice: " +
+      JSON.stringify(dup));
+
+    // REMOVED BY THE COLON-FREE SPELLING, which most tools print.
+    const removed = await ok("/tls/trust/remove",
+      { fingerprint: mine.replace(/:/g, "").toLowerCase() },
+      "removed the CA this section added", true);
+    added = false;
+    assert.ok(removed.removed === 1 && removed.removedAnchor &&
+              removed.removedAnchor.fingerprint256 === mine,
+      "the remove should name the anchor it removed: " + JSON.stringify(removed));
+  } finally {
+    if (added) {
+      // THE ONE ANCHOR THIS SECTION ADDED, AND NO OTHER. A failure above must
+      // not leave a CA in a process-wide truststore for every later job.
+      await post("/tls/trust/remove", { fingerprint: mine }, true);
+    }
+  }
+
+  const afterRemove = await trustAnchorsHeld();
+  assert.ok(afterRemove.body.anchors.every(function (one) {
+    return one.fingerprint256 !== mine;
+  }), "READ BACK AFTER THE REMOVE, the CA must be gone from GET " +
+    "/admin-api/tls/trust — a remove that answers ok and leaves the anchor " +
+    "listed is the defect this read exists for.");
+  assert.deepStrictEqual(afterRemove.body.anchors.map(function (one) {
+    return one.fingerprint256;
+  }).sort(), heldBefore.slice().sort(),
+    "the truststore must be exactly what it was before this section: it adds " +
+    "one CA and removes that CA, and touches no anchor anybody else put there.");
+  log.info("[truststore] OK — a minted CA added, read back at the root and " +
+           "under the realm prefix, refused as a duplicate, removed by " +
+           "fingerprint and read back absent; a read-only token was refused " +
+           "the write, and every other anchor was left where it was.");
+  log.debug("Leaving theTruststoreRoundTrips().");
+}
+
+// ---------------------------------------------------------------------------
+// THE STORED KERBEROS KEYS (2026-09-12): create, read, rotate, read, delete,
+// read — and a person's clear, which on a development stack clears nothing.
+//
+// **THE KDC IS THE PROCESS'S**, so this is the third section here that works at
+// the ROOT and cleans up by hand: the service principal it creates is the
+// DEFAULT realm's whatever prefix a call carries, and every later job's Kerberos
+// traffic is answered by the same KDC. The SPN carries this run's realm id, so
+// nobody else holds it, and it is deleted in a `finally`.
+//
+// **THE KEYTAB IS THE ONE PIECE OF KEY MATERIAL THIS API EVER RETURNS**, so the
+// assertions that matter are about where it is NOT: the read of the resource
+// after the create carries no part of it, and the rotate's keytab is a
+// different one at the next kvno. The header is checked to be MIT's 0x0502 and
+// no more — `tests/kerberos_person_keys.js` reads the whole file with an
+// independent parser, in process.
+// ---------------------------------------------------------------------------
+async function kerberosPrincipalsHeld(scopeRoot) {
+  const reply = await get("/kerberos/principals?per=100", scopeRoot);
+  assert.strictEqual(reply.status, 200,
+    "GET /admin-api/kerberos/principals should answer 200; it answered " +
+    reply.status + " " + String(reply.raw).slice(0, 300));
+  assert.ok(Array.isArray(reply.body.services) && Array.isArray(reply.body.people),
+    "the resource should list `services` and `people`: " +
+    String(reply.raw).slice(0, 300));
+  return reply;
+}
+
+async function theKerberosPrincipalsRoundTrip() {
+  log.debug("Entering theKerberosPrincipalsRoundTrip().");
+  log.info("=== Kerberos principals: create, rotate, delete a service key ===");
+  const spn = "HTTP/" + REALM + ".example.com";
+  let created = false;
+  try {
+    await refused("/kerberos/principals/create-service",
+      { spn: "krbtgt/EXAMPLE.COM" }, /ticket-granting key/,
+      "a krbtgt principal", true);
+    await refused("/kerberos/principals/create-service", { spn: "not-an-spn" },
+      /is not a service principal name/, "a one-component name", true);
+    await refused("/kerberos/principals/rotate-service", { spn: spn },
+      /holds no stored key to rotate/, "a rotate of a principal nobody made", true);
+
+    const made = await ok("/kerberos/principals/create-service", { spn: spn },
+                          "created a service principal with a random key", true);
+    created = true;
+    assert.ok(typeof made.keytab === "string" && made.keytab.length > 100,
+      "create-service must return the keytab, base64: " +
+      JSON.stringify(Object.assign({}, made, { keytab: "(" +
+        String(made.keytab || "").length + " chars)" })));
+    const bytes = Buffer.from(made.keytab, "base64");
+    assert.ok(bytes[0] === 0x05 && bytes[1] === 0x02,
+      "the keytab must be MIT's version 0x0502; it starts " +
+      bytes.subarray(0, 2).toString("hex"));
+    assert.strictEqual(made.trustRealm, "default",
+      "the reply must say the principal is the default trust realm's");
+
+    const afterCreate = await kerberosPrincipalsHeld(true);
+    const row = afterCreate.body.services.filter(function (one) {
+      return one.spn === spn;
+    })[0];
+    assert.ok(row && row.kvno === made.kvno && row.held === true &&
+              row.etypes.length === made.etypes.length,
+      "READ BACK THROUGH GET /admin-api/kerberos/principals, the principal must " +
+      "be listed at the kvno the create returned. It listed: " +
+      JSON.stringify(row || null));
+    assert.ok(afterCreate.raw.indexOf(made.keytab.slice(0, 48)) < 0 &&
+              afterCreate.raw.indexOf("$aesgcm$") < 0,
+      "THE READ MUST CARRY NO KEY MATERIAL: neither the keytab nor a sealed value");
+
+    // THE SAME KDC UNDER THIS REALM'S PREFIX.
+    const inRealm = await kerberosPrincipalsHeld(false);
+    assert.ok(inRealm.body.trustRealm === "default" &&
+              inRealm.body.services.some(function (one) { return one.spn === spn; }),
+      "GET /realm/" + REALM + "/admin-api/kerberos/principals must list the same " +
+      "principal: the KDC is the process's.");
+
+    await refused("/kerberos/principals/create-service", { spn: spn },
+      /already holds a stored key/, "a second create of the same SPN", true);
+
+    const rotated = await ok("/kerberos/principals/rotate-service", { spn: spn },
+                             "rotated the service principal", true);
+    assert.ok(rotated.kvno === made.kvno + 1 && rotated.keytab !== made.keytab,
+      "rotate-service must move the kvno up by one and return a NEW keytab: " +
+      made.kvno + " -> " + rotated.kvno);
+    const afterRotate = await kerberosPrincipalsHeld(true);
+    const rotatedRow = afterRotate.body.services.filter(function (one) {
+      return one.spn === spn;
+    })[0];
+    assert.ok(rotatedRow && rotatedRow.kvno === rotated.kvno && !!rotatedRow.rotatedAt,
+      "READ BACK AFTER THE ROTATE, the listed kvno must be the new one: " +
+      JSON.stringify(rotatedRow || null));
+
+    // PREVIOUS KEY VERSIONS (2026-09-12). The rotate KEPT the version it
+    // replaced — the reply's keytab carries both kvnos and `retained` says until
+    // when — and drop-previous-service-keys ends that window, read back as an
+    // empty `retained` with the current kvno unchanged.
+    assert.ok(Array.isArray(rotated.keytabKvnos) &&
+              rotated.keytabKvnos.join(",") === rotated.kvno + "," + made.kvno &&
+              Array.isArray(rotated.retained) && rotated.retained.length === 1 &&
+              rotated.retained[0].kvno === made.kvno,
+      "rotate-service must keep the previous version and put it in the keytab: " +
+      JSON.stringify({ keytabKvnos: rotated.keytabKvnos, retained: rotated.retained }));
+    assert.ok(Array.isArray(rotatedRow.retained) && rotatedRow.retained.length === 1 &&
+              rotatedRow.retained[0].kvno === made.kvno &&
+              !isNaN(Date.parse(rotatedRow.retained[0].expiresAt)) &&
+              afterRotate.raw.indexOf(rotated.keytab.slice(0, 48)) < 0,
+      "READ BACK AFTER THE ROTATE, the row must list the kept version with its expiry and " +
+      "no key material: " + JSON.stringify(rotatedRow.retained || null));
+    const droppedPrevious = await ok("/kerberos/principals/drop-previous-service-keys",
+      { spn: spn }, "dropped the service principal's previous key version", true);
+    assert.ok(droppedPrevious.dropped === 1 &&
+              JSON.stringify(droppedPrevious.kvnos) === JSON.stringify([made.kvno]),
+      "drop-previous-service-keys must drop the one kept version: " +
+      JSON.stringify(droppedPrevious));
+    const afterDrop = await kerberosPrincipalsHeld(true);
+    const droppedRow = afterDrop.body.services.filter(function (one) {
+      return one.spn === spn;
+    })[0];
+    assert.ok(droppedRow && droppedRow.kvno === rotated.kvno &&
+              Array.isArray(droppedRow.retained) && droppedRow.retained.length === 0,
+      "READ BACK AFTER THE DROP, the principal must keep its current kvno and list nothing " +
+      "kept: " + JSON.stringify(droppedRow || null));
+    // AND A SECOND DROP FINDS NOTHING. The list above is the PUBLIC half, written
+    // beside the sealed record; this is the one question over HTTP whose answer
+    // comes from inside the seal, so a drop that cleared the list and kept the
+    // versions is caught here rather than only in process.
+    const droppedAgain = await ok("/kerberos/principals/drop-previous-service-keys",
+      { spn: spn }, "answered a second drop with nothing kept", true);
+    assert.strictEqual(droppedAgain.dropped, 0,
+      "a second drop must find nothing kept — the sealed record itself must have lost " +
+      "the version, not only the list: " + JSON.stringify(droppedAgain));
+    await refused("/kerberos/principals/drop-previous-service-keys",
+      { spn: "HTTP/nobody-" + REALM + ".example.com" }, /holds no stored Kerberos key/,
+      "a drop for an SPN with no stored key", true);
+    // A PERSON: nobody on a development stack holds keys, so there is nothing to
+    // drop, and that is a refusal naming why.
+    await refused("/kerberos/principals/drop-previous-person-keys",
+      { username: "alice" }, /holds no stored Kerberos key/,
+      "a drop for a person with no stored keys", true);
+
+    const removed = await ok("/kerberos/principals/delete-service", { spn: spn },
+                             "deleted the service principal's key", true);
+    created = false;
+    assert.ok(/is gone/.test(String(removed.message)),
+      "the delete should say the key is gone: " + JSON.stringify(removed));
+    const afterDelete = await kerberosPrincipalsHeld(true);
+    assert.ok(afterDelete.body.services.every(function (one) { return one.spn !== spn; }),
+      "READ BACK AFTER THE DELETE, the principal must be gone from the list");
+
+    // A PERSON: nobody on a development stack holds keys, so the clear answers
+    // `cleared: false` rather than a refusal — which is what lets a script clear
+    // on every run — and a name nobody holds is refused.
+    await refused("/kerberos/principals/clear-person-keys",
+      { username: "nobody-" + REALM }, /nobody called/,
+      "a clear for somebody not in the directory", true);
+    const cleared = await ok("/kerberos/principals/clear-person-keys",
+      { username: "alice" }, "answered a clear for a person with no keys", true);
+    assert.strictEqual(cleared.cleared, false,
+      "alice holds no Kerberos keys on a development stack: " + JSON.stringify(cleared));
+    await kerberosPrincipalsHeld(true);
+  } finally {
+    if (created) {
+      await post("/kerberos/principals/delete-service", { spn: spn }, true);
+    }
+  }
+  log.info("[kerberos] OK — a service principal created with a keytab, read back " +
+           "at the root and under the realm prefix with no key material, refused " +
+           "a second create, rotated to the next kvno with the previous version kept " +
+           "in the keytab and the list, that version dropped and read back gone, " +
+           "deleted and read back absent; krbtgt, a one-component name and two drops " +
+           "with nothing stored were refused, and a person's clear answered.");
+  log.debug("Leaving theKerberosPrincipalsRoundTrip().");
 }
 
 // ---------------------------------------------------------------------------
@@ -3740,6 +4401,7 @@ async function test() {
     await everyDocumentedExampleIsAccepted(doc);
     await everyReadAnswersAboutThisRealm(doc);
     await theApplicationsRegistryRoundTrips();
+    await theObservedReturnAddressesAreDecided();
     await theDelegatedPermissionsRoundTrip();
     await theClaimSetDoorsRoundTrip();
     await theFederationRegisterRoundTrips();
@@ -3751,6 +4413,8 @@ async function test() {
     await theIssuedListGroupsByIssuance();
     await theDirectoryAndSignOutDoorsRoundTrip();
     await theAdminRolesRoundTrip();
+    await theTruststoreRoundTrips();
+    await theKerberosPrincipalsRoundTrip();
     const candidate = await theConfigurationDoorsRoundTrip(doc);
     await theConfigurationChangeReachesTheStore(candidate);
     everyDocumentedOperationWasDriven(doc);

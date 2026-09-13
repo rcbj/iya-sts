@@ -75,6 +75,56 @@ const log = engine.log;
 const model = engine.model;
 
 // ---------------------------------------------------------------------------
+// THE ERROR CODES — THE MOCK'S OWN REGISTRY, RESOLVED THE WAY THE VERSION IS.
+//
+// Every failure this container logs carries an `STS-XPEP-nnnn` code at the
+// front of the line, from the ONE table in `common/error_codes.js`. There is no
+// audit log in this process and no call-log funnel, so the LOG LINE is the only
+// place a code is recorded here — never a response body, for the registry's
+// own first rule: a client of this PEP sees HTTP and nothing this service
+// invented.
+//
+// **TWO CANDIDATES, FOR `loadVersion()`'s REASON BELOW.** The Dockerfile copies
+// the registry to the container ROOT beside this file (`./error_codes`) — not
+// into `./common/`, which is the shim and must stay one file — and a checkout
+// has it where it lives (`../common/error_codes`). Exactly one hits.
+//
+// **A MISSING REGISTRY MAY NOT STOP THIS CONTAINER STARTING**, which is the
+// version's rule and for its reason: a PEP that cannot name its failures is
+// still a PEP that enforces. So both misses fall back to a local `tag()` that
+// writes the same `[STS-…] ` prefix, and say so once.
+//
+// It is resolved HERE and not in `engine.js`, deliberately: `tests/xacml_pep.js`
+// loads `engine.js` alone in a child and asserts that not one of the mock's own
+// modules is in its `require.cache`, and in a checkout the registry IS one.
+// `sync.js` and `pip.js` are handed the resulting `tag` on `options`, which is
+// how they are handed everything else this file decides at start.
+function loadErrorCodes() {
+  const candidates = ['./error_codes', '../common/error_codes'];
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      const registry = require(candidates[i]);
+      if (registry && typeof registry.tag === 'function') {
+        return registry;
+      }
+    } catch (error) {
+      // Not this layout. Silent because exactly one of the two is expected to
+      // miss on every start; the case worth reporting is BOTH, below.
+    }
+  }
+  const fallback = { tag: function (code) { return '[' + code + '] '; } };
+  log.error(fallback.tag('STS-XPEP-0001') + 'xacml-pep: neither ./error_codes ' +
+            'nor ../common/error_codes could be loaded, so the error-code ' +
+            'registry is not here. Log lines still carry their codes; nothing ' +
+            'else changes. In the image that means the Dockerfile stopped ' +
+            'copying common/error_codes.js.');
+  return fallback;
+}
+
+const ERROR_CODES = loadErrorCodes();
+const tag = ERROR_CODES.tag;
+
+// ---------------------------------------------------------------------------
 // THE VERSION, M.N.O — THE SAME ONE THE MOCK REPORTS, FROM THE SAME MODULE.
 //
 // **IT WAS THE STRING `'mock-sts xacml-pep, phase five'` UNTIL 2026-09-06**,
@@ -115,7 +165,8 @@ function loadVersion() {
       // miss on every start; the case worth reporting is BOTH, below.
     }
   }
-  log.error('xacml-pep: neither ./version nor ../common/version could be ' +
+  log.error(tag('STS-XPEP-0002') +
+            'xacml-pep: neither ./version nor ../common/version could be ' +
             'loaded, so this PEP cannot name the build it is running. It ' +
             'registers and enforces regardless. In the image that means the ' +
             'Dockerfile stopped copying common/version.js and VERSION.');
@@ -152,7 +203,8 @@ function fileFromEnv(name) {
     // certificate path it cannot read would otherwise start, register
     // unauthenticated, and leave somebody looking at the PDP's console
     // wondering why the row says it proved nothing.
-    log.error('xacml-pep: ' + name + ' names ' + path + ' and it could not ' +
+    log.error(tag('STS-XPEP-0003') +
+              'xacml-pep: ' + name + ' names ' + path + ' and it could not ' +
               'be read (' + error.message + '). Carrying on WITHOUT it, ' +
               'which means this PEP registers unauthenticated if the PDP ' +
               'allows that and is refused if it does not.');
@@ -198,7 +250,10 @@ const options = {
   // that has to be switched on to get that is a feature most deployments
   // will not have.
   // ---------------------------------------------------------------------
-  pipEnabled: process.env.PEP_PIP !== 'false'
+  pipEnabled: process.env.PEP_PIP !== 'false',
+  // The error-code tag for `sync.js` and `pip.js`'s log lines. See
+  // `loadErrorCodes()` above.
+  tag: tag
 };
 
 function send(res, status, body) {
@@ -213,7 +268,7 @@ function send(res, status, body) {
 // WHAT THIS PEP DOES WITH A DECISION. See the header — the mock's rule,
 // restated rather than imported.
 // ---------------------------------------------------------------------------
-const DISCHARGEABLE = ['urn:sts-mock:xacml:obligation:log'];
+const DISCHARGEABLE = ['urn:sts:xacml:obligation:log'];
 
 function enforce(answer) {
   log.debug('Entering enforce(). decision=' + answer.decision);
@@ -244,6 +299,9 @@ function enforce(answer) {
   }
   if (allowed && undischargeable.length) {
     allowed = false;
+    log.warn(tag('STS-XPEP-0004') + 'xacml-pep: refusing a ' +
+             answer.decision + ' that carries obligation(s) this PEP cannot ' +
+             'discharge: ' + undischargeable.join(', ') + '.');
     why = 'The policy said ' + answer.decision + ', but the decision carries ' +
           (undischargeable.length === 1 ? 'an obligation' : 'obligations') +
           ' this PEP cannot discharge (' + undischargeable.join(', ') +
@@ -276,6 +334,9 @@ async function decide(query) {
   log.debug('Entering decide().');
   const holding = sync.current();
   if (!holding.loaded) {
+    log.warn(tag('STS-XPEP-0005') + 'xacml-pep: a decision was asked for ' +
+             'and this PEP holds no root policy, so it is NotApplicable and ' +
+             'the ' + options.bias + ' bias settles it.');
     log.debug('Leaving decide(). Nothing is held.');
     return { decision: model.DECISION.NOT_APPLICABLE,
              status: { code: model.STATUS.OK },
@@ -296,12 +357,12 @@ async function decide(query) {
     : [];
   // EVERY OTHER QUERY PARAMETER BECOMES A SUBJECT ATTRIBUTE, ASSERTED UNDER
   // BOTH SPELLINGS — the bare name and the mock's own
-  // `urn:sts-mock:xacml:attribute:` form.
+  // `urn:sts:xacml:attribute:` form.
   //
   // **THAT IS NOT BELT AND BRACES; IT IS WHAT MAKES THE CONTRACT TRUE.** The
   // mock's `xacml_pip.js` answers BOTH spellings from ONE directory attribute
   // — a designator for `employeeType` and one for
-  // `urn:sts-mock:xacml:attribute:employeeType` both read the same entry — so
+  // `urn:sts:xacml:attribute:employeeType` both read the same entry — so
   // a policy author over there may legitimately write either and the PDP
   // decides identically. A remote PEP that asserted only one of them would
   // decide differently from the PDP for every policy that happened to use the
@@ -314,7 +375,7 @@ async function decide(query) {
   // because that module is not in `engine.js`'s copy list and pulling it in
   // for one string would bring the mock's directory reader into a process
   // that has no directory.
-  const PIP_PREFIX = 'urn:sts-mock:xacml:attribute:';
+  const PIP_PREFIX = 'urn:sts:xacml:attribute:';
   Object.keys(query).forEach(function (key) {
     if (key === 'subject' || key === 'resource' || key === 'action') {
       return;
@@ -378,6 +439,14 @@ async function decide(query) {
   // that did not, and this is the only place the difference is visible to
   // whoever is reading a refusal.
   answer.pip = pipResolver.report;
+  if (answer.decision === model.DECISION.INDETERMINATE) {
+    log.warn(tag('STS-XPEP-0006') + 'xacml-pep: the engine answered ' +
+             'Indeterminate (' +
+             ((answer.status && answer.status.code) || 'no status') +
+             ((answer.status && answer.status.message)
+               ? ': ' + answer.status.message : '') +
+             '), so the ' + options.bias + ' bias settles it.');
+  }
   log.debug('Leaving decide(). ' + answer.decision);
   return answer;
 }
@@ -488,7 +557,7 @@ function overview() {
            'policy asks about must be IN the request, and one that is not ' +
            'produces an empty bag. Pass extra query parameters to ' +
            '/protected and each becomes a subject attribute under ' +
-           'urn:sts-mock:xacml:attribute: — asserted by the caller about ' +
+           'urn:sts:xacml:attribute: — asserted by the caller about ' +
            'itself, which no real deployment would believe and which is ' +
            'exactly what a mock is for.'
   };
@@ -535,6 +604,8 @@ const server = http.createServer(function (req, res) {
   } catch (error) {
     // A URL node itself will not parse cannot name any of four fixed paths,
     // so there is nothing to route it to.
+    log.warn(tag('STS-XPEP-0007') + 'xacml-pep: refused a request whose URL ' +
+             'would not parse: ' + error.message);
     send(res, 400, { error: 'that is not a request URL' });
     return;
   }
@@ -566,7 +637,8 @@ const server = http.createServer(function (req, res) {
     protectedResource(query).then(function (answer) {
       send(res, answer.status, answer.body);
     }).catch(function (error) {
-      log.error('xacml-pep: deciding threw: ' + error.message);
+      log.error(tag('STS-XPEP-0008') + 'xacml-pep: deciding threw: ' +
+                error.message);
       send(res, 500, { error: 'decision_failed',
         error_description: 'This PEP could not reach a decision: ' +
                            error.message + '. That is a defect here rather ' +
@@ -593,11 +665,13 @@ const server = http.createServer(function (req, res) {
              'Nothing in the nudge was read — what changed is discovered by ' +
              'pulling.');
     sync.pull(options).catch(function (error) {
-      log.warn('xacml-pep: the nudged pull failed: ' + error.message +
-               '. The scheduled poll will try again.');
+      log.warn(tag('STS-XPEP-0010') + 'xacml-pep: the nudged pull failed: ' +
+               error.message + '. The scheduled poll will try again.');
     });
     return;
   }
+  log.info(tag('STS-XPEP-0009') + 'xacml-pep: no such endpoint: ' +
+           req.method + ' ' + path);
   send(res, 404, {
     error: 'not_found',
     error_description: 'This PEP answers GET /, GET /protected, ' +
@@ -671,11 +745,13 @@ async function start() {
     // stop a pull, which is the whole doctrine of this file, so the catch is
     // between them rather than around both.
     sync.registerIfNeeded(options).catch(function (error) {
-      log.debug('xacml-pep: the retried registration threw: ' + error.message);
+      log.debug(tag('STS-XPEP-0011') +
+                'xacml-pep: the retried registration threw: ' + error.message);
     }).then(function () {
       return sync.pull(options);
     }).catch(function (error) {
-      log.warn('xacml-pep: the scheduled pull threw: ' + error.message);
+      log.warn(tag('STS-XPEP-0010') + 'xacml-pep: the scheduled pull threw: ' +
+               error.message);
     });
   }, options.pollIntervalMs).unref();
 
@@ -689,7 +765,8 @@ async function start() {
       }
       return null;
     }).catch(function (error) {
-      log.warn('xacml-pep: the heartbeat threw: ' + error.message);
+      log.warn(tag('STS-XPEP-0012') + 'xacml-pep: the heartbeat threw: ' +
+               error.message);
     });
   }, options.heartbeatIntervalMs).unref();
 
@@ -704,7 +781,7 @@ async function start() {
 // `common/worker.js` carries, for the same reason.
 if (require.main === module) {
   start().catch(function (error) {
-    log.error('xacml-pep: could not start: ' +
+    log.error(tag('STS-XPEP-0013') + 'xacml-pep: could not start: ' +
               (error && error.stack ? error.stack : error));
     process.exit(1);
   });

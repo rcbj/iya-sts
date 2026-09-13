@@ -277,6 +277,10 @@ function theProtocolListIsHonest(doc, page) {
                     // paying that here is cheaper than making the rule
                     // conditional on whether a group is a protocol.
                     "User portal",
+                    // GNAP (2026-09-12): an authorization server of its own
+                    // kind, carded beside XACML because both are families a
+                    // client reaches with a credential it already holds.
+                    "GNAP",
                     "XACML", "Federation", "Shared Signals",
                     "SAML 2.0", "SAML 1.1",
                     "WS-Federation", "WS-Trust", "Kerberos", "SPNEGO", "SPIFFE",

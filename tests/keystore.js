@@ -233,6 +233,65 @@ async function run(t) {
             'separates a product from a mock');
 
     // -------------------------------------------------------------------
+    // **AND SO DOES THE POST-QUANTUM HALF, WHICH IT DID NOT UNTIL
+    // 2026-09-12.**
+    //
+    // `serialise()` has written these since 2026-09-07 and `deserialise()`
+    // has read them back the whole time — and the RESTORED key set threw them
+    // away, because `helpers.js`'s `lazyKeySet()` had nowhere to get them
+    // from. Nothing failed: the process generated eleven more, offered them
+    // to its siblings, was refused because another process had got there
+    // first, and went on signing with its own.
+    //
+    // **MEASURED IN A DISPATCHED STACK**: three workers publishing three
+    // different ML-DSA and SLH-DSA kids for one realm, so a UserInfo response
+    // signed by one could not be verified against the JWKS served by another.
+    //
+    // Asserted through `privateMaterialFor()` rather than by signing,
+    // because what broke is the RESTORE and signing would only prove that
+    // SOME key exists — which it did, eleven times over, and that was the
+    // bug.
+    // -------------------------------------------------------------------
+    const warmed = await helpers.warmPqKeys('');
+    t.check(Array.isArray(warmed) && warmed.length > 0,
+            'the realm has a post-quantum key set at all',
+            String(warmed && warmed.length) + ' key(s)');
+    const warmedKids = (warmed || []).map(function (one) {
+      return one.publicJwk && one.publicJwk.kid;
+    }).join(',');
+    await new Promise(function (r) { setTimeout(r, 50); });
+
+    keystore.reset();
+    keystore.setStore(store);
+    await keystore.start();
+    helpers.resetStsKeys();
+    const restoredPq = helpers.STS.pqKeys || [];
+    t.equal(restoredPq.map(function (one) {
+              return one.publicJwk && one.publicJwk.kid;
+            }).join(','), warmedKids,
+            'THE POST-QUANTUM KEYS COME BACK TOO — every process that ' +
+            'restores a realm from the store publishes the same ML-DSA and ' +
+            'SLH-DSA keys, which is what stops one worker\'s signature ' +
+            'being unverifiable against another worker\'s JWKS');
+    // **AS BYTES, AND THE KIDS ABOVE AGREED WHILE THESE DID NOT.** A stored
+    // post-quantum private key is base64 in the blob and raw bytes in a key
+    // set, and the first version of the restore handed the STRING on: every
+    // kid matched, the JWKS was right, and the first signature answered *an
+    // ML-DSA "priv" is the 32-byte seed of RFC 9964 section 3.2; this one is
+    // 44 bytes* — 44 being the length of 32 bytes in base64. A comparison of
+    // public names cannot see that, which is why this assertion is about the
+    // private half.
+    const firstPq = restoredPq[0] || {};
+    t.check(Buffer.isBuffer(firstPq.privateKey),
+            'and as BYTES rather than as the base64 the blob holds them in — ' +
+            'the kid matches either way and only the signature does not',
+            typeof firstPq.privateKey + ' of length ' +
+            String(firstPq.privateKey && firstPq.privateKey.length));
+    t.equal((firstPq.privateKey || '').length,
+            ((warmed[0] || {}).privateKey || '').length,
+            'the same number of bytes the generated key had');
+
+    // -------------------------------------------------------------------
     // 3. ROTATION, which is destructive and has to be.
     // -------------------------------------------------------------------
     t.log.info('=== rotation ===');
@@ -300,7 +359,8 @@ async function run(t) {
     process.env.STS_KEYS_SOURCE = 'persisted';
     process.env.STS_KEYS_KEK_PROVIDER = 'file';
     process.env.STS_KEYS_KEK_FILE = kekFile;
-    keystore.setStore(fakeStore());
+    const store = fakeStore();
+    keystore.setStore(store);
     await keystore.start();
     t.equal(keystore.persists(), true,
             'this section is only about the persisting case — the other one ' +
@@ -354,6 +414,52 @@ async function run(t) {
             'the generated set was WRITTEN DOWN as well, which is the ' +
             'property the old early-return was really protecting: sharing ' +
             'must not stop a product service persisting its keys');
+
+    // -------------------------------------------------------------------
+    // **LOSING THE RACE HAS TO REACH THE STORED SET, AND UNTIL 2026-09-12 IT
+    // DID NOT.** Everything above is the WINNER's side of the channel; this
+    // is the loser's. A process that generated a realm's keys, wrote them to
+    // `sts_keys` and is then told another process got there first drops its
+    // CACHED set — and `helpers.js` asks `storedFor()` FIRST, which is the
+    // ordering the block above argues for, so it rebuilt from its own row and
+    // went on signing with what it had made. The adoption logged as a success
+    // and reversed itself on the next property read.
+    //
+    // Measured on a dispatched stack with `keys.source=persisted`: a realm
+    // created at runtime had FOUR key sets in four processes, three generated
+    // within 43ms of each other and each written down, so `/oauth2/jwks`
+    // answered a different key per worker. It was found as an "intermittent"
+    // OAEP failure in `tests/vendored/sts_jwt_bearer_grant.js`, which encrypts
+    // to the key one worker publishes and posts to whichever answers.
+    //
+    // The winning blob is the held one with a DIFFERENT certificate rather
+    // than a second generated key set, and that is the right stand-in: the
+    // certificate is what `publishShared()` compares to tell an enrichment
+    // from a race, so it is the identity of a set at this layer.
+    // -------------------------------------------------------------------
+    const mine = keystore.storedFor('default');
+    const winner = Object.assign({}, mine, {
+      certB64: 'WINNING-CERTIFICATE',
+      createdAt: (mine.createdAt || Date.now()) + 1
+    });
+    const wroteBefore = store.rows.get('default');
+    keystore.adoptShared('default', winner);
+    const after = keystore.storedFor('default');
+    // The write is QUEUED — `hold()` seals synchronously and hands the store
+    // a promise — so the row has not moved until the microtask queue has run.
+    // Awaited rather than asserted optimistically, for the reason every other
+    // timing assertion in this repository is: a check that happens to pass on
+    // a fast machine is not a check.
+    await new Promise(function (resolve) { setImmediate(resolve); });
+    t.equal(after && after.certB64, 'WINNING-CERTIFICATE',
+            'ADOPTING ANOTHER PROCESS\'S KEY SET REPLACES THE STORED ONE — ' +
+            'without this the loser rebuilds from its own row and the ' +
+            'adoption is a no-op that logged as a success');
+    t.check(store.rows.get('default') !== wroteBefore,
+            'AND THE WINNER IS WRITTEN DOWN, so the row converges on the set ' +
+            'every process is using rather than on whichever process wrote ' +
+            'last — the loser had already stored its own',
+            String(store.rows.get('default') !== wroteBefore));
 
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
@@ -447,7 +553,7 @@ async function run(t) {
     // refused, and the eleven keys that never left the process that made them.
     keys.pqKeys = [{ alg: 'ML-DSA-44',
                      privateKey: Buffer.from('not a key'),
-                     publicJwk: { kty: 'AKP', kid: 'sts-mock-ml-dsa-44-0000' } }];
+                     publicJwk: { kty: 'AKP', kid: 'sts-ml-dsa-44-0000' } }];
     keystore.publishShared('', keys);
     t.equal(offered.length, 2,
             'THE POST-QUANTUM KEYS ARE OFFERED ON — the same key set gaining ' +

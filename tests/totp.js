@@ -174,6 +174,24 @@ function run(t) {
           totp.verify(record, at(0), { at: now, window: 0 }).ok,
           'a window of 0 demands a synchronised clock exactly');
 
+  // THE SAME ZERO, THROUGH THE SETTING (2026-09-12). Every check above hands
+  // `verify()` its window directly, which is why `settings()` reading
+  // `totp.window` as `|| 1` survived: a documented zero became one and nothing
+  // here ever asked for the window the way a sign-in does.
+  const config = require('../common/config');
+  try {
+    config.setOverride('totp.window', '0');
+    t.equal(totp.settings().window, 0,
+            'totp.window=0 is honoured as zero rather than read as absent and ' +
+            'replaced with the default of one');
+    t.check(!totp.verify(record, at(-30), { at: now }).ok,
+            'and a sign-in with no window of its own then refuses the ' +
+            'previous step, which is what the setting promises');
+  } finally {
+    config.clearOverride('totp.window');
+  }
+  t.equal(totp.settings().window, 1, 'and cleared, the window is one again');
+
   t.log.info('=== RFC 6238 section 5.2: a code is accepted ONCE ===');
   const first = totp.verify(record, at(0), { at: now });
   t.check(first.ok, 'the code verifies the first time');

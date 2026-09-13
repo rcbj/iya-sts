@@ -40,8 +40,8 @@
 // broke rather than with a 401 five steps later.
 //
 // **IT KEEPS EVERY COOKIE, BY NAME.** There are two by the end — the sign-on
-// session (`sts_mock_session`, the identity provider's) and the console's own
-// (`sts_mock_admin`, established from the ID Token) — and the console reads the
+// session (`sts_session`, the identity provider's) and the console's own
+// (`sts_admin`, established from the ID Token) — and the console reads the
 // second. A jar that kept only the last `Set-Cookie` seen would work by luck and
 // break the day the order changed.
 //
@@ -82,6 +82,79 @@ function jar() {
     names: function () { return Object.keys(held); },
     get: function (name) { return held[name] || ""; }
   };
+}
+
+// ---------------------------------------------------------------------------
+// THE PERSON WHO SIGNS IN IS CREATED FIRST, WITH A PASSWORD AND THE ATTRIBUTES
+// A REAL ACCOUNT CARRIES (2026-09-12).
+//
+// This walk used to type a name nobody had created and a password equal to it,
+// and it worked because development mode checks no password and creates a
+// person — with an INVENTED persona on the entry — for any name that signs in.
+// Product mode does neither: it verifies the password against the person's own
+// entry and invents no `sn`, `mail` or `displayName`. So the account is made
+// through `POST /admin-api/users/create` with `invent: false`, its own
+// attributes and a password of at least twelve characters, and that is the
+// password typed. A name already taken (a second job, or a second run against a
+// kept stack) gets the same password SET rather than a second entry, because
+// one entry per person is the directory's rule and the sign-in below has to
+// present a password that entry holds.
+//
+// The management API is reached with whatever credential the run's preload
+// attaches (`tests/tools/attach-admin-token.js`); nothing here mints one.
+// ---------------------------------------------------------------------------
+function consolePasswordFor(user) {
+  return "Console-signin-" + String(user) + "-Passw0rd!";
+}
+
+async function ensureConsoleAccount(base, user, say) {
+  const password = consolePasswordFor(user);
+  const domain = "console-signin.test";
+  async function apiPost(path, payload) {
+    const r = await fetch(base + "/admin-api" + path, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const raw = await r.text();
+    let body = {};
+    try {
+      body = JSON.parse(raw);
+    } catch (e) {
+      // Not JSON — an HTML error page. Kept as the raw text for the message.
+      body = { raw: raw };
+    }
+    return { status: r.status, body: body };
+  }
+  const created = await apiPost("/users/create", {
+    username: user, invent: false,
+    attributes: { cn: "Console " + user, givenName: "Console", sn: String(user),
+                  displayName: "Console " + user,
+                  mail: String(user) + "@" + domain },
+    credential: "password", password: password
+  });
+  if (created.status === 200 && created.body && created.body.ok) {
+    say("[console] created " + user + " with a password and its attributes " +
+        "before signing in.");
+    return password;
+  }
+  if (created.body && created.body.existing) {
+    const set = await apiPost("/users/set-password",
+                              { user: user, password: password });
+    if (!(set.status === 200 && set.body && set.body.ok)) {
+      // NOT A FAILURE. The password this helper derives for a name never
+      // changes, so an account an earlier job or run created already holds it
+      // — and a password policy with a HISTORY refuses setting the same one
+      // again. The sign-in below says soon enough if the password is wrong.
+      say("[console] " + user + " already exists and setting its password " +
+          "again answered " + set.status + " " +
+          JSON.stringify(set.body).slice(0, 200) + "; signing in with the " +
+          "password this helper always gives it.");
+    }
+    return password;
+  }
+  assert.fail("creating the console account " + user + " through POST " +
+    "/admin-api/users/create answered " + created.status + " " +
+    JSON.stringify(created.body).slice(0, 300));
 }
 
 // `base` is the service's base URL; `user` is the name to type. `log` is
@@ -132,6 +205,7 @@ async function signInToTheConsole(base, user, log) {
     "it went to \"" + where + "\". Without that id the screen has nothing to " +
     "sign in FOR and refuses the POST.");
 
+  const password = await ensureConsoleAccount(base, user, say);
   const screen = await hop(where);
   const screenHtml = await screen.text();
   const csrf =
@@ -142,11 +216,11 @@ async function signInToTheConsole(base, user, log) {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "authn_id=" + encodeURIComponent(authn) +
           "&username=" + encodeURIComponent(user) +
-          "&password=" + encodeURIComponent(user) +
+          "&password=" + encodeURIComponent(password) +
           "&action=login" +
           (csrf ? "&csrf_token=" + encodeURIComponent(csrf) : "")
   });
-  assert.ok(cookies.get("sts_mock_session"),
+  assert.ok(cookies.get("sts_session"),
     "signing in at /authn/login should set the sign-on session cookie; the " +
     "reply was " + signedIn.status + ". This service checks no password, so a " +
     "refusal here is about the request rather than the credential.");
@@ -159,7 +233,7 @@ async function signInToTheConsole(base, user, log) {
     at = await hop(at.headers.get("location") || "");
   }
 
-  assert.ok(cookies.get("sts_mock_admin"),
+  assert.ok(cookies.get("sts_admin"),
     "completing the authorization code flow should establish the CONSOLE's " +
     "own session cookie, and the jar holds [" + cookies.names().join(", ") +
     "]. That cookie is what the console reads: since 2026-09-06 the sign-on " +
@@ -171,4 +245,6 @@ async function signInToTheConsole(base, user, log) {
   return cookies.header();
 }
 
-module.exports = { signInToTheConsole: signInToTheConsole, jar: jar };
+module.exports = { signInToTheConsole: signInToTheConsole, jar: jar,
+                   ensureConsoleAccount: ensureConsoleAccount,
+                   consolePasswordFor: consolePasswordFor };

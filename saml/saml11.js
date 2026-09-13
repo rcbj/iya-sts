@@ -64,9 +64,15 @@ const { log, logArtifact, STS, xmlEscape, genId, iso } = require('../common/help
 // saml.issuer — the same setting the 2.0 assertions carry, because it names
 // the same signer.
 const config = require('../common/config');
+// The error-code registry, a leaf; the signing failure below is tagged with its code.
+const errorCodes = require('../common/error_codes');
 // As in saml2.js: the custom attributes an admin configured, and the register every
 // assertion is counted in.
 const stats = require('../common/admin_stats');
+// The configured signature algorithms and the one reading of how a session
+// authenticated — both libraries beside this file, argued in their headers.
+const documentSettings = require('./document_settings');
+const authnContext = require('./authn_context');
 
 const SAML11_NS = 'urn:oasis:names:tc:SAML:1.0:assertion';
 
@@ -127,10 +133,14 @@ function signSaml11Assertion(xml) {
   // would pull those ancestor declarations into the digest at verification time
   // and the signature would fail for every relying party while verifying
   // perfectly here. That argument is now made once, over signXml().
+  // The configured algorithms (2026-09-12), for saml2.js's reason.
+  const how = documentSettings.signatureOptions();
   const signed = stsCrypto.signXml(xml, {
     privateKeyPem: STS.privateKeyPem,
     certPem: STS.certPem,
     placement: stsCrypto.PLACEMENT.LAST,
+    sigAlg: how.sigAlg,
+    c14nAlg: how.c14nAlg,
     what: 'SAML 1.1 assertion'
   });
   logArtifact('SAML 1.1 assertion', 'after signing', signed);
@@ -219,6 +229,16 @@ function attributeValuesOf(a) {
 //                       browser, so a relying party is told not to keep it. It is
 //                       off for the two older callers, whose assertions do not
 //                       pass through a browser at all.
+//   authenticationStatement
+//                       false leaves the <AuthenticationStatement> OUT
+//                       (2026-09-12). Default true, which is every caller that
+//                       existed before it. An answer to an AttributeQuery is a
+//                       statement about ATTRIBUTES; writing an authentication
+//                       statement into it — with a method and an instant — told
+//                       a relying party that somebody signed in who may never
+//                       have been near this service. SAML 1.1 lets an assertion
+//                       carry any non-empty set of statements, so leaving it
+//                       out is a smaller document rather than an invalid one.
 //   sign                false returns the assertion UNSIGNED. It is a test case
 //                       rather than a mistake — a relying party that accepts an
 //                       unsigned assertion has a hole in it and this is how
@@ -240,7 +260,11 @@ function buildSaml11Assertion(opts) {
   const notBefore = iso(-skewS / 60);
   const exp = iso(lifetimeMin + skewS / 60);
   const authnInstant = opts.authnInstant || now;
-  const authnMethod = opts.authnMethod || 'urn:oasis:names:tc:SAML:1.0:am:password';
+  // `unspecified` rather than `am:password` since 2026-09-12, for the reason
+  // saml2.js gives beside its own default: a caller that names no method has
+  // not said a password was used. Every caller here passes the method
+  // `saml/authn_context.js` computed.
+  const authnMethod = opts.authnMethod || authnContext.AM_UNSPECIFIED;
   // The NameIdentifier, and the one thing to know about the defaults: they are
   // what this service has said for years and nothing consumed, so they stay the
   // defaults rather than becoming what a browser-profile relying party asked
@@ -324,9 +348,10 @@ function buildSaml11Assertion(opts) {
       ' IssueInstant="' + now + '">' +
       '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp + '">' + audienceEl +
       doNotCacheEl + '</saml:Conditions>' +
-      '<saml:AuthenticationStatement AuthenticationMethod="' + xmlEscape(authnMethod) + '"' +
-        ' AuthenticationInstant="' + authnInstant + '">' + subjectEl + localityEl +
-      '</saml:AuthenticationStatement>' +
+      (opts.authenticationStatement === false ? '' :
+        '<saml:AuthenticationStatement AuthenticationMethod="' + xmlEscape(authnMethod) + '"' +
+          ' AuthenticationInstant="' + authnInstant + '">' + subjectEl + localityEl +
+        '</saml:AuthenticationStatement>') +
       (attributeEls
         ? '<saml:AttributeStatement>' + subjectEl + attributeEls + '</saml:AttributeStatement>'
         : '') +
@@ -357,7 +382,7 @@ function buildSaml11Assertion(opts) {
     // what failed. The log line is the record of which it was — and so, now, is the
     // console's Signed column, which is why the record is corrected here.
     record.signed = false;
-    log.error('SAML 1.1 signing failed, returning the assertion unsigned: ' + e.message);
+    log.error(errorCodes.tag('STS-SAML-0024') + 'SAML 1.1 signing failed, returning the assertion unsigned: ' + e.message);
     log.debug("Leaving buildSaml11Assertion(). Unsigned.");
     return xml;
   }

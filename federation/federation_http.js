@@ -99,6 +99,10 @@ const http = require('http');
 const { URL } = require('url');
 const config = require('./../common/config');
 const { log } = require('./../common/helpers');
+// THE ERROR CODES. Every way a request fails carries its code as `errorCode` on
+// the result, and `federation_sp.js` marks the refusal page's response with it —
+// the result object itself is never sent to anybody. A leaf, so no cycle.
+const errorCodes = require('./../common/error_codes');
 // WHO IS CALLING, AND WHICH BUILD OF IT. This is the STRONGEST of this
 // repository's outbound requesters, and the one whose requests carry a client
 // secret and an authorization code — so the partner's access log is where an
@@ -119,7 +123,13 @@ const DIALLABLE = ['fedTokenUrl', 'fedUserinfoUrl', 'fedJwksUri'];
 // A partner that answers with more than this is not answering a protocol. A
 // token response is a few hundred bytes and a JWKS a few kilobytes; 256 KiB is
 // two orders of magnitude of headroom and still a bound.
-const MAX_BODY_BYTES = 256 * 1024;
+//
+// `federation.maxResponseBytes` since 2026-09-12; it was the constant
+// MAX_BODY_BYTES. Read once per REQUEST, so a change reaches the next one and a
+// response already being read keeps the cap it started under.
+function maxBodyBytes() {
+  return Number(config.value('federation.maxResponseBytes'));
+}
 
 function outboundAllowed() {
   return !!config.value('federation.outbound');
@@ -196,7 +206,7 @@ function fetchJson(record, attribute, options) {
     // A programming error rather than a configuration one, so it is loud. See
     // the header: this is the mechanism that keeps the SSRF position honest,
     // and it must never be possible to slip past it by passing a string.
-    log.error('federation: something asked to dial "' + attribute + '" on ' + id +
+    log.error(errorCodes.tag('STS-FED-0046') + 'federation: something asked to dial "' + attribute + '" on ' + id +
               ', which is not one of the three attributes this service will ' +
               'follow (' + DIALLABLE.join(', ') + '). Refused. This is a bug in ' +
               'the caller, not a misconfiguration — see the header of ' +
@@ -204,12 +214,14 @@ function fetchJson(record, attribute, options) {
     log.debug('Leaving fetchJson(). Not a diallable attribute.');
     log.debug('Leaving fetchJson().');
     return Promise.resolve({ ok: false, status: 0, json: null, text: '', url: '',
+                             errorCode: 'STS-FED-0046',
                              why: 'this service will not follow a URL from "' + attribute + '"' });
   }
   if (!outboundAllowed()) {
     log.debug('Leaving fetchJson(). Outbound is off.');
     log.debug('Leaving fetchJson().');
     return Promise.resolve({ ok: false, status: 0, json: null, text: '', url: '',
+                             errorCode: 'STS-FED-0047',
                              why: 'federation.outbound is off, so this service makes no ' +
                                   'back-channel request at all. SAML, SAML 1.1 and ' +
                                   'WS-Federation need none; an OIDC partner can be used ' +
@@ -221,6 +233,7 @@ function fetchJson(record, attribute, options) {
     log.debug('Leaving fetchJson(). ' + problem);
     log.debug('Leaving fetchJson().');
     return Promise.resolve({ ok: false, status: 0, json: null, text: '', url: raw,
+                             errorCode: 'STS-FED-0048',
                              why: attribute + ' cannot be dialled: ' + problem });
   }
 
@@ -248,6 +261,7 @@ function fetchJson(record, attribute, options) {
       Buffer.from(String(opts.basic.user) + ':' + String(opts.basic.pass)).toString('base64');
   }
 
+  const cap = maxBodyBytes();
   log.debug('Leaving fetchJson().');
   return new Promise(function (resolve) {
     const done = function (result) {
@@ -278,6 +292,7 @@ function fetchJson(record, attribute, options) {
           // there is nothing here worth having.
           response.destroy();
           return done({ ok: false, status: status, json: null, text: '',
+                        errorCode: 'STS-FED-0049',
                         why: 'it answered ' + status + ' redirecting to "' + location +
                              '", and this service does not follow a redirect on a ' +
                              'back-channel request — the credential in the ' +
@@ -290,7 +305,7 @@ function fetchJson(record, attribute, options) {
         response.on('data', function (chunk) {
           if (overflowed) return;
           bytes += Buffer.byteLength(chunk);
-          if (bytes > MAX_BODY_BYTES) {
+          if (bytes > cap) {
             overflowed = true;
             response.destroy();
             return;
@@ -300,8 +315,10 @@ function fetchJson(record, attribute, options) {
         response.on('end', function () {
           if (overflowed) {
             return done({ ok: false, status: status, json: null, text: '',
-                          why: 'it answered with more than ' + MAX_BODY_BYTES +
-                               ' bytes, which is not a token response, a UserInfo ' +
+                          errorCode: 'STS-FED-0050',
+                          why: 'it answered with more than ' + cap +
+                               ' bytes (federation.maxResponseBytes), which is not a ' +
+                               'token response, a UserInfo ' +
                                'document or a JWKS' });
           }
           let json = null;
@@ -314,11 +331,13 @@ function fetchJson(record, attribute, options) {
             json = null;
           }
           done({ ok: status >= 200 && status < 300, status: status, json: json, text: text,
+                 errorCode: status >= 200 && status < 300 ? '' : 'STS-FED-0051',
                  why: status >= 200 && status < 300 ? ''
                    : 'it answered ' + status + (json && json.error ? ' ' + json.error : '') });
         });
         response.on('error', function (e) {
           done({ ok: false, status: status, json: null, text: text,
+                 errorCode: 'STS-FED-0052',
                  why: 'the response failed: ' + e.message });
         });
       });
@@ -327,11 +346,13 @@ function fetchJson(record, attribute, options) {
       // already succeeded by here, so this is a bug in the caller and is
       // reported as a refusal rather than thrown into a redirect.
       return done({ ok: false, status: 0, json: null, text: '',
+                    errorCode: 'STS-FED-0053',
                     why: 'the request could not be built: ' + e.message });
     }
     request.setTimeout(timeoutMs(), function () {
       request.destroy();
       done({ ok: false, status: 0, json: null, text: '',
+             errorCode: 'STS-FED-0054',
              why: 'it did not answer within ' + timeoutMs() + 'ms ' +
                   '(federation.outboundTimeoutMs). A browser is waiting on this ' +
                   'request, which is why the wait is short' });
@@ -342,6 +363,7 @@ function fetchJson(record, attribute, options) {
       // "self-signed certificate" and "connection refused" send somebody to two
       // completely different places.
       done({ ok: false, status: 0, json: null, text: '',
+             errorCode: 'STS-FED-0055',
              why: 'the request failed: ' + (e.code ? e.code + ' — ' : '') + e.message +
                   (e.code === 'DEPTH_ZERO_SELF_SIGNED_CERT' ||
                    e.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
@@ -357,7 +379,7 @@ function fetchJson(record, attribute, options) {
 
 module.exports = {
   DIALLABLE: DIALLABLE,
-  MAX_BODY_BYTES: MAX_BODY_BYTES,
+  maxBodyBytes: maxBodyBytes,
   urlProblem: urlProblem,
   fetchJson: fetchJson,
   outboundAllowed: outboundAllowed,

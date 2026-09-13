@@ -94,6 +94,10 @@
 
 const { log } = require('./helpers');
 const applications = require('./applications');
+// The registry of failure codes, a LEAF. A refusal carries its code
+// NON-ENUMERABLY on the result, so what a caller serialises is unchanged; the
+// refusals `applications.updateApplication()` answers already carry theirs.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // THE REGISTER, BOTH DIRECTIONS, FROM ONE WALK OF THE CONTAINER.
@@ -381,19 +385,19 @@ function removePermission(resource, name) {
   const entry = applications.get(resource);
   if (!entry) {
     log.debug("Leaving removePermission(). No such application.");
-    return { ok: false, errors: ['There is no application called "' + resource + '" in this ' +
-                                 'registry.'] };
+    return errorCodes.mark({ ok: false, errors: ['There is no application called "' + resource + '" in this ' +
+                                 'registry.'] }, 'STS-REG-0021');
   }
   const found = applications.permissionsOf(entry).filter(function (one) {
     return one.name === leaf;
   })[0];
   if (!found) {
     log.debug("Leaving removePermission(). No such permission.");
-    return { ok: false, errors: ['"' + resource + '" defines no permission called "' + leaf +
+    return errorCodes.mark({ ok: false, errors: ['"' + resource + '" defines no permission called "' + leaf +
                                  '". It defines: ' +
                                  (applications.permissionsOf(entry).map(function (one) {
                                    return one.name;
-                                 }).join(', ') || '(none)') + '.'] };
+                                 }).join(', ') || '(none)') + '.'] }, 'STS-REG-0027');
   }
   const result = applications.updateApplication(resource, {
     attribute: 'oauthPermission', mode: 'remove', value: found.raw,

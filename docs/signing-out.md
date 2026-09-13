@@ -28,12 +28,19 @@ GET /logout
     no session cookie -> 302 /authn/login  -> back here signed in
     a session cookie  -> the list
 
-GET /logout?username=alice        somebody else's list
+GET /logout?username=alice        somebody else's list (development mode only)
 GET /logout?format=json           the same thing, for a test
 ```
 
 Signing out may mean signing in first. This service has no other way to know who
 is asking, and the session that creates is listed with everything else.
+
+**`?username=` naming somebody else works in development mode only.** In product
+mode a password is verified at every door, so an anonymous request naming a
+person would be a way to end their sessions and revoke their tokens with no
+credential at all; there, `/logout` acts only on the signed-in caller (naming
+yourself is fine) and anything else is a 403 pointing at `/admin/logout` and
+`POST /admin-api/logout`, which require an administrator's credential.
 
 ## `POST /logout`
 
@@ -193,7 +200,7 @@ the same termination.
 
 | Kind | Why it is a session | When it expires |
 |---|---|---|
-| Browser sign-on session | the cookie from `/authn/login`, which OAuth 2.0 / OIDC, WS-Federation, both SAML profiles and the console all read | at an **absolute** instant fixed when it was created — **using it does not extend it**, because there is no idle timeout here |
+| Browser sign-on session | the cookie from `/authn/login`, which OAuth 2.0 / OIDC, WS-Federation, both SAML profiles and the console all read | at an **absolute** instant fixed when it was created (`authn.sessionLifetimeS`) — **using it does not extend it** — or, where `authn.sessionIdleTimeoutS` is set, once it has gone that long unused |
 | Kerberos ticket-granting ticket | a TGT *is* the Kerberos session; a service ticket is one use of it | at the `endtime` the KDC sealed into the ticket, which nothing here can move |
 | LDAP connection | RFC 4511 section 4.2 makes a Bind the authorization state of a *connection* | **never** — it lasts until the next Bind, an Unbind, or the socket closing |
 
@@ -222,5 +229,5 @@ refusal in this service is switchable — see [configuration](configuration.md):
 |---|---|
 | `logout.kerberosSignOut` | the KDC behaves exactly as it did before this existed |
 | `logout.ldapDisconnect` | directory connections are left alone, and listed as untouched rather than hidden |
-| `logout.anyUser` | `?username=` is refused; `/logout` acts only on the caller's own session |
+| `logout.anyUser` | `?username=` is refused; `/logout` acts only on the caller's own session. **Product mode behaves as if this were off, whatever it says** |
 | `oauth2.frontchannelLogout` | no `sid`, no advertisement, no iframes — the tokens are byte-for-byte what this service issued before |

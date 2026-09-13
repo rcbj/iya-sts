@@ -128,6 +128,15 @@ const app = require('../common/app');
 const { log, xmlEscape, baseUrlOf, stsKeysFor, parseBody } =
   require('../common/helpers');
 const config = require('../common/config');
+// THE ERROR CODES (common/error_codes.js, a leaf). The key export marks its
+// refusals on the RESULT under the non-enumerable Symbol `mark()` uses, so
+// `/admin-api/keys/export` sends the same JSON and this page reads the code back
+// with `errorCodes.codeOf()` to mark its own response.
+const errorCodes = require('../common/error_codes');
+
+function refused(code, result) {
+  return errorCodes.mark(result, code);
+}
 const realms = require('../common/realms');
 // The console's SHELL and its prose helpers, exactly as `../sts_metadata.js`
 // takes them: `respond()` answers ?format=json itself and wraps the body in the
@@ -316,12 +325,52 @@ const FAMILIES = [
                'anchor it already has. Every certificate this service issues ' +
                'names its own CRL in three schemes (http, ldap, ldaps) and ' +
                'its responder in an Authority Information Access.' },
+        // **THIS ROW SAID `NONE` UNTIL 2026-09-12** — nothing fetched a CRL
+        // and nothing asked a responder, so a certificate revoked on /admin/pki
+        // still authenticated here. It is read from the module that performs
+        // the check now, which is this page's rule, so it names the policy in
+        // force rather than a policy somebody once wrote down.
         { what: 'Revocation checked',
-          how: 'NONE. When a CLIENT presents a certificate to this service ' +
-               'nothing fetches a CRL and nothing asks a responder — so a ' +
-               'certificate revoked on this service\'s own /admin/pki still ' +
-               'authenticates here. Publishing revocation and consulting it ' +
-               'are different work and only the first is done.' },
+          how: require('../common/revocation_status').describePolicy().sentence },
+        { what: 'Revocation check — how a foreign CRL is trusted',
+          how: 'Its signature is verified against the ISSUER\'s certificate ' +
+               '(the next certificate up the presented chain), its issuer name ' +
+               'must match, a critical extension this service does not ' +
+               'implement makes it unusable (RFC 5280 section 6.3.3), and it ' +
+               'is used until its nextUpdate or pki.revocationCrlMaxAgeS, ' +
+               'whichever is sooner. The transport is not certificate-checked: ' +
+               'the signature is the authentication, and a CRL server\'s own ' +
+               'certificate commonly chains to the CA being checked. An ' +
+               'INDIRECT CRL is verified against the certificate of the ' +
+               'cRLIssuer the presented certificate names, which must carry ' +
+               'cRLSign and chain to the presented path — taken from the chain, ' +
+               'this service\'s authorities, pki.revocationCrlIssuersFile, or ' +
+               'the caIssuers address in the CRL\'s own Authority Information ' +
+               'Access; a DELTA against the same signer as its base. Lists are ' +
+               'fetched over http, https or ldaps (plain ldap only when ' +
+               'pki.revocationLdap allows it); an ldaps directory\'s ' +
+               'certificate must chain to node\'s store or ' +
+               'pki.revocationLdapCaFile.' },
+        { what: 'Revocation check — how a foreign OCSP response is trusted',
+          how: 'The request carries a SHA-1 CertID (the RFC 5019 profile\'s ' +
+               'identifier, not a signature) and a 32-octet nonce. The response ' +
+               'must be signed by the certificate\'s issuer, or by a delegated ' +
+               'responder whose certificate the issuer signed with ' +
+               'id-kp-OCSPSigning (RFC 6960 section 4.2.2.2); a different nonce ' +
+               'echoed back is refused as a replay; thisUpdate and nextUpdate ' +
+               'must be fresh within pki.revocationClockSkewS. A delegated ' +
+               'responder\'s OWN status is looked up on the CRL its certificate ' +
+               'names (never over OCSP) unless it carries ' +
+               'id-pkix-ocsp-nocheck; a revoked one\'s answers are not used, ' +
+               'and an unknown one\'s are not used under hard-fail.' },
+        { what: 'Revocation check — a REGISTERED certificate',
+          how: 'A certificate registered rather than presented — an RFC 7523 ' +
+               'key\'s x5c, an RFC 7522 certificate, fedSigningCertificate or a ' +
+               'federation partner key\'s x5c, a certificate in ' +
+               'oid4vp.trustedIssuerCertificates — is checked the same way when ' +
+               'it verifies a signature, its issuers fetched from its own ' +
+               'caIssuers address. A bare key with no certificate has nothing ' +
+               'to check and is reported as such.' },
         { what: 'Where the CA private keys live', how: report.residency }
       ];
     }
@@ -389,6 +438,67 @@ const FAMILIES = [
   // connection, which is the tls/ family's cryptography and not this one's.
   // The policies it pulls are not signed, so a PEP trusts the transport for
   // them exactly as it trusts it for everything else.
+  { name: 'GNAP',
+    signs: 'THE FIVE ACCESS TOKEN FORMATS, three of which are not JWTs. ' +
+           'jwt-signed goes through the same signer as every other JWT here ' +
+           '(`typ: GNAP`); biscuit and zcap are signed with the realm\'s ' +
+           'Ed25519 key (Biscuit\'s own block signature, and Ed25519Signature2020 ' +
+           'over a ZCAP-LD capability); a macaroon is an HMAC-SHA256 chain under a ' +
+           'key derived per resource server. It also signs an HTTP response ' +
+           'with RFC 9421 when a client instance asks for one.',
+    verifies: 'EVERY REQUEST A CLIENT INSTANCE MAKES, by the key it presented: an ' +
+              'RFC 9421 HTTP message signature (with the body covered by an RFC 9530 ' +
+              'Content-Digest), a mutual TLS certificate, a detached JWS over the body ' +
+              'or an attached JWS carrying it. A key rotation is verified under BOTH ' +
+              'keys. A resource server calling introspection or registration is ' +
+              'proofed the same way, and every token format is verified at ' +
+              'introspection and at the demonstration resource server.',
+    encrypts: 'jwt-encrypted: a signed GNAP JWT inside a JWE — to the resource ' +
+              'server\'s own key (RSA-OAEP-256 or ECDH-ES+A256KW, with ' +
+              '`gnap.jweEnc`) when its application entry carries one, otherwise ' +
+              '`dir` with A256GCM under a realm-derived key so only this ' +
+              'authorization server can open it.',
+    decrypts: 'A jwt-encrypted token encrypted under `dir`, at introspection. A ' +
+              'token encrypted to a resource server\'s key is opaque here, which is ' +
+              'the point of encrypting to it.',
+    keys: 'The client instance\'s key is the client\'s identity — a JWK, a ' +
+          'certificate, a certificate thumbprint or a reference to a key on the ' +
+          'application entry. A shared symmetric key (gnapSymmetricKey) and a ' +
+          'macaroon root key (gnapMacaroonKey) are sealed at rest under the ' +
+          'process key-encryption key. The macaroon and dir keys are HKDF-SHA256 ' +
+          'derivations of the realm secret with a domain separator each.',
+    hashes: 'SHA-256 and SHA-512 for Content-Digest; the section 4.2.3 interaction ' +
+            'hash in any Named Information hash method node computes (SHA-2 and SHA-3, ' +
+            'truncated forms included); SHA-256 for a JWK thumbprint, a ' +
+            'certificate thumbprint and a remembered approval\'s digest; SHA-256 of ' +
+            'the access token for `ath` in a JWS proof.',
+    whatItDoesNot: 'IT DOES NOT ACCEPT AN UNPROOFED REQUEST FOR A BOUND TOKEN, and ' +
+                   'there is no setting that makes it: a GNAP key proof is the ' +
+                   'protocol rather than a hardening option. What is optional is a ' +
+                   'BEARER token, which gnap.bearerTokens turns off. Macaroon ' +
+                   'third-party caveats, Biscuit third-party blocks and ZCAP ' +
+                   'invocation proofs are not implemented.',
+    envelopes: ['httpsig', 'jws', 'jwe', 'jwt', 'jwk', 'thumbprint', 'mtls', 'tls',
+                'macaroon', 'biscuit', 'dataintegrity'],
+    algorithms: function () {
+      // Required HERE rather than at the top: this module is 20a in the require
+      // order and GNAP is 23d. The libraries register no route, so loading them
+      // early would move nothing — but the biscuit format instantiates a
+      // WebAssembly module at load, and a report nobody opened should not pay it.
+      const httpsig = require('../gnap/gnap_httpsig');
+      const gnapKeys = require('../gnap/gnap_keys');
+      const gnapTokens = require('../gnap/gnap_tokens');
+      return [
+        ['Access token formats', gnapTokens.FORMATS],
+        ['Key proofing methods', gnapKeys.PROOF_METHODS],
+        ['Key formats', gnapKeys.KEY_FORMATS.concat(['reference'])],
+        ['HTTP message signature algorithms', Object.keys(httpsig.ALGORITHMS)],
+        ['Content-Digest algorithms', httpsig.DIGEST_ALGORITHMS],
+        ['jwt-encrypted content encryption, through gnap.jweEnc',
+         [String(config.value('gnap.jweEnc') || 'A256GCM')]]
+      ];
+    } },
+
   { name: 'XACML',
     signs: 'Nothing. A decision is not a token and carries no signature.',
     verifies: 'Nothing in the decision path. The remote PEP\'s client ' +
@@ -451,10 +561,19 @@ const FAMILIES = [
               'nothing about which application holds it.',
     encrypts: 'A UserInfo response for a client that registered ' +
               '`userinfo_encrypted_response_alg`: JWE compact, RSA-OAEP or ' +
-              'ECDH-ES to the client\'s own key.',
+              'ECDH-ES to the client\'s own key. **AND EVERY REFRESH TOKEN** ' +
+              '(2026-09-12): the signed JWT is sealed as a nested JWT (`cty: ' +
+              'JWT`, RFC 7519 section 11.2) to THIS REALM\'s own keys, under ' +
+              '`oauth2.refreshTokenEncryptionAlg` and `…Enc` — any key ' +
+              'management algorithm the shared JWE table implements, to the ' +
+              'realm\'s RSA key, EC key or a secret of its own. No client ' +
+              'ever sees or needs those keys.',
     decrypts: 'A JWE encrypted to this service\'s RSA key, RSA-OAEP-256 only ' +
               '— a shorter list than it encrypts with on purpose, because it ' +
-              'holds no EC private key to agree with.',
+              'holds no EC private key to agree with. **AND A REFRESH TOKEN**, ' +
+              'under whichever algorithm its own header names, before the ' +
+              'refresh grant, introspection, revocation or token exchange ' +
+              'reads anything in it; an unencrypted refresh token is refused.',
     hashes: '`at_hash` and `c_hash` are the left half of the SHA-256 of the ' +
             'token; PKCE `S256` is SHA-256 over the verifier; `cnf.jkt` is an ' +
             'RFC 7638 JWK Thumbprint (SHA-256) and `cnf["x5t#S256"]` is the ' +
@@ -485,7 +604,13 @@ const FAMILIES = [
         // `tests/vendored/admin_api.js` is what compared the two.
         ['JWE key management (out)', stsCrypto.JWE_ASYMMETRIC_ALGS],
         ['JWE key management (in)', stsCrypto.JWE_DECRYPT_ALGS],
-        ['JWE content encryption', Object.keys(stsCrypto.JWE_ENCS)]
+        ['JWE content encryption', Object.keys(stsCrypto.JWE_ENCS)],
+        // THE REFRESH-TOKEN ENVELOPE (2026-09-12). The WHOLE table rather than
+        // the asymmetric half, because this is the one JWE here encrypted to
+        // a key THIS SERVICE holds — its own RSA and EC keys and a secret of
+        // the realm's — so every family is genuinely in use. Read off the table
+        // that performs it, like every row here.
+        ['Refresh token encryption (to this realm\'s own keys)', stsCrypto.JWE_ALGS]
       ];
     } },
 
@@ -1347,7 +1472,35 @@ const STANDARDS = [
     what: 'How a wallet finds the key that verifies a credential whose ' +
           '`iss` is a DID. The BBS key is published as ' +
           '`publicKeyMultibase` because it has no JWK representation to be ' +
-          'forced into.' }
+          'forced into.' },
+  { key: 'httpsig', name: 'HTTP Message Signatures and Digest Fields',
+    specs: ['RFC 9421', 'RFC 9530', 'RFC 8941 (Structured Field Values)'],
+    coverage: 'partial: request and response signing and verification with every ' +
+              'derived component and component parameter, multiple signatures, and ' +
+              'Content-Digest with sha-256 and sha-512. Repr-Digest and the Want- ' +
+              'fields are not implemented.',
+    what: 'GNAP\'s preferred key proof. THE SIGNATURE BASE IS THE THING BOTH ENDS ' +
+          'MUST BUILD IDENTICALLY, byte for byte, from a message each of them ' +
+          'parsed separately — so the structured-field serializer is written out in ' +
+          '`gnap/gnap_sf.js` rather than borrowed, and held to the RFC\'s own test ' +
+          'vectors.' },
+  { key: 'macaroon', name: 'Macaroons',
+    specs: ['Macaroons (NDSS 2014)', 'libmacaroons V2 binary format'],
+    coverage: 'partial: first-party caveats and attenuation. No third-party ' +
+              'caveats, so no discharge macaroons.',
+    what: 'A bearer credential whose holder can NARROW it without asking anybody, ' +
+          'by appending a caveat and re-keying the HMAC chain. The verifier must ' +
+          'hold the root key, which is why a macaroon is the one GNAP format with ' +
+          'no public verification material.' },
+  { key: 'biscuit', name: 'Biscuit',
+    specs: ['Biscuit specification (biscuitsec.org)'],
+    coverage: 'partial: Ed25519 root and block signatures, Datalog facts, checks ' +
+              'and attenuation blocks, verified by an authorizer run under limits. ' +
+              'No third-party blocks.',
+    what: 'A public-key token a holder can attenuate OFFLINE, like a macaroon, but ' +
+          'verifiable by anybody holding the root public key. Its authorization ' +
+          'logic is Datalog carried inside the token, so the verifier ALWAYS runs ' +
+          'with time and iteration limits.' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -1365,7 +1518,8 @@ let advertisedFamilies = null;
 function setProtocolFamilies(protocols) {
   log.debug("Entering setProtocolFamilies().");
   if (!Array.isArray(protocols)) {
-    log.error('crypto metadata: setProtocolFamilies() was given ' +
+    log.error(errorCodes.tag('STS-ADMIN-0595') +
+              'crypto metadata: setProtocolFamilies() was given ' +
               typeof protocols + ' rather than an array, and was ignored. ' +
               'The crypto page will say the drift check did not run.');
     log.debug("Leaving setProtocolFamilies(). Refused.");
@@ -1375,7 +1529,8 @@ function setProtocolFamilies(protocols) {
     return row && typeof row.name === 'string' && row.name;
   });
   if (named.length !== protocols.length) {
-    log.error('crypto metadata: setProtocolFamilies() was given ' +
+    log.error(errorCodes.tag('STS-ADMIN-0595') +
+              'crypto metadata: setProtocolFamilies() was given ' +
               (protocols.length - named.length) + ' row(s) with no name, and ' +
               'was ignored whole. A partial list would produce a drift ' +
               'report that is wrong rather than absent.');
@@ -2667,6 +2822,7 @@ app.post('/admin/keys/export', function (req, res) {
   // stronger of the two roles — and it is a GET-shaped act done as a POST for
   // exactly that reason.
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-ADMIN-0588');
     res.status(403).type('text/plain').set('Cache-Control', 'no-store')
        .send('Exporting a key pair needs the Admin Write role. Reading this ' +
              'console needs Admin Read; taking a private key out of it needs ' +
@@ -2679,6 +2835,7 @@ app.post('/admin/keys/export', function (req, res) {
             String(body.password || '')).then(function (result) {
     if (!result.ok) {
       // A refusal is a PAGE, so it reads like every other refusal here.
+      errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-ADMIN-0593');
       respondToKeyRefusal(req, res, result.errors[0]);
       log.debug("Leaving the key export endpoint. Refused.");
       return;
@@ -2701,6 +2858,7 @@ app.post('/admin/keys/export', function (req, res) {
     log.debug("Leaving the key export endpoint. Sent " + file.name + ", " +
               data.length + " bytes.");
   }).catch(function (e) {
+    errorCodes.mark(res, 'STS-ADMIN-0594');
     respondToKeyRefusal(req, res, 'The export failed: ' + e.message);
     log.debug("Leaving the key export endpoint. Threw: " + e.message);
   });
@@ -2713,6 +2871,7 @@ function respondToKeyRefusal(req, res, message) {
   log.debug("Entering respondToKeyRefusal().");
   const type = String(req.headers['content-type'] || '');
   if (/json/i.test(type)) {
+    // error-code: none — a transport helper; both callers mark the response with the specific code first
     res.status(400).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify({ ok: false, errors: [message] }, null, 2));
     log.debug("Leaving respondToKeyRefusal(). Answered JSON.");
@@ -2757,7 +2916,8 @@ if (typeof admin.setCryptoReporter === 'function') {
   // registered above and does not go through the slot — and only the API
   // mirror is missing, which is what this line says rather than leaving a
   // 404 to be explained.
-  log.error('crypto metadata: this build of admin-ui/admin.js offers no ' +
+  log.error(errorCodes.tag('STS-ADMIN-0596') +
+            'crypto metadata: this build of admin-ui/admin.js offers no ' +
             'setCryptoReporter(), so /admin/crypto-metadata is drawn and ' +
             'GET /admin-api/crypto will not answer.');
 }
@@ -3071,28 +3231,28 @@ async function exportKey(id, format, password) {
   const row = keyInventory().filter(function (one) { return one.id === id; })[0];
   if (!row) {
     log.debug("Leaving exportKey(). No such key.");
-    return { ok: false, errors: ['There is no key called "' + id + '" in this ' +
+    return refused('STS-ADMIN-0589', { ok: false, errors: ['There is no key called "' + id + '" in this ' +
       'realm. The list on the page is what this process holds; a key named ' +
-      'here and not there is usually a realm switch away.'] };
+      'here and not there is usually a realm switch away.'] });
   }
   if (!row.formats.length) {
     log.debug("Leaving exportKey(). Nothing to export.");
-    return { ok: false, errors: [row.label + ' cannot be exported' +
+    return refused('STS-ADMIN-0590', { ok: false, errors: [row.label + ' cannot be exported' +
       (row.generated === false
         ? ' because it has not been generated yet. The post-quantum keys are ' +
           'made on first use — fetch /oauth2/jwks in this realm and come back.'
-        : '.')] };
+        : '.')] });
   }
   if (row.formats.indexOf(format) < 0) {
     log.debug("Leaving exportKey(). Unsupported format.");
-    return { ok: false, errors: [row.label + ' cannot be exported as ' +
+    return refused('STS-ADMIN-0591', { ok: false, errors: [row.label + ' cannot be exported as ' +
       format + '. It offers ' + row.formats.join(', ') + '.' +
       (format === 'pkcs12' && !row.hasCertificate
         ? ' PKCS#12 wraps a private key in a CERTIFICATE, and this service ' +
           'holds none for this key — only the signing key and the TLS key ' +
           'have one. Minting a throwaway certificate so the format worked ' +
           'would hand you a keystore this service has never presented.'
-        : '')] };
+        : '')] });
   }
 
   // The post-quantum keys are a JWK and nothing else, and they are not a PEM
@@ -3103,7 +3263,7 @@ async function exportKey(id, format, password) {
     })[0];
     if (!made) {
       log.debug("Leaving exportKey(). The key vanished between the list and here.");
-      return { ok: false, errors: [row.label + ' has not been generated yet.'] };
+      return refused('STS-ADMIN-0590', { ok: false, errors: [row.label + ' has not been generated yet.'] });
     }
     // The PUBLIC half only. There is no interoperable private encoding for an
     // AKP key to hand over — RFC 9964 defines the public members and the seed
@@ -3123,8 +3283,8 @@ async function exportKey(id, format, password) {
   const pems = pemsFor(id);
   if (!pems) {
     log.debug("Leaving exportKey(). No PEM pair.");
-    return { ok: false, errors: ['No key pair is available for ' + row.label +
-      ' in this realm.'] };
+    return refused('STS-ADMIN-0592', { ok: false, errors: ['No key pair is available for ' + row.label +
+      ' in this realm.'] });
   }
   try {
     const result = await keystore.exportKeyPair({
@@ -3146,7 +3306,7 @@ async function exportKey(id, format, password) {
     // unreadable key — reach the page as themselves. They are better sentences
     // than anything this file would write over the top of them.
     log.debug("Leaving exportKey(). The exporter refused: " + e.message);
-    return { ok: false, errors: [e.message] };
+    return refused('STS-ADMIN-0593', { ok: false, errors: [e.message] });
   }
 }
 

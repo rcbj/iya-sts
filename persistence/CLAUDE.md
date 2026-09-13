@@ -146,6 +146,17 @@ const sessions = realms.map({ persist: 'authn.sessions' });
 
 Every mutation of the three shapes already funnels through `set`, `delete`,
 `clear` or an array mutator, so naming the store names every write to it.
+**What that does NOT name is an edit to an OBJECT the store holds**, and two
+stores declared on 2026-09-12 are made of them: `ssf/caep.js`'s and
+`ssf/risc.js`'s registers, whose state machines do `row.counts[uri] += 1` on a
+row already in the map. Each has a `touch()` that re-sets the key after an edit;
+without it the flush would write every row as it was CREATED, and a restart
+would put back a session that was never revoked. A new store holding mutable
+rows owes the same, and `tests/realm_isolation.js` asserts the two that have it
+against a real observer. The same day added `vc_offers.deferredAccessTokens`
+(keyed by a digest of the token, never the token) and moved
+`spiffe.recordedConnections` from `scope: 'shared'` to a realm's partition — see
+`common/CLAUDE.md`'s table of the seven stores that sweep converted.
 **A JOURNAL AND NOT THE DIFF NEXT DOOR**, and the two arguments are opposite and
 both right: the directory is diffed because `touchDirectory()` is one choke
 point that does not say which entry moved and the directory is COLD; these
@@ -536,6 +547,21 @@ REPORTED — `audit.js`'s `list()` and `summary()`, `admin_stats.js`'s
 `snapshot()`, `xacml_monitor.js`'s. The test for `own` is one question: **is a
 write to this store an ASSIGNMENT or an INCREMENT?**
 
+**AND A THIRD SHAPE SINCE 2026-09-12: A ROW PARTLY BUILT FROM CODE.** Last
+writer wins assumes the row is the only source of its value. `krb5.principals`
+holds rows that are not: a configured Kerberos account is BUILT FROM SETTINGS at
+require time and only then written down, so a restored or replicated copy is an
+older answer to a question the settings already answered — and restoring it
+whole undid a changed `krb5.servicePassword` and put back accounts the current
+settings no longer create. `realms.sharedMap()` takes a `reconcile` option for
+it, asked by the `restore` and `remove` accessors — **which are what both
+`restore()` and `applyLocally()` in `persistence_minted.js` call, so a restart
+and another process obey one rule and neither file changed**. A reconciler that
+throws applies nothing. `common/realms.js` argues the hook and
+`kerberos/CLAUDE.md` the rule it carries; nothing here writes a reconciled row
+back, because two processes with different settings would then exchange it for
+ever.
+
 ### What still does not coordinate
 
 * **The sockets.** The KDC, both LDAP listeners, the two TLS ports and SPIFFE's
@@ -821,3 +847,73 @@ key-encryption key for the service, not one per trust realm, so a realm is not a
 cryptographic boundary at rest — `common/CLAUDE.md` carries that argument beside
 `keystore.js`.
 
+
+## THE DATABASE PASSWORD DOES NOT HAVE TO BE IN THE CONNECTION STRING (2026-09-12)
+
+`persistence.databasePasswordProvider` reads it from the five places
+`common/secrets.js` already reads the key-encryption key from — a mounted file,
+AWS Secrets Manager, Google Secret Manager, Azure Key Vault, HashiCorp Vault —
+and by default out of the SAME file or secret, told apart by a field. That
+module owns *what the password is* and this one owns *where it goes*.
+
+**`start()` SPLIT IN TWO FOR IT, AND THE SPLIT IS A FUNCTION RATHER THAN AN
+`await`.** Reading a secret is a network call to somebody else's service and the
+pool is built synchronously out of a finished string, so the string has to be
+resolved first — the same ordering `keystore.start()` has with its own secret.
+What decided the shape is the driver-load `try`: a rejection raised inside the
+promise chain is caught at the foot of this file and wrapped in *the store could
+not be read*, which for a missing `pg` package is the sentence twice — exactly
+what the comment on that catch says not to do. So `resolveDatabaseUrl()` runs
+BEFORE `openStore()`, which is the old body under a new name.
+
+**IT IS INJECTED INTO THE STRING AND NOT PASSED BESIDE IT, AND THAT IS `pg`'s
+DOING.** `ConnectionParameters` does `Object.assign({}, config,
+parse(config.connectionString))` — everything parsed out of the string wins over
+an explicit field — and `pg-connection-string` returns `password: ''` as an own
+property even for a string that carries none. So a `password` passed beside a
+`connectionString` is silently overwritten with the empty one, and there is no
+arrangement of those two options that works.
+
+**`encodeURIComponent` FIRST, WHICH LOOKS LIKE FUSSINESS AND IS NOT.**
+`URL.password = value` percent-encodes the userinfo set and leaves `%`, `&` and
+`+` alone; `pg` then runs `decodeURIComponent()` over what it finds. A password
+containing a `%` therefore arrives mangled, or throws `URI malformed` inside the
+driver. Encoding first and letting the setter pass the escapes through
+round-trips every byte, and `tests/database_password.js` asserts it **through
+`pg`'s own parser** for every character that has ever caused this.
+
+**A PASSWORD ALREADY IN THE URL IS REPLACED** and the log says so without saying
+what with; two passwords for one connection is a question with no good answer,
+and the configured provider is the one somebody chose deliberately. **A string
+in libpq's keyword/value form is REFUSED** rather than dialled without the
+password somebody configured: `pg` accepts that shape and this cannot edit one
+safely.
+
+**A FAILED READ IS FATAL**, through the same path an unopenable store takes —
+a process told where the password lives that carried on with the one in the URL
+would be ignoring the configuration that exists to keep it out of the URL.
+`describeDatabase()` reports WHERE it came from and never what it is, which is
+the Password row on `/admin/persistence`.
+
+## THE `ldif` STORE HAD STOPPED WRITING THE DIRECTORY (fixed 2026-09-12)
+
+The journalled flush (2026-09-08) hands the driver `all: null` when it knows
+which DNs moved, which is right for `postgres`. The `ldif` driver writes a WHOLE
+FILE per touched realm and read `change.all.get(realmId)` to do it — so every
+flush that named its DNs failed with *Cannot read properties of null (reading
+'get')*, was logged, and was retried on the next change, which failed the same
+way. The service answered correctly out of memory the whole time and the file on
+disk stopped moving: in `ldif` mode, anything written to the directory by a
+writer that named its DN was lost at the next restart.
+
+**Nothing saw it** because `tests/appconfig_persistence.js` fills the directory
+slot with a stub that never names a DN, so every flush it drove took the
+full-walk path. `tests/truststore_persistence.js` found it by writing a real
+entry through the real directory and reading it back from a second process.
+
+`flush()` now builds the snapshot for the TOUCHED realms only when the driver is
+`ldif`, which keeps the journal's saving for every realm nothing happened in.
+
+**AND THE DIRECTORY NOW CARRIES THE CLIENT TRUSTSTORE'S RUNTIME ANCHORS**, in
+`ou=trustAnchors` in the default realm — so "the embedded directory persists"
+includes them. `tls/CLAUDE.md` argues it.

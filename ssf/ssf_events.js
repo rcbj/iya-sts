@@ -1561,7 +1561,19 @@ function publicKeyForHeader(header) {
   log.debug('Entering publicKeyForHeader().');
   const kid = String((header || {}).kid || '');
   const alg = String((header || {}).alg || '');
-  if (alg === 'RS256' || kid === STS.kid) {
+  // ---------------------------------------------------------------------
+  // **ON THE `kid`, AND ON THE ALGORITHM ONLY WHERE THERE IS NO `kid`
+  // (2026-09-12).** This read `alg === 'RS256' || kid === STS.kid`, so EVERY
+  // RS256 SET — including one a foreign transmitter signed and labelled with its
+  // own kid — was checked against this service's RSA key and reported
+  // "invalid". That is a false statement about somebody else's signature: the
+  // honest answer is the sentence `verifySet()` gives for a key this service
+  // does not hold, *not verifiable here*, and a receiver page that says
+  // "invalid" teaches whoever reads it that the other transmitter is broken.
+  // A SET that names no kid is still tried against the RSA key, because that
+  // is the only key it could be claiming.
+  // ---------------------------------------------------------------------
+  if (kid ? kid === STS.kid : alg === 'RS256') {
     // The RSA key is not in the list below — it is `STS.privateKey`/`STS.kid`,
     // where eight modules already read it — so it is resolved separately from
     // the certificate this service publishes for it.

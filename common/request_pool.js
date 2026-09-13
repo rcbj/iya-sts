@@ -49,10 +49,23 @@
 //
 // `workers.dispatch` names the path prefixes that go to a worker. With nothing
 // in it — the default — this middleware calls `next()` for everything and the
-// service behaves exactly as it did, which is what makes this landable before
-// the state channel is finished. A prefix is added when the stores its handlers
-// touch are reachable from a worker, and `state_channel.js` is what decides
-// when that is true.
+// service behaves exactly as it did, which is what made this landable before
+// the state channel existed.
+//
+// **THE STATE CHANNEL IS `persistence_replication.js` AND THERE IS NO
+// `state_channel.js` (corrected 2026-09-12).** This block named one, and so did
+// `request_worker.js`'s header; no such file was ever written. What was built
+// instead is the thing the root CLAUDE.md argues at length — a worker is just
+// ANOTHER PROCESS AGAINST THE STORE, running the same four startup steps from
+// `service_state.js`, reconciled by the change log in
+// `persistence/persistence_replication.js`. A reader following either sentence
+// went looking for a file that does not exist and could reasonably have
+// concluded the channel was unfinished.
+//
+// So the rule for adding a prefix is not "wait for a module" — it is
+// `start()`'s refusal below: **nothing may be dispatched unless this process is
+// coordinating**, and what decides whether a store is reachable from a worker
+// is whether its changes are rows in `sts_changes`.
 //
 // **A REQUEST IS NEVER SILENTLY HALF-DISPATCHED.** If a worker cannot be
 // reached the request is answered 503 with a sentence naming the pool, rather
@@ -73,6 +86,9 @@ const config = require('./config');
 // and cannot join a cycle. It is the shared-key registry this file arbitrates;
 // see keystore.js's block above storedFor().
 const keystore = require('./keystore');
+// A LEAF with no requires: the failure codes on the log lines and the 502s and
+// 503s below. See common/error_codes.js.
+const errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({
   name: 'request_pool',
@@ -97,7 +113,10 @@ const WORKER_MODULE = path.join(__dirname, 'request_worker.js');
 // the other way instead, filled once, before any worker is forked.
 // ---------------------------------------------------------------------------
 let tlsMaterial = null;
-let vciRequestEncKeyPem = '';
+// (The OpenID4VCI request-encryption key used to be held here and handed down
+// the fork beside the certificate. It is a member of each realm's key set since
+// 2026-09-12 and travels on the key channel with the rest of it — see
+// `common/helpers.js`'s makeRequestEncryptionKey().)
 let bbsKeyPairB64 = '';
 // Workers announce their own commits (see receiveCommitted()), so proxy()
 // must NOT bump the generation when a response goes out — doing both would
@@ -344,7 +363,8 @@ function reapStuckTickets(need, clock) {
   // entry bulk load it does take tens of seconds. In that second case the
   // barrier has degraded, and it had already degraded at the 2,000ms bound:
   // this only stops the backlog making every OTHER read pay for it too.
-  log.warn('request_pool: ' + gone.length + ' ticket(s) had been answered ' +
+  log.warn(errorCodes.tag('STS-WORKER-0008') +
+           'request_pool: ' + gone.length + ' ticket(s) had been answered ' +
            'for more than ' + (REAP_AFTER_MS / 1000) + 's without any ' +
            'worker reporting them committed, and were dropped (' + reaped +
            ' so far). Every read since has been served without them anyway, ' +
@@ -373,7 +393,8 @@ function awaitCommitConfirmations(servedBy) {
     ticketWaiters.push(waiter);
     setTimeout(function () {
       if (!done) {
-        log.warn('request_pool: a write answered before this read was not ' +
+        log.warn(errorCodes.tag('STS-WORKER-0007') +
+                 'request_pool: a write answered before this read was not ' +
                  'reported committed within 2000ms (waiting below ticket ' +
                  need + '; ' + outstanding.size + ' outstanding, ' +
                  finishedTickets.size + ' of them finished); serving ' +
@@ -506,25 +527,70 @@ function peerOf(req) {
       return;
     }
     // `issuerCertificate` is a CHAIN and is self-referential at the root, so
-    // walking it would not terminate. It is dropped rather than followed:
-    // nothing in this service reads it, and the verification verdict — which
-    // is what a chain would have been consulted for — travels beside it.
+    // walking it would not terminate. It is not copied as it stands; the DER
+    // of each certificate above the leaf goes in `issuerChain` below instead.
     if (name === 'issuerCertificate') {
       return;
     }
     flat[name] = value;
   });
+  // THE CHAIN ABOVE THE LEAF, AS DER (2026-09-12). The sentence this replaced
+  // said nothing here reads it, and that stopped being true the day
+  // `common/revocation_status.js` started CONSULTING revocation: a foreign
+  // CRL is verified against the issuer's certificate, and a worker handed the
+  // leaf alone has no issuer to verify it with. This is the path OpenSSL built
+  // in the front process, anchor included, bounded because its shape is
+  // somebody else's bytes. The register half of the check needs none of it.
+  const chain = [];
+  try {
+    let at = socket.getPeerCertificate(true);
+    at = at && at.issuerCertificate;
+    while (at && at.raw && chain.length < 8) {
+      if (at.raw.equals(cert.raw)) {
+        break;
+      }
+      chain.push(at.raw.toString('base64'));
+      if (!at.issuerCertificate || at.issuerCertificate === at) {
+        break;
+      }
+      at = at.issuerCertificate;
+    }
+  } catch (e) {
+    // A socket that went away between the two reads. The leaf still goes; a
+    // worker without the chain answers a foreign certificate as unknown, which
+    // is what the policy exists to decide about.
+    chain.length = 0;
+  }
+  if (chain.length) {
+    flat.issuerChain = chain;
+  }
   let encoded;
   try {
     encoded = Buffer.from(JSON.stringify(flat), 'utf8').toString('base64');
   } catch (e) {
     return null;
   }
+  // THE CHAIN IS WHAT IS GIVEN UP FIRST when the header would be too large:
+  // the leaf binds a token and names a caller, and losing it would be the
+  // request presenting nothing at all.
+  if (encoded.length > 12000 && flat.issuerChain) {
+    log.warn(errorCodes.tag('STS-WORKER-0037') +
+             'request_pool: a client certificate\'s issuer chain is too large ' +
+             'to forward (' + encoded.length + ' bytes encoded); the worker ' +
+             'gets the leaf alone and cannot verify a foreign CRL about it.');
+    delete flat.issuerChain;
+    try {
+      encoded = Buffer.from(JSON.stringify(flat), 'utf8').toString('base64');
+    } catch (e) {
+      return null;
+    }
+  }
   // A header this size would be refused by the worker's own parser, and a
   // refused request is worse than one that behaves as though no certificate
   // was sent. 12KB is comfortably under node's default 16KB header limit.
   if (encoded.length > 12000) {
-    log.warn('request_pool: a client certificate is too large to forward (' +
+    log.warn(errorCodes.tag('STS-WORKER-0009') +
+             'request_pool: a client certificate is too large to forward (' +
              encoded.length + ' bytes encoded); the worker will see this ' +
              'request as having presented none.');
     return null;
@@ -536,7 +602,7 @@ function peerOf(req) {
 // imported from authn.js because this file must not require a protocol module:
 // it is loaded by app.js, which is above every route, and a require in that
 // direction would drag authn's routes to the front of the router (rule 1).
-const SESSION_COOKIE = 'sts_mock_session';
+const SESSION_COOKIE = 'sts_session';
 
 // AND THE TWO RELYING-PARTY COOKIES (2026-09-08). Since this service's own
 // console and user portal became OpenID Connect clients, each holds a session
@@ -550,7 +616,7 @@ const SESSION_COOKIE = 'sts_mock_session';
 //
 // Named here for SESSION_COOKIE's reason: this file is loaded by app.js, above
 // every route, so it may not require the module that owns them.
-const RP_COOKIES = ['sts_mock_admin', 'sts_mock_portal'];
+const RP_COOKIES = ['sts_admin', 'sts_portal'];
 
 function sessionCookieName(bit) {
   if (bit.indexOf(SESSION_COOKIE + '=') === 0) {
@@ -611,9 +677,37 @@ function size() {
   return wanted;
 }
 
-// The path prefixes that go to a worker. A list of strings; empty means none,
-// which is the default and is what makes this file inert until it is asked for.
-function dispatchPrefixes() {
+// ---------------------------------------------------------------------------
+// ONE LIST OF WHAT IS DISPATCHED, AND IT WAS TWO SETTINGS UNTIL 2026-09-12.
+//
+// `workers.dispatch` held path prefixes and `workers.operations` held operation
+// kinds, and **the distinction between them was artificial**: a dispatched
+// thing is a dispatched thing, and an operator naming what should leave the
+// front process has no reason to care whether this service reaches it over HTTP
+// or over a raw socket. Two settings meant two places to look, two things to
+// forget, and a coordination guard that had to remember to check both.
+//
+// So there is one list, and an entry says what it is BY ITS SHAPE:
+//
+//   `/scim`, `/admin-api`   a PATH PREFIX — it starts with a slash
+//   `ldap`, `ldap.search`   an OPERATION KIND — `family` or `family.operation`
+//   `*`                     EVERYTHING, of both kinds
+//
+// **THE LEADING SLASH IS THE WHOLE DISCRIMINATOR AND IT NEEDED NO MIGRATION.**
+// Every value this setting has ever held is a path prefix beginning with `/` or
+// the `*` wildcard, so a configuration written before the merge means exactly
+// what it used to mean. An operation kind cannot begin with a slash — it is a
+// module's own name for a unit of work — and a path prefix cannot not, because
+// `matchesAny()` compares it against `req.url`.
+//
+// **`*` NOW REACHES OPERATIONS TOO, WHICH IS A REAL BEHAVIOUR CHANGE AND IS
+// THE POINT RATHER THAN A SIDE EFFECT.** It meant "every path" and means
+// "everything"; a wildcard that quietly excluded a whole class of work would be
+// the artificial distinction surviving the settings it was named after. An
+// operator who wants paths and not operations names the paths, which is what
+// the list is for.
+// ---------------------------------------------------------------------------
+function dispatchList() {
   let raw;
   try {
     raw = config.value('workers.dispatch');
@@ -628,6 +722,14 @@ function dispatchPrefixes() {
     return String(one).trim();
   }).filter(function (one) {
     return one.length > 0;
+  });
+}
+
+// An entry that names a URL. `*` is in BOTH halves because it names everything,
+// and it has to be in this one for `dispatched()`'s wildcard branch to see it.
+function dispatchPrefixes() {
+  return dispatchList().filter(function (one) {
+    return one === '*' || one.charAt(0) === '/';
   });
 }
 
@@ -745,7 +847,41 @@ function fansOut(url) {
 // The pins came off with it. `tests/request_routing.js` asserts they are off
 // and `tests/spiffe_authority.js` asserts the sharing that replaced them.
 // ---------------------------------------------------------------------------
-const NEVER_DISPATCHED = ['/tls'];
+// ---------------------------------------------------------------------------
+// AND THE CLIENT-CERTIFICATE TRUSTSTORE'S TWO GATED DOORS ARE (2026-09-12):
+// `/admin/tls/trust` and `/admin-api/tls/trust`.
+//
+// **THIS IS THE SOCKET ARGUMENT A THIRD TIME AND NOT SPIFFE'S ROUTE AROUND
+// ONE**, and the difference is the whole of why the pin is right here when
+// SPIFFE's came off after an hour. SPIFFE's authority was STATE that happened
+// to be private — two module arrays — and the fix was to make it a row every
+// process shares. The truststore is not state in that sense. It is the
+// CONFIGURATION OF A LISTENER: the `ca` half of the secure context 8443, 9443,
+// LDAPS 636 and the main port were created with, applied by
+// `setSecureContext()` on server objects only the front process holds. A
+// worker has the same module loaded and its own copy of the array, and
+// changing that copy changes nothing any handshake reads — so an add answered
+// there would report success about a listener nothing is listening on, and a
+// read answered there would list an array no connection is verified against.
+//
+// **SHARING IT WOULD NOT HAVE FIXED THAT, WHICH IS WHY IT IS PINNED AND NOT A
+// ROW.** `tls/tls_server.js`'s note above `anchors` records that it WAS briefly
+// a shared, persisted store, and that it implied a sharing that did not happen:
+// even with every process holding the same list, the list only matters in the
+// one process that can apply it, and that process is where the request has to
+// be answered. It is the shape the listener CERTIFICATE took beside it
+// (`reconcileTheListener()` below): the decision is the front process's alone.
+//
+// Both paths, and only those two. `/admin/tls` beside them is the listeners'
+// SETTINGS page, which is ordinary configuration read out of the store and is
+// dispatched with the rest of the console; `matchesAny()` stops at a segment
+// boundary, so neither `/admin/tls` nor `/admin-api/tlsx` is caught by these,
+// and the realm prefix and the query string are stripped before the compare.
+// What it costs is that those two pages take the front process's affinity
+// rather than the console's: their session is read out of the store, where a
+// console session minted by a worker arrives by replication.
+// ---------------------------------------------------------------------------
+const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust'];
 
 function dispatched(url) {
   // A SEGMENT BOUNDARY RATHER THAN A BARE PREFIX, and the loose version was
@@ -790,7 +926,8 @@ function ensureSocketDir() {
   } catch (e) {
     // See request_worker.js: a filesystem that does not carry modes is not a
     // reason to refuse to serve, and the socket itself is narrowed too.
-    log.warn('request_pool: could not narrow the mode on ' + socketDir + ': ' +
+    log.warn(errorCodes.tag('STS-WORKER-0010') +
+             'request_pool: could not narrow the mode on ' + socketDir + ': ' +
              e.message);
   }
   log.debug('Leaving ensureSocketDir(). ' + socketDir);
@@ -890,14 +1027,19 @@ function receivePublishedKeys(entry, published) {
   // published, so the second publish carries the SAME certificate and more
   // content. keystore.adoptShared() takes it (publishShared() decides), and it
   // has to be broadcast or only the process that warmed them has them.
+  //
+  // **THE RULE IS `keystore.enriches()` AND NOT A COPY OF IT (2026-09-12).** It
+  // was written out here with one member — the post-quantum count — and the
+  // OpenID4VCI request-encryption key joined the set that day, backfilled on a
+  // set written before it existed. Two copies of the rule is how the offering
+  // process and this one come to disagree about what a race is.
   const heldBlob = keystore.sharedBlobFor(realmId);
-  const enriches = heldBlob && published.blob &&
-    heldBlob.certB64 === published.blob.certB64 &&
-    (published.blob.pqKeys || []).length > (heldBlob.pqKeys || []).length;
+  const enriches = keystore.enriches(published.blob, heldBlob);
   if (enriches) {
     keystore.adoptShared(realmId, published.blob);
-    log.info('request_pool: the "' + realmId + '" realm\'s post-quantum keys ' +
-             'were generated by worker ' + (entry && entry.pid) + '; every ' +
+    log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
+             'enriched by worker ' + (entry && entry.pid) + ' (its ' +
+             'post-quantum keys or its request-encryption key); every ' +
              'process here now uses them.');
     broadcastKeys(realmId, published.blob, entry);
     return;
@@ -976,7 +1118,8 @@ function closeDirectoryConnections(header) {
       // Not percent-encoding. The worker wrote this header, so this is a bug
       // here rather than input from anywhere — said out loud rather than
       // silently closing nothing.
-      log.warn('request_pool: a worker asked for a directory sign-out with a ' +
+      log.warn(errorCodes.tag('STS-WORKER-0011') +
+               'request_pool: a worker asked for a directory sign-out with a ' +
                'key this process could not decode (' + encoded + '): ' +
                e.message);
       return;
@@ -990,7 +1133,8 @@ function closeDirectoryConnections(header) {
                'directory; ' + dropped.length + ' connection(s) closed in ' +
                'this process, which is the one holding them.');
     } catch (e) {
-      log.warn('request_pool: could not close the directory connections a ' +
+      log.warn(errorCodes.tag('STS-WORKER-0012') +
+               'request_pool: could not close the directory connections a ' +
                'worker asked to end for ' + key + ': ' + e.message);
     }
   });
@@ -1004,7 +1148,8 @@ function broadcastKeys(realmId, blob, except) {
     try {
       other.child.send({ adoptKeys: { realm: realmId, blob: blob } });
     } catch (e) {
-      log.warn('request_pool: could not hand the "' + realmId + '" realm\'s ' +
+      log.warn(errorCodes.tag('STS-WORKER-0013') +
+               'request_pool: could not hand the "' + realmId + '" realm\'s ' +
                'keys to worker ' + other.pid + ': ' + e.message);
     }
   });
@@ -1093,7 +1238,8 @@ function reconcileTheListener() {
           other.child.send({ adoptServerCertificate: bundle });
           told += 1;
         } catch (e) {
-          log.warn('request_pool: could not hand worker ' + other.pid +
+          log.warn(errorCodes.tag('STS-WORKER-0014') +
+                   'request_pool: could not hand worker ' + other.pid +
                    ' the re-issued server certificate: ' + e.message +
                    '. It goes on pinning the previous one, so its own ' +
                    'OpenID Connect back channel will fail until it is ' +
@@ -1108,7 +1254,8 @@ function reconcileTheListener() {
       // Reported rather than thrown: this runs off a message handler, where an
       // unhandled rejection would take the front process down and with it
       // every worker — for a certificate that is still being served.
-      log.error('request_pool: the listener certificate could not be ' +
+      log.error(errorCodes.tag('STS-WORKER-0015') +
+                'request_pool: the listener certificate could not be ' +
                 'reconciled with the rebuilt hierarchy: ' + e.message);
     });
 }
@@ -1121,7 +1268,8 @@ function broadcastPki(realmId, chain, except) {
     try {
       other.child.send({ adoptPki: { realm: realmId, chain: chain } });
     } catch (e) {
-      log.warn('request_pool: could not hand the "' + realmId + '" realm\'s ' +
+      log.warn(errorCodes.tag('STS-WORKER-0013') +
+               'request_pool: could not hand the "' + realmId + '" realm\'s ' +
                'certificate authority to worker ' + other.pid + ': ' +
                e.message);
     }
@@ -1135,12 +1283,21 @@ function sendKeys(entry, realmId) {
       try {
         entry.child.send({ adoptKeys: all[i] });
       } catch (e) {
-        log.warn('request_pool: could not correct worker ' + entry.pid +
+        log.warn(errorCodes.tag('STS-WORKER-0013') +
+                 'request_pool: could not correct worker ' + entry.pid +
                  '\'s keys for "' + realmId + '": ' + e.message);
       }
       return;
     }
   }
+}
+
+// How many connections the front process may have open to ONE worker at once.
+// Read at fork, because an agent is made there and a change would not reach an
+// agent that exists — which is why `workers.maxSockets` is restart-only.
+function maxSocketsPerWorker() {
+  const n = Number(config.value('workers.maxSockets'));
+  return (n > 0) ? n : 64;
 }
 
 function fork() {
@@ -1150,11 +1307,85 @@ function fork() {
     // stdout and stderr are the front process's, so a worker's bunyan lines
     // land in the same stream as everything else. They carry the pid.
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+    // -------------------------------------------------------------------
+    // STRUCTURED CLONE ON THE CHANNEL, AND IT WAS THE DEFAULT JSON UNTIL
+    // 2026-09-12.
+    //
+    // **THIS IS `worker_pool.js`'s ARGUMENT, ARRIVING HERE FOR THE SECOND
+    // FAMILY.** That file says it about a 32,000-byte SLH-DSA signature; the
+    // same sentence is true of a DER certificate, and the operation channel
+    // now carries them: a SPIFFE gRPC request and reply hold X509-SVIDs,
+    // bundles, private keys and CSRs as `bytes`.
+    //
+    // **JSON DOES NOT MERELY BLOAT A BUFFER, IT CHANGES ITS TYPE.**
+    // `JSON.stringify(Buffer)` is `{"type":"Buffer","data":[…]}` — six times
+    // the bytes, and it arrives at the far end as a PLAIN OBJECT. Measured
+    // here before the change: a Buffer sent over a default channel reaches the
+    // child as `Object` and comes back as `Object`. grpc-js would then be
+    // handed something that is not a Buffer for a `bytes` field, so the
+    // failure lands in protobuf serialization, naming a field, one process
+    // away from the cause.
+    //
+    // **IT IS A STRICT SUPERSET FOR EVERYTHING THIS CHANNEL ALREADY
+    // CARRIES** — the LDAP operation shapes are strings and numbers, and so
+    // are the commit, sync and ready messages — so nothing that worked before
+    // it behaves differently. What it adds is Buffers, Dates and Maps
+    // surviving as themselves, which is what stopped the SPIFFE codec needing
+    // a base64 layer of its own that every new `bytes` field would have had to
+    // be added to.
+    // -------------------------------------------------------------------
+    serialization: 'advanced',
     // THE MARKER THAT STOPS A WORKER PROXYING TO ITSELF. See the constant at
     // the top of this file for what happens without it.
     env: Object.assign({}, process.env, { STS_REQUEST_WORKER: '1' })
   });
   const entry = { child: child, pid: child.pid, socket: socket, ready: false,
+                  // -------------------------------------------------------
+                  // ONE AGENT PER WORKER, AND IT IS A BOUND RATHER THAN A
+                  // CACHE (2026-09-12).
+                  //
+                  // Every dispatched request used node's GLOBAL agent, whose
+                  // `maxSockets` is Infinity — so nothing limited how many
+                  // unix-socket connections the front process could have open
+                  // to one worker, and an unbounded proxy in front of a
+                  // single-threaded worker is a bug whether or not it has
+                  // been observed.
+                  //
+                  // **IT IS NOT WHAT FIXED THE FAILURE THAT PROMPTED IT, AND
+                  // SAYING SO IS THE POINT OF THIS BLOCK.** The measured
+                  // failure was `sts_directory_bulk_load_scim` in a
+                  // `--modes=dispatch` run — `4999 of 5000 SCIM creates were
+                  // accepted`, the one refusal `502 … connect EAGAIN
+                  // /tmp/sts-workers-*/w2.sock`, a request that never reached
+                  // a worker at all. EAGAIN on an AF_UNIX `connect()` is the
+                  // listen backlog being full, and **that job issues its five
+                  // thousand creates one at a time** (`for … await`), so a cap
+                  // of 64 was never anywhere near being reached by it. What
+                  // fixes that failure is the explicit backlog on the worker's
+                  // own socket — see `bindSocket()` in
+                  // `common/request_worker.js`. This bounds the OTHER end,
+                  // which is real (the suite runs many jobs at once) and is
+                  // not the thing that was measured.
+                  //
+                  // **NOT KEPT ALIVE.** `keepAlive: true` would remove nearly
+                  // every connect and is the obvious answer; it was refused
+                  // because it trades a rare failure for a nastier one — a
+                  // socket reused in the instant the worker closes it, which
+                  // arrives as an ECONNRESET on a request that had been
+                  // accepted rather than on one that never left.
+                  //
+                  // **THE HAZARD A BOUND CREATES, WRITTEN DOWN BECAUSE IT IS
+                  // THE REASON THE NUMBER IS NOT SMALL**: this service makes
+                  // requests to ITSELF — `common/oidc_rp.js`'s back channel
+                  // dials the front process, which dispatches again — so a
+                  // worker holding N in-flight requests that are each waiting
+                  // on a reentrant call needs an N+1th connection to make
+                  // progress. At 64 that needs sixty-four simultaneous
+                  // sign-ins landing on ONE worker, which is not a load this
+                  // service sees; at 4 it would be a deadlock somebody meets.
+                  // -------------------------------------------------------
+                  agent: new http.Agent({ keepAlive: false,
+                                          maxSockets: maxSocketsPerWorker() }),
                   inFlight: 0, served: 0, startedAt: Date.now(),
                   retiring: false,
                   // A FRESH WORKER IS CURRENT: it ran service_state.start(),
@@ -1178,7 +1409,6 @@ function fork() {
                  // assertions its siblings accept.
                  pki: keystore.pkiAll(),
                  kek: keystore.ephemeralKek(),
-                 vciRequestEncKeyPem: vciRequestEncKeyPem,
                  bbsKeyPair: bbsKeyPairB64,
                  // WHAT IS BOUND ON THE DIRECTORY RIGHT NOW. A worker that
                  // started with an empty list and was never told otherwise
@@ -1187,7 +1417,8 @@ function fork() {
                  // this whole mechanism is about, narrowed to one worker.
                  ldapConnections: directory().connectionSnapshot() });
   } catch (e) {
-    log.error('request_pool: could not start worker ' + child.pid + ': ' +
+    log.error(errorCodes.tag('STS-WORKER-0016') +
+              'request_pool: could not start worker ' + child.pid + ': ' +
               e.message);
   }
 
@@ -1203,7 +1434,8 @@ function fork() {
         return;
       }
       if (message && message.ready === false) {
-        log.error('request_pool: worker ' + entry.pid + ' could not start: ' +
+        log.error(errorCodes.tag('STS-WORKER-0017') +
+                  'request_pool: worker ' + entry.pid + ' could not start: ' +
                   message.error);
         resolve(null);
         return;
@@ -1233,7 +1465,8 @@ function fork() {
       }
     });
     child.on('error', function (err) {
-      log.warn('request_pool: the channel to worker ' + entry.pid +
+      log.warn(errorCodes.tag('STS-WORKER-0020') +
+               'request_pool: the channel to worker ' + entry.pid +
                ' failed: ' + err.message);
       resolve(null);
     });
@@ -1253,6 +1486,15 @@ function fork() {
 function reap(entry, code, signal) {
   log.debug('Entering reap(). pid=' + entry.pid);
   workers = workers.filter(function (one) { return one !== entry; });
+  // ITS AGENT GOES WITH IT. The agent holds sockets to a socket PATH that has
+  // just stopped being served, and a worker replaced often enough — a crash
+  // loop is the case — would otherwise leave one agent per dead worker for
+  // the life of the process. `destroy()` closes what is idle; anything still
+  // in flight fails through `proxy()`'s error path, which is what it did
+  // before this agent existed.
+  if (entry.agent && typeof entry.agent.destroy === 'function') {
+    entry.agent.destroy();
+  }
   affinity.forEach(function (pid, session) {
     if (pid === entry.pid) {
       affinity.delete(session);
@@ -1285,7 +1527,8 @@ function reap(entry, code, signal) {
     });
     entry.tickets.clear();
     if (answered) {
-      log.warn('request_pool: worker ' + entry.pid + ' died holding ' +
+      log.warn(errorCodes.tag('STS-WORKER-0021') +
+               'request_pool: worker ' + entry.pid + ' died holding ' +
                answered + ' answered request(s) whose flush it had not ' +
                'reported. Those writes may not have reached the store, and ' +
                'no reader is being made to wait for them any longer.');
@@ -1306,14 +1549,16 @@ function reap(entry, code, signal) {
     quickExits++;
   }
   if (entry.inFlight) {
-    log.warn('request_pool: worker ' + entry.pid + ' ' + how + ' with ' +
+    log.warn(errorCodes.tag('STS-WORKER-0022') +
+             'request_pool: worker ' + entry.pid + ' ' + how + ' with ' +
              entry.inFlight + ' request(s) in flight; each is answered 502.');
   } else {
     log.info('request_pool: worker ' + entry.pid + ' ' + how + '.');
   }
   if (quickExits >= QUICK_EXIT_LIMIT && !givenUp && !stopped) {
     givenUp = true;
-    log.error('request_pool: ' + quickExits + ' request workers in a row ' +
+    log.error(errorCodes.tag('STS-WORKER-0023') +
+      'request_pool: ' + quickExits + ' request workers in a row ' +
       'exited within ' + QUICK_EXIT_MS + 'ms without serving anything, so ' +
       'this service has STOPPED FORKING THEM and is handling every request ' +
       'in the process that holds the sockets — which is what ' +
@@ -1761,11 +2006,16 @@ function start() {
   // key it cannot read.
   //
   // The way out is to configure a coordinating store, or to empty
-  // `workers.dispatch` and `workers.operations`. Both are named in the message,
-  // because a refusal that does not say what to do instead is a refusal
-  // somebody works around.
+  // `workers.dispatch`, which is named in the message because a refusal that
+  // does not say what to do instead is a refusal somebody works around.
+  //
+  // **IT READS ONE SETTING AND USED TO READ TWO.** The list it checks is the
+  // whole of `workers.dispatch` — paths and operation kinds alike — which is
+  // what merging the two settings bought here: a guard that had to remember to
+  // concatenate a second list is a guard that would have been half a guard the
+  // first time somebody added a third kind of dispatchable thing.
   // ---------------------------------------------------------------------
-  const wants = dispatchPrefixes().concat(operationKinds());
+  const wants = dispatchList();
   if (wants.length) {
     // Required HERE rather than at the top of the file: `persistence` is above
     // every protocol module in the require order and this file is loaded by
@@ -1780,16 +2030,16 @@ function start() {
           'persistence_replication.js\'s supports())'
         : 'nothing is being persisted (persistence.mode is "' + state.mode +
           '")';
-      starting = Promise.reject(new Error(
-        'request_pool: ' + wants.length + ' path(s)/operation(s) are ' +
-        'configured to be handled in a request worker (' + wants.join(', ') +
-        ') and THIS PROCESS IS NOT COORDINATING: ' + why + '. Every worker ' +
-        'would hold its own private copy of the directory, the sessions and ' +
-        'the settings, and a request answered by one would not see what ' +
-        'another had written — which does not fail, it answers wrongly and ' +
-        'intermittently. Configure a coordinating store (persistence.mode ' +
-        'postgres with persistence.coordinate on), or clear ' +
-        'workers.dispatch and workers.operations.'));
+      starting = Promise.reject(new Error(errorCodes.tag('STS-WORKER-0024') +
+        'request_pool: ' + wants.length + ' entry/entries in ' +
+        'workers.dispatch are configured to be handled in a request worker (' +
+        wants.join(', ') + ') and THIS PROCESS IS NOT COORDINATING: ' + why +
+        '. Every worker would hold its own private copy of the directory, the ' +
+        'sessions and the settings, and a request answered by one would not ' +
+        'see what another had written — which does not fail, it answers ' +
+        'wrongly and intermittently. Configure a coordinating store ' +
+        '(persistence.mode postgres with persistence.coordinate on), or clear ' +
+        'workers.dispatch.'));
       return starting;
     }
     log.info('request_pool: coordinating through the ' + state.mode + ' store, ' +
@@ -1808,16 +2058,11 @@ function start() {
   // there the operator's KEK is already in place and the store is meant to
   // outlive the process. See keystore.js.
   // ---------------------------------------------------------------------
-  // THE OID4VCI REQUEST-ENCRYPTION KEY. Generated here, once, and handed to
-  // every worker with the rest — see vc_issuer.js's VCI_REQUEST_ENC_KEY. It is
-  // made in this file rather than read out of that module because that module
-  // must not be loaded in the front process before the protocol stack is.
-  if (!vciRequestEncKeyPem) {
-    vciRequestEncKeyPem = nodeCrypto.generateKeyPairSync('rsa', {
-      modulusLength: 2048
-    }).privateKey.export({ type: 'pkcs8', format: 'pem' });
-    process.env.STS_VCI_REQUEST_ENC_KEY_PEM = vciRequestEncKeyPem;
-  }
+  // (THE OID4VCI REQUEST-ENCRYPTION KEY WAS GENERATED HERE until 2026-09-12 —
+  // one key for the whole process, handed to every worker in the environment,
+  // shared by every trust realm. It is a member of each realm's key set now, so
+  // the key channel installed below carries it per realm and the keystore
+  // writes it down in product mode; nothing about it happens in this file.)
   if (!keystore.hasEphemeralKek()) {
     const generated = nodeCrypto.randomBytes(32).toString('hex');
     if (keystore.useEphemeralKek(generated)) {
@@ -1865,11 +2110,13 @@ function start() {
       // can still serve every request itself, which is what
       // `workers.requestCount = 0` means. A service that refused to start
       // because its workers did would be a worse outcome than a slow one.
-      log.error('request_pool: not one of ' + wanted + ' request worker(s) ' +
+      log.error(errorCodes.tag('STS-WORKER-0025') +
+        'request_pool: not one of ' + wanted + ' request worker(s) ' +
         'started, so every request is being handled in the process that ' +
         'holds the sockets. The reason is in the lines above this one.');
     } else if (up < wanted) {
-      log.warn('request_pool: ' + up + ' of ' + wanted + ' request worker(s) ' +
+      log.warn(errorCodes.tag('STS-WORKER-0026') +
+               'request_pool: ' + up + ' of ' + wanted + ' request worker(s) ' +
                'started.');
     }
     return { started: up, wanted: wanted };
@@ -2064,7 +2311,8 @@ function barrier(entry, wanted) {
   return new Promise(function (resolve) {
     const timer = setTimeout(function () {
       pendingSyncs.delete(id);
-      log.warn('request_pool: worker ' + entry.pid + ' did not answer a read ' +
+      log.warn(errorCodes.tag('STS-WORKER-0027') +
+               'request_pool: worker ' + entry.pid + ' did not answer a read ' +
                'barrier within ' + BARRIER_TIMEOUT_MS + 'ms; the request is ' +
                'being served from what that worker has.');
       resolve(false);
@@ -2126,9 +2374,11 @@ function middleware() {
       // reaches a worker; a request kept here got none, so this process
       // answered from whatever it had last pulled on its timer.
       //
-      // `/tls` is the only thing on that list today and does not need it —
-      // its whole content is the connection in front of it. It is here for
-      // the next entry rather than for that one, and it is here rather than
+      // `/tls` does not need it — its whole content is the connection in
+      // front of it. **The two truststore doors DO (2026-09-12)**: they are a
+      // console page behind a session and an API behind a token, answered by
+      // a process that did not mint either, which is exactly the case the
+      // next sentence describes. It was written for the next entry, and it is here rather than
       // in a comment because the list is exactly where somebody adds a path
       // without thinking about staleness. It was written when `/admin/spiffe`
       // was briefly on the list: a console page behind a session, answered by
@@ -2177,11 +2427,13 @@ function middleware() {
       // A pool IS configured and has no worker to give. Refused rather than
       // handled here — see the header: the same path served from two processes
       // depending on timing is the bug this is avoiding.
-      log.error('request_pool: ' + req.method + ' ' + req.url + ' matched the ' +
+      log.error(errorCodes.tag('STS-WORKER-0028') +
+        'request_pool: ' + req.method + ' ' + req.url + ' matched the ' +
         'dispatch list and no worker is serving, so it is refused. Handling ' +
         'it here instead would mean this path is answered by whichever ' +
         'process happened to be available, out of two that do not share ' +
         'state.');
+      errorCodes.mark(res, 'STS-WORKER-0028');
       res.status(503);
       res.set('Retry-After', '5');
       res.type('text/plain');
@@ -2376,7 +2628,13 @@ function proxy(entry, req, res, atGeneration, ticket) {
     socketPath: entry.socket,
     path: req.originalUrl || req.url,
     method: req.method,
-    headers: headers
+    headers: headers,
+    // THIS WORKER'S OWN AGENT, which is what bounds how many connections the
+    // front process may have open to it at once. See the block where it is
+    // made: without it this used the global agent, `maxSockets: Infinity`, and
+    // a bulk load answered one request in five thousand with a 502 that named
+    // `connect EAGAIN`.
+    agent: entry.agent
   }, function (answer) {
     // **AND NOT ALONGSIDE A SESSION COOKIE (2026-09-07).** The pin is APPENDED
     // to `set-cookie`, and a client that keeps only the last one it is sent —
@@ -2483,7 +2741,8 @@ function proxy(entry, req, res, atGeneration, ticket) {
     answer.pipe(res);
     answer.on('end', finish);
     answer.on('error', function (err) {
-      log.warn('request_pool: the answer from worker ' + entry.pid +
+      log.warn(errorCodes.tag('STS-WORKER-0029') +
+               'request_pool: the answer from worker ' + entry.pid +
                ' failed mid-flight: ' + err.message);
       finish();
       res.destroy();
@@ -2495,7 +2754,8 @@ function proxy(entry, req, res, atGeneration, ticket) {
     // handler (or died before a byte of the answer left it), so there is
     // nothing for it to announce and nothing a reader is owed.
     finish(!answered);
-    log.error('request_pool: worker ' + entry.pid + ' could not answer ' +
+    log.error(errorCodes.tag('STS-WORKER-0030') +
+              'request_pool: worker ' + entry.pid + ' could not answer ' +
               req.method + ' ' + req.url + ': ' + err.message);
     if (res.headersSent) {
       // Already streaming. There is no status left to send, so the connection
@@ -2503,6 +2763,7 @@ function proxy(entry, req, res, atGeneration, ticket) {
       res.destroy();
       return;
     }
+    errorCodes.mark(res, 'STS-WORKER-0030');
     res.status(502);
     res.type('text/plain');
     res.send('The request worker handling this request went away (' +
@@ -2546,42 +2807,74 @@ function proxy(entry, req, res, atGeneration, ticket) {
 // IPC channel carries a structured clone, which takes a Buffer whole — and
 // `worker_pool.js` already established that shape for the computation jobs.
 //
-// **WHAT THIS DOES NOT SOLVE IS THE SAME THING THE HTTP PATH DOES NOT SOLVE.**
-// A worker's directory is ITS OWN. An LDAP `add` dispatched to a worker writes
-// an entry the front process cannot see and the next worker has never heard of,
-// and unlike the settings case — where the divergence was one stale read in six
-// — the directory would fork N ways on the first write. So `ldap.*` operations
-// are NOT dispatched by default and must not be until the store behind them is
-// shared. The mechanism is here; the switch is deliberately not thrown.
+// **THIS BLOCK SAID THE STORE WAS NOT SHARED, AND THAT STOPPED BEING TRUE
+// BEFORE IT WAS WRITTEN (corrected 2026-09-12).** It read: *A worker's
+// directory is ITS OWN. An LDAP `add` dispatched to a worker writes an entry
+// the front process cannot see and the next worker has never heard of… So
+// `ldap.*` operations are NOT dispatched by default and must not be until the
+// store behind them is shared. The mechanism is here; the switch is
+// deliberately not thrown.*
+//
+// It was the pre-coordination argument — `request_worker.js`'s "the state
+// problem is real and it is not solved here", which was honest on the day it
+// was written — carried forward into a file whose HTTP half had since been
+// rebuilt around the change log. Three things make it false:
+//
+//   * **Directory changes ARE change-log rows.** `persistence.js` registers
+//     `applyDirectoryChange`, which calls `directory.applyEntry(realm, key,
+//     entry)` and `removeEntry()` in every other process. An entry written in
+//     a worker reaches the front process and every sibling the same way a
+//     realm or a setting does.
+//   * **The configuration it warned about cannot be reached.** `start()`
+//     refuses to bring the pool up unless the store coordinates, and the list
+//     it checks is `dispatchPrefixes().concat(operationKinds())` — operations
+//     are inside that guard. Naming `ldap` with a memory store does not fork
+//     the directory N ways; it stops the service, naming the setting.
+//   * **The same store is already written from a worker over HTTP.** `/scim/v2`
+//     is a fanout prefix and SCIM has no store of its own — it writes this
+//     directory entry for entry. A SCIM POST creating a person and an LDAP
+//     `add` creating the same person are one mutation through one path.
+//
+// **WHAT IS ACTUALLY PARTICULAR TO LDAP IS THE CONNECTION, AND IT IS WHY THESE
+// HOLD AFFINITY WHERE THE COMMENT BELOW USED TO SAY THEY FAN OUT.** RFC 4511
+// section 4.2: the connection carries the authorization state and a client may
+// have several operations outstanding on it at once. Two consequences neither
+// the change log nor a credential-per-call covers:
+//
+//   * **A client reads its own writes on its own connection.** Over HTTP a
+//     caller is a series of independent requests and `workers.readYourWrite` is
+//     a question about that caller's expectations. On one socket an `ldapadd`
+//     followed by an `ldapsearch` is not two callers, and answering the search
+//     from a worker that has not caught up is a directory contradicting itself
+//     within one conversation.
+//   * **Order within a connection is the client's to rely on.** Fanned out,
+//     two operations sent back to back can be answered by two workers in either
+//     order.
+//
+// Affinity is still **a locality measure and never a correctness one** — the
+// rule at the top of this file is unchanged and must stay unchanged. What
+// makes a dispatched LDAP write safe to read back is the barrier below, the
+// same one the HTTP path uses; affinity is what keeps the common case from
+// needing it. `opts.affinity` carries the CONNECTION id for exactly that
+// reason, and an operation arriving without one still fans out.
 // ---------------------------------------------------------------------------
 
 let nextOperationId = 1;
 const pendingOperations = new Map();
 
-// Which operation kinds go to a worker. Same shape and same discipline as the
-// path list: empty means none, which is the default.
+// The other half of the SAME list — the entries that do not name a URL. See
+// `dispatchList()`: the leading slash is what tells the two apart, and `*` is
+// in both halves because it names everything.
 function operationKinds() {
-  let raw;
-  try {
-    raw = config.value('workers.operations');
-  } catch (e) {
-    return [];
-  }
-  if (!raw) {
-    return [];
-  }
-  const list = Array.isArray(raw) ? raw : String(raw).split(',');
-  return list.map(function (one) {
-    return String(one).trim();
-  }).filter(function (one) {
-    return one.length > 0;
+  return dispatchList().filter(function (one) {
+    return one === '*' || one.charAt(0) !== '/';
   });
 }
 
 // Whether this operation is dispatched. A kind is `family.operation`, and a
-// list entry may name either the whole family (`ldap`) or one of its
-// operations (`ldap.search`) — so a family can be moved a piece at a time,
-// which is how a store this size has any chance of being moved safely.
+// list entry may name the whole family (`ldap`), one of its operations
+// (`ldap.search`), or everything (`*`) — so a family can be moved a piece at a
+// time, which is how a store this size has any chance of being moved safely.
 function operationDispatched(kind) {
   const kinds = operationKinds();
   if (!kinds.length) {
@@ -2589,7 +2882,7 @@ function operationDispatched(kind) {
   }
   const family = String(kind || '').split('.')[0];
   for (let i = 0; i < kinds.length; i++) {
-    if (kinds[i] === kind || kinds[i] === family) {
+    if (kinds[i] === '*' || kinds[i] === kind || kinds[i] === family) {
       return true;
     }
   }
@@ -2600,16 +2893,25 @@ function operationDispatched(kind) {
 // RUN ONE OPERATION IN A WORKER.
 //
 // `opts.affinity` names something to be stuck to, exactly as a session cookie
-// does for a request; an operation with none FANS OUT. **LDAP passes none on
-// purpose**: a directory operation carries its own DN and its own credential,
-// and nothing about one has to be remembered to answer the next — the bind that
-// authenticated the connection is state the FRONT process holds, because the
-// front process is the one holding the connection.
+// does for a request; an operation with none FANS OUT. **LDAP passes the
+// CONNECTION** — see the block above for why a connection-oriented protocol is
+// different here from a credential-per-call one, and why that is a locality
+// argument rather than a correctness one.
 //
 // It resolves `{ dispatched: false }` rather than rejecting when there is no
 // pool, so a caller is written one way and the front process does the work
 // itself — which is what `workers.requestCount = 0` means and is a supported
 // configuration rather than a degraded one.
+//
+// **IT GOES THROUGH THE READ BARRIER, WHICH IT DID NOT UNTIL 2026-09-12.** The
+// barrier was built for the HTTP path and nothing took an operation through
+// it, so a dispatched operation was outside read-your-write entirely: a write
+// through one worker moved no generation anybody waited on, and a read through
+// another was never held for it. That is invisible while nothing is dispatched
+// and is the whole of the guarantee the moment something is — so the three
+// steps below are `dispatch()`'s, in `dispatch()`'s order, for `dispatch()`'s
+// reasons. **WAIT, THEN TAKE THE TICKET**: the other order deadlocks on a
+// ticket the waiter holds itself.
 // ---------------------------------------------------------------------------
 function runOperation(kind, args, opts) {
   log.debug('Entering runOperation(). kind=' + kind);
@@ -2628,23 +2930,56 @@ function runOperation(kind, args, opts) {
     log.debug('Leaving runOperation(). No worker; the caller does it here.');
     return Promise.resolve({ dispatched: false });
   }
+  if (!readYourWrite()) {
+    log.debug('Leaving runOperation(). Sent without a barrier.');
+    return sendOperation(entry, kind, args, 0);
+  }
+  return awaitCommitConfirmations(entry).then(function () {
+    const ticket = dispatchTicket(entry);
+    // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST ONE, before the
+    // generation is read. It matters more here than on the HTTP path, not
+    // less: the front process is the one that holds every socket this service
+    // has, so it is the process that mints a session on 9443 and writes the
+    // Kerberos replay cache — and an LDAP operation is very often the next
+    // thing that has to see it.
+    noteLocalWrites(localWriteCount());
+    const wanted = generation;
+    if (entry.generation >= wanted) {
+      return sendOperation(entry, kind, args, ticket);
+    }
+    return barrier(entry, wanted).then(function () {
+      return sendOperation(entry, kind, args, ticket);
+    });
+  });
+}
+
+// The send itself, split out so that the three paths above share one copy of
+// the bookkeeping. A ticket of 0 means read-your-write is off and there is
+// none.
+function sendOperation(entry, kind, args, ticket) {
+  log.debug('Entering sendOperation(). kind=' + kind + ' pid=' + entry.pid);
   const id = nextOperationId++;
   const promise = new Promise(function (resolve, reject) {
     pendingOperations.set(id, { resolve: resolve, reject: reject, kind: kind,
-                                pid: entry.pid });
+                                pid: entry.pid, ticket: ticket });
   });
   entry.inFlight++;
   try {
-    entry.child.send({ operation: true, id: id, kind: kind, args: args });
+    entry.child.send({ operation: true, id: id, kind: kind, args: args,
+                       ticket: ticket });
   } catch (e) {
     const pending = pendingOperations.get(id);
     pendingOperations.delete(id);
     entry.inFlight--;
+    // THE TICKET IS RELEASED AND NOT ARMED. The worker never got the message,
+    // so it will never announce it — an armed ticket here is one nothing can
+    // ever clear, which is the wedge ticketAbandoned() was written for.
+    ticketAbandoned(entry, ticket);
     if (pending) {
       pending.resolve({ dispatched: false });
     }
   }
-  log.debug('Leaving runOperation(). id=' + id + ' on worker ' + entry.pid);
+  log.debug('Leaving sendOperation(). id=' + id + ' on worker ' + entry.pid);
   return promise;
 }
 
@@ -2661,6 +2996,29 @@ function receiveOperation(entry, message) {
   pendingOperations.delete(message.id);
   entry.inFlight--;
   entry.served++;
+  // ---------------------------------------------------------------------
+  // THE TICKET, AND THE TWO ENDINGS ARE THE ONES proxy() HAS.
+  //
+  // `ran` says whether the worker got as far as the handler. If it did, the
+  // ticket is ARMED — it may now block a reader, and the worker's own
+  // announcement is what will clear it. If it did not — an operation kind this
+  // worker does not answer to — nothing was written and nothing will ever be
+  // announced, so the ticket is RELEASED. Arming one the worker never saw is
+  // the wedge that cost a 2,000ms wait on every read for the life of a
+  // process; see ticketAbandoned().
+  //
+  // An older worker predates the `ran` field and sends neither value.
+  // `message.ran !== false` reads that as "it ran", which is the safe side:
+  // arming a ticket the worker will announce costs nothing, and releasing one
+  // it does announce would release a reader early.
+  // ---------------------------------------------------------------------
+  if (pending.ticket) {
+    if (message.ran === false) {
+      ticketAbandoned(entry, pending.ticket);
+    } else {
+      ticketFinished(entry, pending.ticket);
+    }
+  }
   if (message.ok) {
     pending.resolve({ dispatched: true, result: message.result });
     log.debug('Leaving receiveOperation(). Resolved.');
@@ -2682,6 +3040,12 @@ function failOperations(entry) {
       return;
     }
     pendingOperations.delete(id);
+    // ITS TICKET GOES WITH IT, RELEASED RATHER THAN ARMED. The worker is gone,
+    // so it will never announce a flush covering this — and a ticket nothing
+    // can clear makes every later read wait the full barrier bound and then
+    // serve stale anyway. That is the wedge ticketAbandoned() was written for,
+    // reached here by a worker dying rather than by a 502.
+    ticketAbandoned(entry, pending.ticket);
     pending.reject(new Error('the worker process running this ' + pending.kind +
       ' operation went away before it answered. A worker holds no state that ' +
       'this operation needed, so it can simply be tried again.'));
@@ -2712,7 +3076,8 @@ function stop(timeoutMs) {
       going.forEach(function (entry) {
         if (entry.child.exitCode === null && entry.child.signalCode === null) {
           killed++;
-          log.warn('request_pool: worker ' + entry.pid + ' did not finish ' +
+          log.warn(errorCodes.tag('STS-WORKER-0031') +
+                   'request_pool: worker ' + entry.pid + ' did not finish ' +
                    'within ' + limit + 'ms and was killed.');
           entry.child.kill('SIGKILL');
         }
@@ -2722,6 +3087,14 @@ function stop(timeoutMs) {
     function done() {
       left = 0;
       clearTimeout(timer);
+      // AND EVERY AGENT, for `reap()`'s reason: `stop()` is what a test calls
+      // between cases, so an agent left holding sockets to a removed socket
+      // directory is a handle the next `start()` has no way to reach.
+      workers.forEach(function (one) {
+        if (one.agent && typeof one.agent.destroy === 'function') {
+          one.agent.destroy();
+        }
+      });
       workers = [];
       affinity.clear();
       removeSocketDir();
@@ -2828,6 +3201,11 @@ module.exports = {
   SESSION_COOKIE: SESSION_COOKIE,
   POOL_COOKIE: POOL_COOKIE,
   PEER_CERT_HEADER: PEER_CERT_HEADER,
+  // WHAT A WORKER IS HANDED OF A CLIENT CERTIFICATE, exported for
+  // tests/revocation_status.js (2026-09-12): the issuer chain it now carries is
+  // what lets a worker verify a foreign CRL, and a real socket is the only
+  // honest input to the function that reads one.
+  peerOf: peerOf,
   // THE SPELLING, EXPORTED SO THAT IT CAN BE COMPARED WITH THE WORKER'S. Both
   // ends name this header and neither can read the other's constant at
   // runtime — the two processes share no memory — so the only thing that can

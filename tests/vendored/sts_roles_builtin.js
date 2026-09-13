@@ -148,7 +148,24 @@ const REALM = ("builtin-" + names.runStamp()).toLowerCase()
 // THE PARTIES, fixed rather than random because every refusal sentence below
 // quotes them and a name that changed per run would make a failing log
 // unreadable.
-const PERSON = "alice";
+//
+// **THE PERSON IS CREATED BY THIS JOB AND NOT SEEDED (2026-09-12).** It was
+// `alice`, whom every realm's directory is seeded with in development and in
+// product nobody. So it is made in `createTheRealm()` through the realm's own
+// `/admin-api/users/create`, with the attributes a real account carries and a
+// password of at least twelve characters, which is what the sign-in screen is
+// sent. The six applications are registered with the redirect URI the
+// authorization requests name, because product mode answers only a registered
+// one.
+//
+// **WHAT IS DELIBERATELY NOT SUPPLIED**: a client secret on the six
+// applications and on PUBLIC_CLIENT. Three of the six sections are ABOUT
+// whether a client authenticated — ALL_UNAUTHENTICATED_APPLICATIONS needs a
+// client with no credential to have a positive case at all — so this job
+// exercises a development-mode behaviour on purpose, and product mode (where
+// there are no public clients) cannot reach those sections.
+const PERSON = "builtin-person";
+const PASSWORD = "roles-builtin-Passw0rd!-" + names.runStamp();
 const ANON = "anonymous";        // authn.js's ANONYMOUS_USERNAME
 
 // SIX APPLICATIONS, ONE PER ROLE, and that is deliberate rather than tidy: an
@@ -305,7 +322,7 @@ async function arriveAt(clientId, how, state) {
     String(screen.text).slice(0, 300));
   const fields = how === "anonymous"
     ? { authn_id: id, action: "anonymous" }
-    : { authn_id: id, action: "login", username: PERSON, password: "whatever" };
+    : { authn_id: id, action: "login", username: PERSON, password: PASSWORD };
   const posted = await b.go("POST", "/realm/" + REALM + "/authn/login",
                             form(fields));
   log.debug("Leaving arriveAt(). status=" + posted.status);
@@ -464,9 +481,20 @@ async function buildTheWorld() {
     [APP_AUTH_APPS,   "ALL_AUTHENTICATED_APPLICATIONS"],
     [APP_UNAUTH_APPS, "ALL_UNAUTHENTICATED_APPLICATIONS"]
   ];
+  await act("users", "create", {
+    username: PERSON, invent: false,
+    attributes: { cn: "Builtin Person", givenName: "Builtin", sn: "Person",
+                  displayName: "Builtin Person",
+                  mail: PERSON + "@roles-builtin.test" },
+    credential: "password", password: PASSWORD
+  }, "created " + PERSON + " in the realm, with a password");
+
   for (const [identifier, role] of apps) {
     await act("applications", "create",
-              { identifier: identifier, kind: "oauth2-client", name: identifier },
+              { identifier: identifier, kind: "oauth2-client", name: identifier,
+                protocols: ["oauth2", "oidc"],
+                fields: { oauthClientId: [identifier],
+                          oauthRedirectUri: [REDIRECT_URI] } },
               "created " + identifier);
     // EVERY ONE OF THEM NAMES ITS ROLE EXPLICITLY, including the EVERYBODY
     // one, which would behave identically with the attribute absent. That is

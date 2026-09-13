@@ -109,6 +109,10 @@ const config = require('../common/config');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 const mode = require('../common/mode');
 const audit = require('../common/audit');
+// THE ERROR CODES. A LEAF. Every refusal descriptor below carries the condition
+// as `errorCode`, and `spiffe_grpc.js` puts it on the one audit row the refusal
+// gets; the descriptor itself never reaches a client.
+const errorCodes = require('../common/error_codes');
 const stats = require('../common/admin_stats');
 // PER PROCESS AND NOT PER REALM — see the store below. Required only for
 // `sharedMap()`, and it is a LEAF that registers no route, so this cannot
@@ -125,6 +129,10 @@ const registry = require('./spiffe_registry');
 // `server.js` requires LAST and long after `./tls_server`, so no route moves,
 // and that module knows nothing about SPIFFE, so there is no cycle.
 const tls = require('../tls/tls_server');
+// THE REVOCATION CHECK (2026-09-12), its synchronous register-only door. A
+// LIBRARY that registers no route; it requires `common/pki.js`, which
+// `spiffe_ca.js` above already requires, so nothing new is loaded here.
+const revocationStatus = require('../common/revocation_status');
 
 // ---------------------------------------------------------------------------
 // THE ENTITIES. A CALLER MAY BE SEVERAL AT ONCE.
@@ -273,7 +281,7 @@ function adminIds() {
 // specification names, and deliberately ugly: a client author who copies it
 // into production code should be able to see from the spelling alone that it is
 // this service's own affordance and not part of the Workload API.
-const ASSERTED_SELECTOR_KEY = 'x-sts-mock-workload-selector';
+const ASSERTED_SELECTOR_KEY = 'x-sts-workload-selector';
 
 // ---------------------------------------------------------------------------
 // THE TRANSPORT A CALL ARRIVED ON.
@@ -382,19 +390,22 @@ function spiffeIdFromCertificate(certificate) {
     log.debug('Leaving spiffeIdFromCertificate(). No URI SAN.');
     return { ok: false, reason: 'The certificate carries no URI ' +
              'subjectAltName, so it is not an X509-SVID. An SVID\'s identity ' +
-             'is its URI SAN; nothing else on a certificate names one.' };
+             'is its URI SAN; nothing else on a certificate names one.',
+             errorCode: 'STS-SPIFFE-0016' };
   }
   if (uris.length > 1) {
     log.debug('Leaving spiffeIdFromCertificate(). ' + uris.length + ' URI SANs.');
     return { ok: false, reason: 'The certificate carries ' + uris.length +
              ' URI subjectAltNames. An X509-SVID has exactly one — choosing ' +
-             'between them would be deciding which identity you have.' };
+             'between them would be deciding which identity you have.',
+             errorCode: 'STS-SPIFFE-0017' };
   }
   const parsed = spiffeId.parse(uris[0]);
   if (!parsed.ok) {
     log.debug('Leaving spiffeIdFromCertificate(). Not a SPIFFE ID.');
     return { ok: false, reason: 'The certificate\'s URI subjectAltName is not ' +
-             'a valid SPIFFE ID: ' + parsed.reason };
+             'a valid SPIFFE ID: ' + parsed.reason,
+             errorCode: 'STS-SPIFFE-0018' };
   }
   log.debug('Leaving spiffeIdFromCertificate(). ' + parsed.id);
   return { ok: true, id: parsed.id };
@@ -450,11 +461,21 @@ function authorityCertificates() {
       // An authority this service minted itself that will not parse is a
       // defect here rather than a caller problem, so it is logged loudly and
       // the others are still usable.
-      log.error('spiffe: one of this trust domain\'s own X.509 authorities ' +
+      log.error(errorCodes.tag('STS-SPIFFE-0025') +
+                'spiffe: one of this trust domain\'s own X.509 authorities ' +
                 'would not parse and cannot verify anything: ' + e.message);
     }
   });
+  // THIS REALM'S federated bundles, and never one named after a trust domain
+  // this service serves: `ca.federatedBundles()` drops those, because the match
+  // below trusts the LABEL a bundle was stored under, and a label naming a
+  // served domain would let a foreign anchor vouch for this service's own
+  // identities. Until 2026-09-12 the store was process-wide and that is exactly
+  // what one realm could arrange for another. See spiffe_ca.js.
   ca.federatedBundles().forEach(function (foreign) {
+    if (foreign.trustDomain === ca.trustDomain()) {
+      return;
+    }
     ((foreign.document || {}).keys || []).forEach(function (key) {
       if (key.use !== 'x509-svid') return;
       (key.x5c || []).forEach(function (b64) {
@@ -484,7 +505,8 @@ function verifyPresentedCertificate(certificate, id) {
   } catch (e) {
     log.debug('Leaving verifyPresentedCertificate(). It would not parse.');
     return { ok: false, reason: 'The presented certificate would not parse: ' +
-                                e.message };
+                                e.message,
+             errorCode: 'STS-SPIFFE-0019' };
   }
   // The clock, with this service's configured skew. An SVID's lifetime is
   // short — an hour by default — so a client whose clock is a few minutes out
@@ -498,20 +520,23 @@ function verifyPresentedCertificate(certificate, id) {
     log.debug('Leaving verifyPresentedCertificate(). Not yet valid.');
     return { ok: false, reason: 'The presented SVID is not valid until ' +
              leaf.validFrom + ' and it is now ' + new Date().toISOString() +
-             ' here (allowing ' + skew + 's of skew).' };
+             ' here (allowing ' + skew + 's of skew).',
+             errorCode: 'STS-SPIFFE-0020' };
   }
   if (Number.isFinite(to) && now - skew > to) {
     log.debug('Leaving verifyPresentedCertificate(). Expired.');
     return { ok: false, reason: 'The presented SVID expired at ' + leaf.validTo +
              '. SVIDs here live for ' + config.value('spiffe.svidTtl') +
-             's — fetch a new one rather than reusing this.' };
+             's — fetch a new one rather than reusing this.',
+             errorCode: 'STS-SPIFFE-0021' };
   }
   const authorities = authorityCertificates();
   if (!authorities.length) {
     log.debug('Leaving verifyPresentedCertificate(). No authorities.');
     return { ok: false, reason: 'This service holds no X.509 authority to ' +
              'verify an SVID against, which is a fault here rather than a ' +
-             'problem with your certificate. See GET /spiffe.' };
+             'problem with your certificate. See GET /spiffe.',
+             errorCode: 'STS-SPIFFE-0022' };
   }
   for (let i = 0; i < authorities.length; i++) {
     const authority = authorities[i];
@@ -534,18 +559,45 @@ function verifyPresentedCertificate(certificate, id) {
                'domain ' + authority.trustDomain + '. A bundle verifies ' +
                'identities in ITS OWN trust domain and nowhere else; ' +
                'accepting this would be exactly the cross-domain confusion ' +
-               'federation exists to prevent.' };
+               'federation exists to prevent.',
+               errorCode: 'STS-SPIFFE-0023' };
+    }
+    // -------------------------------------------------------------------
+    // AND IT MAY NOT BE REVOKED (2026-09-12). An SVID this realm's SPIFFE
+    // Issuing CA signed is looked up in the register, and so is every tier
+    // above it this service holds — so revoking the Issuing CA or the realm's
+    // Intermediate on /admin/pki refuses every SVID under it at this door.
+    //
+    // **THE REGISTER ONLY, AND NEVER A FETCH, WHATEVER THE POLICY.** This runs
+    // synchronously inside a gRPC handler, and the X509-SVID specification
+    // defines no revocation for a FEDERATED identity at all: a trust domain
+    // stops vouching for a key by taking it out of its bundle, which is the
+    // mechanism `authorityCertificates()` above already honours. So a
+    // federated SVID is answered `not-consulted` and never refused on it.
+    // -------------------------------------------------------------------
+    const revocation = revocationStatus.localVerdictFor({
+      leaf: leaf, chain: [], verified: true
+    });
+    if (revocation.refused) {
+      log.debug('Leaving verifyPresentedCertificate(). Refused on revocation.');
+      return { ok: false,
+               reason: 'The presented SVID was signed by ' +
+                       authority.trustDomain + '\'s authority and was REFUSED ON ' +
+                       'REVOCATION (pki.revocationCheck is ' + revocation.policy +
+                       '): ' + revocation.why,
+               errorCode: errorCodes.codeOf(revocation) || 'STS-PKI-0118' };
     }
     log.debug('Leaving verifyPresentedCertificate(). Verified against ' +
               authority.trustDomain + '.');
-    return { ok: true, trustDomain: authority.trustDomain };
+    return { ok: true, trustDomain: authority.trustDomain, revocation: revocation };
   }
   log.debug('Leaving verifyPresentedCertificate(). Nothing signed it.');
   return { ok: false, reason: 'No X.509 authority this service holds signed ' +
            'that certificate — neither this trust domain\'s (' +
            ca.trustDomain() + ') nor any federated one. It is a certificate ' +
            'from somewhere else, or from a previous run: the authorities here ' +
-           'are generated at startup and do not survive a restart.' };
+           'are generated at startup and do not survive a restart.',
+           errorCode: 'STS-SPIFFE-0024' };
 }
 
 // ---------------------------------------------------------------------------
@@ -667,6 +719,7 @@ function callerOf(call, surface) {
   const identity = spiffeIdFromCertificate(certificate);
   if (!identity.ok) {
     caller.refusal = identity.reason;
+    caller.refusalCode = identity.errorCode;
     caller.notes.push(identity.reason);
     log.debug('Leaving callerOf(). The certificate names no SPIFFE ID.');
     return caller;
@@ -674,6 +727,7 @@ function callerOf(call, surface) {
   const verified = verifyPresentedCertificate(certificate, identity.id);
   if (!verified.ok) {
     caller.refusal = verified.reason;
+    caller.refusalCode = verified.errorCode;
     caller.notes.push(verified.reason);
     // The id is recorded even though the certificate did not verify, because a
     // refusal naming the identity somebody CLAIMED is the one a client author
@@ -726,12 +780,13 @@ function authorize(caller, method) {
     // See the note on POLICY: no row means refuse. It is a defect in this
     // service rather than in the call, so it is logged as one and the message
     // says so — a client author must not spend an afternoon on it.
-    log.error('spiffe: ' + method + ' has no row in spiffe_auth.js\'s POLICY ' +
+    log.error(errorCodes.tag('STS-SPIFFE-0013') +
+              'spiffe: ' + method + ' has no row in spiffe_auth.js\'s POLICY ' +
               'table, so it is refused. That is a defect in this service: ' +
               'every method needs a row, copied from SPIRE\'s ' +
               'policy_data.json.');
     log.debug('Leaving authorize(). No policy row.');
-    return { status: 'PERMISSION_DENIED',
+    return { status: 'PERMISSION_DENIED', errorCode: 'STS-SPIFFE-0013',
              message: method + ' has no authorization rule in this service, ' +
                       'so it is refused rather than allowed. That is a bug ' +
                       'here rather than a problem with your call — please ' +
@@ -762,6 +817,11 @@ function authorize(caller, method) {
     ' The rule is SPIRE\'s own — see GET /spiffe for the whole table.';
   log.debug('Leaving authorize(). Refused.');
   return { status: nothingPresented ? 'UNAUTHENTICATED' : 'PERMISSION_DENIED',
+           // WHICH CONDITION: the certificate's own refusal where one was
+           // presented and not accepted, since that is what actually has to be
+           // fixed; otherwise nothing presented, or not enough.
+           errorCode: caller.refusalCode ||
+             (nothingPresented ? 'STS-SPIFFE-0014' : 'STS-SPIFFE-0015'),
            message: reason };
 }
 
@@ -787,21 +847,53 @@ function authorize(caller, method) {
 // costs one duplicate row on a long-lived connection, where forgetting nothing
 // is a map that grows for the life of the process.
 // ---------------------------------------------------------------------------
-const MAX_RECORDED_CONNECTIONS = 512;
+// `spiffe.maxRecordedConnections` since 2026-09-12; 512 was the constant and
+// is its default. Read per call. `perProcess` in config.js, and that is still
+// right with the store below partitioned: the cap is the same number in every
+// realm's partition, and a realm resizing it would be one realm deciding how
+// much every other realm's register remembers. The floor is 1: a cap of 0
+// would record every connection as new on every call, which is the per-call
+// counting this map exists to undo.
+function maxRecordedConnections() {
+  return config.value('spiffe.maxRecordedConnections');
+}
 // -------------------------------------------------------------------------
-// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
-// is a plain Map that reports its writes so product mode can write them down;
-// `scope: 'shared'` is what says the store deliberately has no realm in it,
-// which is the discriminator `tests/realm_isolation.js` checks against.
+// PER TRUST REALM SINCE 2026-09-12, AND IT WAS `sharedMap()` WITH
+// `scope: 'shared'` UNTIL THEN.
+//
+// That was right while the SPIRE Server API had one pair of sockets for the
+// whole process. It has a pair PER REALM since the same day (see
+// `spiffe/CLAUDE.md`), and a connection belongs to exactly one of them — so a
+// process-wide register let one realm's connections evict another's from the
+// cap (a duplicate authentication row in the realm that lost) and put every
+// realm's connection keys in one row set.
+//
+// **HOW THE REALM IS KNOWN FOR A gRPC CONNECTION**, which is the question an
+// HTTP-shaped answer gets wrong: not from a path — gRPC's path is the method
+// name — and not from anything the caller sends. It is the LISTENER the
+// connection was accepted on. `spiffe_server.js`'s `handlersInRealm()` enters
+// that listener's realm with `realms.run()` around every handler it registers,
+// the default realm's four sockets included, and `recordCaller()` runs inside
+// `spiffe_grpc.js`'s `prepareCall()`, which is inside that handler — so the
+// ambient realm HERE is the realm whose socket the call arrived on, and the
+// partition `realms.map()` picks is that realm's. It never reaches a request
+// worker: `prepareCall()` stays in the front process, which holds the socket.
+//
+// A connection key (certificate thumbprint and peer address) cannot occur on
+// two realms' listeners at once, because a peer's ephemeral port is one
+// connection to one socket — so no entry is split and no answer changes; what
+// changes is whose cap it counts against and which realm a restore puts it in.
 // -------------------------------------------------------------------------
-const recordedConnections = realms.sharedMap({
-  persist: 'spiffe.recordedConnections', scope: 'shared' });
+const recordedConnections = realms.map({ persist: 'spiffe.recordedConnections' });
 
 function alreadyRecorded(key) {
   if (!key) return false;
   if (recordedConnections.has(key)) return true;
   recordedConnections.set(key, nowSec());
-  if (recordedConnections.size > MAX_RECORDED_CONNECTIONS) {
+  // A `while` rather than an `if`, because the cap is runtime-settable: lowered
+  // by more than one, a single eviction would leave the map above it for ever.
+  const cap = maxRecordedConnections();
+  while (recordedConnections.size > cap) {
     const oldest = recordedConnections.keys().next().value;
     recordedConnections.delete(oldest);
   }
@@ -835,7 +927,8 @@ function recordIdentity(detail) {
     // the observer in ldap_server.js already follows, applied at the caller as
     // well because this one runs inside a gRPC handler where a throw becomes
     // an Unknown status on a call that actually succeeded.
-    log.error('spiffe: recording an accepted credential threw and was ' +
+    log.error(errorCodes.tag('STS-SPIFFE-0026') +
+              'spiffe: recording an accepted credential threw and was ' +
               'ignored: ' + e.message);
   }
   log.debug('Leaving recordIdentity().');

@@ -124,6 +124,9 @@ const exchange = require('./spnego_exchange.js');
 // The shell and the check table. See that module's export list for why the
 // sign-in door wears the debugger page's look rather than the sign-in screen's.
 const spnegoPage = require('./spnego.js');
+// ERROR CODES, a leaf. A negotiation's refusal is marked by
+// exchange.applyVerdict(); the three marked here are this door's own.
+const errorCodes = require('../common/error_codes');
 
 const page = spnegoPage.page;
 const checksTable = spnegoPage.checksTable;
@@ -148,7 +151,7 @@ const VIA = 'Kerberos v5 (SPNEGO)';
 // is `alice`, when and only when that realm is THIS KDC's own.
 //
 // **THE STRIPPING IS THE POINT AND IT IS NOT COSMETIC.** The session's username
-// becomes `sub: urn:sts-mock:user:<username>` in every token, assertion and
+// becomes `sub: urn:sts:user:<username>` in every token, assertion and
 // credential that follows. Leaving the realm on would mean that somebody who
 // types `alice` at the sign-in screen and the same person arriving with a
 // ticket are TWO SUBJECTS as far as every relying party is concerned — which is
@@ -348,6 +351,7 @@ async function handleSignIn(req, res) {
     // setting it was, for the same reason.
     log.info('krb5-spnego-authn: refused a sign-in because ' +
       'krb5.spnegoAuthentication is off.');
+    errorCodes.mark(res, 'STS-KRB-0097');
     res.status(403).type('html').set('Cache-Control', 'no-store').send(
       page('Integrated authentication is off',
         '<h1>403 &mdash; integrated authentication is off</h1>' +
@@ -465,6 +469,7 @@ async function handleSignIn(req, res) {
   if (!session) {
     log.info('krb5-spnego-authn: the issuance policy refused a session for ' +
              username + ' after a valid ticket from ' + verdict.client + '.');
+    errorCodes.mark(res, 'STS-KRB-0098');
     res.status(403).type('html').set('Cache-Control', 'no-store').send(
       page('Not permitted',
         '<h1>403 &mdash; the issuance policy refused this sign-in</h1>' +
@@ -548,6 +553,7 @@ app.get(SPNEGO_PATH, function (req, res) {
     // here.
     log.error('krb5-spnego-authn: unhandled failure: ' + (e.stack || e.message));
     if (!res.headersSent) {
+      errorCodes.mark(res, 'STS-KRB-0099');
       res.status(500).type('html').send(page('Failed',
         '<h1>500</h1><div class="err">' + xmlEscape(e.message) + '</div>'));
     }

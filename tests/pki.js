@@ -195,7 +195,7 @@ async function run(t) {
           described.extensions.map(function (one) {
             return one.name + ' (' + one.oid + ')';
           }).join(', '));
-  t.check(/urn:sts-mock:application:webapp1/.test(
+  t.check(/urn:sts:application:webapp1/.test(
             JSON.stringify(described.extensions)),
           'the application\'s identifier is a URI subjectAltName, because a ' +
           'CN is a display name and a SAN is the machine-readable one');
@@ -457,7 +457,12 @@ async function run(t) {
   // two claims SEPARATELY and pins the one that used to be here as an
   // absence: the report must say that revocation is published, must say that
   // it is not consulted, and must NOT say the old thing.
-  t.check(/PUBLISHED, NOT ENFORCED/.test(report.revocation),
+  // **AND IT REVERSED AGAIN ON 2026-09-12**: the second half read *CONSULT
+  // ONE … still gets in here*, and `common/revocation_status.js` consults it
+  // now. The two claims are still pinned SEPARATELY, and the old sentence is
+  // pinned as an ABSENCE, for the reason above — a substring test over prose
+  // that kept both old and new words would pass against either.
+  t.check(/PUBLISHED AND CONSULTED/.test(report.revocation),
           'the report states that revocation is PUBLISHED — every authority ' +
           'signs a CRL and answers OCSP, which reversed on 2026-09-11',
           report.revocation);
@@ -465,13 +470,12 @@ async function run(t) {
           /\/pki\/ocsp\//.test(report.revocation),
           'and names the two addresses a client reads it from, rather than ' +
           'leaving a reader to find them inside a certificate');
-  t.check(/CONSULT/.test(report.revocation) &&
-          /still gets in here/.test(report.revocation),
-          'and keeps the OTHER half in the same breath: this service ' +
-          'publishes revocation and checks none of anybody\'s, so a ' +
-          'certificate revoked here still authenticates here. Running the ' +
-          'two together is the dangerous reading and the sentence exists to ' +
-          'prevent it',
+  t.check(/CONSULTED, (SOFT|HARD)-FAIL/.test(report.revocation) &&
+          !/still gets in here/.test(report.revocation),
+          'and says in the same breath what a PRESENTED certificate is held ' +
+          'to — the policy in force by name — and no longer says a ' +
+          'certificate revoked here still gets in here, which stopped being ' +
+          'true on 2026-09-12',
           report.revocation);
   t.check(!/^NONE/.test(report.revocation),
           'and the report no longer opens with NONE, which is the claim that ' +

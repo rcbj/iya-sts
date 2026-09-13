@@ -113,6 +113,8 @@ const { log } = require('../common/helpers');
 const realms = require('../common/realms');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 const mode = require('../common/mode');
+// For `oauth2.maxAuthorizationServerProfiles`. A leaf that requires nothing here.
+const config = require('../common/config');
 // The profile a request selects when its URL carries no path component. Named
 // rather than empty-stringed because it is a value people type into a form and
 // read on a page, and "" is not a thing anybody can type.
@@ -222,8 +224,50 @@ const MEMBERS = [
   { name: 'service_documentation', group: 'Documents and limits', kind: 'string', what: '' },
   { name: 'op_policy_uri', group: 'Documents and limits', kind: 'string', what: '' },
   { name: 'op_tos_uri', group: 'Documents and limits', kind: 'string', what: '' },
-  { name: 'ui_locales_supported', group: 'Documents and limits', kind: 'list', what: '' }
+  { name: 'ui_locales_supported', group: 'Documents and limits', kind: 'list', what: '' },
+
+  // --- GNAP (RFC 9635 section 9, RFC 9767 section 3.1), 2026-09-12 ------------
+  // THE SAME PROFILE, A SECOND DOCUMENT. A named authorization server answers
+  // GNAP at `/{id}/gnap` as well as OAuth at `/{id}/oauth2/*`, and these are the
+  // members of the GNAP discovery document its OPTIONS request returns. They
+  // carry `document: 'gnap'`, and that marker is the whole of the change here:
+  // `apply()` and `capabilitiesOf()` keep each document's members to that
+  // document, so an override of `key_proofs_supported` never appears in the
+  // RFC 8414 metadata and an override of `grant_types_supported` never appears
+  // in GNAP's. Like the OAuth rows marked `enforces`, the ones marked here are
+  // what `gnap/gnap_grants.js` checks a request against.
+  { name: 'interaction_start_modes_supported', group: 'GNAP', kind: 'list', document: 'gnap',
+    enforces: 'which interaction start modes the GNAP grant endpoint offers',
+    what: 'Section 9. Remove `redirect` to see whether a web client falls back to a user code.' },
+  { name: 'interaction_finish_methods_supported', group: 'GNAP', kind: 'list', document: 'gnap',
+    enforces: 'which interaction finish methods are honoured',
+    what: 'Section 9. A client whose finish method is not listed gets no `finish` nonce and has ' +
+          'to poll.' },
+  { name: 'key_proofs_supported', group: 'GNAP', kind: 'list', document: 'gnap',
+    enforces: 'which key proofing methods the grant endpoint accepts',
+    what: 'Section 9 and RFC 9767 section 3.1. A request proved by an unlisted method is refused ' +
+          'with invalid_client.' },
+  { name: 'sub_id_formats_supported', group: 'GNAP', kind: 'list', document: 'gnap',
+    enforces: 'which Subject Identifier formats are released',
+    what: 'Section 9, RFC 9493 spellings.' },
+  { name: 'assertion_formats_supported', group: 'GNAP', kind: 'list', document: 'gnap',
+    enforces: 'which subject assertion formats are released',
+    what: 'Section 9: id_token and saml2.' },
+  { name: 'key_rotation_supported', group: 'GNAP', kind: 'boolean', document: 'gnap',
+    enforces: 'whether an access token\'s key may be rotated',
+    what: 'Section 9 and 6.1.1. False answers key_rotation_not_supported.' },
+  { name: 'token_formats_supported', group: 'GNAP', kind: 'list', document: 'gnap',
+    enforces: 'which RFC 9767 token formats are issued',
+    what: 'RFC 9767 section 3.1. A format not listed is never issued by this authorization server.' }
 ];
+
+// Which document a member belongs to: 'gnap' for the rows marked so, and
+// 'oauth' for everything else — including a member no row describes, because
+// every override made before GNAP existed was an OAuth one.
+function documentOf(member) {
+  const row = MEMBERS.filter(function (one) { return one.name === member; })[0];
+  return row && row.document ? row.document : 'oauth';
+}
 
 const MEMBER_BY_NAME = {};
 MEMBERS.forEach(function (row) { MEMBER_BY_NAME[row.name] = row; });
@@ -295,8 +339,16 @@ function blank(id) {
 // Past the cap a name is still SERVED — with the defaults, which is what it
 // would have had anyway — and simply not recorded, so a load generator cannot
 // take the feature away from the names that matter.
+//
+// `oauth2.maxAuthorizationServerProfiles` since 2026-09-12; the constant is its
+// default and the export below is a getter over the setting.
 // ---------------------------------------------------------------------------
 const MAX_PROFILES = 200;
+
+function maxProfiles() {
+  const count = Number(config.value('oauth2.maxAuthorizationServerProfiles'));
+  return isFinite(count) && count > 0 ? Math.floor(count) : MAX_PROFILES;
+}
 
 function ensure(id, options) {
   log.debug("Entering ensure().");
@@ -310,10 +362,10 @@ function ensure(id, options) {
   }
   let profile = profiles.get(key);
   if (!profile) {
-    if (profiles.size >= MAX_PROFILES) {
+    if (profiles.size >= maxProfiles()) {
       // Warned rather than thrown: the request that named it is answered with
       // the defaults, which is what an unconfigured name has always produced.
-      log.warn('authorization_servers: not recording "' + key + '"; ' + MAX_PROFILES +
+      log.warn('authorization_servers: not recording "' + key + '"; ' + maxProfiles() +
                ' profiles are held (the id comes off a URL path, so any caller can invent ' +
                'one). It is still served, with the defaults.');
       log.debug("Leaving ensure(). The registry is full.");
@@ -372,10 +424,14 @@ function apply(metadata, id) {
     return metadata;
   }
   Object.keys(profile.overrides).forEach(function (member) {
-    metadata[member] = profile.overrides[member];
+    if (documentOf(member) === 'oauth') {
+      metadata[member] = profile.overrides[member];
+    }
   });
   profile.removed.forEach(function (member) {
-    delete metadata[member];
+    if (documentOf(member) === 'oauth') {
+      delete metadata[member];
+    }
   });
   log.debug("Leaving apply(). " + Object.keys(profile.overrides).length + " override(s), " +
             profile.removed.length + " removal(s).");
@@ -400,8 +456,9 @@ function apply(metadata, id) {
 // PKCE is unavailable, so a server that refused every method on the strength of
 // having removed the member would be enforcing something it never said.
 // ---------------------------------------------------------------------------
-function capabilitiesOf(id, defaults) {
+function capabilitiesOf(id, defaults, document) {
   log.debug("Entering capabilitiesOf().");
+  const wanted = document || 'oauth';
   const merged = Object.assign({}, defaults || {});
   const profile = get(id);
   if (!profile) {
@@ -409,10 +466,14 @@ function capabilitiesOf(id, defaults) {
     return merged;
   }
   Object.keys(profile.overrides).forEach(function (member) {
-    merged[member] = profile.overrides[member];
+    if (documentOf(member) === wanted) {
+      merged[member] = profile.overrides[member];
+    }
   });
   profile.removed.forEach(function (member) {
-    delete merged[member];
+    if (documentOf(member) === wanted) {
+      delete merged[member];
+    }
   });
   log.debug("Leaving capabilitiesOf().");
   return merged;
@@ -422,7 +483,7 @@ function capabilitiesOf(id, defaults) {
 // check. `null` means the server said nothing — see above — and every caller
 // distinguishes that from an empty list, which means it said "none".
 function capabilityList(id, defaults, member) {
-  const merged = capabilitiesOf(id, defaults);
+  const merged = capabilitiesOf(id, defaults, documentOf(member));
   const value = merged[member];
   if (value === undefined) {
     return null;
@@ -452,6 +513,10 @@ function driftOf(id, truth) {
   }
   const rows = [];
   Object.keys(profile.overrides).forEach(function (member) {
+    // A GNAP member is not drift in the OAuth document it never appears in.
+    if (documentOf(member) !== 'oauth') {
+      return;
+    }
     const published = profile.overrides[member];
     const actual = truth ? truth[member] : undefined;
     if (JSON.stringify(published) === JSON.stringify(actual)) {
@@ -478,7 +543,7 @@ function driftOf(id, truth) {
     });
   });
   profile.removed.forEach(function (member) {
-    if (!truth || truth[member] === undefined) {
+    if (!truth || truth[member] === undefined || documentOf(member) !== 'oauth') {
       return;
     }
     const spec = MEMBER_BY_NAME[member];
@@ -521,8 +586,9 @@ function create(detail) {
   const profile = ensure(id, {});
   if (!profile) {
     log.debug("Leaving create().");
-    return { ok: false, errors: ['This service is holding its maximum of ' + MAX_PROFILES +
-                                 ' authorization servers. Delete one first.'] };
+    return { ok: false, errors: ['This service is holding its maximum of ' + maxProfiles() +
+                                 ' authorization servers (oauth2.maxAuthorizationServerProfiles). ' +
+                                 'Delete one first, or raise the setting.'] };
   }
   profile.label = String(info.label || '');
   profile.description = String(info.description || '');
@@ -702,8 +768,9 @@ function list() {
 }
 
 module.exports = {
+  documentOf: documentOf,
   DEFAULT_ID: DEFAULT_ID,
-  MAX_PROFILES: MAX_PROFILES,
+  get MAX_PROFILES() { return maxProfiles(); },
   ensure: ensure,
   capabilitiesOf: capabilitiesOf,
   capabilityList: capabilityList,

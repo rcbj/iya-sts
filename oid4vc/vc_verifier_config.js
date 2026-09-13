@@ -75,7 +75,31 @@ const { VCI_VCT, VCI_JWT_TYPES, VCI_CONFIG_ID, VCI_DID_CONFIG_ID, VCI_JWT_CONFIG
 // paths in it is a request no wallet can display and nothing here would enjoy
 // logging. Well above the catalogue's own size, so the page's own Save can never
 // hit it.
+//
+// `oid4vp.maxRequestedClaims` since 2026-09-12; the constant is the default and
+// the export is a getter over the setting.
 const MAX_REQUESTED = 40;
+
+function maxRequested() {
+  const count = Number(config.value('oid4vp.maxRequestedClaims'));
+  return isFinite(count) && count > 0 ? Math.floor(count) : MAX_REQUESTED;
+}
+
+// ---------------------------------------------------------------------------
+// THE SD-JWT VC TYPE THIS VERIFIER ASKS FOR AND REQUIRES (2026-09-12).
+//
+// It was VCI_VCT, this issuer's own type, fixed. `oid4vp.expectedVct` defaults
+// to that value, so nothing changes; setting it is how the Verifier is pointed
+// at a credential another issuer mints under a type of its own — which, with
+// `oid4vp.trustedIssuerCertificates` beside it, is what makes this Verifier
+// usable for a credential this service did not issue. The DCQL query's
+// `vct_values` and the check on the way back BOTH read it, through the getter
+// on the format row below, so the question and the judgement of the answer
+// cannot come apart.
+// ---------------------------------------------------------------------------
+function expectedVct() {
+  return String(config.value('oid4vp.expectedVct') || VCI_VCT);
+}
 
 // The DCQL credential query's id, which is also the key the vp_token is a member
 // of when the presentation comes back (OID4VP section 8.1). It lives here rather
@@ -199,16 +223,20 @@ function carriedNow(claimName) {
 //                                      jwt_vc_json, whose holder hands over the
 //                                      whole credentialSubject or nothing
 //
-// The identifying VALUES are not configurable. They are what this service's own
-// issuer mints (vc_configs.js), and a Verifier asking for a vct nobody here
-// issues would be a request no wallet in this stack could ever satisfy — a
-// negative worth having, but one that belongs to the issuer's configuration
-// rather than to a text box on this page.
+// The identifying VALUES are not configurable ON THIS PAGE. They are what this
+// service's own issuer mints (vc_configs.js), and a Verifier asking for a vct
+// nobody here issues would be a request no wallet in this stack could ever
+// satisfy — a negative worth having, but one that belongs to configuration
+// rather than to a text box on this page. The SD-JWT VC one became a SETTING
+// on 2026-09-12 (`oid4vp.expectedVct`, defaulting to this issuer's type) so
+// that the Verifier can be pointed at another issuer's credential; see
+// expectedVct() above. The two W3C type lists are still this issuer's.
 // ---------------------------------------------------------------------------
 const FORMATS = [
   { id: 'dc+sd-jwt', label: 'SD-JWT VC', claimsAt: 'top',
-    identifiedBy: 'meta.vct_values', identifier: VCI_VCT,
-    identifierText: VCI_VCT,
+    identifiedBy: 'meta.vct_values',
+    get identifier() { return expectedVct(); },
+    get identifierText() { return expectedVct(); },
     selectiveDisclosure: 'per claim, by withholding Disclosures',
     holderBinding: 'Key Binding JWT signed by the credential\'s cnf key',
     configs: [VCI_CONFIG_ID, VCI_DID_CONFIG_ID],
@@ -345,8 +373,8 @@ function setRequested(names) {
     seen.add(name);
     wanted.push(name);
   });
-  if (wanted.length > MAX_REQUESTED) {
-    errors.push('That is ' + wanted.length + ' claims; at most ' + MAX_REQUESTED + ' may be ' +
+  if (wanted.length > maxRequested()) {
+    errors.push('That is ' + wanted.length + ' claims; at most ' + maxRequested() + ' may be ' +
                 'requested at once.');
   }
   if (errors.length) {
@@ -549,7 +577,8 @@ module.exports = {
   REQUESTABLE: REQUESTABLE,
   FORMATS: FORMATS,
   FORMAT_IDS: FORMAT_IDS,
-  MAX_REQUESTED: MAX_REQUESTED,
+  get MAX_REQUESTED() { return maxRequested(); },
+  expectedVct: expectedVct,
   defaultRequested: defaultRequested,
   rowFor: rowFor,
   carriedNow: carriedNow,

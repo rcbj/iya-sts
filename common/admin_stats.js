@@ -66,6 +66,10 @@ const replication = require('../persistence/persistence_replication');
 // normalised the identity, which is what lets an audit row and a /admin/users
 // row name the same person.
 const audit = require('./audit');
+// The registry of failure codes, a LEAF. The wrapped calls below that swallow a
+// throw log it with one; a refused claim-set change carries its code on the
+// audit row and, NON-ENUMERABLY, on the result a caller serialises.
+const errorCodes = require('./error_codes');
 // THE FEDERATION RELEASE FILTER, and it is a plain require in the ordinary
 // direction rather than a hook. Rule 3e's test both ways round: that module
 // registers no route, and it requires only helpers.js, config.js and audit.js —
@@ -264,13 +268,16 @@ const KIND_BY_TYP = {
   'ID': 'id_token',
   'Refresh': 'refresh_token',
   'UserInfo': 'userinfo_response',
-  'oauth-authz-req+jwt': 'request_object'
+  'oauth-authz-req+jwt': 'request_object',
+  // A GNAP access token in either JWT format (RFC 9767), signed through
+  // signJwt() like every other token here so it is counted and revocable.
+  'GNAP': 'gnap_access_token'
 };
 
 // The three the console offers to invalidate, which are the three the user of this
 // service can actually present again. A signed UserInfo response is a reply, not a
 // credential, and revoking one would mean nothing.
-const REVOCABLE_KINDS = ['access_token', 'id_token', 'refresh_token'];
+const REVOCABLE_KINDS = ['access_token', 'id_token', 'refresh_token', 'gnap_access_token'];
 
 // Every kind a JWT can be recorded under, read off the table above rather than
 // written out again — the tokens page's filter offers exactly these, and a filter
@@ -792,7 +799,8 @@ function noteWebauthnEnrolled(username) {
     // The tail must not wag the dog — the same rule signJwt()'s recorder
     // follows. An enrolment that succeeded must not be undone because the
     // directory could not be told about it.
-    log.error('admin: the directory could not be told that a security key was ' +
+    log.error(errorCodes.tag('STS-REG-0039') +
+              'admin: the directory could not be told that a security key was ' +
               'enrolled for ' + identity.key + ': ' + e.message);
   }
   log.debug("Leaving noteWebauthnEnrolled().");
@@ -832,7 +840,8 @@ function noteCertificateIssued(subject, certificate, detail) {
     // here it matters more: this runs inside a gRPC handler that has already
     // minted a certificate the caller is owed, and a throw would turn a
     // successful issuance into an Unknown status.
-    log.error('the user observer threw on an issuance and was ignored; the ' +
+    log.error(errorCodes.tag('STS-REG-0039') +
+              'the user observer threw on an issuance and was ignored; the ' +
               'SVID itself is unaffected: ' + e.message);
   }
   log.debug("Leaving noteCertificateIssued().");
@@ -886,7 +895,8 @@ function recordCredentialStatus(subject, status, detail) {
   } catch (e) {
     // As above: a ban or a delete has already happened and must not be undone
     // by a directory that could not write it down.
-    log.error('the user observer threw on a credential status change and was ' +
+    log.error(errorCodes.tag('STS-REG-0039') +
+              'the user observer threw on a credential status change and was ' +
               'ignored; the change itself stands: ' + e.message);
   }
   log.debug("Leaving recordCredentialStatus().");
@@ -1228,7 +1238,7 @@ function recordScim(detail) {
     // Swallowed on purpose: a counter must never be able to fail a provisioning
     // request. Logged rather than ignored, because a counter that stopped
     // counting silently would make this page quietly wrong.
-    log.warn('scim: a request could not be counted: ' + e.message);
+    log.warn(errorCodes.tag('STS-REG-0040') + 'scim: a request could not be counted: ' + e.message);
   }
   log.debug("Leaving recordScim().");
 }
@@ -1458,7 +1468,7 @@ function resetScimForTests() {
 //
 // **Identity is keyed on the LOCAL NAME, and that is a decision with a visible
 // consequence.** The same person reaches this service under four spellings —
-// `alice` at the login screen, `urn:sts-mock:user:alice` as the `sub` of every token,
+// `alice` at the login screen, `urn:sts:user:alice` as the `sub` of every token,
 // `alice` as a SAML subject, `alice@STS.MOCK` as a Kerberos principal — and a page
 // showing four rows for one name would be a worse answer than one row, since the
 // whole premise of this mock is that the name you type is who you are in every
@@ -1582,7 +1592,7 @@ function identityKeyOf(value) {
 // place and not twelve.
 //
 // But ldap_server.js requires THIS file (it needs identityOf's normalisation, so
-// that `alice`, `urn:sts-mock:user:alice` and `alice@REALM` seed one entry and
+// that `alice`, `urn:sts:user:alice` and `alice@REALM` seed one entry and
 // not three), so this file cannot require it back: a cycle in node hands back a
 // half-initialised module whose exports are undefined, and the symptom arrives
 // later as something that is not a function. So the direction is inverted, the
@@ -1799,7 +1809,8 @@ function recordAuthentication(detail) {
         : 'a credential was accepted for this application'
     });
   } catch (e) {
-    log.error('the application registry threw and was ignored; the ' +
+    log.error(errorCodes.tag('STS-REG-0041') +
+              'the application registry threw and was ignored; the ' +
               'authentication itself stands: ' + e.message);
   }
   // The embedded LDAP directory, if it is loaded. Wrapped for the same reason the
@@ -1845,7 +1856,7 @@ function recordAuthentication(detail) {
         // creating a second one named by a digest of it.
         //
         // NORMALISED like `key` is, and through the same function: the caller
-        // has whatever the token carried — `alice` or `urn:sts-mock:user:alice`
+        // has whatever the token carried — `alice` or `urn:sts:user:alice`
         // — and passing it through raw would link the DID to a person filed
         // under a name nothing else here uses, which is the split this whole
         // funnel exists to prevent.
@@ -1875,7 +1886,8 @@ function recordAuthentication(detail) {
         federation: info.federation || null
       });
     } catch (e) {
-      log.error('the user observer threw and was ignored; the authentication ' +
+      log.error(errorCodes.tag('STS-REG-0039') +
+                'the user observer threw and was ignored; the authentication ' +
                 'itself is unaffected: ' + e.message);
     }
   }
@@ -2078,7 +2090,8 @@ function resolvedJwtClaims(id, context) {
   try {
     return attributeResolver.jwtClaims(id, context) || {};
   } catch (e) {
-    log.error('the claim-attribute resolver threw and was ignored; the token is ' +
+    log.error(errorCodes.tag('STS-REG-0042') +
+              'the claim-attribute resolver threw and was ignored; the token is ' +
               'issued without its attribute claims: ' + e.message);
     return {};
   }
@@ -2091,7 +2104,8 @@ function resolvedSamlAttributes(id, context) {
   try {
     return attributeResolver.samlAttributes(id, context) || [];
   } catch (e) {
-    log.error('the claim-attribute resolver threw and was ignored; the assertion ' +
+    log.error(errorCodes.tag('STS-REG-0042') +
+              'the claim-attribute resolver threw and was ignored; the assertion ' +
               'is issued without its attribute claims: ' + e.message);
     return [];
   }
@@ -2165,7 +2179,8 @@ function resolvedGroupClaims(id, context) {
   try {
     return groupResolver.jwtClaims(id, context) || {};
   } catch (e) {
-    log.error('the group-claim resolver threw and was ignored; the token is ' +
+    log.error(errorCodes.tag('STS-REG-0043') +
+              'the group-claim resolver threw and was ignored; the token is ' +
               'issued without its groups claim: ' + e.message);
     return {};
   }
@@ -2191,7 +2206,8 @@ function resolvedRoleClaims(context) {
         : { kind: 'application',
             name: String(ctx.client_id || ''), authenticated: true }) || {};
   } catch (e) {
-    log.error('the role register threw and was ignored; the token is issued ' +
+    log.error(errorCodes.tag('STS-REG-0044') +
+              'the role register threw and was ignored; the token is issued ' +
               'without its roles claim: ' + e.message);
     return {};
   }
@@ -2224,7 +2240,8 @@ function resolvedGroupAttributes(id, context) {
   try {
     return groupResolver.samlAttributes(id, context) || [];
   } catch (e) {
-    log.error('the group-claim resolver threw and was ignored; the assertion ' +
+    log.error(errorCodes.tag('STS-REG-0043') +
+              'the group-claim resolver threw and was ignored; the assertion ' +
               'is issued without its groups claim: ' + e.message);
     return [];
   }
@@ -2310,7 +2327,7 @@ function typedValue(text) {
 // sentence stays true because every call site keeps it, not because something
 // central strips it.
 // ---------------------------------------------------------------------------
-function recordClaimSetChange(id, set, added, removed, count, ok, errors) {
+function recordClaimSetChange(id, set, added, removed, count, ok, errors, code) {
   log.debug("Entering recordClaimSetChange(). id=" + id + ", ok=" + ok);
   // No guard: audit.audit() is wrapped over there and cannot throw. A guard
   // would suggest to the next reader that this call is allowed to fail a
@@ -2318,6 +2335,8 @@ function recordClaimSetChange(id, set, added, removed, count, ok, errors) {
   audit.audit({
     action: 'claims.change',
     outcome: ok ? 'success' : 'refused',
+    // The condition a refusal was for; '' on a change that was made.
+    errorCode: ok ? '' : (code || ''),
     actor: '',
     target: id,
     channel: 'http',
@@ -2360,27 +2379,33 @@ function setClaimSet(id, entries) {
   const set = CLAIM_SETS[id];
   if (!set) {
     log.debug("Leaving setClaimSet(). No such claim set.");
-    return { ok: false, errors: ['There is no claim set called "' + id + '". The ' +
-                                 CLAIM_SET_IDS.length + ' are: ' + CLAIM_SET_IDS.join(', ') + '.'] };
+    return errorCodes.mark({ ok: false, errors: ['There is no claim set called "' + id + '". The ' +
+                                 CLAIM_SET_IDS.length + ' are: ' + CLAIM_SET_IDS.join(', ') + '.'] },
+                           'STS-REG-0034');
   }
   const errors = [];
   const cleaned = [];
   const seen = new Set();
+  // The condition the FIRST refusal was for, which is the one shown first.
+  let code = '';
   (entries || []).forEach(function (entry, index) {
     const name = String((entry && entry.name) || '').trim();
     if (!name) {
       errors.push('Entry ' + (index + 1) + ' has no name.');
+      code = code || 'STS-REG-0036';
       return;
     }
     if (reservedNames(set).indexOf(name) >= 0) {
       errors.push('"' + name + '" is a claim this service sets itself and cannot be overridden. ' +
                   'Custom claims are added to a ' + (set.kind === 'userinfo' ? 'UserInfo response' : 'token') +
                   ', never substituted into it.');
+      code = code || 'STS-REG-0037';
       return;
     }
     if (seen.has(name)) {
       errors.push('"' + name + '" is configured twice; the later one would win silently, so both ' +
                   'are refused.');
+      code = code || 'STS-REG-0038';
       return;
     }
     seen.add(name);
@@ -2390,9 +2415,9 @@ function setClaimSet(id, entries) {
     cleaned.push(claim);
   });
   if (errors.length) {
-    recordClaimSetChange(id, set, [], [], set.claims.length, false, errors);
+    recordClaimSetChange(id, set, [], [], set.claims.length, false, errors, code);
     log.debug("Leaving setClaimSet(). Refused with " + errors.length + " error(s); nothing changed.");
-    return { ok: false, errors: errors };
+    return errorCodes.mark({ ok: false, errors: errors }, code);
   }
   const beforeNames = set.claims.map(function (claim) { return claim.name; });
   const afterNames = cleaned.map(function (claim) { return claim.name; });

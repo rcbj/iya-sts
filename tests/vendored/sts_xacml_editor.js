@@ -76,7 +76,7 @@
 // browser's message out of `errors`, which those three never set — so the
 // person got the page they had just posted from, unchanged, with no
 // explanation, which reads exactly like a control that does nothing. It was
-// invisible to `/admin-api`, where `admin.xacmlAction()` had already been given
+// invisible to `/admin-api`, where `xacmlAction()` had already been given
 // that translation, and invisible to `tests/xacml_pap.js`, which asserts the
 // refusal it gets back from the function rather than the sentence a browser is
 // shown. Fixed in `admin-ui/admin.js` so that the console and `/admin-api`
@@ -129,11 +129,25 @@ const REALM = ("xacmled-" + names.runStamp()).toLowerCase()
 const POLICY = "edited-in-the-browser";
 const SECOND_POLICY = "a-second-policy";
 
-// The person the rule built on the page is about. bob is seeded in every realm
-// as `employeeType: staff`, so the template policy permits him to GET and
-// refuses him everything else — which is the refusal sections 5 and 8 flip and
-// flip back.
-const SUBJECT = "bob";
+// The person the rule built on the page is about, `employeeType: staff`, so the
+// template policy permits them to GET and refuses them everything else — which
+// is the refusal sections 5 and 8 flip and flip back.
+//
+// **CREATED BY THIS JOB IN ITS REALM, AND NOT SEEDED (2026-09-12).** It was
+// `bob`, and the "anybody else" section 5 checks was `alice` — both seeded in
+// every realm in development and in nobody's directory in product. So
+// `createThePeople()` makes two staff members with the attributes a real
+// account carries. The console account is created the same way, with a
+// password the sign-in screen is then sent, because product mode creates
+// nobody for a typed name and verifies the password it is given.
+//
+// **`cn=xacml-user-1` BELOW IS STILL A SEED** and is recorded as such: the
+// certificate identity is resolved in this realm's directory and its seeded
+// `xacml-users` group, and `sts_xacml_endpoints.js` records why replacing it is
+// not a one-line change.
+const SUBJECT = "xacml-editor-staff";
+const OTHER_STAFF = "xacml-editor-other-staff";
+const CONSOLE_PASSWORD = "xacml-editor-console-Passw0rd!-" + names.runStamp();
 const SUBJECT_ID = "urn:oasis:names:tc:xacml:1.0:subject:subject-id";
 const ACCESS_SUBJECT =
   "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject";
@@ -572,6 +586,9 @@ async function signIn(driver, username) {
   const field = await driver.findElement(By.css("input[name='username']"));
   await field.clear();
   await field.sendKeys(username);
+  const secret = await driver.findElement(By.css("input[name='password']"));
+  await secret.clear();
+  await secret.sendKeys(CONSOLE_PASSWORD);
   const button = await driver.findElement(
       By.xpath("//button[@type='submit'] | //input[@type='submit'] | //button"));
   await button.click();
@@ -1136,7 +1153,7 @@ async function aRuleBuiltOnThePageDecides(driver) {
   //    are one; what they are compared AGAINST is the other, because that half
   //    changes shape entirely when the reference is an XPath selector. The
   //    value and the attribute together are the whole rule: subject-id equals
-  //    bob.
+  //    SUBJECT.
   page = await pressOn(driver, newMatch, "edit-match",
                        { matchId: STRING_EQUAL, value: SUBJECT }, "matchId");
   page = await pressOn(driver, newMatch, "edit-match",
@@ -1201,11 +1218,11 @@ async function aRuleBuiltOnThePageDecides(driver) {
       "the decision is " + after.body.decision);
   });
 
-  const others = await enforcementFor("alice", "DELETE");
+  const others = await enforcementFor(OTHER_STAFF, "DELETE");
   check("and it changed nothing for anybody else", function () {
     assert.strictEqual(others.status, 403,
       "the rule matches subject-id = " + SUBJECT + " and nobody else, so " +
-      "alice must still be refused DELETE. A rule that permitted everybody " +
+      OTHER_STAFF + " must still be refused DELETE. A rule that permitted everybody " +
       "would pass the check above and be entirely wrong. The PEP answered " +
       others.status);
   });
@@ -1454,6 +1471,36 @@ async function createTheRealm() {
   log.debug("Leaving createTheRealm().");
 }
 
+// THE CONSOLE ACCOUNT, in the DEFAULT realm where the console's session and its
+// role roster live, and the two staff members the rule is about, in this run's
+// realm where the PIP will look them up.
+async function createThePeople() {
+  log.debug("Entering createThePeople().");
+  const consoleAccount = await apiPost("/admin-api/users/create", {
+    username: CONSOLE_USER, invent: false,
+    attributes: { cn: "XACML Editor Operator", givenName: "XACML",
+                  sn: "Editor Operator", displayName: "XACML Editor Operator",
+                  mail: CONSOLE_USER + "@xacml-editor.test" },
+    credential: "password", password: CONSOLE_PASSWORD
+  });
+  assert.ok(consoleAccount.status === 200 && consoleAccount.body &&
+            consoleAccount.body.ok,
+    "creating the console account " + CONSOLE_USER + " answered " +
+    consoleAccount.status + " " + String(consoleAccount.text).slice(0, 300));
+  for (const who of [SUBJECT, OTHER_STAFF]) {
+    const r = await apiPost("/realm/" + REALM + "/admin-api/users/create", {
+      username: who, invent: false,
+      attributes: { cn: "XACML Editor " + who, givenName: "XACML", sn: who,
+                    displayName: "XACML Editor " + who,
+                    mail: who + "@xacml-editor.test", employeeType: "staff" }
+    });
+    assert.ok(r.status === 200 && r.body && r.body.ok,
+      "creating " + who + " (employeeType=staff) in " + REALM + " answered " +
+      r.status + " " + String(r.text).slice(0, 300));
+  }
+  log.debug("Leaving createThePeople().");
+}
+
 async function createThePolicies() {
   log.debug("Entering createThePolicies().");
   // THROUGH /admin-api AND NOT THROUGH THE CONSOLE'S OWN TEMPLATE FORM, which
@@ -1529,6 +1576,7 @@ async function test() {
     await mintTheCredential();
     await createTheRealm();
     try {
+      await createThePeople();
       await signIn(driver, CONSOLE_USER);
       // BEFORE ANY POLICY EXISTS — this is the only moment that page can be
       // seen, and creating the policies first would lose it for ever.

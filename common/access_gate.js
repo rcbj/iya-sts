@@ -58,6 +58,10 @@
 
 const { log } = require('./helpers');
 const config = require('./config');
+// The error-code registry. A LEAF that requires nothing here, so this file stays
+// one; the two failures below are tagged in the log rather than audited, because
+// `audit.js` is a heavier require than a leaf gate should carry.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // THE RESOURCES. A closed list, because a resource id that only ever appears at
@@ -162,7 +166,8 @@ let decider = null;
 function setDecider(fn) {
   log.debug('Entering setDecider().');
   if (typeof fn !== 'function' && fn !== null) {
-    log.error('access_gate: setDecider() was given something that is not a ' +
+    log.error(errorCodes.tag('STS-XACML-0050') +
+              'access_gate: setDecider() was given something that is not a ' +
               'function, so it was refused. Every access decision will be ' +
               'ALLOWED, which is what a process without the XACML family does.');
     return false;
@@ -230,7 +235,8 @@ function check(request) {
     answer = decider(asked);
   } catch (error) {
     // See the header: a THROW is a defect, not a Deny.
-    log.error('access_gate: the decider threw and access was ALLOWED; this is ' +
+    log.error(errorCodes.tag('STS-XACML-0051') +
+              'access_gate: the decider threw and access was ALLOWED; this is ' +
               'a defect in the embedded PEP rather than a decision. ' +
               error.message);
     return allow('The embedded PEP threw, which is a defect rather than a ' +

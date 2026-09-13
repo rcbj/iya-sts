@@ -247,20 +247,30 @@ const SPECS = [
               'pre-authentication (PA-ENC-TIMESTAMP), PA-ETYPE-INFO2 carrying the salt, ticket ' +
               'flags, clock-skew enforcement and the error catalogue. Two realms with a trust ' +
               'between them, so cross-realm referrals work. No FAST, no request signatures, no ' +
-              'S4U, no kpasswd. The AP exchange belongs to the protected service, not here. ' +
+              'PKINIT, no kpasswd (S4U is [MS-SFU], its own row). The AP exchange belongs to ' +
+              'the protected service, not here. ' +
               // The rule for these notes is that they say what would mislead somebody who
               // believed the row. "Pre-authentication is implemented" is true and, on its own,
               // implies an account database with per-account secrets in it.
               'ANY username authenticates and every user account shares ONE password, which ' +
               'GET /krb5/principals publishes: pre-authentication is verified for real (the ' +
               'password is the key, so it has to be), but it is the same password for ' +
-              'everybody and an unknown username is created on the spot rather than refused.' },
+              'everybody and an unknown username is created on the spot rather than refused. ' +
+              'THAT IS DEVELOPMENT MODE. In product mode the fixture accounts, the second ' +
+              'realm and every delegation rule are absent, nothing is created on demand, ' +
+              'no password is published, and krbtgt and the configured service account exist ' +
+              'only where krb5.krbtgtPassword and krb5.servicePassword are set to something ' +
+              'other than their published defaults — so a product KDC authenticates NOBODY ' +
+              '(directory people get no Kerberos account) and its useful half is the acceptor, ' +
+              'for tickets a real KDC issued to krb5.servicePrincipal.' },
   { id: 'rfc3961', name: 'Kerberos encryption framework (RFC 3961/3962/8009, RFC 4757)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc3961',
     coverage: 'full for the etypes offered: aes128/256-cts-hmac-sha1-96 (17, 18), ' +
               'aes128/256-cts-hmac-sha256/384 (19, 20) and arcfour-hmac-md5 (23). DES is ' +
-              'decode-only and not offered. The same codec runs in the browser.' },
+              'decode-only and not offered. Which of the five are offered at all is ' +
+              'krb5.enctypes, all five by default; a number the codec does not implement ' +
+              'stops the service at startup. The same codec runs in the browser.' },
   { id: 'ms-sfu', name: '[MS-SFU] Kerberos Protocol Extensions: ' +
                        'Service for User and Constrained Delegation',
     where: 'Microsoft Open Specifications',
@@ -468,6 +478,74 @@ const SPECS = [
               'specification permits and which keeps a mock from holding a socket open ' +
               'to demonstrate nothing.' },
 
+  // --- GNAP (2026-09-12): the grant negotiation protocol, its resource
+  //     server connections, and the two HTTP documents its preferred proof
+  //     method rests on. The three token formats beyond JWT are named here
+  //     because RFC 9767's token format registry names them, and each is
+  //     minted and verified by /gnap and /gnap/introspect.
+  { id: 'rfc9635', name: 'RFC 9635 — Grant Negotiation and Authorization Protocol (GNAP)',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc9635',
+    coverage: 'full, authorization server side: the grant request with every access, ' +
+              'subject, client and user member; all four interaction start modes ' +
+              '(redirect, app, user_code, user_code_uri) and both finish methods ' +
+              '(redirect and push) with the section 4.2.3 interaction hash in every ' +
+              'Named Information hash method node computes; continuation by polling, by ' +
+              'interaction reference, modification ' +
+              'and revocation, with too_fast and wait; token rotation and revocation at ' +
+              'the management URI; client key rotation in section 6.1; all four key ' +
+              'proofing methods (httpsig, mtls, jwsd, jws) and all four key formats (jwk, ' +
+              'cert, cert#S256, key reference); instance identifiers; subject identifiers ' +
+              'and id_token / SAML 2 assertions; bearer and durable flags; multiple access ' +
+              'tokens in one grant; OPTIONS discovery and the RS-first WWW-Authenticate ' +
+              'challenge. Every error section 3.6 defines is used. What is permissive is ' +
+              'the resource owner: the approval page takes the one authentication service ' +
+              'this process has, which checks passwords only in product mode.' },
+  { id: 'rfc9767', name: 'RFC 9767 — GNAP Resource Server Connections',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc9767',
+    coverage: 'full: the RS-facing discovery document at /.well-known/gnap-as-rs, token ' +
+              'introspection with the section 2.1 token model, resource set registration, ' +
+              'token derivation through existing_access_token, and every format in the ' +
+              'section 5.2 token format registry — jwt-signed, jwt-encrypted, macaroon, ' +
+              'biscuit and zcap — minted and verified.' },
+  { id: 'rfc9421', name: 'RFC 9421 — HTTP Message Signatures',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc9421',
+    coverage: 'partial: signing and verification of requests and responses with every ' +
+              'derived component, header and structured-field component parameters (sf, ' +
+              'key, bs, req, tr), multiple signatures, and the algorithms in section 3.3 ' +
+              'except those needing a key type this process does not hold. It is held to ' +
+              'the specification\'s Appendix B test vectors by tests/gnap_httpsig.js. It ' +
+              'is used as GNAP\'s httpsig proof and nowhere else, so trailers are parsed ' +
+              'and never sent.' },
+  { id: 'rfc9530', name: 'RFC 9530 — Digest Fields',
+    where: 'IETF',
+    url: 'https://www.rfc-editor.org/rfc/rfc9530',
+    coverage: 'partial: Content-Digest with sha-256 and sha-512, generated and verified, ' +
+              'which is what GNAP\'s httpsig proof covers a body with. Repr-Digest and the ' +
+              'Want- fields are not implemented, because nothing here negotiates a ' +
+              'representation.' },
+  { id: 'macaroons', name: 'Macaroons: Cookies with Contextual Caveats (NDSS 2014) and the libmacaroons V2 format',
+    where: 'Google Research / libmacaroons',
+    url: 'https://research.google/pubs/macaroons-cookies-with-contextual-caveats-for-decentralized-authorization-in-the-cloud/',
+    coverage: 'partial: first-party caveats in the V2 binary format, HMAC-SHA256 chaining, ' +
+              'attenuation by a holder, and a caveat grammar of this service\'s own that ' +
+              'carries RFC 9767\'s token model. Third-party caveats and discharge macaroons ' +
+              'are not implemented.' },
+  { id: 'biscuit', name: 'Biscuit authorization token specification',
+    where: 'Biscuit (Eclipse Foundation)',
+    url: 'https://doc.biscuitsec.org/reference/specifications',
+    coverage: 'partial: Ed25519-signed tokens with facts carrying RFC 9767\'s token model, ' +
+              'Datalog attenuation blocks, and verification with an authorizer run under ' +
+              'limits. Third-party blocks are not implemented.' },
+  { id: 'zcap-ld', name: 'W3C CCG Authorization Capabilities for Linked Data (ZCAP-LD) v0.3',
+    where: 'W3C Credentials Community Group',
+    url: 'https://w3c-ccg.github.io/zcap-spec/',
+    coverage: 'partial: root and delegated capabilities signed with Ed25519Signature2020, ' +
+              'verified against a controller document this service publishes, with an ' +
+              'offline document loader. Capability invocation over HTTP is not ' +
+              'implemented; the capability is presented as a GNAP access token instead.' },
   { id: 'rfc7642', name: 'SCIM: Definitions, Overview, Concepts, and Requirements (RFC 7642)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc7642',
@@ -506,9 +584,11 @@ const SPECS = [
               'both. Section 3.11 (/Me) is covered too, as an alias onto the same User ' +
               'handlers, and still answers 501 where there is genuinely no subject. NOT ' +
               'covered, each on purpose and each said on /scim: NOTHING IS REALLY ' +
-              'CHECKED ABOUT A CREDENTIAL — anybody can get a token with either scope, ' +
-              'any password but "invalid" passes Basic, anybody can register a HOBA key ' +
-              '— so it is a turnstile rather than a lock, and what it buys is that a ' +
+              'CHECKED ABOUT A CREDENTIAL IN DEVELOPMENT MODE — anybody can get a token ' +
+              'with either scope, any password but "invalid" passes Basic, anybody can ' +
+              'register a HOBA key (in product mode Basic is verified, Digest is not ' +
+              'offered, and a HOBA key needs its owner signed in) — so it is a turnstile ' +
+              'rather than a lock there, and what it buys is that a ' +
               'client\'s 401, 403 and challenge-response paths can be run at all; no ' +
               'ETag or If-Match (section 3.14), advertised as unsupported because a ' +
               'version built over a one-second timestamp would be a concurrency control ' +
@@ -604,7 +684,10 @@ const SPECS = [
               // the row. "Bind is implemented" is true and, alone, implies credentials.
               'EVERY BIND SUCCEEDS — any DN, any password, anonymous included — with the ' +
               'single exception of the literal password "invalid", which is refused with ' +
-              'LDAP_INVALID_CREDENTIALS so a negative test has something to fail on. It is ' +
+              'LDAP_INVALID_CREDENTIALS so a negative test has something to fail on. That is ' +
+              'development mode: in product mode a named simple bind is verified against the ' +
+              'entry\'s userPassword, the directory holds no seeded people, and ' +
+              'ldap.plainListener can leave 389 unbound. It is ' +
               'the ldapjs 3.0.7 library, pinned as a submodule and used unmodified; what is ' +
               'written here is the handlers.' },
   { id: 'rfc4512', name: 'LDAP v3: directory information models (RFC 4512)',
@@ -635,7 +718,10 @@ const SPECS = [
               'The certificate is self-signed, regenerated on every start and shared with ' +
               'the two HTTPS listeners, so a client verifies it per run: fetch it from ' +
               'GET /tls/server-certificate rather than reaching for LDAPTLS_REQCERT=never, ' +
-              'which would also hide the one thing worth checking here.' },
+              'which would also hide the one thing worth checking here. In PRODUCT mode a ' +
+              'simple bind IS verified, which makes 389 a password in the clear: ' +
+              'ldap.plainListener turns that listener off and the service warns at startup ' +
+              'while it is on.' },
   { id: 'rfc4514', name: 'LDAP v3: string representation of distinguished names (RFC 4514)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4514',
@@ -677,8 +763,10 @@ const SPECS = [
     url: 'https://www.rfc-editor.org/rfc/rfc8446',
     coverage: 'full, and none of it is this service\'s code — the two HTTPS listeners and ' +
               'the directory\'s LDAPS listener on 636 are ' +
-              'node\'s own TLS stack over OpenSSL, with whatever versions and ciphers that ' +
-              'build offers. What is written here is the POLICY and the REPORT: one listener ' +
+              'node\'s own TLS stack over OpenSSL. The protocol floor and cipher list are ' +
+              'tls.minVersion (TLSv1.2, node\'s default) and tls.ciphers (node\'s default ' +
+              'list), applied to those three and to the main port. What is written here is ' +
+              'the POLICY and the REPORT: one listener ' +
               'asks for a client certificate and accepts whatever arrives, the other requires ' +
               'one, and both hand back what the server saw. Two things about client ' +
               'authentication are worth knowing before reading that report. Under TLS 1.3 the ' +
@@ -694,7 +782,8 @@ const SPECS = [
     url: 'https://www.rfc-editor.org/rfc/rfc5280',
     coverage: 'partial, and the path validation is OpenSSL\'s rather than this service\'s: ' +
               'client certificates are verified against anchors POSTed to /tls/trust at ' +
-              'runtime, and the server certificate is self-signed here per start with a ' +
+              'runtime (development mode; product mode refuses that and reads ' +
+              'tls.trustAnchorsFile at startup), and the server certificate is self-signed here per start with a ' +
               'subjectAltName carrying every name this stack is reached by. THIS SERVICE ' +
               'PUBLISHES REVOCATION AND STILL CHECKS NONE, and the two halves of that ' +
               'sentence must not be run together. Section 5 is implemented: every authority ' +
@@ -725,7 +814,13 @@ const SPECS = [
     where: 'OASIS ws-sx',
     url: 'https://docs.oasis-open.org/ws-sx/ws-trust/v1.4/ws-trust.html',
     coverage: 'partial: Issue, Renew, Validate and Cancel over SOAP 1.1 and 1.2. ' +
-              'Request signatures are not verified and no policy is enforced — this is a test STS.' },
+              'Request signatures are not verified and no delegation policy is enforced. In ' +
+              'PRODUCT mode (2026-09-12) every operation needs a credential — a UsernameToken ' +
+              'verified against the directory, or a SAML assertion this STS signed and inside ' +
+              'its Conditions — and an OnBehalfOf/ActAs needs the requester\'s own credential and ' +
+              'such an assertion inside it; development accepts none, as it always did. In both ' +
+              'modes a requested wst:Lifetime is clamped (wstrust.maxTokenLifetimeMin) and the ' +
+              'issued assertion\'s AuthnContext names the credential rather than a password.' },
   { id: 'wss-username', name: 'WS-Security UsernameToken Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss/v1.1/wss-v1.1-spec-os-UsernameTokenProfile.pdf',
@@ -739,8 +834,11 @@ const SPECS = [
               'requires, Conditions), carried by WS-Trust, by WS-Federation, and since 2026-08-24 ' +
               'in a <samlp:Response> of its own — THERE IS A WEB BROWSER SSO PROFILE NOW, at ' +
               '/saml2, and the three rows below cover its bindings, profiles and metadata. What ' +
-              'is still absent: no assertion is encrypted, no AuthnRequest signature is verified, ' +
-              'and no <samlp:AttributeQuery> is answered. The WS-FEDERATION metadata still ' +
+              'is still absent: no AuthnRequest signature is verified, and no ' +
+              '<samlp:AttributeQuery> is answered (assertions ARE encrypted since 2026-08-27). ' +
+              'The AuthnContextClassRef names how the session really authenticated — a ' +
+              'certificate is TLSClient, a SPNEGO ticket Kerberos, the unauthenticated session ' +
+              'unspecified — where until 2026-09-12 all of those were PasswordProtectedTransport. The WS-FEDERATION metadata still ' +
               'publishes no IDPSSODescriptor, which is now a fact about that document rather than ' +
               'about this service — the SAML 2.0 metadata at /saml2/metadata is where the ' +
               'IDPSSODescriptor is.' },
@@ -763,7 +861,9 @@ const SPECS = [
               'LogoutRequest for each rather than firing them into frames it cannot observe. NOT ' +
               'here: identity-provider-initiated SSO with an unsolicited Response, the ECP ' +
               'profile (4.2), Name Identifier Management (4.5), and the Assertion Query and ' +
-              'Request profile (6). No assertion is encrypted.' },
+              'Request profile (6). The AssertionConsumerServiceURL is accepted as sent in ' +
+              'development mode and must be registered on the service provider\'s entry in ' +
+              'PRODUCT mode (2026-09-12), with no fallback to the mock service provider.' },
   { id: 'saml2-metadata', name: 'SAML 2.0 Metadata',
     where: 'OASIS saml-metadata-2.0-os',
     url: 'https://docs.oasis-open.org/security/saml/v2.0/saml-metadata-2.0-os.pdf',
@@ -772,7 +872,11 @@ const SPECS = [
               'and Ping publish. It is minted for any entityID asked for. This service PUBLISHES ' +
               'metadata and does not CONSUME it: there is no SPSSODescriptor ingest, which is why ' +
               'a service provider\'s logout return address has to be declared and why an ' +
-              'assertion consumer service URL is taken from the request rather than looked up.' },
+              'assertion consumer service URL is taken from the request rather than looked up — ' +
+              'in development mode; in product mode it must be one registered on the entry. ' +
+              'The certificate in a service provider\'s metadata IS consumed, by an explicit ' +
+              'refresh, for encryption. <md:Organization> is saml.organizationName and its ' +
+              'siblings, and is omitted when the name is emptied.' },
   { id: 'saml11', name: 'SAML 1.1 Core',
     where: 'OASIS oasis-sstc-saml-core-1.1',
     url: 'https://www.oasis-open.org/committees/download.php/3406/oasis-sstc-saml-core-1.1.pdf',
@@ -785,7 +889,10 @@ const SPECS = [
               'its shapes. What is still absent: the fifth request type, ' +
               'AuthorizationDecisionQuery, which is refused by name because this service makes no ' +
               'authorization decisions; and there is no SAML 1.1 Single Logout to implement, ' +
-              'because the protocol has none.' },
+              'because the protocol has none. The AttributeQuery and AuthenticationQuery are ' +
+              'answered to anybody in development mode and REFUSED in product mode ' +
+              '(2026-09-12); in both, an AuthenticationQuery is answered only from a live ' +
+              'session and an AttributeQuery carries no AuthenticationStatement.' },
   { id: 'saml11-bindings', name: 'SAML 1.1 Bindings and Profiles',
     where: 'OASIS oasis-sstc-saml-bindings-1.1',
     url: 'https://www.oasis-open.org/committees/download.php/3405/oasis-sstc-saml-bindings-1.1.pdf',
@@ -806,7 +913,9 @@ const SPECS = [
               'a failure is a PAGE rather than a Response because there is nothing to answer. ' +
               'Shibboleth\'s non-standard AuthnRequest profile ' +
               '(urn:mace:shibboleth:1.0:profiles:AuthnRequest) is accepted and advertised, ' +
-              'because it is what every real SAML 1.1 service provider sends.' },
+              'because it is what every real SAML 1.1 service provider sends. `shire` is used ' +
+              'as sent in development mode and must be registered on the relying party\'s entry ' +
+              'in PRODUCT mode (2026-09-12).' },
   { id: 'ws-federation', name: 'WS-Federation 1.2',
     where: 'OASIS wsfed',
     url: 'https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation-1.2-spec-os.html',
@@ -819,12 +928,16 @@ const SPECS = [
               'service (wpseudo1.0) which both answer 501, wreqptr (refused — dereferencing a URL ' +
               'from a query parameter is a server-side request forgery), token encryption in this ' +
               'profile (a passive request carries no recipient certificate), and any authorization ' +
-              'or policy enforcement.' },
+              'or policy enforcement. wreply is used as sent in development mode and must be a ' +
+              'registered wsfedReplyUrl in PRODUCT mode (2026-09-12), with no fallback to the ' +
+              'mock relying party.' },
   { id: 'xmldsig', name: 'XML Signature and XML Encryption',
     where: 'W3C',
     url: 'https://www.w3.org/TR/xmldsig-core1/',
     coverage: 'full for what it emits: enveloped signature, exclusive canonicalization, ' +
-              'RSA-SHA256; AES-256-CBC content encryption with an RSA-OAEP wrapped key.' },
+              'RSA-SHA256 by default and RSA-SHA384/512 or the broken RSA-SHA1 by ' +
+              'saml.signatureAlgorithm (2026-09-12); AES-GCM or AES-CBC content encryption ' +
+              'with an RSA-OAEP or RSA-1_5 wrapped key.' },
   { id: 'rfc6749', name: 'RFC 6749 — OAuth 2.0',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc6749',
@@ -874,7 +987,8 @@ const SPECS = [
               'tokens, token_type DPoP, the dpop_jkt authorization request parameter (section 10), ' +
               'jti replay detection, and the server-supplied nonce handshake in both shapes — 400 ' +
               'use_dpop_nonce at the token endpoint, 401 with WWW-Authenticate at a protected one. ' +
-              'Nonces are off until /dpop/nonce-mode turns them on. Not implemented: the ' +
+              'Nonces are off until oauth2.dpopNonceRequired (per realm; /dpop/nonce-mode writes it ' +
+              'in development) turns them on. Not implemented: the ' +
               'authorization-code binding via PAR, and mTLS-bound tokens (RFC 8705), which are the ' +
               "other way to sender-constrain. Note a foreign access token's cnf cannot be trusted " +
               'here, since this issuer does not verify a token the separate authorization server ' +
@@ -1538,6 +1652,127 @@ const ENDPOINTS = [
           'endpoint here whose role does not follow its path, because what ' +
           'comes back is a person\'s own data rather than a rule anybody may ' +
           'check.' },
+  // --- GNAP (2026-09-12). gnap/CLAUDE.md argues the module split.
+  { path: '/gnap', group: 'GNAP', name: 'The grant endpoint',
+    specs: ['rfc9635', 'rfc9421', 'rfc9530', 'rfc9493'],
+    what: 'POST is a grant request (RFC 9635 section 2): the access asked for, the ' +
+          'subject information asked for, the client instance and its key, the user, ' +
+          'and how an interaction may start and finish. Every request is proofed with ' +
+          'the key it presents — an HTTP message signature, mutual TLS, a detached or ' +
+          'an attached JWS — and the body is held to a JSON Schema before it is read. ' +
+          'The answer is access tokens, subject information, an interaction to start, ' +
+          'a continuation, or an error from section 3.6. OPTIONS is the discovery ' +
+          'document of section 9: what this authorization server supports, read off ' +
+          'the gnap.* settings and the authorization server profile rather than written ' +
+          'down.' },
+  { path: '/:as/gnap', group: 'GNAP', name: 'The grant endpoint of a named authorization server',
+    specs: ['rfc9635'],
+    what: 'The same endpoint for an authorization server profile from /admin/authorization-servers, ' +
+          'whose GNAP members narrow what that profile advertises and accepts. The ' +
+          'reserved first segments (admin, gnap, oauth2 and the rest) fall through to ' +
+          'their own routes.' },
+  { path: '/gnap/continue/:grant', group: 'GNAP', name: 'Grant continuation',
+    specs: ['rfc9635'],
+    what: 'Section 5, one URI and three methods. POST continues — a poll, or with an ' +
+          'interact_ref after a finish — and answers too_fast before the stated wait. ' +
+          'PATCH modifies the grant onto different access, which revokes the tokens ' +
+          'already issued when gnap.revokeOnModify is on. DELETE revokes the whole ' +
+          'grant and every token under it, and emits a CAEP session-revoked for the ' +
+          'grant. Every call carries the continuation access token and the grant\'s key ' +
+          'proof.' },
+  { path: '/gnap/token/:handle', group: 'GNAP', name: 'Token management',
+    specs: ['rfc9635'],
+    what: 'Section 6. POST rotates the access token — a new value, the same rights, ' +
+          'the old value dead — and, carrying a new key under section 6.1, rotates ' +
+          'the client instance\'s key with a proof by both keys. DELETE revokes the ' +
+          'token and emits a CAEP session-revoked for it.' },
+  { path: '/gnap/interact/:id', group: 'GNAP', name: 'The redirect interaction start',
+    specs: ['rfc9635'],
+    what: 'Section 4.1.1: the URI a client instance sends the resource owner\'s ' +
+          'browser to. It signs the person in through the one authentication service ' +
+          'this process has (a GNAP-authenticated person gets the same directory entry ' +
+          'as any other) and leads to the approval page.' },
+  { path: '/gnap/app/:id', group: 'GNAP', name: 'The app interaction start',
+    specs: ['rfc9635'],
+    what: 'Section 4.1.4: the same start reached by an application URI rather than a ' +
+          'browser redirect.' },
+  { path: '/gnap/code', group: 'GNAP', name: 'User code entry',
+    specs: ['rfc9635'],
+    what: 'Sections 4.1.2 and 4.1.3: GET draws the form a person types a user code ' +
+          'into, or takes the code on the query for user_code_uri; POST spends it. ' +
+          'Rate limited per address, and a code is single-use and case-folded.' },
+  { path: '/gnap/approve/:id', group: 'GNAP', name: 'Resource owner approval',
+    specs: ['rfc9635'],
+    what: 'The page that asks the signed-in resource owner whether the client instance ' +
+          'may have what it asked for, one right at a time, and the form that answers ' +
+          'it. Protected by the session and a CSRF token. An approval is remembered in ' +
+          'the consent register when gnap.rememberApprovals is on, so the same request ' +
+          'from the same application is not asked twice. On a redirect finish it ' +
+          'returns to the registered finish URI with the interaction hash; on push it ' +
+          'POSTs the hash to it.' },
+  { path: '/.well-known/gnap-as-rs', group: 'GNAP', name: 'Resource server discovery',
+    specs: ['rfc9767'],
+    what: 'RFC 9767 section 3.1: the document a resource server reads before it ' +
+          'talks to this authorization server — the grant endpoint, the introspection ' +
+          'and resource registration endpoints, the key proofs and the token formats ' +
+          'supported. Served no-store.' },
+  { path: '/.well-known/gnap-as-rs/:as', group: 'GNAP', name: 'Resource server discovery for a named authorization server',
+    specs: ['rfc9767'],
+    what: 'The same document for one authorization server profile.' },
+  { path: '/gnap/introspect', group: 'GNAP', name: 'Token introspection',
+    specs: ['rfc9767'],
+    what: 'RFC 9767 section 3.3: a resource server, proofed with its own key, asks ' +
+          'whether a token is active and gets the section 2.1 token model back — in ' +
+          'every format, including the three that are not JWTs. A token issued to a ' +
+          'different resource server, revoked, expired or bound to a key that did not ' +
+          'present it is answered active: false.' },
+  { path: '/gnap/resource', group: 'GNAP', name: 'Resource set registration',
+    specs: ['rfc9767'],
+    what: 'RFC 9767 section 3.4: a resource server registers a set of access rights ' +
+          'and receives a reference a client instance can ask for by name. Token ' +
+          'derivation (section 3.5) goes to the grant endpoint with ' +
+          'existing_access_token.' },
+  { path: '/gnap/keys', group: 'GNAP', name: 'Verification material for the token formats',
+    specs: ['rfc9767', 'biscuit', 'zcap-ld'],
+    what: 'NOT A SPECIFICATION ENDPOINT: the public keys a resource server needs to ' +
+          'verify the self-contained formats without introspection — the JWKS for ' +
+          'jwt-signed, and the Ed25519 public key for biscuit and zcap. Macaroons are ' +
+          'symmetric and never appear here. Served no-store.' },
+  { path: '/gnap/zcap/controller', group: 'GNAP', name: 'The ZCAP controller document',
+    specs: ['zcap-ld'],
+    what: 'NOT A GNAP ENDPOINT: the controller document a zcap access token\'s root ' +
+          'capability names, carrying the verification method its signature is ' +
+          'checked against. Served no-store.' },
+  { path: '/gnap/rs/resource', group: 'GNAP', name: 'The demonstration resource server',
+    specs: ['rfc9635', 'rfc9767', 'macaroons'],
+    what: 'A protected resource on this service, for a client instance to spend a ' +
+          'token against: with no token it answers 401 with the section 9.1 ' +
+          'WWW-Authenticate challenge naming the grant endpoint; with one it checks ' +
+          'the format, the audience, the key binding and the access rights the way a ' +
+          'resource server would. gnap.demoResourceServer turns it off.' },
+  { path: '/admin/gnap', group: 'GNAP', name: 'The GNAP console page',
+    specs: ['rfc9635', 'rfc9767'],
+    what: 'Protocols > GNAP: the endpoints, what each authorization server profile ' +
+          'advertises, the token formats and their verification material, the grants ' +
+          'this realm holds (filtered by state, with a Revoke on each), the registered ' +
+          'resource sets (with a Delete on each), and every gnap.* setting.' },
+  { path: '/admin/gnap/monitor', group: 'GNAP', name: 'GNAP grants',
+    specs: ['rfc9635'],
+    what: 'Monitoring > GNAP grants: every application that uses GNAP — declared for ' +
+          'the family, seen speaking it, or with a counter — and what each has done: ' +
+          'grant requests, approvals, denials, refusals, tokens issued by format, ' +
+          'rotations, revocations and introspections.' },
+  { path: '/admin-api/gnap', group: 'GNAP', name: 'The GNAP console page over JSON',
+    specs: ['rfc9635', 'rfc9767'],
+    what: 'What GET /admin/gnap draws, out of the same view function.' },
+  { path: '/admin-api/gnap/monitor', group: 'GNAP', name: 'GNAP grants over JSON',
+    specs: ['rfc9635'],
+    what: 'What GET /admin/gnap/monitor draws, out of the same view function.' },
+  { path: '/admin-api/gnap/:action', group: 'GNAP', name: 'Revoke a grant or delete a resource set',
+    specs: ['rfc9635', 'rfc9767'],
+    what: 'The two controls on /admin/gnap as one action resource: revoke-grant ' +
+          '(the grant and every token under it, with the CAEP event a client\'s own ' +
+          'DELETE would send) and delete-resource-set.' },
   { path: '/admin/xacml', group: 'XACML', name: 'The XACML console page',
     specs: ['xacml30'],
     what: 'Settings, and what the PDP currently decides with. The one ' +
@@ -1933,9 +2168,11 @@ const ENDPOINTS = [
           'behind them, the things it deliberately does not do, and the dozen things you ' +
           'can do to make it fail. Two are worth reading before pointing anything at it: ' +
           'THESE ENDPOINTS CREATE AND DELETE ACCOUNTS AND ARE THE ONE SURFACE HERE THAT ' +
-          'REQUIRES A CREDENTIAL — while checking almost nothing about it, since anybody ' +
-          'can get a token with either scope, any password but "invalid" passes Basic and ' +
-          'anybody can register a HOBA key; and active:false DEACTIVATES NOBODY — it is ' +
+          'REQUIRES A CREDENTIAL — while checking almost nothing about it in development ' +
+          'mode, since anybody can get a token with either scope, any password but ' +
+          '"invalid" passes Basic and anybody can register a HOBA key (product mode ' +
+          'verifies Basic, offers no Digest and lets only a signed-in owner register a ' +
+          'key); and active:false DEACTIVATES NOBODY — it is ' +
           'stored as scimActive and read by nothing here. Add ?format=json.' },
   { path: '/scim/v2/ServiceProviderConfig', group: 'SCIM',
     name: 'What this SCIM server supports',
@@ -2119,12 +2356,15 @@ const ENDPOINTS = [
           'were made under). It starts EMPTY and has to: the CA it verifies is usually ' +
           'generated in a browser minutes before the connection and exists nowhere else, so no ' +
           'file could hold it. It is on the PLAIN port because that is the one reachable before ' +
-          'anything is trusted. POST only.' },
+          'anything is trusted. POST only. A DEVELOPMENT TEST CONTROL: it needs no credential, ' +
+          'so product mode refuses it and names the gated doors — /admin/tls/trust and ' +
+          'POST /admin-api/tls/trust/add.' },
   { path: '/tls/trust/clear', group: 'TLS', name: 'Empty the client truststore',
     specs: ['rfc5280'],
     what: 'Removes every anchor, returning the service to its starting state: no client ' +
           'certificate verifies, and nothing can connect to the listener that requires one. ' +
-          'POST only.' },
+          'POST only. A development test control that product mode refuses; the gated doors ' +
+          'remove one anchor at a time and have no clear.' },
 
   // --- service ---
   { path: '/', group: 'Service', name: 'The front page',
@@ -2242,8 +2482,9 @@ const ENDPOINTS = [
   { path: '/spiffe/federated/:trustDomain', group: 'SPIFFE',
     name: 'A federated trust domain\'s bundle, as held',
     specs: ['spiffe-bundle'],
-    what: 'What this service actually holds for a foreign trust domain, exactly as it ' +
-          'was given. Published so that "the bundle I pushed" and "the bundle you are ' +
+    what: 'What this realm actually holds for a foreign trust domain, exactly as it ' +
+          'was given — federated bundles are per realm, and none may be named after a ' +
+          'trust domain any realm of this service serves. Published so that "the bundle I pushed" and "the bundle you are ' +
           'serving to workloads" can be compared, which is most of debugging a ' +
           'federation. A FOREIGN BUNDLE IS ALWAYS GIVEN AND NEVER FETCHED: the ' +
           'relationship\'s bundle endpoint URL is recorded, RefreshBundle on the SPIRE ' +
@@ -2399,7 +2640,7 @@ const ENDPOINTS = [
           'seen under, how they authenticated each time, every sign-on session they hold and the ' +
           'tokens issued ON each of those sessions, and the assertions, tickets and credentials ' +
           'issued to them. One row is one local name across all protocols — alice, ' +
-          'urn:sts-mock:user:alice and alice@REALM are one identity — and subjects that never ' +
+          'urn:sts:user:alice and alice@REALM are one identity — and subjects that never ' +
           'authenticated at all (an exchanged foreign token, OnBehalfOf, S4U) are listed and ' +
           'marked as such. Add ?format=json. IT HAS ONE CONTROL, and it writes somewhere else: ' +
           'POST creates a person in the embedded LDAP directory, refusing a username that is ' +
@@ -3130,7 +3371,7 @@ const ENDPOINTS = [
           'chance at a copy. **THE KEY\'S WHOLE AUTHORITY IS *this is me***: ' +
           'an assertion signed with it that names anybody else as `sub` is ' +
           'refused, on the registered key and on a certificate presented in ' +
-          'x5c alike, because the leaf carries urn:sts-mock:person:<name> as ' +
+          'x5c alike, because the leaf carries urn:sts:person:<name> as ' +
           'a URI subjectAltName. The identity is the session\'s and the form ' +
           'has no name field — one would let anybody signed in write a key ' +
           'pair onto somebody else\'s entry. Generate is RATE LIMITED where ' +
@@ -3321,6 +3562,27 @@ const ENDPOINTS = [
           'with the enforcement. It is NOT /admin/rbac, which is two ' +
           'directory groups granting this console, and it is NOT ' +
           '/admin/groups, where a group still grants nothing on its own.' },
+  { path: '/admin/policies', group: 'Admin', name: 'Policies',
+    // userPassword is RFC 4519's attribute and the policy is what may be
+    // written into it — over the console, the management API, the portal and
+    // an LDAP modify (RFC 4511 section 4.6), which is why both are cited. The
+    // attribute NAMES follow draft-behera-ldap-password-policy, which has no
+    // row in SPECS and is named in the prose rather than invented as one.
+    specs: ['rfc4519', 'rfc4511'],
+    what: 'NON-SPEC PAGE. The rules this realm holds a credential to, the ' +
+          'PASSWORD POLICY first: a minimum length, how many previous ' +
+          'passwords may not be reused, a symbol count, and whether an ' +
+          'uppercase letter and a number are required — the default profile, ' +
+          'stored as cn=default,ou=passwordPolicies in the shape of ' +
+          'draft-behera-ldap-password-policy (pwdMinLength, pwdInHistory, ' +
+          'pwdHistory) with the composition rules as this service\'s own ' +
+          'stsPwd* attributes. POST saves or resets it. ENFORCED IN PRODUCT ' +
+          'MODE ONLY, at every door that sets a password: the console, ' +
+          '/admin-api, /portal/password, /portal/activate and an LDAP add or ' +
+          'modify of userPassword, all through credentials.js. Development ' +
+          'records the history and applies no rule. A GENERATED password is ' +
+          'drawn by the generate-password package until it satisfies the ' +
+          'profile, in both modes. It is NOT the XACML policy repository.' },
   { path: '/admin/consent', group: 'Admin', name: 'Consent',
     // Two specifications and not the delegation page's four. Nothing here has
     // been PERFORMED, so [MS-SFU] and WS-Trust have nothing to do with it;
@@ -3576,6 +3838,37 @@ const ENDPOINTS = [
           'shown, only its kind and identifier. ?format=json carries the ' +
           'person, the credentials with the grant on each, the acts and the ' +
           'graph; ?format=svg is the picture alone.' },
+  { path: '/admin/secrets', group: 'Admin',
+    name: 'Where the primordial secrets come from, and what the store is doing',
+    specs: [],
+    what: 'NON-SPEC. THE TWO SECRETS THIS SERVICE READS AND NEVER WRITES: the ' +
+          'key-encryption key everything it seals is sealed under, and the ' +
+          'database password. For each — the provider, the location, the ' +
+          'field taken out of a JSON value, whether it is sharing the other ' +
+          'one\'s location, and **whether THIS PROCESS actually read it**, ' +
+          'with the instant and with the error if the last attempt failed. ' +
+          'That last is the fact no settings page can carry: a ' +
+          'development-mode service never asks for the key, so a perfectly ' +
+          'broken configuration and a working one look identical until the ' +
+          'mode changes. The STORE is reported once per store rather than ' +
+          'once per secret — for a file its path, mode, owner, mtime and ' +
+          'which members it holds if it is JSON; for HashiCorp Vault or ' +
+          'OpenBao the seal status, the health summary, the leader, the ' +
+          'client certificate this service authenticates with and when it ' +
+          'expires, the token that login produced, WHAT THAT IDENTITY MAY ' +
+          'ACTUALLY DO asked of the store rather than quoted from a policy ' +
+          'file, and every version the store has kept; for AWS, GCP and ' +
+          'Azure the metadata each publishes, through a DESCRIBE rather than ' +
+          'a get. **NO SECRET VALUE APPEARS AND NO PROBE FETCHES ONE**, and ' +
+          'there is no control on the page: no reveal, no rotate, no ' +
+          'test-read — a rotate would destroy everything sealed under the ' +
+          'key, which is why it is written once. A probe refused with 403 is ' +
+          'usually the read-only policy WORKING and is drawn as a row saying ' +
+          'so. ?format=json is the same model /admin-api/secrets answers. It ' +
+          'is filed under MONITORING: /admin/config holds the keys.* ' +
+          'settings and reads the same on a service that started a second ' +
+          'ago, and everything here can be broken while every one of those ' +
+          'rows is right.' },
   { path: '/admin/database', group: 'Admin',
     name: 'What PostgreSQL reports about itself, and this service\'s schema in it',
     specs: [],
@@ -3639,6 +3932,18 @@ const ENDPOINTS = [
           'reads a key and never writes one — and a decrypt-this button ' +
           'would be the one door onto material no door is supposed to have. ' +
           'Add ?format=json, or GET /admin-api/encryption.' },
+  { path: '/admin/error-codes', group: 'Admin', name: 'Error codes',
+    specs: [],
+    what: 'NON-SPEC. Every way this service can fail or refuse, organised by ' +
+          'protocol subsystem or major component, each with a code of the form ' +
+          'STS-<SUBSYSTEM>-<NNNN>, what the client is told instead, and how many ' +
+          'rows in this realm\'s held audit log carry it right now — linked to ' +
+          'the audit log filtered to that code. A code is recorded on the audit ' +
+          'row and at the front of the service log line and is NEVER SENT TO A ' +
+          'CLIENT, so every protocol\'s own errors are unchanged. Also lists any ' +
+          'code found on a held row that the table does not hold. No control: ' +
+          'the table is common/error_codes.js. Add ?format=json, or GET ' +
+          '/admin-api/error-codes.' },
   { path: '/admin/audit', group: 'Admin', name: 'Audit log',
     // rfc4511 is linked because the directory operations are its and they are the
     // largest source of rows here. Nothing else: an audit log is not a protocol,
@@ -4019,6 +4324,37 @@ const ENDPOINTS = [
           'is listening. Whether the MAIN port is HTTPS is global.https on ' +
           '/admin/config, which is a fact about the process rather than about ' +
           'these listeners. Add ?format=json.' },
+  { path: '/admin/tls/trust', group: 'Admin',
+    name: 'Client-certificate truststore',
+    specs: ['rfc5280', 'rfc8446'],
+    effect: 'POST adds or removes an anchor client certificates on 8443, ' +
+            '9443, LDAPS 636 and the main port are verified against, from the ' +
+            'next handshake',
+    what: 'NON-SPEC. Every trust anchor the TLS listeners verify a client ' +
+          'certificate against — subject, issuer, serial, validity, SHA-256 ' +
+          'fingerprint and SOURCE (`file` from tls.trustAnchorsFile, `runtime` ' +
+          'added while the process runs) — paged, with two controls: add PEM ' +
+          'certificates, and remove ONE anchor by its fingerprint. There is ' +
+          'deliberately no clear. THE GATED RUNTIME DOOR, and the one product ' +
+          'mode has: /tls/trust needs no credential and is refused there. ' +
+          'Nothing on it is persisted, and a removed `file` anchor comes back ' +
+          'at the next start. Admin Write to change it. Answered by the process ' +
+          'holding the listeners in workers.dispatch mode. Add ?format=json.' },
+  { path: '/admin/kerberos/principals', group: 'Admin',
+    name: 'Kerberos principals',
+    specs: ['rfc4120', 'rfc3961'],
+    effect: 'POST creates, rotates or deletes a service principal\'s stored ' +
+            'random key, or clears a person\'s Kerberos keys, from the next ' +
+            'AS-REQ or TGS-REQ',
+    what: 'NON-SPEC. Who the KDC holds a STORED long-term key for: directory ' +
+          'people whose keys were derived from their own password (product ' +
+          'mode) with the kvno, the enctypes and whether the keys still match ' +
+          'the password, and service principals created here with a RANDOM ' +
+          'key. A create or a rotate answers with a page carrying an MIT ' +
+          'keytab ONCE; no page and no JSON shows a key. Two lists, paged ' +
+          'separately. One KDC for the process, so the default trust realm\'s ' +
+          'principals under every realm prefix. Admin Write to change it. Add ' +
+          '?format=json.' },
   { path: '/admin/token-lifetimes', group: 'Admin', name: 'Token lifetimes',
     specs: ['rfc6749', 'rfc7519', 'oidc'],
     effect: 'changes how long every FUTURE access token, ID Token and refresh ' +
@@ -4165,6 +4501,23 @@ const ENDPOINTS = [
           'onto their ou=users entry as stsAssertion* and may only assert ' +
           'about themselves. Mirrors POST /admin/pki, POST ' +
           '/admin/pki/certificate and POST /admin/pki/person.' },
+  { path: '/admin-api/secrets', group: 'Management API',
+    name: 'The secret store, and whether this process read from it', specs: [],
+    what: 'NON-SPEC. Everything /admin/secrets draws, as JSON: `secrets` — ' +
+          'one member per secret with the provider, the location, the field, ' +
+          'whether it shares the other secret\'s location, `lastRead` and ' +
+          'its own probes — and `stores`, one member per STORE rather than ' +
+          'per secret, because two secrets kept in one place share its ' +
+          'state. **A PROBE THAT FAILED IS A MEMBER AND NOT AN ABSENCE**, ' +
+          'with ok:false and the store\'s HTTP status in `status`, and here ' +
+          'half of them are SUPPOSED to fail: the identity this service ' +
+          'holds is bound to two read paths, so a 403 against anything else ' +
+          'is the read-only policy working. **NOTHING IN THE REPLY IS A ' +
+          'SECRET AND NOTHING IN IT CAME FROM READING ONE** — every probe is ' +
+          'a metadata read and common/secrets.js deletes a deny-list of ' +
+          'member names from whatever a provider answers before it leaves ' +
+          'that module. admin:read, and there is deliberately no write ' +
+          'beside it. Mirrors GET /admin/secrets.' },
   { path: '/admin-api/database', group: 'Management API',
     name: 'PostgreSQL metrics and schema statistics', specs: [],
     what: 'NON-SPEC. Everything /admin/database draws, as JSON. **IT IS THE ' +
@@ -4460,7 +4813,11 @@ const ENDPOINTS = [
           'ldapmodify still reaches everything, which is deliberate. `create` is how a relying ' +
           'party is configured BEFORE it connects — otherwise an entry only appears when an ' +
           'identifier is accepted — and `forget` is the one operation that loses a fact, which ' +
-          'is why it is separate from revoke-registration. Mirrors POST /admin/applications.' },
+          'is why it is separate from revoke-registration. `confirm-address` and ' +
+          '`discard-address` (2026-09-12) decide a return address a DEVELOPMENT-mode request ' +
+          'put on the entry and marked on appReturnAddressObserved: product mode refuses a ' +
+          'marked address until it is confirmed, and discarding takes it off. Mirrors ' +
+          'POST /admin/applications.' },
   { path: '/admin-api/applications', group: 'Management API', name: 'Applications',
     specs: ['rfc4511', 'rfc7591'],
     what: 'NON-SPEC. Every application this service has been asked about, as JSON: OAuth ' +
@@ -4846,6 +5203,25 @@ const ENDPOINTS = [
           'nothing at all, and saying so at the moment it happens is better ' +
           'than refusing until every application entry has been edited. ' +
           'Nothing already ISSUED is touched by any of the five.' },
+  { path: '/admin-api/policies', group: 'Management API', name: 'Policies',
+    specs: ['openapi', 'rfc4519'],
+    what: 'NON-SPEC. The policies register — today the password policy and its ' +
+          'one profile, `default`. `password.profile` is the profile IN FORCE: ' +
+          'the stored cn=default,ou=passwordPolicies entry where there is one ' +
+          'and the built-in defaults where there is not, with `sources` saying ' +
+          'which each value came from. `enforced` is whether this realm checks ' +
+          'it, which is product mode. `password.rules` is what the user portal ' +
+          'prints and `password.doors` names every door that sets a password. ' +
+          'Paged like every list here, though one profile is all there is.' },
+  { path: '/admin-api/policies/:action', group: 'Management API',
+    name: 'Change the password policy',
+    specs: ['openapi', 'rfc4519'],
+    what: 'save-password-policy and reset-password-policy — the same two the ' +
+          'console posts to /admin/policies, through the same function. A save ' +
+          'REPLACES the profile and every field is required, so a field left ' +
+          'out is refused by name rather than quietly reset. A reset deletes ' +
+          'the stored entry and puts the built-in defaults back. Either applies ' +
+          'to the NEXT password set in the realm and to nothing already stored.' },
   { path: '/admin-api/consent', group: 'Management API', name: 'Consent',
     specs: ['openapi', 'rfc6749', 'oidc'],
     what: 'NON-SPEC. The consent register, both halves, and the third in this ' +
@@ -4886,6 +5262,16 @@ const ENDPOINTS = [
           'permissions, and refusing an unrecognised one would make it ' +
           'impossible to consent openid. NONE OF THE FOUR TOUCHES WHAT WAS ' +
           'ALREADY ISSUED.' },
+  { path: '/admin-api/error-codes', group: 'Management API', name: 'Error codes',
+    specs: [],
+    what: 'NON-SPEC. The central table of every failure condition this service ' +
+          'can produce, STS-<SUBSYSTEM>-<NNNN>, as JSON: each code with its ' +
+          'subsystem, what failed, what the CLIENT is told in its own protocol\'s ' +
+          'vocabulary, and how many rows the held audit log carries it on in this ' +
+          'realm — filtered by subsystem, text and ?seen=1, paged with ?page= and ' +
+          '?per=. A CODE IS NEVER SENT TO A CLIENT: it is on the audit row and in ' +
+          'the log line only. READ ONLY — the table is source. Mirrors GET ' +
+          '/admin/error-codes; the same table is docs/error-codes.md.' },
   { path: '/admin-api/audit', group: 'Management API', name: 'Audit log',
     specs: ['rfc4511'],
     what: 'NON-SPEC. What happened here, in order, as JSON: every ' +
@@ -5138,6 +5524,49 @@ const ENDPOINTS = [
           'anything is listening. Whether the MAIN port is HTTPS is ' +
           'global.https, on /admin-api/config with the process\'s own ' +
           'settings. Read-only.' },
+  { path: '/admin-api/tls/trust', group: 'Management API',
+    name: 'Client-certificate truststore',
+    specs: ['rfc5280', 'openapi'],
+    what: 'GET /admin/tls/trust over JSON: every client-certificate trust ' +
+          'anchor with its subject, issuer, serial, validity, fingerprint, PEM ' +
+          'and source (`file` or `runtime`), paged with ?page= and ?per=. One ' +
+          'truststore for the PROCESS, so it answers the same under every realm ' +
+          'prefix. No private key is in it — the truststore holds certificates ' +
+          'and nothing else. Nothing in it is persisted.' },
+  { path: '/admin-api/tls/trust/:action', group: 'Management API',
+    name: 'Add or remove a client-certificate trust anchor',
+    specs: ['rfc5280', 'openapi'],
+    what: 'add | remove — the two controls on /admin/tls/trust, through the ' +
+          'same action function, with the action taken from the URL. add ' +
+          'takes `certificates` (one or more PEM blocks, refused whole if ' +
+          'OpenSSL cannot read one); remove takes one `fingerprint`. NO BULK ' +
+          'CLEAR, deliberately. Needs admin:write, works in both modes, and is ' +
+          'the gated twin of POST /tls/trust, which product mode refuses. Not ' +
+          'persisted.' },
+  { path: '/admin-api/kerberos/principals', group: 'Management API',
+    name: 'Kerberos principals',
+    specs: ['rfc4120', 'rfc3961', 'openapi'],
+    what: 'GET /admin/kerberos/principals over JSON: the directory people ' +
+          'holding Kerberos keys derived from their password and the service ' +
+          'principals holding a stored random key, each with kvno, enctypes ' +
+          'and dates, paged with ?peoplePage=, ?servicesPage= and ?per=. NO KEY ' +
+          'MATERIAL, sealed or otherwise. The default trust realm\'s principals ' +
+          'under every realm prefix.' },
+  { path: '/admin-api/kerberos/principals/:action', group: 'Management API',
+    name: 'Create, rotate or delete a service principal, clear a person\'s keys, ' +
+          'or drop previous key versions',
+    specs: ['rfc4120', 'rfc3961', 'openapi'],
+    what: 'create-service | rotate-service | delete-service | clear-person-keys | ' +
+          'drop-previous-service-keys | drop-previous-person-keys — the six ' +
+          'controls on /admin/kerberos/principals, through the same action ' +
+          'function. create-service and rotate-service take `spn` and return an ' +
+          'MIT keytab (format 0x502), base64, ONCE — the only replies on this API ' +
+          'carrying key material, and the keytab cannot be fetched again; a ' +
+          'rotate\'s keytab also carries the previous kvno it keeps. ' +
+          'delete-service and drop-previous-service-keys take `spn`; ' +
+          'clear-person-keys and drop-previous-person-keys take `username`. The ' +
+          'two drops end the window in which a ticket under a previous key ' +
+          'version is still accepted. Needs admin:write.' },
   { path: '/admin-api/token-lifetimes', group: 'Management API',
     name: 'Token lifetimes',
     specs: ['rfc6749', 'rfc7519', 'oidc'],
@@ -5759,8 +6188,9 @@ const ENDPOINTS = [
           'nothing consults this service when one is presented, and hiding those would make a ' +
           'global logout look complete when it is not. No console role is needed; with no ' +
           'session it sends the browser to /authn/login and back. logout.anyUser decides ' +
-          'whether ?username= may name somebody else, which grants nothing that signing in as ' +
-          'them would not. Add ?format=json.' },
+          'whether ?username= may name somebody else in DEVELOPMENT mode, where it grants ' +
+          'nothing that signing in as them would not; in PRODUCT mode a sign-out names only ' +
+          'the signed-in caller, whatever that setting says. Add ?format=json.' },
   { path: '/authn/login', group: 'Authentication', name: 'Sign-in screen',
     specs: ['oidc'],
     effect: 'shows the sign-in screen for a request another endpoint sent here; needs an ?authn= id, ' +
@@ -5960,7 +6390,10 @@ const ENDPOINTS = [
     what: 'NON-SPEC, for tests and for trying the handshake by hand: turns the RFC 9449 section ' +
           '8/9 server-supplied nonce requirement on and off at runtime, so the 401/retry exchange ' +
           'can be exercised without restarting the service. GET reports the current state; POST ' +
-          '{"required": true|false} sets it.' },
+          '{"required": true|false} sets it — for the TRUST REALM it is reached in, by writing ' +
+          'oauth2.dpopNonceRequired (it was one switch for the whole process until 2026-09-12). ' +
+          'PRODUCT MODE REFUSES THE POST with 403, because it is a test control: there the ' +
+          'setting is changed through /admin/oauth2 or POST /admin-api/config/set.' },
   { path: '/oauth2/consent', group: 'OAuth 2.0 / OIDC', name: 'Consent screen',
     specs: ['oidc', 'rfc6749'],
     effect: 'needs a pending consent id — answers 400 when followed bare',
@@ -6101,7 +6534,11 @@ const ENDPOINTS = [
           '(section 2.4), the implicit grant and any response type naming token (2.1.2), and an ' +
           'http redirect URI off the loopback (2.6), each with invalid_client_metadata and the ' +
           'section. Recording a permission the token endpoint will always refuse is the ' +
-          'discovery document\'s promise broken in the other direction.' },
+          'discovery document\'s promise broken in the other direction. PRODUCT MODE CLOSES IT ' +
+          '(403, and registration_endpoint leaves both discovery documents) unless ' +
+          'oauth2.openRegistration is on; an application is then created on /admin or ' +
+          '/admin-api. The client_id prefix, the random sizes and client_secret_expires_at are ' +
+          'settings (oauth2.registeredClientIdPrefix and its neighbours).' },
   { path: '/oauth2/register/:client_id', group: 'OAuth 2.0 / OIDC',
     name: 'Registered client management', specs: ['rfc7592', 'rfc6750'],
     what: 'Read, update or delete a registered client, guarded by its registration access token.' },
@@ -6160,8 +6597,20 @@ const ENDPOINTS = [
   // --- DIDs ---
   { path: '/.well-known/did.json', group: 'Decentralized Identifiers',
     name: 'DID document (did:web)', specs: ['did-core'],
-    what: 'This issuer as a did:web, with the RS256 key as a JsonWebKey2020 and the BBS key as a ' +
-          'Multikey. The DID is derived from the request Host, so one container works at any address.' },
+    what: 'This issuer as a did:web, with the RS256 key as a JsonWebKey2020 (plus the ' +
+          'oid4vci.credentialSigningAlgorithm key when that is not RS256) and the BBS key as a ' +
+          'Multikey. The DID is derived from the base URL the request arrived on — the Host, or ' +
+          'global.publicBaseUrl where it is pinned — so one container works at any address. A ' +
+          'trust realm\'s base has a path, and its DID carries it as did:web components ' +
+          '(did:web:host%3A8081:realm:acme), which resolve at /did.json below rather than here.' },
+  { path: '/did.json', group: 'Decentralized Identifiers',
+    name: 'DID document at a did:web path (trust realms)', specs: ['did-core'],
+    effect: 'answers 404 when followed in the default realm with no pinned path — open it under /realm/<id>/',
+    what: 'The same document, where the did:web method resolves a DID that has a PATH: ' +
+          'did:web:host:realm:acme is fetched from https://host/realm/acme/did.json. Answered ' +
+          'inside a realm, or under a pinned global.publicBaseUrl with a path; a DID with no ' +
+          'path answers 404 naming the well-known location, because a document served where no ' +
+          'resolver looks is a document nothing checks.' },
   { path: '/did/generate', group: 'Decentralized Identifiers',
     name: 'Generate a verifiable DID (not a spec endpoint)', specs: [],
     what: 'NON-SPEC, for tests and for trying the DID Tools page: ?method=jwk mints a fresh P-256 ' +
@@ -6266,6 +6715,25 @@ const PROTOCOLS = [
           'time-limited activation link to set up a credential — hashed at ' +
           'rest like a password, rate limited, spent when the setup finishes ' +
           'rather than when the link is opened, and never signing anybody in.' },
+  { name: 'GNAP', groups: ['GNAP'],
+    specs: ['rfc9635', 'rfc9767', 'rfc9421', 'rfc9530'],
+    what: 'An authorization server for the Grant Negotiation and Authorization ' +
+          'Protocol (RFC 9635) and the resource server connections of RFC 9767, ' +
+          'per trust realm. Where OAuth 2.0 starts from a client_id and a redirect, ' +
+          'GNAP starts from a KEY: every request a client instance makes is proofed ' +
+          'with it, and the grant is a negotiation that can continue, be modified, ' +
+          'and be revoked. Access tokens come in the five formats RFC 9767 ' +
+          'registers — signed and encrypted JWTs, macaroons, biscuits and ZCAP-LD ' +
+          'capabilities — and every GNAP client is an application entry in the ' +
+          'registry, with its shared keys sealed at rest.\n\n**A GRANT IS A ' +
+          'SESSION FOR SHARED SIGNALS PURPOSES**: revoking one, or a token under ' +
+          'it, sends a CAEP session-revoked, and a stream owned by a GNAP web ' +
+          'application hears only about people who approved a grant to it.',
+    sockets: 'It makes an OUTBOUND request when a client instance asks for the push ' +
+             'finish method: the interaction reference is POSTed to a finish URI ' +
+             'registered on the client\'s application entry. gnap.pushFinish turns ' +
+             'it off, gnap.pushAllowedHosts narrows it, and plain http is refused ' +
+             'unless gnap.pushAllowInsecure is set.' },
   { name: 'XACML', groups: ['XACML'],
     specs: ['xacml30', 'xacmljson'],
     what: 'A Policy Decision Point, a policy repository that IS ' +

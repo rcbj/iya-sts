@@ -82,6 +82,27 @@ var INTRUDER = usernameFor("portal-intruder");
 // service that starts before anybody can sign in.
 var NEWCOMER = usernameFor("portal-newcomer");
 
+// ---------------------------------------------------------------------------
+// EVERY PERSON THIS JOB SIGNS IN IS CREATED FIRST, WITH A PASSWORD AND THE
+// ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12).
+//
+// In product mode this service invents no persona for a name that signs in,
+// creates nobody because a sign-in named them, and verifies the password
+// against the person's own entry. The suite runs in development, where none of
+// that is enforced — which is exactly why a job that leaned on it would go on
+// passing while testing the invention. So `ensurePerson()` makes each account
+// through `/admin-api/users/create` with `invent: false`, its own `cn`, `sn`,
+// `givenName`, `displayName` and `mail`, and a password of at least twelve
+// characters, and that password is what the sign-in screen is sent.
+// ---------------------------------------------------------------------------
+var PASSWORD = "portal-sessions-Passw0rd!-" + String(Date.now()).slice(-6);
+var MAIL_DOMAIN = "portal-sessions.test";
+
+function personAttributes(who) {
+  return { cn: "Portal Person " + who, givenName: "Portal", sn: who,
+           displayName: "Portal Person " + who, mail: who + "@" + MAIL_DOMAIN };
+}
+
 var checks = 0;
 function check(what, fn) {
   fn();
@@ -123,7 +144,7 @@ function browser(name) {
                                               headers: headers, body: body });
       // A JAR KEYED BY NAME, and it has to be since 2026-09-06: a browser
       // signing in to a hosted surface ends up holding TWO cookies — the
-      // sign-on session (`sts_mock_session`, the identity provider's) and the
+      // sign-on session (`sts_session`, the identity provider's) and the
       // surface's own, established from the ID Token. Keeping only the last
       // one seen dropped whichever arrived first, which made the second half
       // of every flow behave as though nobody had signed in.
@@ -184,6 +205,27 @@ async function post(path, body) {
   return { status: r.status, body: parsed, raw: raw };
 }
 
+// Create `who` with a password and real attributes, once. A name this job has
+// already created (a second sign-in by the same person) is left as it is.
+var createdPeople = {};
+async function ensurePerson(who) {
+  log.debug("Entering ensurePerson(). who=" + who);
+  if (createdPeople[who]) {
+    log.debug("Leaving ensurePerson(). Already created by this run.");
+    return;
+  }
+  const r = await post("/users/create", {
+    username: who, invent: false, attributes: personAttributes(who),
+    credential: "password", password: PASSWORD
+  });
+  assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
+    "POST /admin-api/users/create should create " + who + " with a password " +
+    "before they sign in; it answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  createdPeople[who] = true;
+  log.debug("Leaving ensurePerson(). Created " + who + ".");
+}
+
 // The session id out of the cookie, so an assertion can name the row it means
 // rather than "the only one there" — this suite runs against a service other
 // jobs are also signing in to.
@@ -194,8 +236,8 @@ async function post(path, body) {
 // derived from it. The one a door CREATED is the second, so that is the one
 // these assertions are about — and `signOnIdOf()` beside it is how a test
 // reaches the other when it means the other.
-const SURFACE_COOKIES = { admin: "sts_mock_admin", portal: "sts_mock_portal" };
-const SIGN_ON_COOKIE = "sts_mock_session";
+const SURFACE_COOKIES = { admin: "sts_admin", portal: "sts_portal" };
+const SIGN_ON_COOKIE = "sts_session";
 
 function sessionIdOf(b) {
   return b.jar[SURFACE_COOKIES.admin] || b.jar[SURFACE_COOKIES.portal] || "";
@@ -240,11 +282,12 @@ async function rowFor(id) {
 // signing in works and nothing at all about which protocol did it.
 //
 // The browser ends up holding TWO cookies and that is the design: the sign-on
-// session (`sts_mock_session`, the identity provider's) and the surface's own
-// (`sts_mock_admin` or `sts_mock_portal`, established from the ID Token). The
+// session (`sts_session`, the identity provider's) and the surface's own
+// (`sts_admin` or `sts_portal`, established from the ID Token). The
 // jar keeps whichever it was last sent, so `cookies` below holds both by name.
 async function signInAt(door, who) {
   log.debug("Entering signInAt(). door=" + door);
+  await ensurePerson(who);
   const b = browser(who);
   let r = await b.go("GET", door);
   assert.ok(/\/oauth2\/authorize\?/.test(r.location),
@@ -270,7 +313,7 @@ async function signInAt(door, who) {
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: who,
-                        password: "any-password", action: "login",
+                        password: PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in form should redirect, got " + r.status + " " +
@@ -445,7 +488,7 @@ async function oneUserCannotReachAnother(owner) {
   assert.ok(csrf, "the portal draws no csrf_token to post back.");
   const wrote = await b.go("POST", "/portal/password",
     form({ csrf_token: csrf, username: OWNER, user: OWNER,
-           current: "any-password", next: "IntruderChosen123!",
+           current: PASSWORD, next: "IntruderChosen123!",
            confirm: "IntruderChosen123!" }));
   check("a password change naming somebody else is accepted or refused, but " +
         "either way it answers — it is not a crash", function () {
@@ -568,8 +611,11 @@ async function signingOutInvalidatesIt(b, who, door) {
 // ---------------------------------------------------------------------------
 async function anActivationLinkEndsAtAUsableSignIn() {
   log.info("=== an activation link ends at a sign-in that works ===");
+  // Created with the attributes a real account carries and NO credential —
+  // the activation link below is how the credential arrives.
   const created = await post("/users/create",
-    { username: NEWCOMER, invent: false, credential: "activation" });
+    { username: NEWCOMER, invent: false, attributes: personAttributes(NEWCOMER),
+      credential: "activation" });
   assert.ok(created.status === 200 && created.body && created.body.ok,
     "POST /admin-api/users/create should create " + NEWCOMER + "; it answered " +
     created.status + " " + String(created.raw).slice(0, 300));
@@ -623,7 +669,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   const token = (r.text.match(/name="token" value="([^"]+)"/) || [])[1];
   assert.ok(token, "the activation form carries no token to post back.");
 
-  const password = "activated-" + Date.now();
+  const password = "Activated-Pw1!-" + Date.now();
   r = await b.go("POST", "/portal/activate",
                  form({ user: NEWCOMER, token: token, password: password,
                         confirm: password, key_role: "none",

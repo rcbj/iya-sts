@@ -55,6 +55,9 @@
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
+// The error-code registry (a leaf), for the one data failure below whose only
+// record is a log line. Not a module the remote PEP container copies.
+const errorCodes = require('../common/error_codes');
 const model = require('./xacml_model');
 const datatypes = require('./xacml_datatypes');
 
@@ -96,7 +99,7 @@ function available() {
 //     stands. This is what a policy author writes and what the PAP's editor
 //     will offer from the directory's own schema.
 //   * the URN prefix this service uses for its own attributes,
-//     `urn:sts-mock:xacml:attribute:<name>`, so that a policy which wants to
+//     `urn:sts:xacml:attribute:<name>`, so that a policy which wants to
 //     be explicit about where an attribute comes from can be.
 //
 // A standard XACML URI like `urn:oasis:names:tc:xacml:1.0:subject:subject-id`
@@ -104,7 +107,7 @@ function available() {
 // carries it, and inventing a directory lookup for it would let a policy
 // silently read a different subject-id from the one being decided about.
 // ---------------------------------------------------------------------------
-const ATTRIBUTE_PREFIX = 'urn:sts-mock:xacml:attribute:';
+const ATTRIBUTE_PREFIX = 'urn:sts:xacml:attribute:';
 
 function directoryAttributeFor(attributeId) {
   log.debug('Entering directoryAttributeFor(). id=' + attributeId);
@@ -280,7 +283,8 @@ function resolverFor(request) {
         // that a wholly unparseable attribute looks exactly like a missing
         // one; the warning is the only place that difference is visible, and
         // it names both the attribute and the type.
-        log.warn('xacml: the directory value "' + item + '" on attribute "' +
+        log.warn(errorCodes.tag('STS-XACML-0061') +
+                 'xacml: the directory value "' + item + '" on attribute "' +
                  name + '" is not a valid ' + designator.dataType +
                  ', so it is not returned to the PDP: ' + error.message);
       }

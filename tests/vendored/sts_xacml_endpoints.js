@@ -176,6 +176,23 @@ const ROGUE_CN = "rogue-pep-" + names.runStamp();
 // The rogue name above is stamped precisely because it must resolve to an
 // entry that exists and holds NOTHING, which a fresh name does.
 const XACML_USER_CN = "xacml-user-1";
+// THE TWO PEOPLE THE RBAC POLICY DECIDES ABOUT, CREATED BY THIS JOB IN ITS
+// REALM (2026-09-12). They were the seeded `carol` (employeeType=admin) and
+// `alice` (employeeType=staff), whom every realm's directory holds in
+// development and in product nobody. Two people with the same `employeeType`
+// are made in `createThePeople()` instead, with the attributes a real account
+// carries — `mail` and `sn` among them, because the PIP section reads both —
+// so every decision below is still about an attribute the PIP fetches and the
+// request never carries, and none of it depends on a seed.
+//
+// **THE TWO CERTIFICATE IDENTITIES ABOVE STILL ARE SEEDS**, and that is
+// recorded rather than changed: `cn=remote-pep-1` and `cn=xacml-user-1` are
+// resolved in THIS realm and in the DEFAULT one (section 12 reads the default
+// realm's repository with the same certificate), so replacing them means
+// provisioning an entry and a group membership in both — which writes to the
+// default realm's role groups, a change every later job in the run inherits.
+const ADMIN_PERSON = "xacml-admin-person";
+const STAFF_PERSON = "xacml-staff-person";
 // The XACML core namespace and the access-subject category, written out here
 // because the PIP section below builds XML by hand — a job driving a wire
 // format has to spell it rather than import the service's own constant, or it
@@ -188,7 +205,7 @@ const SUBJECT_CATEGORY =
 // rather than read from the service, because the whole assertion in section 5
 // is that THIS string and no other is discharged — reading it from the module
 // under test would make the check agree with whatever the module said.
-const DISCHARGEABLE = "urn:sts-mock:xacml:obligation:log";
+const DISCHARGEABLE = "urn:sts:xacml:obligation:log";
 
 var checks = 0;
 function check(what, fn) {
@@ -667,7 +684,7 @@ async function anEmptyRepositoryDecidesNothing() {
   log.debug("Entering anEmptyRepositoryDecidesNothing().");
   log.info("=== An empty repository, and the bias that reads it ===");
 
-  const answer = await decisionFor("carol", "GET");
+  const answer = await decisionFor(ADMIN_PERSON, "GET");
   check("a PDP with no root policy answers NotApplicable", function () {
     assert.strictEqual(answer.Decision, "NotApplicable",
       "an empty repository has nothing to say about a request, which is " +
@@ -679,7 +696,7 @@ async function anEmptyRepositoryDecidesNothing() {
       JSON.stringify(answer.Status));
   });
 
-  const denied = await xGet("/xacml/protected?subject=carol&action=GET");
+  const denied = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
   check("the deny-biased PEP refuses that with 403", function () {
     assert.strictEqual(denied.status, 403,
       "deny-biased means anything that is not Permit is a refusal; the " +
@@ -693,7 +710,7 @@ async function anEmptyRepositoryDecidesNothing() {
   });
 
   await setSetting("xacml.pepBias", "permit-biased");
-  const allowed = await xGet("/xacml/protected?subject=carol&action=GET");
+  const allowed = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
   check("the SAME decision is allowed by a permit-biased PEP", function () {
     assert.strictEqual(allowed.status, 200,
       "permit-biased means anything that is not Deny is allowed; the PEP " +
@@ -710,7 +727,7 @@ async function anEmptyRepositoryDecidesNothing() {
   });
   await resetSetting("xacml.pepBias");
 
-  const back = await xGet("/xacml/protected?subject=carol&action=GET");
+  const back = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
   check("resetting the setting puts the refusal back", function () {
     assert.strictEqual(back.status, 403,
       "after /admin-api/config/reset the PEP should be deny-biased again; " +
@@ -728,9 +745,10 @@ async function anEmptyRepositoryDecidesNothing() {
 // The template is the RBAC one: `employeeType=admin` may do anything,
 // `employeeType=staff` may GET or HEAD, and the combining algorithm is
 // deny-unless-permit so anything else is a Deny rather than a NotApplicable.
-// The three seeded people carry those attributes in EVERY realm — carol is the
-// admin, alice and bob are staff — which is what makes the decisions below
-// predictable without this file writing a directory entry.
+// The two people `createThePeople()` makes in this realm carry those attributes
+// — ADMIN_PERSON is the admin, STAFF_PERSON is staff — which is what makes the
+// decisions below predictable. (Until 2026-09-12 they were the seeded `carol`
+// and `alice`, and this said the file wrote no directory entry.)
 //
 // THE ATTRIBUTE COMES FROM THE PIP AND NOT FROM THE REQUEST, which is the half
 // worth stating: nothing below sends an `employeeType`, so a Permit here is the
@@ -774,13 +792,13 @@ async function aPolicyBuiltThroughTheApiDecides() {
   });
 
   const cases = [
-    { who: "carol", action: "DELETE", decision: "Permit",
-      why: "carol is the admin, and an admin may do anything" },
-    { who: "carol", action: "GET", decision: "Permit",
+    { who: ADMIN_PERSON, action: "DELETE", decision: "Permit",
+      why: ADMIN_PERSON + " is the admin, and an admin may do anything" },
+    { who: ADMIN_PERSON, action: "GET", decision: "Permit",
       why: "an admin may GET as well" },
-    { who: "alice", action: "GET", decision: "Permit",
-      why: "alice is staff, and staff may GET" },
-    { who: "alice", action: "DELETE", decision: "Deny",
+    { who: STAFF_PERSON, action: "GET", decision: "Permit",
+      why: STAFF_PERSON + " is staff, and staff may GET" },
+    { who: STAFF_PERSON, action: "DELETE", decision: "Deny",
       why: "staff may not DELETE, and deny-unless-permit denies rather than " +
            "answering NotApplicable" },
     { who: "nobody-at-all", action: "GET", decision: "Deny",
@@ -865,7 +883,7 @@ async function aMalformedRequestIsRefused() {
   // AND THE ENDPOINT IS STILL ALIVE AFTERWARDS. Four refusals in a row is
   // exactly the shape that catches a handler which throws past its own error
   // path and leaves the route wedged.
-  const after = await decisionFor("carol", "GET");
+  const after = await decisionFor(ADMIN_PERSON, "GET");
   check("the endpoint still decides after four refusals", function () {
     assert.strictEqual(after.Decision, "Permit",
       "after four malformed requests the endpoint answered " + after.Decision);
@@ -885,7 +903,7 @@ async function aMalformedRequestIsRefused() {
 // cannot discharge turns a Permit into a REFUSAL.
 //
 // The pair below is what makes that assertable: the editor's `add-obligation`
-// mints `urn:sts-mock:xacml:obligation:1`, which this PEP has never heard of,
+// mints `urn:sts:xacml:obligation:1`, which this PEP has never heard of,
 // and `edit-obligation` renames it to the one it knows. Same policy, same
 // request, same Permit — and the enforcement flips, which is the only way to
 // show that the refusal was about the OBLIGATION and not about the decision.
@@ -894,10 +912,10 @@ async function anUndischargeableObligationRefuses() {
   log.debug("Entering anUndischargeableObligationRefuses().");
   log.info("=== The embedded PEP and an obligation it cannot discharge ===");
 
-  const before = await xGet("/xacml/protected?subject=carol&action=GET");
-  check("carol is allowed before any obligation exists", function () {
+  const before = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
+  check(ADMIN_PERSON + " is allowed before any obligation exists", function () {
     assert.strictEqual(before.status, 200,
-      "carol is the admin and the policy permits her; the PEP answered " +
+      ADMIN_PERSON + " is the admin and the policy permits them; the PEP answered " +
       before.status + " " + String(before.text).slice(0, 200));
     assert.deepStrictEqual(before.body.obligations, [],
       "and the decision carries no obligations yet; it carries " +
@@ -907,7 +925,7 @@ async function anUndischargeableObligationRefuses() {
   await act("add-policy-obligation", { policy: POLICY, path: "", on: "Permit" },
             "added an obligation to the policy");
 
-  const refused = await xGet("/xacml/protected?subject=carol&action=GET");
+  const refused = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
   check("an undischargeable obligation turns the Permit into a refusal",
         function () {
     assert.strictEqual(refused.status, 403,
@@ -923,7 +941,7 @@ async function anUndischargeableObligationRefuses() {
       "and the refusal should name the obligation as the cause; it says: " +
       refused.body.why);
     assert.deepStrictEqual(refused.body.obligations,
-      [{ id: "urn:sts-mock:xacml:obligation:1", discharged: false }],
+      [{ id: "urn:sts:xacml:obligation:1", discharged: false }],
       "the obligation should be reported UNDISCHARGED rather than omitted; " +
       "it reports " + JSON.stringify(refused.body.obligations));
   });
@@ -947,7 +965,7 @@ async function anUndischargeableObligationRefuses() {
               on: "Permit" },
             "renamed the obligation to the one this PEP knows");
 
-  const discharged = await xGet("/xacml/protected?subject=carol&action=GET");
+  const discharged = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
   check("the one obligation this PEP knows IS discharged, and access returns",
         function () {
     assert.strictEqual(discharged.status, 200,
@@ -964,7 +982,7 @@ async function anUndischargeableObligationRefuses() {
   // subject here; leaving it would make every later Permit carry one.
   await act("remove", { policy: POLICY, path: obligation.path },
             "removed the obligation again");
-  const clean = await xGet("/xacml/protected?subject=carol&action=GET");
+  const clean = await xGet("/xacml/protected?subject=" + ADMIN_PERSON + "&action=GET");
   check("removing the obligation leaves an ordinary Permit", function () {
     assert.strictEqual(clean.status, 200);
     assert.deepStrictEqual(clean.body.obligations, [],
@@ -1540,7 +1558,7 @@ async function turningItOff() {
         "untouched; it says: " + r.body.error_description);
     });
   }
-  const stillDeciding = await decisionFor("carol", "GET");
+  const stillDeciding = await decisionFor(ADMIN_PERSON, "GET");
   check("remotePeps off leaves the PDP deciding", function () {
     assert.strictEqual(stillDeciding.Decision, "Permit",
       "turning remote enforcement points off must not turn the decision " +
@@ -1693,6 +1711,27 @@ async function createTheRealm() {
     "inside it, so this is a failure and not something to work around.");
   log.info("Created the throwaway realm " + REALM + ".");
   log.debug("Leaving createTheRealm().");
+}
+
+async function createThePeople() {
+  log.debug("Entering createThePeople().");
+  for (const one of [[ADMIN_PERSON, "admin", "Admin"],
+                     [STAFF_PERSON, "staff", "Staff"]]) {
+    const r = await postJson(api("/users/create"), {
+      username: one[0], invent: false,
+      attributes: { cn: "XACML " + one[2] + " Person", givenName: "XACML",
+                    sn: one[2] + " Person", displayName: "XACML " + one[2],
+                    mail: one[0] + "@xacml-endpoints.test",
+                    employeeType: one[1] }
+    });
+    assert.ok(r.status === 200 && r.body && r.body.ok,
+      "POST /admin-api/users/create should put " + one[0] + " (employeeType=" +
+      one[1] + ") in " + REALM + "'s directory; it answered " + r.status + " " +
+      String(r.text).slice(0, 300));
+  }
+  log.info("Created " + ADMIN_PERSON + " (admin) and " + STAFF_PERSON +
+           " (staff) in " + REALM + ".");
+  log.debug("Leaving createThePeople().");
 }
 
 async function theRealmIsLeftBehind() {
@@ -1888,7 +1927,7 @@ function pipQuery(subject, designators) {
     'string">' + subject + '</AttributeValue>\n' +
     '      </Attribute>\n    </Attributes>\n';
   return '<?xml version="1.0" encoding="UTF-8"?>\n' +
-         '<PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0">\n' +
+         '<PIPRequest xmlns="urn:sts:xacml:pip:1.0">\n' +
          '  <Request xmlns="' + XACML_NS + '" CombinedDecision="false" ' +
          'ReturnPolicyIdList="false">\n' + subjectBlock + '  </Request>\n' +
          dz + '\n</PIPRequest>\n';
@@ -1898,9 +1937,9 @@ async function thePipAnswersInXacmlsOwnXml() {
   log.debug("Entering thePipAnswersInXacmlsOwnXml().");
   log.info("=== POST /xacml/pip — the PIP, in XACML's own XML ===");
 
-  const answered = await xPostRaw("/xacml/pip", pipQuery("carol", [
+  const answered = await xPostRaw("/xacml/pip", pipQuery(ADMIN_PERSON, [
     { id: "mail" }, { id: "employeeType" },
-    { id: "urn:sts-mock:xacml:attribute:sn" },
+    { id: "urn:sts:xacml:attribute:sn" },
     { id: "noSuchAttributeAnywhere" },
     { id: "mail", category: "urn:oasis:names:tc:xacml:3.0:attribute-category:resource" }
   ]), trusted);
@@ -1935,11 +1974,11 @@ async function thePipAnswersInXacmlsOwnXml() {
   check("it resolves both spellings of a directory attribute", function () {
     assert.ok(answered.text.indexOf('AttributeId="mail"') > 0 &&
               answered.text.indexOf("@") > 0,
-      "carol's mail should come back with a value; the document is " +
+      ADMIN_PERSON + "'s mail should come back with a value; the document is " +
       answered.text.slice(0, 800));
     assert.ok(answered.text.indexOf(
-      'AttributeId="urn:sts-mock:xacml:attribute:sn"') > 0,
-      "and the urn:sts-mock:xacml:attribute: form should resolve too — a PEP " +
+      'AttributeId="urn:sts:xacml:attribute:sn"') > 0,
+      "and the urn:sts:xacml:attribute: form should resolve too — a PEP " +
       "asserting only one of the two spellings is the defect " +
       "xacml-pep/CLAUDE.md records having cost a run");
   });
@@ -1973,7 +2012,7 @@ async function thePipAnswersInXacmlsOwnXml() {
 
   const noDesignators = await xPostRaw("/xacml/pip",
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
-    '<PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0">\n  <Request xmlns="' +
+    '<PIPRequest xmlns="urn:sts:xacml:pip:1.0">\n  <Request xmlns="' +
     XACML_NS + '"/>\n</PIPRequest>\n', trusted);
   check("a query naming no designator is a 400 and never an empty answer",
         function () {
@@ -2013,7 +2052,7 @@ async function thePipAnswersInXacmlsOwnXml() {
   // `tests/portal_access.js`, where the bucket can be cleared afterwards.
   // ---------------------------------------------------------------------
   const oversizedId = await xPostRaw("/xacml/pip",
-    pipQuery("carol", [{ id: "a".repeat(400) }]), trusted);
+    pipQuery(ADMIN_PERSON, [{ id: "a".repeat(400) }]), trusted);
   check("an AttributeId longer than an identifier is refused", function () {
     assert.strictEqual(oversizedId.status, 400,
       "it answered " + oversizedId.status + ". That string is echoed into " +
@@ -2024,7 +2063,7 @@ async function thePipAnswersInXacmlsOwnXml() {
   });
 
   const controlChar = await xPostRaw("/xacml/pip",
-    pipQuery("carol", [{ id: "ma\u0007il" }]), trusted);
+    pipQuery(ADMIN_PERSON, [{ id: "ma\u0007il" }]), trusted);
   check("and so is one carrying a control character", function () {
     assert.strictEqual(controlChar.status, 400,
       "it answered " + controlChar.status + ". A BEL in an AttributeId ends " +
@@ -2046,7 +2085,7 @@ async function thePipAnswersInXacmlsOwnXml() {
   // A BODY OVER THE CEILING. `validation.parseXml()`'s CAP.LARGE is a MEGABYTE
   // and app.js's body parser stops at five, so without the tighter cap a
   // caller chooses how much of this process's memory one request costs.
-  const huge = '<?xml version="1.0"?><PIPRequest xmlns="urn:sts-mock:xacml:' +
+  const huge = '<?xml version="1.0"?><PIPRequest xmlns="urn:sts:xacml:' +
                'pip:1.0"><Request/><!--' + "z".repeat(1100000) + '--></PIPRequest>';
   const oversizedBody = await xPostRaw("/xacml/pip", huge, trusted);
   check("and a body over the megabyte ceiling never reaches the parser",
@@ -2068,7 +2107,7 @@ async function thePipAnswersInXacmlsOwnXml() {
     prev = "lol" + i;
   }
   const bomb = '<?xml version="1.0"?><!DOCTYPE PIPRequest [' + entities +
-               ']><PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0"><Request/>' +
+               ']><PIPRequest xmlns="urn:sts:xacml:pip:1.0"><Request/>' +
                '<x>&' + prev + ';</x></PIPRequest>';
   const started = Date.now();
   const laughs = await xPostRaw("/xacml/pip", bomb, trusted);
@@ -2111,6 +2150,7 @@ async function test() {
   await mintTheCredentials();
   await createTheRealm();
   try {
+    await createThePeople();
     await theGateSplitsOnTheRole();
     await theSurfaceDescribesItself();
     await anEmptyRepositoryDecidesNothing();

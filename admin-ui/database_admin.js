@@ -70,6 +70,8 @@
 const app = require('../common/app');
 const admin = require('./admin');
 const { log } = require('../common/helpers');
+// The error codes (common/error_codes.js), a leaf: requiring it moves nothing.
+const errorCodes = require('../common/error_codes');
 const config = require('../common/config');
 const persistence = require('../persistence/persistence');
 
@@ -399,8 +401,9 @@ function renderDatabase(req, res) {
     admin.respond(req, res, json, 'Database', '/admin/database', body(json));
     log.debug('Leaving renderDatabase().');
   }).catch(function (e) {
-    log.error('database_admin: the page threw: ' +
+    log.error(errorCodes.tag('STS-ADMIN-0598') + 'database_admin: the page threw: ' +
               (e && e.stack ? e.stack : e));
+    errorCodes.mark(res, 'STS-ADMIN-0598');
     admin.respond(req, res, { ok: false, error: String(e && e.message || e) },
                   'Database', '/admin/database',
                   admin.warn('This page could not be drawn: ' +

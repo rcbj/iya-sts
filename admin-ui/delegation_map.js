@@ -89,6 +89,8 @@
 // ---------------------------------------------------------------------------
 
 const { log, xmlEscape } = require('../common/helpers');
+// The error codes (common/error_codes.js), a leaf: requiring it moves nothing.
+const errorCodes = require('../common/error_codes');
 const dagre = require('@dagrejs/dagre');
 
 // ---------------------------------------------------------------------------
@@ -1056,7 +1058,8 @@ function render(graph, options) {
               svg.width + "x" + svg.height + ".");
     return svg;
   } catch (e) {
-    log.error('delegation map: the picture could not be drawn and the page was ' +
+    log.error(errorCodes.tag('STS-ADMIN-0600') +
+              'delegation map: the picture could not be drawn and the page was ' +
               'left alone: ' + e.message);
     return {
       svg: '<p class="err">The picture could not be drawn: ' + esc(e.message) +

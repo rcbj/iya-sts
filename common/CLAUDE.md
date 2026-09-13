@@ -13,6 +13,7 @@ more than one family needs it, not because it felt general.
 | `app.js` | The express app and every middleware. Requiring it is how a protocol module gets somewhere to register. |
 | `admin_stats.js` | The counters, the revocation set, and `recordAuthentication()` — the single authentication funnel. |
 | `audit.js` | What happened, when, and to whom, as discrete events. Sits BESIDE `admin_stats.js`, not under it. |
+| `error_codes.js` | **THE ONE TABLE OF EVERY FAILURE CONDITION (2026-09-12)** — `STS-<SUBSYSTEM>-<NNNN>`, by subsystem, with what the client sees beside each. `mark()`, `tag()`, and the generator for `docs/error-codes.md`. A LEAF that requires nothing. See below. |
 | `applications.js` | Every application this service has been asked about, stored in the directory under `ou=applications`. |
 | `delegation.js` | Who acted on whose behalf, through what, to reach what — eight mechanisms across three protocol families in ONE model. What HAPPENED. |
 | `app_permissions.js` | **Who MAY reach what, decided in advance** — delegated permissions between two OAuth application entries, in Microsoft Entra ID's shape. The CONFIGURED twin of the file above it, and never to be drawn as one register with it. |
@@ -22,6 +23,7 @@ more than one family needs it, not because it felt general.
 | `group_claims.js` | The groups claim, in all five claim sets at once. |
 | `pki_authoring.js` | **THE CERTIFICATE & KEY CONFIGURATION PANE, AS A MODEL (2026-09-10)** — the parent project's *PKI / X.509* workflow: fourteen profiles, five cryptographic approaches, a subject DN, twenty-two X.509v3 extensions, PKCS#10 and four keystore formats, over the same vendored encoder. A LEAF (rule 3aa): it draws no HTML and holds no store. |
 | `pki.js` | **A CERTIFICATE AUTHORITY PER TRUST REALM, since 2026-09-10** — Root, Intermediate, Issuing, and the signing key pairs it issues to applications. **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms` and the two vendored PKI modules. |
+| `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
 | `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/vendored/CLAUDE.md`. |
 
 **`config_file.js` is new with the 2026-08-23 reorganisation and it exists
@@ -221,6 +223,54 @@ of the few declaration attributes a PROTOCOL also writes, because a receiver
 authenticating and being agreed a stream is exactly the kind of event this
 registry exists to hold.
 
+## A RETURN ADDRESS HAS A PROVENANCE, AND `returnAddressesOf()` IS THE ONE PLACE IT IS READ (2026-09-12)
+
+Development mode writes the return address a request NAMED onto the attribute
+product mode checks requests against — `samlAssertionConsumerService` from a
+SAML 2.0 ACS URL or a SAML 1.1 `shire`, `wsfedReplyUrl` from a `wreply`, and
+`oauthRedirectUri` when `common/oidc_rp.js` teaches the console's or portal's
+own client the address it was reached at. A realm switched to product kept all
+of it and believed it as registered; the only guard was a sentence telling the
+operator to review before switching.
+
+**The entry now records PROVENANCE on `appReturnAddressObserved`**, one value
+per marked address, `<attribute> <address>` — ONE attribute rather than one
+per family because the families are `RETURN_ADDRESS_ATTRIBUTES`, derived from
+the `PROTOCOLS` table, so a family added tomorrow is covered with no schema row
+of its own; the attribute name goes first because it has no space in it and the
+URL takes the remainder, which is `consent.js`'s rule about the unconstrained
+field. It is DERIVED and in no `EDITABLE` row.
+
+* **What marks**: `seen()` marks an address a sighting ADDS (never one already
+  on the entry — a sighting may not demote a registration), and
+  `updateApplication()` marks an `add` carrying `observed: true` — the one
+  caller is `oidc_rp.js`'s learning, which is a sighting in an update's shape —
+  only in a mode that accepts unregistered addresses.
+* **What unmarks**: `confirmReturnAddress()` (mark off, address kept),
+  `discardReturnAddress()` (both off), an explicit `add` of the address with no
+  flag (an operator's write is a registration), a `remove`, and an RFC 7591 /
+  7592 registration naming the redirect URI. The two actions are
+  `confirm-address` / `discard-address` in `admin-core/admin_actions.js`, drawn
+  on the application's console page and mirrored at
+  `POST /admin-api/applications/{action}`; both refuse an unmarked address by
+  name (`STS-REG-0050`) rather than doing nothing.
+* **What reads**: `returnAddressesOf(source, attribute)` answers `registered`
+  (what the check may believe in this realm's mode) and `unconfirmed` (what it
+  withheld). Development believes everything and `unconfirmed` is always empty
+  there; product withholds every marked address. Both SAML profiles and
+  WS-Federation hand both lists to `saml/return_address.js`, which refuses a
+  withheld address with `STS-REG-0049` and a sentence naming the confirm
+  operation, and `clientConfigOf()` builds `redirect_uris` from it — so the
+  console's and portal's sign-in and RFC 9700 mode's exact match both see the
+  same answer. `view()` lists the marks as `returnAddressesObserved`, each with
+  `trusted` in the current mode.
+
+**What it cannot do is tell an address recorded before the mark existed from a
+registered one**, and it does not guess — "anything a sighting could have
+written" would refuse addresses operators really did register. That half stays
+a review by hand and every surface says so. `tests/return_address_provenance.js`
+pins it, seventeen mutants caught.
+
 ## `appHomePageUrl`: THE ONE URL ON AN APPLICATION ENTRY THAT IS FOR A PERSON
 
 Added 2026-09-10 for `/portal/applications`, which lists the applications a
@@ -362,6 +412,18 @@ file may require freely because it is a leaf. It is also why `crypto.js` hands
 the pool this job DIRECTLY rather than through `pq_jose.js`: a scrypt
 derivation is not a JOSE operation, and routing it there would have put a
 password in a file about post-quantum signing.
+
+### The cost of a NEW hash is a setting, and nothing already stored moves (2026-09-12)
+
+`security.passwordHashLogN`, `…R` and `…P` replace the three constants for what
+the NEXT hash is written under; the constants are the defaults and N's floor is
+2^14, clamped here as well as refused by the settings table, because the one
+thing this file must never do is write a hash cheaper than it promises. N is set
+as its logarithm because scrypt accepts only a power of two. **Every stored hash
+keeps verifying** — `$scrypt$N$r$p$salt$hash` names its own parameters, which is
+why the stored form was made self-describing — and the worker-pool job is handed
+the parameters read ONCE, so the encoded value always names the cost the
+derivation really used. `tests/password_policy.js` pins both halves.
 
 ### The four scrypt functions are one implementation with two doors
 
@@ -595,6 +657,50 @@ rather than into a file of its own. **It surfaced because `/admin/scim/monitor`
 draws the counters and the directory side by side**, which is worth noting on
 its own: the leak had been visible across two tabs for twelve days and nobody
 had a reason to hold them next to each other.
+
+**SEVEN MORE ON 2026-09-12, FOUND BY LOOKING RATHER THAN BY A PAGE.** A sweep of
+module-level `new Map()` / `new Set()` / `{}` / `let` stores across the protocol
+directories, after SPIFFE gained a pair of sockets per realm:
+
+| Store | Was | Now | What leaked |
+|---|---|---|---|
+| `ssf/caep.js` register | `new Map()` | `realms.map({ persist: 'caep.register' })` | every realm's sessions on every realm's `/admin/caep-sessions` |
+| `ssf/risc.js` register | `new Map()` | `realms.map({ persist: 'risc.register' })` | a deletion in one realm's directory on every realm's `/admin/risc-accounts` |
+| `oid4vc/vc_offers.js` `deferredAccessTokens` | `new Set()` | `realms.map({ persist })`, keyed by a SHA-256 of the token | a deferred token deferred in every realm, and on one worker |
+| `spiffe/spiffe_auth.js` recorded connections | `sharedMap()`, `scope: 'shared'` | `realms.map({ persist })` | one realm's gRPC connections evicting another's from the cap |
+| `scim/scim_auth.js` Digest nonces, HOBA challenges and replay set | `new Map()` ×3 | `realms.map()`, not persisted | one realm's unauthenticated challenges evicting another's |
+| `federation/federation.js` release index | two `let`s | `realms.keyed()` | one realm's release policy applied to another realm's tokens for five seconds |
+| `oid4vc/vc_issuer.js` last Credential Request | a `let` | `realms.keyed()` | one realm's debugging endpoint reporting another's request |
+
+**TWO OF THEM NEEDED MORE THAN A DECLARATION, AND THE REASON IS WORTH KEEPING.**
+CAEP's and RISC's state machines edit a row object ALREADY IN THE MAP —
+`row.counts[uri] += 1`, `row.state = 'revoked'` — and `realms.map()` journals a
+`set()`, so a persisted register would write each row as it was CREATED. Each
+file has a `touch()` that re-sets the same key after an edit, which keeps the
+row's place in the insertion order and puts nothing back that was trimmed or
+replaced meanwhile. `persistence/CLAUDE.md`'s "every mutation funnels through
+`set`" is true of the store and not of what is stored in it.
+
+**THE SPIFFE ONE IS WHERE AN HTTP-SHAPED ANSWER GOES WRONG.** A gRPC call has no
+realm segment — the path is the method — so the realm a connection is in is the
+LISTENER it was accepted on: `spiffe_server.js`'s `handlersInRealm()` wraps every
+handler of every realm's servers (the default realm's four sockets included) in
+`realms.run()`, and `recordCaller()` runs inside `prepareCall()`, inside that
+handler, in the front process.
+
+**WHAT WAS LOOKED AT AND LEFT PROCESS-WIDE**, each with an argument that does not
+rest on the directory: catalogues built once from code (`vc_claims.js`'s,
+`federation_map.js`'s `DEFAULT_MAP`/`seenIncoming`, the XACML function and
+datatype tables, `ssf_events.js`'s `EVENT_BY_URI`, `applications.js`'s schema
+maps); `xacml_store.js`'s `parsed`, keyed by the SHA-256 of a document's TEXT, so
+two realms holding one policy share one parse and cannot share a wrong one;
+`spiffe_ca.js`'s `building`, already keyed BY realm id, and `warnedShadows`, a
+log de-duplicator; `xacml_role_pep.js`'s `dryRun`, a flag set and restored inside
+one synchronous call; `spiffe_server.js`'s `listeners`, keyed by realm id and
+owning sockets; the two worker pools, the request pool's tickets and affinity,
+and `keystore.js`'s `material`/`shared`/`pkiHeld`, all keyed by realm id or
+belonging to the OS process; and `authn.js`'s observer and sweep timer, which
+are wiring rather than state.
 
 
 ### Rule 3m: the realm's overrides are an inverted hook into `config.js`
@@ -1236,6 +1342,76 @@ with `Cannot find module` naming a file the operator never mentioned.
    true, which is the only clear operation there is.
 
 
+3ac. **`error_codes.js`: every failure has a name, and the name never reaches
+   the client (2026-09-12).** A failure used to be identified by its SENTENCE —
+   an `error_description`, a log line, an audit summary — and a sentence is
+   reworded, carries per-request values and exists in three wordings for one
+   condition. So there is one table, and every refusal and failure in the
+   service is a row in it.
+
+   **IT IS A LEAF THAT REQUIRES NOTHING AT ALL**, not even a logger, so
+   `config.js`, `crypto.js`, `realms.js` and `audit.js` — which cannot require
+   each other freely — can all require it. Its `log` is console-backed, the
+   `version.js` arrangement for the same reason.
+
+   **THREE WAYS A CODE IS RECORDED, CHOSEN BY WHAT HOLDS THE FAILURE:**
+
+   | Situation | How |
+   |---|---|
+   | an HTTP response that refuses or fails | `errorCodes.mark(res, code)` before the call that sends it; `audit.recordHttp()` reads it off the response on `finish` |
+   | a non-HTTP refusal (LDAP, KRB-ERROR, gRPC), an outbound or background failure | `errorCode:` on the audit row that already exists, or `audit.failure(code, …)` where none does (`service.failure` for one that belongs to no request) |
+   | a failure no audit row can hold — the process is exiting, or the module cannot require `audit.js` without a cycle | `errorCodes.tag(code)` at the front of the log message |
+
+   A library that RETURNS a refusal to a caller that sends it (a verdict, an
+   `{ ok: false }` action result) attaches the code under the same
+   `Symbol.for('mock-sts.errorCode')` that `mark()` uses, NON-ENUMERABLY, and
+   the caller marks `errorCodes.codeOf(result) || '<its own fallback>'`. The
+   symbol is what makes that safe: several of those results are serialised
+   whole to `/admin-api` clients, and an enumerable `errorCode` member would
+   have put the code on the wire through the one door nobody thinks of as a
+   response.
+
+   **THE CODE CHANGES NO BYTE A CLIENT RECEIVES**, and that is the design rather
+   than a precaution. A client under test must see its protocol's own error and
+   nothing else; a code is an operator's name for the condition. The table's
+   `spec` column records what the client IS told, so the documentation page can
+   say it without anybody reading the handler.
+
+   **`audit.js` CHANGED IN THREE WAYS FOR IT, AND EACH IS A RULE.**
+   * A row with `errorCode` and no `outcome` is a REFUSAL, not a success — a
+     failure in the success count beside its own code would be the log
+     disagreeing with itself.
+   * A row with `errorCode` writes ONE log line, from `logFailure()`, so the
+     audit ring and the service log cannot disagree about which code a failure
+     had and no site has to remember to log it. `info` for a refusal, `error`
+     for an error — a refusal is this service working.
+   * **A FAILURE IS RECORDED WITH `audit.protocolCalls` OFF.** That setting
+     silences JWKS polls and metadata fetches; a refused request is the row
+     somebody turned the firehose off to be able to find. And every failed HTTP
+     response carries a code — the one marked, or a generic `STS-HTTP-0001`
+     (unrouted), `-0002` (4xx) or `-0003` (5xx) — so a row with `-0002` or
+     `-0003` on it is a failure site MISSING its code, and the documentation
+     page tells a reader to report one.
+
+   **A NEW `service` CATEGORY**, with `service.failure`, beside
+   `protocol.failure`: a store that could not be written or a worker that
+   stopped answering answers none of the questions the other categories are
+   filtered by.
+
+   **`tests/error_codes.js` IS WHAT KEEPS THE TABLE COMPLETE**, and the check
+   that matters most is the one that looks least like a test: every line
+   matching a FAILURE PATTERN — `.status(4xx)`, `oauthError(`, `log.error(`,
+   `outcome: 'refused'`, an ldapjs error, and each subsystem's own helper
+   shapes — must have a code within a few lines, or `// error-code: none —
+   <why>` with the reason spelled out. **A protocol family added tomorrow with
+   a `fooError(res, …)` helper of its own is invisible to that check until its
+   shape is added to the list**, which is the one gap the list cannot close by
+   itself; adding the family is adding the pattern.
+
+   **NEVER RENUMBER, NEVER REUSE.** A code ends up in an alert rule and a saved
+   log search. A condition that stops existing keeps its row with `retired:
+   true`, and the test stops requiring it to be raised.
+
 3d. **`claim_attributes.js` is the THIRD reader of `vc_claims.js`'s catalogue,
    and it is a library like the other two.** `vc_claims.js` says what an issued
    CREDENTIAL carries and `vc_verifier_config.js` says what the mock Verifier
@@ -1745,11 +1921,20 @@ with `Cannot find module` naming a file the operator never mentioned.
      answer, in front of every sign-in, whose Deny button makes the surface
      unreachable. It is an ATTRIBUTE rather than an exemption in `consent.js`,
      so an operator who wants the screen removes the values and gets it.
-   * **The redirect URI on the entry is LEARNT as well as seeded.** The seeded
-     value names `localhost:<port>`, because it is written before any request
-     exists; the first flow through a different base ADDS that base's callback,
-     since RFC 9700 mode matches `redirect_uri` by exact string and a service
-     reached by a container name would otherwise refuse itself.
+   * **The redirect URI on the entry is LEARNT as well as seeded — in
+     DEVELOPMENT, with `global.publicBaseUrl` empty, up to
+     `oidcRp.maxRedirectUris`.** The seeded value names `localhost:<port>`,
+     because it is written before any request exists; the first flow through a
+     different base ADDS that base's callback, since RFC 9700 mode matches
+     `redirect_uri` by exact string and a service reached by a container name
+     would otherwise refuse itself. **Two corrections on 2026-09-12**: the base
+     comes from the request's `Host` header whether or not `global.trustProxy`
+     is on, so learning in product mode was an anonymous way to plant a
+     callback on this service's own client — it is REFUSED there now, and a
+     pinned base is never learnt — and the call that learnt it had never worked
+     at all (it passed one object where `updateApplication()` takes an
+     identifier and a change), so this bullet described a behaviour nothing had
+     ever performed. `common/oidc_rp.js`'s `ensureRedirectUri()` carries both.
 
    **TWO ATTRIBUTES HOLD CREDENTIALS IN THE CLEAR** — `oauthClientSecret` and
    `appRegistrationAccessToken` — which is the `/krb5/principals` decision about
@@ -1772,7 +1957,7 @@ with `Cannot find module` naming a file the operator never mentioned.
 
    It requires `helpers.js`, `config.js` and `admin_stats.js` — that last one
    for `identityKeyOf()`'s normalisation only, so that `alice`, `alice@REALM`
-   and `urn:sts-mock:user:alice` are one person on a chain rather than three.
+   and `urn:sts:user:alice` are one person on a chain rather than three.
    `admin_stats.js` requires nothing here, so there is no cycle and none of
    rule 3e's slots is needed. Keep it that way: it is called from the KDC, from
    WS-Trust and from the token endpoint, and anything it required all three
@@ -2577,7 +2762,7 @@ URI.
 
 It requires `helpers.js`, `config.js`, `applications.js` and `admin_stats.js`
 (for `identityKeyOf()`, so that `alice`, `alice@EXAMPLE.COM` and
-`urn:sts-mock:user:alice` are one person here exactly as they are one entry in
+`urn:sts:user:alice` are one person here exactly as they are one entry in
 the directory), and nothing requires it back. **The directory arrives through
 `setDirectory()`, which `ldap_server.js` fills at ITS require time** — the same
 inversion `group_claims.js`, `applications.js`, `federation.js`,
@@ -3052,7 +3237,7 @@ blobs by certificate stopped working the moment a realm's keys were certified**:
   generating the default realm's eleven post-quantum keys independently**, each
   publishing its own in `/oauth2/jwks` and signing with its own, so a UserInfo
   response or an ID Token signed by one worker could not be verified against the
-  JWKS served by another — `No key in the set has kid "sts-mock-ml-dsa-44-…"`.
+  JWKS served by another — `No key in the set has kid "sts-ml-dsa-44-…"`.
 * **the `kid` a RESTORED set derives.** `certifiedView()` names a key after the
   certificate it is handed as the self-signed one, so a blob carrying the issued
   certificate would have made the `kid` move across a restart — which is the one
@@ -3065,6 +3250,115 @@ certificate view from `pki.js` in the process that holds it, so a certified
 realm still publishes the certified certificate everywhere. `tests/keystore.js`
 section 5 pins it, and the shape to remember is that neither half failed — the
 service was correct, slower, and wrong only at a client.
+
+### AND THE STORE UNDID THE ARBITRATION, WHICH IS THE THIRD OF THESE AND THE QUIETEST (2026-09-12)
+
+The channel above decides a race — several processes generating one realm's keys
+at once — by **first-generator-wins**: the loser is sent the winner's blob,
+`adoptShared()` drops its CACHED set, and `helpers.js` rebuilds. That was
+complete for as long as there was nothing else to rebuild FROM.
+
+**With `keys.source=persisted` there is, and the rebuild found the loser's own
+row.** `helpers.js` looks a realm's keys up STORED → SIBLING → generate, in that
+order and for the reason the block above it argues; a process that had already
+written its losing set to `sts_keys` rebuilt from it, so **adopting became a
+no-op that logged as a success.**
+
+Measured on a dispatched stack the day `dispatch` mode started reading its
+key-encryption key from the OpenBao container: a realm created at runtime had
+**four key sets in four processes**, three of them generated within 43ms of each
+other and each written down. `/oauth2/jwks` answered a different key per worker,
+so an assertion encrypted to the key one worker published would not decrypt on
+another — which is how it was found, as an "intermittent" OAEP failure in
+`tests/vendored/sts_jwt_bearer_grant.js` that had been written down as a flake.
+
+**PRODUCT MODE WITH REQUEST WORKERS HAD THIS ALL ALONG.** In development with no
+keystore `storedFor()` answers null, so the channel worked and nothing anywhere
+could see the hole. `adoptShared()` now holds the adopted blob as this process's
+material and writes it down — so the row converges on the set everybody is
+using rather than on whichever process wrote last — and `tests/keystore.js`
+pins both halves.
+
+### AND THE POST-QUANTUM HALF WAS WRITTEN AND NEVER READ BACK (2026-09-12)
+
+`serialise()` has carried a realm's eleven post-quantum keys since 2026-09-07
+and `deserialise()` has read them back the whole time. **Nothing put them on a
+restored key set.** `helpers.js` has two paths into a key set and only one of
+them copied them: `plainKeySet()` — a SIBLING's, over the pool's channel — did,
+and `lazyKeySet()` — the STORE's — did not, because `privateMaterialFor()` had
+nowhere to keep them.
+
+So a process that restored a realm generated eleven more, offered them to its
+siblings, was refused because another process had got there first, and went on
+signing with its own. **Measured in a dispatched stack: three workers publishing
+three different ML-DSA and SLH-DSA kids for one realm**, so a UserInfo response
+signed by one could not be verified against the JWKS served by another —
+`No key in the set has kid "sts-slh-dsa-shake-128s-…"`.
+
+**AND THERE WAS A SECOND HALF, WHICH IS WHY THE FIRST ONE ALONE CHANGED
+NOTHING.** The only writer of a realm's blob was `remember()` at GENERATION
+time — which is before the post-quantum keys exist. The stored blob therefore
+never had them to restore. `pqKeysForAsync()` writes them down now, beside the
+publish it already did: one hands them to the processes running now, the other
+to the next process to restore this realm.
+
+Both are pinned in `tests/keystore.js` section 2, and the shape to remember is
+the one this file records twice already: **a thing that is written and never
+read back fails silently, and a cache invalidated without its backing row fails
+the same way.**
+
+### AND THE OPENID4VCI REQUEST-ENCRYPTION KEY IS A MEMBER OF THE SET (2026-09-12)
+
+`vciRequestEncKey` — `{ privateKey, publicJwk }` — is made by `makeStsKeys()`
+WITH the set, and it replaced a key of its own that `oid4vc/vc_issuer.js`
+generated at module load, `request_pool.js` handed down the fork in
+`STS_VCI_REQUEST_ENC_KEY_PEM`, and every realm in a pooled process shared.
+`mode.js`'s `vci-request-encryption-key` NOT_YET row was that. **Every property
+it lacked is one this set already had**, which is the whole argument for putting
+it here rather than building a keystore row family and a pool channel of its own:
+per realm, sealed in `sts_keys`, decrypted only while used, agreed by the key
+channel. `pki.js`'s placement argument again — a second answer to *where does
+this service keep a private key* is the one nobody remembers to rotate.
+
+**IT IS A PLAIN KEY AND NOT A LEAF.** OID4VCI section 10 publishes a bare JWK
+that a wallet trusts because it read it out of the issuer's own metadata over
+TLS; nothing looks for a certificate on it, and every certificate `pki.js`
+issues from a use case is a SIGNING certificate while this key only decrypts.
+The kid is derived from the key, as the curve keys' are.
+
+**THE TRAPS THIS FILE RECORDS WERE EACH MET ON PURPOSE, THE SAME DAY**:
+
+* `serialise()` writes it (as PEM), `deserialise()` reads it back, and
+  `privateMaterialFor()` parses it as `vci` on the purged record — the three
+  places the post-quantum half needed and got one at a time.
+* **both key-set paths put it back**: `plainKeySet()` copies it off a sibling's
+  blob, `lazyKeySet()` keeps the PUBLIC JWK resident and the private half a
+  getter, so publishing the issuer metadata decrypts nothing.
+* **`makeStsKeys()` runs inside the realm the set is for** (`realms.run()` in
+  the factory), because it reads `oid4vci.requestEncryptionKeyBits` and `.of()`
+  from a watcher is not ambient in that realm.
+* **A SET WRITTEN BEFORE THE KEY EXISTED IS BACKFILLED**, by
+  `helpers.requestEncryptionKeyFor()`, in a fixed order: ASK first
+  (`keystore.requestEncryptionKeyHeldFor()` — the store, then the shared blob —
+  because a process may have adopted a sibling's backfill without its cached set
+  being dropped, `adoptShared()` dropping one only when it REPLACES a shared
+  blob), then make one in the set's realm, then `remember()` and
+  `publishShared()` it as an ENRICHMENT. A backfilled key on a RESTORED set is
+  held on the set until exit — one key, once, on the first start after an
+  upgrade; the next start restores it from the row.
+* **THE ENRICHMENT RULE IS ONE FUNCTION NOW**, `keystore.enriches()`, applied by
+  `publishShared()` and by `request_pool.js`'s `receivePublishedKeys()`. It was
+  written out in both with ONE member — the post-quantum count — and is now
+  *the same certificate, at least everything held has, and strictly more of
+  something*: a set gaining its request-encryption key offered against a held
+  blob that already has post-quantum keys it lacks must not replace that blob.
+* **NO WATCHER GENERATES IT.** It is made with the set, and `pki.js`'s realm
+  watcher still asks rather than takes.
+
+`tests/vci_request_encryption_key.js` pins every bullet, twenty mutants across
+it and `tests/realm_isolation.js`, all caught; the enrichment mutant survived the
+first round because the fixture asserted only one direction of the two-member
+rule.
 
 ### AND SINCE 2026-09-10 IT HOLDS THE CERTIFICATE AUTHORITIES TOO
 
@@ -3125,6 +3419,91 @@ managed identity — which is most of what makes a secret manager usable.
 **A missing SDK is reported as the package to install**, never as
 `Cannot find module`, which names a file nobody chose.
 
+### TWO SECRETS SINCE 2026-09-12, AND THE HEADING ABOVE IS NOW HALF TRUE
+
+The KEK was the only thing this file read for six days. The second is **the
+database password**, and it arrived for the reason the first did: it was sitting
+in a configuration string in plain text.
+
+**A SECRET IS A DESCRIPTOR NOW AND THE PROVIDERS TAKE ONE.** `read(spec)` rather
+than `read()`, where the spec names which settings hold the provider and the
+location, what the secret is called in a sentence, and which FIELD to take if
+the value turns out to be JSON. `readKek()` is `read(KEK)` and every deployment
+reading raw bytes out of a mounted file sees exactly what it saw before — that
+is the compatibility guarantee, and it rests on the KEK's descriptor naming no
+default field, so its value is taken whole.
+
+**THE TWO CAN LIVE IN ONE PLACE, WHICH IS THE POINT.** The database password's
+location DEFAULTS TO THE KEK's, because a deployment already mounts one file or
+already keeps one cloud secret and being made to provision a second is work this
+service would have invented. `pick()` is what tells them apart inside it: a
+named field taken out of a JSON object, the whole value otherwise.
+
+**AND THE ONE REFUSAL THAT MATTERS IS ABOUT A *SHARED* LOCATION.** A secret of
+its own that is not JSON is the whole password — that is what somebody who put a
+password in a secret meant. A SHARED one that is not JSON is the
+key-encryption key, and returning it would hand this service's master key to a
+database server as a password, in the clear, on the wire, with a failed
+connection as the only symptom. So `borrowed` is passed down to `pick()` and
+that case throws. `tests/database_password.js` breaks if it stops.
+
+**WHAT IS SHARED IS THE STORE AND WHAT IS NOT IS THE SECRET — BY DEFAULT.**
+`keys.kekVault`, `keys.kekRegion` and `keys.kekToken` say how to REACH Vault,
+AWS or Key Vault and a deployment usually has one of those, so the database
+password reads them too. The provider and the location are per secret, because
+those are what ordinarily differ.
+
+**SINCE 2026-09-12 THE DATABASE PASSWORD MAY OVERRIDE ALL THREE** —
+`persistence.databasePasswordVault`, `…Region` and `…Token`, EMPTY by default
+and empty meaning the key's. The paragraph above was right about the deployment
+it describes and silent about the one whose database credential is owned by
+somebody else, in a different Vault, region or Key Vault, which could not be
+configured at all. They are overrides rather than rows of their own so the
+shared store stays the answer nobody has to type. `reachOf()` is the one place
+the decision is made, the read path and the `/admin/secrets` probes both ask it,
+and a Vault store's identity in that report is the endpoint AND whether a token
+is used — two secrets reached two ways are two logins. The client-certificate
+settings (`keys.vaultClient*`) stay shared: they are this service's identity,
+not the store's. **The `cert` auth mount is `keys.vaultCertAuthMount` since the
+same day** (it was the literal `auth/cert/login`), and a value that is not a
+plain path is refused rather than put into a request line.
+`tests/database_password.js` sections K and L pin both.
+
+**THE INJECTION IS `persistence.js`'s AND NOT THIS FILE'S.** This module answers
+*what is the password*; putting it into a connection string is a fact about
+`pg`, and that file argues it — including why it is injected into the string
+rather than passed beside it, which is not a preference.
+
+### AND IT AUTHENTICATES WITH A CERTIFICATE NOW, NOT ONLY A TOKEN (2026-09-12)
+
+`keys.vaultClientCert` / `keys.vaultClientKey` / `keys.vaultCaCert` are about
+the CONNECTION rather than about either secret, which is why they are
+`keys.vault*` and not `keys.kek*`: one deployment has one secret store, and both
+secrets reach it the same way. With a certificate configured the provider logs
+in through `auth/cert` and the token in the configuration is not used.
+
+**A TOKEN IN A FILE IS A BEARER CREDENTIAL** — whoever reads the file is the
+identity, it does not expire, and rotating it is an outage. A certificate the
+STORE issued is an identity the store can revoke, bound to a policy the store
+holds. `openbao/` is the stack that demonstrates it: the store builds a
+certificate authority of its own, issues this service a certificate from it, and
+binds that certificate to a policy that can read two paths and write nothing.
+
+**THE TLS MATERIAL IS PASSED TWICE AND IT HAS TO BE.** `node-vault` merges
+`requestOptions` into the calls its own helpers make and `rpDefaults` into the
+request library's defaults, and `client.request()` — the escape hatch below —
+uses only the second. Passing one of them gives a login that works and a read
+that does not, or the reverse.
+
+**AND THE LOGIN GOES THROUGH `client.request()` RATHER THAN `certLogin()`,
+WHICH IS A BUG IN THE SDK.** node-vault 0.10.2 declares `certLogin` with
+`schema.req = { type: 'object' }` and no `properties`, and its
+`extendOptions()` does `Object.keys(reqSchema.properties)` the moment any
+argument is passed — so `certLogin({ name })` throws *Cannot convert undefined
+or null to object* before a request is made, and `certLogin()` with no argument
+cannot name a role. Going through `request()` sends the role and keeps the SDK's
+TLS handling.
+
 ### The encryption, in `crypto.js`
 
 AES-256-GCM and **not** CBC, and the difference is the one that matters: GCM is
@@ -3160,7 +3539,7 @@ that function's own header says in as many words. Every call site agrees:
 `'totp-secret'`, `'application-private-key'`, `'person-private-key'`,
 `'minted-rows'`. Labels, never realms.
 
-**The HKDF `info` IS A CONSTANT** (`'mock-sts key material v1'`), so the
+**The HKDF `info` IS A CONSTANT** (`'sts key material v1'`), so the
 separation the paragraph above buys is **per record and not per tenant**: every
 sealed value has its own key and IV, and one master key opens all of them in
 every realm.
@@ -3206,6 +3585,47 @@ that exists.**
   shape of problem the request pool's barrier hit from the other direction.
   Creating a realm would also become a key-provisioning act, where today it is
   one API call.
+
+
+### `storeReport()`: THE SAME MODULE ANSWERING A MONITORING QUESTION (2026-09-12)
+
+`describe()` says where a secret is configured to come from. **`storeReport()`
+says whether it actually got there, and what the thing at the other end is
+doing** — it is what `/admin/secrets` and `GET /admin-api/secrets` draw, and
+`admin-ui/CLAUDE.md` argues the page. Three things about it belong here, beside
+the module:
+
+* **THE PROBES LIVE IN A TABLE AND NOT ON THE FIVE PROVIDER OBJECTS**
+  (`PROBES`, keyed by provider id), and that is a separation rather than
+  tidiness. A provider's `read()` is on the path this service STARTS on — it
+  runs before the listener binds, and in product mode a throw there is a
+  service that does not come up. A probe is on the path a console page is drawn
+  on. Two places is what makes it impossible for somebody adding a probe to
+  break a read, and every probe is new code against somebody else's SDK, which
+  is exactly the code that breaks.
+* **THE READ LEDGER IS THE FACT NOTHING ELSE HERE COULD CARRY.** `read()`
+  records every read, success and failure, with the instant and the error and
+  never the value. A development-mode service on a memory store never asks for
+  the key-encryption key at all, so a perfectly broken provider and a working
+  one are indistinguishable from any settings page — and the row an operator
+  most needs is the one a service that did not start cannot show anybody.
+* **`scrub()` IS THE SAME CLAIM ASSERTED TWICE AND IT HAS FIRED IN ANGER.**
+  Every probe picks its fields by name, so in a correct build the deny-list
+  deletes nothing; what it catches is a future probe that hands back a
+  provider's answer whole, and that mistake is silent, one-way and fatal —
+  `auth/token/lookup-self` answers the live token in a member called `id`. It
+  is also why a probe must name its OWN members: the `mounts` probe returned
+  `{}` against a store with four engines mounted, because it had called them
+  `secret` and `auth` and both are on the list.
+
+**`vaultConnect()` WAS EXTRACTED FROM `vaultProvider.read()` THAT DAY AND IS
+NOW SHARED BY BOTH.** A second login for the probes would have been a second
+answer to *how this service proves who it is to the store*, and a page
+reporting the policies of a token obtained differently from the one the read
+uses is a page that is right about something nobody is running. The session
+object the probes thread through it is what makes a render cost ONE login
+rather than eight.
+
 
 ## 3w. `pki.js`: a certificate authority, and the three decisions in it
 
@@ -3323,6 +3743,43 @@ stored value when the key can produce it and the right default when it cannot.
 `tests/spiffe_pki.js` guards both, and it is the only place in the service where
 either can be asked.
 
+### THE DEFAULTS OF A BUILD NOBODY TYPED INTO ARE SETTINGS, AND A FULL STORE REFUSES (2026-09-12)
+
+Four things the console's Build form could say and nothing else could:
+
+* **`pki.signatureAlgorithm` is `algorithmsFrom()`'s default now**, beside
+  `pki.keyAlgorithm`, which it always was. The startup auto-build, a realm
+  created at runtime and `certify()`'s repair of a stale branch pass `{}` and
+  had silently got the per-key default whatever the setting said. A configured
+  value the key cannot produce is SKIPPED rather than refused — the SPIFFE use
+  case prefers EC while the setting may name an RSA digest — and a CALLER that
+  names a mismatched pair is still refused by name.
+* **The three tier lifetimes are `pki.rootLifetimeYears`,
+  `pki.intermediateLifetimeYears` and `pki.issuingLifetimeYears`, ZERO meaning
+  the vendored profile's own number**, so a change to what an Intermediate CA IS
+  still reaches this service from the parent project's table. `tierYearsFrom()`
+  also fixed a bug the form had: `buildScope()` handed `ensureRoot()` the
+  `{ root, intermediate, issuing }` object and `buildRoot()` did
+  `Number(object)`, so the Root lifetime the form collects was NaN and fell to
+  the profile like a blank.
+* **`issueSigningKeyPair()` reads `pki.leafLifetimeDays`** where it had the
+  literal 365 beside a `certify()` that read the setting — so the one setting
+  described as the default lifetime of an issued key pair governed every issued
+  key pair except the ones it was written for. `leafLifetimeDays()` is both
+  doors' one read.
+* **A full object store REFUSES the next object** (`pki.maxStoredObjects`,
+  default 200) where it used to discard the OLDEST — which is very often a CA
+  key pair somebody kept and other objects were issued from, discarded on a
+  page about a different object. `roomForObject()` answers before a key is
+  generated, a REPLACEMENT of an id already held always has room, and
+  `MAX_OBJECTS` is a GETTER on the exports so a reader of `pki.MAX_OBJECTS`
+  sees the setting. **`common/pki_authoring.js` does not yet check
+  `putObject()`'s `ok`**, so an issue into a full store reports the certificate
+  and stores nothing; that file is the caller and the gap is recorded rather
+  than papered over.
+
+`tests/pki_defaults.js` pins all four, mutation-tested against nine.
+
 ### A BRANCH IN ONE ACT, OR NONE
 
 A trust chain is only worth anything WHOLE — and since the shape changed that
@@ -3387,14 +3844,14 @@ rather than per realm (a list is signed by an ISSUER, so a list per realm would
 have no valid issuer), every certificate names its own in three schemes, and
 anything rotated goes on its issuer's list as `superseded` automatically.
 
-**`verifyLeaf()` STILL DOES NOT LOOK AT ANY OF IT.** A presented chain is
-checked link by link and against this realm's own Intermediate, and no list is
-fetched for any certificate in it — so **a certificate revoked on this
-service's own `/admin/pki` is still accepted here.** Publishing revocation and
-consulting it are different pieces of work and only the first is done;
-`common/mode.js`'s `certificate-revocation` row is the durable record of the
-outstanding half, and `admin-ui/crypto_metadata.js` draws the two as SEPARATE
-ROWS so that a reader cannot take one for the other.
+~~**`verifyLeaf()` STILL DOES NOT LOOK AT ANY OF IT.**~~ **IT LOOKS SINCE
+2026-09-12.** That paragraph read *a certificate revoked on this service's own
+`/admin/pki` is still accepted here*. `verifyLeaf()`'s last check asks the
+register about every certificate on the path — through `revocation_status.js`'s
+synchronous door, because the checks before it guarantee the path is this
+service's own — and a revoked one is refused with `STS-PKI-0118`.
+`admin-ui/crypto_metadata.js` still draws published and consulted as SEPARATE
+ROWS, because they are still two claims; the section below argues the check.
 
 `report()` carries `revocation` — the sentence, so every surface drawing it
 repeats one wording — and `/admin/pki` carries `revocationNote` beside
@@ -3545,7 +4002,7 @@ the one that would have been missed: a key found on the person's entry, and a
 CERTIFICATE presented in the assertion's `x5c` that this service can see it
 issued. The chain path does not consult the registry at all — that is the point
 of it — so `common/pki.js` puts the answer IN the certificate, as a URI
-subjectAltName of `urn:sts-mock:person:<name>`, and `assertion_grant.js` reads
+subjectAltName of `urn:sts:person:<name>`, and `assertion_grant.js` reads
 it there. Before people could hold a key pair, *it chains here* and *it may
 assert about somebody* were one sentence; that SAN is what keeps them apart.
 **The name in the certificate stands on its own**, with no entry required: a
@@ -3616,6 +4073,241 @@ cannot be reached over HTTP at all: the sealing is a property of what is on the
 entry rather than of any reply, and a certificate issued to somebody who has
 since been deleted is a state no sequence of endpoint calls can produce while
 still holding the key that goes with it.
+
+
+### THE REALM WATCHER ASKS AND DOES NOT TAKE (2026-09-12)
+
+`pki.js` subscribes to `realms.onChange(… 'create')` so that a realm made at
+runtime gets a branch under the service Root. It ended with:
+
+```js
+// AND ITS KEYS, if they have been generated already.
+return certifyKeySet(id, keySetProvider(id));
+```
+
+**THE COMMENT AND THE CODE SAID DIFFERENT THINGS AND THE CODE WON.**
+`keySetProvider` is `helpers.stsKeysFor.of()`, which MAKES a key set for a
+realm that has none — so that line did not certify a realm's keys, it CREATED
+them, **in every process that saw the realm appear**. In a dispatched service
+that is the front process and every request worker.
+
+**WHAT IT COST, MEASURED ON A `--modes=dispatch` RUN OF THE WHOLE SUITE.** A
+realm created at 17:48:47.995 had FOUR key sets in four processes within 95ms —
+kids `7223b2499bdb` (pid 33), `5adaac82b8f3` (pid 40), `2865074f6ea8` (pid 1)
+and `ee9c19ca8208` (pid 34). Each was generated, each was written to
+`sts_keys`, and `request_pool.js`'s first-generator-wins arbitrated all but one
+of them away. **They converge; what they do not do is converge before
+answering**, and every response served inside that window carries a key set the
+service is about to disown.
+
+It reached the suite as `tests/vendored/sts_jwt_bearer_grant.js` section 7 — an
+RSA public key read from `/oauth2/jwks` on one worker, an assertion encrypted
+to it, a token request decrypted on another — **`oaep decoding error`**, which
+names nothing and reads as a broken JWE.
+
+**THE FIX IS THE COMMENT MADE TRUE**: a second provider, `keySetHeldFor`,
+answers whether this process ALREADY holds that realm's keys, and the watcher
+certifies only when it does. Where it does not, nothing is made — the keys are
+built once, by whichever process first has a REQUEST that needs them, published
+to the others over the pool's key channel, and certified from the other
+direction by `helpers.js`'s `certifyLater()`. **The two are the same job
+reached from the two directions a realm's keys and its branch can arrive in,
+and only one of them can race.**
+
+Measured again on a real dispatched stack, three request workers on one
+PostgreSQL store, creating four realms and requesting nothing:
+
+| | key generations |
+|---|---|
+| before | **13** (three or four per realm, one per process) |
+| after | **0** |
+
+It also restores what `helpers.js` already said happened and had silently
+stopped being true: *a realm created at runtime makes its keys on first use.*
+
+**THE HELD-CHECK MUST READ THE CACHE AND NEVER `.of()`**, which is the one way
+to write this fix so that it is the defect again: `.of()` generates, so a
+held-check written with it would answer *yes, this process holds them* **by
+making them**. `common/service_state.js` supplies it as
+`helpers.stsKeysFor.existing()`, and `tests/key_agreement_storm.js` asserts
+that — the fix lives in two files, and a mutation run showed that pinning only
+`pki.js` leaves the production wiring free to be deleted with everything green.
+
+## 3ad. `revocation_status.js`: REVOCATION, CONSULTED (2026-09-12)
+
+`pki_revocation.js` PUBLISHES; this CONSULTS. Until it existed a client
+certificate on 8443, 9443 or the main port, an X509-SVID at the SPIRE Server API
+and an assertion's `x5c` were checked against their anchors and never against a
+list. **One function answers** — `verdictFor(input)` (asynchronous) or
+`localVerdictFor(input)` (the register only, synchronous) — `good`, `revoked`
+with the reason and moment, or `unknown` with why; `decide()` applies
+`pki.revocationCheck`. The module header argues all of it; five things reach
+outside.
+
+* **WHO SIGNED IT DECIDES WHERE THE ANSWER COMES FROM.** An authority this
+  process holds — found by NAME AND SIGNATURE, over `keystore.pkiAll()` rather
+  than `pki.rawRowFor()`, whose empty scope id means *the ambient realm* — is
+  answered from the register, walking UP through the held tiers whether or not
+  the client sent them, so a revoked Issuing CA refuses a leaf presented alone.
+  Anybody else's is answered by the OCSP responder its Authority Information
+  Access names and the CRL its `cRLDistributionPoints` names — see below.
+* **THE FIFTH OUTBOUND REQUEST, ARGUED FROM SCRATCH.** A URL is dialled only for
+  a chain that VERIFIED against the truststore — the issuer who wrote it is one an
+  administrator installed — and never for an unverified one. http/https only, no
+  redirects, a timeout and a size cap, a cache honouring `nextUpdate` capped by
+  `pki.revocationCrlMaxAgeS`, failures remembered for
+  `pki.revocationFailureRetryS`, one fetch per URL at a time. https is not
+  certificate-checked: the CRL's own signature is the authentication.
+* **`auto` IS `mode.refusesUnknownRevocationStatus()`**: hard-fail in product,
+  soft-fail in development. Development checks too, because the register cannot
+  make a good certificate fail. A certificate naming no fetchable list is not
+  refused by hard-fail unless `pki.revocationRequireDistributionPoint` — there
+  is no fetch to block.
+* **THE MAIN PORT IS ANNOTATED, NOT REFUSED.** `common/app.js` runs
+  `annotateRequest()` below `requestPool.middleware()` — in the worker that
+  answers a dispatched request — onto `req.certificateRevocation`, and the
+  synchronous doors read it: `mtls.peerVerified()` (so both XACML chains),
+  SCIM's client-certificate scheme and `client_auth.verifyCertificate()`. A
+  worker sees the chain because `request_pool.peerOf()` now forwards
+  `issuerChain` beside the leaf, and the register because it is a `pki:` row
+  every process holds.
+* **LAZILY REQUIRED FROM `pki.js`**, inside `verifyLeaf()`, for the cycle
+  `pki_revocation.js` already is.
+
+### OCSP, DELTA AND INDIRECT CRLs, THE SAME DAY
+
+The first version read one CRL per foreign certificate and refused as unusable
+any list carrying an issuing distribution point or a delta indicator. Four
+decisions came with closing that, and the module header argues each.
+
+* **OCSP FIRST, THE CRL AS FALLBACK, AND `pki.revocationOcsp` MAY REVERSE IT.**
+  An OCSP answer is about one certificate, usually fresher than the list, and
+  the fallback is what keeps a responder that is down from turning revoked into
+  unknown. **Revoked from either route wins; a signed `unknown` is NOT upgraded
+  by a CRL that does not list the certificate**, because it is the issuer's own
+  responder disowning it. The CertID is SHA-1 — an identifier the RFC 5019
+  profile requires, never relied on for collision resistance — and a 32-octet
+  nonce is always sent: a different nonce echoed back is a replay, none echoed is
+  believed unless `pki.revocationOcspRequireNonce`. The signer must be the issuer,
+  or a delegated responder the issuer certified with `id-kp-OCSPSigning` and
+  whose key the responderID names; that responder's OWN revocation is not asked.
+* **THE REASONS ARE A MASK AND THE LOOP IS OVER POINTS, NOT URLS** (RFC 5280
+  section 6.3.3). A certificate is good only once its lists cover every reason
+  between them; a list with `onlySomeReasons`, or a point with `reasons`, covers
+  less. **Three extensions are read out of their raw DER** because pkijs parses
+  `onlySomeReasons` into a number that is not the bit string and hands a point's
+  `reasons` over with the unused-bits octet in front.
+* **A DELTA THAT CANNOT BE APPLIED LEAVES ONLY A PERMANENT REVOCATION
+  STANDING.** A base's keyCompromise is revoked whatever a newer list says; a
+  base that lists nothing, or a hold, is exactly what a delta updates, so it is
+  unknown — blocking the delta must not hide the newest revocations.
+* **AN INDIRECT CRL'S SIGNER IS AUTHORISED BY THE CERTIFICATE, WHEREVER ITS
+  CERTIFICATE CAME FROM.** The certificate's own `cRLIssuer` names who may issue
+  its list; that name's certificate must carry `cRLSign` and chain to an authority
+  the presented path passes through, and is looked for in the chain, among this
+  process's authorities, in `pki.revocationCrlIssuersFile` and — since the third
+  pass — at the caIssuers address the LIST's own Authority Information Access
+  names (RFC 5280 section 5.2.7). This file said *never fetched, because the only
+  URL for it would be inside the document whose signer is in question*, and that
+  is exactly why fetching it is safe: what is fetched is believed only for its
+  name, its cRLSign, its validity, its chain to the path and its key verifying the
+  list — an impostor gains nothing it could not have had from anywhere. The same
+  fetch verifies a DIRECT list signed with the issuer's rollover key. Entries are
+  keyed by ISSUER and serial, attributed per RFC 5280 section 5.3.3.
+
+**THE SIGNATURE IS CHECKED WITH THE ENGINE AND NOT `crl.verify()`**, which
+answers false for an unknown critical extension and for an issuer name whose
+bytes differ from the signer's subject — so a list refused for its extension was
+reported as forged. Found by the existing critical-extension test the moment
+`2.5.29.27` stopped being unknown and the fixture moved to an OID nobody knows.
+
+### THE THIRD PASS: EVERY ITEM THE SECOND LISTED AS NOT DONE
+
+That paragraph listed four gaps and all four are closed; the module header's
+*WHAT IS NOT DONE* is what is left, and it is argued rather than outstanding.
+
+* **A DELEGATED OCSP RESPONDER'S OWN STATUS IS CHECKED** (RFC 6960 section
+  4.2.2.2.1) — never through OCSP, which would be the responder vouching for
+  itself, but through the CRL its own certificate names. `id-pkix-ocsp-nocheck`
+  is honoured and the verdict says `not-checked`. REVOKED makes its answers
+  unusable under every policy (`STS-PKI-0127`); UNKNOWN is decided per call where
+  the answer is used — hard-fail does not believe it, soft-fail does and records
+  that it did — because the answer is cached and the policy is per realm.
+* **LDAP IS THE SECOND OUTBOUND PROTOCOL, AND IT IS ARGUED AT `fetchLdap()`.**
+  The node-ldapjs SUBMODULE's client, unpatched. `ldaps:` by default, verified
+  against node's store plus `pki.revocationLdapCaFile` — an LDAP session is far
+  more library code than a DER parser, so TLS bounds who may speak it; plain
+  `ldap:` only with `pki.revocationLdap=ldaps-and-ldap`, which is an operator
+  saying the directory's network is theirs. RFC 4516 read strictly (a host, base
+  scope, no critical extension, only a list's or a CA certificate's attributes),
+  one deadline, the connection's bytes capped, one entry, no referral followed.
+  OCSP stays http(s): RFC 6960 appendix A defines no other transport.
+* **A DISTRIBUTION POINT NAMED RELATIVE TO ITS CRL ISSUER IS RESOLVED** where the
+  whole name is unambiguous — every RDN single-valued — and looked up in the
+  directory `pki.revocationLdapDirectory` names; a multi-valued RDN, or no
+  directory, is refused BY NAME. The certificate does not say which directory,
+  and a guess is a request to a host nobody signed.
+* **A REGISTERED CERTIFICATE IS CHECKED WHEN IT IS USED** —
+  `registeredVerdictFor()`, `STS-PKI-0129`. The RFC 7523 grant and client
+  authentication (a registered JWK's `x5c`), RFC 7522 (the registered or issued
+  certificate), the federation consumer in all five protocols
+  (`fedSigningCertificate`, a partner JWK's `x5c`) and the OID4VP response
+  endpoint (`oid4vp.trustedIssuerCertificates`). **Every one of those paths is
+  asynchronous and was made to wait**, so there is no register-only twin. Its
+  issuer is fetched hop by hop from its own caIssuers address, because nothing
+  presents one; a certificate naming no such address is refused only under
+  `pki.revocationRequireDistributionPoint`, one naming an address that did not
+  answer is refusable under hard-fail. **A bare key is reported `bare` and never
+  `good`.** SPIFFE federated bundles are trust anchors, which no list revokes.
+
+The two defence-in-depth delta checks — a delta signed by another authorised key
+than its base, and a base with no cRLNumber — have OpenSSL fixtures now, and this
+service's own Issuing CA signing an indirect list about a certificate under a
+sub-CA it does not hold has one too. LDAPS 636 still asks for no client
+certificate. **Node's own `crl` secure-context option was measured and
+refused**: it makes OpenSSL require a CRL for EVERY issuer, so a client from an
+authority with no list loaded fails with `UNABLE_TO_GET_CRL`.
+
+`tests/revocation_status.js` pins it all in four child processes — the register
+and CRL half (with this service's own authority as an indirect-CRL signer and
+every door that uses a registered certificate), the listeners, an OpenSSL half
+whose every certificate, OCSP response and complete CRL OpenSSL made (pkijs
+builds only the indirect lists, which `openssl crl` then verifies), and a closing
+half — the responder's own status, caIssuers, the two delta checks, a registered
+certificate with nothing presented, and ldap and ldaps against an in-process
+ldapjs directory on ephemeral ports. **They are children for what they share with
+a process**: `global.mode`, a dozen `pki.revocation*` settings, authorities
+revoked in the keystore's rows, and the module-wide caches. The branch race that
+first put them there is fixed below.
+
+### A BRANCH IS BUILT ONCE, IN ONE PROCESS (2026-09-12)
+
+`ensureScope()` looked for a complete branch and, finding none, AWAITED a build
+of nine signatures. Two callers inside that window both built and the second
+REPLACED the first's branch, so a leaf issued from the first was *not signed
+by* an Issuing CA of the same name. The two callers were ordinary —
+`realms.create()` fires the realm watcher, which builds without being awaited,
+and the code that created the realm asks for the branch next — and
+`tests/revocation_status.js` met it under `npm test`.
+
+**`oneBuildAtATime()` is a queue per scope**, and `ensureScope()` looks for the
+branch INSIDE it, which is what makes the second caller a reader of the first
+caller's branch rather than its replacement. `buildScope()` queues the same way
+and still replaces — a console rebuild and `certify()`'s repair of a stale
+branch mean it. The Root is one more scope (`SERVICE_SCOPE`): two branches built
+at once on a service with no Root made two Roots. A build that fails releases
+its place.
+
+**AND ACROSS PROCESSES THE WATCHER NO LONGER BUILDS A REALM IT ONLY LEARNT
+ABOUT.** `persistence.js` restores a replicated realm through `realms.create()`,
+so every process of a dispatched service fired the watcher and built — last
+write winning over `keystore`'s PKI channel. `realms.create()` now tells its
+watchers `{ restored: true }` for those, and the branch is the creating
+process's to build and everyone else's to adopt over that channel, which is
+immediate where replication is not. An explicit `ensureScope()` in a process
+that needs the branch before it arrives still builds; that is an ask, not an
+event every process sees. `tests/pki_scope_builds.js` pins all of it, four
+mutants caught.
 
 ## 3aa. `pki_authoring.js`: the pane, and the two things it is NOT
 
@@ -3731,6 +4423,70 @@ The observable behaviour is the same one — an object that can be inspected and
 used as a trust anchor and can never sign again — which is why losing the field
 to a difference in where the store is would have been the wrong call.
 
+## 3ac. `password_policy.js`: THE PASSWORD POLICY, AND WHERE IT IS ASKED (2026-09-12)
+
+**THIS SECTION'S HEADING READ "`credentials.js` HOLDS THE PASSWORD RULE, AND IT
+IS LENGTH" FOR A FEW HOURS THE SAME DAY.** `setPassword()` had stored a
+one-character password in product mode, and the fix was a minimum length read
+from `security.passwordMinLength`, with no composition rules because NIST SP
+800-63B advises against them. rcbj then asked for a policy with composition
+rules, a history and a page — so the setting was retired into the profile below
+and the NIST sentence became what it always was: an argument a deployment can
+act on by setting the symbol count to 0 and both booleans off. What survives of
+the length rule is the part that was right — ONE place decides and every door
+asks it. (`credentials.factorScanLimit` replacing `FACTOR_SCAN_LIMIT` was the
+same day and is unaffected.)
+
+**THE PROFILE IS A DIRECTORY ENTRY**, `cn=default,ou=passwordPolicies` in each
+realm, and rcbj chose that over a settings group for the reasons every register
+here is in the directory: per realm, persisted and replicated with it, visible
+to `ldapsearch`, and a container that can hold a second profile the day one can
+be assigned. Six fields — `pwdMinLength` (12), `pwdInHistory` (5),
+`stsPwdMinSymbols` (1), `stsPwdRequireUppercase` (TRUE), `stsPwdRequireDigit`
+(TRUE), `stsPwdGeneratedLength` (20). **The `pwd*` names are
+draft-behera-ldap-password-policy's**, which is what OpenLDAP's ppolicy overlay
+reads, and `pwdInHistory` keeps the draft's meaning: PREVIOUS passwords, with the
+current one refused beside them. The draft defines no composition rule, so those
+are `stsPwd*` and nobody mistakes them for the draft's.
+
+**IT IS A LEAF (rule 3)** requiring `helpers.js`, `mode.js` and the
+`generate-password` package, and its directory arrives through a slot
+`ldap_server.js` fills — `roles.js`'s arrangement exactly. **`FIELDS` is one
+table read five ways**: the schema, the console's form, the management API's
+request schema, the validation and the parse. Three decisions in it:
+
+* **THE PROFILE IS NOT SEEDED.** An absent entry means the built-in defaults are
+  in force, which is `role-issuance`'s argument: a seed is written into ONE
+  realm, and a policy that silently did not exist in the realms created later is
+  the defect that argument was made about.
+* **AN UNREADABLE STORED VALUE FALLS BACK TO THE DEFAULT, NEVER TO "NO RULE"**,
+  and is reported in `problems`. `pwdMinLength: twelve` has broken one attribute;
+  the answer must not be a policy with no minimum.
+* **A SAVE REPLACES AND CARRIES EVERY FIELD**, refusing a missing one by name —
+  a save that quietly reset what it was not told about is the invisible way to
+  loosen a policy. The console form is told apart so that an unticked checkbox
+  (which posts nothing) reads as "no".
+
+**THE GENERATOR IS `generate-password` AND ITS JOB IS THE DRAW.** It draws from
+`crypto.randomBytes` with rejection sampling (no modulo bias) and has no
+dependencies; it cannot count symbols, so this file draws whole passwords with
+all four pools on and REJECTS any that fail the profile, which keeps the result
+uniform over the passwords that pass. `"` and a backtick are left out because a
+generated password is pasted into shells and JSON bodies.
+
+**`credentials.js` IS WHERE IT IS ASKED.** `preparePassword()` decides
+everything — composition, history, the hash, the history to leave — and writes
+nothing; `setPassword()` calls it and writes; the LDAP add and modify handlers
+call it inside their atomic working copy. **Enforced only where
+`mode.verifiesCredentials()`**, for the length rule's reason; the HISTORY is
+RECORDED in both modes, because moving the previous hash into `pwdHistory` costs
+no new hash and a realm switched to product should not start empty.
+`opts.generated` skips the history comparison (up to six scrypt derivations on
+the one thread every socket is served from, for a password nothing could have
+used before). A stored value that is not a scrypt hash is compared in constant
+time as the string it is, and never copied into the history.
+`tests/password_policy.js` holds all of it, eight mutants caught.
+
 ## `credentials.js` GENERATES A PASSWORD IN ONE PLACE, AND `set-password` FINALLY EXISTS (2026-09-06)
 
 Two small changes made when `/admin/users/new` gave the console a way to set a
@@ -3759,6 +4515,48 @@ reach one function.
 Both are worth reading beside *ALL FIVE GATED SURFACES* above: the gap there was
 an enum documenting itself as done, and the gap here was an error message doing
 the same thing.
+
+## `credentials.js` OFFERS A PASSWORD OBSERVER, AND `applications.js` A WITHHELD FIELD (2026-09-12)
+
+Both exist for the stored Kerberos keys, whose register is
+`kerberos/krb5_person_keys.js` and whose argument is `kerberos/CLAUDE.md`'s. What
+belongs here is the half of each that is this directory's.
+
+**`setPasswordObserver(fn)` IS CALLED AT EXACTLY TWO MOMENTS**: after
+`setPassword()` has WRITTEN a password, and after `verify()` or `verifyAsync()`
+has answered `reason: 'verified'`. Those are the only two moments this file holds
+a plaintext password that is known to be the person's, and a product-mode KDC
+needs one — RFC 3961 string-to-key runs over the plaintext and no key can be
+derived from the scrypt hash this file stores. It is never called for a
+development-mode verification (which checked nothing) or for a refusal.
+
+* **RULE 3e, ON A LAYERING CLAUSE AS WELL AS THE USUAL TWO.** A require from here
+  to the filler would be `common/` reaching into `kerberos/` — the inversion this
+  directory's entry test exists to prevent — would load the principal database and
+  the codec into every process that verifies a password, and would close a cycle,
+  because the filler requires this file.
+* **WRAPPED, AND IT MAY NOT KEEP THE PASSWORD.** An observer that throws is logged
+  and the credential act answers exactly as it would have. The Kerberos filler
+  queues one asynchronous derivation and drops the plaintext when it settles — a
+  sign-in is never delayed or refused because a key could not be made.
+* **THE LDAP DOORS REACH IT THROUGH `passwordWritten()`** (later the same day). They
+  write a password through `preparePassword()` inside an atomic modify rather than
+  through `setPassword()`, and this bullet read *THE LDAP DOORS DO NOT CALL IT*; the
+  handler now calls `passwordWritten()` after it has committed, which notifies the
+  observer as a `set`. The stamp still guards any other door that writes the hash.
+
+**`WITHHELD_FIELDS` IS A STRONGER CLAIM THAN `SEALED_FIELDS`.** A sealed field is
+OPENED for a reader that came through this module, because an application's
+signing key is something an operator collects. `krb5ServiceKeys` is not: it leaves
+this service once, as the keytab its create hands over, so `view()` replaces it —
+in `fields` AND in `attributes`, ciphertext included — with a sentence saying how
+much was kept back. The ENTRY still holds it; the KDC reads it through the
+directory, never through here. **It is a schema row and not a raw attribute for a
+reason that is not optional**: `writeApplication()` replaces an entry from its
+record, and an attribute the schema does not list would be erased by the next
+sighting — for a Kerberos service, the next ticket issued for it. **And it is written
+through the directory slot, never through `updateApplication()`**, whose audit
+summary, log line and reply all quote the value written.
 
 ## `totp.js`: RFC 6238, AND THE SECOND CREDENTIAL THIS SERVICE REALLY CHECKS (2026-09-10)
 
@@ -4041,6 +4839,15 @@ invited to generate a new set instead, and `backupCodeStatus()` reports
 list on paper and the one thing this mechanism may never do is stop working
 with nothing having said so.
 
+### Two numbers that read a legal zero as absent (fixed 2026-09-12)
+
+`backupCodes.groupSize` was `Number(x || 5)`, so its documented zero — *print it
+unbroken* — became five; `totp.js`'s `totp.window` was `Number(x || 1)`, so the
+zero its row names for demonstrating a synchronised clock forgave a step either
+side. Both read through `numberOr()` now, and `report().atRest` — which
+`/admin/crypto-metadata` prints — stopped saying the codes are "ENCRYPTED and
+not hashed", a day after they became hashes.
+
 ### A spend that will not write is a REFUSAL
 
 `verifyTotp()` treats a failed counter write as a warning; this refuses,
@@ -4316,7 +5123,7 @@ to the container root rather than beside the shim.
 **`userAgent()` LIVES HERE FOR THE REASON THE MODULE DOES.** This service makes
 four outbound requests and three of them reach somebody else's server —
 federation's, SSF's RFC 8935 push, and XACML's change nudge. Each says
-`mock-sts/<M.N.O> (<component>)` in RFC 9110 product form, built from one copy
+`sts/<M.N.O> (<component>)` in RFC 9110 product form, built from one copy
 of the product token, because three hand-written strings in three modules is
 three places for a rename to reach two of. It is not a claim about HTTP living
 in a version module: it is the one string in this service that is *made of* the

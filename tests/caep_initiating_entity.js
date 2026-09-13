@@ -142,7 +142,7 @@ function run(t) {
   // thirty seconds for it would be a test nobody runs.
   expiring.expires = Date.now() - 1000;
   const found = authn.sessionOf({
-    headers: { cookie: 'sts_mock_session=' + expiring.id } });
+    headers: { cookie: 'sts_session=' + expiring.id } });
   t.equal(found, null, 'an expired session is not returned');
   t.equal(seenExpiry.length, 1,
           'and ending it told the observer, which it did not do at all ' +

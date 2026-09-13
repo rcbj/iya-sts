@@ -154,6 +154,80 @@ It also reads the SESSION store, which `../authn/authn.js` owns.
 
 ---
 
+## THE ACTIONS LEFT THIS DIRECTORY ON 2026-09-12
+
+Thirty-one of them, with the tables they dispatch on and the pure helpers they
+share — about 3,100 lines with their comments — to
+`admin-core/admin_actions.js`. `admin.js` went from 36,197 lines to 33,125.
+
+**They were not moved because they were wrong.** Not one of them had ever
+touched `req`, `res` or markup; each took a parsed body and an actor and
+returned a result object. They were a shared logic layer already, and this
+directory was simply the wrong address for it — `mgmt-api/admin_api.js`
+required this module to reach them, which made the surface a machine drives
+downstream of the surface a person reads.
+
+**WHAT STAYED IS TRANSPORT, AND THE LINE IS WORTH KNOWING.**
+`respondToAction()` turns a result into a 303 back to the page or into JSON;
+`respondToApplicationAction()` does the same and reaches for this console's
+paging; `listField()` reads `req` for the repeated-checkbox parse that
+`helpers.parseBody()` cannot answer. All three belong to the surface that has
+a page. **`listField()` staying is the fact the whole move rested on**:
+`applicationsAction(body, protocols)` takes those parsed values as a parameter
+because the route parses them and hands them down — a boundary somebody drew
+long before there was anywhere to move to.
+
+**AND THEN THE INTERLEAVED ONES WERE SPLIT, FAMILY BY FAMILY.** Every page that
+computed a dozen facts, drew markup from them and assembled a json at the
+bottom now takes the facts from `admin-core/admin_views.js` in one call and
+renders them — its markup untouched, its json handed back as `view.json`. The
+page a person reads and the resource a machine fetches are one computation.
+`mfaView()` left entirely: the page it belonged to had split into
+`/admin/totp` and `/admin/webauthn` and its columns had moved onto
+`/admin/users`, so nothing here drew from it any more.
+
+**THE PURE VIEWS WENT FIRST, AND THE LINE THERE WAS A MEASUREMENT.** Of the
+eighty-nine view-shaped functions here, forty-six return a json half and **only
+three separate at a clean boundary** — the rest build row markup part-way
+through the computation. So what moved to `admin-core/admin_views.js` is the
+thirty-eight that were already pure: they answer a question and reach no markup
+at all. The forty-three that render stayed, because `{ json, inner }` computed
+in one pass is the strongest form of rule 7 there is and splitting it is
+bespoke work on interleaved code.
+
+**AND SO DID THIS CONSOLE'S OWN STRUCTURE, WHICH IS PURE AND STILL BELONGS
+HERE**: `consoleJson()` (which pages exist, out of `NAV`), `configJson()` and
+`settingsGroupsFor()` (where a settings group is edited, out of
+`SETTING_HOMES`), `protocolSettingsJsonFor()` and `configSettingsJson()`. A
+caller asking what pages this console has is asking the console about itself.
+Purity was not the test; ownership was. `configSettingsJson` is handed to the
+read layer, because `scimJson()` embeds this console's settings block and the
+alternative was for the page and `/admin-api/scim` to build it separately.
+
+**THEY ARE ALIASED BACK RATHER THAN REWRITTEN AT EVERY CALL SITE**, in one
+block under the requires. This file calls those names several hundred times —
+from the routes, from the views that draw the buttons an action dispatches on,
+and from each other — so rewriting each into `adminActions.x` would have made
+the move a diff nobody could read, in which a behaviour change and a rename
+look identical. **They are deliberately not RE-EXPORTED**: aliasing keeps this
+file's own call sites working, and re-exporting would publish a second way to
+reach the same function.
+
+**`api_explorer.js` REQUIRES THE READ LAYER DIRECTLY**, and that is the one
+console page that does. It asks `gateStateFor()` which roles the reader holds,
+so the token it mints carries those scopes and no others — and that function
+moved. It called `admin.gateStateFor()` for a while after it stopped existing:
+the module loaded fine and threw a `TypeError` when somebody opened the page.
+
+The seven inverted hooks that the actions need — `setLogoutReader()`,
+`setDirectoryWriter()`, `setGroupWriter()`, the three signals reporters and
+`setXacmlPages()` — **stay here**, and forward what they were handed from
+inside the setter the filler already calls. Every filler in the tree names this
+module, and so does every rule 3e sentence in the root file; moving the slots
+would have meant editing four fillers to say something no more useful.
+`admin-core/CLAUDE.md` argues the rest.
+
+
 ## `/admin/database`: EVERYTHING POSTGRESQL WILL SAY, AND THE SCHEMA IN IT (2026-09-11)
 
 Filed under **Monitoring** and not beside `/admin/persistence`, on this file's
@@ -202,6 +276,120 @@ both and is missing a table. The reverse is deliberately not reported: a table
 in that schema the driver never heard of is an operator's business, and a page
 calling it an error would be this service claiming a namespace it does not own.
 
+
+
+## `/admin/secrets`: WHERE THE PRIMORDIAL SECRETS COME FROM (2026-09-12)
+
+Filed under **Monitoring**, and it is the page this file's filing rule was
+hardest to apply to, because **three** pages touch the subject and each answers
+a different question:
+
+| Page | Section | The question |
+|---|---|---|
+| `/admin/config` | Server configuration | What is this service SET UP to read, and from where? The `keys.*` rows. |
+| `/admin/encryption` | Monitoring | What is SEALED, and with what? The key-encryption key is one paragraph in it, because there the key is a fact about the sealing rather than the subject. |
+| `/admin/secrets` | Monitoring | What is at the other end of that paragraph, and is it working? |
+
+**AND THE THIRD QUESTION IS THE ONE NOTHING COULD ANSWER.** Everything on this
+page can be broken while every settings row is right: the file may not be
+there, the store may be sealed, the client certificate may have expired, the
+policy may have been widened, the secret may have been rotated to a version
+nothing here can read. `/admin/config` reads identically in all of those cases
+and so does `/admin/encryption`.
+
+**THERE ARE TWO SECRETS AND THERE IS NO THIRD**: the key-encryption key, and
+the database password. Both are READ from outside — this service generates
+neither and writes neither down — so they are the one part of its configuration
+whose correctness depends on a system nobody here controls.
+
+### The page holds no probe, no SDK and no credential
+
+`common/secrets.js` owns the providers, the client and the login; this page
+asks it for `storeReport()` and draws what comes back. That is
+`/admin/database`'s separation, and it is load-bearing here for a second reason
+beyond the first: **the login a probe makes must be the same login a startup
+read makes**, or the page is right about something nobody is running. It is one
+function (`vaultConnect()`), extracted from the read path on the day this page
+was written and shared by both.
+
+### What is drawn, per provider
+
+* **`file`** — the path, whether it is there, its mode, owner and mtime, its
+  symlink target where it has one (a Kubernetes Secret mount is a symlink into
+  a `..data` directory that is REPLACED on rotation, so the target is how an
+  operator sees that a rotation landed), and whether it holds a JSON object —
+  **the member NAMES and never the values**.
+* **`vault`** — the whole state the store will publish: seal status and seal
+  TYPE, initialised or not, the version and build, the cluster and its leader,
+  the health summary with **the store's clock against this process's**, the
+  certificate this service presents and when it expires, the token the login
+  produced, the engines the identity can see, and **what that identity may
+  ACTUALLY do, asked of the store rather than quoted from a policy file**.
+* **`aws`, `gcp`, `azure`** — the metadata each publishes about the secret:
+  rotation and the KMS key, version states, staging labels, replication.
+  Through `DescribeSecret`, `getSecretVersion` and
+  `listPropertiesOfSecretVersions` — never through the call that returns the
+  value.
+
+### Three refusals, and each is the page
+
+* **NO SECRET VALUE, and the guard is asserted twice.** Every probe names the
+  fields it returns, and `secrets.js` then deletes a deny-list of member names
+  from whatever came out. That duplication is deliberate: this is the one page
+  in this console where being wrong is unrecoverable — a key-encryption key
+  drawn once is a key that has to be rotated, and rotating it means everything
+  sealed under it is gone. **The guard has fired in anger once already**: the
+  `mounts` probe answered `{}` against a store with four engines mounted,
+  because it had named its members `secret` and `auth` and both are on the
+  list. The rule that came out of it is that a probe names its OWN members and
+  never echoes a provider's.
+* **NO CONTROL.** No reveal, no rotate, no test-read. A reveal is the end of
+  the key. A rotate is a deployment act and this service has no re-sealing
+  pass, which is why `openbao/seed.js` writes the key once and refuses to
+  replace it. And a test-read would be this console causing the one thing the
+  whole design avoids — the key in this process's memory because somebody
+  opened a page.
+* **NO PROBE READS A SECRET.** Every one is metadata: a stat, a `sys`
+  endpoint, a KV version history, a describe. Opening a page must not change
+  what this process is holding.
+
+### A failed probe is a row, and here half of them are supposed to fail
+
+`/admin/database`'s rule, and it matters more here. The identity this service
+holds in a secret store is deliberately bound to two read paths and nothing
+else, so **a 403 against anything else is the policy working** — and a page
+that hid the refusal would be hiding the evidence for the claim
+`openbao/read-only.hcl` makes. The page says that at the top, in amber, rather
+than leaving a reader to conclude that the store is broken.
+
+**THE BOUND IS A TIMER, WHERE `/admin/database`'s DELIBERATELY IS NOT ONE.**
+There it had to be PostgreSQL's own `statement_timeout`, because abandoning the
+promise left a statement running and a connection pinned out of a pool every
+protocol endpoint writes through. Nothing here is pooled and there is no
+equivalent to ask for: an abandoned HTTPS request to somebody else's store
+closes its own socket. `keys.storeProbeTimeoutMs` bounds ONE probe, and they
+run in parallel — measured against a store that was down: **100ms for all nine,
+not nine times the bound.**
+
+### Two things the report does once that it would naturally do twice
+
+Both were measured against a real OpenBao rather than reasoned about:
+
+* **ONE LOGIN PER RENDER.** Each of the eight Vault probes made its own
+  certificate login at first — eight round trips and eight service tokens
+  minted in the store, each with an hour to live, every time somebody opened
+  the page. A `session` object is threaded through every probe and memoizes
+  the connection.
+* **ONE PROBE PER LOCATION, NOT PER SECRET.** The commonest configuration
+  there is — the compose stack — keeps both secrets at `secret/data/sts`, and
+  the version history of that path is one answer, not two. **The scope is the
+  PROVIDER's to declare** (`PROBES.<id>.scope()`), because the report cannot
+  know what a probe's answer depends on: the file provider's is per MEMBER and
+  every other is per stored object, and a key guessed centrally would silently
+  either ask twice or answer the wrong question once.
+
+`tests/secret_store_report.js` holds everything about this page that needs no
+store, and `common/CLAUDE.md` argues the module underneath it.
 
 ## EVERY SETTING IS DRAWN ON THE PAGE FOR THE PROTOCOL IT CONFIGURES (2026-08-27)
 
@@ -1689,6 +1877,47 @@ stream, clear what has been received — each have their operation on
 
 ---
 
+## `/admin/tls/trust` AND THE THIRTEENTH SLOT (2026-09-12)
+
+The client-certificate truststore: every anchor 8443, 9443, LDAPS 636 and the main port
+verify a client certificate against, with its subject, issuer, serial, validity, SHA-256
+fingerprint and SOURCE (`file` from `tls.trustAnchorsFile`, `runtime` otherwise), paged,
+with an add form (a textarea of PEM blocks) and a Remove button on every row. It is the
+runtime door product mode did not have — `POST /tls/trust` needs no credential, so product
+mode refuses it — and `GET /admin-api/tls/trust` / `POST /admin-api/tls/trust/{add,remove}`
+mirror it (rule 7). `tls/CLAUDE.md` argues what the truststore does; four things are this
+file's.
+
+* **FILED UNDER PROTOCOLS, DIRECTLY BENEATH `/admin/tls`, UNGROUPED.** It is configuration
+  of those listeners, which is the question that section answers. A `TLS` group heading over
+  `TLS / mutual TLS` would say the label twice, which is `SECTIONS`' test for a group.
+* **THERE IS DELIBERATELY NO CLEAR BUTTON**, and the page says why where one would be: a
+  clear's reach is every client certificate every other caller relies on. The controls are
+  drawn for a reader holding Admin Write; the GATE refuses a POST without it whatever the
+  page drew. Removing a `file` anchor is allowed and the reply says it comes back.
+* **THE SLOT IS `setTruststore()` AND IT PASSES RULE 3e'S TEST BOTH WAYS ROUND.** A require
+  from this file to `tls/tls_server.js` would move `/tls*` routes on the documented order
+  and make the console the reason they are where they are; a require from that module back
+  to this one at its top level is a REAL cycle, not a theoretical one — `tls_server.js` is
+  first loaded from inside this file's own require, through `admin-core/admin_views.js` →
+  `spiffe/spiffe_auth.js`, so it would find no `setTruststore` on the half-built exports.
+  **So it is the one slot here NOT filled by the module that owns what it carries**:
+  `common/protocol_stack.js` fills it on the line after it requires `tls_server.js`. It
+  carries one object (`list`, `add`, `remove`), is validated whole for `setLogoutReader()`'s
+  reason, and forwards to both `admin-core/` halves from inside the setter;
+  `tests/admin_actions_layer.js`'s `FORWARDED` holds the single writer in each.
+* **WITH REQUEST WORKERS THE PAGE IS ANSWERED BY THE FRONT PROCESS**, pinned in
+  `common/request_pool.js`'s `NEVER_DISPATCHED`, because the array is configuration of
+  listeners only that process holds. It therefore takes that process's session, read out of
+  the store after the barrier the front process runs for a non-dispatched request.
+
+`tests/vendored/sts_admin_console.js`'s `theTruststorePageAddsAndRemoves()` presses both
+controls in a browser with a CA it mints — the Remove it presses is the one on the row
+carrying THAT CA's subject, which is what catches a button rendered with the wrong
+fingerprint — and asserts the truststore afterwards is exactly what it was before.
+
+---
+
 ## Four reader slots and FOUR writer slots point INTO this module
 
 `server.js` requires this module BEFORE `../ldap/ldap_server.js`,
@@ -1778,7 +2007,7 @@ owns the store, and reimplementing any of it here is how the console and an
   presented to this service in an interaction that SUCCEEDED, across all twelve
   families, and drills into one's sessions and the tokens issued on each. Two rules
   hold it up and both are easy to break by accident: **one row is one local name**
-  (`alice`, `urn:sts-mock:user:alice` and `alice@REALM` are one identity — the prefix
+  (`alice`, `urn:sts:user:alice` and `alice@REALM` are one identity — the prefix
   is derived from `userFor()` rather than written down, so changing that function
   cannot silently split every user in two), and **a token is placed under a session by
   the optional third argument to `signJwt()`**, never by a claim — no token here
@@ -2626,7 +2855,7 @@ provider's cookie directly. It is a RELYING PARTY now — `sts-admin-console`,
 an ordinary entry under `ou=applications` — so a gated request with no console
 session is answered with a redirect to `/oauth2/authorize`, and what comes back
 is a code that buys an ID Token that establishes a session of the console's
-own, in a cookie of its own (`sts_mock_admin`). `common/oidc_rp.js` runs the
+own, in a cookie of its own (`sts_admin`). `common/oidc_rp.js` runs the
 flow and argues it; four things about it are this file's.
 
 * **THE ROLES DID NOT MOVE.** `gateStateFor()` still asks `admin_rbac.js`
@@ -4804,3 +5033,110 @@ button says so and why the act is audited like the other two
 cosmetic: `tests/vendored/sts_admin_api_operations.js` reads the refusal
 sentence that list builds in order to discover what to check for, so a list
 short by one turns the parity check off for that action.
+
+## `/admin/policies`: DIRECTORY → POLICIES, AND A GENERATED PASSWORD BY DEFAULT (2026-09-12)
+
+Asked for by rcbj as *Directory → Policies*, with the password policy as the
+first kind of policy it configures. `common/CLAUDE.md` 3ac argues the model and
+the store; three things are this console's.
+
+**IT IS IN DIRECTORY BECAUSE ITS STORE IS, AND IT IS A DESTINATION.** Every page
+in that section draws something the directory holds, and this draws
+`ou=passwordPolicies`. It is not a drill-down — nothing else here leads to it as
+a next step — which is the test the two `/new` pages failed and this one passes.
+**The label is shared with `/admin/xacml/policies` and the `/admin/ldap/policies`
+group row**, and the blurb says the difference on the Overview rather than
+renaming what rcbj asked for: those draw `ou=policies`, documents a PDP
+evaluates; this draws profiles `credentials.setPassword()` checks.
+
+**THE FORM IS THE FIELD TABLE, AND THE RESET IS A SECOND FORM.** Every row of
+`password_policy.FIELDS` is one input — a `number` carrying the field's `min` and
+`max`, or a checkbox — so the browser's refusal and the server's are the same
+numbers. A save REPLACES the profile and posts every field; the action is told
+`via: 'console'` so an unticked checkbox (which posts nothing) reads as "no"
+there and as a missing field from an API caller. **Put the built-in defaults
+back** is its own `<form>` rather than a second submit button, for
+`/admin/users/new`'s two-buttons trap. The page shows, beside the form, the rules
+as the portal prints them, every door the policy is enforced at, what the history
+costs in scrypt comparisons, the generator, the paged profile list and the
+container's schema.
+
+**THE NEW-USER FORM PRESELECTS `generate`**, and `DEFAULT_CREDENTIAL` is declared
+in `admin-core/admin_actions.js` because the action is what applies it and the
+require between the two layers goes views to actions; `admin_views.js`
+re-exports it and `newUserJson()` publishes it with the rules. The note under
+the password boxes said *there is no strength rule and that is deliberate* and
+now says which rules apply and whether this realm enforces them.
+
+Rule 7 is `GET /admin-api/policies` and `POST /admin-api/policies/{action}`, in
+the same change, over the same two functions.
+
+
+## `/admin/error-codes`: THE ERROR CODE TABLE, UNDER MONITORING (2026-09-12)
+
+The table is `common/error_codes.js` (rule 3ac in `common/CLAUDE.md`) and
+`docs/error-codes.md` is generated from it, so this page is not a third copy of
+the catalogue: it is the table FILTERED and PAGED with the one column a
+document cannot have — how many rows in this realm's held audit log carry each
+code, each count a link to `/admin/audit?code=`. **That column is why it is
+filed under Monitoring beside the audit log** and not under Server
+configuration: a reader arrives holding a code off a row or a log line, and the
+page answers both *what does it mean* and *which failures has this service been
+producing*.
+
+Three things about it are decisions:
+
+* **The count is of the HELD rows in the ambient realm**, the ones
+  `/admin/audit` lists, so it falls as that ring's cap discards the oldest, and
+  it is zero for a failure recorded only as a log line — a startup refusal, and
+  everything the remote PEP container logs. The page says so, because a zero
+  reads as "never happens" otherwise.
+* **A code on a held row that the table does not hold is listed**, never
+  dropped: `mark()` and `audit()` record an unregistered code as given exactly
+  so that this row survives.
+* **No control.** A code's meaning is source; renumbering one at runtime would
+  make every alert rule written against it describe a different condition.
+
+`admin-core/admin_views.js`'s `errorCodesView()` builds it and
+`GET /admin-api/error-codes` answers from the same function — rule 7 with no
+POST beside the GET, because the page has nothing to change.
+
+## `/admin/kerberos/principals`: WHO THE KDC HOLDS A STORED KEY FOR (2026-09-12)
+
+Under Protocols, directly beside `/admin/kerberos`, and **Admin Write** for its
+controls. Two tables — directory people whose keys were derived from their own
+password, and service principals created here with a random key — each paged on
+a parameter of its own (`peoplePage`, `servicesPage`) because one `page` cannot
+page two lists. A row carries enctypes, kvno, salt and when; **never a key**.
+`kerberos/CLAUDE.md` argues the feature; three decisions are this page's.
+
+* **A CREATE OR A ROTATE ANSWERS WITH A PAGE AND NOT A DOWNLOAD.** The keytab is
+  the one time key material leaves this service, and a raw `application/octet-
+  stream` reply would be a file with nothing beside it saying which kvno it
+  holds, which enctypes, or that it cannot be fetched again. So the reply is a
+  "Kerberos keytab" page — the warning that it is shown once, the principal and
+  kvno, a `data:` link to save it and the base64 in a read-only textarea — which
+  is `/admin/pki/person`'s arrangement for a person's private key, and for its
+  reason: `respondToAction()` 303s with a message on the query string, and key
+  material on a query string lands in history, logs and the next `Referer`. It
+  is also what lets `sts_admin_console.js` assert the page rather than a
+  download the browser would swallow.
+* **A JSON CALLER GETS THE ACTION RESULT**, keytab included, through
+  `respondToAction()` exactly as before; only a browser form gets the page.
+* **THE TRUST REALM IS THE DEFAULT ONE WHEREVER THE PAGE IS REACHED**, and the
+  page says so — the KDC is one process-wide socket family, and drawing a realm
+  prefix's own directory here would describe people the KDC will never ask
+  about.
+
+`encryption_admin.js`'s `DATA_CLASSES` gained a `kerberos-keys` row, because the
+two key attributes are sealed under that label and the encryption report refuses
+a label with no row.
+
+**PREVIOUS KEY VERSIONS (later the same day).** Each table grew a *Previous
+versions* column — kvno, enctypes and when each stops being accepted — and each
+row a **Drop previous versions** button, drawn only while a version is kept,
+because a button that could only ever answer `dropped: 0` is a control that
+reads as broken. The keytab page a rotate answers with names every version in
+the keytab. The note above the tiles states the bounds as they stand now, with
+zero in `krb5.retainedKeyTtlS` already turned into the seconds it means, since a
+reader of that page is deciding whether to press Drop.

@@ -53,6 +53,29 @@
 // What it does NOT do is follow redirects or accept anything but XML, and
 // neither is an oversight: a redirect is how a URL somebody vetted becomes a
 // URL nobody vetted.
+//
+// ---------------------------------------------------------------------------
+// **THE POLICY IS NOW `federation/federation_http.js`'s, NOT A COPY OF IT
+// (2026-09-12)**, and four things were wrong with the copy, each quietly:
+//
+//   * `federation.outbound` — the switch a deployment with no egress sets so
+//     that THIS SERVICE DIALS NOTHING — was never read here, so a refresh dialled
+//     out of an air-gapped deployment that believed it could not;
+//   * `federation.outboundAllowInsecure` was applied to the SCHEME and not to
+//     the CERTIFICATE, the opposite half from the other requester: an https
+//     metadata host with a certificate nothing trusts was refused even with the
+//     setting on, and the setting's own description promises otherwise;
+//   * no User-Agent was sent, where the CLAUDE.md rule is that every outbound
+//     request says which build is calling (`common/version.js`);
+//   * the timeout read `Number(...) || 5000`, a second default disagreeing with
+//     the setting's own (15000) — and a fallback no setting could be read past.
+//
+// So the outbound switch, the scheme rule and the insecure switch are asked of
+// that module, the timeout is the setting, and the body cap is
+// `saml2.spMetadataMaxBytes`. The URL rule stays in THIS file's `refresh()` —
+// the URL comes off the application entry by name — because that module's
+// DIALLABLE list is about federation relationships and a fourth name there
+// would be the change its header forbids.
 // ===========================================================================
 
 const http = require('http');
@@ -63,13 +86,33 @@ const forge = require('node-forge');
 
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// THE ERROR CODES AND THE AUDIT LOG. A refresh is an action whose result the
+// console or the management API sends back as it is, so a code cannot ride on
+// that result — it would be serialised to the caller. Each refused refresh is
+// an audit row carrying its code instead. `audit.js` requires nothing that
+// reaches back here, so this closes no cycle.
+const errorCodes = require('../common/error_codes');
+const audit = require('../common/audit');
 const applications = require('../common/applications');
+// The outbound policy — the kill switch, the scheme rule and the insecure
+// switch — from the module that owns it. A library that registers nothing and
+// requires only config, helpers and version, so a require from saml/ closes no
+// cycle and moves no route.
+const fedHttp = require('../federation/federation_http');
+// Which build is calling, in RFC 9110 product form — the rule every outbound
+// requester in this service follows. Built once: the version cannot change.
+const USER_AGENT = require('../common/version').userAgent('saml-sp-metadata');
 
 // The metadata namespace, and the two this file reads inside it. Matched on
 // LOCAL NAME everywhere below — `getElementsByTagNameNS('*', ...)` — because a
 // metadata document may use `md:`, `saml2:` or no prefix at all and all three
 // are the same document. helpers.firstByLocal() follows the same rule.
-const MAX_METADATA_BYTES = 512 * 1024;
+//
+// The cap is `saml2.spMetadataMaxBytes` since 2026-09-12; it was the constant
+// MAX_METADATA_BYTES, 512 KiB, which is still the setting's default.
+function maxMetadataBytes() {
+  return Number(config.value('saml2.spMetadataMaxBytes'));
+}
 
 // ---------------------------------------------------------------------------
 // PARSE, and it answers rather than throws.
@@ -205,35 +248,19 @@ function certificateProblem(value) {
   }
 }
 
-function allowInsecure() {
-  return !!config.value('federation.outboundAllowInsecure');
-}
-
+// The timeout, read as the setting and nothing else. See the header for the
+// `|| 5000` this replaced.
 function timeoutMs() {
-  return Number(config.value('federation.outboundTimeoutMs')) || 5000;
+  return Number(config.value('federation.outboundTimeoutMs'));
 }
 
-// The same shape federation_http.js's urlProblem() has, and it cites the same
-// setting because it is the same question: may this service make a request in
-// the clear?
+// Whether this URL may be dialled, as a sentence. The empty case is this file's
+// own words; everything else is federation_http.js's rule, so the two outbound
+// requesters cannot disagree about what "in the clear" means.
 function urlProblem(raw) {
   const text = String(raw || '').trim();
   if (!text) return 'there is no samlSpMetadataUrl on this application';
-  let parsed;
-  try {
-    parsed = new URL(text);
-  } catch (e) {
-    return '"' + text + '" is not a URL (' + e.message + ')';
-  }
-  if (parsed.protocol === 'https:') return '';
-  if (parsed.protocol === 'http:') {
-    return allowInsecure() ? ''
-      : 'it is an http:// URL and federation.outboundAllowInsecure is off. That setting ' +
-        'is shared rather than duplicated: a deployment has decided once whether this ' +
-        'service may make a request in the clear';
-  }
-  return 'its scheme is "' + parsed.protocol.replace(':', '') + '", and only https ' +
-         '(or http, with federation.outboundAllowInsecure on) is dialled';
+  return fedHttp.urlProblem(text);
 }
 
 // ---------------------------------------------------------------------------
@@ -244,10 +271,20 @@ function urlProblem(raw) {
 function fetchMetadata(url) {
   log.debug("Entering fetchMetadata(). url=" + url);
   return new Promise(function (resolve) {
+    // THE KILL SWITCH FIRST (2026-09-12) — see the header. A deployment that set
+    // `federation.outbound` off has said this process dials nothing.
+    if (!fedHttp.outboundAllowed()) {
+      log.debug("Leaving fetchMetadata(). federation.outbound is off.");
+      resolve({ ok: false, errorCode: 'STS-SAML-0045',
+                why: 'federation.outbound is off, so this service makes no outbound request ' +
+                     'at all — a metadata document cannot be fetched. Paste the service ' +
+                     'provider\'s certificate into samlEncryptionCertificate instead' });
+      return;
+    }
     const problem = urlProblem(url);
     if (problem) {
       log.debug("Leaving fetchMetadata(). Refused: " + problem);
-      resolve({ ok: false, why: problem });
+      resolve({ ok: false, errorCode: 'STS-SAML-0046', why: problem });
       return;
     }
     const parsed = new URL(String(url).trim());
@@ -258,15 +295,26 @@ function fetchMetadata(url) {
       settled = true;
       resolve(answer);
     };
+    const cap = maxMetadataBytes();
+    const insecure = fedHttp.allowInsecure();
+    if (parsed.protocol !== 'https:') {
+      // Every insecure request, not only the setting — federation_http.js's rule.
+      log.warn('saml2: fetching SP metadata from ' + parsed.origin + ' over plain http ' +
+               'because federation.outboundAllowInsecure is ON.');
+    }
     const request = agent.get(String(url).trim(), {
-      headers: { accept: 'application/samlmetadata+xml, application/xml, text/xml' }
+      headers: { accept: 'application/samlmetadata+xml, application/xml, text/xml',
+                 'user-agent': USER_AGENT },
+      // THE CERTIFICATE CHECK, and `federation.outboundAllowInsecure` is what
+      // turns it off — the half the copy of this policy never applied.
+      rejectUnauthorized: !insecure
     }, function (res) {
       // NO REDIRECT FOLLOWING, deliberately: a redirect is how a URL somebody
       // vetted becomes a URL nobody vetted, and this is one of two places in
       // this service that dials anything at all.
       if (res.statusCode >= 300 && res.statusCode < 400) {
         res.resume();
-        done({ ok: false, status: res.statusCode,
+        done({ ok: false, status: res.statusCode, errorCode: 'STS-SAML-0047',
                why: 'it answered ' + res.statusCode + ' with a redirect to "' +
                     (res.headers.location || '(no Location)') + '". Redirects are not ' +
                     'followed here — a redirect is how a vetted URL becomes an unvetted ' +
@@ -275,7 +323,7 @@ function fetchMetadata(url) {
       }
       if (res.statusCode !== 200) {
         res.resume();
-        done({ ok: false, status: res.statusCode,
+        done({ ok: false, status: res.statusCode, errorCode: 'STS-SAML-0048',
                why: 'it answered ' + res.statusCode + ' rather than 200' });
         return;
       }
@@ -284,13 +332,13 @@ function fetchMetadata(url) {
       res.setEncoding('utf8');
       res.on('data', function (chunk) {
         size += chunk.length;
-        if (size > MAX_METADATA_BYTES) {
+        if (size > cap) {
           // A cap, because the other end is not this service's to trust and a
           // metadata document is kilobytes. Destroying the socket is what stops
           // an endless response from being read into memory.
           request.destroy();
-          done({ ok: false, why: 'the document is larger than ' + MAX_METADATA_BYTES +
-                 ' bytes, which no service provider metadata is' });
+          done({ ok: false, errorCode: 'STS-SAML-0049', why: 'the document is larger than ' + cap +
+                 ' bytes (saml2.spMetadataMaxBytes), which no service provider metadata is' });
           return;
         }
         body += chunk;
@@ -301,15 +349,28 @@ function fetchMetadata(url) {
     });
     request.setTimeout(timeoutMs(), function () {
       request.destroy();
-      done({ ok: false, why: 'it did not answer within ' + timeoutMs() +
+      done({ ok: false, errorCode: 'STS-SAML-0050', why: 'it did not answer within ' + timeoutMs() +
              'ms (federation.outboundTimeoutMs)' });
     });
     request.on('error', function (e) {
       // The message is the node error's, because "self-signed certificate",
       // "connection refused" and "getaddrinfo ENOTFOUND" send somebody to three
       // different places and a single word for all three sends them nowhere.
-      done({ ok: false, why: 'the request failed: ' + e.message });
+      done({ ok: false, errorCode: 'STS-SAML-0051', why: 'the request failed: ' + e.message });
     });
+  });
+}
+
+// The audit row for a refresh that did not happen. The reason sentences name a
+// URL, a status or a parser's message — never a certificate or a document body.
+function refreshRefused(code, identifier, why) {
+  audit.failure(code, {
+    protocol: 'SAML 2.0', channel: 'internal',
+    target: String(identifier || ''),
+    summary: 'the service provider metadata for ' + String(identifier || '(unnamed)') +
+             ' was not refreshed: ' + why,
+    // error-code: none — the helper's own row; every caller passes its code
+    outcome: 'refused'
   });
 }
 
@@ -327,6 +388,7 @@ function refresh(identifier) {
   const record = applications.get(identifier);
   if (!record) {
     log.debug("Leaving refresh(). No such application.");
+    refreshRefused('STS-SAML-0044', identifier, 'there is no such application to refresh');
     return Promise.resolve({ ok: false, errors: ['There is no application "' + identifier +
       '" in this registry. Create it first — a metadata URL is an attribute on an entry, ' +
       'and this action never takes a URL from the caller.'] });
@@ -338,6 +400,8 @@ function refresh(identifier) {
       log.warn('saml2: could not refresh metadata for ' + identifier + ' — ' + answer.why +
                '. Nothing on the entry was changed.');
       log.debug("Leaving refresh(). The fetch failed.");
+      refreshRefused(answer.errorCode || 'STS-SAML-0051', identifier,
+                     'the metadata could not be fetched: ' + answer.why);
       return { ok: false, errors: ['The metadata at "' + wanted + '" could not be read: ' +
         answer.why + '. Nothing on the entry was changed, so whatever certificate it ' +
         'already had is still in force.'] };
@@ -345,12 +409,16 @@ function refresh(identifier) {
     const parsed = parse(answer.xml);
     if (!parsed.ok) {
       log.debug("Leaving refresh(). The document is unusable.");
+      refreshRefused('STS-SAML-0052', identifier,
+                     'the fetched metadata document is unusable: ' + parsed.why);
       return { ok: false, errors: ['The document at "' + wanted + '" was fetched but ' +
         parsed.why + '. Nothing on the entry was changed.'] };
     }
     const bad = certificateProblem(parsed.certificate);
     if (bad) {
       log.debug("Leaving refresh(). The certificate is unusable.");
+      refreshRefused('STS-SAML-0053', identifier,
+                     'the metadata carries a certificate this service cannot use: ' + bad);
       return { ok: false, errors: ['The metadata at "' + wanted + '" carries a certificate ' +
         'this service cannot use: ' + bad + '. Nothing on the entry was changed.'] };
     }
@@ -363,6 +431,8 @@ function refresh(identifier) {
     const failed = stored.filter(function (one) { return !one.ok; });
     if (failed.length) {
       log.debug("Leaving refresh(). The entry would not take it.");
+      refreshRefused('STS-SAML-0054', identifier,
+                     'the application entry would not take the fetched metadata');
       return { ok: false, errors: failed.reduce(function (all, one) {
         return all.concat(one.errors || []);
       }, []) };

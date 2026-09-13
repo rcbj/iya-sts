@@ -12,8 +12,11 @@ what still is not matters just as much.
 **Encryption is a page of its own.** What this service seals before a value
 reaches a store, and what encrypts the rest of the database underneath it —
 LUKS, ZFS, the forks that have TDE — is [Encryption at rest](encryption-at-rest.md).
-That page also answers the question this one invites: there is ONE
-key-encryption key for the whole service rather than one per trust realm.
+That page also answers the two questions this one invites: there is ONE
+key-encryption key for the whole service rather than one per trust realm, and
+the DATABASE PASSWORD can come out of the same secret store as that key
+(`persistence.databasePasswordProvider`) rather than out of the connection
+string.
 
 ## What survives, and what never can
 

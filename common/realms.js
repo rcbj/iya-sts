@@ -76,8 +76,24 @@ const bunyan = require('bunyan');
 // an INVERTED HOOK filled at the foot of this file, which is rule 3e's shape and
 // passes rule 3e's test: a require in that direction would close a cycle.
 const config = require('./config');
+// The registry of failure codes, a LEAF. NOT audit.js, which requires this
+// file: a failure here is logged with `errorCodes.tag()`, and a refusal handed
+// back to the console or the management API carries its code NON-ENUMERABLY
+// (`errorCodes.mark()` on the result), so a reply serialised from it is
+// byte-for-byte what it was.
+const errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({ name: 'sts-realms' });
+
+// The FIRST condition a list of refusals was built for, kept on the list. A
+// later push must not overwrite it: the first sentence is the one a caller
+// shows first, and the code should name the same condition.
+function firstCode(target, code) {
+  if (code && !errorCodes.codeOf(target)) {
+    errorCodes.mark(target, code);
+  }
+  return target;
+}
 config.registerLogger(log);
 
 // ---------------------------------------------------------------------------
@@ -324,7 +340,8 @@ function reserved() {
     // walks it for a REFUSAL rather than for a report. An express that changed
     // shape must not stop a realm from being created — it must stop the
     // refusal being silent, which is what this line does.
-    log.warn('realms: could not read the router to reserve realm ids: ' + e.message);
+    log.warn(errorCodes.tag('STS-CORE-0017') +
+             'realms: could not read the router to reserve realm ids: ' + e.message);
   }
   log.debug("Leaving reserved().");
   return paths;
@@ -338,20 +355,24 @@ function validateId(id) {
     errors.push('A realm id is lower-case letters, digits and hyphens, ' +
                 'starts with a letter or a digit and is at most 31 ' +
                 'characters. "' + value + '" is not.');
+    firstCode(errors, 'STS-CORE-0009');
     log.debug("Leaving validateId().");
     return errors;
   }
   if (value === DEFAULT_ID) {
     errors.push('"' + DEFAULT_ID + '" is the built-in realm and cannot be redefined.');
+    firstCode(errors, 'STS-CORE-0010');
   }
   if (reserved().indexOf(value) >= 0) {
     errors.push('"' + value + '" is the first segment of a path this service ' +
                 'already serves. A realm may not be called that, whatever ' +
                 'realms.pathSegment is set to, because clearing that setting ' +
                 'would make the realm shadow the endpoint.');
+    firstCode(errors, 'STS-CORE-0011');
   }
   if (realms.has(value)) {
     errors.push('A realm called "' + value + '" is already defined.');
+    firstCode(errors, 'STS-CORE-0012');
   }
   log.debug("Leaving validateId().");
   return errors;
@@ -403,8 +424,118 @@ const NAMED_BY_REALM = [
   { key: 'wsfed.entityId', join: ':' },
   { key: 'wstrust.issuer', join: ':' },
   { key: 'saml.issuer', join: ':' },
-  { key: 'oid4vp.clientId', join: '-' }
+  { key: 'oid4vp.clientId', join: '-' },
+  // ---------------------------------------------------------------------
+  // **THE SEVENTH IS THE SPIFFE TRUST DOMAIN (2026-09-12), AND IT IS THE
+  // FIRST ONE THAT GOES IN FRONT.**
+  //
+  // It belongs on this list for the list's own reason and not by analogy: a
+  // trust domain is the authority part of every SPIFFE ID an issuing
+  // authority mints, so two realms sharing one are two authorities claiming
+  // one name — and an SVID from either is then ambiguous in exactly the way
+  // two identity providers sharing an entityID are. `spiffe://example.org/w`
+  // issued by the default realm and by `acme` would be one identifier over
+  // two key sets.
+  //
+  // `prefix` is what this row adds to the shape. The six above SUFFIX
+  // (`urn:…:acme`), because what they name is an entity and a longer name is
+  // still a name. A trust domain is a DNS-shaped label whose structure runs
+  // the other way — `acme.example.org` is beneath `example.org` and
+  // `example.org.acme` is beneath nothing — and rcbj's instruction was a
+  // COMMON ROOT with a unique issuer under it, which is that word for word.
+  { key: 'spiffe.trustDomain', join: '.', prefix: true }
 ];
+
+// ---------------------------------------------------------------------------
+// AND THE THINGS A REALM MUST NOT INHERIT AT ALL (2026-09-12).
+//
+// A second list, because it is a different claim. The one above is about
+// names that must be DISTINCT; this is about defaults that must be OFF — a
+// realm is created without the SPIFFE protocol, at rcbj's instruction and for
+// a reason the seeded names do not carry:
+//
+//   * a realm's SPIFFE is not one more view onto a shared surface. Turning it
+//     on BINDS SOCKETS — a Workload API and a SPIRE Server API of that realm's
+//     own, on an address of its own — and a realm that bound two listeners
+//     merely by existing would make `POST /admin-api/realms/create` an
+//     operation that opens ports, which is not what anybody asking for a realm
+//     is asking for;
+//   * and what comes out of those sockets is a CREDENTIAL another service will
+//     believe, issued by an authority that attests nothing. The service-wide
+//     posture is that this is deliberate and said out loud on every SPIFFE
+//     surface; making it the automatic consequence of creating a realm would
+//     be that posture arrived at by nobody.
+//
+// The default realm is untouched: `spiffe.enabled` defaults to true for the
+// process, which is the service this repository has always been.
+//
+// THE SOCKET PATHS ARE HERE FOR A THIRD REASON, and it is the plainest one in
+// this file: two processes cannot bind one Unix socket path, and neither can
+// two realms. A realm that inherited `/tmp/spire-agent/public/api.sock` would
+// fail to bind, or — worse, on a stale socket — would take it away from the
+// realm that had it.
+// ---------------------------------------------------------------------------
+//
+// **AND THE TCP LISTENERS AND THE ADMINISTRATORS ARE HERE FOR A FOURTH
+// (2026-09-12).** A realm seeded only its socket paths, so it inherited the
+// default realm's `spiffe.workloadPort` (8092), `spiffe.serverPort` (8181) and
+// `spiffe.grpcHost` (0.0.0.0) — addresses the default realm is already
+// listening on. Turning a realm's SPIFFE on therefore produced two refused
+// binds every time, explained by `spiffe_server.js`'s refusal but reached by
+// nobody's choice. Two ways out were considered:
+//
+//   * DISTINCT PORTS per realm. Rejected: `spiffe/CLAUDE.md` argues that a realm
+//     is told apart by an ADDRESS with the ports unchanged, so a client
+//     configured for :8092 reaches every realm where it expects to — and there
+//     is no port this file could pick that is guaranteed free on the host.
+//   * THE TCP LISTENERS OFF (port 0) until an operator gives the realm an
+//     address. TAKEN. This file cannot know which addresses this machine has,
+//     so it cannot choose one; what it can do is not bind the one address it
+//     knows is taken. A realm turned on gets its two Unix sockets, which work,
+//     and the SPIRE Server API — the network-reachable administrative surface
+//     that mints credentials — is opened on TCP only by somebody deciding to:
+//     set `spiffe.grpcHost` to an address of the realm's own and the two ports
+//     back to 8092 / 8181 on the realm.
+//
+// `spiffe.adminIds` is seeded EMPTY for the same kind of reason: the process's
+// list names SPIFFE IDs in the DEFAULT realm's trust domain, and a realm is a
+// different trust domain. None of those ids could verify there — nothing in
+// the realm signs them — so inheriting the list granted nothing, but it
+// published administrators on `/realm/<id>/spiffe` who are not administrators
+// of anything in it. `keepEmpty` is what lets an empty value be seeded at all.
+// ---------------------------------------------------------------------------
+const SEEDED_FOR_REALM = [
+  { key: 'spiffe.enabled', value: function () { return false; } },
+  { key: 'spiffe.workloadSocket', value: function (id) {
+      return socketPathFor('spiffe.workloadSocket', id);
+    } },
+  { key: 'spiffe.serverSocket', value: function (id) {
+      return socketPathFor('spiffe.serverSocket', id);
+    } },
+  { key: 'spiffe.workloadPort', value: function () { return 0; } },
+  { key: 'spiffe.serverPort', value: function () { return 0; } },
+  { key: 'spiffe.adminIds', value: function () { return ''; },
+    keepEmpty: true }
+];
+
+// `/tmp/spire-agent/public/api.sock` for the default realm becomes
+// `/tmp/spire-agent/public/acme/api.sock` for `acme` — the realm as a
+// DIRECTORY rather than a suffix on the filename, because that is what SPIRE's
+// own layout does with a second agent and because a client is pointed at a
+// directory far more often than at a file.
+function socketPathFor(key, id) {
+  const base = run(DEFAULT_REALM, function () {
+    return String(config.value(key) || '');
+  });
+  if (!base) {
+    return '';
+  }
+  const cut = base.lastIndexOf('/');
+  if (cut < 0) {
+    return id + '-' + base;
+  }
+  return base.slice(0, cut) + '/' + id + base.slice(cut);
+}
 
 function seededNames(id) {
   log.debug("Entering seededNames(). id=" + id);
@@ -418,7 +549,18 @@ function seededNames(id) {
       return config.value(row.key);
     });
     if (base) {
-      out[row.key] = String(base) + row.join + id;
+      out[row.key] = row.prefix
+        ? id + row.join + String(base)
+        : String(base) + row.join + id;
+    }
+  });
+  SEEDED_FOR_REALM.forEach(function (row) {
+    const value = row.value(id);
+    if (value === undefined || value === null) {
+      return;
+    }
+    if (value !== '' || row.keepEmpty) {
+      out[row.key] = value;
     }
   });
   log.debug("Leaving seededNames(). " + Object.keys(out).length + " name(s).");
@@ -431,12 +573,13 @@ function create(spec) {
   const errors = validateId(id);
   if (errors.length) {
     log.debug("Leaving create(). Refused: " + errors.join(' '));
-    return { ok: false, errors: errors };
+    return errorCodes.mark({ ok: false, errors: errors }, errorCodes.codeOf(errors));
   }
   const overrideErrors = checkOverrides((spec || {}).overrides);
   if (overrideErrors.length) {
     log.debug("Leaving create(). Refused for its overrides.");
-    return { ok: false, errors: overrideErrors };
+    return errorCodes.mark({ ok: false, errors: overrideErrors },
+                           errorCodes.codeOf(overrideErrors));
   }
   const realm = {
     id: id,
@@ -457,7 +600,11 @@ function create(spec) {
   built(realm);
   // And after the builders, so that a watcher writing the registry down does
   // it once the realm is whole. See onChange() above.
-  changed(realm.id, 'create');
+  // `restored` rides along for a watcher that must tell a realm somebody
+  // CREATED here from one this process only learnt about — `persistence.js`
+  // restores a stored or replicated realm through this same function, and
+  // `pki.js` builds a certificate branch for the first and not the second.
+  changed(realm.id, 'create', { restored: !!(spec && spec.restored) });
   log.debug("Leaving create().");
   return { ok: true, errors: [], realm: realm };
 }
@@ -467,14 +614,16 @@ function update(id, changes) {
   const realm = realms.get(String(id || ''));
   if (!realm) {
     log.debug("Leaving update(). No such realm.");
-    return { ok: false, errors: ['No realm called "' + id + '" is defined.'] };
+    return errorCodes.mark({ ok: false, errors: ['No realm called "' + id + '" is defined.'] },
+                           'STS-CORE-0013');
   }
   const spec = changes || {};
   if (spec.overrides !== undefined) {
     const overrideErrors = checkOverrides(spec.overrides);
     if (overrideErrors.length) {
       log.debug("Leaving update(). Refused for its overrides.");
-      return { ok: false, errors: overrideErrors };
+      return errorCodes.mark({ ok: false, errors: overrideErrors },
+                             errorCodes.codeOf(overrideErrors));
     }
     realm.overrides = Object.assign({}, spec.overrides);
   }
@@ -548,6 +697,18 @@ function checkRealmOverride(key, raw) {
   return config.checkOverride(key, raw, true);
 }
 
+// WHICH CONDITION checkRealmOverride() REFUSED FOR, in its order: the two rules
+// that are this file's, then config.js's own three through its twin.
+function checkRealmOverrideCode(key, raw) {
+  if (String(key || '').indexOf('realms.') === 0) {
+    return 'STS-CORE-0014';
+  }
+  if (config.isPerProcess(key)) {
+    return 'STS-CORE-0015';
+  }
+  return config.checkOverrideCode(key, raw, true);
+}
+
 // One setting, set or cleared on one realm. Separate from update() because the
 // console's configuration page edits a section at a time and the management API
 // edits a key at a time, and neither wants to send the whole override object
@@ -557,12 +718,14 @@ function setOverride(id, key, raw) {
   const realm = realms.get(String(id || ''));
   if (!realm) {
     log.debug("Leaving setOverride(). No such realm.");
-    return { ok: false, errors: ['No realm called "' + id + '" is defined.'] };
+    return errorCodes.mark({ ok: false, errors: ['No realm called "' + id + '" is defined.'] },
+                           'STS-CORE-0013');
   }
   const problem = checkRealmOverride(key, raw);
   if (problem) {
     log.debug("Leaving setOverride(). Refused: " + problem);
-    return { ok: false, errors: [problem] };
+    return errorCodes.mark({ ok: false, errors: [problem] },
+                           checkRealmOverrideCode(key, raw));
   }
   realm.overrides[key] = raw;
   log.info('realms: "' + realm.id + '" sets ' + key + '.');
@@ -576,13 +739,14 @@ function clearOverride(id, key) {
   const realm = realms.get(String(id || ''));
   if (!realm) {
     log.debug("Leaving clearOverride(). No such realm.");
-    return { ok: false, errors: ['No realm called "' + id + '" is defined.'] };
+    return errorCodes.mark({ ok: false, errors: ['No realm called "' + id + '" is defined.'] },
+                           'STS-CORE-0013');
   }
   if (!Object.prototype.hasOwnProperty.call(realm.overrides, key)) {
     log.debug("Leaving clearOverride(). Nothing was set.");
-    return { ok: false, errors: ['"' + key + '" is not set on realm "' +
+    return errorCodes.mark({ ok: false, errors: ['"' + key + '" is not set on realm "' +
       realm.id + '"; it already comes from what the whole service is ' +
-      'configured with.'] };
+      'configured with.'] }, 'STS-CORE-0016');
   }
   delete realm.overrides[key];
   log.info('realms: "' + realm.id + '" no longer sets ' + key + '.');
@@ -606,6 +770,7 @@ function checkOverrides(overrides) {
     const problem = checkRealmOverride(key, overrides[key]);
     if (problem) {
       errors.push(problem);
+      firstCode(errors, checkRealmOverrideCode(key, overrides[key]));
     }
   });
   return errors;
@@ -641,15 +806,16 @@ function onChange(fn) {
   watchers.push(fn);
 }
 
-function changed(id, what) {
+function changed(id, what, info) {
   log.debug("Entering changed(). id=" + id + ", what=" + what);
   watchers.forEach(function (watcher) {
     try {
-      watcher(id, what);
+      watcher(id, what, info || {});
     } catch (e) {
       // Swallowed and named: a watcher that cannot do its job must not undo
       // the caller's, and the caller's job here already succeeded.
-      log.warn('realms: a change watcher threw for "' + id + '" (' + what +
+      log.warn(errorCodes.tag('STS-CORE-0018') +
+               'realms: a change watcher threw for "' + id + '" (' + what +
                '): ' + e.message);
     }
   });
@@ -709,7 +875,8 @@ function built(realm) {
     try {
       build(realm.id, realm);
     } catch (e) {
-      log.warn('realms: a store could not build itself for "' + realm.id +
+      log.warn(errorCodes.tag('STS-CORE-0019') +
+               'realms: a store could not build itself for "' + realm.id +
                '": ' + e.message);
     }
   });
@@ -721,7 +888,8 @@ function remove(id) {
   const realm = realms.get(String(id || ''));
   if (!realm) {
     log.debug("Leaving remove(). No such realm.");
-    return { ok: false, errors: ['No realm called "' + id + '" is defined.'] };
+    return errorCodes.mark({ ok: false, errors: ['No realm called "' + id + '" is defined.'] },
+                           'STS-CORE-0013');
   }
   realms.delete(realm.id);
   purges.forEach(function (purge) {
@@ -732,7 +900,8 @@ function remove(id) {
       // purging, and it must not leave the registry row behind either — the
       // row is already gone above. Log it and carry on; the worst outcome is
       // state for an id nobody can reach any more.
-      log.warn('realms: a store refused to purge "' + realm.id + '": ' + e.message);
+      log.warn(errorCodes.tag('STS-CORE-0020') +
+               'realms: a store refused to purge "' + realm.id + '": ' + e.message);
     }
   });
   log.info('realms: "' + realm.id + '" removed, with everything it held.');
@@ -808,7 +977,8 @@ let persistObserver = null;
 function setPersistObserver(fn) {
   log.debug("Entering setPersistObserver().");
   if (typeof fn !== 'function') {
-    log.error('realms: setPersistObserver() was given a ' + typeof fn +
+    log.error(errorCodes.tag('STS-CORE-0021') +
+              'realms: setPersistObserver() was given a ' + typeof fn +
               ' rather than a function. Nothing minted will be written down.');
     log.debug("Leaving setPersistObserver(). Refused.");
     return false;
@@ -843,7 +1013,8 @@ function declareHandle(options, shape, accessors) {
     // store that is at worst not persisted — which is the trade rule 1's
     // "a require that throws takes the service down where a route cannot"
     // already makes for the listeners.
-    log.error('realms: the handle "' + handle + '" is declared TWICE (' +
+    log.error(errorCodes.tag('STS-CORE-0022') +
+              'realms: the handle "' + handle + '" is declared TWICE (' +
               already.shape + ' and ' + shape + '). The second declaration ' +
               'will not be persisted: two stores under one handle would ' +
               'each overwrite the other\'s rows, and the damage would only ' +
@@ -918,7 +1089,8 @@ function noteWriteIn(handle, realmId, key) {
     // inside a sign-in. A store that cannot journal its write must not fail
     // the request that made it — the same argument persistence.js makes about
     // a failed flush, one layer down.
-    log.error('realms: "' + handle + '" could not report a write: ' + e.message);
+    log.error(errorCodes.tag('STS-CORE-0023') +
+              'realms: "' + handle + '" could not report a write: ' + e.message);
   }
 }
 
@@ -1315,11 +1487,53 @@ function obj(factory, options) {
 // It is a plain `Map` with no partitioning at all — every member is the real
 // Map's, and only the three mutators are wrapped — so a caller cannot tell it
 // from the `new Map()` it replaces.
+//
+// ---------------------------------------------------------------------------
+// `reconcile`: WHAT A STORED ROW MAY CHANGE IN A STORE PARTLY BUILT FROM CODE
+// (2026-09-12).
+//
+// `restore` and `remove` below are the two accessors BOTH doors a stored row
+// comes in through reach — `persistence_minted.js`'s startup `restore()` and
+// its replication applier `applyLocally()` — so a rule stated here is obeyed by
+// a restart and by another process alike, and cannot be forgotten by a third
+// door, because there is no third accessor.
+//
+// Until this date both accessors wrote whatever they were handed. That is right
+// for a store whose every row was MINTED (a session, a replay entry), and wrong
+// for `krb5.principals`, whose configured rows are BUILT FROM SETTINGS at
+// require time and only then written down: a restore put back the password,
+// salt, etypes and kvno the row had when it was written, silently overriding a
+// changed `krb5.servicePassword` for as long as that row lived in the store —
+// and resurrected a fixture account with a published password into a process
+// whose settings no longer create it. So a store may pass
+//
+//     reconcile: { restore(key, incoming, held) -> value | undefined,
+//                  remove(key, held) -> boolean }
+//
+// and the accessor asks it first. `restore` answers the value to HOLD, which
+// may be `held` itself with fields copied onto it, or `undefined` meaning
+// "hold nothing new" — what was held stays and nothing replaces it. `remove`
+// answers false to refuse. Either missing means the old behaviour for that
+// half.
+//
+// **A RECONCILER THAT THROWS APPLIES NOTHING**, which is fail-closed on
+// purpose: the rule exists because some incoming rows must not be believed, and
+// a rule that could not be evaluated has not said this one may be. The row stays
+// in the store and the next write of that key through a process that CAN
+// evaluate it replaces it. Logged, with a code, because it is a defect in the
+// reconciler rather than anything about the row.
+//
+// ONE CALLER TODAY (`kerberos/krb5_principals.js`), and it is on `sharedMap()`
+// alone because that is the only shape with a store built partly from code. A
+// `realms.map()` that needs it would add the same two lines to its accessors;
+// adding them speculatively would be a hook nothing tests.
 // ---------------------------------------------------------------------------
 function sharedMap(options) {
   log.debug("Entering sharedMap().");
   const real = new Map();
   const declared = Object.assign({}, options || {}, { scope: 'shared' });
+  const reconcile = (options && options.reconcile) || {};
+  const handleName = String((options && options.persist) || '(undeclared)');
   const handle = declareHandle(declared, 'shared-map', {
     dump: function () {
       const out = [];
@@ -1330,8 +1544,44 @@ function sharedMap(options) {
       return real.has(k) ? { present: true, value: real.get(k) }
                          : { present: false };
     },
-    restore: function (realmId, k, v) { real.set(k, v); },
-    remove: function (realmId, k) { real.delete(k); }
+    restore: function (realmId, k, v) {
+      if (typeof reconcile.restore !== 'function') {
+        real.set(k, v);
+        return;
+      }
+      let admitted;
+      try {
+        admitted = reconcile.restore(k, v, real.get(k));
+      } catch (e) {
+        log.error(errorCodes.tag('STS-CORE-0042') +
+                  'realms: "' + handleName + '" could not reconcile a stored ' +
+                  'row under "' + k + '", so it was NOT applied and what this ' +
+                  'process held is unchanged: ' + e.message);
+        return;
+      }
+      if (admitted !== undefined) {
+        real.set(k, admitted);
+      }
+    },
+    remove: function (realmId, k) {
+      if (typeof reconcile.remove !== 'function') {
+        real.delete(k);
+        return;
+      }
+      let allowed = false;
+      try {
+        allowed = reconcile.remove(k, real.get(k)) !== false;
+      } catch (e) {
+        log.error(errorCodes.tag('STS-CORE-0042') +
+                  'realms: "' + handleName + '" could not reconcile a stored ' +
+                  'removal of "' + k + '", so it was NOT applied and what this ' +
+                  'process held is unchanged: ' + e.message);
+        return;
+      }
+      if (allowed) {
+        real.delete(k);
+      }
+    }
   });
   // The realm reported is always the empty string, whatever realm the write
   // happened in: a shared store has ONE row set, and journalling a write under
@@ -1343,7 +1593,8 @@ function sharedMap(options) {
       try {
         persistObserver(handle, '', k === undefined ? null : k);
       } catch (e) {
-        log.error('realms: "' + handle + '" could not report a write: ' +
+        log.error(errorCodes.tag('STS-CORE-0023') +
+                  'realms: "' + handle + '" could not report a write: ' +
                   e.message);
       }
     }
@@ -1526,15 +1777,32 @@ function realmSupport() {
     { family: 'TLS (8443 / 9443)', state: 'none', by: 'shared',
       note: 'Their whole content is what the server saw of the connection, ' +
             'which is a property of the socket and not of a realm.' },
-    { family: 'SPIFFE', state: 'none', by: 'shared',
-      note: 'One trust domain, one signing authority and one registry per ' +
-            'process. A SPIFFE trust domain is already the thing a trust ' +
-            'realm is, so the two would be nested rather than combined. The ' +
-            'REGISTRY is per realm now, since it is a container in the ' +
-            'directory — but the trust domain, the signing authority and the ' +
-            'four sockets in front of them are not, so what a realm gets is ' +
-            'its own list of registrations for one shared authority. That is ' +
-            'why this row is still `none`.' }
+    { family: 'SPIFFE', state: 'full', by: 'socket',
+      note: 'A TRUST DOMAIN, AN AUTHORITY, A REGISTRY AND A PAIR OF gRPC ' +
+            'SOCKETS PER REALM since 2026-09-12 — this row read `none` until ' +
+            'then and said one trust domain, one signing authority and four ' +
+            'shared sockets. **THE DISCRIMINATOR IS THE ENDPOINT ADDRESS AND ' +
+            'IT COULD NOT HAVE BEEN ANYTHING ELSE**: gRPC has a path and it ' +
+            'is the METHOD — `/SpiffeWorkloadAPI/FetchX509SVID` is fixed by ' +
+            'that specification and the SPIRE APIs by theirs — so a realm ' +
+            'segment in it would be a method no conforming client calls. A ' +
+            'realm is created with `spiffe.trustDomain` of ' +
+            '`<realm>.<the process\'s>` (the common root with a unique ' +
+            'issuer under it) and with SPIFFE OFF; turning it on builds that ' +
+            'realm\'s authorities and binds a Workload API and a SPIRE ' +
+            'Server API of its own, on Unix socket paths seeded when the ' +
+            'realm was made — and on TCP only once somebody gives it an ' +
+            'address (`spiffe.grpcHost`) and ports, which a realm is created ' +
+            'without, because the ones it would inherit are the default ' +
+            'realm\'s and already bound. ' +
+            'Join tokens are per realm too, because a join token is a ' +
+            'credential for joining a trust domain. **WHAT IS STILL SHARED ' +
+            'IS THE PROCESS\'S OWN FOUR SOCKETS**, which belong to the ' +
+            'default realm and stay bound whatever `spiffe.enabled` says — a ' +
+            'socket that vanished would read as a service that had stopped' +
+            '. The FEDERATED bundles are a realm\'s own since 2026-09-12, ' +
+            'and none may be registered under a trust domain any realm of ' +
+            'this service serves.' }
   ];
 }
 

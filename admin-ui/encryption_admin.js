@@ -93,7 +93,9 @@ const minted = require('../persistence/persistence_minted');
 const DATA_CLASSES = [
   {
     label: 'signing-keys',
-    what: 'This service’s own signing keys, one row per trust realm',
+    what: 'This service’s own signing keys, one row per trust realm — and, ' +
+          'in the same row since 2026-09-12, that realm’s OpenID4VCI ' +
+          'credential request-encryption key',
     where: 'the `sts_keys` row family in the persistence store',
     sealed: true,
     why: 'A private key that outlives the process. In product mode these are ' +
@@ -131,6 +133,32 @@ const DATA_CLASSES = [
          'database row and a backup of either hold `$aesgcm$…`.'
   },
   {
+    label: 'gnap-shared-key',
+    what: 'A GNAP client instance’s shared secret for a key reference — ' +
+          '`gnapSymmetricKey` (RFC 9635 section 7.1.1)',
+    where: 'an attribute on the application’s own entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'Whoever holds it can sign GNAP requests AS that client instance: ' +
+         'an HMAC key is both halves of the credential. Sealed at rest under ' +
+         'the process key-encryption key when keys persist, opened for a ' +
+         'reader that came through `applications.js`, and withheld from LDAP ' +
+         'readers in product mode.'
+  },
+  {
+    label: 'gnap-macaroon-key',
+    what: 'A GNAP resource server’s macaroon root key — `gnapMacaroonKey` ' +
+          '(RFC 9767 section 2.2)',
+    where: 'an attribute on the resource server’s application entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'A macaroon is verified with its ROOT key, and the same key can mint ' +
+         'one: whoever holds it can issue tokens that resource server will ' +
+         'accept. The key is derived per resource server from the realm ' +
+         'secret, and written onto the entry — sealed — only so the resource ' +
+         'server’s operator has somewhere to collect it.'
+  },
+  {
     label: 'person-private-key',
     what: 'The assertion signing key pair `/admin/pki` issues to a PERSON — ' +
           '`stsAssertionPrivateKey` (2026-09-11)',
@@ -144,6 +172,24 @@ const DATA_CLASSES = [
          'over ONCE, by the act that creates it, and is ciphertext ' +
          'everywhere afterwards. A console page that printed a person’s ' +
          'private key on every visit was the alternative.'
+  },
+  {
+    label: 'kerberos-keys',
+    what: 'Stored Kerberos long-term keys — a directory person\'s, derived ' +
+          'from their own password (`stsKrb5Keys`), and a service ' +
+          'principal\'s random ones (`krb5ServiceKeys`) (2026-09-12)',
+    where: 'an attribute on the person’s entry under `ou=users`, or on the ' +
+           'service’s application entry under `ou=applications`',
+    sealed: true,
+    why: 'PASSWORD-EQUIVALENT: a Kerberos long-term key is what the password ' +
+         'is turned into, and whoever holds it can obtain tickets as that ' +
+         'principal without knowing the password. So it is sealed wherever the ' +
+         'key-encryption key outlives the process, the name and a stamp of the ' +
+         'password hash are sealed WITH it so a value cannot be moved to ' +
+         'another entry or kept past a password change, and it is WITHHELD — ' +
+         'ciphertext included — from every page, every LDAP search and every ' +
+         '`/admin-api` reply. A service principal\'s key leaves this service ' +
+         'once, as the keytab its create or rotate hands over.'
   },
   {
     label: 'totp-secret',

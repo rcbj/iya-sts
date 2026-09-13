@@ -414,8 +414,20 @@ async function theReportFollowsTheSettings() {
 async function theRosterIsOnTheUsersPage() {
   log.info("=== the roster is columns on /admin/users ===");
 
-  await ok("/users/create", { username: PERSON, invent: false },
-           "created a person");
+  // WITH THE ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12). Product mode
+  // invents nothing onto an entry, so a person created with a bare username is
+  // a person this suite should not be depending on. No password: this person
+  // never signs in, and holding no credential at all is the state the roster
+  // below is asserted against. **`credential: "none"` IS SAID, NOT ASSUMED**,
+  // since a create that names no credential GENERATES a password (2026-09-12) —
+  // left out, this person is `usable` and the assertion about somebody holding
+  // nothing would fail describing a person who legitimately holds a password.
+  await ok("/users/create", {
+    username: PERSON, invent: false, credential: "none",
+    attributes: { cn: "Second Factor Person " + PERSON, givenName: "Second",
+                  sn: PERSON, displayName: "Second Factor Person " + PERSON,
+                  mail: PERSON + "@second-factor-pages.test" }
+  }, "created a person");
 
   const list = await get("/users?q=" + encodeURIComponent(PERSON));
   check("A PERSON WHO HAS NEVER AUTHENTICATED IS ON THE LIST, which the old " +

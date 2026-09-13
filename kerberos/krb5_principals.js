@@ -38,10 +38,33 @@
 // USER_PASSWORD below for why Kerberos cannot simply check no password the way the
 // rest of this service does not, and findOrCreateUser() for the accounts that are
 // not in the table until somebody asks for one.
+//
+// **ALL OF THAT IS DEVELOPMENT MODE (2026-09-12).** In product mode the fixture
+// accounts, their literal passwords, the delegation rules and the second realm
+// are not created, nothing is created on demand, and the two accounts the service
+// needs — krbtgt and `krb5.servicePrincipal` — exist only where their passwords
+// are set to something other than the value this repository publishes. See
+// SEEDS_DEMO and buildDatabase().
+//
+// **AND SINCE LATER THE SAME DAY A PRODUCT KDC AUTHENTICATES THE DIRECTORY'S
+// PEOPLE.** The sentence here read *what product mode does NOT yet do is give
+// the people in the directory Kerberos accounts: a product KDC here
+// authenticates nobody*. A person's long-term keys are now derived from their
+// real password at the moment a plaintext one is in hand — when it is SET, and
+// when a sign-in VERIFIES it — and stored, sealed, on their own directory
+// entry. This file does not know how: it offers `setKeySource()`, which
+// `krb5_person_keys.js` fills, and a user principal in product mode is resolved
+// through it rather than from `krb5.userPassword`. The same slot answers a
+// SERVICE principal an operator created with a random key. See KEY SOURCE
+// below, and `kerberos/CLAUDE.md`.
 // ---------------------------------------------------------------------------
 
 const kcrypto = require('./krb5_crypto.js');
 const prim = require('./krb5_primitives.js');
+// node's own, for the SHA-256 an on-demand RID is derived from (see
+// autoRidFor()). A builtin, so it adds nothing to the parent project's COPY
+// set.
+const nodeCrypto = require('crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 // The mode. A LEAF (rule 3) that registers nothing and requires only `config`,
@@ -52,15 +75,109 @@ const mode = require('../common/mode');
 // `sharedMap()`, and it is a LEAF that registers no route, so this cannot
 // move a route or join a cycle.
 const realms = require('../common/realms');
+// ERROR CODES. A LEAF requiring nothing, already in the parent project's copy
+// set through common/audit.js. Only tag() is used: every failure here happens
+// while the principal database is built at require time, before a request or
+// an audit ring exists to hold a row.
+const errorCodes = require('../common/error_codes');
 
 const REALM = config.value('krb5.realm');
 const DOMAIN = REALM.toLowerCase();
 
-// The etypes this KDC will use at all, strongest first. arcfour is included
+// ---------------------------------------------------------------------------
+// WHETHER THIS DATABASE CARRIES THE FIXTURE ACCOUNTS, DECIDED ONCE (2026-09-12).
+//
+// Every account below `krbtgt` in DEFINITIONS — alice, bob, the locked and
+// expired ones, the computer account, the four delegation services and their
+// rules, the whole second realm and its trust — is DEMONSTRATION DATA, and the
+// service accounts among them carry passwords written in this file. In
+// development that is the point: each one drives a failure a client has to
+// render. In product mode (`mode.seedsDemoData()` false) a fixture account with
+// a password printed in a public repository is an account anybody can use, and
+// a delegation rule nobody configured is a permission nobody granted, so none
+// of it is created. What is left is what the service NEEDS: this realm's
+// `krbtgt` and the account `krb5.servicePrincipal` names — each only where its
+// password is not the published default (see `publishedDefault()` below).
+//
+// **CAPTURED AT REQUIRE TIME AND NOT READ PER REQUEST**, and that is the honest
+// shape rather than a shortcut: the database and every long-term key in it are
+// built here, at require time, which is why `krb5.realm` and every password
+// setting are restart-only. `global.mode` is runtime-settable and per trust
+// realm, but this KDC is one of the socket families a realm does not get — it
+// answers in no realm — so the mode it is built in is the PROCESS's mode at
+// startup, and changing it later adds and removes no principal. `realmsServed()`
+// reads the same captured value so the database and the realms it answers for
+// cannot disagree.
+// ---------------------------------------------------------------------------
+const SEEDS_DEMO = mode.seedsDemoData();
+
+// The value a setting ships with, read off its row rather than written out a
+// second time here. A password equal to it is a password printed in this
+// repository, whoever typed it.
+function publishedDefault(key) {
+  const row = config.SETTINGS.filter(function (one) { return one.key === key; })[0];
+  return row ? row.dflt : undefined;
+}
+
+// ---------------------------------------------------------------------------
+// The etypes this KDC will use at all, strongest first — `krb5.enctypes`, whose
+// default is the literal this line used to carry. arcfour is in that default
 // because the workflow has to be able to exercise it — Microsoft is retiring it
 // and a debugger whose only story is "that is deprecated" cannot help anybody
-// still running it.
-const KDC_ETYPES = [18, 17, 20, 19, 23];
+// still running it — and taking 23 out is what a hardened deployment does.
+//
+// A number the vendored codec does not implement is REFUSED rather than
+// dropped: a list that silently lost an entry would be a KDC offering less than
+// its configuration says, and the first symptom would be KDC_ERR_ETYPE_NOSUPP
+// for a client that asked for exactly what the operator wrote down.
+// ---------------------------------------------------------------------------
+function parseEtypes(list) {
+  log.debug('Entering parseEtypes().');
+  const ids = [];
+  const problems = [];
+  (Array.isArray(list) ? list : String(list || '').split(',')).forEach(function (raw) {
+    const text = String(raw).trim();
+    if (!text) {
+      return;
+    }
+    const id = Number(text);
+    if (!/^\d+$/.test(text) || !kcrypto.isSupportedEtype(id)) {
+      problems.push(text);
+      return;
+    }
+    if (ids.indexOf(id) === -1) {
+      ids.push(id);
+    }
+  });
+  if (!ids.length && !problems.length) {
+    problems.push('(an empty list)');
+  }
+  log.debug('Leaving parseEtypes(). ' + ids.length + ' etype(s), ' +
+            problems.length + ' problem(s).');
+  return { ids: ids, problems: problems };
+}
+
+const KDC_ETYPES = (function configuredEtypes() {
+  const parsed = parseEtypes(config.value('krb5.enctypes'));
+  if (parsed.problems.length) {
+    // FATAL, for `config.js`'s reason: a KDC answering with a narrower list
+    // than it was configured with is wrong in a way no page shows, and a throw
+    // out of a require lands as a stack trace whose top frame is node's loader.
+    log.fatal(errorCodes.tag('STS-KRB-0058') +
+              'krb5: NOT STARTING. krb5.enctypes (KRB5_ENCTYPES) names ' +
+              parsed.problems.join(', ') + ', which the Kerberos codec here ' +
+              'does not implement. It performs 17, 18, 19, 20 and 23 ' +
+              '(aes128-cts-hmac-sha1-96, aes256-cts-hmac-sha1-96, ' +
+              'aes128-cts-hmac-sha256-128, aes256-cts-hmac-sha384-192, ' +
+              'rc4-hmac); DES is decode-only.');
+    process.exit(1);
+  }
+  return parsed.ids;
+})();
+
+// Every account's key version. One per account: rotation is not modelled —
+// see `krb5.kvno`.
+const KVNO = config.value('krb5.kvno');
 
 // AD's salt for a user account: realm + sAMAccountName, no separator.
 function userSalt(realm, name) {
@@ -237,14 +354,21 @@ function hostSalt(realm, shortName, dnsDomain) {
 //
 // A USER entry carries no `password`: register() gives it USER_PASSWORD, the one every
 // user here shares. A service, computer or krbtgt entry names its own.
+//
+// **THE FIRST ENTRY IS INFRASTRUCTURE AND EVERY OTHER ONE IS A FIXTURE** (see
+// SEEDS_DEMO above). The HTTP/web entry among the fixtures is REPLACED by the
+// account `krb5.servicePrincipal` names when the two are the same name, which
+// they are at the default settings — see `configuredServiceDefinition()`.
+const KRBTGT_DEFINITION = {
+  name: ['krbtgt', REALM],
+  type: 2,                                   // NT-SRV-INST
+  password: config.value('krb5.krbtgtPassword'),
+  salt: userSalt(REALM, 'krbtgt'),
+  description: 'the ticket-granting service, whose key seals every TGT'
+};
+
 const DEFINITIONS = [
-  {
-    name: ['krbtgt', REALM],
-    type: 2,                                   // NT-SRV-INST
-    password: config.value('krb5.krbtgtPassword'),
-    salt: userSalt(REALM, 'krbtgt'),
-    description: 'the ticket-granting service, whose key seals every TGT'
-  },
+  KRBTGT_DEFINITION,
   {
     name: ['alice'],
     type: 1,                                   // NT-PRINCIPAL
@@ -573,8 +697,13 @@ const TRUSTED_DEFINITIONS = [
 
 // Which realms this process answers for. A real KDC answers for exactly one; this one
 // answers for two so the whole referral chase is reachable without a second container.
+//
+// **ONE IN PRODUCT MODE.** The second realm, its krbtgt, its user and the trust
+// are all fixtures (SEEDS_DEMO), so a KDC that went on answering for PARTNER.COM
+// would be answering for a realm it holds nothing in. KDC_ERR_WRONG_REALM is the
+// true answer to a request naming it.
 function realmsServed() {
-  return [REALM, TRUSTED_REALM];
+  return SEEDS_DEMO ? [REALM, TRUSTED_REALM] : [REALM];
 }
 
 function domainSidFor(realm) {
@@ -596,7 +725,11 @@ function domainSidFor(realm) {
 function realmForService(nameComponents) {
   if (!nameComponents || nameComponents.length < 2) return null;
   const host = String(nameComponents[nameComponents.length - 1]).toLowerCase();
-  if (host === TRUSTED_DOMAIN || host.endsWith('.' + TRUSTED_DOMAIN)) return TRUSTED_REALM;
+  // No trust exists in product mode (see realmsServed()), so no host belongs to
+  // the trusted realm and the name is simply unknown here.
+  if (SEEDS_DEMO && (host === TRUSTED_DOMAIN || host.endsWith('.' + TRUSTED_DOMAIN))) {
+    return TRUSTED_REALM;
+  }
   if (host === DOMAIN || host.endsWith('.' + DOMAIN)) return REALM;
   return null;
 }
@@ -615,15 +748,266 @@ function realmForService(nameComponents) {
 // name inside the protocol is the KERBEROS realm rather than this service's.
 // **A LONG-TERM KEY IS THE PASSWORD**, which is why every row here is sealed
 // before it reaches the store.
-const principals = realms.sharedMap({ persist: 'krb5.principals',
-                                      scope: 'shared' });
+//
+// ---------------------------------------------------------------------------
+// A RESTORED ROW DOES NOT GET TO OVERRIDE THE SETTINGS (2026-09-12).
+//
+// This store holds two kinds of row, and until this date a restore treated
+// them as one. A CONFIGURED principal — krbtgt, the acceptor's account built
+// from `krb5.servicePrincipal` / `krb5.servicePassword` / `krb5.serviceSalt`,
+// every fixture — is BUILT FROM SETTINGS AND CODE by buildDatabase() at require
+// time, and only then written down. A RUNTIME-MADE principal — one
+// findOrCreateUser()/findOrCreateService() invented (`autoCreated`), or a
+// directory person directoryUser() registered (`directoryKeys`) — exists
+// nowhere BUT the store.
+//
+// The restore put back whole rows. So a configured account came back with the
+// password, salt, etypes and kvno it had when the row was written, and a
+// changed `krb5.servicePassword` (or `krb5.enctypes`, or `krb5.kvno`) silently
+// did not take effect for as long as that row lived. Worse, a process whose
+// settings no longer create an account — product mode after a development run,
+// a krbtgt refused for its published password, a renamed SPN — had it put
+// back anyway, with whatever password it was written with.
+//
+// **THE RULE, AT THE ONE BOUNDARY BOTH DOORS REACH.** `reconcile` below is
+// asked by `realms.sharedMap()`'s `restore` and `remove` accessors, which are
+// what the startup restore AND the replication applier call — so another
+// process's write obeys it exactly as a restart does:
+//
+//   * a key THIS PROCESS CONFIGURED (`CONFIGURED_KEYS`) keeps every field its
+//     settings built and takes only RUNTIME_FIELDS from the row. A difference in
+//     anything else is LOGGED (STS-KRB-0111), by field name and never by value,
+//     so an operator can see that a stored row was stale;
+//   * a RUNTIME-MADE row is restored WHOLE — it has no other source;
+//   * any other row is NOT restored (STS-KRB-0112): it claims to be configured
+//     and this process's settings do not configure it;
+//   * a replicated REMOVAL of a configured key is refused (STS-KRB-0113) — a
+//     configured account exists because the settings build it, and nothing in
+//     this service deletes one.
+//
+// **WHAT IS RUNTIME STATE ON A CONFIGURED PRINCIPAL IS EXACTLY ONE FIELD**, and
+// that is a finding rather than a guess: every write to a configured principal
+// after buildDatabase() is signOut() and clearSignOut() (called from
+// `logout/logout.js`, `admin-core/admin_actions.js` and `krb5_kdc.js`'s AS
+// handler), and both write `signedOutAt`. `revoked` looks like runtime state and
+// is not — it is set only by the `locked` fixture's definition and nothing
+// mutates it. directoryUser() moves `kvno`, `salt` and `etypes`, but only on a
+// `directoryKeys` record, which is restored whole. A field that becomes runtime
+// state later is a row added to RUNTIME_FIELDS, in the same commit as its first
+// writer — or a restart silently undoes that writer's work.
+//
+// **NOTHING IS WRITTEN BACK.** A stale stored row is corrected the next time
+// anything writes that key (a sign-out writes the WHOLE record this process
+// holds, which carries the current settings). Rewriting from inside the
+// applier would be two processes with different settings exchanging one row
+// for ever — the one unbounded failure `persistence/CLAUDE.md` warns about.
+// ---------------------------------------------------------------------------
+const RUNTIME_FIELDS = ['signedOutAt'];
 
-// RIDs for the accounts findOrCreateUser() makes, from 5000 up. Well clear of the
-// configured ones (the 1100s here, the 2100s in PARTNER.COM) on purpose: a service
-// authorizing on the PAC sees a SID and nothing else, so the range is the only way to
-// tell an account that was configured from one that turned up at runtime.
+// The keys buildDatabase() registered from settings and code. Filled at require
+// time, before any restore can run, and never shrunk: a configured account does
+// not stop being configured while the process that configured it is running.
+const CONFIGURED_KEYS = new Set();
+
+// The fields, by name, on which a stored row differs from what this process
+// built. JSON on both sides because the stored row has been through JSON —
+// `passwordMustChange` is a Date here and an ISO string there, and the key cache
+// is non-enumerable so it is compared by neither.
+function configDrift(incoming, held) {
+  const names = new Set(Object.keys(held).concat(Object.keys(incoming)));
+  const differing = [];
+  names.forEach(function (name) {
+    if (RUNTIME_FIELDS.indexOf(name) !== -1) {
+      return;
+    }
+    if (JSON.stringify(incoming[name]) !== JSON.stringify(held[name])) {
+      differing.push(name);
+    }
+  });
+  return differing.sort();
+}
+
+// A different principal already holding this row's RID, or null. Asked of a
+// runtime-made row on the way in, so that a collision the allocator did not
+// make — one left by the allocator before autoRidFor(), or the residual it
+// states — is SEEN rather than silently restored beside its twin.
+function ridHolderOtherThan(key, rid) {
+  let holder = null;
+  principals.forEach(function (principal, otherKey) {
+    if (!holder && otherKey !== key && principal && principal.pac &&
+        Number(principal.pac.rid) === Number(rid)) {
+      holder = otherKey;
+    }
+  });
+  return holder;
+}
+
+function reconcileRestored(key, incoming, held) {
+  log.debug('Entering reconcileRestored(). key=' + key);
+  if (!incoming || typeof incoming !== 'object' || !Array.isArray(incoming.name)) {
+    log.warn(errorCodes.tag('STS-KRB-0112') + 'krb5: a stored row under "' + key +
+             '" is not a principal record, so it was not restored.');
+    log.debug('Leaving reconcileRestored(). Not a record.');
+    return undefined;
+  }
+  if (CONFIGURED_KEYS.has(key)) {
+    if (!held) {
+      // Unreachable while the removal half refuses a configured key, and
+      // answered the safe way if it is ever reached: a configured account is
+      // built from settings, so there is nothing in the row to build it from.
+      log.debug('Leaving reconcileRestored(). Configured and not held.');
+      return undefined;
+    }
+    const differing = configDrift(incoming, held);
+    if (differing.length) {
+      log.warn(errorCodes.tag('STS-KRB-0111') + 'krb5: the stored row for the ' +
+               'configured principal ' + key + ' differs from what this ' +
+               'process\'s settings build, in ' + differing.join(', ') + '. The ' +
+               'settings were kept; only ' + RUNTIME_FIELDS.join(', ') + ' was ' +
+               'taken from the row. The stored row is corrected the next time ' +
+               'this principal is written.');
+    }
+    RUNTIME_FIELDS.forEach(function (field) {
+      held[field] = incoming[field] === undefined ? null : incoming[field];
+    });
+    log.debug('Leaving reconcileRestored(). Configured; runtime state taken.');
+    return held;
+  }
+  if (incoming.autoCreated || incoming.directoryKeys) {
+    const rid = incoming.pac && incoming.pac.rid;
+    const twin = rid === undefined || rid === null ? null : ridHolderOtherThan(key, rid);
+    if (twin) {
+      log.warn(errorCodes.tag('STS-KRB-0114') + 'krb5: the restored principal ' +
+               key + ' carries RID ' + rid + ', which ' + twin + ' already holds ' +
+               'here. Neither was renumbered — an existing account keeps its SID ' +
+               '— but a service authorizing on the PAC cannot tell the two apart.');
+    }
+    log.debug('Leaving reconcileRestored(). Runtime-made; restored whole.');
+    return withKeyCache(incoming);
+  }
+  log.warn(errorCodes.tag('STS-KRB-0112') + 'krb5: the stored principal ' + key +
+           ' was not restored: it is not auto-created or directory-keyed, and ' +
+           'this process\'s settings do not configure it (a different mode, a ' +
+           'refused published password, or a renamed principal).');
+  log.debug('Leaving reconcileRestored(). Not configured here.');
+  return undefined;
+}
+
+function reconcileRemoved(key) {
+  if (CONFIGURED_KEYS.has(key)) {
+    log.warn(errorCodes.tag('STS-KRB-0113') + 'krb5: a stored removal of the ' +
+             'configured principal ' + key + ' was refused; it exists because ' +
+             'this process\'s settings build it.');
+    return false;
+  }
+  return true;
+}
+
+const principals = realms.sharedMap({ persist: 'krb5.principals',
+                                      scope: 'shared',
+                                      reconcile: { restore: reconcileRestored,
+                                                   remove: reconcileRemoved } });
+
+// ---------------------------------------------------------------------------
+// RIDs FOR THE ACCOUNTS MADE AT RUNTIME, DERIVED FROM THE NAME (2026-09-12).
+//
+// From 5000 up, well clear of the configured ones (the 1100s here, the 2100s in
+// PARTNER.COM, the well-known RIDs below 1000) on purpose: a service authorizing
+// on the PAC sees a SID and nothing else, so the range is the only way to tell
+// an account that was configured from one that turned up at runtime.
+//
+// **IT HAS BEEN THREE THINGS AND THE FIRST TWO COLLIDED.** A counter
+// (`let autoRidNext = 5000`) restarted at 5000 in a process whose store came
+// back holding 5000, 5001 and 5002. Its replacement read one above the highest
+// RID in the database, which fixed a restart and not a second PROCESS: two
+// processes creating accounts in the same instant both read the same highest
+// RID before either write replicated, and handed one SID to two accounts. A
+// service authorizing on the PAC cannot tell two accounts with one SID apart,
+// so that is an impersonation rather than a cosmetic collision.
+//
+// **NOW A RID IS A FUNCTION OF THE PRINCIPAL'S OWN NAME.** SHA-256 over
+// `name@realm`, the first 48 bits reduced into [AUTO_RID_BASE, AUTO_RID_LIMIT),
+// then a linear probe past any slot a DIFFERENT principal in this database
+// already holds. What that buys, and what the tests pin:
+//
+//   * two processes creating the SAME name compute the same RID with no
+//     coordination at all — which is the concurrent case that actually happens,
+//     a client retrying an AS-REQ against two workers;
+//   * an EXISTING account keeps whatever RID it has — nothing here renumbers,
+//     so a SID already in somebody's ticket, ACL or log still means what it did
+//     (every caller asks only when creating, and directoryUser() keeps the RID
+//     of a record it replaces);
+//   * a configured RID is never produced: the range starts above all of them.
+//
+// **THE RANGE ENDS AT 2^30**, the size of Active Directory's global RID pool
+// (the 31st bit is reserved and unlocked only by an explicit domain operation),
+// so a SID minted here is one a real domain could have issued, and nothing
+// reading the value as a signed 32-bit integer — [MS-PAC]'s NDR is unsigned,
+// not every consumer is — sees a negative. The span is ~1.07 billion slots.
+//
+// **THE PROBE TERMINATES BY PIGEONHOLE, NOT BY LUCK.** It looks at most one
+// slot more than there are principals, and at most that many slots can be
+// taken — a JavaScript Map cannot hold a thousandth of the span.
+//
+// **THE RESIDUAL, AND WHY IT IS NOT A `common/mode.js` ROW.** Two DIFFERENT
+// names whose hashes land on the same slot, created in two processes inside one
+// replication window, get one RID — as does one name whose probe path differs
+// between two processes because one of them already holds a principal on the
+// slot and the other has not replicated it yet. Both need two names to meet on
+// one slot in ~1.07 billion within ONE replication window
+// (`persistence.pollInterval`, and 0.5–1s with LISTEN/NOTIFY): the expected
+// number of such meetings among n accounts first created inside one window is
+// about n²/2.1e9 — one in two thousand for a thousand simultaneous first
+// sign-ins, one in twenty for ten thousand — against a CERTAINTY for any two
+// concurrent creations under the allocator this replaced. Accounts created in
+// different windows cannot meet at all, because the probe sees the replicated
+// one. Runtime-made accounts are, in product mode, a directory person's first
+// Kerberos sign-in, so ten thousand inside one second is not a shape a
+// deployment produces. And it is not SILENT: a restored or replicated
+// runtime-made row whose RID another principal holds is logged as STS-KRB-0114
+// (see reconcileRestored()). A collision-proof allocator is a coordinated
+// write, which is a store feature this service does not have; the remaining
+// window is not worth a design an operator would have to run.
+// ---------------------------------------------------------------------------
 const AUTO_RID_BASE = 5000;
-let autoRidNext = AUTO_RID_BASE;
+const AUTO_RID_LIMIT = 0x40000000;
+
+function autoRidFor(nameComponents, realm) {
+  log.debug('Entering autoRidFor().');
+  const key = keyOf({ name: (nameComponents || []).map(String), realm: realm || REALM });
+  const span = AUTO_RID_LIMIT - AUTO_RID_BASE;
+  // A label in front of the name, so this digest is never the same bytes as
+  // any other SHA-256 of a principal name something else computes.
+  const digest = nodeCrypto.createHash('sha256')
+    .update('sts-krb5-auto-rid:' + key, 'utf8').digest();
+  // 48 bits is an exact integer in a double, and 2^48 mod ~2^30 leaves a bias
+  // of about one part in a quarter of a million — nothing a SID can show.
+  const start = digest.readUIntBE(0, 6) % span;
+  const taken = new Map();
+  principals.forEach(function (principal, otherKey) {
+    const rid = Number(principal && principal.pac && principal.pac.rid);
+    if (otherKey !== key && Number.isFinite(rid) && !taken.has(rid)) {
+      taken.set(rid, otherKey);
+    }
+  });
+  for (let step = 0; step <= taken.size; step++) {
+    const rid = AUTO_RID_BASE + ((start + step) % span);
+    if (!taken.has(rid)) {
+      if (step) {
+        log.info('krb5: ' + key + ' hashes to RID ' + (AUTO_RID_BASE + start) +
+                 ', which ' + taken.get(AUTO_RID_BASE + start) + ' holds; it ' +
+                 'was given ' + rid + ', ' + step + ' slot(s) on.');
+      }
+      log.debug('Leaving autoRidFor(). ' + rid);
+      return rid;
+    }
+  }
+  // Unreachable: `taken.size + 1` distinct slots cannot all be among
+  // `taken.size` taken ones. Said as code rather than left as a fall-through
+  // that would register an account with no RID.
+  throw new Error('krb5: no free RID for ' + key + ' after ' + (taken.size + 1) +
+                  ' slots, which cannot happen');
+}
 
 // The map key carries the REALM, because two realms are served here and
 // krbtgt/PARTNER.COM exists in BOTH of them with different meanings — in EXAMPLE.COM it
@@ -642,7 +1026,18 @@ function register(def) {
     realm: def.realm || REALM,
     // A user entry names no password; it gets the one every user shares. A service,
     // computer or krbtgt entry names its own and keeps it — see USER_PASSWORD.
-    password: def.password || USER_PASSWORD,
+    //
+    // **A DIRECTORY-KEYED PRINCIPAL GETS NO PASSWORD AT ALL, AND THAT IS THE
+    // SECURITY OF THE FEATURE RATHER THAN A DETAIL OF IT.** Its keys come from
+    // the key source (see KEY SOURCE below), and the shared development
+    // password left on the record would be a second key for the same account:
+    // a cache miss in `longTermKey()` would derive from it, and a product KDC
+    // would quietly accept `password!` for every person in the directory.
+    password: def.directoryKeys ? null : (def.password || USER_PASSWORD),
+    // Whether the long-term keys come from the KEY SOURCE rather than from a
+    // password on this record. Persisted with the record (it is not a secret)
+    // so a restored principal is never mistaken for one to derive.
+    directoryKeys: !!def.directoryKeys,
     salt: def.salt,
     etypes: def.etypes || KDC_ETYPES.slice(),
     requiresPreAuth: def.requiresPreAuth !== false,
@@ -672,7 +1067,8 @@ function register(def) {
       fullName: null,
       passwordMustChange: null
     }, def.pac || {}),
-    kvno: 3,
+    // `krb5.kvno`, one version for every account. Rotation is not modelled.
+    kvno: KVNO,
     // WHEN THIS PRINCIPAL LAST SIGNED OUT, as a Date, or null for never.
     //
     // It is the only thing a KDC can honestly do about a credential it has
@@ -721,8 +1117,155 @@ function register(def) {
   return principal;
 }
 
-DEFINITIONS.forEach(register);
-TRUSTED_DEFINITIONS.forEach(register);
+// ---------------------------------------------------------------------------
+// THE ACCOUNT THE ACCEPTOR HOLDS, BUILT FROM `krb5.servicePrincipal` (2026-09-12).
+//
+// It was the fixture entry `['HTTP', 'web.' + DOMAIN]` with a literal password,
+// whatever `krb5.servicePrincipal` said — while `krb5_service.js` looked for the
+// SETTING's name. At the default settings the two agree (HTTP/web.example.com)
+// and nothing could show the gap; set the SPN to anything else and the acceptor's
+// own account did not exist, so every ticket for it was "another account's SPN"
+// or unknown. That is wrong in every mode, which is why this is not behind the
+// mode: the account is made from the name the acceptor is configured to be.
+//
+// At the default settings the definition built here is the fixture entry field
+// for field — same name, same password, same salt, same `okAsDelegate`, same
+// description — so an unedited development service's database is unchanged.
+//
+// **IN PRODUCT MODE THE PUBLISHED PASSWORD IS REFUSED**, and so is an empty one.
+// `service-account-password` is printed in this file; a service key derived from
+// it lets anybody who has read the repository mint a ticket this acceptor will
+// accept as anybody. The account is then not created and `serviceAccount()`
+// carries the reason, which the acceptor puts in its refusal and GET
+// /krb5/service publishes. The salt is `krb5.serviceSalt` when set, because an
+// account in a real KDC is salted with its sAMAccountName and nothing here can
+// derive that.
+//
+// `ok-as-delegate` is ON only where the fixtures are. It is advice to a client
+// that it may forward a TGT to this service — which is unconstrained delegation
+// on the client's side — and a product deployment that wants that says so in
+// its KDC rather than inheriting it from a demonstration.
+// ---------------------------------------------------------------------------
+const SERVICE_ACCOUNT = { spn: '', available: false, reason: '' };
+
+function configuredServiceDefinition() {
+  log.debug('Entering configuredServiceDefinition().');
+  const spn = String(config.value('krb5.servicePrincipal') || '').trim();
+  SERVICE_ACCOUNT.spn = spn;
+  const parts = spn.split('/');
+  if (parts.length < 2 || !parts.every(function (part) { return part.length; })) {
+    SERVICE_ACCOUNT.reason = 'krb5.servicePrincipal is "' + spn + '", which is not ' +
+      'a service/host name — an SPN has at least two components, so no account ' +
+      'was created for the acceptor.';
+    log.warn(errorCodes.tag('STS-KRB-0059') + 'krb5: ' + SERVICE_ACCOUNT.reason);
+    log.debug('Leaving configuredServiceDefinition(). Not an SPN.');
+    return null;
+  }
+  const password = String(config.value('krb5.servicePassword') || '');
+  if (!password) {
+    SERVICE_ACCOUNT.reason = 'krb5.servicePassword (KRB5_SERVICE_PASSWORD) is ' +
+      'empty, so the account ' + spn + '@' + REALM + ' was not created and the ' +
+      'acceptor holds no key to decrypt a ticket with.';
+    log.warn(errorCodes.tag('STS-KRB-0060') + 'krb5: ' + SERVICE_ACCOUNT.reason);
+    log.debug('Leaving configuredServiceDefinition(). No password.');
+    return null;
+  }
+  if (!SEEDS_DEMO && password === publishedDefault('krb5.servicePassword')) {
+    SERVICE_ACCOUNT.reason = 'product mode refuses the published default ' +
+      'krb5.servicePassword: that value is written in this service\'s source, ' +
+      'so a key derived from it would let anybody mint a ticket this acceptor ' +
+      'accepts. The account ' + spn + '@' + REALM + ' was NOT created, so the ' +
+      'acceptor on krb5.servicePort and /authn/spnego accept no ticket. Set ' +
+      'KRB5_SERVICE_PASSWORD to the password of that SPN\'s account in the KDC ' +
+      'that issues its tickets (and KRB5_SERVICE_SALT to its salt).';
+    log.warn(errorCodes.tag('STS-KRB-0061') + 'krb5: ' + SERVICE_ACCOUNT.reason);
+    log.debug('Leaving configuredServiceDefinition(). Published default refused.');
+    return null;
+  }
+  const host = parts[parts.length - 1];
+  const configuredSalt = String(config.value('krb5.serviceSalt') || '');
+  SERVICE_ACCOUNT.available = true;
+  SERVICE_ACCOUNT.reason = '';
+  log.debug('Leaving configuredServiceDefinition(). ' + spn);
+  return {
+    name: parts,
+    type: 3,
+    password: password,
+    // The convention the fixture always used: realm + the service name + the
+    // host's first label, which for HTTP/web.example.com is EXAMPLE.COMHTTPweb.
+    salt: configuredSalt ||
+      userSalt(REALM, parts.slice(0, -1).join('') + host.split('.')[0]),
+    okAsDelegate: SEEDS_DEMO,
+    description: 'an HTTP service principal, flagged ok-as-delegate'
+  };
+}
+
+// The fixture HTTP/web entry this replaces when the names match.
+function sameName(a, b) {
+  return a.join('/') === b.join('/');
+}
+
+// ---------------------------------------------------------------------------
+// THE KRBTGT, AND THE ONE REFUSAL IT CARRIES IN PRODUCT MODE.
+//
+// Its key seals every TGT, so a krbtgt derived from the published
+// `krbtgt-mock-password` is a key anybody can forge a ticket-granting ticket
+// with — a golden ticket, handed out in the README. Product mode refuses to
+// create it; the KDC then issues nothing, which is the truthful state of a KDC
+// nobody gave a key.
+// ---------------------------------------------------------------------------
+let krbtgtReason = '';
+
+// A principal built from settings and code, which a restore may not override.
+// See CONFIGURED_KEYS and reconcileRestored() above.
+function registerConfigured(def) {
+  const principal = register(def);
+  CONFIGURED_KEYS.add(keyOf(principal));
+  return principal;
+}
+
+function buildDatabase() {
+  log.debug('Entering buildDatabase().');
+  const service = configuredServiceDefinition();
+  let serviceRegistered = false;
+  if (!SEEDS_DEMO && KRBTGT_DEFINITION.password === publishedDefault('krb5.krbtgtPassword')) {
+    krbtgtReason = 'product mode refuses the published default ' +
+      'krb5.krbtgtPassword (KRB5_KRBTGT_PASSWORD): a krbtgt key derived from it ' +
+      'would let anybody forge a ticket-granting ticket. krbtgt/' + REALM + ' was ' +
+      'NOT created, so this KDC issues no ticket until it is set.';
+    log.warn(errorCodes.tag('STS-KRB-0062') + 'krb5: ' + krbtgtReason);
+  } else {
+    registerConfigured(KRBTGT_DEFINITION);
+  }
+  if (SEEDS_DEMO) {
+    DEFINITIONS.forEach(function (def) {
+      if (def === KRBTGT_DEFINITION) {
+        return;
+      }
+      if (service && !serviceRegistered && sameName(def.name, service.name)) {
+        // In place, so the database lists its accounts in the order it always did.
+        registerConfigured(service);
+        serviceRegistered = true;
+        return;
+      }
+      registerConfigured(def);
+    });
+    TRUSTED_DEFINITIONS.forEach(registerConfigured);
+  } else {
+    log.info('krb5: product mode, so the fixture accounts (alice, bob, locked, ' +
+             'expired, the computer account, the delegation services and their ' +
+             'rules, and the ' + TRUSTED_REALM + ' realm and trust) were NOT ' +
+             'created. This KDC holds krbtgt/' + REALM + ' and ' +
+             (SERVICE_ACCOUNT.spn || 'no service account') + ' where their ' +
+             'passwords are configured, and nothing else.');
+  }
+  if (service && !serviceRegistered) {
+    registerConfigured(service);
+  }
+  log.debug('Leaving buildDatabase().');
+}
+
+buildDatabase();
 log.info('krb5: principal database for realm ' + REALM + ' — ' +
   Array.from(principals.keys()).join(', '));
 
@@ -886,12 +1429,358 @@ function withKeyCache(principal) {
   return principal;
 }
 
+// ---------------------------------------------------------------------------
+// KEY SOURCE (2026-09-12): WHERE A LONG-TERM KEY COMES FROM WHEN IT IS NOT A
+// PASSWORD IN THIS FILE.
+//
+// Two kinds of principal keep their keys somewhere other than this database:
+//
+//   * A PERSON, in product mode. Their password is a scrypt hash on their
+//     directory entry, and a Kerberos key cannot be derived from a hash — so
+//     `krb5_person_keys.js` derives the keys when a plaintext password is in
+//     hand (set, or verified at a sign-in) and stores them, sealed, on that
+//     entry. This file asks for them by name.
+//   * A SERVICE an operator created at `/admin/kerberos/principals`, with a
+//     RANDOM key rather than a password, stored on its application entry
+//     under `ou=applications`. Asked for by SPN, in EVERY mode, and preferred
+//     over an account this file built from `krb5.servicePassword` — which is
+//     what lets an operator give the acceptor's own SPN a real keytab.
+//
+// **AN INVERTED HOOK, AND RULE 3e's TEST ANSWERS YES THREE WAYS ROUND.** The
+// source reads the directory, which is `ldap/ldap_server.js` at 21, and the
+// credential store, which is `common/credentials.js`; this file is required by
+// `krb5_kdc.js` at 15. A require from here to either would register every
+// `/ldap` route ahead of the KDC's own (rule 1). And the source requires THIS
+// file, so a require back closes a cycle. The third reason is not about route
+// order at all and is the one worth keeping: **the parent project's in-process
+// Kerberos jobs load this file, `krb5_kdc.js` and `krb5_service.js` and copy
+// their require closure into an image** — a require from here to the source
+// would drag `common/credentials.js`, `common/keystore.js` and the directory
+// into that copy set for a feature those jobs never use. With the slot, the
+// closure is exactly what it was.
+//
+// ONE OBJECT, VALIDATED WHOLE, for `admin.js`'s `setLogoutReader()` reason: a
+// source that answered services and not people would give a product KDC a
+// keytab path and leave every person refused with nothing saying why.
+//
+// **A PROCESS WITH NO SOURCE BEHAVES EXACTLY AS IT DID**, which is every
+// in-process caller that never loads the directory: development mode keys users
+// from `krb5.userPassword`, and product mode refuses a user with a sentence
+// saying the source is missing rather than one about reserved names.
+// ---------------------------------------------------------------------------
+let keySource = null;
+
+function setKeySource(source) {
+  log.debug('Entering setKeySource().');
+  const needed = ['personKeys', 'serviceKeys'];
+  const missing = needed.filter(function (name) {
+    return !source || typeof source[name] !== 'function';
+  });
+  if (missing.length) {
+    log.error(errorCodes.tag('STS-KRB-0100') +
+              'krb5: setKeySource() was given something without ' +
+              missing.join(', ') + ', so it was refused whole. A product KDC ' +
+              'will authenticate no person and no stored service key will be ' +
+              'used.');
+    log.debug('Leaving setKeySource(). Refused.');
+    return false;
+  }
+  keySource = source;
+  log.debug('Leaving setKeySource(). Installed.');
+  return true;
+}
+
+// Whether a name, in a realm, is one the PERSON half of the source answers:
+// product mode, one component, this KDC's own realm. The realm check is not
+// caution — the source reads the DEFAULT trust realm's directory, whose people
+// are this realm's users; a name in the trusted realm is nobody there.
+function personShaped(nameComponents, realm) {
+  return !SEEDS_DEMO && Array.isArray(nameComponents) &&
+         nameComponents.length === 1 && !!nameComponents[0] &&
+         (realm || REALM) === REALM;
+}
+
+// The e-texts, one per state the source can report. No em dash and nothing
+// non-ASCII, for handleAsReq()'s reason: a KerberosString is a GeneralString
+// and a client decoding it as Latin-1 renders UTF-8 as mojibake in the one
+// field whose whole job is to be read by a person.
+const PERSON_REFUSALS = {
+  'no-source': { errorCode: 'STS-KRB-0101',
+    eText: 'this KDC has no directory to read Kerberos keys from, so no user ' +
+           'principal can authenticate in product mode' },
+  'off': { errorCode: 'STS-KRB-0102',
+    eText: 'krb5.personKeys is off, so no directory person has Kerberos keys ' +
+           'on this KDC' },
+  'unknown': { errorCode: 'STS-KRB-0103',
+    eText: 'no such principal: there is nobody by that name in the directory' },
+  'none': { errorCode: 'STS-KRB-0104',
+    eText: 'this principal has no Kerberos keys yet - sign in once with the ' +
+           'password, or reset it' },
+  'stale': { errorCode: 'STS-KRB-0104',
+    eText: 'this principal\'s Kerberos keys were derived from a password it ' +
+           'no longer has - sign in once with the current password, or reset it' },
+  'unreadable': { errorCode: 'STS-KRB-0105',
+    eText: 'this principal\'s stored Kerberos keys cannot be opened on this ' +
+           'KDC - reset the password to derive new ones' }
+};
+
+// ---------------------------------------------------------------------------
+// A PERSON AS A PRINCIPAL. `{ principal, refusal }`.
+//
+// **THE PRINCIPAL IS A RECORD IN THIS DATABASE AND THE KEYS ARE NOT.** It is
+// registered here — a name, a salt, the etypes and kvno the stored keys carry,
+// a RID and no password — so that everything else a principal is used for
+// works unchanged: `signOut()` stamps it, `handleTgsReq()` finds it, and
+// `/krb5/principals` lists it. The KEYS go into the non-enumerable cache and
+// nowhere else, so they are never persisted with the record, never replicated
+// and never published; they are fetched afresh from the source on every lookup,
+// which is what makes a password change reach the very next AS-REQ.
+// ---------------------------------------------------------------------------
+function directoryUser(name) {
+  log.debug('Entering directoryUser(). name=' + name);
+  if (!keySource) {
+    log.info('krb5: product mode and no key source is installed, so ' + name +
+             '@' + REALM + ' cannot authenticate.');
+    log.debug('Leaving directoryUser(). No source.');
+    return { principal: null, refusal: PERSON_REFUSALS['no-source'] };
+  }
+  let answer = null;
+  try {
+    answer = keySource.personKeys(name) || {};
+  } catch (e) {
+    // A source that threw is a source with nothing to offer. Refused, with the
+    // unreadable sentence, rather than let through: the alternative for a
+    // PRODUCT KDC is no key at all, and there is no permissive answer to that.
+    log.error(errorCodes.tag('STS-KRB-0105') + 'krb5: reading the Kerberos ' +
+              'keys for ' + name + ' threw: ' + e.message);
+    answer = { state: 'unreadable' };
+  }
+  if (answer.state !== 'ok') {
+    const refusal = PERSON_REFUSALS[answer.state] || PERSON_REFUSALS.unreadable;
+    log.info('krb5: ' + name + '@' + REALM + ' was refused before ' +
+             'pre-authentication (' + (answer.state || 'unknown state') +
+             '): ' + refusal.eText + (answer.detail ? ' — ' + answer.detail : ''));
+    log.debug('Leaving directoryUser(). ' + answer.state);
+    return { principal: null, refusal: refusal };
+  }
+  const key = name + '@' + REALM;
+  let record = principals.get(key);
+  const wantedEtypes = answer.keys.map(function (pair) { return pair[0]; });
+  if (!record || !record.directoryKeys) {
+    const kept = record || null;
+    record = register({
+      name: [name],
+      type: 1,
+      realm: REALM,
+      salt: answer.salt,
+      etypes: wantedEtypes,
+      directoryKeys: true,
+      description: 'a person in the directory, keyed from their own password',
+      pac: {
+        rid: kept && kept.pac && kept.pac.rid ? kept.pac.rid : autoRidFor([name], REALM),
+        groups: [RID.DOMAIN_USERS],
+        userAccountControl: UAC.NORMAL_ACCOUNT,
+        // S-1-18-1 says the identity came from a password logon, which is
+        // exactly what the keys this principal holds were derived from.
+        extraSids: ['S-1-18-1', 'S-1-5-11']
+      }
+    });
+    if (kept && kept.signedOutAt) {
+      record.signedOutAt = kept.signedOutAt;
+    }
+    record.kvno = answer.kvno;
+    principals.set(key, record);
+    log.info('krb5: ' + key + ' is keyed from the directory (kvno ' +
+             answer.kvno + ', ' + wantedEtypes.length + ' etype(s)).');
+  } else if (record.kvno !== answer.kvno || record.salt !== answer.salt ||
+             record.etypes.join(',') !== wantedEtypes.join(',')) {
+    // WRITTEN BACK THROUGH THE STORE when it moved, for signOut()'s reason:
+    // a field mutated in place is invisible to persistence and to every other
+    // process.
+    record.kvno = answer.kvno;
+    record.salt = answer.salt;
+    record.etypes = wantedEtypes;
+    principals.set(key, record);
+  }
+  withKeyCache(record);
+  record.keys = new Map(answer.keys);
+  attachRetained(record, answer);
+  log.debug('Leaving directoryUser(). kvno ' + record.kvno + '.');
+  return { principal: record, refusal: null };
+}
+
+// ---------------------------------------------------------------------------
+// PREVIOUS KEY VERSIONS (2026-09-12). The key source hands over, beside the
+// current keys, the previous versions `krb5_person_keys.js` still keeps after a
+// password change or a rotation; they are attached NON-ENUMERABLY, for the key
+// cache's reason, and in a property of their own — **never in `keys`**, which is
+// the cache pre-authentication and every issuance read. So an old password can
+// never sign in and nothing is ever ISSUED under an old kvno: the one reader is
+// `retainedKeyFor()`, which a caller decrypting a ticket ALREADY sealed under
+// that kvno asks by number.
+// ---------------------------------------------------------------------------
+function attachRetained(principal, answer) {
+  const versions = ((answer && answer.retained) || []).map(function (version) {
+    return { kvno: Number(version.kvno), expiresAt: Number(version.expiresAt),
+             keys: new Map(version.keys) };
+  });
+  Object.defineProperty(principal, 'retainedKeys', {
+    value: versions, enumerable: false, writable: true, configurable: true
+  });
+}
+
+// The key for `etype` at the PREVIOUS key version `kvno` of a stored-key
+// principal, or null: `{ key, kvno, expiresAt }`. Read afresh from the source,
+// for `longTermKey()`'s reason — a drop or an expiry must reach the very next
+// ticket — and checked against the clock here as well as by the source, so a
+// version that expires between the two reads is not used. A principal built
+// from a password in the configuration has no previous versions: its key does
+// not change when its number does.
+function retainedKeyFor(principal, etype, kvno) {
+  if (!principal || !principal.directoryKeys || kvno === null || kvno === undefined) {
+    return null;
+  }
+  log.debug('Entering retainedKeyFor(). ' + keyOf(principal) + ' kvno=' + kvno);
+  const fresh = principal.storedServiceKey
+    ? storedService(principal.name, principal.realm)
+    : (principal.type === 1 ? directoryUser(String(principal.name[0])).principal : null);
+  const nowMs = Date.now();
+  const version = ((fresh && fresh.retainedKeys) || []).filter(function (one) {
+    return one.kvno === Number(kvno) && one.expiresAt > nowMs && one.keys.has(etype);
+  })[0];
+  if (!version) {
+    log.debug('Leaving retainedKeyFor(). Not kept.');
+    return null;
+  }
+  log.debug('Leaving retainedKeyFor(). Kept until ' +
+            new Date(version.expiresAt).toISOString() + '.');
+  return { key: version.keys.get(etype), kvno: version.kvno, expiresAt: version.expiresAt };
+}
+
+// Which previous versions a stored-key principal still keeps, as numbers — for
+// the sentence a refusal carries.
+function retainedKvnosOf(principal) {
+  return ((principal && principal.retainedKeys) || []).filter(function (one) {
+    return one.expiresAt > Date.now();
+  }).map(function (one) { return one.kvno; });
+}
+
+// The whole lookup an AS exchange makes, with the REASON beside a refusal.
+// `findOrCreateUser()` is this with the reason thrown away, for its four other
+// callers.
+function lookupUser(nameComponents, realm) {
+  log.debug('Entering lookupUser().');
+  if (personShaped(nameComponents, realm)) {
+    const answer = directoryUser(String(nameComponents[0]));
+    log.debug('Leaving lookupUser(). From the directory.');
+    return answer;
+  }
+  const principal = findOrCreateUserInDatabase(nameComponents, realm);
+  log.debug('Leaving lookupUser(). From the database.');
+  return { principal: principal, refusal: null };
+}
+
+// ---------------------------------------------------------------------------
+// A STORED SERVICE KEY, AS A PRINCIPAL. Null when there is none.
+//
+// **NOT REGISTERED**, where a directory person is: a service principal is never
+// signed out and never auto-created, so there is nothing a record would carry
+// that the application entry does not. It is built afresh per lookup over the
+// configured account where one exists — so a stored key for the acceptor's own
+// SPN keeps that account's `okAsDelegate`, delegation rules and PAC identity and
+// replaces only its KEY — and over a plain service shape where none does.
+//
+// `krbtgt/*` is never asked: the ticket-granting key is the one key an operator
+// may not replace from a console, because every TGT in the realm is sealed
+// under it.
+// ---------------------------------------------------------------------------
+function storedService(nameComponents, realm) {
+  if (!keySource || !Array.isArray(nameComponents) || nameComponents.length < 2 ||
+      String(nameComponents[0]).toLowerCase() === 'krbtgt' ||
+      (realm || REALM) !== REALM) {
+    return null;
+  }
+  log.debug('Entering storedService(). spn=' + nameComponents.join('/'));
+  let answer = null;
+  try {
+    answer = keySource.serviceKeys(nameComponents.join('/'));
+  } catch (e) {
+    // Reported and treated as no stored key: the configured account, if any,
+    // still answers — which is what the service did before a key was stored.
+    log.error(errorCodes.tag('STS-KRB-0106') + 'krb5: reading the stored key ' +
+              'for ' + nameComponents.join('/') + ' threw: ' + e.message);
+    log.debug('Leaving storedService(). The source threw.');
+    return null;
+  }
+  if (!answer || !answer.keys || !answer.keys.length) {
+    log.debug('Leaving storedService(). None stored.');
+    return null;
+  }
+  const base = principals.get(nameComponents.join('/') + '@' + REALM);
+  const principal = Object.assign({
+    name: nameComponents.map(String),
+    type: 3,
+    realm: REALM,
+    requiresPreAuth: true,
+    revoked: false,
+    passwordExpired: false,
+    okAsDelegate: false,
+    trustedToAuthenticateForDelegation: false,
+    notDelegated: false,
+    allowedToDelegateTo: [],
+    allowedToActOnBehalfOf: [],
+    description: 'a service principal with a stored random key',
+    autoCreated: false,
+    pac: { rid: 1100, primaryGroupRid: RID.DOMAIN_COMPUTERS,
+           groups: [RID.DOMAIN_COMPUTERS],
+           userAccountControl: UAC.WORKSTATION_TRUST_ACCOUNT, extraSids: [],
+           fullName: null, passwordMustChange: null },
+    signedOutAt: null
+  }, base || {});
+  principal.password = null;
+  principal.directoryKeys = true;
+  principal.storedServiceKey = true;
+  principal.salt = principal.salt ||
+    userSalt(REALM, nameComponents.join(''));
+  principal.kvno = answer.kvno;
+  principal.etypes = answer.keys.map(function (pair) { return pair[0]; });
+  Object.defineProperty(principal, 'keys', {
+    value: new Map(answer.keys), enumerable: false, writable: true, configurable: true
+  });
+  attachRetained(principal, answer);
+  log.debug('Leaving storedService(). kvno ' + principal.kvno + '.');
+  return principal;
+}
+
 function find(nameComponents, realm) {
   if (!nameComponents || !nameComponents.length) return null;
+  // A STORED SERVICE KEY WINS over the database, and is asked first. See
+  // storedService().
+  const stored = storedService(nameComponents, realm);
+  if (stored) {
+    return stored;
+  }
   // EVERY READER COMES THROUGH HERE, which is why the cache is repaired here
   // rather than at each of the two places that use it.
-  return withKeyCache(
+  const held = withKeyCache(
     principals.get(nameComponents.join('/') + '@' + (realm || REALM))) || null;
+  // A DIRECTORY PERSON IS READ AGAIN FROM THE SOURCE (2026-09-12). Their record's
+  // key cache holds whatever the LAST AS lookup found, so a TGS naming them —
+  // as the service a ticket is for, or the ticket being presented — would
+  // otherwise issue or decrypt under the kvno before a password change. Refused
+  // by the source (no keys, stale, unreadable), the record is still returned,
+  // for sign-out and the PAC, with an EMPTY cache: every key use then asks the
+  // source again and is refused.
+  if (held && held.directoryKeys && !held.storedServiceKey &&
+      personShaped(nameComponents, realm)) {
+    const fresh = directoryUser(String(nameComponents[0])).principal;
+    if (fresh) {
+      return fresh;
+    }
+    held.keys = new Map();
+    attachRetained(held, null);
+  }
+  return held;
 }
 
 // ---------------------------------------------------------------------------
@@ -924,6 +1813,12 @@ function find(nameComponents, realm) {
 // a salt and lazily-derived keys.
 // ---------------------------------------------------------------------------
 function findOrCreateUser(nameComponents, realm) {
+  // PRODUCT MODE RESOLVES A PERSON FROM THE DIRECTORY (2026-09-12). See
+  // lookupUser(), which is this plus the reason for a refusal.
+  return lookupUser(nameComponents, realm).principal;
+}
+
+function findOrCreateUserInDatabase(nameComponents, realm) {
   log.debug('Entering findOrCreateUser().');
   const inRealm = realm || REALM;
   const existing = find(nameComponents, inRealm);
@@ -973,7 +1868,7 @@ function findOrCreateUser(nameComponents, realm) {
     description: 'created on first sight — every username authenticates here, with the ' +
                  'one password every user shares',
     pac: {
-      rid: autoRidNext++,
+      rid: autoRidFor([name], inRealm),
       groups: [RID.DOMAIN_USERS],
       userAccountControl: UAC.NORMAL_ACCOUNT,
       // The same two well-known SIDs the configured users carry: S-1-18-1 says the
@@ -1057,7 +1952,7 @@ function findOrCreateService(nameComponents, realm) {
     description: 'created on first sight because ' + host + ' matches ' + matched +
                  ' — the shared auto-service password, published by this endpoint',
     pac: {
-      rid: autoRidNext++,
+      rid: autoRidFor(nameComponents.map(String), inRealm),
       groups: [RID.DOMAIN_COMPUTERS],
       userAccountControl: UAC.WORKSTATION_TRUST_ACCOUNT
     }
@@ -1070,8 +1965,25 @@ function findOrCreateService(nameComponents, realm) {
 }
 
 // The long-term key for one etype. Derived on demand and cached.
+//
+// **A DIRECTORY-KEYED PRINCIPAL IS NEVER DERIVED**, whatever its record says:
+// its keys come from the key source and a miss is asked of the source again
+// and then REFUSED. Deriving would mean a password, and the only password this
+// file could reach for is the shared development one — see register().
 async function longTermKey(principal, etype) {
+  withKeyCache(principal);
   if (principal.keys.has(etype)) return principal.keys.get(etype);
+  if (principal.directoryKeys) {
+    const again = principal.storedServiceKey
+      ? storedService(principal.name, principal.realm)
+      : (principal.type === 1 ? directoryUser(String(principal.name[0])).principal : null);
+    if (again && again.keys && again.keys.has(etype)) {
+      return again.keys.get(etype);
+    }
+    throw new Error('krb5: ' + keyOf(principal) + ' holds no stored key for ' +
+                    kcrypto.etypeName(etype) + ', and a directory-keyed ' +
+                    'principal is never derived from a password here');
+  }
   const profile = kcrypto.etypeById(etype);
   const key = await profile.stringToKey(principal.password, prim.utf8(principal.salt), null);
   principal.keys.set(etype, key);
@@ -1343,6 +2255,35 @@ module.exports = {
   REALM: REALM,
   DOMAIN: DOMAIN,
   KDC_ETYPES: KDC_ETYPES,
+  KVNO: KVNO,
+  parseEtypes: parseEtypes,
+  // Whether the fixture accounts are in this database — captured at require
+  // time, see SEEDS_DEMO.
+  seedsDemoPrincipals: SEEDS_DEMO,
+  // The acceptor's account: its SPN, whether it exists, and if not, why. A copy,
+  // so a caller cannot change what the next caller is told.
+  serviceAccount: function () {
+    // `storedKey` since 2026-09-12: whether an operator stored a RANDOM key
+    // for this SPN at /admin/kerberos/principals, which the acceptor prefers
+    // over the password-derived account. An account refused for its published
+    // password is then keyed anyway, which is the way out that refusal names.
+    const stored = !!storedService(SERVICE_ACCOUNT.spn.split('/'), REALM);
+    return { spn: SERVICE_ACCOUNT.spn,
+             available: SERVICE_ACCOUNT.available || stored,
+             storedKey: stored,
+             reason: stored ? '' : SERVICE_ACCOUNT.reason };
+  },
+  // The key source (see KEY SOURCE). `lookupUser()` is the AS exchange's
+  // lookup, with the reason for a refusal beside a null principal.
+  setKeySource: setKeySource,
+  keySourceInstalled: function () { return !!keySource; },
+  lookupUser: lookupUser,
+  // Previous key versions (see PREVIOUS KEY VERSIONS).
+  retainedKeyFor: retainedKeyFor,
+  retainedKvnosOf: retainedKvnosOf,
+  // Empty unless product mode refused to create krbtgt/<realm>.
+  krbtgtUnavailableReason: function () { return krbtgtReason; },
+  publishedDefault: publishedDefault,
   find: find,
   delegationPolicy: delegationPolicy,
   findOrCreateUser: findOrCreateUser,
@@ -1352,6 +2293,18 @@ module.exports = {
   SERVICE_DOMAINS: SERVICE_DOMAINS,
   reservedUnknown: reservedUnknown,
   all: function () { return Array.from(principals.values()); },
+  // The RID an account made at runtime under this name would be given, and
+  // the range it is drawn from — see autoRidFor(). Exported so a test can ask
+  // two processes the same question without creating anything.
+  autoRidFor: autoRidFor,
+  AUTO_RID_BASE: AUTO_RID_BASE,
+  AUTO_RID_LIMIT: AUTO_RID_LIMIT,
+  // Whether a principal was built from this process's settings and code, which
+  // decides what a restored row may change on it — see reconcileRestored().
+  isConfigured: function (nameComponents, realm) {
+    return CONFIGURED_KEYS.has((nameComponents || []).join('/') + '@' + (realm || REALM));
+  },
+  RUNTIME_FIELDS: RUNTIME_FIELDS.slice(),
   longTermKey: longTermKey,
   supportedEtypes: supportedEtypes,
   chooseEtype: chooseEtype,

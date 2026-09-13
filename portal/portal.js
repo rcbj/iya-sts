@@ -146,6 +146,20 @@ const oidcRp = require('../common/oidc_rp');
 // without the XACML family does.
 const accessGate = require('../common/access_gate');
 const audit = require('../common/audit');
+// THE ERROR CODES (common/error_codes.js), a leaf. A refusal here marks its
+// RESPONSE, which the call log reads after the bytes have gone, and carries the
+// same code on the portal's own audit row where it writes one. Never on a page.
+const errorCodes = require('../common/error_codes');
+
+// The code a library already put on the result this portal is about to report:
+// the non-enumerable mark, or an `errorCode` member on an internal result. Its
+// own is the more specific; this portal's code names the door otherwise.
+function innerCode(result) {
+  if (!result || typeof result !== 'object') {
+    return '';
+  }
+  return errorCodes.codeOf(result) || String(result.errorCode || '');
+}
 
 // The input validator. A LEAF (rule 3): it registers no route and requires only
 // `config`, `bunyan` and zod, so it closes no cycle here and moves nothing.
@@ -236,7 +250,8 @@ let directory = null;
 function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
   if (!hooks || typeof hooks.personEntry !== 'function') {
-    log.error('portal: setDirectory() was given something without ' +
+    log.error(errorCodes.tag('STS-PORTAL-0014') +
+              'portal: setDirectory() was given something without ' +
               'personEntry(), so it was refused whole. The Overview will go ' +
               'on drawing the four facts the session carries and will say ' +
               'that it is doing so.');
@@ -272,7 +287,8 @@ function entryFor(session) {
     // NOT rethrown. An account page that 500s because the store was mid-write
     // is worse than one that reports what the session knows — and the fallback
     // is a real one, said on the page.
-    log.error('portal: reading the directory entry for ' + username +
+    log.error(errorCodes.tag('STS-PORTAL-0015') +
+              'portal: reading the directory entry for ' + username +
               ' threw, so the Overview is drawing what the session carries: ' +
               e.message);
     log.debug('Leaving entryFor(). It threw.');
@@ -656,6 +672,26 @@ const ACTIVATION_REFUSAL =
   'have been used, or it may never have been issued. Ask whoever set up your ' +
   'account for a new one.';
 
+// ---------------------------------------------------------------------------
+// WHAT A PASSWORD HERE MUST BE, SAID ON THE FORM THAT ASKS FOR ONE (2026-09-12).
+//
+// The rules are `common/password_policy.js`'s default profile, read through
+// `credentials.passwordRules()` — the function the refusal is built beside —
+// so the sentence a person reads before typing and the rule applied after
+// they press the button are one rule. In development mode nothing is checked,
+// and the note says that rather than listing rules nobody applies.
+// ---------------------------------------------------------------------------
+function passwordRulesNote(username) {
+  const said = credentials.passwordRules(username);
+  if (!said.enforced) {
+    return '<p class="note">This service is in development mode and checks no ' +
+           'password, so any password is accepted here. In product mode it ' +
+           'must be ' + esc(said.rules.join(', ')) + '.</p>';
+  }
+  return '<p class="note">A password here must be ' +
+         esc(said.rules.join(', ')) + '.</p>';
+}
+
 function activationForm(base, username, token, message, error) {
   const csrfless = ''; // the form carries the token instead; see below
   return page('Set up your account',
@@ -679,6 +715,7 @@ function activationForm(base, username, token, message, error) {
     '<input type="password" id="password" name="password" autocomplete="new-password">' +
     '<label for="confirm">Confirm it</label>' +
     '<input type="password" id="confirm" name="confirm" autocomplete="new-password">' +
+    passwordRulesNote(username) +
     '<p class="note">Leave both empty if you would rather sign in with a ' +
     'security key alone. You need at least one of the two.</p>' +
     '<h2>2. A security key</h2>' +
@@ -810,6 +847,7 @@ function activationTotpForm(username, token, enrolment, error) {
 function refuseShape(res, why) {
   log.debug('Entering refuseShape(). code=' + why.code + ' field=' + why.field);
   log.debug('Leaving refuseShape().');
+  // error-code: none — the shared renderer; every caller marks STS-PORTAL-0001 before calling it
   return send(res, 400, page('Bad request',
     '<div class="card"><h1>Bad request</h1><p class="err">' +
     esc(why.detail) + '</p></div>'));
@@ -895,6 +933,7 @@ app.get(ACTIVATE, function (req, res) {
   log.debug('Entering GET ' + ACTIVATE + '.');
   const asked = validation.check(req, 'query', ACTIVATE_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
     return refuseShape(res, asked);
   }
   const username = String(asked.value.user || '').trim();
@@ -905,6 +944,7 @@ app.get(ACTIVATE, function (req, res) {
   const allowed = websecurity.attempt('activation', req, username);
   if (!allowed.ok) {
     log.debug('Leaving GET ' + ACTIVATE + '. Rate limited.');
+    errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0002');
     return send(res, 429, page('Too many attempts',
       '<div class="card"><h1>Too many attempts</h1><p>' +
       esc(allowed.detail) + '</p></div>'));
@@ -915,11 +955,13 @@ app.get(ACTIVATE, function (req, res) {
              '" (' + checked.reason + ').');
     audit.record({
       category: 'authentication', action: 'portal.activate.refused',
+      errorCode: innerCode(checked) || 'STS-PORTAL-0003',
       actor: username, outcome: 'failure',
       summary: 'an activation link was refused',
       detail: { reason: checked.reason, address: websecurity.addressOf(req) }
     });
     log.debug('Leaving GET ' + ACTIVATE + '. Refused.');
+    errorCodes.mark(res, innerCode(checked) || 'STS-PORTAL-0003');
     return send(res, 400, page('Activation link',
       '<div class="card"><h1>Activation link</h1><div class="err">' +
       esc(ACTIVATION_REFUSAL) + '</div></div>'));
@@ -934,6 +976,7 @@ app.post(ACTIVATE, async function (req, res) {
   // text, so `checkParsed()` is the entry point. Its header argues why.
   const posted = validation.checkParsed(parseBody(req), 'body', ACTIVATE_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, innerCode(posted) || 'STS-PORTAL-0001');
     return refuseShape(res, posted);
   }
   const body = posted.value;
@@ -944,6 +987,7 @@ app.post(ACTIVATE, async function (req, res) {
   const allowed = websecurity.attempt('activation', req, username);
   if (!allowed.ok) {
     log.debug('Leaving POST ' + ACTIVATE + '. Rate limited.');
+    errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0002');
     return send(res, 429, page('Too many attempts',
       '<div class="card"><h1>Too many attempts</h1><p>' +
       esc(allowed.detail) + '</p></div>'));
@@ -956,6 +1000,7 @@ app.post(ACTIVATE, async function (req, res) {
     log.info('portal: an activation POST was refused for "' + username +
              '" (' + checked.reason + ').');
     log.debug('Leaving POST ' + ACTIVATE + '. Refused.');
+    errorCodes.mark(res, innerCode(checked) || 'STS-PORTAL-0003');
     return send(res, 400, page('Activation link',
       '<div class="card"><h1>Activation link</h1><div class="err">' +
       esc(ACTIVATION_REFUSAL) + '</div></div>'));
@@ -984,6 +1029,7 @@ app.post(ACTIVATE, async function (req, res) {
     const waiting = await pendingEnrolmentFor(username, base);
     if (!waiting) {
       log.debug('Leaving POST ' + ACTIVATE + '. The enrolment had expired.');
+      errorCodes.mark(res, 'STS-PORTAL-0004');
       return send(res, 400, activationForm(base, username, token, null,
         'That authenticator setup expired before it was confirmed. Nothing ' +
         'was lost — set it up again below, or leave the box unticked and use ' +
@@ -994,6 +1040,7 @@ app.post(ACTIVATE, async function (req, res) {
     if (!confirmed.ok) {
       audit.record({
         category: 'authentication', action: 'portal.activate.mfa.refused',
+        errorCode: innerCode(confirmed) || 'STS-PORTAL-0005',
         actor: username, outcome: 'failure',
         summary: 'an authenticator app was not confirmed during activation',
         detail: { reason: confirmed.reason || '',
@@ -1002,6 +1049,7 @@ app.post(ACTIVATE, async function (req, res) {
       log.debug('Leaving POST ' + ACTIVATE + '. The code did not confirm.');
       // THE SAME SECRET IS REDRAWN. Mistyping six digits must not mean
       // scanning again.
+      errorCodes.mark(res, innerCode(confirmed) || 'STS-PORTAL-0005');
       return send(res, 400, activationTotpForm(username, token, waiting,
         (confirmed.errors || ['That code is not right.'])[0]));
     }
@@ -1024,6 +1072,7 @@ app.post(ACTIVATE, async function (req, res) {
   }
 
   if (password && password !== confirm) {
+    errorCodes.mark(res, 'STS-PORTAL-0006');
     return send(res, 400, activationForm(base, username, token, null,
       'The two passwords do not match.'));
   }
@@ -1034,6 +1083,7 @@ app.post(ACTIVATE, async function (req, res) {
   // lockout `credentials.removeKey()` refuses to create, caught at the other
   // end of the same rule.
   if (!password && keyRole !== 'primary') {
+    errorCodes.mark(res, 'STS-PORTAL-0007');
     return send(res, 400, activationForm(base, username, token, null,
       keyRole === 'mfa'
         ? 'A security key used as a SECOND factor needs a password to be the ' +
@@ -1045,6 +1095,7 @@ app.post(ACTIVATE, async function (req, res) {
   if (password) {
     const set = credentials.setPassword(username, password);
     if (!set.ok) {
+      errorCodes.mark(res, innerCode(set) || 'STS-PORTAL-0008');
       return send(res, 400, activationForm(base, username, token, null,
         (set.errors || ['The password could not be set.'])[0]));
     }
@@ -1085,7 +1136,8 @@ app.post(ACTIVATE, async function (req, res) {
                     activationTotpForm(username, token, enrolment, null));
       }
     }
-    log.warn('portal: an authenticator app was asked for while activating "' +
+    log.warn(errorCodes.tag('STS-PORTAL-0009') +
+             'portal: an authenticator app was asked for while activating "' +
              username + '" and could not be started (' +
              (begun.errors || []).join(' ') + '). The activation finishes ' +
              'without it rather than being refused.');
@@ -1272,6 +1324,7 @@ function requireSignIn(req, res, returnTo, want) {
       log.info('portal: the access policy refused ' + req.method + ' ' +
                (req.originalUrl || req.url) + ' for ' +
                session.user.username + '. ' + answer.why);
+      errorCodes.mark(res, innerCode(answer) || 'STS-PORTAL-0010');
       send(res, 403, page('Not permitted',
         '<div class="card"><h1>Not permitted</h1>' +
         '<div class="err">' + esc(answer.why) + '</div>' +
@@ -1330,7 +1383,15 @@ function requireSignIn(req, res, returnTo, want) {
     // The client entry is gone or has no secret. A refusal with the reason on
     // it rather than a redirect into a flow that cannot complete — and it names
     // the entry, because that is where somebody has to look.
-    log.error('portal: nobody can sign in. ' + started.why);
+    log.error(errorCodes.tag('STS-PORTAL-0011') + 'portal: nobody can sign in. ' +
+              started.why);
+    // TWO CAUSES SINCE 2026-09-12, AND THE NOTE USED TO ASSERT THE FIRST. The
+    // entry can be gone or secretless — "which is what has happened" — or, in
+    // product mode, this portal can be reached at an address its entry does
+    // not carry as a redirect URI, which `oidc_rp.js` now refuses rather than
+    // writing onto the entry. The reason is in `started.why` either way; the
+    // note only says which kind of fix it is.
+    errorCodes.mark(res, innerCode(started) || 'STS-PORTAL-0011');
     send(res, 503, page('The portal cannot sign anybody in',
       '<div class="card"><h1>The portal cannot sign anybody in</h1>' +
       '<div class="err">' + esc(started.why) + '</div>' +
@@ -1338,8 +1399,13 @@ function requireSignIn(req, res, returnTo, want) {
       'authorization server, as the registered client ' +
       '<code>sts-user-portal</code>. That entry is seeded at startup and lives ' +
       'under <code>ou=applications</code> like any other application, so it can ' +
-      'be edited and deleted like any other &mdash; which is what has ' +
-      'happened.</p></div>'));
+      'be edited and deleted like any other' +
+      (started.reason === 'unregistered-address'
+        ? ' &mdash; and in product mode the addresses it may be reached at are ' +
+          'the redirect URIs on it, which an administrator registers rather ' +
+          'than a request.'
+        : ' &mdash; which is what has happened.') +
+      '</p></div>'));
   }
   return null;
 }
@@ -1655,6 +1721,7 @@ function passwordPage(session, message, error) {
     '<input type="password" id="next" name="next" autocomplete="new-password">' +
     '<label for="confirm">Confirm it</label>' +
     '<input type="password" id="confirm" name="confirm" autocomplete="new-password">' +
+    passwordRulesNote(session.user.username) +
     '<button type="submit">Change password</button>' +
     '</form>' +
     '<p class="note">Your current password is required even though you are ' +
@@ -2496,7 +2563,8 @@ async function pendingEnrolmentFor(username, base) {
     // NOT fatal, and the page says so by showing the typed secret alone. A QR
     // renderer that fails must not cost somebody the ability to set up a
     // second factor, because the transcribable form is the whole credential.
-    log.error('portal: the QR code could not be drawn (' + e.message +
+    log.error(errorCodes.tag('STS-PORTAL-0016') +
+              'portal: the QR code could not be drawn (' + e.message +
               '), so the enrolment is offered by hand only.');
   }
   log.debug('Leaving pendingEnrolmentFor(). Rendered.');
@@ -2636,15 +2704,25 @@ const SIGN_IN_FAMILIES = [
     how: 'a WS-Federation token' }
 ];
 
-// How many entries the page will evaluate. A GUARD AND NOT A SETTING: a
-// deployment with a registry this size has an operator's problem rather than a
-// person's, and a configuration row would be a knob nobody turns until the day
-// the page has already been slow. Each entry costs one policy evaluation per
-// distinct issuance kind it has, on the one thread that answers every socket
-// this service holds — which is the stall `CLAUDE.md`'s worker-pool section is
-// about, so the cap is here rather than left to be discovered. The page says
-// when it bites.
+// How many entries the page will evaluate. Each entry costs one policy
+// evaluation per distinct issuance kind it has, on the one thread that answers
+// every socket this service holds — which is the stall `CLAUDE.md`'s
+// worker-pool section is about, so the cap is here rather than left to be
+// discovered. The page says when it bites.
+//
+// **THIS COMMENT CALLED IT "A GUARD AND NOT A SETTING" UNTIL 2026-09-12**, on
+// the argument that a configuration row would be a knob nobody turns until the
+// page had already been slow. The half about the page being slow is still
+// true; what the argument left out is the deployment whose registry is past a
+// thousand ON PURPOSE, which had no way to see its own applications at all
+// short of editing this file. It is `portal.applicationScanLimit` now, with
+// this number as its default, and it is read per request.
 const SCAN_LIMIT = 1000;
+
+function scanLimit() {
+  const n = Number(config.value('portal.applicationScanLimit'));
+  return isFinite(n) && n > 0 ? Math.floor(n) : SCAN_LIMIT;
+}
 
 // Rows per page. The registry is paginated for the same reason /admin's is:
 // a list that draws every row is a list that stops working at some size and
@@ -2684,7 +2762,8 @@ function signInFamiliesOf(row) {
 function applicationsFor(username) {
   log.debug('Entering applicationsFor(). username=' + username);
   const all = applications.list();
-  const scanned = all.slice(0, SCAN_LIMIT);
+  const limit = scanLimit();
+  const scanned = all.slice(0, limit);
   const rows = [];
   let refused = 0;
   let notSignIn = 0;
@@ -2762,7 +2841,7 @@ function applicationsFor(username) {
             refused + ' refused, ' + notSignIn + ' not sign-in destinations.');
   return { rows: rows, refused: refused, notSignIn: notSignIn,
            scanned: scanned.length, total: all.length,
-           truncated: all.length > scanned.length };
+           truncated: all.length > scanned.length, limit: limit };
 }
 
 // ---------------------------------------------------------------------------
@@ -2890,7 +2969,8 @@ function applicationsPage(session, message, error, wanted) {
         esc(String(found.total - found.scanned)) + ' of ' +
         esc(String(found.total)) + ' entries. This page evaluates the ' +
         'issuance policy for each application it lists and stops at ' +
-        esc(String(SCAN_LIMIT)) + ', because that work happens on the one ' +
+        esc(String(found.limit)) + ' (portal.applicationScanLimit), ' +
+        'because that work happens on the one ' +
         'thread answering every socket this service holds.</td></tr>'
       : '') +
     '</table>' +
@@ -2927,6 +3007,7 @@ app.get(BASE + '/callback', function (req, res) {
   oidcRp.handleCallback(req, res, 'portal').then(function (answer) {
     if (!answer.ok) {
       log.info('portal: a sign-in did not complete. ' + answer.why);
+      errorCodes.mark(res, innerCode(answer) || 'STS-PORTAL-0012');
       send(res, 400, page('Signing in did not complete',
         '<div class="card"><h1>Signing in did not complete</h1>' +
         '<div class="err">' + esc(answer.why) + '</div>' +
@@ -2945,7 +3026,9 @@ app.get(BASE + '/callback', function (req, res) {
   }).catch(function (e) {
     // A rejection is a bug here rather than anything a request can cause:
     // handleCallback() resolves its refusals. Reported as one.
-    log.error('The portal OIDC callback threw: ' + (e.stack || e.message));
+    log.error(errorCodes.tag('STS-PORTAL-0013') + 'The portal OIDC callback threw: ' +
+              (e.stack || e.message));
+    errorCodes.mark(res, 'STS-PORTAL-0013');
     send(res, 500, page('Signing in did not complete',
       '<div class="card"><h1>Signing in did not complete</h1>' +
       '<div class="err">' + esc(e.message) + '</div></div>'));
@@ -2980,6 +3063,7 @@ app.get(BASE, function (req, res) {
   }
   const asked = validation.check(req, 'query', PORTAL_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
     return refuseShape(res, asked);
   }
   log.debug('Leaving GET ' + BASE + '. Drawn for ' + session.user.username + '.');
@@ -2998,6 +3082,7 @@ app.get(BASE + '/applications', function (req, res) {
   }
   const asked = validation.check(req, 'query', APPLICATIONS_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
     return refuseShape(res, asked);
   }
   log.debug('Leaving GET ' + BASE + '/applications. Drawn for ' +
@@ -3066,6 +3151,10 @@ const SIGNALS_QUERY = vz.object({
 app.post(BASE + '/signals/receive', function (req, res) {
   log.debug('Entering POST ' + BASE + '/signals/receive.');
   const taken = signals.accept(signals.PORTAL, req);
+  if (taken.status >= 400) {
+    // The receiver's own code where it gave one; this portal's door otherwise.
+    errorCodes.mark(res, innerCode(taken) || 'STS-PORTAL-0038');
+  }
   res.status(taken.status).set('Cache-Control', 'no-store');
   if (taken.body) {
     res.type('application/json').send(JSON.stringify(taken.body, null, 2));
@@ -3206,6 +3295,7 @@ app.get(BASE + '/signals', function (req, res) {
   }
   const asked = validation.check(req, 'query', SIGNALS_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
     return refuseShape(res, asked);
   }
   log.debug('Leaving GET ' + BASE + '/signals. Drawn for ' +
@@ -3229,6 +3319,7 @@ app.get(BASE + '/password', function (req, res) {
   }
   const asked = validation.check(req, 'query', PORTAL_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
     return refuseShape(res, asked);
   }
   log.debug('Leaving GET ' + BASE + '/password. Drawn for ' +
@@ -3247,6 +3338,7 @@ app.get(BASE + '/keys', function (req, res) {
   }
   const asked = validation.check(req, 'query', PORTAL_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
     return refuseShape(res, asked);
   }
   log.debug('Leaving GET ' + BASE + '/keys. Drawn for ' +
@@ -3288,6 +3380,7 @@ app.get(BASE + '/mfa', async function (req, res) {
   if (!session) return undefined;
   const asked = validation.check(req, 'query', PORTAL_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
     return refuseShape(res, asked);
   }
   const enrolment = await pendingEnrolmentFor(session.user.username,
@@ -3326,6 +3419,7 @@ app.post(BASE + '/mfa', async function (req, res) {
   const username = session.user.username;
   const posted = validation.checkParsed(parseBody(req), 'body', MFA_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, innerCode(posted) || 'STS-PORTAL-0001');
     return refuseShape(res, posted);
   }
   const body = posted.value;
@@ -3338,11 +3432,13 @@ app.post(BASE + '/mfa', async function (req, res) {
              ' was refused on CSRF (' + csrf.reason + ').');
     audit.record({
       category: 'authentication', action: 'portal.mfa.csrf',
+      errorCode: innerCode(csrf) || 'STS-PORTAL-0017',
       actor: username, outcome: 'failure',
       summary: 'an authenticator app change was refused: ' + csrf.reason,
       detail: { address: websecurity.addressOf(req), what: action }
     });
     log.debug('Leaving POST ' + BASE + '/mfa. CSRF.');
+    errorCodes.mark(res, innerCode(csrf) || 'STS-PORTAL-0017');
     return send(res, 403, mfaPage(session, null, csrf.detail,
                                   await pendingEnrolmentFor(username, base)));
   }
@@ -3351,6 +3447,7 @@ app.post(BASE + '/mfa', async function (req, res) {
     const removed = credentials.removeTotp(username);
     if (!removed.ok) {
       log.debug('Leaving POST ' + BASE + '/mfa. Nothing to remove.');
+      errorCodes.mark(res, innerCode(removed) || 'STS-PORTAL-0021');
       return send(res, 400, mfaPage(session, null,
         (removed.errors || ['It could not be removed.'])[0],
         await pendingEnrolmentFor(username, base)));
@@ -3377,6 +3474,7 @@ app.post(BASE + '/mfa', async function (req, res) {
     const begun = credentials.beginTotpEnrolment(username, { base: base });
     if (!begun.ok) {
       log.debug('Leaving POST ' + BASE + '/mfa. Refused to start.');
+      errorCodes.mark(res, innerCode(begun) || 'STS-PORTAL-0022');
       return send(res, 400, mfaPage(session, null,
         (begun.errors || ['The setup could not be started.'])[0], null));
     }
@@ -3402,6 +3500,7 @@ app.post(BASE + '/mfa', async function (req, res) {
     const allowed = websecurity.attempt('mfa-code', req, username);
     if (!allowed.ok) {
       log.debug('Leaving POST ' + BASE + '/mfa. Rate limited.');
+      errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0018');
       return send(res, 429, mfaPage(session, null, allowed.detail,
                                     await pendingEnrolmentFor(username, base)));
     }
@@ -3410,6 +3509,7 @@ app.post(BASE + '/mfa', async function (req, res) {
     if (!confirmed.ok) {
       audit.record({
         category: 'authentication', action: 'portal.mfa.refused',
+        errorCode: innerCode(confirmed) || 'STS-PORTAL-0023',
         actor: username, outcome: 'failure',
         summary: 'an authenticator app setup was not confirmed',
         detail: { reason: confirmed.reason || '',
@@ -3419,6 +3519,7 @@ app.post(BASE + '/mfa', async function (req, res) {
       // THE SAME PENDING SECRET IS REDRAWN, not a new one. A mistyped code is
       // the ordinary case and re-scanning for a typo would be the reason
       // nobody finishes this.
+      errorCodes.mark(res, innerCode(confirmed) || 'STS-PORTAL-0023');
       return send(res, 400, mfaPage(session, null,
         (confirmed.errors || ['That code is not right.'])[0],
         await pendingEnrolmentFor(username, base)));
@@ -3484,6 +3585,7 @@ app.post(BASE + '/mfa', async function (req, res) {
     const begun = credentials.beginBackupCodes(username);
     audit.record({
       category: 'authentication', action: 'portal.mfa.backup-codes.generated',
+      errorCode: begun.ok ? undefined : (innerCode(begun) || 'STS-PORTAL-0024'),
       actor: username, outcome: begun.ok ? 'success' : 'failure',
       summary: begun.ok
         ? username + ' generated a set of recovery codes and is being shown ' +
@@ -3497,6 +3599,7 @@ app.post(BASE + '/mfa', async function (req, res) {
     });
     if (!begun.ok) {
       log.debug('Leaving POST ' + BASE + '/mfa. Could not generate.');
+      errorCodes.mark(res, innerCode(begun) || 'STS-PORTAL-0024');
       return send(res, 400, mfaPage(session, null,
         (begun.errors || ['They could not be generated.'])[0],
         await pendingEnrolmentFor(username, base), null, null));
@@ -3516,6 +3619,7 @@ app.post(BASE + '/mfa', async function (req, res) {
                                                   String(body.handle || ''));
     audit.record({
       category: 'authentication', action: 'portal.mfa.backup-codes.confirmed',
+      errorCode: stored.ok ? undefined : (innerCode(stored) || 'STS-PORTAL-0025'),
       actor: username, outcome: stored.ok ? 'success' : 'failure',
       summary: stored.ok
         ? username + ' confirmed they had saved their recovery codes, and ' +
@@ -3535,6 +3639,7 @@ app.post(BASE + '/mfa', async function (req, res) {
       const held = credentials.pendingBackupCodesFor(username,
                                                      String(body.handle || ''));
       log.debug('Leaving POST ' + BASE + '/mfa. The confirm failed.');
+      errorCodes.mark(res, innerCode(stored) || 'STS-PORTAL-0025');
       return send(res, 400, mfaPage(session, null,
         (stored.errors || ['They could not be stored.'])[0],
         null,
@@ -3571,6 +3676,7 @@ app.post(BASE + '/mfa', async function (req, res) {
   // reachable from the form; it is redrawn rather than errored, for the reason
   // the sign-in screen falls through on an unknown action.
   log.debug('Leaving POST ' + BASE + '/mfa. No action.');
+  errorCodes.mark(res, 'STS-PORTAL-0026');
   return send(res, 400, mfaPage(session, null,
     'Nothing was asked for.', await pendingEnrolmentFor(username, base)));
 });
@@ -3585,6 +3691,7 @@ app.get(BASE + '/signing-key', function (req, res) {
   if (!session) return undefined;
   const asked = validation.check(req, 'query', PORTAL_QUERY);
   if (!asked.ok) {
+    errorCodes.mark(res, innerCode(asked) || 'STS-PORTAL-0001');
     return refuseShape(res, asked);
   }
   log.debug('Leaving GET ' + BASE + '/signing-key.');
@@ -3613,6 +3720,7 @@ app.post(BASE + '/signing-key', async function (req, res) {
   const posted = validation.checkParsed(parseBody(req), 'body',
                                         SIGNING_KEY_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, innerCode(posted) || 'STS-PORTAL-0001');
     return refuseShape(res, posted);
   }
   const body = posted.value;
@@ -3624,11 +3732,13 @@ app.post(BASE + '/signing-key', async function (req, res) {
              ' was refused on CSRF (' + csrf.reason + ').');
     audit.record({
       category: 'authentication', action: 'portal.signing-key.csrf',
+      errorCode: innerCode(csrf) || 'STS-PORTAL-0017',
       actor: username, outcome: 'failure',
       summary: 'a signing key change was refused: ' + csrf.reason,
       detail: { address: websecurity.addressOf(req), what: action }
     });
     log.debug('Leaving POST ' + BASE + '/signing-key. CSRF.');
+    errorCodes.mark(res, innerCode(csrf) || 'STS-PORTAL-0017');
     return send(res, 403, signingKeyPage(session, null, csrf.detail, null,
                                          base));
   }
@@ -3637,6 +3747,7 @@ app.post(BASE + '/signing-key', async function (req, res) {
     const removed = personAssertions.clear(username);
     if (!removed.ok) {
       log.debug('Leaving POST ' + BASE + '/signing-key. Nothing to remove.');
+      errorCodes.mark(res, 'STS-PORTAL-0027');
       return send(res, 400, signingKeyPage(session, null,
         'You hold no signing key, so there was nothing to take off.', null,
         base));
@@ -3665,6 +3776,7 @@ app.post(BASE + '/signing-key', async function (req, res) {
     // must not issue anything.
     if (config.value('pki.personSelfService') === false) {
       log.debug('Leaving POST ' + BASE + '/signing-key. Self-service is off.');
+      errorCodes.mark(res, 'STS-PORTAL-0028');
       return send(res, 403, signingKeyPage(session, null,
         'This service does not let people issue their own signing keys. An ' +
         'administrator can issue one to you.', null, base));
@@ -3675,16 +3787,27 @@ app.post(BASE + '/signing-key', async function (req, res) {
     // limit is explicit rather than the shared default because what is being
     // protected is the SERVICE rather than an account — five is more than
     // anybody needs and far less than it takes to notice.
-    const allowed = websecurity.attempt('portal-signing-key', req, username, 5);
+    //
+    // **TWO SETTINGS SINCE 2026-09-12, AND THE DEFAULTS ARE THE FIVE IT WAS.**
+    // The literal 5 applied to BOTH buckets, so everybody behind one NAT or
+    // proxy shared five key generations a window between them. The
+    // per-address number is its own row now so a deployment whose people
+    // arrive from one address can raise it without raising what one person may
+    // do.
+    const allowed = websecurity.attempt('portal-signing-key', req, username, {
+      identity: config.value('pki.personSelfServicePerIdentity'),
+      address: config.value('pki.personSelfServicePerAddress')
+    });
     if (!allowed.ok) {
       log.debug('Leaving POST ' + BASE + '/signing-key. Rate limited.');
+      errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0020');
       return send(res, 429, signingKeyPage(session, null, allowed.detail, null,
                                            base));
     }
     const issued = await pki.issueSigningKeyPair(undefined, {
       identifier: username,
       purpose: 'jwt',
-      // WHAT PUTS `urn:sts-mock:person:<name>` IN THE CERTIFICATE, and the
+      // WHAT PUTS `urn:sts:person:<name>` IN THE CERTIFICATE, and the
       // whole reason this page may exist: it is what holds the key to
       // asserting about its own holder even when it is presented on its `x5c`
       // alone, with nothing on the entry left to consult.
@@ -3694,6 +3817,7 @@ app.post(BASE + '/signing-key', async function (req, res) {
     });
     if (!issued.ok) {
       log.debug('Leaving POST ' + BASE + '/signing-key. The issue failed.');
+      errorCodes.mark(res, innerCode(issued) || 'STS-PORTAL-0029');
       return send(res, 400, signingKeyPage(session, null,
         (issued.errors || ['A key pair could not be issued.'])[0], null, base));
     }
@@ -3704,9 +3828,11 @@ app.post(BASE + '/signing-key', async function (req, res) {
       // over ONCE and keeps no copy, so a failed write is not a state to
       // retry from — showing the private key of a pair this service cannot
       // verify anything against would be worse than the refusal.
-      log.error('portal: a signing key pair was issued to ' + username +
+      log.error(errorCodes.tag('STS-PORTAL-0030') +
+                'portal: a signing key pair was issued to ' + username +
                 ' and could not be written: ' +
                 (written.errors || []).join(' '));
+      errorCodes.mark(res, innerCode(written) || 'STS-PORTAL-0030');
       return send(res, 500, signingKeyPage(session, null,
         (written.errors || ['It could not be written to your entry.'])[0],
         null, base));
@@ -3741,6 +3867,7 @@ app.post(BASE + '/signing-key', async function (req, res) {
   // reachable from the form; it is redrawn rather than errored, for the reason
   // the sign-in screen falls through on an unknown action.
   log.debug('Leaving POST ' + BASE + '/signing-key. No action.');
+  errorCodes.mark(res, 'STS-PORTAL-0026');
   return send(res, 400, signingKeyPage(session, null, 'Nothing was asked for.',
                                        null, base));
 });
@@ -3752,6 +3879,7 @@ app.post(BASE + '/password', function (req, res) {
   const username = session.user.username;
   const posted = validation.checkParsed(parseBody(req), 'body', PASSWORD_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, innerCode(posted) || 'STS-PORTAL-0001');
     return refuseShape(res, posted);
   }
   const body = posted.value;
@@ -3762,17 +3890,20 @@ app.post(BASE + '/password', function (req, res) {
              'CSRF (' + csrf.reason + ').');
     audit.record({
       category: 'authentication', action: 'portal.password.csrf',
+      errorCode: innerCode(csrf) || 'STS-PORTAL-0017',
       actor: username, outcome: 'failure',
       summary: 'a password change was refused: ' + csrf.reason,
       detail: { address: websecurity.addressOf(req) }
     });
     log.debug('Leaving POST ' + BASE + '/password. CSRF.');
+    errorCodes.mark(res, innerCode(csrf) || 'STS-PORTAL-0017');
     return send(res, 403, passwordPage(session, null, csrf.detail));
   }
 
   const allowed = websecurity.attempt('password-change', req, username);
   if (!allowed.ok) {
     log.debug('Leaving POST ' + BASE + '/password. Rate limited.');
+    errorCodes.mark(res, innerCode(allowed) || 'STS-PORTAL-0019');
     return send(res, 429, passwordPage(session, null, allowed.detail));
   }
 
@@ -3795,20 +3926,24 @@ app.post(BASE + '/password', function (req, res) {
              checked.reason + ').');
     audit.record({
       category: 'authentication', action: 'portal.password.refused',
+      errorCode: innerCode(checked) || 'STS-PORTAL-0031',
       actor: username, outcome: 'failure',
       summary: 'a password change was refused',
       detail: { reason: checked.reason, address: websecurity.addressOf(req) }
     });
     log.debug('Leaving POST ' + BASE + '/password. Wrong current password.');
+    errorCodes.mark(res, innerCode(checked) || 'STS-PORTAL-0031');
     return send(res, 400, passwordPage(session, null,
       'Your current password is not right.'));
   }
   if (!next || next !== confirm) {
+    errorCodes.mark(res, 'STS-PORTAL-0032');
     return send(res, 400, passwordPage(session, null,
       next ? 'The two new passwords do not match.' : 'Give a new password.'));
   }
   const set = credentials.setPassword(username, next);
   if (!set.ok) {
+    errorCodes.mark(res, innerCode(set) || 'STS-PORTAL-0008');
     return send(res, 400, passwordPage(session, null,
       (set.errors || ['The password could not be changed.'])[0]));
   }
@@ -3860,6 +3995,7 @@ app.post(BASE + '/keys', function (req, res) {
   const base = baseUrlOf(req);
   const posted = validation.checkParsed(parseBody(req), 'body', ENROL_KEY_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, innerCode(posted) || 'STS-PORTAL-0001');
     return refuseShape(res, posted);
   }
   const body = posted.value;
@@ -3867,6 +4003,7 @@ app.post(BASE + '/keys', function (req, res) {
   const csrf = websecurity.checkCsrf(session.id, body);
   if (!csrf.ok) {
     log.debug('Leaving POST ' + BASE + '/keys. CSRF.');
+    errorCodes.mark(res, innerCode(csrf) || 'STS-PORTAL-0017');
     return sendKeysPage(res, 403, keysPage(session, null, csrf.detail, base));
   }
   const action = String(body.action || '');
@@ -3890,6 +4027,7 @@ app.post(BASE + '/keys', function (req, res) {
     });
     if (!begun.ok) {
       log.debug('Leaving POST ' + BASE + '/keys. Refused to start.');
+      errorCodes.mark(res, innerCode(begun) || 'STS-PORTAL-0033');
       return sendKeysPage(res, 400, keysPage(session, null,
         (begun.errors || ['The enrolment could not be started.'])[0], base));
     }
@@ -3921,24 +4059,38 @@ app.post(BASE + '/keys', function (req, res) {
     }
     if (!credential) {
       log.debug('Leaving POST ' + BASE + '/keys. No ceremony ran.');
+      errorCodes.mark(res, 'STS-PORTAL-0034');
       return sendKeysPage(res, 400, keysPage(session, null,
         'Your browser did not run the ceremony, so there is nothing to ' +
         'register. This page needs JavaScript for that one step — a security ' +
         'key is created by the browser and there is no form that can do it. ' +
         'The rest of this portal runs no script at all.', base));
     }
+    // THE SAME TWO ADDRESS RULES THE SIGN-IN SCREEN APPLIES (2026-09-12): an
+    // RP ID that does not fit is refused in product mode rather than replaced
+    // by the request's host, and `webauthn.allowedOrigins` decides the origin
+    // where it is set. Asked of `authn.js` so the two ceremonies cannot differ.
+    const rpRefusal = authn.rpIdProblem(base);
+    if (rpRefusal) {
+      log.debug('Leaving POST ' + BASE + '/keys. The RP ID does not fit.');
+      errorCodes.mark(res, 'STS-PORTAL-0035');
+      return sendKeysPage(res, 400, keysPage(session, null, rpRefusal, base));
+    }
     const done = credentials.confirmKeyEnrolment(username,
       String(body.enrolment_id || ''), credential,
-      { origin: authn.originOf(base), rpId: authn.rpIdOf(base) });
+      { origin: authn.expectedOriginFor(base, credential),
+        rpId: authn.rpIdOf(base) });
     if (!done.ok) {
       audit.record({
         category: 'authentication', action: 'portal.key.refused',
+        errorCode: innerCode(done) || 'STS-PORTAL-0036',
         actor: username, outcome: 'failure',
         summary: 'a security key enrolment was not completed for ' + username,
         detail: { reason: done.reason || '',
                   address: websecurity.addressOf(req) }
       });
       log.debug('Leaving POST ' + BASE + '/keys. Refused: ' + done.reason);
+      errorCodes.mark(res, innerCode(done) || 'STS-PORTAL-0036');
       return sendKeysPage(res, 400, keysPage(session, null,
         (done.errors || ['The security key could not be registered.'])[0],
         base));
@@ -3963,6 +4115,7 @@ app.post(BASE + '/keys', function (req, res) {
   }
 
   log.debug('Leaving POST ' + BASE + '/keys. Unknown action.');
+  errorCodes.mark(res, 'STS-PORTAL-0026');
   return sendKeysPage(res, 400, keysPage(session, null,
     'Unknown action "' + esc(action) + '". There are three: begin, finish ' +
     'and cancel.', base));
@@ -4001,6 +4154,7 @@ app.post(BASE + '/remove-key', function (req, res) {
   const username = session.user.username;
   const posted = validation.checkParsed(parseBody(req), 'body', REMOVE_KEY_FORM);
   if (!posted.ok) {
+    errorCodes.mark(res, innerCode(posted) || 'STS-PORTAL-0001');
     return refuseShape(res, posted);
   }
   const body = posted.value;
@@ -4008,6 +4162,7 @@ app.post(BASE + '/remove-key', function (req, res) {
   const csrf = websecurity.checkCsrf(session.id, body);
   if (!csrf.ok) {
     log.debug('Leaving POST ' + BASE + '/remove-key. CSRF.');
+    errorCodes.mark(res, innerCode(csrf) || 'STS-PORTAL-0017');
     return send(res, 403, keysPage(session, null, csrf.detail, baseUrlOf(req)));
   }
   // THE CREDENTIAL ID COMES FROM THE BODY AND THE USERNAME DOES NOT, which is
@@ -4019,6 +4174,7 @@ app.post(BASE + '/remove-key', function (req, res) {
                                         String(body.credentialId || ''));
   if (!removed.ok) {
     log.debug('Leaving POST ' + BASE + '/remove-key. Refused.');
+    errorCodes.mark(res, innerCode(removed) || 'STS-PORTAL-0037');
     return send(res, 400, keysPage(session, null,
       (removed.errors || ['The key could not be removed.'])[0], baseUrlOf(req)));
   }
@@ -4084,11 +4240,13 @@ app.post(BASE + '/signout', function (req, res) {
              csrf.reason + ').');
     audit.record({
       category: 'authentication', action: 'portal.signout.csrf',
+      errorCode: innerCode(csrf) || 'STS-PORTAL-0017',
       actor: username, outcome: 'failure',
       summary: 'a sign-out was refused: ' + csrf.reason,
       detail: { address: websecurity.addressOf(req) }
     });
     log.debug('Leaving POST ' + BASE + '/signout. CSRF.');
+    errorCodes.mark(res, innerCode(csrf) || 'STS-PORTAL-0017');
     return send(res, 403, overviewPage(session, null, csrf.detail));
   }
   const parent = String(session.derivedFrom || '');

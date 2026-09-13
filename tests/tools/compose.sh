@@ -1,13 +1,14 @@
 #
 # tests/tools/compose.sh — how this repository's two launchers talk to docker.
 #
-# SOURCED, never run: it defines three functions and sets nothing. Both
+# SOURCED, never run: it defines four functions and sets nothing. Both
 # ./local-run-tests.sh (which brings up ONE service and drives it from this
 # machine) and ./docker-run-tests.sh (which brings up the service AND the tests
-# container and drives nothing itself) need exactly the same three answers —
+# container and drives nothing itself) need exactly the same four answers —
 # which compose command is on this machine, how to hand it the variables a
-# compose file substitutes, and how to stop waiting on one that has wedged — so
-# they are here rather than in both.
+# compose file substitutes, how to stop waiting on one that has wedged, and
+# which addresses on this machine are free for the stack to take — so they are
+# here rather than in both.
 #
 # It lives in tests/tools/ for the reason everything else in this directory
 # does: tools/ is NOT tests. run.js's discovery rule walks tests/*.js and would
@@ -148,4 +149,106 @@ docker_compose_bounded()
   "${timeoutCmd}" --kill-after=30s "${seconds}" \
     env ${COMPOSE_ENV[@]+"${COMPOSE_ENV[@]}"} ${COMPOSE_CMD} "$@"
   return $?
+}
+
+# ---------------------------------------------------------------------------
+# A /24 NOBODY ELSE ON THIS MACHINE IS USING (2026-09-12), and it is here for
+# the same reason the three functions above are: both launchers need it and
+# neither may answer it differently.
+#
+# **NAMING A PROJECT MUST ISOLATE THE WHOLE RUN, AND ON 2026-09-12 IT STOPPED
+# DOING SO AGAIN.** ./local-run-tests.sh's own header is the record of that
+# lesson learnt once at the container names; the SUBNET arrived the same day a
+# realm's SPIFFE listeners needed addresses of their own, went into
+# docker-compose.yml as a literal `172.29.0.0/24`, and was not added to the
+# list of things a project name scopes. A network is machine-wide exactly as a
+# `container_name` is, so the second run in this tree — whatever project it was
+# given — asked for a subnet the first run was holding and got
+#
+#   invalid pool request: Pool overlaps with other one on this address space
+#
+# before a single container started. It reads as a docker problem and is two
+# runs sharing an address.
+#
+# THE FIRST CANDIDATE IS THE COMPOSE FILE'S OWN DEFAULT, so a plain run on an
+# idle machine takes exactly the addresses it always took and nothing about
+# this is visible; the scan only moves a SECOND run out of the way. The base
+# is the caller's because the two launchers deliberately sit in different /16s
+# — 172.29 here and 172.30 for the containerized one — so that a run of each
+# does not need the scan at all.
+#
+# WHAT COUNTS AS USED IS BOTH ANSWERS DOCKER ITSELF CHECKS: every existing
+# docker network's configured subnet, and every route in this machine's own
+# table. The second is not belt and braces — the error above is also what a
+# VPN route or a libvirt bridge produces, and a scan that looked only at
+# docker would keep handing back a subnet the daemon then refuses.
+#
+# A CALLER GETS NOTHING BACK AND A NON-ZERO STATUS if all 256 are spoken for,
+# rather than a default that would fail at `up`: the point of this is to say
+# what is wrong before the stack tries.
+# ---------------------------------------------------------------------------
+freeSubnet()
+{
+  local base="$1"
+  local used=""
+  local ids=""
+  if [ -n "${DOCKER_SUDO}" ];
+  then
+    ids="$(sudo -n docker network ls -q 2> /dev/null || true)"
+    if [ -n "${ids}" ];
+    then
+      used="$(echo "${ids}" | xargs -r sudo -n docker network inspect \
+        -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2> /dev/null || true)"
+    fi
+  else
+    ids="$(docker network ls -q 2> /dev/null || true)"
+    if [ -n "${ids}" ];
+    then
+      used="$(echo "${ids}" | xargs -r docker network inspect \
+        -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2> /dev/null || true)"
+    fi
+  fi
+  if command -v ip > /dev/null 2>&1;
+  then
+    used="${used} $(ip -4 route show 2> /dev/null | awk '{ print $1 }' || true)"
+  fi
+  node -e '
+    var base = process.argv[1];
+    var used = String(process.argv[2] || "").split(/\s+/).filter(Boolean);
+    // A CIDR as a pair of unsigned 32-bit integers. Anything that is not one
+    // is dropped rather than guessed at: `ip route` prints `default` and
+    // bare addresses among the prefixes, and neither can overlap anything.
+    function parse(text)
+    {
+      var m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)\/(\d+)$/.exec(text);
+      if (!m) { return null; }
+      var bits = Number(m[5]);
+      if (bits < 0 || bits > 32) { return null; }
+      var addr = (((Number(m[1]) << 24) >>> 0) + (Number(m[2]) << 16) +
+                  (Number(m[3]) << 8) + Number(m[4])) >>> 0;
+      var mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+      return { net: (addr & mask) >>> 0, mask: mask };
+    }
+    var taken = used.map(parse).filter(Boolean);
+    // Two ranges overlap when either one contains the network address of the
+    // other. No arithmetic about sizes is needed and none is done.
+    function overlaps(a, b)
+    {
+      return ((a.net & b.mask) >>> 0) === b.net ||
+             ((b.net & a.mask) >>> 0) === a.net;
+    }
+    for (var third = 0; third < 256; third += 1)
+    {
+      var candidate = base + "." + third + ".0/24";
+      var range = parse(candidate);
+      if (!range) { break; }
+      var clash = taken.some(function (other) { return overlaps(range, other); });
+      if (!clash)
+      {
+        process.stdout.write(candidate);
+        process.exit(0);
+      }
+    }
+    process.exit(1);
+  ' "${base}" "${used}"
 }

@@ -93,6 +93,10 @@ const log = bunyan.createLogger({
 });
 
 const pki = require('./pki');
+// The error-code registry (a leaf). A grammar refusal is thrown with its code
+// marked non-enumerably on the Error, so `issue()` can say WHICH grammar; a
+// refusal returned to a caller carries its code the same way.
+const errorCodes = require('./error_codes');
 // The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
 // `common/vendored/CLAUDE.md`. One encoder for this page and for that
 // project's, which is the whole point of vendoring them.
@@ -401,28 +405,28 @@ function parseAltNames(lines) {
   lines.forEach(function (line) {
     const colon = line.indexOf(':');
     if (colon < 0) {
-      throw new Error('Alternative name "' + line + '" has no type. Write ' +
+      throw errorCodes.mark(new Error('Alternative name "' + line + '" has no type. Write ' +
                       'dns:example.com, ip:10.0.0.1, email:a@b, ' +
                       'uri:https://…, upn:user@REALM, krb5:host/x@REALM, ' +
                       'rid:1.2.3.4, dirname:CN=x, or ' +
-                      'othername:<oid>:<base64 DER>.');
+                      'othername:<oid>:<base64 DER>.'), 'STS-PKI-0078');
     }
     const kind = line.slice(0, colon).trim().toLowerCase();
     const value = line.slice(colon + 1).trim();
     if (kind === 'othername') {
       const second = value.indexOf(':');
       if (second < 0) {
-        throw new Error('othername needs an OID and a base64 DER value: ' +
-                        'othername:1.2.3.4:BASE64');
+        throw errorCodes.mark(new Error('othername needs an OID and a base64 DER value: ' +
+                        'othername:1.2.3.4:BASE64'), 'STS-PKI-0078');
       }
       out.push({ kind: 'otherName', oid: value.slice(0, second).trim(),
                  value: value.slice(second + 1).trim() });
       return;
     }
     if (!GENERAL_NAME_KINDS[kind]) {
-      throw new Error('Unknown alternative name type "' + kind + '". The ' +
+      throw errorCodes.mark(new Error('Unknown alternative name type "' + kind + '". The ' +
                       'types are ' + Object.keys(GENERAL_NAME_KINDS).join(', ') +
-                      ' and othername.');
+                      ' and othername.'), 'STS-PKI-0078');
     }
     out.push({ kind: GENERAL_NAME_KINDS[kind], value: value });
   });
@@ -439,9 +443,9 @@ function parseAccessDescriptions(lines) {
   lines.forEach(function (line) {
     const colon = line.indexOf(':');
     if (colon < 0) {
-      throw new Error('Access description "' + line + '" has no method. ' +
+      throw errorCodes.mark(new Error('Access description "' + line + '" has no method. ' +
                       'Write ocsp:http://… or caissuers:http://… — or ' +
-                      '<oid>:<url> for a method this page does not name.');
+                      '<oid>:<url> for a method this page does not name.'), 'STS-PKI-0079');
     }
     const method = line.slice(0, colon).trim();
     out.push({ method: known[method.toLowerCase()] || method,
@@ -485,8 +489,8 @@ function parsePolicyMappings(lines) {
   lines.forEach(function (line) {
     const eq = line.indexOf('=');
     if (eq < 0) {
-      throw new Error('A policy mapping is <issuer oid>=<subject oid>; got "' +
-                      line + '".');
+      throw errorCodes.mark(new Error('A policy mapping is <issuer oid>=<subject oid>; got "' +
+                      line + '".'), 'STS-PKI-0080');
     }
     out.push({ issuer: line.slice(0, eq).trim(),
                subject: line.slice(eq + 1).trim() });
@@ -506,8 +510,8 @@ function parseNameConstraints(lines) {
   lines.forEach(function (line) {
     const space = line.indexOf(' ');
     if (space < 0) {
-      throw new Error('A name constraint is "permit <name>" or ' +
-                      '"exclude <name>"; got "' + line + '".');
+      throw errorCodes.mark(new Error('A name constraint is "permit <name>" or ' +
+                      '"exclude <name>"; got "' + line + '".'), 'STS-PKI-0081');
     }
     const verb = line.slice(0, space).trim().toLowerCase();
     const names = parseAltNames([line.slice(space + 1).trim()]);
@@ -516,8 +520,8 @@ function parseNameConstraints(lines) {
     } else if (verb === 'exclude' || verb === 'excluded') {
       out.excluded = out.excluded.concat(names);
     } else {
-      throw new Error('A name constraint starts with "permit" or "exclude"; ' +
-                      'got "' + verb + '".');
+      throw errorCodes.mark(new Error('A name constraint starts with "permit" or "exclude"; ' +
+                      'got "' + verb + '".'), 'STS-PKI-0081');
     }
   });
   log.debug('Leaving parseNameConstraints(). ' + out.permitted.length +
@@ -532,8 +536,8 @@ function parseCustomExtensions(lines) {
   lines.forEach(function (line) {
     const parts = line.split('|');
     if (parts.length < 3) {
-      throw new Error('A custom extension is <oid>|<critical or ->|<base64 ' +
-                      'DER>; got "' + line + '".');
+      throw errorCodes.mark(new Error('A custom extension is <oid>|<critical or ->|<base64 ' +
+                      'DER>; got "' + line + '".'), 'STS-PKI-0082');
     }
     out.push({ oid: parts[0].trim(),
                critical: /^crit/i.test(parts[1].trim()),
@@ -564,8 +568,8 @@ function subjectFrom(draft) {
   linesOf(draft, 'pki_dn_extra').forEach(function (line) {
     const eq = line.indexOf('=');
     if (eq < 0) {
-      throw new Error('An extra subject attribute is NAME=value or ' +
-                      'OID=value; got "' + line + '".');
+      throw errorCodes.mark(new Error('An extra subject attribute is NAME=value or ' +
+                      'OID=value; got "' + line + '".'), 'STS-PKI-0083');
     }
     const name = line.slice(0, eq).trim();
     const value = line.slice(eq + 1).trim();
@@ -938,20 +942,20 @@ async function generateKeys(draft, which) {
   const desc = keyMaterial.keyAlg(algId);
   if (!desc) {
     log.debug('Leaving generateKeys(). Unknown algorithm.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['"' + algId + '" is not a key algorithm this service ' +
-                      'can generate.'] };
+                      'can generate.'] }, 'STS-PKI-0002');
   }
   let pair;
   try {
     pair = await keyMaterial.generateKeyPair(algId);
   } catch (e) {
-    log.error('pki_authoring: a ' + algId + ' key pair could not be ' +
+    log.error(errorCodes.tag('STS-PKI-0075') + 'pki_authoring: a ' + algId + ' key pair could not be ' +
               'generated: ' + e.message);
     log.debug('Leaving generateKeys(). The generator refused.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['A ' + desc.label + ' key pair could not be generated: ' +
-                      e.message] };
+                      e.message] }, 'STS-PKI-0075');
   }
   const out = Object.assign({}, draft);
   out[algField] = algId;
@@ -989,7 +993,7 @@ async function asShown(draft, pair, desc) {
   } catch (e) {
     // Not fatal: the key exists and PEM is what this page's other half reads.
     // A pair that could not be shown as JWK is still a pair.
-    log.warn('pki_authoring: the key pair could not be rendered as JWK (' +
+    log.warn(errorCodes.tag('STS-PKI-0076') + 'pki_authoring: the key pair could not be rendered as JWK (' +
              e.message + '), so it is shown as PEM.');
     log.debug('Leaving asShown(). PEM after a failed conversion.');
     return { privateText: pair.privatePem, publicText: pair.publicPem };
@@ -1009,10 +1013,10 @@ async function issue(realmId, draft) {
   const p = profileFor(profileId);
   if (!p) {
     log.debug('Leaving issue(). Unknown profile.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['"' + profileId + '" is not a certificate profile this ' +
                       'service knows. They are ' +
-                      x509.profileIds().join(', ') + '.'] };
+                      x509.profileIds().join(', ') + '.'] }, 'STS-PKI-0077');
   }
 
   let subject;
@@ -1025,13 +1029,33 @@ async function issue(realmId, draft) {
     // rather than passed on: a certificate quietly missing a name somebody
     // typed is the worst outcome available on this page, because it verifies.
     log.debug('Leaving issue(). A field would not parse.');
-    return { ok: false, errors: [e.message] };
+    return errorCodes.mark({ ok: false, errors: [e.message] },
+                           errorCodes.codeOf(e) || 'STS-PKI-0084');
   }
   if (!subject.length) {
     log.debug('Leaving issue(). No subject.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['A certificate needs a subject — at least a Common ' +
-                      'Name.'] };
+                      'Name.'] }, 'STS-PKI-0085');
+  }
+
+  // THE STORE IS ASKED FIRST (2026-09-12). `pki.putObject()` REFUSES a new
+  // object once `pki.maxStoredObjects` is reached rather than evicting the
+  // oldest — which may carry a private key somebody chose to keep — and this
+  // function did not read that answer, so issuing into a full store reported
+  // "Issued" and stored nothing. Asked here, before the key generation, because
+  // a post-quantum pair can take seconds and a refusal after them is seconds
+  // spent on an object nobody may keep; the answer from `putObject()` below is
+  // still checked, for the case where the store filled in between.
+  if (!pki.roomForObject(realmId)) {
+    log.debug('Leaving issue(). The object store is full.');
+    return errorCodes.mark({ ok: false,
+             errors: ['This realm\'s certificate store is full (' +
+                      'pki.maxStoredObjects is ' +
+                      config.value('pki.maxStoredObjects') + '). Nothing was ' +
+                      'generated and nothing already stored was discarded. ' +
+                      'Delete objects that are no longer wanted, or raise ' +
+                      'pki.maxStoredObjects.'] }, 'STS-PKI-0027');
   }
 
   // --- the key pair ------------------------------------------------------
@@ -1040,9 +1064,9 @@ async function issue(realmId, draft) {
   const keyDesc = keyMaterial.keyAlg(keyAlgId);
   if (!keyDesc) {
     log.debug('Leaving issue(). Unknown key algorithm.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['"' + keyAlgId + '" is not a key algorithm this ' +
-                      'service can generate.'] };
+                      'service can generate.'] }, 'STS-PKI-0002');
   }
   let privatePem = '';
   let publicPem = '';
@@ -1051,12 +1075,12 @@ async function issue(realmId, draft) {
     const pub = String(draft.pki_public_key || '').trim();
     if (!priv || !pub) {
       log.debug('Leaving issue(). Nothing to reuse.');
-      return { ok: false,
+      return errorCodes.mark({ ok: false,
                errors: ['"reuse the key pair below" is ticked and the two key ' +
                         'boxes are not both filled in. Clear the box and the ' +
                         'button generates a pair: the certificate certifies ' +
                         'the public key, and a CA needs the private half to ' +
-                        'go on signing with afterwards.'] };
+                        'go on signing with afterwards.'] }, 'STS-PKI-0086');
     }
     try {
       // The boxes may hold JWK — the format toggle — and everything below is
@@ -1065,11 +1089,11 @@ async function issue(realmId, draft) {
       publicPem = await keyMaterial.asPublicPem(pub, keyDesc);
     } catch (e) {
       log.debug('Leaving issue(). The pasted key would not read.');
-      return { ok: false,
+      return errorCodes.mark({ ok: false,
                errors: ['The key pair in the boxes could not be read as ' +
                         keyDesc.label + ': ' + e.message + ' Check that the ' +
                         'Key Algorithm above matches what is actually in ' +
-                        'them.'] };
+                        'them.'] }, 'STS-PKI-0087');
     }
   } else {
     try {
@@ -1077,12 +1101,12 @@ async function issue(realmId, draft) {
       privatePem = pair.privatePem;
       publicPem = pair.publicPem;
     } catch (e) {
-      log.error('pki_authoring: a ' + keyAlgId + ' key pair could not be ' +
+      log.error(errorCodes.tag('STS-PKI-0075') + 'pki_authoring: a ' + keyAlgId + ' key pair could not be ' +
                 'generated: ' + e.message);
       log.debug('Leaving issue(). The generator refused.');
-      return { ok: false,
+      return errorCodes.mark({ ok: false,
                errors: ['A ' + keyDesc.label + ' key pair could not be ' +
-                        'generated: ' + e.message] };
+                        'generated: ' + e.message] }, 'STS-PKI-0075');
     }
   }
 
@@ -1092,19 +1116,19 @@ async function issue(realmId, draft) {
     issuer = pki.issuerFor(realmId, textOf(draft, 'pki_issuer'));
     if (!issuer) {
       log.debug('Leaving issue(). No issuer.');
-      return { ok: false,
+      return errorCodes.mark({ ok: false,
                errors: ['Choose the certificate authority that signs this ' +
                         'certificate. Build this realm\'s hierarchy above, ' +
                         'or issue a self-signed Root CA from this pane first ' +
                         '— a certificate signed by nothing is not something ' +
                         'this page can make except under a self-signed ' +
-                        'profile.'] };
+                        'profile.'] }, 'STS-PKI-0088');
     }
     if (!issuer.privateKeyPem) {
       log.debug('Leaving issue(). The issuer cannot sign.');
-      return { ok: false,
+      return errorCodes.mark({ ok: false,
                errors: ['"' + issuer.subject + '" has no private key in this ' +
-                        'service, so it cannot sign.'] };
+                        'service, so it cannot sign.'] }, 'STS-PKI-0089');
     }
   }
 
@@ -1115,9 +1139,9 @@ async function issue(realmId, draft) {
   const sig = x509.SIG_ALGS[sigAlgId];
   if (!sig) {
     log.debug('Leaving issue(). Unknown signature algorithm.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['"' + sigAlgId + '" is not a signature algorithm this ' +
-                      'service can produce.'] };
+                      'service can produce.'] }, 'STS-PKI-0003');
   }
   const allowed = x509.signatureAlgorithmsFor(signerDesc || {});
   if (allowed.indexOf(sigAlgId) < 0) {
@@ -1125,28 +1149,28 @@ async function issue(realmId, draft) {
     // key-usage error naming neither the key nor the algorithm. The list is in
     // the sentence because the page cannot narrow the menu without a script.
     log.debug('Leaving issue(). The algorithms do not match.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['The signing key is ' +
                       ((signerDesc || {}).label || 'of another kind') +
                       ', which cannot produce a ' + (sig.label || sigAlgId) +
                       ' signature. It can produce: ' + allowed.join(', ') +
-                      '.'] };
+                      '.'] }, 'STS-PKI-0004');
   }
 
   // --- validity ----------------------------------------------------------
   const notBeforeText = textOf(draft, 'pki_not_before');
   const notBefore = notBeforeText ? new Date(notBeforeText) : new Date();
   if (isNaN(notBefore.getTime())) {
-    return { ok: false, errors: ['Not Before is not a date this service can ' +
-                                 'read: "' + notBeforeText + '".'] };
+    return errorCodes.mark({ ok: false, errors: ['Not Before is not a date this service can ' +
+                                 'read: "' + notBeforeText + '".'] }, 'STS-PKI-0090');
   }
   const notAfterText = textOf(draft, 'pki_not_after');
   let notAfter;
   if (notAfterText) {
     notAfter = new Date(notAfterText);
     if (isNaN(notAfter.getTime())) {
-      return { ok: false, errors: ['Not After is not a date this service can ' +
-                                   'read: "' + notAfterText + '".'] };
+      return errorCodes.mark({ ok: false, errors: ['Not After is not a date this service can ' +
+                                   'read: "' + notAfterText + '".'] }, 'STS-PKI-0090');
     }
   } else {
     let years = parseInt(textOf(draft, 'pki_validity_years'), 10);
@@ -1157,10 +1181,10 @@ async function issue(realmId, draft) {
     notAfter.setUTCFullYear(notAfter.getUTCFullYear() + years);
   }
   if (notAfter.getTime() <= notBefore.getTime()) {
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['Not After is not later than Not Before, so this ' +
                       'certificate would be expired the moment it was ' +
-                      'signed.'] };
+                      'signed.'] }, 'STS-PKI-0091');
   }
 
   const keepPrivate = flagOf(draft, 'pki_save_keys');
@@ -1221,12 +1245,12 @@ async function issue(realmId, draft) {
   try {
     result = await x509.issueCertificate(spec);
   } catch (e) {
-    log.error('pki_authoring: a certificate for "' +
+    log.error(errorCodes.tag('STS-PKI-0092') + 'pki_authoring: a certificate for "' +
               textOf(draft, 'pki_dn_cn') + '" could not be issued: ' +
               e.message);
     log.debug('Leaving issue(). The encoder refused.');
-    return { ok: false,
-             errors: ['The certificate could not be issued: ' + e.message] };
+    return errorCodes.mark({ ok: false,
+             errors: ['The certificate could not be issued: ' + e.message] }, 'STS-PKI-0092');
   }
 
   // --- the certification request, which this page does not consume -------
@@ -1259,7 +1283,7 @@ async function issue(realmId, draft) {
       });
       csrPem = request.pem;
     } catch (e) {
-      log.warn('pki_authoring: the certificate was issued and the CSR could ' +
+      log.warn(errorCodes.tag('STS-PKI-0093') + 'pki_authoring: the certificate was issued and the CSR could ' +
                'not be built: ' + e.message);
       csrNote = ' The certification request could NOT be built (' + e.message +
                 '), which has no effect on the certificate.';
@@ -1301,6 +1325,13 @@ async function issue(realmId, draft) {
     createdAt: Date.now()
   };
   const stored = pki.putObject(realmId, object);
+  if (!stored || stored.ok === false) {
+    log.debug('Leaving issue(). The store refused the object.');
+    return errorCodes.mark({ ok: false, draft: draft,
+             errors: (stored && stored.errors) ||
+                     ['The certificate was built and could not be stored.'] },
+             errorCodes.codeOf(stored) || 'STS-PKI-0094');
+  }
 
   // The form comes back with a FRESH SERIAL and the key pair that was just
   // certified. A serial that stayed put would be re-used by the next
@@ -1356,18 +1387,18 @@ async function alternativePairFor(draft) {
   const desc = keyMaterial.keyAlg(algId);
   if (!desc) {
     log.debug('Leaving alternativePairFor(). Unknown algorithm.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['"' + algId + '" is not an algorithm this service can ' +
-                      'use for the alternative key.'] };
+                      'use for the alternative key.'] }, 'STS-PKI-0002');
   }
   const priv = String(draft.pki_alt_private_key || '').trim();
   const pub = String(draft.pki_alt_public_key || '').trim();
   if (flagOf(draft, 'pki_alt_reuse_key') || (priv && pub)) {
     if (!priv || !pub) {
       log.debug('Leaving alternativePairFor(). Half a pair.');
-      return { ok: false,
+      return errorCodes.mark({ ok: false,
                errors: ['The alternative key pair is half filled in. Both ' +
-                        'boxes, or neither and one is generated.'] };
+                        'boxes, or neither and one is generated.'] }, 'STS-PKI-0095');
     }
     log.debug('Leaving alternativePairFor(). Reused.');
     return { ok: true, pair: { algId: algId, privatePem: priv,
@@ -1380,9 +1411,9 @@ async function alternativePairFor(draft) {
                                publicPem: pair.publicPem } };
   } catch (e) {
     log.debug('Leaving alternativePairFor(). The generator refused.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['The alternative ' + desc.label + ' key pair could not ' +
-                      'be generated: ' + e.message] };
+                      'be generated: ' + e.message] }, 'STS-PKI-0075');
   }
 }
 
@@ -1405,15 +1436,15 @@ async function useStoredKey(realmId, draft, objectId) {
   const object = pki.objectFor(realmId, objectId);
   if (!object) {
     log.debug('Leaving useStoredKey(). No such object.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['There is no object "' + objectId + '" in this realm\'s ' +
-                      'store.'] };
+                      'store.'] }, 'STS-PKI-0029');
   }
   if (!object.privateKeyPem) {
     log.debug('Leaving useStoredKey(). No private key.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['"' + object.subject + '" has no private key here, so ' +
-                      'there is no pair to reuse.'] };
+                      'there is no pair to reuse.'] }, 'STS-PKI-0096');
   }
   const desc = keyMaterial.keyAlg(object.keyAlg) || {};
   const shown = await asShown(draft, { privatePem: object.privateKeyPem,
@@ -1456,7 +1487,7 @@ function chainFor(realmId, object) {
   while (current && hops < 16) {
     hops += 1;
     if (seen[current.id || current.tier]) {
-      log.warn('pki_authoring: the chain above "' + object.subject + '" ' +
+      log.warn(errorCodes.tag('STS-PKI-0097') + 'pki_authoring: the chain above "' + object.subject + '" ' +
                'loops back on itself at "' + current.subject + '", so the ' +
                'walk stopped there. An issuer id was edited into a cycle.');
       break;
@@ -1513,17 +1544,17 @@ async function exportKeys(realmId, draft, objectId) {
   const format = textOf(draft, 'pki_ks_format') || 'pem';
   if (keyMaterial.keystoreFormats().indexOf(format) < 0) {
     log.debug('Leaving exportKeys(). Unknown format.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['"' + format + '" is not a keystore format. They are ' +
-                      keyMaterial.keystoreFormats().join(', ') + '.'] };
+                      keyMaterial.keystoreFormats().join(', ') + '.'] }, 'STS-PKI-0098');
   }
   const password = String(draft.pki_ks_password || '');
   const object = objectId ? pki.objectFor(realmId, objectId) : null;
   if (objectId && !object) {
     log.debug('Leaving exportKeys(). No such object.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['There is no object "' + objectId + '" in this realm\'s ' +
-                      'store.'] };
+                      'store.'] }, 'STS-PKI-0029');
   }
 
   // The SELECTED object if one was named, otherwise whatever is in the two key
@@ -1533,9 +1564,9 @@ async function exportKeys(realmId, draft, objectId) {
                                              config.value('pki.keyAlgorithm'));
   const desc = keyMaterial.keyAlg(keyAlgId);
   if (!desc) {
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['"' + keyAlgId + '" is not a key algorithm this service ' +
-                      'knows, so its key pair cannot be written out.'] };
+                      'knows, so its key pair cannot be written out.'] }, 'STS-PKI-0002');
   }
   const privateText = object ? object.privateKeyPem
                              : String(draft.pki_private_key || '').trim();
@@ -1543,9 +1574,9 @@ async function exportKeys(realmId, draft, objectId) {
                             : String(draft.pki_public_key || '').trim();
   if (!privateText || !publicText) {
     log.debug('Leaving exportKeys(). No key pair.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['There is no key pair to export. Generate one, or ' +
-                      'select an object in the store below.'] };
+                      'select an object in the store below.'] }, 'STS-PKI-0099');
   }
 
   const certs = [];
@@ -1567,11 +1598,11 @@ async function exportKeys(realmId, draft, objectId) {
       desc: desc,
       certs: certs,
       baseName: fileBaseFor(object, desc),
-      friendlyName: object ? object.subject : 'mock-sts key pair'
+      friendlyName: object ? object.subject : 'sts key pair'
     });
   } catch (e) {
     log.debug('Leaving exportKeys(). The export refused.');
-    return { ok: false, errors: [e.message] };
+    return errorCodes.mark({ ok: false, errors: [e.message] }, 'STS-PKI-0100');
   }
   log.debug('Leaving exportKeys(). ' + written.files.length + ' file(s).');
   return { ok: true, files: written.files, status: written.status,
@@ -1688,7 +1719,7 @@ function defaultDraft(realmId) {
   const applied = applyProfile(draft, defaultProfileId());
   // The organisation is this service's setting rather than the encoder's
   // example, because a hierarchy built on the page above carries it and two
-  // certificates from one realm reading `O=Example` and `O=mock-sts` are two
+  // certificates from one realm reading `O=Example` and `O=sts` are two
   // organisations as far as a path validator is concerned.
   applied.pki_dn_o = config.value('pki.organisation');
   // An issuer is preselected where there is exactly one obvious answer — this

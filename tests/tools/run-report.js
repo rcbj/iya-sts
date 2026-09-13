@@ -304,6 +304,72 @@ const OTHER_SERVICE_ENV =
 // `var baseUrl = "http://localhost:3000"` and drives pages under it, while a
 // job of ours locates the mock through WSTRUST_STS_URL / OID4VCI_ISSUER_URL
 // and never mentions 3000.
+// ---------------------------------------------------------------------------
+// THE STACK'S DEPLOYMENT VARIABLES, WHICH A UNIT JOB MUST NOT INHERIT.
+//
+// `tests/tools/modes.sh` defines the three modes as a block of `NAME=value`
+// lines, and both launchers EXPORT them into the shell this runner is started
+// from — they have to, because that is how `docker compose` and a host-mode
+// service are handed the mode. A unit job is a child of this process, so it
+// inherited them too, and that was silently wrong for as long as no mode set
+// anything a module reads at require time.
+//
+// **`dispatch` MODE STARTED SETTING ONE ON 2026-09-12 AND IT COST EIGHT JOBS.**
+// `STS_KEYS_SOURCE=persisted` turns the keystore on, and a keystore with no
+// persistence store is a refusal by design — so `pki`, `pki_hierarchy`,
+// `pki_revocation`, `spiffe_pki` and `tls_trust_anchor` died at
+// `pki.start()` with *key material is configured to persist … and no
+// persistence store is open*, and `backup_codes`, `encryption_report` and
+// `rfc7523_person_issuer` failed further in, at the seal. Every one of them
+// was passing in `memory` and `postgres` the same minute. The unit half asserts
+// MODULE CONTRACTS in a process with no store, no listener and no container;
+// how the service under the protocol jobs was deployed is not its
+// configuration, and the eight failures said nothing about the service.
+//
+// THE NAMES ARE READ OUT OF `modes.sh` RATHER THAN WRITTEN HERE, because that
+// file says it is the one place the modes are defined and a list copied into
+// this one would drift in the direction nobody notices: a mode grows a fourth
+// variable, the copy here does not, and the next unit job to read it fails for
+// a reason three files away. A unit test that needs one of these sets it
+// itself — every one that does already does, and `tests/database_metrics.js`
+// deletes one — which is what makes stripping them safe as well as correct.
+// ---------------------------------------------------------------------------
+function stackDeploymentVariables() {
+  log.debug('Entering stackDeploymentVariables().');
+  const names = [];
+  let text = '';
+  try {
+    text = fs.readFileSync(path.join(__dirname, 'modes.sh'), 'utf8');
+  } catch (e) {
+    // Not fatal: a unit job with the stack's variables is what this repository
+    // did until 2026-09-12, so the degraded state is the old behaviour. It is
+    // said out loud because silence here is eight failures nothing explains.
+    log.warn('could not read tests/tools/modes.sh (' + e.message + '), so ' +
+             'unit jobs will inherit whatever the launcher exported.');
+    log.debug('Leaving stackDeploymentVariables(). Unreadable.');
+    return names;
+  }
+  text.split('\n').forEach(function (line) {
+    // NOT `STS_ALL_MODES`, which is the bash ARRAY of mode names at the top
+    // of that file and is never an environment variable at all. A value
+    // opening with `(` is the discriminator, because it is the only thing
+    // that tells an array apart from a heredoc line here.
+    const m = /^(STS_[A-Z0-9_]+)=([^(]|$)/.exec(line);
+    if (m && names.indexOf(m[1]) < 0) {
+      names.push(m[1]);
+    }
+  });
+  if (!names.length) {
+    log.warn('tests/tools/modes.sh named no STS_* variables, which means its ' +
+             'shape has changed — unit jobs will inherit the launcher\'s ' +
+             'environment as they did before 2026-09-12.');
+  }
+  log.debug('Leaving stackDeploymentVariables(). n=' + names.length);
+  return names;
+}
+
+const STACK_ENV = stackDeploymentVariables();
+
 const SELENIUM_REQUIRE = /require\(\s*["']selenium-webdriver/;
 const DEBUGGER_SITE = /localhost:3000|127\.0\.0\.1:3000/;
 const NEEDS_THE_MOCK = /WSTRUST_STS_URL|OID4VCI_ISSUER_URL/;
@@ -1505,6 +1571,12 @@ async function main() {
       job.cmd = [process.execPath, path.join(TESTS_DIR, 'run.js'),
                  '--only=' + job.file];
       job.env = Object.assign({}, process.env);
+      // The mode's own variables, taken back off — see STACK_ENV above. This
+      // is what makes the unit half run identically in all three modes rather
+      // than accidentally so.
+      STACK_ENV.forEach(function (name) {
+        delete job.env[name];
+      });
       if (wantCoverage) {
         job.env.NODE_V8_COVERAGE = rawUnit;
       }
@@ -1803,4 +1875,10 @@ if (require.main === module) {
   });
 }
 
-module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf };
+module.exports = { vendoredJobs: vendoredJobs, assertionOf: assertionOf,
+                   // EXPORTED FOR tests/unit_job_environment.js AND FOR
+                   // NOTHING ELSE. The list it returns is what a unit job
+                   // must not inherit, and a test that computed it for
+                   // itself would pass while this file read modes.sh
+                   // differently — which is the only way this can break.
+                   stackDeploymentVariables: stackDeploymentVariables };

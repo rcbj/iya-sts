@@ -329,7 +329,7 @@ function checkTheRealmIsTransparent(t) {
 function checkTheAffinityKey(t) {
   t.log.info('=== the affinity key: cookie first, then the flow ===');
 
-  const withCookie = { headers: { cookie: 'a=1; sts_mock_session=SESS1; b=2' },
+  const withCookie = { headers: { cookie: 'a=1; sts_session=SESS1; b=2' },
                        url: '/admin/users', originalUrl: '/admin/users' };
   t.check(pool.affinityKeyOf(withCookie) === 's:SESS1',
           'the session cookie is the key when there is one, whatever else is ' +
@@ -350,7 +350,7 @@ function checkTheAffinityKey(t) {
           'load finds nothing',
           pool.affinityKeyOf(flow));
 
-  const both = { headers: { cookie: 'sts_mock_session=SESS2' },
+  const both = { headers: { cookie: 'sts_session=SESS2' },
                  url: '/oauth2/consent?consent=C7',
                  originalUrl: '/oauth2/consent?consent=C7' };
   t.check(pool.affinityKeyOf(both) === 's:SESS2',
@@ -382,7 +382,7 @@ function checkTheAffinityKey(t) {
   // the worker whose answer set that cookie — so it resolves by LOOKUP to the
   // worker that holds the session, where the pin is only a fallback for a
   // binding this process has lost.
-  const bothCookies = { headers: { cookie: 'sts_pool=4242; sts_mock_session=SESS3' },
+  const bothCookies = { headers: { cookie: 'sts_pool=4242; sts_session=SESS3' },
                         url: '/admin', originalUrl: '/admin' };
   t.check(pool.affinityKeyOf(bothCookies) === 's:SESS3',
           'and the sign-on session still wins over it, because it is bound to ' +
@@ -391,7 +391,7 @@ function checkTheAffinityKey(t) {
 
   // And with no pin the session is still the key — a browser that never got a
   // pin because the response that signed it in deliberately did not carry one.
-  const sessionOnly = { headers: { cookie: 'sts_mock_session=SESS4' },
+  const sessionOnly = { headers: { cookie: 'sts_session=SESS4' },
                         url: '/admin', originalUrl: '/admin' };
   t.check(pool.affinityKeyOf(sessionOnly) === 's:SESS4',
           'a session with no pin is still a key',
@@ -405,7 +405,7 @@ function checkTheAffinityKey(t) {
           'hop of a flow, so it fans out and the pool binds whatever that ' +
           'worker mints', JSON.stringify(pool.affinityKeyOf(bare)));
 
-  const empty = { headers: { cookie: 'sts_mock_session=' },
+  const empty = { headers: { cookie: 'sts_session=' },
                   url: '/admin', originalUrl: '/admin' };
   t.check(pool.affinityKeyOf(empty) === '',
           'an EMPTY cookie is no key either — a sign-out clears it, and ' +
@@ -414,21 +414,30 @@ function checkTheAffinityKey(t) {
 }
 
 // ---------------------------------------------------------------------------
-// OPERATIONS: the half that is not HTTP. A kind is `family.operation`, and
-// naming the family dispatches all of it.
+// OPERATIONS: the half that is not HTTP, OUT OF THE SAME SETTING AS THE PATHS.
+//
+// `workers.operations` was a second setting until 2026-09-12 and the
+// distinction it drew was artificial — a dispatched thing is a dispatched
+// thing. There is one list now and **an entry says what it is by its shape**: a
+// leading slash is a path prefix, anything else is an operation kind, `*` is
+// everything.
+//
+// That makes this section's job specific: the two halves must READ THE SAME
+// LIST and must not see each other's entries. A path leaking into
+// `operationKinds()` would dispatch an operation nobody named; an operation
+// kind leaking into `dispatchPrefixes()` would be matched against `req.url`,
+// where `ldap` would quietly match `/ldapsomething`.
 // ---------------------------------------------------------------------------
 function checkOperations(t) {
-  t.log.info('=== operation dispatch is off by default and names families ===');
-  const had = process.env.STS_WORKERS_OPERATIONS;
+  t.log.info('=== operations and paths come out of one setting ===');
+  const had = process.env.STS_WORKERS_DISPATCH;
   try {
-    delete process.env.STS_WORKERS_OPERATIONS;
+    delete process.env.STS_WORKERS_DISPATCH;
     t.check(pool.operationDispatched('ldap.search') === false,
-            'NOTHING is dispatched by default — a worker holds its own copy ' +
-            'of the directory, so dispatching a write before that store is ' +
-            'shared forks it on the first entry',
+            'NOTHING is dispatched by default, of either kind',
             String(pool.operationDispatched('ldap.search')));
 
-    process.env.STS_WORKERS_OPERATIONS = 'ldap';
+    process.env.STS_WORKERS_DISPATCH = 'ldap';
     t.check(pool.operationDispatched('ldap.search') === true,
             'naming the family dispatches its operations', 'yes');
     t.check(pool.operationDispatched('ldap.add') === true,
@@ -436,18 +445,53 @@ function checkOperations(t) {
     t.check(pool.operationDispatched('krb5.asreq') === false,
             'and only that family', 'no');
 
-    process.env.STS_WORKERS_OPERATIONS = 'ldap.search';
+    process.env.STS_WORKERS_DISPATCH = 'ldap.search';
     t.check(pool.operationDispatched('ldap.search') === true,
             'a single operation can be named on its own, which is how a ' +
             'store this size gets moved a piece at a time', 'yes');
     t.check(pool.operationDispatched('ldap.add') === false,
             'without taking its siblings with it — the reads can move before ' +
             'the writes do', 'no');
+
+    // ---------------------------------------------------------------------
+    // THE TWO HALVES OF ONE LIST, WHICH IS THE WHOLE OF WHAT THE MERGE HAD TO
+    // GET RIGHT. Mixed together, each must see only its own kind.
+    // ---------------------------------------------------------------------
+    process.env.STS_WORKERS_DISPATCH = '/scim,ldap,/admin-api';
+    t.check(pool.operationDispatched('ldap.search') === true,
+            'a mixed list dispatches the operation kind in it', 'yes');
+    t.check(JSON.stringify(pool.dispatchPrefixes()) ===
+            JSON.stringify(['/scim', '/admin-api']),
+            'and the PATH half sees only the paths (' +
+            pool.dispatchPrefixes().join(', ') + ')',
+            'an operation kind reaching the prefix list is matched against ' +
+            'req.url, where "ldap" would match /ldapsomething');
+    t.check(JSON.stringify(pool.operationKinds()) === JSON.stringify(['ldap']),
+            'and the OPERATION half sees only the kinds (' +
+            pool.operationKinds().join(', ') + ')',
+            'a path reaching the kind list would dispatch an operation ' +
+            'family nobody named');
+
+    // ---------------------------------------------------------------------
+    // AND `*` IS EVERYTHING, WHICH IS THE ONE BEHAVIOUR THE MERGE CHANGED.
+    //
+    // It meant "every path" and means "everything". A wildcard that quietly
+    // excluded a whole class of work would be the artificial distinction
+    // surviving the settings it was named after — an operator who wants paths
+    // and not operations names the paths, which is what the list is for.
+    // ---------------------------------------------------------------------
+    process.env.STS_WORKERS_DISPATCH = '*';
+    t.check(pool.operationDispatched('ldap.search') === true,
+            '"*" reaches operations and not only paths', 'yes');
+    t.check(pool.dispatchPrefixes().indexOf('*') >= 0,
+            'and is still in the path half, where dispatched() reads it',
+            'the wildcard fell out of the prefix list, so "*" would dispatch ' +
+            'no path at all');
   } finally {
     if (had === undefined) {
-      delete process.env.STS_WORKERS_OPERATIONS;
+      delete process.env.STS_WORKERS_DISPATCH;
     } else {
-      process.env.STS_WORKERS_OPERATIONS = had;
+      process.env.STS_WORKERS_DISPATCH = had;
     }
   }
 }

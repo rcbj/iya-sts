@@ -23,8 +23,9 @@
 //      AP-REQ. Rejecting a bare one is not pedantry: it is what a real service does,
 //      and a client that sends one gets a refusal naming nothing.
 //   2. **The ticket decrypts with MY key** — key usage 2, the service's own
-//      long-term key, at the kvno the ticket names. A stale keytab fails here, and
-//      KRB_AP_ERR_BADKEYVER says exactly that.
+//      long-term key, at the kvno the ticket names — the current one, or a
+//      previous version a stored key still keeps after a rotation. A stale
+//      keytab fails here, and KRB_AP_ERR_BADKEYVER says exactly that.
 //   3. **The ticket is for ME.** A ticket for another service that happens to
 //      decrypt (because two accounts share a password) must still be refused.
 //   4. **The Authenticator decrypts with the ticket's SESSION key** — key usage 11.
@@ -48,6 +49,11 @@ const net = require('net');
 const app = require('../common/app');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// `listenHost()` and the mode, both from modules this file's closure already
+// holds: `helpers.js` is required on the line above and requires `mode.js`
+// itself, so neither adds a file to the parent project's copy set.
+const { listenHost } = require('../common/helpers');
+const mode = require('../common/mode');
 const msgs = require('./krb5_messages.js');
 const kcrypto = require('./krb5_crypto.js');
 // PER PROCESS AND NOT PER REALM — see the store below. Required only for
@@ -63,6 +69,13 @@ const stats = require('../common/admin_stats');
 // only helpers.js, config.js and audit.js, so nothing about requiring it here
 // closes a cycle or moves an endpoint in the router.
 const applications = require('../common/applications');
+// ERROR CODES and the audit log, both already in this closure through
+// applications.js. accept() names the condition on its result as `errorCode`
+// — never on the reply bytes — and whichever TRANSPORT sent the refusal records
+// it: audit.failure() for the raw socket below, a mark on the response for the
+// two SPNEGO doors (spnego_exchange.js carries it onto the verdict).
+const audit = require('../common/audit');
+const errorCodes = require('../common/error_codes');
 
 const SERVICE_PORT = config.value('krb5.servicePort');
 const SERVICE_PRINCIPAL = config.value('krb5.servicePrincipal').split('/');
@@ -71,7 +84,11 @@ const SERVICE_PRINCIPAL = config.value('krb5.servicePrincipal').split('/');
 function clockSkewSeconds() {
   return config.value('krb5.clockSkew');
 }
-const MAX_TOKEN_BYTES = 64 * 1024;
+// The largest token this acceptor reads — `krb5.serviceMaxTokenBytes`, whose
+// default is the 64 * 1024 this used to be. A function, because it is runtime.
+function maxTokenBytes() {
+  return config.value('krb5.serviceMaxTokenBytes');
+}
 
 // The replay cache. Keyed by the Authenticator's client, ctime and cusec — the
 // triple RFC 4120 section 3.2.3 names — and bounded, because an unbounded cache in a
@@ -79,7 +96,11 @@ const MAX_TOKEN_BYTES = 64 * 1024;
 function replayWindowSeconds() {
   return clockSkewSeconds() * 2;
 }
-const MAX_REPLAY_ENTRIES = 10000;
+// How many Authenticators may be held inside the window at once —
+// `krb5.replayCacheMaxEntries`, default the 10000 this used to be.
+function maxReplayEntries() {
+  return config.value('krb5.replayCacheMaxEntries');
+}
 // -------------------------------------------------------------------------
 // PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
 // is a plain Map that reports its writes so product mode can write them down;
@@ -99,15 +120,30 @@ function replayKey(authenticator) {
          authenticator.ctime.getTime() + '/' + authenticator.cusec;
 }
 
+// ---------------------------------------------------------------------------
+// PRUNING FORGETS ONLY WHAT CAN NO LONGER BE REPLAYED (2026-09-12).
+//
+// An entry is dropped once it is older than TWICE the clock skew, and that is
+// exactly enough: the clock check accepted this Authenticator, so its ctime is
+// no more than one skew BEHIND the moment it was seen, and it passes the clock
+// check again only while it is no more than one skew behind NOW — so by
+// seenAt + 2 * skew no replay of it can get as far as this cache.
+//
+// **WHAT THIS FUNCTION USED TO DO NEXT WAS A REPLAY OPENING.** When the cache
+// was still over its cap it deleted the OLDEST entries, and its comment said
+// that was safe because "entries older than the skew window cannot be replayed
+// anyway" — true of the entries the loop above had already removed and false of
+// every entry it had not, which is every one this loop then deleted. An
+// attacker holding a captured AP-REQ needed only to present enough fresh valid
+// Authenticators to push it out, and in development any username obtains a
+// ticket. The cap is a cap on MEMORY, and the honest way to honour it is to
+// refuse the NEXT Authenticator (see accept()) rather than to forget one that
+// could still be replayed. Refusing is a denial of service to the caller who
+// arrives while it is full; forgetting was an impersonation.
+// ---------------------------------------------------------------------------
 function pruneReplayCache(nowMs) {
   for (const [key, seenAt] of replayCache) {
     if (nowMs - seenAt > replayWindowSeconds() * 1000) replayCache.delete(key);
-  }
-  // If it is still oversized, the oldest go first. Refusing to grow without bound
-  // matters more than remembering everything: entries older than the skew window
-  // cannot be replayed anyway, because the clock check rejects them first.
-  while (replayCache.size > MAX_REPLAY_ENTRIES) {
-    replayCache.delete(replayCache.keys().next().value);
   }
 }
 
@@ -141,8 +177,8 @@ async function accept(tokenBytes, opts) {
     return ok;
   }
 
-  if (tokenBytes.length > MAX_TOKEN_BYTES) {
-    return { reply: errorReply(60, 'the token is ' + tokenBytes.length + ' bytes, over this ' +
+  if (tokenBytes.length > maxTokenBytes()) {
+    return { errorCode: 'STS-KRB-0063', reply: errorReply(60, 'the token is ' + tokenBytes.length + ' bytes, over this ' +
       'service\'s limit'), checks: checks, ok: false };
   }
 
@@ -154,11 +190,12 @@ async function accept(tokenBytes, opts) {
       (token.tokIdName || prim.toHex(new Uint8Array(token.tokId))));
   } catch (e) {
     check('GSS InitialContextToken', false, e.message);
-    return { reply: errorReply(60, e.message), checks: checks, ok: false };
+    return { errorCode: 'STS-KRB-0064', reply: errorReply(60, e.message), checks: checks,
+             ok: false };
   }
   if (token.tokIdName !== 'AP_REQ') {
     check('token is an AP-REQ', false, 'it is ' + (token.tokIdName || 'unrecognised'));
-    return { reply: errorReply(40, 'this service accepts an AP-REQ; it was sent ' +
+    return { errorCode: 'STS-KRB-0065', reply: errorReply(40, 'this service accepts an AP-REQ; it was sent ' +
       (token.tokIdName || 'something else')), checks: checks, ok: false };
   }
   check('token is an AP-REQ', true, null);
@@ -168,7 +205,8 @@ async function accept(tokenBytes, opts) {
     apReq = msgs.readApReq(token.inner);
   } catch (e) {
     check('AP-REQ decodes', false, e.message);
-    return { reply: errorReply(60, 'the AP-REQ does not decode: ' + e.message), checks: checks, ok: false };
+    return { errorCode: 'STS-KRB-0066',
+             reply: errorReply(60, 'the AP-REQ does not decode: ' + e.message), checks: checks, ok: false };
   }
   check('AP-REQ decodes', true, 'ap-options: ' +
     (msgs.apOptionNames(apReq.apOptions).join(', ') || '(none)'));
@@ -207,41 +245,71 @@ async function accept(tokenBytes, opts) {
   const mine = !!found && (presented === wanted || found.autoCreated);
   const me = mine ? found : null;
   if (!me) {
+    // THE ACCOUNT ITSELF MAY NOT EXIST, and that is a configuration fact rather
+    // than a client mistake — product mode refuses the published service
+    // password, for one. Said first when it is the reason, because "this service
+    // answers only on example.com" is no help to somebody whose ticket named
+    // exactly the configured SPN.
+    const account = principals.serviceAccount();
     const why = found
       ? 'that is another account\'s SPN, configured in this realm with its own key'
-      : 'this service answers only on ' +
-        (principals.SERVICE_DOMAINS.join(', ') || '(nothing configured)');
+      : (!account.available && presented === wanted)
+        ? 'this service holds no key for its own name: ' + account.reason
+        : !mode.autoCreates()
+          ? 'this service answers only on its configured name (product mode ' +
+            'registers no SPN on demand)' +
+            (account.available ? '' : ', and holds no key for that either: ' + account.reason)
+          : 'this service answers only on ' +
+            (principals.SERVICE_DOMAINS.join(', ') || '(nothing configured)');
     check('the ticket is for this service', false, 'it is for ' + presented +
       ', not ' + wanted + ' — ' + why);
-    return { reply: errorReply(35, 'this ticket is for ' + presented +
+    return { errorCode: 'STS-KRB-0067', reply: errorReply(35, 'this ticket is for ' + presented +
       '; this service is ' + wanted + ' — ' + why), checks: checks, ok: false };
   }
   check('the ticket is for this service', true, presented +
     (presented === wanted ? '' : ' (registered on demand for a host this ' +
       'service answers on; its canonical name is ' + wanted + ')'));
 
-  // 2. The ticket decrypts with my key.
-  if (apReq.ticket.encPart.kvno !== null && apReq.ticket.encPart.kvno !== me.kvno) {
+  // 2. The ticket decrypts with my key — the CURRENT version, or, since
+  // 2026-09-12, a PREVIOUS version this service still keeps. A rotation of a
+  // stored service key keeps the version it replaced for as long as a ticket
+  // sealed under it can still be presented (krb5.retainedKeyVersions,
+  // krb5.retainedKeyTtlS), which is what a real service's keytab does after
+  // `ktadd`: without it, every ticket issued a moment before a rotation is
+  // refused at its next use. `principals.retainedKeyFor()` answers only for a
+  // stored-key account, so an account built from krb5.servicePassword refuses
+  // a different kvno exactly as it always did.
+  const ticketKvno = apReq.ticket.encPart.kvno;
+  const retained = (ticketKvno !== null && ticketKvno !== me.kvno)
+    ? principals.retainedKeyFor(me, apReq.ticket.encPart.etype, ticketKvno) : null;
+  if (ticketKvno !== null && ticketKvno !== me.kvno && !retained) {
     // A stale keytab, and named as such — this is the error whose meaning is least
     // guessable from its name.
-    check('key version matches', false, 'the ticket names kvno ' + apReq.ticket.encPart.kvno +
-      ' and this service holds kvno ' + me.kvno);
-    return { reply: errorReply(44, 'the ticket was encrypted with key version ' +
-      apReq.ticket.encPart.kvno + ' and this service holds version ' + me.kvno +
+    const kept = principals.retainedKvnosOf(me);
+    check('key version matches', false, 'the ticket names kvno ' + ticketKvno +
+      ' and this service holds kvno ' + me.kvno +
+      (kept.length ? ' (and keeps previous kvno ' + kept.join(', ') + ')' : ''));
+    return { errorCode: 'STS-KRB-0068', reply: errorReply(44, 'the ticket was encrypted with key version ' +
+      ticketKvno + ' and this service holds version ' + me.kvno +
+      (kept.length ? ' and keeps previous version ' + kept.join(', ') : '') +
       ' — the keytab is out of date with the account\'s password'), checks: checks, ok: false };
   }
-  check('key version matches', true, 'kvno ' + me.kvno);
+  check('key version matches', true, retained
+    ? 'kvno ' + ticketKvno + ', a PREVIOUS version this service still keeps until ' +
+      new Date(retained.expiresAt).toISOString() + ' (current kvno ' + me.kvno + ')'
+    : 'kvno ' + me.kvno);
 
   const ticketProfile = kcrypto.etypeById(apReq.ticket.encPart.etype);
   let ticketPart;
   try {
     ticketPart = msgs.readEncTicketPart(await ticketProfile.decrypt(
-      await principals.longTermKey(me, apReq.ticket.encPart.etype),
+      retained ? retained.key : await principals.longTermKey(me, apReq.ticket.encPart.etype),
       kcrypto.KEY_USAGE.KDC_REP_TICKET, apReq.ticket.encPart.cipher));
     check('ticket decrypts with this service\'s key', true, ticketProfile.name + ', key usage 2');
   } catch (e) {
     check('ticket decrypts with this service\'s key', false, e.message);
-    return { reply: errorReply(31, 'the ticket does not decrypt with this service\'s key: ' + e.message),
+    return { errorCode: 'STS-KRB-0069',
+             reply: errorReply(31, 'the ticket does not decrypt with this service\'s key: ' + e.message),
              checks: checks, ok: false };
   }
 
@@ -255,7 +323,8 @@ async function accept(tokenBytes, opts) {
     check('Authenticator decrypts with the session key', true, 'key usage 11');
   } catch (e) {
     check('Authenticator decrypts with the session key', false, e.message);
-    return { reply: errorReply(31, 'the Authenticator does not decrypt with the ticket\'s session ' +
+    return { errorCode: 'STS-KRB-0070',
+             reply: errorReply(31, 'the Authenticator does not decrypt with the ticket\'s session ' +
       'key at key usage 11: ' + e.message), checks: checks, ok: false };
   }
 
@@ -265,7 +334,8 @@ async function accept(tokenBytes, opts) {
     check('Authenticator and ticket name the same client', false,
       'the Authenticator says ' + authenticator.cname.name.join('/') + ', the ticket says ' +
       ticketPart.cname.name.join('/'));
-    return { reply: errorReply(36, 'the Authenticator and the ticket name different clients'),
+    return { errorCode: 'STS-KRB-0071',
+             reply: errorReply(36, 'the Authenticator and the ticket name different clients'),
              checks: checks, ok: false };
   }
   check('Authenticator and ticket name the same client', true,
@@ -277,7 +347,7 @@ async function accept(tokenBytes, opts) {
   if (skew > clockSkewSeconds()) {
     check('clock skew within tolerance', false, Math.round(skew) + 's against a ' +
       clockSkewSeconds() + 's tolerance');
-    return { reply: errorReply(37, 'the Authenticator\'s clock is ' + Math.round(skew) +
+    return { errorCode: 'STS-KRB-0072', reply: errorReply(37, 'the Authenticator\'s clock is ' + Math.round(skew) +
       ' seconds from this service\'s (tolerance ' + clockSkewSeconds() + 's)'),
              checks: checks, ok: false };
   }
@@ -286,7 +356,8 @@ async function accept(tokenBytes, opts) {
   if (ticketPart.endtime <= nowDate) {
     check('ticket is inside its validity window', false, 'it expired at ' +
       ticketPart.endtime.toISOString());
-    return { reply: errorReply(32, 'the ticket expired at ' + ticketPart.endtime.toISOString()),
+    return { errorCode: 'STS-KRB-0073',
+             reply: errorReply(32, 'the ticket expired at ' + ticketPart.endtime.toISOString()),
              checks: checks, ok: false };
   }
   check('ticket is inside its validity window', true, 'until ' + ticketPart.endtime.toISOString());
@@ -297,8 +368,19 @@ async function accept(tokenBytes, opts) {
   const key = replayKey(authenticator);
   if (replayCache.has(key)) {
     check('not a replay', false, 'this Authenticator (client, ctime, cusec) has been seen before');
-    return { reply: errorReply(34, 'this Authenticator has been seen before — a replay. The ' +
+    return { errorCode: 'STS-KRB-0074', reply: errorReply(34, 'this Authenticator has been seen before — a replay. The ' +
       'triple (client, ctime, cusec) is what identifies one, per RFC 4120 section 3.2.3.'),
+             checks: checks, ok: false };
+  }
+  // FULL OF AUTHENTICATORS THAT COULD STILL BE REPLAYED: refuse this one rather
+  // than forget one of them. See pruneReplayCache().
+  if (replayCache.size >= maxReplayEntries()) {
+    check('not a replay', false, 'the replay cache holds its maximum of ' +
+      maxReplayEntries() + ' Authenticators, every one still inside the replay window');
+    return { errorCode: 'STS-KRB-0075', reply: errorReply(60, 'this acceptor\'s replay cache is full (' +
+      maxReplayEntries() + ' Authenticators seen in the last ' + replayWindowSeconds() +
+      ' seconds, krb5.replayCacheMaxEntries). It refuses a new Authenticator rather ' +
+      'than forgetting one that could still be replayed; retry shortly.'),
              checks: checks, ok: false };
   }
   replayCache.set(key, nowDate.getTime());
@@ -314,13 +396,14 @@ async function accept(tokenBytes, opts) {
         (gssInfo.hasChannelBindings ? ', with channel bindings' : ', no channel bindings'));
     } catch (e) {
       check('0x8003 checksum parses', false, e.message);
-      return { reply: errorReply(50, 'the Authenticator\'s 0x8003 checksum is malformed: ' + e.message),
+      return { errorCode: 'STS-KRB-0076',
+               reply: errorReply(50, 'the Authenticator\'s 0x8003 checksum is malformed: ' + e.message),
                checks: checks, ok: false };
     }
   } else if (authenticator.cksum) {
     check('0x8003 checksum parses', false, 'the checksum is type ' + authenticator.cksum.type +
       ', not 0x8003 (32771) — a GSS caller must send the channel-bindings-and-flags structure');
-    return { reply: errorReply(50, 'checksum type ' + authenticator.cksum.type + ' is not ' +
+    return { errorCode: 'STS-KRB-0077', reply: errorReply(50, 'checksum type ' + authenticator.cksum.type + ' is not ' +
       'appropriate here; a GSS AP-REQ carries type 32771 (0x8003)'), checks: checks, ok: false };
   } else {
     check('0x8003 checksum parses', false, 'the Authenticator carries no checksum at all');
@@ -484,8 +567,16 @@ function startTcp(port) {
     });
     socket.on('data', function (chunk) {
       buffer = Buffer.concat([buffer, chunk]);
-      if (buffer.length > MAX_TOKEN_BYTES) {
-        log.warn('krb5-service: a client sent more than ' + MAX_TOKEN_BYTES + ' bytes; closing');
+      if (buffer.length > maxTokenBytes()) {
+        log.warn('krb5-service: a client sent more than ' + maxTokenBytes() +
+                 ' bytes (krb5.serviceMaxTokenBytes); closing');
+        audit.failure('STS-KRB-0078', {
+          protocol: 'Kerberos', channel: 'kerberos',
+          target: 'Kerberos service TCP ' + port,
+          summary: 'a request to the Kerberos service exceeded ' +
+                   'krb5.serviceMaxTokenBytes and the connection was closed',
+          outcome: 'refused'
+        });
         socket.destroy();
         return;
       }
@@ -493,6 +584,13 @@ function startTcp(port) {
       const declared = buffer.readUInt32BE(0);
       if (declared & 0x80000000) {
         log.warn('krb5-service: a length prefix with the reserved top bit set; closing');
+        audit.failure('STS-KRB-0079', {
+          protocol: 'Kerberos', channel: 'kerberos',
+          target: 'Kerberos service TCP ' + port,
+          summary: 'a request to the Kerberos service carried a length prefix with ' +
+                   'the reserved top bit set and the connection was closed',
+          outcome: 'refused'
+        });
         socket.destroy();
         return;
       }
@@ -503,6 +601,17 @@ function startTcp(port) {
         // A refusal is an ERROR TOKEN, not a closed socket: a client that gets
         // silence learns nothing, and the whole point of this service is to say why.
         const reply = result.reply;
+        if (!result.ok && result.errorCode) {
+          // The raw socket is the one transport with no HTTP funnel, so the
+          // acceptor's refusal is recorded here. The SPNEGO doors mark theirs.
+          audit.failure(result.errorCode, {
+            protocol: 'Kerberos', channel: 'kerberos',
+            target: SERVICE_PRINCIPAL.join('/') + '@' + principals.REALM,
+            summary: 'the Kerberos service refused an AP-REQ over raw TCP',
+            // error-code: none — the code is the one accept() named at the refusal site
+            outcome: 'refused'
+          });
+        }
         if (!reply) {
           // Accepted with no mutual authentication requested. Nothing to send, so
           // close cleanly rather than leaving the client waiting for a reply the
@@ -515,15 +624,20 @@ function startTcp(port) {
         Buffer.from(reply).copy(framed, 4);
         socket.write(framed);
       }).catch(function (e) {
-        log.error('krb5-service: failed to build a reply: ' + (e.stack || e.message));
+        log.error(errorCodes.tag('STS-KRB-0080') + 'krb5-service: failed to build a reply: ' +
+                  (e.stack || e.message));
         socket.destroy();
       });
     });
   });
   server.on('error', function (err) {
-    log.error('krb5-service: the listener on port ' + port + ' failed: ' + err.message);
+    log.error(errorCodes.tag('STS-KRB-0081') + 'krb5-service: the listener on port ' + port +
+              ' failed: ' + err.message);
   });
-  server.listen(port, '0.0.0.0', function () {
+  // `global.host`, which it ignored for the literal '0.0.0.0' until 2026-09-12 —
+  // so a service confined to 127.0.0.1 still offered this acceptor on every
+  // interface. Brackets are URL syntax and are stripped for the socket.
+  server.listen(port, listenHost().replace(/^\[|\]$/g, ''), function () {
     log.info('krb5-service: ' + SERVICE_PRINCIPAL.join('/') + ' listening on TCP ' +
       server.address().port + ' — present a GSS-wrapped AP-REQ');
   });
@@ -547,8 +661,12 @@ app.get('/krb5/service', function (req, res) {
     // Every SPN this service will answer for, not just the canonical one: a real
     // service account carries several and one keytab holds a key for each. See the
     // identity check in accept().
-    acceptsAnySpnForHosts: principals.SERVICE_DOMAINS,
+    acceptsAnySpnForHosts: mode.autoCreates() ? principals.SERVICE_DOMAINS : [],
+    // Whether the account this acceptor decrypts with exists, and why not.
+    serviceAccount: principals.serviceAccount(),
     port: SERVICE_PORT,
+    maxTokenBytes: maxTokenBytes(),
+    replayCacheMaxEntries: maxReplayEntries(),
     clockSkewSeconds: clockSkewSeconds(),
     replayCacheEntries: replayCache.size,
     checksThisServicePerforms: [

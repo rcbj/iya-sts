@@ -399,6 +399,52 @@ async function body(t, dir) {
           'and a flush in development mode writes no rows at all');
 
   // -------------------------------------------------------------------------
+  // 7b. UNLESS SEVERAL PROCESSES ARE ANSWERING ONE PORT (2026-09-12).
+  //
+  // The arm above is the promise; this is its one exception, and it is not a
+  // softening of it. A dispatched run is several processes against one store,
+  // and what they mint has to be in that store or they disagree: a token
+  // minted on one worker is unknown to the next, and — the way it was actually
+  // found — a REPLAYED RFC 7523 assertion is refused by the worker that saw it
+  // and accepted by the two that did not.
+  //
+  // **IT WAS `hasEphemeralKek()` ALONE AND THAT WENT SILENTLY FALSE.** The
+  // pool generates a per-run KEK precisely because development mode has none;
+  // `keys.source=persisted` gives it a REAL one, `useEphemeralKek()` then
+  // refuses to substitute a per-run key, and every arm of the condition was
+  // false — so a dispatched run reading its KEK from a secret store shared
+  // nothing, with no error anywhere. The question is SEVERAL PROCESSES, and it
+  // is asked as such now.
+  //
+  // The two variables go through the ENVIRONMENT for `armKeystore()`'s reason:
+  // both are restart-only rows and `setOverride()` refuses one correctly.
+  // -------------------------------------------------------------------------
+  t.log.info('=== development mode, dispatched ===');
+  process.env.STS_WORKERS_REQUEST_COUNT = '3';
+  process.env.STS_WORKERS_DISPATCH = '*';
+  minted.reset();
+  const poolDriver = fakeDriver('process-a');
+  minted.setDriver(poolDriver, 'postgres');
+  t.equal(minted.enabled(), true,
+          'A DISPATCHED development run DOES persist what it mints, because ' +
+          'its workers have to agree — the keystore holds a real ' +
+          'key-encryption key here, which is the case that used to answer no');
+  sessions.set('sid-10', { user: 'erin' });
+  await minted.flush();
+  t.check(poolDriver.rows.size > 0,
+          'and a flush writes rows the other workers can read',
+          String(poolDriver.rows.size) + ' row(s)');
+
+  delete process.env.STS_WORKERS_DISPATCH;
+  minted.reset();
+  minted.setDriver(fakeDriver('process-a'), 'postgres');
+  t.equal(minted.enabled(), false,
+          'and WORKERS ALONE ARE NOT THE CONDITION — with nothing dispatched ' +
+          'the children answer no request, so there is no second process to ' +
+          'disagree with and the promise above is unchanged');
+  delete process.env.STS_WORKERS_REQUEST_COUNT;
+
+  // -------------------------------------------------------------------------
   // 8. AN ldif STORE SAYS SO RATHER THAN HALF-WORKING.
   // -------------------------------------------------------------------------
   t.log.info('=== the ldif store ===');

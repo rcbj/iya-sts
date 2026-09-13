@@ -82,7 +82,8 @@
 // is not a property of the work it asks for.
 //
 // ---------------------------------------------------------------------------
-// THE STATE PROBLEM IS REAL AND IT IS NOT SOLVED HERE.
+// THE STATE PROBLEM IS REAL, AND THIS BLOCK NAMED A FILE THAT WAS NEVER
+// WRITTEN (corrected 2026-09-12).
 //
 // Requiring the protocol stack gives this worker its OWN directory, its own
 // session map, its own token registry and its own realm table — seeded at
@@ -92,11 +93,22 @@
 // stops detecting, an introspection 404 for a token that exists, a config
 // change that lands on one worker of four.
 //
-// **So this file is the TRANSPORT and `state_channel.js` is the other half.**
-// Until every store a handler touches is reached through that channel, a
-// worker is correct only for requests that read and write nothing shared —
-// which is why `request_pool.js` dispatches by an explicit allow-list rather
-// than by default, and why that list starts empty.
+// **IT SAID: *this file is the TRANSPORT and `state_channel.js` is the other
+// half* — and there is no `state_channel.js`.** It was the name the other half
+// was going to have, written down before it was built, and what was actually
+// built is a different shape with a better argument behind it: a worker is
+// ANOTHER PROCESS AGAINST THE STORE, so it runs `common/service_state.js` —
+// the same four startup steps `server.js` runs, from the same file — and the
+// stores are reconciled by `persistence/persistence_replication.js`'s change
+// log. The root CLAUDE.md argues why that was not a second mechanism.
+//
+// **SO THE CONDITION FOR DISPATCHING A PATH IS NOW STATED AND CHECKED RATHER
+// THAN PENDING.** `request_pool.js`'s `start()` REFUSES to bring the pool up
+// unless this process is coordinating, and the list it checks covers the
+// operation kinds below as well as the paths. A store is reachable from a
+// worker exactly when its changes are rows in `sts_changes`; the directory's
+// are, which is why `ldap/ldap_server.js` was the first family to fill the
+// operation table.
 // ---------------------------------------------------------------------------
 
 // FIRST, and for the reason server.js gives: this process was forked, so it
@@ -112,6 +124,8 @@ const config = require('./config');
 // The four startup steps, shared with server.js — the store, the keys, the
 // minted rows and COORDINATION. See service_state.js.
 const serviceState = require('./service_state');
+// A LEAF with no requires: the failure codes on the log lines below.
+const errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({
   name: 'request_worker',
@@ -435,7 +449,8 @@ function start(path) {
       // which is the most misleading pair of symptoms this mechanism can
       // produce.
       finishedTickets = covered.concat(finishedTickets);
-      log.warn('request_worker: could not announce a commit: ' + e.message +
+      log.warn(errorCodes.tag('STS-WORKER-0032') +
+               'request_worker: could not announce a commit: ' + e.message +
                '. A reader may be told it is current before this write is ' +
                'visible.');
     }).then(function () {
@@ -446,6 +461,39 @@ function start(path) {
       }
     });
   }
+
+  // ---------------------------------------------------------------------
+  // AND THE SAME ANNOUNCEMENT FOR AN OPERATION, WHICH IS NOT A RESPONSE
+  // (2026-09-12).
+  //
+  // Everything above this line counts HTTP responses, because until operations
+  // were wired up an HTTP response was the only thing a worker finished. **An
+  // LDAP add is a write with no response in this process** — the front process
+  // holds the socket and writes the reply — so nothing here would have counted
+  // it, its ticket would never have been announced, and the front process would
+  // have waited the full barrier bound for it and then served stale.
+  //
+  // That is the exact wedge `request_pool.js`'s ticketAbandoned() documents,
+  // reached by a different road: there the worker never ran the handler, here
+  // the worker ran it and had no way to say so. So an operation takes the same
+  // two steps a response does — count it, remember its ticket, announce when
+  // the flush covers it — through the one function both paths call.
+  //
+  // It is a module-level hook rather than a require because `announceWhenCommitted`
+  // closes over this worker's store handle, and `handleOperation()` is at module
+  // scope so that the `begin` message is what brings the service up. Filled
+  // here, which is after the store is open and before any operation can arrive.
+  // ---------------------------------------------------------------------
+  noteOperationFinished = function (ticket) {
+    if (!config.value('workers.readYourWrite')) {
+      return;
+    }
+    finishedCount++;
+    if (Number(ticket) > 0) {
+      finishedTickets.push(Number(ticket));
+    }
+    announceWhenCommitted();
+  };
 
   server = http.createServer(function (req, res) {
     const encoded = req.headers[PEER_CERT_HEADER];
@@ -572,7 +620,8 @@ function start(path) {
 
   server.on('error', function (err) {
     clearTimeout(startTimer);
-    log.error('request_worker: the socket ' + socketPath + ' failed: ' +
+    log.error(errorCodes.tag('STS-WORKER-0018') +
+              'request_worker: the socket ' + socketPath + ' failed: ' +
               err.message);
     report({ ready: false, error: err.message });
   });
@@ -604,7 +653,8 @@ function start(path) {
              !!(state.coordinating && state.coordinating.coordinating) + '.');
     bindSocket();
   }).catch(function (err) {
-    log.error('request_worker ' + process.pid + ': the state could not be ' +
+    log.error(errorCodes.tag('STS-WORKER-0019') +
+              'request_worker ' + process.pid + ': the state could not be ' +
               'brought up: ' + err.message);
     report({ ready: false, error: 'the state could not be brought up: ' +
              err.message });
@@ -614,7 +664,32 @@ function start(path) {
 
 function bindSocket() {
   log.debug('Entering bindSocket().');
-  server.listen(socketPath, function () {
+  // ---------------------------------------------------------------------
+  // **AN EXPLICIT BACKLOG, AND IT IS THE FIX FOR A MEASURED FAILURE
+  // (2026-09-12).** `listen(path, cb)` takes node's default of 511 pending
+  // connections. **EAGAIN from an AF_UNIX `connect()` is that queue being
+  // full** — and the front process opens a connection per dispatched request,
+  // so on a machine running the whole suite at once the queue is shared by
+  // every job there is.
+  //
+  // It reached the suite as `sts_directory_bulk_load_scim`: `4999 of 5000
+  // SCIM creates were accepted`, the one refusal `502 … connect EAGAIN
+  // /tmp/sts-workers-*/w2.sock`. **Not a rejected write — a request that
+  // never reached a worker**, answered with a sentence telling the caller it
+  // could simply be made again, which is a thing this service could have done
+  // for itself if the body were replayable and is not.
+  //
+  // **THE FRONT PROCESS'S BOUND IS NOT THIS**, and the two must not be
+  // confused: `workers.maxSockets` caps how many connections it may have OPEN
+  // at once, and that job issues its five thousand creates one at a time, so
+  // no per-worker cap was ever close to being reached by it. This is the
+  // queue those connections land in.
+  //
+  // 1024 rather than a setting: this is the depth of a queue inside one
+  // machine between two processes of one service, and there is nothing an
+  // operator could usefully know that would make a different number right.
+  // ---------------------------------------------------------------------
+  server.listen({ path: socketPath, backlog: 1024 }, function () {
     clearTimeout(startTimer);
     // The socket is created with the process umask, which on a shared machine
     // could be world-writable. Narrowed to the owner: anything that can write
@@ -626,7 +701,8 @@ function bindSocket() {
       // Reported rather than fatal: a filesystem that does not carry modes is
       // not a reason to refuse to serve, and the socket is in a directory that
       // is itself owner-only.
-      log.warn('request_worker: could not narrow the mode on ' + socketPath +
+      log.warn(errorCodes.tag('STS-WORKER-0010') +
+               'request_worker: could not narrow the mode on ' + socketPath +
                ', so it keeps the process umask: ' + e.message);
     }
     log.info('request_worker ' + process.pid + ': ready on ' + socketPath +
@@ -649,7 +725,8 @@ function decodePeer(encoded) {
     // A header this process could not read. Treated as no certificate rather
     // than as an error: the alternative is refusing a request over what is,
     // from the caller's point of view, something they never sent.
-    log.warn('request_worker: a forwarded client certificate could not be ' +
+    log.warn(errorCodes.tag('STS-WORKER-0033') +
+             'request_worker: a forwarded client certificate could not be ' +
              'read and is being treated as absent: ' + e.message);
     log.debug('Leaving decodePeer(). Unreadable.');
     return null;
@@ -673,7 +750,8 @@ function report(message) {
       process.send(message);
     }
   } catch (e) {
-    log.warn('request_worker: could not reach the front process: ' + e.message);
+    log.warn(errorCodes.tag('STS-WORKER-0034') +
+             'request_worker: could not reach the front process: ' + e.message);
   }
   log.debug('Leaving report().');
 }
@@ -755,6 +833,33 @@ function register(kind, fn) {
   log.debug('register(): worker ' + process.pid + ' answers "' + kind + '".');
 }
 
+// Filled by start(), which is where the store handle the announcement needs
+// lives. Null in a process that never started — and an operation cannot reach
+// one of those, because the front process only sends to a worker it has had a
+// ready report from.
+let noteOperationFinished = null;
+
+// The announcement, made ONCE per operation however it ended. **Including when
+// it ended in a refusal**, and that is not tidiness: a refused LDAP add is a
+// handler that ran, and a handler that ran may have written an audit row — the
+// refusal is exactly what that row records. Announcing only on success would
+// leave the ticket for a refused operation outstanding for ever, which is the
+// wedge again.
+function operationFinished(ticket) {
+  if (!noteOperationFinished) {
+    return;
+  }
+  try {
+    noteOperationFinished(ticket);
+  } catch (e) {
+    // Bookkeeping must not fail the operation the client is waiting on — the
+    // same guard publishConnections() makes on the other side of this seam.
+    log.warn(errorCodes.tag('STS-WORKER-0035') +
+             'request_worker: an operation could not be announced: ' +
+             e.message + '. A reader may wait the full barrier bound for it.');
+  }
+}
+
 // One operation, and its answer on the channel. A FAILED operation is a
 // MESSAGE and not a crash, for the reason worker.js gives about its own jobs: a
 // refusal is something the caller has to turn into a protocol error, and a
@@ -762,9 +867,15 @@ function register(kind, fn) {
 // a client waiting for ever on a raw socket.
 function handleOperation(message) {
   log.debug('Entering handleOperation(). kind=' + message.kind);
+  const ticket = Number(message.ticket) || 0;
   const fn = OPERATIONS.get(message.kind);
   if (!fn) {
-    process.send({ operation: true, id: message.id, ok: false,
+    // NOT ANNOUNCED, and this is the one path that must not be: no handler
+    // ran, so nothing was written, and the front process releases this ticket
+    // rather than arming it — exactly as proxy() does for a request a worker
+    // never answered. Announcing here would arm a ticket for a flush that
+    // covers nothing.
+    process.send({ operation: true, id: message.id, ok: false, ran: false,
       error: 'this worker does not answer to the "' + message.kind + '" ' +
         'operation. It answers to: ' +
         (Array.from(OPERATIONS.keys()).join(', ') || '(nothing)') + '.',
@@ -776,15 +887,21 @@ function handleOperation(message) {
   try {
     result = fn(message.args);
   } catch (e) {
-    process.send({ operation: true, id: message.id, ok: false,
+    // It RAN, so it is announced: a handler that threw part way through may
+    // still have written.
+    operationFinished(ticket);
+    process.send({ operation: true, id: message.id, ok: false, ran: true,
                    error: e.message, errorName: e.name || 'Error' });
     log.debug('Leaving handleOperation(). It threw.');
     return;
   }
   Promise.resolve(result).then(function (value) {
-    process.send({ operation: true, id: message.id, ok: true, result: value });
+    operationFinished(ticket);
+    process.send({ operation: true, id: message.id, ok: true, ran: true,
+                   result: value });
   }, function (e) {
-    process.send({ operation: true, id: message.id, ok: false,
+    operationFinished(ticket);
+    process.send({ operation: true, id: message.id, ok: false, ran: true,
                    error: e.message, errorName: e.name || 'Error' });
   });
   log.debug('Leaving handleOperation(). Running.');
@@ -812,7 +929,8 @@ function handleSync(message) {
   }, function (err) {
     // syncNow() resolves rather than rejects, so this is a defect here rather
     // than a store that is unwell. Answered anyway, for the reason above.
-    log.error('request_worker: the read barrier threw: ' + err.message);
+    log.error(errorCodes.tag('STS-WORKER-0036') +
+              'request_worker: the read barrier threw: ' + err.message);
     process.send({ sync: true, id: message.id, ok: false,
                    error: err.message });
   });
@@ -917,12 +1035,10 @@ if (require.main === module) {
     if (message.kek) {
       keystore.useEphemeralKek(message.kek);
     }
-    // The OID4VCI request-encryption key, into the environment before the
-    // stack is required — vc_issuer.js reads it at module load. Same channel
-    // and same reason as the certificate above.
-    if (message.vciRequestEncKeyPem) {
-      process.env.STS_VCI_REQUEST_ENC_KEY_PEM = message.vciRequestEncKeyPem;
-    }
+    // (The OID4VCI request-encryption key used to arrive here, into the
+    // environment. It is a member of every realm's key set since 2026-09-12,
+    // so it arrives in `message.keys` below with the rest of each set.)
+    //
     // The BBS pair, same channel and same reason — helpers.js reads it the
     // first time anything issues a Data Integrity proof.
     if (message.bbsKeyPair) {

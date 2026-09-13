@@ -142,13 +142,36 @@ function peerVerified(req) {
                   'for one and never requires it, so the connection is ' +
                   'perfectly ordinary.' };
   }
+  // REVOCATION, CONSULTED (2026-09-12). `common/app.js` put the verdict on the
+  // request before any route, because a foreign CRL may need a fetch and this
+  // function is synchronous. **A REVOKED CERTIFICATE IS NOT VERIFIED**, which
+  // is what every validator that checks means by the word — so every caller
+  // that resolves a certificate to an identity through here (the remote XACML
+  // PEP chain and the XACML user chain) refuses it without learning a new
+  // question. It is read ONLY for a chain that verified: an unverified one is
+  // refused already, and its reason is the more useful one to report.
+  // `revocation` is carried out whole so a caller can mark the right code.
+  const revocation = req.certificateRevocation || null;
+  if (socket.authorized && revocation && revocation.refused) {
+    log.debug("Leaving peerVerified(). Verified, and refused on revocation.");
+    return {
+      verified: false, presented: true, revocation: revocation,
+      error: revocation.status === 'revoked' ? 'CERT_REVOKED'
+                                             : 'REVOCATION_STATUS_UNKNOWN',
+      why: 'The chain built to an anchor in this service\'s client truststore ' +
+           'and was REFUSED ON REVOCATION (pki.revocationCheck is ' +
+           revocation.policy + '): ' + revocation.why
+    };
+  }
   if (socket.authorized) {
     log.debug("Leaving peerVerified(). Verified.");
-    return { verified: true, presented: true,
+    return { verified: true, presented: true, revocation: revocation,
              why: 'The chain built from what was presented to an anchor in ' +
-                  'this service\'s client truststore (POST /tls/trust). NO ' +
-                  'REVOCATION WAS CHECKED — a revoked certificate verifies ' +
-                  'here and would not verify anywhere that matters.' };
+                  'this service\'s client truststore' +
+                  (revocation && revocation.checked
+                    ? ', and its revocation was consulted: ' + revocation.why
+                    : '. NO REVOCATION WAS CHECKED (pki.revocationCheck is off) ' +
+                      '— a revoked certificate verifies here.') };
   }
   const error = socket.authorizationError
     ? String(socket.authorizationError) : '';
@@ -253,6 +276,7 @@ function checkBinding(claims, req, verified, noun) {
   if (!presented) {
     log.debug("Leaving checkBinding(). Bound, and no certificate on this connection.");
     return {
+      errorCode: 'STS-OAUTH-0091',
       error: 'invalid_token',
       description: 'RFC 8705 section 3.1: this ' + what + ' is bound to a client certificate ' +
                    '(cnf["' + CONFIRMATION_MEMBER + '"]), so it may only be used on a TLS ' +
@@ -264,6 +288,7 @@ function checkBinding(claims, req, verified, noun) {
   if (presented !== bound) {
     log.debug("Leaving checkBinding(). Bound to a different certificate.");
     return {
+      errorCode: 'STS-OAUTH-0092',
       error: 'invalid_token',
       description: 'RFC 8705 section 3.1: this ' + what + ' is bound to the client certificate ' +
                    'whose SHA-256 thumbprint is ' + bound + ', and this connection was made ' +

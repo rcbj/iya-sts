@@ -91,6 +91,7 @@ STS_PERSISTENCE_COORDINATE=false
 STS_WORKERS_REQUEST_COUNT=0
 STS_WORKERS_DISPATCH=
 STS_WORKERS_READ_YOUR_WRITE=false
+STS_KEYS_SOURCE=generated
 EOF
       ;;
     postgres)
@@ -117,6 +118,7 @@ STS_PERSISTENCE_COORDINATE=true
 STS_WORKERS_REQUEST_COUNT=0
 STS_WORKERS_DISPATCH=
 STS_WORKERS_READ_YOUR_WRITE=false
+STS_KEYS_SOURCE=generated
 EOF
       ;;
     dispatch)
@@ -130,6 +132,18 @@ EOF
       # which spread across workers by design — without the barrier those are
       # racing the change log, and a suite that raced would fail intermittently
       # and teach nobody anything.
+      #
+      # AND THE SECRET STORE IS READ HERE (2026-09-12), which is the third axis
+      # this mode carries. `STS_KEYS_SOURCE=persisted` turns the keystore ON
+      # WITHOUT product mode — `tests/keystore.js` records that as the reason
+      # the setting exists — so the key-encryption key is really fetched, from
+      # the OpenBao container the stack brings up, with the client certificate
+      # that store issued and a policy that lets it read and not write.
+      #
+      # The DATABASE PASSWORD comes out of that store in every mode, because
+      # the compose file's connection string no longer carries one at all. What
+      # is particular to this mode is the KEK, which needs a keystore to be on
+      # before anything reads it.
       cat <<'EOF'
 STS_MODE=development
 STS_PERSISTENCE_MODE=postgres
@@ -137,6 +151,7 @@ STS_PERSISTENCE_COORDINATE=true
 STS_WORKERS_REQUEST_COUNT=3
 STS_WORKERS_DISPATCH=*
 STS_WORKERS_READ_YOUR_WRITE=true
+STS_KEYS_SOURCE=persisted
 EOF
       ;;
     *)

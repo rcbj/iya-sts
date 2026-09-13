@@ -445,6 +445,18 @@ const corsOptions = function (req, callback) {
     callback(null, { origin: false });
     return;
   }
+  // **GNAP'S DISCOVERY IS AN OPTIONS REQUEST (2026-09-12).** RFC 9635 section 9
+  // has a client "send an HTTP OPTIONS request to the grant request endpoint" and
+  // the AS "MUST respond with a JSON document". The `app.options('*')` below
+  // would otherwise answer every such request as a bare CORS preflight — 204, no
+  // body — before the GNAP route ever ran. `preflightContinue` keeps the CORS
+  // headers and hands the request on, and a browser's real preflight to the
+  // grant endpoint then receives the discovery document with those headers,
+  // which is a valid preflight answer as well.
+  if (/(^|\/)gnap$/.test(String(req.path || ''))) {
+    callback(null, { origin: '*', preflightContinue: true });
+    return;
+  }
   callback(null, { origin: '*' });
 };
 
@@ -504,7 +516,66 @@ app.use(bodyParser.raw({
 // Accept any content-type as raw text (SOAP arrives as text/xml or
 // application/soap+xml). It runs AFTER the raw parser above, and body-parser
 // leaves a body alone once one of them has taken it.
-app.use(bodyParser.text({ type: function () { return true; }, limit: '5mb' }));
+//
+// **THE BYTES ARE KEPT BESIDE THE STRING (2026-09-12), FOR ONE READER: GNAP.**
+// RFC 9635 section 7.3.1 makes a client sign a `Content-Digest` (RFC 9530) of
+// the request content, and section 7.3.3's detached JWS signs a SHA-256 of it —
+// both over the BYTES ON THE WIRE. `req.body` is those bytes decoded as UTF-8,
+// and a decode is not reversible in general: body-parser strips a byte-order
+// mark and turns an invalid sequence into U+FFFD, so re-encoding the string
+// would compare a digest over something the client never sent, and a correct
+// client would be refused for it.
+//
+// `verify` is body-parser's hook for exactly this — it is called with the
+// buffer BEFORE the decode (body-parser 2.x, lib/read.js) — and it only
+// ASSIGNS, so it cannot refuse a body and cannot change what any other endpoint
+// here sees. One caveat is inherent rather than fixable here: with a
+// `Content-Encoding` the stream is inflated first, so the buffer is the decoded
+// content, which is also what RFC 9530's `Content-Digest` is defined over.
+app.use(bodyParser.text({
+  type: function () { return true; },
+  limit: '5mb',
+  verify: function (req, res, buffer) {
+    req.rawBody = buffer;
+  }
+}));
+
+// ---------------------------------------------------------------------------
+// A BODY THE PARSERS ABOVE REFUSED, WRITTEN DOWN — AND NOTHING ELSE ABOUT IT.
+//
+// A body too large, in a charset or content encoding body-parser does not
+// read, or cut off before its Content-Length arrived is refused by the parser
+// with `next(err)`, and Express's final handler answers it. That refusal
+// reaches NO RECORD: the call log below is registered after the parsers (it has
+// to be — see its own comment), so an error raised here skips it along with
+// every other ordinary middleware, and a 413 or a 415 left no audit row at all.
+//
+// So this one error middleware writes the failure row itself, with the code for
+// the condition, and hands the error straight on. It changes nothing a client
+// receives — the same error reaches the same final handler — and it cannot
+// throw, because audit.failure() cannot. The target is the PATH only: a query
+// string on this service carries codes and hints the audit log redacts.
+// ---------------------------------------------------------------------------
+app.use(function (err, req, res, next) {
+  const type = String((err && err.type) || '');
+  let code = 'STS-HTTP-0014';
+  if (type === 'entity.too.large') {
+    code = 'STS-HTTP-0004';
+  } else if (type === 'charset.unsupported' || type === 'encoding.unsupported') {
+    code = 'STS-HTTP-0012';
+  } else if (type === 'request.aborted' || type === 'request.size.invalid') {
+    code = 'STS-HTTP-0013';
+  }
+  audit.failure(code, {
+    protocol: 'HTTP', channel: 'http',
+    target: String(req.originalUrl || req.url || '').split('?')[0],
+    summary: 'The request body of ' + req.method + ' was refused before any ' +
+             'endpoint saw it (' + (type || 'unclassified') + ', HTTP ' +
+             ((err && (err.status || err.statusCode)) || 500) + ').',
+    outcome: (err && (err.status || err.statusCode) >= 500) ? 'error' : 'refused'
+  });
+  next(err);
+});
 
 // ---------------------------------------------------------------------------
 // Record every call into every endpoint: the path, the request (headers and
@@ -631,6 +702,45 @@ app.use(function (req, res, next) {
 // the CSP and `X-Content-Type-Options` every other response does.
 // ---------------------------------------------------------------------------
 app.use(validation.guard());
+
+// ---------------------------------------------------------------------------
+// THE REVOCATION STATUS OF A PRESENTED CLIENT CERTIFICATE (2026-09-12).
+//
+// The doors on this port that accept a certificate — `mtls.peerVerified()`,
+// SCIM's client-certificate scheme and RFC 8705 client authentication — are
+// synchronous, and a certificate from a foreign authority may need its CRL
+// fetched. So the verdict is computed ONCE here, before any route, onto
+// `req.certificateRevocation`, and those doors read it. **It refuses nothing
+// itself**: a request that reaches no door reading it is unaffected, which is
+// what keeps the refusal at the point the certificate is USED.
+//
+// **BELOW `requestPool.middleware()` ON PURPOSE**, so a dispatched request is
+// checked in the worker that evaluates its certificate, where the register is
+// visible because it is a `pki:` row every process holds. A plain-HTTP request
+// and one that presented nothing pass straight through.
+//
+// The module is required LAZILY: it requires `common/pki.js`, and this file is
+// at position 2 of the require order, above everything that module is built
+// on. By the time a request arrives every one of those is loaded.
+// `common/revocation_status.js` argues the rest.
+// ---------------------------------------------------------------------------
+app.use(function (req, res, next) {
+  const socket = req.socket;
+  if (!socket || typeof socket.getPeerCertificate !== 'function') {
+    next();
+    return;
+  }
+  require('./revocation_status').annotateRequest(req).then(function () {
+    next();
+  }, function (e) {
+    // `annotateRequest()` never rejects; a rejection here is a defect in it,
+    // and a request must not hang for one. Nothing was annotated, which every
+    // door reads as "not consulted".
+    log.warn('app: the revocation annotation rejected and was skipped: ' +
+             e.message);
+    next();
+  });
+});
 
 app.get('/healthcheck', function (req, res) {
   log.debug("Entering the healthcheck endpoint.");

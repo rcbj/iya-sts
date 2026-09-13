@@ -82,7 +82,11 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 const config = require('../common/config');
-const { log, PORT } = require('../common/helpers');
+const { log, PORT, loopbackHost, hostForUrl, pinnedBaseUrl, baseUrlOf } =
+  require('../common/helpers');
+// For the realm prefix on `ownBaseUrl()`. A leaf with respect to this
+// directory: it requires nothing here.
+const realms = require('../common/realms');
 // WHO IS CALLING, AND WHICH BUILD OF IT. A Security Event Token arrives at a
 // receiver unasked — that is what RFC 8935 push IS — so the receiver's log is
 // the only place its operator can find out what has been talking to them. RFC
@@ -90,10 +94,22 @@ const { log, PORT } = require('../common/helpers');
 // Built once at require time: the version cannot change while the process runs.
 const USER_AGENT = require('../common/version').userAgent('ssf-transmitter');
 
+// THE ERROR CODES (common/error_codes.js). Every way a push can fail carries
+// its code on the result as `errorCode`, which `ssf.js`'s transmit() puts on
+// the `ssf.event.refused` audit row. That result is read field by field there
+// and never serialised to anybody, so the code reaches no receiver and no
+// caller — which is why this file needs no require of the registry at all.
+
 // A receiver that answers a push with more than this is not answering RFC
 // 8935. A success is 202 with an EMPTY body and a failure is a small JSON
 // object; 64 KiB is three orders of magnitude of headroom and still a bound.
+// `ssf.pushMaxResponseBytes` since 2026-09-12, read per push; this constant is
+// its default and is kept as an export for what printed it.
 const MAX_BODY_BYTES = 64 * 1024;
+
+function maxBodyBytes() {
+  return config.value('ssf.pushMaxResponseBytes');
+}
 
 // The media type of a SET on the wire (RFC 8417 section 2.3). It is not
 // `application/jwt` and a receiver that dispatches on the type — several do —
@@ -180,13 +196,66 @@ function allowedHosts() {
 function loopbackOrigin() {
   log.debug('Entering loopbackOrigin().');
   const scheme = config.value('global.https') ? 'https' : 'http';
-  // 127.0.0.1 rather than `localhost`, which resolves to ::1 first on some
+  // An address rather than `localhost`, which resolves to ::1 first on some
   // hosts while this service binds 0.0.0.0 — a connection refused on a name
   // that pings, which is among the least obvious failures available.
-  // `oidc_rp.js` chose the same literal for the same reason.
-  const out = scheme + '://127.0.0.1:' + PORT;
+  //
+  // **`helpers.loopbackHost()` AND NOT THE LITERAL `127.0.0.1` (2026-09-12).**
+  // The literal reached nothing when `global.host` bound one interface address
+  // or IPv6 only, so every push to this service's own two receivers failed with
+  // ECONNREFUSED and both inbox pages stayed empty for a reason nothing named.
+  // `loopbackHost()` is how this process dials itself — a wildcard bind maps to
+  // the loopback address of its own family — and `hostForUrl()` brackets an
+  // IPv6 literal, which a URL needs and a bind does not.
+  const out = scheme + '://' + hostForUrl(loopbackHost()) + ':' + PORT;
   log.debug('Leaving loopbackOrigin(). ' + out);
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THIS SERVICE'S OWN BASE URL WHEN THERE IS NO REQUEST TO READ ONE FROM
+// (2026-09-12).
+//
+// Two things here name an issuer with no request behind them — a stream seeded
+// at startup, and a CAEP event sent by the expiry sweep's timer — and both used
+// `helpers.baseUrlOf(null)`, which falls back to `http://localhost:<port>`:
+// HTTP whatever `global.https` says, and a host nothing dials. So a seeded
+// stream on an HTTPS service carried an `iss` in the wrong scheme.
+//
+// `global.publicBaseUrl` wins where it is set — it is the operator saying what
+// this service is called, and every other issuer here already takes it. Where
+// it is not, the loopback origin in the scheme this listener really speaks. The
+// realm's prefix goes on the end ONCE, which is `baseUrlOf()`'s own contract.
+// ---------------------------------------------------------------------------
+function ownBaseUrl() {
+  log.debug('Entering ownBaseUrl().');
+  const pinned = pinnedBaseUrl();
+  const out = (pinned || loopbackOrigin()) + realms.currentPrefix();
+  log.debug('Leaving ownBaseUrl(). ' + out);
+  return out;
+}
+
+// The `iss` of this transmitter in the ambient realm. `ssf.js`'s `issuerFor()`
+// argues the three rules; it is here, beside `ownBaseUrl()`, because both
+// `ssf.js` and `ssf_receivers.js` need it and the second cannot require the
+// first. A value the REALM carries is used as it stands; a process-wide value
+// gets the realm's prefix; an empty one is the base URL, which carries the
+// prefix already.
+function transmitterIssuer(req) {
+  log.debug('Entering transmitterIssuer().');
+  const configured = String(config.value('ssf.issuer') || '').trim();
+  let value;
+  if (configured) {
+    const realm = realms.current();
+    const ownValue = !!(realm && realm.overrides &&
+      Object.prototype.hasOwnProperty.call(realm.overrides, 'ssf.issuer'));
+    value = ownValue ? configured
+                     : configured.replace(/\/+$/, '') + realms.currentPrefix();
+  } else {
+    value = req ? baseUrlOf(req) : ownBaseUrl();
+  }
+  log.debug('Leaving transmitterIssuer(). ' + value);
+  return value;
 }
 
 function isOwnLoopback(raw) {
@@ -283,6 +352,7 @@ function pushSet(url, token, options) {
   if (!pushAllowed()) {
     log.debug('Leaving pushSet(). ssf.pushDelivery is off.');
     return Promise.resolve({ ok: false, status: 0, err: '', description: '',
+      errorCode: 'STS-SSF-0033',
       why: 'ssf.pushDelivery is off, so this service makes no outbound ' +
            'request at all. Poll delivery (urn:ietf:rfc:8936) needs none — ' +
            'the receiver comes here.' });
@@ -291,6 +361,7 @@ function pushSet(url, token, options) {
   if (problem) {
     log.debug('Leaving pushSet(). ' + problem);
     return Promise.resolve({ ok: false, status: 0, err: '', description: '',
+      errorCode: 'STS-SSF-0034',
       why: 'the delivery endpoint cannot be dialled: ' + problem });
   }
   const target = new URL(String(url).trim());
@@ -331,6 +402,7 @@ function pushSet(url, token, options) {
       // out, and a throw would have to be caught at every call site.
       log.debug('Leaving pushSet(). No server certificate: ' + e.message);
       return Promise.resolve({ ok: false, status: 0, err: '', description: '',
+        errorCode: 'STS-SSF-0035',
         why: 'this is one of this service\'s own receivers, on the loopback ' +
              'address, and its TLS certificate could not be read to verify ' +
              'the connection against: ' + e.message });
@@ -364,6 +436,9 @@ function pushSet(url, token, options) {
     headers.Authorization = String(opts.authorizationHeader);
   }
 
+  // Read once per push, so a runtime change cannot move the bound half way
+  // through one response.
+  const limit = maxBodyBytes();
   log.debug('Leaving pushSet(). Dialling ' + target.origin + '.');
   return new Promise(function (resolve) {
     const done = function (result) {
@@ -400,6 +475,7 @@ function pushSet(url, token, options) {
         if (status >= 300 && status < 400 && location) {
           response.destroy();
           return done({ ok: false, status: status, err: '', description: '',
+            errorCode: 'STS-SSF-0036',
             why: 'it answered ' + status + ' redirecting to "' + location +
                  '", and this service does not follow a redirect on a push. ' +
                  'The event and the receiver\'s authorization_header would ' +
@@ -414,7 +490,7 @@ function pushSet(url, token, options) {
             return;
           }
           bytes += Buffer.byteLength(chunk);
-          if (bytes > MAX_BODY_BYTES) {
+          if (bytes > limit) {
             overflowed = true;
             response.destroy();
             return;
@@ -424,11 +500,11 @@ function pushSet(url, token, options) {
         response.on('end', function () {
           if (overflowed) {
             return done({ ok: false, status: status, err: '',
-              description: '',
-              why: 'it answered with more than ' + MAX_BODY_BYTES +
-                   ' bytes. RFC 8935 makes a success an EMPTY 202 and a ' +
-                   'failure a small JSON object, so this is not a push ' +
-                   'endpoint answering.' });
+              description: '', errorCode: 'STS-SSF-0037',
+              why: 'it answered with more than ' + limit +
+                   ' bytes (ssf.pushMaxResponseBytes). RFC 8935 makes a ' +
+                   'success an EMPTY 202 and a failure a small JSON object, ' +
+                   'so this is not a push endpoint answering.' });
           }
           if (status === 202 || status === 200 || status === 204) {
             // 202 is what RFC 8935 section 2.3 specifies. 200 and 204 are
@@ -455,15 +531,21 @@ function pushSet(url, token, options) {
           if (status === 400 && json && json.err) {
             return done({ ok: false, status: status, err: String(json.err),
               description: String(json.description || ''),
+              errorCode: 'STS-SSF-0038',
               why: 'the receiver REFUSED the event: ' + String(json.err) +
                    ' — ' + String(json.description || '(no description)') });
           }
           return done({ ok: false, status: status, err: '', description: '',
+            errorCode: 'STS-SSF-0039',
+            // A 5xx or a 429 is the receiver not coping rather than refusing,
+            // which is the one kind of answer `ssf.pushRetries` may try again.
+            retryable: status >= 500 || status === 429,
             why: 'it answered ' + status + (text
               ? ': ' + text.slice(0, 200) : ' with no body') });
         });
         response.on('error', function (e) {
           done({ ok: false, status: status, err: '', description: '',
+            errorCode: 'STS-SSF-0040',
             why: 'the response failed: ' + e.message });
         });
       });
@@ -471,11 +553,13 @@ function pushSet(url, token, options) {
       // A malformed option rather than a network failure — new URL() has
       // already succeeded by here, so this is a bug in the caller.
       return done({ ok: false, status: 0, err: '', description: '',
+        errorCode: 'STS-SSF-0041',
         why: 'the request could not be built: ' + e.message });
     }
     request.setTimeout(timeoutMs(), function () {
       request.destroy();
-      done({ ok: false, status: 0, err: '', description: '',
+      done({ ok: false, status: 0, err: '', description: '', retryable: true,
+        errorCode: 'STS-SSF-0042',
         why: 'it did not answer within ' + timeoutMs() +
              'ms (ssf.pushTimeoutMs)' });
     });
@@ -488,6 +572,10 @@ function pushSet(url, token, options) {
         e.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
         e.code === 'SELF_SIGNED_CERT_IN_CHAIN';
       done({ ok: false, status: 0, err: '', description: '',
+        errorCode: selfSigned ? 'STS-SSF-0044' : 'STS-SSF-0043',
+        // A connection that failed may succeed; a certificate nothing trusts
+        // will not, and retrying it is only delay.
+        retryable: !selfSigned,
         why: 'the request failed: ' + (e.code ? e.code + ' — ' : '') +
              e.message + (selfSigned
           ? '. Set ssf.pushAllowInsecure to push to a receiver whose ' +
@@ -498,8 +586,57 @@ function pushSet(url, token, options) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// PUSH ONE SET, TRYING AGAIN WHERE `ssf.pushRetries` SAYS TO (2026-09-12).
+//
+// `ssf/CLAUDE.md` argues why this service does not retry, and **the default is
+// still 0, which is exactly that**: a mock that retried would make a receiver's
+// one-shot failure invisible. A deployment is the other case — a receiver that
+// restarts for thirty seconds should not lose every event sent in them — so the
+// count is a setting rather than a rewrite of the argument.
+//
+// ONLY A FAILURE THAT COULD GO DIFFERENTLY IS RETRIED: no connection, a
+// timeout, a 5xx or a 429. A 400 with `{err, description}` is the receiver
+// REFUSING — it read the SET and will read it the same way next time, and RFC
+// 8935 section 2.4 makes that a final answer. Nor is a push this service
+// refused to make (delivery off, a URL it may not dial) retried: nothing about
+// it changes with time. The delay is linear — `ssf.pushRetryDelayMs` times the
+// attempt number — and every attempt's result is returned in `attempts`, so the
+// stream's log says how many were made rather than only how the last one went.
+// ---------------------------------------------------------------------------
+function pushSetWithRetries(url, token, options) {
+  log.debug('Entering pushSetWithRetries().');
+  const retries = config.value('ssf.pushRetries');
+  const delay = config.value('ssf.pushRetryDelayMs');
+  const attempts = [];
+  function attempt(n) {
+    return pushSet(url, token, options).then(function (result) {
+      attempts.push({ status: result.status, why: result.why });
+      if (result.ok || !result.retryable || n >= retries) {
+        log.debug('pushSetWithRetries() finished after ' + (n + 1) +
+                  ' attempt(s). ok=' + result.ok);
+        return Object.assign({}, result, { attempts: attempts });
+      }
+      log.info('ssf: a push to ' + url + ' failed (' + result.why + '); ' +
+               'trying again in ' + (delay * (n + 1)) + 'ms, attempt ' +
+               (n + 2) + ' of ' + (retries + 1) + ' (ssf.pushRetries).');
+      return new Promise(function (resolve) {
+        const timer = setTimeout(resolve, delay * (n + 1));
+        // A retry must not keep a process that is shutting down alive.
+        if (timer.unref) timer.unref();
+      }).then(function () { return attempt(n + 1); });
+    });
+  }
+  log.debug('Leaving pushSetWithRetries(). ' + retries + ' retr(ies) allowed.');
+  return attempt(0);
+}
+
 module.exports = {
+  pushSetWithRetries: pushSetWithRetries,
   loopbackOrigin: loopbackOrigin,
+  ownBaseUrl: ownBaseUrl,
+  transmitterIssuer: transmitterIssuer,
+  maxBodyBytes: maxBodyBytes,
   isOwnLoopback: isOwnLoopback,
   MAX_BODY_BYTES: MAX_BODY_BYTES,
   SET_MEDIA_TYPE: SET_MEDIA_TYPE,

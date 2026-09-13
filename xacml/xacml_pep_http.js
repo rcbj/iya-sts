@@ -94,6 +94,13 @@ const http = require('http');
 const { URL } = require('url');
 const config = require('../common/config');
 const { log } = require('../common/helpers');
+// The audit log and the error-code registry, for a nudge that was not
+// delivered. `audit.js` requires `helpers`, `config`, `realms`, the replication
+// module and the registry, none of which reaches back here, so the require
+// closes no cycle. A failed nudge is recorded rather than escalated — this
+// header's own rule — and a row with a code is how it is recorded.
+const audit = require('../common/audit');
+const errorCodes = require('../common/error_codes');
 // Built once at require time: the version cannot change while the process runs.
 // See the header comment on the headers block below for why the nudge carries
 // one at all.
@@ -197,6 +204,16 @@ function urlProblem(raw) {
 // could not get by pulling. Adding a fourth that carries content removes the
 // argument for this file existing.
 // ---------------------------------------------------------------------------
+// One row per nudge that did not arrive. The TARGET is the notify URL's origin
+// and never its path or query, which a PEP may have put anything in.
+function recordUndelivered(code, origin, summary) {
+  audit.failure(code, {
+    action: 'service.failure', protocol: 'XACML', channel: 'http',
+    // error-code: none — the code is this helper's parameter; every caller passes a literal
+    target: origin || '', summary: summary, outcome: 'error'
+  });
+}
+
 function nudge(url, issuer, options) {
   log.debug('Entering nudge(). url=' + url);
   const settings = options || {};
@@ -211,6 +228,9 @@ function nudge(url, issuer, options) {
     const problem = urlProblem(url);
     if (problem) {
       log.debug('Leaving nudge(). Refused before dialling.');
+      recordUndelivered('STS-XACML-0066', '', 'A change nudge was not sent: ' +
+                        'the PEP\'s notify URL is outside this service\'s ' +
+                        'outbound bounds.');
       resolve({ ok: false, status: 0, why: problem });
       return;
     }
@@ -268,6 +288,9 @@ function nudge(url, issuer, options) {
         const status = response.statusCode || 0;
         if (status >= 300 && status < 400) {
           log.debug('Leaving nudge(). A redirect.');
+          recordUndelivered('STS-XACML-0067', parsed.origin,
+                            'A PEP\'s notify endpoint answered a nudge with ' +
+                            'a redirect, which is not followed.');
           resolve({ ok: false, status: status,
                     why: 'The notify endpoint answered ' + status +
                          '. Redirects are not followed: a nudge posted ' +
@@ -283,17 +306,31 @@ function nudge(url, issuer, options) {
         }
         const text = Buffer.concat(chunks).toString('utf8').trim();
         log.debug('Leaving nudge(). Refused with ' + status);
+        recordUndelivered('STS-XACML-0068', parsed.origin,
+                          'A PEP\'s notify endpoint answered a nudge with ' +
+                          'HTTP ' + status + '.');
         resolve({ ok: false, status: status,
                   why: 'The PEP answered ' + status +
                        (text ? ': ' + text.slice(0, 300) : '.') });
       });
     });
+    let timedOut = false;
     request.on('timeout', function () {
+      timedOut = true;
       request.destroy(new Error('the notify endpoint did not answer within ' +
                                 timeoutMs() + 'ms'));
     });
     request.on('error', function (error) {
       log.debug('Leaving nudge(). Failed.');
+      if (timedOut) {
+        recordUndelivered('STS-XACML-0069', parsed.origin,
+                          'A PEP\'s notify endpoint did not answer a nudge ' +
+                          'within xacml.pepNotifyTimeoutMs.');
+      } else {
+        recordUndelivered('STS-XACML-0070', parsed.origin,
+                          'A nudge could not be delivered to a PEP\'s notify ' +
+                          'endpoint: the connection failed.');
+      }
       resolve({ ok: false, status: 0,
                 why: 'The nudge could not be delivered: ' +
                      (error && error.message ? error.message :

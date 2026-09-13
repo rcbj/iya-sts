@@ -66,6 +66,21 @@
 // store that holds per-realm state is `realms.obj()` and not `{}`. The
 // counters' own contract — a refused caller is not a client, an absent
 // measurement is null, a counter cannot throw — is `tests/scim_monitor.js`.
+//
+// ---------------------------------------------------------------------------
+// AND SEVEN MORE ON 2026-09-12, FROM A SWEEP RATHER THAN A PAGE.
+//
+// The CAEP and RISC registers, `vc_offers.js`'s deferred access tokens,
+// `spiffe_auth.js`'s recorded connections, `scim_auth.js`'s Digest nonces and
+// HOBA stores, and `federation.js`'s release index — `common/CLAUDE.md` has the
+// table of what each leaked. Sections 5b and 5c below. Two of them are asserted
+// in a CHILD PROCESS, because their modules register routes (or require one
+// that does) and this file shares one process with every other; and the CAEP
+// and RISC registers' in-place edits are asserted against a real persistence
+// observer there too, because that observer cannot be put back in this one.
+// The OpenID4VCI request-encryption key, which became per realm the same day,
+// has a file of its own — `tests/vci_request_encryption_key.js` — because what
+// it asserts is the KEY SET's machinery and not a store's declaration.
 // ===========================================================================
 
 // Deleted rather than set, for the reason config_realm_layer.js gives: a
@@ -380,6 +395,306 @@ function checkScimCounters(t) {
 }
 
 // ---------------------------------------------------------------------------
+// 5b. THE CAEP AND RISC REGISTERS (2026-09-12).
+//
+// Both were `new Map()` beside `ssf_streams.js`'s streams, which have been per
+// realm since the day SSF arrived — so a stream agreed in `acme` counted its
+// events against a session row every realm's console listed, and deleting
+// `alice` in `acme` put a `purged` row on the DEFAULT realm's
+// /admin/risc-accounts beside a directory that still held its own `alice`.
+// Same retired reason as the three above: the directory and the session store
+// are per realm, and a register ABOUT them was not.
+//
+// Both ways round and across a purge, for the header's reason, plus the
+// DECLARATION: each is a persisted store with a realm in it, because product
+// mode writes down the sessions and accounts these rows describe.
+// ---------------------------------------------------------------------------
+function checkSignalRegisters(t) {
+  t.log.info('the CAEP and RISC registers');
+  const caep = require('../ssf/caep');
+  const risc = require('../ssf/risc');
+
+  [['caep', caep, 'iso-session', 'caep.register'],
+   ['risc', risc, 'iso-account', 'risc.register']].forEach(function (spec) {
+    const label = spec[0];
+    const register = spec[1];
+    const key = spec[2];
+    const handle = realms.handleFor(spec[3]);
+    t.check(!!handle && handle.scope === 'realm' && handle.merge === 'replace',
+            label + '\'s register is DECLARED as a persisted store with a realm in ' +
+            'it, merged by replacement — a row is whole-valued',
+            handle ? handle.scope + '/' + handle.merge : '(not declared)');
+
+    withRealm(t, 'iso-' + label, function (realm) {
+      realms.run(realm, function () {
+        register.rowFor(key, { iss: 'https://iso.example' });
+      });
+      t.check(!!realms.run(realm, function () { return register.get(key); }),
+              label + ': a row made in a realm is there in that realm');
+      t.equal(register.get(key), null,
+              label.toUpperCase() + ': AND IS NOT IN THE DEFAULT REALM. It was, ' +
+              'while the register was one Map for the process');
+      register.rowFor(key + '-outside', {});
+      t.equal(realms.run(realm, function () { return register.get(key + '-outside'); }),
+              null,
+              label + ': and a row made outside the realm is not inside it');
+
+      // The edit-in-place half — that `touch()` REPORTS a row mutated where it
+      // stands — is asserted in the child process below, because it needs a
+      // persistence observer and `realms.setPersistObserver()` has no way to
+      // put back the one another file in this run may have installed.
+      register.clear();
+    });
+
+    // Same id, second life.
+    withRealm(t, 'iso-' + label, function (realm) {
+      t.equal(realms.run(realm, function () { return register.get(key); }), null,
+              label + ': a realm removed and created again has none of the old ' +
+              'one\'s rows');
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 5c. THE STORES WHOSE MODULES CANNOT BE LOADED IN THIS PROCESS (2026-09-12).
+//
+// `oid4vc/vc_offers.js` registers the offer pages and `spiffe/spiffe_auth.js`
+// requires `tls/tls_server.js`, which registers `/tls*` — and `run.js` runs
+// every file in ONE process, where a route registered here moves what a later
+// file sees of the router. So they are asserted in a CHILD PROCESS, which is
+// `tests/oauth_oid4vc_hardcoded.js`'s arrangement for the same reason.
+//
+//   * `vc_offers.deferredAccessTokens` was a `new Set()` beside four
+//     `realms.map()`s: a deferred token minted in one realm was deferred in
+//     every realm, and on one worker only.
+//   * `spiffe_auth.js`'s recorded connections were `sharedMap()` while SPIFFE
+//     had one pair of sockets. It has a pair PER REALM, and the realm a gRPC
+//     connection is in is the realm of the LISTENER it arrived on, which
+//     `spiffe_server.js` makes ambient around every handler — so the child
+//     enters a realm the way that wrapper does and records a caller there.
+//
+// Three more are asserted as DECLARATIONS, because their modules export no
+// reader and a behavioural probe would need a directory, a Digest client or a
+// federation relationship to reach them: `scim_auth.js`'s Digest nonces and
+// HOBA challenge and replay sets, and `federation.js`'s release index.
+// ---------------------------------------------------------------------------
+function childStores() {
+  const OUT = process.env.ISO_CHILD_OUT;
+  const findings = [];
+  function note(ok, what, detail) {
+    findings.push({ ok: !!ok, what: what, detail: detail === undefined ? '' : String(detail) });
+  }
+  try {
+    delete process.env.CONFIG_FILE;
+    const ROOT = process.env.ISO_CHILD_ROOT;
+    const realms = require(ROOT + '/common/realms');
+    const offers = require(ROOT + '/oid4vc/vc_offers');
+    const auth = require(ROOT + '/spiffe/spiffe_auth');
+
+    const a = realms.create({ id: 'iso-child-a', name: 'a' }).realm;
+    const b = realms.create({ id: 'iso-child-b', name: 'b' }).realm;
+
+    // THE DEFERRED ACCESS TOKENS.
+    const tokens = offers.deferredAccessTokens;
+    realms.run(a, function () { tokens.add('iso-deferred-token'); });
+    note(realms.run(a, function () { return tokens.has('iso-deferred-token'); }),
+         'vc_offers: a deferred access token recorded in a realm is deferred there');
+    note(!tokens.has('iso-deferred-token') &&
+         !realms.run(b, function () { return tokens.has('iso-deferred-token'); }),
+         'VC_OFFERS: AND IS AN ORDINARY TOKEN IN THE DEFAULT REALM AND IN ANOTHER — ' +
+         'it was deferred everywhere while the store was one Set');
+    const tokenHandle = realms.handleFor('vc_offers.deferredAccessTokens');
+    note(tokenHandle && tokenHandle.scope === 'realm',
+         'vc_offers: the store is declared persisted, with a realm in it',
+         tokenHandle ? tokenHandle.scope : '(not declared)');
+    const dumped = tokenHandle ? tokenHandle.dump(a.id) : [];
+    note(dumped.length === 1 && dumped[0].key.indexOf('iso-deferred-token') < 0,
+         'vc_offers: and what it holds is a DIGEST of the token, never the bearer ' +
+         'credential itself', JSON.stringify(dumped.map(function (row) { return row.key; })));
+    realms.remove('iso-child-a');
+    const again = realms.create({ id: 'iso-child-a', name: 'a' }).realm;
+    note(!realms.run(again, function () { return tokens.has('iso-deferred-token'); }),
+         'vc_offers: a realm removed and remade has none of the old one\'s tokens');
+
+    // THE SPIRE SERVER API'S RECORDED CONNECTIONS.
+    const caller = { authenticated: true, spiffeId: 'spiffe://iso.example/agent',
+                     peer: '10.9.8.7:40001', transport: 'tcp',
+                     certificate: { fingerprintSha256: 'AA:BB:CC' },
+                     entities: {} };
+    const connKey = 'AA:BB:CC|10.9.8.7:40001';
+    const connHandle = realms.handleFor('spiffe.recordedConnections');
+    note(connHandle && connHandle.scope === 'realm',
+         'spiffe_auth: the recorded-connection store is declared per realm and ' +
+         'not `shared` any more', connHandle ? connHandle.scope : '(not declared)');
+    realms.run(b, function () { auth.recordCaller(caller); });
+    note(connHandle && connHandle.read(b.id, connKey).present,
+         'spiffe_auth: a connection accepted on a realm\'s listener is recorded in ' +
+         'THAT realm — the ambient realm spiffe_server.js enters around the handler');
+    note(connHandle && !connHandle.read('', connKey).present &&
+         !connHandle.read(again.id, connKey).present,
+         'SPIFFE_AUTH: AND NOT IN THE DEFAULT REALM OR ANOTHER ONE, so one realm\'s ' +
+         'connections neither count against nor evict another\'s');
+    realms.remove('iso-child-b');
+    const remadeB = realms.create({ id: 'iso-child-b', name: 'b' }).realm;
+    note(connHandle && !connHandle.read(remadeB.id, connKey).present,
+         'spiffe_auth: and removing the realm takes its connections with it');
+
+    // AN EDIT IN PLACE REACHES THE JOURNAL, in the realm it was made in. The
+    // CAEP and RISC state machines mutate a row object already in the map, and
+    // `realms.map()` journals only a `set()` — so without `touch()` product
+    // mode would write a row as it was CREATED and a restart would put back a
+    // session that was never revoked. A child process because this needs an
+    // observer, and the one in the parent run cannot be put back.
+    const journal = [];
+    realms.setPersistObserver(function (handle, realmId, key) {
+      journal.push([handle, realmId, key]);
+    });
+    const caep = require(ROOT + '/ssf/caep');
+    const risc = require(ROOT + '/ssf/risc');
+    [['caep.register', caep, 'iso-journal-session',
+      'https://schemas.openid.net/secevent/caep/event-type/session-revoked'],
+     ['risc.register', risc, 'iso-journal-account',
+      'https://schemas.openid.net/secevent/risc/event-type/account-disabled']
+    ].forEach(function (spec) {
+      realms.run(remadeB, function () { spec[1].rowFor(spec[2], {}); });
+      journal.length = 0;
+      realms.run(remadeB, function () {
+        spec[1].applyToState(spec[1].get(spec[2]), spec[3], {});
+      });
+      note(journal.some(function (row) {
+             return row[0] === spec[0] && row[1] === remadeB.id && row[2] === spec[2];
+           }),
+           spec[0] + ': a row edited IN PLACE by the state machine is reported to ' +
+           'the journal, in the realm it was edited in', JSON.stringify(journal));
+    });
+  } catch (e) {
+    note(false, 'the child ran to the end', e && e.stack);
+  }
+  require('fs').writeFileSync(OUT, JSON.stringify(findings));
+  process.exit(0);
+}
+
+function checkChildStores(t) {
+  t.log.info('the stores asserted in a child process');
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const childProcess = require('child_process');
+  const root = path.join(__dirname, '..');
+  const out = path.join(os.tmpdir(), 'sts-realm-iso-' + process.pid + '-' +
+                                     Date.now() + '.json');
+  const env = Object.assign({}, process.env, {
+    ISO_CHILD_OUT: out, ISO_CHILD_ROOT: root, LOG_LEVEL: 'fatal' });
+  delete env.CONFIG_FILE;
+  const result = childProcess.spawnSync(process.execPath,
+    ['-e', '(' + childStores.toString() + ')()'], {
+      cwd: root, env: env, encoding: 'utf8', timeout: 120000,
+      maxBuffer: 64 * 1024 * 1024 });
+  let findings = null;
+  try {
+    findings = JSON.parse(fs.readFileSync(out, 'utf8'));
+  } catch (e) {
+    // The child died before writing a report; said below with its status.
+    findings = null;
+  }
+  try {
+    fs.rmSync(out, { force: true });
+  } catch (e) {
+    // A temporary file left behind is not a failed assertion.
+    t.log.debug('could not remove ' + out + ': ' + e.message);
+  }
+  if (t.check(Array.isArray(findings), 'the child process reported its findings',
+              'status=' + result.status + ' ' + String(result.stderr || '').slice(-2000))) {
+    findings.forEach(function (one) { t.check(one.ok, one.what, one.detail); });
+  }
+
+  // THE THREE DECLARATIONS.
+  const read = function (rel) {
+    return fs.readFileSync(path.join(root, rel), 'utf8');
+  };
+  const scim = read('scim/scim_auth.js');
+  ['digestNonces', 'hobaChallenges', 'hobaSeen'].forEach(function (name) {
+    t.check(new RegExp('^const ' + name + ' = realms\\.map\\(', 'm').test(scim) &&
+            !new RegExp('^const ' + name + ' = new Map\\(', 'm').test(scim),
+            'scim_auth: `' + name + '` is declared realms.map() — one realm\'s ' +
+            'unauthenticated challenges no longer evict another realm\'s from a ' +
+            'shared cap');
+  });
+  const federation = read('federation/federation.js');
+  t.check(/^const releaseIndexes = realms\.keyed\(/m.test(federation) &&
+          !/^let releaseIndex = /m.test(federation),
+          'federation: the release index is realms.keyed() — it was built out of ' +
+          'whichever realm issued the first token in its window and applied to ' +
+          'every realm\'s tokens for the rest of it');
+}
+
+// ---------------------------------------------------------------------------
+// 5c. GNAP (2026-09-12): twelve stores in `gnap/gnap_store.js`, the approver
+// index in `gnap/gnap_signals.js` and the counters in `gnap/gnap_monitor.js`.
+//
+// `tests/vendored/sts_gnap_core.js` asserts the over-HTTP half — a token from
+// one realm refused by another realm's resource server, a continuation token
+// that finds nothing in the default realm. What is here is the half that
+// cannot be asked over HTTP: that a realm removed and created again under the
+// same id remembers NONE of the first one's grants, tokens, resource sets,
+// approvers or counts, and that no module in `gnap/` declares a process-wide
+// Map or Set at module scope for the next store to be added as.
+// ---------------------------------------------------------------------------
+function checkGnapStores(t) {
+  t.log.info('the GNAP stores');
+  const fs = require('fs');
+  const path = require('path');
+  const store = require('../gnap/gnap_store');
+  const monitor = require('../gnap/gnap_monitor');
+  const signals = require('../gnap/gnap_signals');
+  const ids = {};
+
+  withRealm(t, 'iso-gnap', function (realm) {
+    realms.run(realm, function () {
+      ids.grant = store.newGrant({ client: { identifier: 'iso-gnap-client' } }).id;
+      store.putToken({ jti: 'iso-gnap-jti', grant: ids.grant }, 'iso-gnap-token-value');
+      store.putResource('iso-gnap-resource', { access: ['read'] });
+      signals.noteApprover('iso-gnap-client', 'iso-gnap-person');
+      monitor.record('iso-gnap-client', 'grant.requested', {});
+    });
+    t.check(!store.getGrant(ids.grant),
+            'a GNAP grant made inside a realm is not in the default realm', ids.grant);
+    t.check(!store.tokenByValue('iso-gnap-token-value'),
+            'nor is its access token, looked up by value');
+    t.check(!store.resourceByReference('iso-gnap-resource'),
+            'nor a resource set registered there');
+    t.check(!signals.approvedBy('iso-gnap-client', 'iso-gnap-person'),
+            'nor who approved a grant to which application — the index a GNAP ' +
+            'application\'s scoped stream is decided by');
+    t.check(!monitor.snapshot().rows['iso-gnap-client'],
+            'nor the monitor\'s counters');
+    t.check(realms.run(realm, function () {
+      return !!store.getGrant(ids.grant) && !!store.tokenByValue('iso-gnap-token-value') &&
+             !!store.resourceByReference('iso-gnap-resource') &&
+             !!monitor.snapshot().rows['iso-gnap-client'];
+    }), 'and every one of them IS there inside the realm that made it');
+  });
+
+  withRealm(t, 'iso-gnap', function (realm) {
+    t.check(realms.run(realm, function () {
+      return !store.getGrant(ids.grant) && !store.tokenByJti('iso-gnap-jti') &&
+             !store.resourceByReference('iso-gnap-resource') &&
+             !signals.approvedBy('iso-gnap-client', 'iso-gnap-person') &&
+             !monitor.snapshot().rows['iso-gnap-client'];
+    }), 'a realm created again under the same id remembers none of the first ' +
+        'one\'s GNAP grants, tokens, resource sets, approvers or counts');
+  });
+
+  const dir = path.join(__dirname, '..', 'gnap');
+  fs.readdirSync(dir).filter(function (f) { return /\.js$/.test(f); }).forEach(function (file) {
+    const src = fs.readFileSync(path.join(dir, file), 'utf8');
+    t.check(!/^(const|let|var)\s+\w+\s*=\s*new (Map|Set)\(/m.test(src),
+            'gnap/' + file + ' declares no module-scope Map or Set — a store there ' +
+            'is realms.map(), or it is one realm\'s state in every realm');
+  });
+}
+
+// ---------------------------------------------------------------------------
 // 6. WITH NO REALM DEFINED, NOTHING ABOVE IS OBSERVABLE.
 //
 // The property the whole realm design rests on, asserted here for the two
@@ -417,6 +732,9 @@ function run(t) {
   checkRevocation(t);
   checkPurge(t);
   checkScimCounters(t);
+  checkSignalRegisters(t);
+  checkGnapStores(t);
+  checkChildStores(t);
   checkDefaultUnchanged(t);
 }
 

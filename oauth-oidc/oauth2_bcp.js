@@ -805,7 +805,7 @@ const REQUIREMENTS = [
   { id: 'no-client-id-confusion', section: '2.6, 4.13', level: 'SHOULD NOT',
     appliesTo: 'authorization server', enforced: 'always',
     title: 'A client must not be able to choose a client_id that impersonates a user',
-    note: 'POST /oauth2/register GENERATES the client_id (sts-mock-client-<random>) and ignores ' +
+    note: 'POST /oauth2/register GENERATES the client_id (oauth2.registeredClientIdPrefix, sts-client- by default, then random) and ignores ' +
           'any the request proposes, so a client cannot pick its own identifier at all — which ' +
           'is the strongest form of this and is true with the mode off. Note what it does NOT ' +
           'cover: a client_id that never registered is whatever string a caller put in the ' +
@@ -825,7 +825,7 @@ const REQUIREMENTS = [
           'the two identifiers still share a namespace, so a client_id that LOOKS like a ' +
           'subject is possible for any client that never registered.\n\n' +
           'WITH THE MODE ON, they get SEPARATE NAMESPACES instead: a client\'s subject is ' +
-          'urn:sts-mock:client:<id> beside a person\'s urn:sts-mock:user:<name>, so the two ' +
+          'urn:sts:client:<id> beside a person\'s urn:sts:user:<name>, so the two ' +
           'cannot collide however a client is named — the SHOULD above it, done properly. That ' +
           'makes `sub` no longer equal to `client_id`, so a resource server written against ' +
           'the comparison must read the PREFIX instead. Both facts are stated here rather than ' +
@@ -1240,7 +1240,7 @@ function checkRedirectUri(opts) {
   const parsed = parseUri(presented);
   if (!parsed) {
     log.debug("Leaving checkRedirectUri(). It does not parse as a URI.");
-    return { ok: false, error: 'invalid_request', requirement: 'redirect-exact-match',
+    return { ok: false, errorCode: 'STS-OAUTH-0119', error: 'invalid_request', requirement: 'redirect-exact-match',
              description: 'RFC 9700 section 2.1: redirect_uri must be an absolute URI. ' +
                           '"' + presented + '" does not parse as one.' };
   }
@@ -1249,7 +1249,7 @@ function checkRedirectUri(opts) {
   // the registration is not what makes it safe.
   if (parsed.protocol === 'http:' && !isLoopbackHost(parsed.hostname)) {
     log.debug("Leaving checkRedirectUri(). http, and not a loopback address.");
-    return { ok: false, error: 'invalid_request', requirement: 'http-scheme-refused',
+    return { ok: false, errorCode: 'STS-OAUTH-0120', error: 'invalid_request', requirement: 'http-scheme-refused',
              description: 'RFC 9700 section 2.6: an authorization server must not allow a ' +
                           'redirect URI using the http scheme, except for a native application ' +
                           'redirecting to a loopback address (127.0.0.1, [::1] or localhost). ' +
@@ -1258,7 +1258,7 @@ function checkRedirectUri(opts) {
   const registered = registeredUrisFor(opts.client);
   if (!registered.list.length) {
     log.debug("Leaving checkRedirectUri(). Nothing is registered to compare against.");
-    return { ok: false, error: 'invalid_request', requirement: 'redirect-exact-match',
+    return { ok: false, errorCode: 'STS-OAUTH-0121', error: 'invalid_request', requirement: 'redirect-exact-match',
              description: 'RFC 9700 section 2.1 requires redirect_uri to be compared by exact ' +
                           'string match against the URIs registered for this client, and none ' +
                           'are registered. Add this URI to the oauth2.redirectUris setting ' +
@@ -1274,7 +1274,7 @@ function checkRedirectUri(opts) {
   }
   if (!matched) {
     log.debug("Leaving checkRedirectUri(). No registered URI matches.");
-    return { ok: false, error: 'invalid_request', requirement: 'redirect-exact-match',
+    return { ok: false, errorCode: 'STS-OAUTH-0122', error: 'invalid_request', requirement: 'redirect-exact-match',
              description: 'RFC 9700 section 2.1: redirect_uri must match one of the URIs ' +
                           'registered for this client by exact string comparison (RFC 3986 ' +
                           'section 6.2.1). "' + presented + '" matches none of the ' +
@@ -1308,7 +1308,7 @@ function checkPostLogoutRedirectUri(opts) {
   const found = list.some(function (uri) { return uriMatches(uri, presented).ok; });
   if (!found) {
     log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
-    return { ok: false, error: 'invalid_request', requirement: 'no-open-redirector',
+    return { ok: false, errorCode: 'STS-OAUTH-0123', error: 'invalid_request', requirement: 'no-open-redirector',
              description: 'RFC 9700 section 2.1: an authorization server must not forward the ' +
                           'browser to an arbitrary URI. "' + presented + '" is not among the ' +
                           (list.length ? list.length + ' registered URI(s): ' + list.join(', ')
@@ -1342,8 +1342,30 @@ function checkPostLogoutRedirectUri(opts) {
 // once the code they belong to could no longer be redeemed, and the whole store
 // is capped. A forgotten value is a check not made, never a false refusal.
 // ---------------------------------------------------------------------------
-const TRANSACTION_TTL_MS = 10 * 60 * 1000;   // twice an authorization code's life
-const MAX_TRANSACTIONS = 500;
+//
+// BOTH NUMBERS ARE READ FROM SETTINGS SINCE 2026-09-12, AND THE FIRST ONE IS
+// NOT A SETTING OF ITS OWN. `TRANSACTION_TTL_MS` said "twice an authorization
+// code's life" in a comment while oauth2.js held the code's life in a constant
+// of its own, which is a match nothing kept. It is now computed from
+// `oauth2.authorizationCodeTtlS` — the SAME row the code's expiry is read from
+// — so moving one moves both. `oauth2.maxPendingTransactions` is the cap, and
+// dropping the oldest when it is reached stays the policy: a forgotten
+// transaction value is a reuse check NOT made, never a false refusal and never
+// a credential accepted twice, because the code itself is single use
+// independently of this store. That is the difference from the assertion
+// replay caches, which refuse rather than forget.
+const TRANSACTION_TTL_MS = 10 * 60 * 1000;   // the DEFAULT: twice a five-minute code
+const MAX_TRANSACTIONS = 500;                // the DEFAULT of the cap
+
+function transactionTtlMs() {
+  const seconds = Number(config.value('oauth2.authorizationCodeTtlS'));
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 2000 : TRANSACTION_TTL_MS;
+}
+
+function maxTransactions() {
+  const count = Number(config.value('oauth2.maxPendingTransactions'));
+  return isFinite(count) && count > 0 ? Math.floor(count) : MAX_TRANSACTIONS;
+}
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
@@ -1362,7 +1384,7 @@ function forgetStaleTransactions() {
   // Still too many? Drop the oldest. Map preserves insertion order, so the
   // first keys are the oldest, and losing the oldest is losing the check least
   // likely to still matter.
-  while (transactions.size > MAX_TRANSACTIONS) {
+  while (transactions.size > maxTransactions()) {
     const oldest = transactions.keys().next();
     if (oldest.done) {
       break;
@@ -1403,7 +1425,7 @@ function checkTransactionValues(opts) {
     }
     if (record.clientId !== clientId) {
       log.debug("Leaving checkTransactionValues(). " + found[i].what + " belongs to another client.");
-      return { ok: false, error: 'invalid_request', requirement: 'transaction-bound',
+      return { ok: false, errorCode: 'STS-OAUTH-0124', error: 'invalid_request', requirement: 'transaction-bound',
                description: 'RFC 9700 section 2.1.1: the ' + found[i].what + ' must be bound to ' +
                             'the client and user-agent transaction. This one was already used by ' +
                             'client "' + record.clientId + '" and cannot also be a fresh value ' +
@@ -1411,7 +1433,7 @@ function checkTransactionValues(opts) {
     }
     if (record.redeemed) {
       log.debug("Leaving checkTransactionValues(). " + found[i].what + " was reused after redemption.");
-      return { ok: false, error: 'invalid_request', requirement: 'transaction-specific',
+      return { ok: false, errorCode: 'STS-OAUTH-0125', error: 'invalid_request', requirement: 'transaction-specific',
                description: 'RFC 9700 section 2.1.1: the ' + found[i].what + ' must be ' +
                             'transaction-specific. This value was used for an authorization code ' +
                             'that has already been redeemed, so this is a second transaction ' +
@@ -1434,7 +1456,7 @@ function rememberTransactionValues(opts) {
     log.debug("Leaving rememberTransactionValues(). RFC 9700 mode is off.");
     return;
   }
-  const forget = Date.now() + TRANSACTION_TTL_MS;
+  const forget = Date.now() + transactionTtlMs();
   transactionKeys(opts.query).forEach(function (entry) {
     transactions.set(entry.key, { clientId: String(opts.clientId || ''),
                                   redeemed: !!opts.completed, forget: forget });
@@ -1486,7 +1508,7 @@ function checkAuthorizationRequest(opts) {
   // Section 2.1.2 — no access token from the authorization endpoint.
   if (types.indexOf('token') >= 0) {
     log.debug("Leaving checkAuthorizationRequest(). The response type issues an access token.");
-    return { ok: false, error: 'unsupported_response_type', requirement: 'no-implicit',
+    return { ok: false, errorCode: 'STS-OAUTH-0126', error: 'unsupported_response_type', requirement: 'no-implicit',
              description: 'RFC 9700 section 2.1.2: clients should not use the implicit grant or ' +
                           'any other response type that issues an access token from the ' +
                           'authorization endpoint. Use response_type=code' +
@@ -1499,7 +1521,7 @@ function checkAuthorizationRequest(opts) {
   if (types.indexOf('code') >= 0 && !query.code_challenge) {
     if (!isConfidential(client)) {
       log.debug("Leaving checkAuthorizationRequest(). A public client sent no code_challenge.");
-      return { ok: false, error: 'invalid_request', requirement: 'pkce-public-clients',
+      return { ok: false, errorCode: 'STS-OAUTH-0127', error: 'invalid_request', requirement: 'pkce-public-clients',
                description: 'RFC 9700 section 2.1.1: public clients must use PKCE (RFC 7636). ' +
                             'Send code_challenge and code_challenge_method=S256. A client ' +
                             'registered here with a token_endpoint_auth_method other than "none" ' +
@@ -1515,7 +1537,7 @@ function checkAuthorizationRequest(opts) {
     const method = String(query.code_challenge_method || 'plain');
     if (method !== 'S256') {
       log.debug("Leaving checkAuthorizationRequest(). code_challenge_method=" + method + ".");
-      return { ok: false, error: 'invalid_request', requirement: 'pkce-s256',
+      return { ok: false, errorCode: 'STS-OAUTH-0128', error: 'invalid_request', requirement: 'pkce-s256',
                description: 'RFC 9700 section 2.1.1: use a code challenge method that does not ' +
                             'expose the verifier. S256 is currently the only one, and it is the ' +
                             'only value code_challenge_methods_supported advertises in this ' +
@@ -1527,7 +1549,7 @@ function checkAuthorizationRequest(opts) {
     // leaving it to fail as a mismatch at the token endpoint.
     if (!/^[A-Za-z0-9_-]{43}$/.test(String(query.code_challenge))) {
       log.debug("Leaving checkAuthorizationRequest(). The S256 challenge is not 43 base64url characters.");
-      return { ok: false, error: 'invalid_request', requirement: 'pkce-s256',
+      return { ok: false, errorCode: 'STS-OAUTH-0129', error: 'invalid_request', requirement: 'pkce-s256',
                description: 'RFC 7636 section 4.2: an S256 code_challenge is the base64url ' +
                             'encoding, without padding, of the SHA-256 of the code_verifier — 43 ' +
                             'characters. This one is ' + String(query.code_challenge).length + '.' };
@@ -1539,7 +1561,7 @@ function checkAuthorizationRequest(opts) {
   // id_token has to have one to bind.
   if (types.indexOf('id_token') >= 0 && !query.nonce) {
     log.debug("Leaving checkAuthorizationRequest(). An id_token was asked for with no nonce.");
-    return { ok: false, error: 'invalid_request', requirement: 'nonce-required',
+    return { ok: false, errorCode: 'STS-OAUTH-0130', error: 'invalid_request', requirement: 'nonce-required',
              description: 'RFC 9700 section 2.1.1: the OpenID Connect nonce must be ' +
                           'transaction-specific and bound to the user-agent transaction, and a ' +
                           'response_type naming id_token must carry one — it is what a client ' +
@@ -1567,7 +1589,7 @@ function checkGrantType(grant) {
     return { ok: true };
   }
   log.debug("Leaving checkGrantType(). The password grant is refused.");
-  return { ok: false, error: 'unsupported_grant_type', requirement: 'no-ropc',
+  return { ok: false, errorCode: 'STS-OAUTH-0131', error: 'unsupported_grant_type', requirement: 'no-ropc',
            description: 'RFC 9700 section 2.4: the resource owner password credentials grant ' +
                         'MUST NOT be used. It gives the client the End-User\'s password, it ' +
                         'cannot carry a second factor, and there is no way to make it safe. ' +
@@ -1608,7 +1630,7 @@ function checkClientRegistration(metadata) {
   const grants = Array.isArray(meta.grant_types) ? meta.grant_types.map(String) : [];
   if (grants.indexOf('password') >= 0) {
     log.debug("Leaving checkClientRegistration(). It asked for the password grant.");
-    return { ok: false, error: 'invalid_client_metadata', requirement: 'no-ropc',
+    return { ok: false, errorCode: 'STS-OAUTH-0132', error: 'invalid_client_metadata', requirement: 'no-ropc',
              description: 'RFC 9700 section 2.4: the resource owner password credentials grant ' +
                           'MUST NOT be used, so this server will not register a client for it. ' +
                           'It hands the End-User\'s password to the client, it cannot carry a ' +
@@ -1618,7 +1640,7 @@ function checkClientRegistration(metadata) {
   }
   if (grants.indexOf('implicit') >= 0) {
     log.debug("Leaving checkClientRegistration(). It asked for the implicit grant.");
-    return { ok: false, error: 'invalid_client_metadata', requirement: 'no-implicit',
+    return { ok: false, errorCode: 'STS-OAUTH-0133', error: 'invalid_client_metadata', requirement: 'no-implicit',
              description: 'RFC 9700 section 2.1.2: the implicit grant issues an access token ' +
                           'from the authorization endpoint, where it travels through the ' +
                           'browser and lands in history, logs and referrers. This server ' +
@@ -1631,7 +1653,7 @@ function checkClientRegistration(metadata) {
   });
   if (withToken.length) {
     log.debug("Leaving checkClientRegistration(). A response type issues an access token.");
-    return { ok: false, error: 'invalid_client_metadata', requirement: 'no-implicit',
+    return { ok: false, errorCode: 'STS-OAUTH-0134', error: 'invalid_client_metadata', requirement: 'no-implicit',
              description: 'RFC 9700 section 2.1.2: a response type that issues an access token ' +
                           'from the authorization endpoint is refused there, so it is refused ' +
                           'here — registering for "' + withToken.join('", "') + '" would ' +
@@ -1643,13 +1665,13 @@ function checkClientRegistration(metadata) {
   for (let i = 0; i < uris.length; i++) {
     const parsed = parseUri(uris[i]);
     if (!parsed) {
-      return { ok: false, error: 'invalid_redirect_uri', requirement: 'redirect-exact-match',
+      return { ok: false, errorCode: 'STS-OAUTH-0135', error: 'invalid_redirect_uri', requirement: 'redirect-exact-match',
                description: 'RFC 9700 section 2.1: a redirect URI must be an absolute URI. "' +
                             uris[i] + '" is not one.' };
     }
     if (parsed.protocol === 'http:' && !isLoopbackHost(parsed.hostname)) {
       log.debug("Leaving checkClientRegistration(). An http redirect URI off the loopback.");
-      return { ok: false, error: 'invalid_redirect_uri', requirement: 'http-scheme-refused',
+      return { ok: false, errorCode: 'STS-OAUTH-0136', error: 'invalid_redirect_uri', requirement: 'http-scheme-refused',
                description: 'RFC 9700 section 2.6: an authorization server must not allow a ' +
                             'redirect URI using the http scheme, except for a native ' +
                             'application redirecting to a loopback address. "' + uris[i] + '" ' +
@@ -1749,13 +1771,13 @@ async function observeClientAuthentication(opts) {
   const registered = opts.registered;
   if (!registered || !registered.known) {
     log.debug("Leaving observeClientAuthentication(). No entry here.");
-    return { authenticated: false, method: '',
+    return { authenticated: false, method: '', errorCode: 'STS-OAUTH-0193',
              why: 'this service has no entry for this client, so there was ' +
                   'nothing to authenticate it against.' };
   }
   if (!isConfidential(registered)) {
     log.debug("Leaving observeClientAuthentication(). A public client.");
-    return { authenticated: false, method: 'none',
+    return { authenticated: false, method: 'none', errorCode: 'STS-OAUTH-0194',
              why: 'this is a PUBLIC client: its entry declares ' +
                   'token_endpoint_auth_method="none" (or none at all), so it ' +
                   'has no credential to present and presenting none is correct.' };
@@ -1775,7 +1797,7 @@ async function observeClientAuthentication(opts) {
     (method === 'self_signed_tls_client_auth' && registered.certificate_thumbprint);
   if (!haveCredential) {
     log.debug("Leaving observeClientAuthentication(). Confidential with nothing on file.");
-    return { authenticated: false, method: method,
+    return { authenticated: false, method: method, errorCode: 'STS-OAUTH-0195',
              why: 'this client is configured as confidential ' +
                   '(token_endpoint_auth_method=' + method + ') and has nothing ' +
                   'on its entry to verify that method against, so nothing ' +
@@ -1807,7 +1829,8 @@ async function observeClientAuthentication(opts) {
   });
   if (!checked.ok) {
     log.debug("Leaving observeClientAuthentication(). It did not verify.");
-    return { authenticated: false, method: method, why: checked.description };
+    return { authenticated: false, method: method, why: checked.description,
+             errorCode: checked.errorCode || 'STS-OAUTH-0137' };
   }
   log.debug("Leaving observeClientAuthentication(). Authenticated by " + method + ".");
   return { authenticated: true, method: method, alg: checked.alg || '',
@@ -1886,7 +1909,8 @@ async function checkClientAuthentication(opts) {
   });
   if (!checked.ok) {
     log.debug("Leaving checkClientAuthentication(). The client did not authenticate.");
-    return { ok: false, error: 'invalid_client', requirement: 'client-authentication',
+    return { ok: false, errorCode: checked.errorCode || 'STS-OAUTH-0137',
+             error: 'invalid_client', requirement: 'client-authentication',
              description: 'RFC 9700 section 2.5: this client\'s entry in the application ' +
                           'registry declares token_endpoint_auth_method=' + method + ', so it ' +
                           'must authenticate — and ' + checked.description };
@@ -1983,7 +2007,37 @@ function refreshFamilyWindowMs() {
   // is the same trade-off the hour of slack below already makes.
   return Math.max(config.value('oauth2.refreshTokenTtlS') * 1000, 3600 * 1000);
 }
+// ---------------------------------------------------------------------------
+// THE CAP IS `oauth2.maxRefreshTokenFamilies` SINCE 2026-09-12, AND WHAT IS
+// DROPPED WHEN IT IS REACHED CHANGED WITH IT.
+//
+// It dropped the OLDEST entry whatever it was — so a busy realm forgot the
+// bookkeeping of refresh tokens that were still presentable, and a copied
+// chain's replay went undetected as a replay. The item-6 rule for the
+// assertion caches is "never forget a live entry; refuse instead", and it
+// cannot be applied here word for word: this is called AFTER the token is
+// signed and handed to the grant, and refusing to ISSUE a refresh token
+// because the bookkeeping is full would turn a busy service into one that
+// signs nobody in. So the trade is stated rather than hidden, in three steps:
+//
+//   1. EXPIRED entries go first — they are presentable nowhere.
+//   2. Then ROTATED ones, oldest first. A rotated token has already been
+//      REVOKED through `stats.revoke()`, so a replay of it is still refused;
+//      what forgetting its record loses is the FAMILY revocation that
+//      replay would otherwise trigger. That is the smallest loss available.
+//   3. Only when every remembered token is live and unrotated is the oldest
+//      of those forgotten, with a warning naming the setting. Its next
+//      redemption starts a new family rather than extending the old one, and
+//      a later replay of it is still refused as revoked.
+//
+// `MAX_REFRESH_TOKENS` is the default, kept under its old name.
+// ---------------------------------------------------------------------------
 const MAX_REFRESH_TOKENS = 2000;
+
+function maxRefreshTokens() {
+  const count = Number(config.value('oauth2.maxRefreshTokenFamilies'));
+  return isFinite(count) && count > 0 ? Math.floor(count) : MAX_REFRESH_TOKENS;
+}
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
@@ -2010,12 +2064,33 @@ function forgetStaleRefreshTokens() {
       refreshFamilies.delete(id);
     }
   });
-  while (refreshTokens.size > MAX_REFRESH_TOKENS) {
+  const cap = maxRefreshTokens();
+  if (refreshTokens.size > cap) {
+    // Step 2: retired tokens, oldest first (a Map iterates in insertion order).
+    const rotated = [];
+    refreshTokens.forEach(function (record, jti) {
+      if (record.rotated) rotated.push(jti);
+    });
+    for (let i = 0; i < rotated.length && refreshTokens.size > cap; i++) {
+      refreshTokens.delete(rotated[i]);
+    }
+  }
+  let droppedLive = 0;
+  while (refreshTokens.size > cap) {
+    // Step 3: the oldest live one, loudly.
     const oldest = refreshTokens.keys().next();
     if (oldest.done) {
       break;
     }
     refreshTokens.delete(oldest.value);
+    droppedLive++;
+  }
+  if (droppedLive) {
+    log.warn('RFC 9700 mode: ' + droppedLive + ' LIVE refresh token record(s) were ' +
+             'forgotten because oauth2.maxRefreshTokenFamilies (' + cap + ') is full of ' +
+             'unexpired, unrotated tokens. Those tokens still work and a replay of a ' +
+             'rotated one is still refused as revoked, but a replay will no longer ' +
+             'revoke its whole family. Raise the setting.');
   }
   log.debug("Leaving forgetStaleRefreshTokens(). " + refreshTokens.size + " remembered in " +
             refreshFamilies.size + " family/families.");
@@ -2111,7 +2186,7 @@ function checkRefreshRequest(opts) {
              'chain has been copied, and there is no way to tell which holder is the ' +
              'legitimate one.');
     log.debug("Leaving checkRefreshRequest(). Replay detected.");
-    return { ok: false, error: 'invalid_grant', requirement: 'refresh-replay-family',
+    return { ok: false, errorCode: 'STS-OAUTH-0138', error: 'invalid_grant', requirement: 'refresh-replay-family',
              revoke: members,
              description: 'RFC 9700 section 2.2.2: this refresh token was already redeemed. ' +
                           'Presenting it again means the chain has been copied, and this ' +
@@ -2141,7 +2216,7 @@ function checkRefreshRequest(opts) {
     const idleFor = family ? Math.round((Date.now() - (family.lastUsedAt || 0)) / 1000) : 0;
     if (family && idleFor > idleSeconds) {
       log.debug("Leaving checkRefreshRequest(). The chain has been idle for " + idleFor + "s.");
-      return { ok: false, error: 'invalid_grant', requirement: 'refresh-idle-timeout',
+      return { ok: false, errorCode: 'STS-OAUTH-0139', error: 'invalid_grant', requirement: 'refresh-idle-timeout',
                description: 'RFC 9700 section 2.2.2: this refresh token\'s grant has been ' +
                             'unused for ' + idleFor + ' seconds and this server expires one ' +
                             'after ' + idleSeconds + ' (oauth2.refreshIdleSeconds). It is an ' +
@@ -2155,14 +2230,14 @@ function checkRefreshRequest(opts) {
   // server must check the token was issued to whoever is presenting it.
   if (!presentedClient) {
     log.debug("Leaving checkRefreshRequest(). No client_id came with the refresh.");
-    return { ok: false, error: 'invalid_request', requirement: 'refresh-client-binding',
+    return { ok: false, errorCode: 'STS-OAUTH-0140', error: 'invalid_request', requirement: 'refresh-client-binding',
              description: 'RFC 6749 section 6: client_id is required on a refresh request, so ' +
                           'that this server can check the refresh token is being used by the ' +
                           'client it was issued to.' };
   }
   if (claims.client_id && claims.client_id !== presentedClient) {
     log.debug("Leaving checkRefreshRequest(). A different client is presenting it.");
-    return { ok: false, error: 'invalid_grant', requirement: 'refresh-client-binding',
+    return { ok: false, errorCode: 'STS-OAUTH-0141', error: 'invalid_grant', requirement: 'refresh-client-binding',
              description: 'RFC 9700 section 2.2.2: this refresh token was issued to client "' +
                           claims.client_id + '" and is being presented by "' + presentedClient +
                           '". A refresh token may only be used by the client it belongs to.' };
@@ -2176,7 +2251,7 @@ function checkRefreshRequest(opts) {
     const extra = asked.filter(function (one) { return granted.indexOf(one) < 0; });
     if (extra.length) {
       log.debug("Leaving checkRefreshRequest(). The requested scope is wider than the grant.");
-      return { ok: false, error: 'invalid_scope', requirement: 'scope-not-widened',
+      return { ok: false, errorCode: 'STS-OAUTH-0142', error: 'invalid_scope', requirement: 'scope-not-widened',
                description: 'RFC 9700 section 2.3: an access token\'s privileges must be ' +
                             'restricted to the minimum required, and RFC 6749 section 6 says a ' +
                             'refresh must not request a scope the original grant did not ' +
@@ -2288,7 +2363,7 @@ function checkCodeReplay(opts) {
            '(RFC 6749 section 10.5).');
   log.debug("Leaving checkCodeReplay(). Refused, with " + jtis.length + " token(s) to revoke.");
   return {
-    ok: false, error: 'invalid_grant', requirement: 'code-single-use', revoke: jtis,
+    ok: false, errorCode: 'STS-OAUTH-0143', error: 'invalid_grant', requirement: 'code-single-use', revoke: jtis,
     description: 'RFC 9700 section 4.5: an authorization code is single use. This one was ' +
                  'redeemed ' + (info.secondsAgo || 0) + ' second(s) ago by client "' +
                  (info.clientId || '(none)') + '". A code presented twice means two holders ' +
@@ -2392,7 +2467,7 @@ function checkClientIdPresent(clientId) {
   }
   log.debug("Leaving checkClientIdPresent(). No client_id.");
   log.debug("Leaving checkClientIdPresent().");
-  return { ok: false, error: 'invalid_request', requirement: 'no-redirect-invalid-combination',
+  return { ok: false, errorCode: 'STS-OAUTH-0144', error: 'invalid_request', requirement: 'no-redirect-invalid-combination',
            description: 'RFC 9700 section 4.11.2, citing RFC 6749 section 4.1.2.1: an ' +
                         'authorization server must not automatically redirect the user agent ' +
                         'for an invalid combination of client_id and redirect_uri. This ' +
@@ -2443,7 +2518,7 @@ function checkTokenRequest(opts) {
 
   if (!record.code_challenge && body.code_verifier) {
     log.debug("Leaving checkTokenRequest(). A code_verifier arrived for a code with no challenge.");
-    return { ok: false, error: 'invalid_grant', requirement: 'pkce-downgrade',
+    return { ok: false, errorCode: 'STS-OAUTH-0145', error: 'invalid_grant', requirement: 'pkce-downgrade',
              description: 'RFC 9700 section 4.8.2: this authorization code was issued without a ' +
                           'code_challenge, so a Token Request carrying a code_verifier is ' +
                           'rejected. Accepting it is the PKCE downgrade attack — it lets an ' +
@@ -2453,7 +2528,7 @@ function checkTokenRequest(opts) {
 
   if (record.client_id && presentedClient && record.client_id !== presentedClient) {
     log.debug("Leaving checkTokenRequest(). A different client is redeeming the code.");
-    return { ok: false, error: 'invalid_grant', requirement: 'transaction-bound',
+    return { ok: false, errorCode: 'STS-OAUTH-0146', error: 'invalid_grant', requirement: 'transaction-bound',
              description: 'RFC 6749 section 4.1.3: this authorization code was issued to client ' +
                           '"' + record.client_id + '" and is being redeemed by "' +
                           presentedClient + '".' };
@@ -2464,7 +2539,7 @@ function checkTokenRequest(opts) {
   // the mode this service compares it only when the client bothered to send it.
   if (record.redirect_uri && !body.redirect_uri) {
     log.debug("Leaving checkTokenRequest(). No redirect_uri came with the code.");
-    return { ok: false, error: 'invalid_grant', requirement: 'transaction-bound',
+    return { ok: false, errorCode: 'STS-OAUTH-0147', error: 'invalid_grant', requirement: 'transaction-bound',
              description: 'RFC 6749 section 4.1.3: redirect_uri is required in the Token Request ' +
                           'when it was present in the authorization request, and must be ' +
                           'identical. It is missing.' };

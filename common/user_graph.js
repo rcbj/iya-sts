@@ -249,7 +249,15 @@ const FLOWS = [
     spec: 'OpenID4VCI 1.0 §4.1.1', browser: false,
     what: 'The wallet redeemed a code that came with a Credential Offer, ' +
           'having already identified itself to the issuer some other way. ' +
-          'There is no authorization request in this grant.' }
+          'There is no authorization request in this grant.' },
+  { flow: 'gnap', protocol: 'GNAP',
+    label: 'GNAP grant', oidc: '', spec: 'RFC 9635 · RFC 9767',
+    browser: false,
+    what: 'A client instance proved its key at /gnap and the grant was released ' +
+          'at the continuation URI — after a resource owner approved it in a ' +
+          'browser, or with no interaction for a trusted client. The token came ' +
+          'back over the client\'s own signed back channel either way, which is ' +
+          'why this row is not marked as a browser flow.' }
 ];
 
 const FLOW_IDS = FLOWS.map(function (one) { return one.flow; });

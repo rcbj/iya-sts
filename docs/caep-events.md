@@ -269,6 +269,24 @@ session here, so `POST /admin-api/tokens/revoke-user` and the bulk buttons on
 `/admin/tokens` emit nothing. A session outlives its tokens; ending it is the
 act this event reports.
 
+**GNAP is the exception, and it is not a contradiction (2026-09-12).** A GNAP
+grant is itself a DELEGATED SESSION between a client instance and a resource
+owner — it has a lifetime, a continuation and a revocation of its own — so
+revoking one IS ending a session, and this event says so. Three acts send it,
+each with a complex subject whose `user` is the resource owner and whose
+`session.id` names what ended:
+
+| Act | `session.id` |
+|---|---|
+| `DELETE` on a grant's continuation URI, or *Revoke* on `/admin/gnap` | `gnap-grant:<grant>` |
+| `DELETE` on an access token's management URI | `gnap-token:<jti>` |
+
+A grant **modified** onto different access sends `token-claims-change` instead,
+carrying the new `access` in `claims`. `gnap.caepEvents` turns all three off. A
+stream OWNED by a GNAP web application — created with that application's own
+GNAP access token — hears only about people who approved a grant to it; see
+[GNAP](gnap.md).
+
 ---
 
 # The five nobody here can cause

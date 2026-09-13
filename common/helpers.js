@@ -78,6 +78,13 @@ const pqJose = require('./pq_jose');
 // is how eight of them reach a signing key. realms.js requires config.js and
 // nothing else here, so this cannot be a cycle.
 const realms = require('./realms');
+// A LEAF over `config` alone (see its header), so this require can close no
+// cycle. `userFor()` asks it whether to invent persona values.
+const mode = require('./mode');
+// The registry of failure codes, a LEAF that requires nothing. NOT audit.js,
+// which requires this file: a failure logged here leads with
+// `errorCodes.tag()` rather than writing a row.
+const errorCodes = require('./error_codes');
 const log = bunyan.createLogger({ name: 'sts',
                                 level: config.value('global.logLevel') });
 // Registering it is what makes global.logLevel a setting rather than a claim:
@@ -176,6 +183,149 @@ const HOST = config.value('global.host');
 // require time would be the one thing the console could not change.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// THE OPENID4VCI CREDENTIAL REQUEST-ENCRYPTION KEY IS A MEMBER OF THE REALM'S
+// KEY SET (2026-09-12).
+//
+// OID4VCI section 10: the ISSUER publishes a key in
+// `credential_request_encryption.jwks` and a wallet encrypts its Credential
+// Request to it. That key lived in `oid4vc/vc_issuer.js` until this date as a
+// thing of its own — generated at module load, handed to request workers
+// through `process.env.STS_VCI_REQUEST_ENC_KEY_PEM`, persisted in no mode — and
+// every trust realm in a pooled process shared the one key the pool handed
+// down, so a realm's issuer could decrypt a request encrypted to ANOTHER
+// realm's published key. `common/mode.js` carried it as NOT_YET.
+//
+// **EVERY PROPERTY IT LACKED IS ONE THE KEY SET ALREADY HAS**, which is the
+// whole argument for putting it here rather than building those properties a
+// second time: one per realm (`stsKeysFor` is `realms.keyed()`), written down
+// and sealed in product mode (`keystore.js`'s `sts_keys` row), decrypted only
+// while it is used (`keys.plaintextRetention`), and agreed across the front
+// process and every request worker by the first-generator-wins key channel. A
+// second mechanism for one more private key would have been a second answer
+// to *where does this service keep a private key* — `pki.js`'s placement
+// argument, made for the same reason.
+//
+// **IT IS A PLAIN KEY AND DELIBERATELY NOT A LEAF OF THE PKI HIERARCHY.** The
+// signing keys are certified because a certificate is how a relying party that
+// never fetched this service's JWKS can decide to trust a signature — `x5c`,
+// the SAML metadata, `/sts/cert`. Nothing of that shape exists for this key:
+// section 10 publishes a bare JWK, a wallet trusts it because it read it out of
+// metadata it fetched over TLS from the issuer itself, and no wallet looks for
+// a certificate on it or would validate one. A leaf here would also be the
+// wrong KIND of leaf — every certificate `pki.js` issues from a use case is a
+// SIGNING certificate (`digitalSignature`), and this key only ever DECRYPTS —
+// so certifying it would mean a key-encipherment profile nothing reads,
+// published nowhere, and a certificate whose only effect is a second thing to
+// rotate. The kid is derived from the key material instead, exactly as the
+// curve keys' are.
+//
+// Its size is `oid4vci.requestEncryptionKeyBits`, read in the realm the key is
+// being made for — the caller enters that realm — so a realm carrying the
+// setting gets the size it asked for. A change reaches key sets made AFTER it
+// and never a key that exists, which is what that setting's row says.
+// ---------------------------------------------------------------------------
+const VCI_REQUEST_ENC_ALG = 'RSA-OAEP-256';
+
+// The public JWK a request-encryption private key publishes, with the members
+// section 10 requires: `alg` (the algorithm is a property of the key, and
+// there is no alg_values_supported for requests), `kid` (a JWE encrypted to a
+// key with a kid MUST repeat it), `use` and `key_ops`. The kid prefix is the
+// one `vc_issuer.js` used, so a wallet sees the same shape it always did.
+function requestEncryptionJwkOf(privateKey) {
+  const publicJwk = crypto.createPublicKey(privateKey).export({ format: 'jwk' });
+  const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  return Object.assign({}, publicJwk, {
+    kid: 'sts-req-enc-' + thumbprint,
+    alg: VCI_REQUEST_ENC_ALG,
+    use: 'enc',
+    key_ops: ['encrypt']
+  });
+}
+
+function makeRequestEncryptionKey() {
+  log.debug("Entering makeRequestEncryptionKey().");
+  const bits = Number(config.value('oid4vci.requestEncryptionKeyBits')) || 2048;
+  const pair = crypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const out = { privateKey: pair.privateKey,
+                publicJwk: requestEncryptionJwkOf(pair.privateKey) };
+  log.debug("Leaving makeRequestEncryptionKey(). " + bits + " bits, kid=" +
+            out.publicJwk.kid);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE REFRESH-TOKEN ENCRYPTION KEYS (2026-09-12).
+//
+// Every refresh token this service issues is a signed JWT ENCRYPTED to its own
+// realm — `oauth-oidc/refresh_token_crypto.js` does the sealing and argues it.
+// These are the keys, and there are three because JWE key management comes in
+// three kinds and the algorithm is a setting (`oauth2.refreshTokenEncryptionAlg`):
+//
+//   rsa     RSA-OAEP and RSA-OAEP-256
+//   ec      ECDH-ES and its three key-wrapping variants
+//   secret  A128KW..A256KW, A128GCMKW..A256GCMKW, dir, PBES2 — 64 random bytes,
+//           from which the exact key size each needs is DERIVED, because those
+//           algorithms have no key derivation of their own (RFC 7518 section 4.4)
+//
+// **ALL THREE ARE MADE, WHICHEVER ALGORITHM IS CONFIGURED.** A token already in
+// a client's hands was sealed under the algorithm in force THEN; holding every
+// kind means changing the setting never strands one, and the decrypt path
+// simply picks the key the JWE header's `alg` names.
+//
+// **UNIQUE PER REALM** because the set is (`stsKeysFor` is `realms.keyed()`), and
+// that is a property worth having rather than an accident: a refresh token
+// minted in one realm does not open in another, so a realm is a cryptographic
+// boundary for its refresh tokens and not merely a routing one.
+//
+// **A PLAIN KEY AND NOT A PKI LEAF**, for `makeRequestEncryptionKey()`'s reason
+// below, more strongly: these keys are never published — a refresh token is
+// opaque to its client (RFC 6749 section 1.5) and the only party that ever
+// encrypts to or decrypts with them is this service. A certificate would be a
+// statement to nobody. The kids are derived from the key material, so two
+// realms or two instances cannot name different keys alike.
+//
+// The RSA size is `oauth2.refreshTokenEncryptionKeyBits` and the curve
+// `oauth2.refreshTokenEncryptionCurve`, read in the realm the keys are made
+// for; a change reaches key sets made after it and never keys that exist.
+// ---------------------------------------------------------------------------
+const REFRESH_TOKEN_SECRET_BYTES = 64;
+
+const REFRESH_TOKEN_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
+                               'P-521': 'secp521r1' };
+
+function refreshTokenJwkOf(privateKey, kind) {
+  const publicJwk = crypto.createPublicKey(privateKey).export({ format: 'jwk' });
+  const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  return Object.assign({}, publicJwk, {
+    kid: 'sts-rt-' + kind + '-' + thumbprint,
+    use: 'enc'
+  });
+}
+
+function makeRefreshTokenEncryptionKeys() {
+  log.debug("Entering makeRefreshTokenEncryptionKeys().");
+  const bits = Number(config.value('oauth2.refreshTokenEncryptionKeyBits')) || 2048;
+  const curveName = String(config.value('oauth2.refreshTokenEncryptionCurve') || 'P-256');
+  const curve = REFRESH_TOKEN_CURVES[curveName] || REFRESH_TOKEN_CURVES['P-256'];
+  const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
+  const secret = crypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
+  const out = {
+    rsa: { privateKey: rsa.privateKey, publicJwk: refreshTokenJwkOf(rsa.privateKey, 'rsa') },
+    ec: { privateKey: ec.privateKey, publicJwk: refreshTokenJwkOf(ec.privateKey, 'ec') },
+    secret: secret,
+    // A kid for the secret too, so a JWE sealed under a symmetric algorithm
+    // names which realm's secret opened it. A hash of 64 random bytes reveals
+    // nothing usable about them, and it is never published anyway.
+    secretKid: 'sts-rt-secret-' +
+      crypto.createHash('sha256').update(secret).digest('base64url').slice(0, 16)
+  };
+  log.debug("Leaving makeRefreshTokenEncryptionKeys(). rsa " + bits + " bits, " +
+            curveName + ", kid=" + out.rsa.publicJwk.kid);
+  return out;
+}
+
 // --- STS signing key/cert (generated once at startup) ----------------------
 function makeStsKeys() {
   log.debug("Entering makeStsKeys().");
@@ -186,7 +336,7 @@ function makeStsKeys() {
   // is what moved; the differences stayed as arguments.
   const keys = stsCrypto.selfSignedRsaCertificate({
     bits: 2048,
-    commonName: 'ws-trust-mock-sts',
+    commonName: 'ws-trust-sts',
     // The LEADING BYTE of a random serial, and not arbitrary: the TLS
     // listener's certificate is '03', so a person looking at two of this
     // service's certificates in a packet capture can tell which is which. It
@@ -261,7 +411,7 @@ function makeStsKeys() {
       // would be one name over two keys — the collision this whole scheme
       // exists to avoid.
       publicJwk: Object.assign({ use: 'sig', alg: spec.alg }, publicJwk,
-        { kid: 'sts-mock-' +
+        { kid: 'sts-' +
           (spec.curve || spec.alg).toLowerCase() + '-' +
           forge.md.sha256.create().update(material).digest().toHex().slice(0, 8) })
     };
@@ -277,6 +427,15 @@ function makeStsKeys() {
     // where eight modules already read it, and moving it would have been a
     // change to every one of them for no gain.
     extraKeys: extraKeys,
+    // THE OPENID4VCI REQUEST-ENCRYPTION KEY, made WITH the set rather than
+    // lazily, for the reason the curve keys above are eager: the set is the
+    // unit the key channel arbitrates, so a member made with it is agreed with
+    // it, and a member made later has to win a second race. See
+    // makeRequestEncryptionKey() for why it is a plain key and not a leaf.
+    vciRequestEncKey: makeRequestEncryptionKey(),
+    // THE REFRESH-TOKEN ENCRYPTION KEYS, made with the set for the same reason
+    // as the request-encryption key: the set is what the key channel agrees.
+    refreshTokenEncKeys: makeRefreshTokenEncryptionKeys(),
     // A `kid` names a KEY, so it is derived from the key material rather than
     // hard-coded. This key is regenerated on every start, and the kid was
     // previously a constant — so two instances of this mock (a stale container
@@ -361,7 +520,7 @@ function makeStsKeys() {
 // was that nobody had edited one of them yet. Changing it changes every JWKS
 // this service has ever published, so it changes here or nowhere.
 function kidOf(certB64) {
-  return 'sts-mock-' +
+  return 'sts-' +
     forge.md.sha256.create().update(certB64).digest().toHex().slice(0, 12);
 }
 
@@ -397,6 +556,19 @@ function plainKeySet(realmId, stored) {
   // "not warmed yet"; this process will make and republish them.
   if (stored.pqKeys) {
     set.pqKeys = stored.pqKeys;
+  }
+  // AND THE OPENID4VCI REQUEST-ENCRYPTION KEY, already a KeyObject — the same
+  // copy for the same reason, and the one `lazyKeySet()` below has to make as
+  // well: a member that travels and is not put back on the set it arrived for
+  // is the post-quantum defect `keystore.js` records, and a process holding a
+  // set without it would generate one of its own and publish a different key.
+  if (stored.vciRequestEncKey) {
+    set.vciRequestEncKey = stored.vciRequestEncKey;
+  }
+  // AND THE REFRESH-TOKEN ENCRYPTION KEYS, for the same reason: dropped here,
+  // this process would make its own and seal tokens no sibling can open.
+  if (stored.refreshTokenEncKeys) {
+    set.refreshTokenEncKeys = stored.refreshTokenEncKeys;
   }
   log.debug("Leaving plainKeySet(). kid=" + set.kid);
   return set;
@@ -460,7 +632,8 @@ function certifyLater(realmId, keys) {
                   done.errors.join(' '));
       }
     }).catch(function (e) {
-      log.error('The "' + realmId + '" realm\'s signing keys could not be ' +
+      log.error(errorCodes.tag('STS-CORE-0024') +
+                'The "' + realmId + '" realm\'s signing keys could not be ' +
                 'certified under its Issuing CAs: ' + e.message + '. They ' +
                 'still SIGN — what they lack is a certificate chaining to ' +
                 'this service\'s Root.');
@@ -603,6 +776,134 @@ function lazyKeySet(realmId, stored) {
       return held.privateKey;
     }
   });
+  // ---------------------------------------------------------------------
+  // **THE POST-QUANTUM HALF, LAZILY — AND ITS ABSENCE HERE WAS A REAL
+  // DIVERGENCE (2026-09-12).**
+  //
+  // `plainKeySet()` — the SIBLING path — has copied `stored.pqKeys` since the
+  // day they started travelling. This one, the STORED path, did not: the set
+  // came back without them, `pqKeysForAsync()` saw none and generated eleven
+  // more, `publishShared()` refused the offer because another process had got
+  // there first, and this process went on signing with what it had made.
+  // Three workers, three different ML-DSA kids, and a UserInfo response
+  // verifiable only against the worker that signed it.
+  //
+  // It is a GETTER for the reason every other private key on this set is one:
+  // the bytes come out of the keystore on demand and are dropped again on the
+  // retention timer. **AND IT HAS A SETTER**, which is not symmetry — 
+  // `pqKeysForAsync()` assigns `keys.pqKeys = made` when it really does have
+  // to generate them (a realm whose store has none yet), and an accessor with
+  // no setter makes that a TypeError in strict mode at the end of a two-second
+  // key generation.
+  // ---------------------------------------------------------------------
+  let pqGenerated = null;
+  Object.defineProperty(set, 'pqKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      if (pqGenerated) {
+        return pqGenerated;
+      }
+      const held = keystore.privateMaterialFor(realmId);
+      return (held && held.pq && held.pq.length) ? held.pq : undefined;
+    },
+    set: function (made) {
+      pqGenerated = made;
+    }
+  });
+  // ---------------------------------------------------------------------
+  // **THE OPENID4VCI REQUEST-ENCRYPTION KEY, PUBLIC HALF RESIDENT AND PRIVATE
+  // HALF A GETTER (2026-09-12)** — the curve keys' arrangement exactly, and
+  // for their reason: `credential_request_encryption.jwks` is published on
+  // every issuer metadata fetch, and that must not cause a decrypt.
+  //
+  // `vciPublic` is the PUBLIC JWK and nothing else — read out into a local so
+  // that no closure below captures `stored.vciRequestEncKey`, which carries
+  // the PEM beside it. Absent on a blob written before the key joined the set;
+  // `requestEncryptionKeyFor()` backfills that case and assigns through the
+  // setter, which is `pqKeys`'s setter and for its reason.
+  // ---------------------------------------------------------------------
+  const vciPublic = (stored.vciRequestEncKey && stored.vciRequestEncKey.publicJwk) || null;
+  let vciGenerated = null;
+  Object.defineProperty(set, 'vciRequestEncKey', {
+    enumerable: true, configurable: true,
+    get: function () {
+      if (vciGenerated) {
+        return vciGenerated;
+      }
+      if (!vciPublic) {
+        return undefined;
+      }
+      const entry = { publicJwk: vciPublic };
+      Object.defineProperty(entry, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () {
+          const held = keystore.privateMaterialFor(realmId);
+          if (!held || !held.vci) {
+            throw new Error('the "' + realmId + '" realm\'s OpenID4VCI ' +
+              'request-encryption key is held encrypted and could not be ' +
+              'decrypted; see the keystore errors above.');
+          }
+          return held.vci;
+        }
+      });
+      return entry;
+    },
+    set: function (made) {
+      vciGenerated = made || null;
+    }
+  });
+  // ---------------------------------------------------------------------
+  // **THE REFRESH-TOKEN ENCRYPTION KEYS, PUBLIC HALVES RESIDENT AND EVERY
+  // PRIVATE PART A GETTER (2026-09-12)** — the request-encryption key's
+  // arrangement, with the SECRET treated as private material too, because it
+  // opens every refresh token sealed under a symmetric algorithm. Only the
+  // public JWKs and the secret's kid are read into locals, so no closure here
+  // captures a PEM or the secret bytes.
+  // ---------------------------------------------------------------------
+  const rtStored = stored.refreshTokenEncKeys || null;
+  const rtPublic = rtStored && rtStored.rsa && rtStored.ec
+    ? { rsa: rtStored.rsa.publicJwk, ec: rtStored.ec.publicJwk,
+        secretKid: rtStored.secretKid }
+    : null;
+  let rtGenerated = null;
+  const rtHeld = function (part) {
+    const held = keystore.privateMaterialFor(realmId);
+    if (!held || !held.rt) {
+      throw new Error('the "' + realmId + '" realm\'s refresh-token encryption ' +
+        part + ' is held encrypted and could not be decrypted; see the keystore ' +
+        'errors above.');
+    }
+    return held.rt;
+  };
+  Object.defineProperty(set, 'refreshTokenEncKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      if (rtGenerated) {
+        return rtGenerated;
+      }
+      if (!rtPublic) {
+        return undefined;
+      }
+      const view = { rsa: { publicJwk: rtPublic.rsa }, ec: { publicJwk: rtPublic.ec },
+                     secretKid: rtPublic.secretKid };
+      Object.defineProperty(view.rsa, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () { return rtHeld('RSA key').rsa.privateKey; }
+      });
+      Object.defineProperty(view.ec, 'privateKey', {
+        enumerable: true, configurable: true,
+        get: function () { return rtHeld('EC key').ec.privateKey; }
+      });
+      Object.defineProperty(view, 'secret', {
+        enumerable: true, configurable: true,
+        get: function () { return rtHeld('secret').secret; }
+      });
+      return view;
+    },
+    set: function (made) {
+      rtGenerated = made || null;
+    }
+  });
   certifiedView(set, realmId, stored);
   log.debug("Leaving lazyKeySet(). " + set.extraKeys.length + " curve key(s).");
   return set;
@@ -699,7 +1000,11 @@ const stsKeysFor = realms.keyed(function (realm) {
     keystore.remember(realm.id, adopted);
     return adopted;
   }
-  const keys = makeStsKeys();
+  // IN THE REALM THE SET IS FOR, which `.of(id)` from a watcher or a sweep is
+  // not ambient in: `makeStsKeys()` reads `oid4vci.requestEncryptionKeyBits`,
+  // and a realm carrying that setting must get the size it asked for rather
+  // than whichever realm happened to be current when its keys were made.
+  const keys = realms.run(realm, makeStsKeys);
   keys.createdAt = Date.now();
   // ---------------------------------------------------------------------
   // THE SAME PRIVATE KEY AS AN ALREADY-PARSED `KeyObject`, and it is here for
@@ -782,6 +1087,98 @@ const stsKeysFor = realms.keyed(function (realm) {
   const written = keystore.storedFor(realm.id);
   return written ? lazyKeySet(realm.id, written) : keys;
 });
+
+// ---------------------------------------------------------------------------
+// THE OPENID4VCI REQUEST-ENCRYPTION KEY OF A KEY SET, as `{ privateKey,
+// publicJwk }` — the CURRENT realm's when no set is named. What
+// `oid4vc/vc_issuer.js` publishes and decrypts with.
+//
+// Every set made from 2026-09-12 carries one, so this is a property read. The
+// rest of the function is the ONE case that does not: a set RESTORED from a
+// `sts_keys` row, or adopted from a sibling's blob, written by a build from
+// before the key joined the set. That set is backfilled here, once, and the
+// order of the three steps is the whole of it:
+//
+//   1. ASK FIRST. Another process of this service may already have backfilled
+//      this realm and this process adopted the result — into the store in
+//      product mode, into the shared map in development — while the set it
+//      built earlier still lacks the member. Generating here would make a
+//      second key and publish neither. `keystore.requestEncryptionKeyHeldFor()`
+//      is that question, and it READS; it never makes anything.
+//   2. THEN MAKE ONE, in the set's own realm, for `makeStsKeys()`'s reason.
+//   3. AND HAND IT ON EXACTLY AS A GENERATED SET IS: written down where this
+//      service persists, and offered to every other process as an ENRICHMENT
+//      of the set they already hold — `keystore.enriches()` is the rule both
+//      ends of that channel apply. A process whose offer loses that race is
+//      told to adopt the winner and drops this set, which is the post-quantum
+//      half's arrangement word for word.
+//
+// **THE ONE COST, SAID:** a backfilled key on a RESTORED set is held on the set
+// until the process exits, where a stored one is decrypted per use. It is one
+// key, once, on the first start after an upgrade; the next start restores it
+// from the row like every other private key here.
+// ---------------------------------------------------------------------------
+function requestEncryptionKeyFor(keySet) {
+  log.debug("Entering requestEncryptionKeyFor().");
+  const keys = keySet || stsKeysFor();
+  const present = keys.vciRequestEncKey;
+  if (present && present.publicJwk) {
+    log.debug("Leaving requestEncryptionKeyFor(). On the set.");
+    return present;
+  }
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.requestEncryptionKeyHeldFor(realmId);
+  if (held) {
+    keys.vciRequestEncKey = held;
+    log.debug("Leaving requestEncryptionKeyFor(). Already made by this service.");
+    return held;
+  }
+  const realm = realms.get(realmId) || realms.DEFAULT_REALM;
+  const made = realms.run(realm, makeRequestEncryptionKey);
+  keys.vciRequestEncKey = made;
+  log.info('An OpenID4VCI request-encryption key was added to the "' + realmId +
+           '" realm\'s key set, which was written by a build from before the ' +
+           'key joined it: kid=' + made.publicJwk.kid + '.');
+  keystore.remember(realmId, keys);
+  keystore.publishShared(realmId, keys);
+  log.debug("Leaving requestEncryptionKeyFor(). Backfilled.");
+  return keys.vciRequestEncKey || made;
+}
+
+// ---------------------------------------------------------------------------
+// THE REFRESH-TOKEN ENCRYPTION KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS
+// WRITTEN BEFORE THEY EXISTED (2026-09-12). `requestEncryptionKeyFor()` above,
+// step for step and for its reasons: ask whether some process already made
+// them, make them in the set's own realm if not, and hand them on as an
+// enrichment of the set every other process holds.
+// ---------------------------------------------------------------------------
+function refreshTokenKeysFor(keySet) {
+  log.debug("Entering refreshTokenKeysFor().");
+  const keys = keySet || stsKeysFor();
+  const present = keys.refreshTokenEncKeys;
+  if (present && present.rsa && present.rsa.publicJwk) {
+    log.debug("Leaving refreshTokenKeysFor(). On the set.");
+    return present;
+  }
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.refreshTokenKeysHeldFor(realmId);
+  if (held) {
+    keys.refreshTokenEncKeys = held;
+    log.debug("Leaving refreshTokenKeysFor(). Already made by this service.");
+    return held;
+  }
+  const realm = realms.get(realmId) || realms.DEFAULT_REALM;
+  const made = realms.run(realm, makeRefreshTokenEncryptionKeys);
+  keys.refreshTokenEncKeys = made;
+  log.info('Refresh-token encryption keys were added to the "' + realmId +
+           '" realm\'s key set, which was written by a build from before they ' +
+           'joined it: ' + made.rsa.publicJwk.kid + ', ' + made.ec.publicJwk.kid +
+           ', ' + made.secretKid + '.');
+  keystore.remember(realmId, keys);
+  keystore.publishShared(realmId, keys);
+  log.debug("Leaving refreshTokenKeysFor(). Backfilled.");
+  return keys.refreshTokenEncKeys || made;
+}
 
 // FORGET THE BUILT KEY SETS so the factory runs again, which is as close to a
 // restart as one process can get. `realms.keyed()` exposes its map as
@@ -925,7 +1322,8 @@ async function bbsKeyPair() {
                'so every process signs and publishes the same one.');
       return bbsKeys;
     } catch (e) {
-      log.error('The handed-down BBS key pair could not be read (' + e.message +
+      log.error(errorCodes.tag('STS-CORE-0025') +
+                'The handed-down BBS key pair could not be read (' + e.message +
                 '); generating one, which means this process publishes a ' +
                 'different verification method from its siblings.');
     }
@@ -976,7 +1374,7 @@ function parseBody(req) {
       log.debug("Leaving parseBody(). Parsed a JSON body.");
       return parsed;
     } catch (e) {
-      log.error('the request body is not JSON: ' + e.message);
+      log.error(errorCodes.tag('STS-CORE-0026') + 'the request body is not JSON: ' + e.message);
       log.debug("Leaving parseBody(). Nothing could be parsed.");
       return {};
     }
@@ -1039,9 +1437,11 @@ function bodyValues(req, body, name) {
 }
 
 function oauthError(res, status, error, description) {
+  // error-code: none — the helper's trace line, not a call to it.
   log.debug("Entering oauthError(). status=" + status + ", error=" + error);
   res.status(status).type('application/json').set('Cache-Control', 'no-store')
      .send(JSON.stringify({ error: error, error_description: description }));
+  // error-code: none — the helper's trace line, not a call to it.
   log.debug("Leaving oauthError().");
 }
 
@@ -1105,7 +1505,7 @@ function pqKeysFor(keys) {
         alg: alg,
         privateKey: pair.priv,
         publicJwk: pqJose.akpPublicJwk(alg, pair.pub,
-          'sts-mock-' + alg.toLowerCase() + '-' +
+          'sts-' + alg.toLowerCase() + '-' +
           forge.md.sha256.create().update(material).digest().toHex()
             .slice(0, 8))
       };
@@ -1163,7 +1563,7 @@ function pqKeysForAsync(keys) {
         alg: alg,
         privateKey: pair.priv,
         publicJwk: pqJose.akpPublicJwk(alg, pair.pub,
-          'sts-mock-' + alg.toLowerCase() + '-' +
+          'sts-' + alg.toLowerCase() + '-' +
           forge.md.sha256.create().update(material).digest().toHex()
             .slice(0, 8))
       };
@@ -1178,7 +1578,36 @@ function pqKeysForAsync(keys) {
       // blob for a realm it already holds when the certificate matches; see the
       // enrichment branch there.
       if (keys.realm) {
-        keystore.publishShared(keys.realm, keys);
+        const took = keystore.publishShared(keys.realm, keys);
+        // ---------------------------------------------------------------
+        // **AND WRITTEN DOWN, WHICH THEY WERE NOT UNTIL 2026-09-12.**
+        //
+        // The line above hands them to the other processes running NOW. This
+        // one hands them to the next process to restore this realm from the
+        // store — `serialise()` has carried them since 2026-09-07 and the
+        // only writer was `remember()` at GENERATION time, which is before
+        // these exist. So the stored blob never had them, every restore
+        // generated eleven more, and the sibling channel refused the offer
+        // because somebody else had got there first.
+        //
+        // It is a no-op in development mode, where `remember()` returns at
+        // once because nothing persists — which is why this was invisible
+        // until the dispatch mode started running with a real keystore.
+        //
+        // `remember()` and not a partial write: the store holds ONE blob per
+        // realm and the whole of it is what a restore reads.
+        //
+        // **AND ONLY IF THIS PROCESS'S SET IS THE ONE BEING SHARED.**
+        // `publishShared()` answers false when another process had already
+        // established this realm's keys — first-generator-wins — and a loser
+        // writing the set it is about to be told to discard would leave the
+        // store holding keys no process is using. When the winner's blob
+        // arrives, `adoptShared()` writes THAT down; the two together are why
+        // the row converges on what everybody is signing with.
+        // ---------------------------------------------------------------
+        if (took !== false) {
+          keystore.remember(keys.realm, keys);
+        }
       }
       log.info('The post-quantum signing keys were generated for the "' +
                keys.realm + '" realm: ' + made.length + ' key(s) in ' +
@@ -1243,7 +1672,8 @@ function warmPqKeys(realmId) {
     // Swallowed and named, because this is nobody's request: a realm whose
     // warm-up failed still makes its keys on the first JWKS fetch, the slow
     // way. A throw here would be an unhandled rejection from a watcher.
-    log.warn('helpers: the post-quantum keys for the "' + realmId +
+    log.warn(errorCodes.tag('STS-CORE-0028') +
+             'helpers: the post-quantum keys for the "' + realmId +
              '" realm could not be generated ahead of time (' + err.message +
              '); the first JWKS fetch on it will make them instead.');
     return null;
@@ -1488,7 +1918,8 @@ function signJwt(payload, context) {
     try {
       jwtRecorder(payload, signed, context || null);
     } catch (e) {
-      log.error('the JWT recorder threw and was ignored; the token itself is unaffected: ' + e.message);
+      log.error(errorCodes.tag('STS-CORE-0027') +
+                'the JWT recorder threw and was ignored; the token itself is unaffected: ' + e.message);
     }
   }
   log.debug("Leaving signJwt().");
@@ -1496,10 +1927,12 @@ function signJwt(payload, context) {
 }
 
 function vciError(res, status, error, description) {
+  // error-code: none — the helper's trace line, not a call to it.
   log.debug("Entering vciError(). status=" + status + ", error=" + error);
   res.status(status).type('application/json').send(JSON.stringify({
     error: error, error_description: description
   }));
+  // error-code: none — the helper's trace line, not a call to it.
   log.debug("Leaving vciError().");
 }
 
@@ -1574,13 +2007,67 @@ function forwardedFrom(req) {
 //
 // It is EMPTY in the default realm, so this is the same string it always was.
 // ---------------------------------------------------------------------------
+//
+// **`global.publicBaseUrl` PINS IT.** Left empty — the default — the base is
+// read off the request, which is what lets one process answer correctly under
+// every name it is reached by. Set, it is the base whatever `Host` a request
+// carried: a caller can then no longer choose what this service believes its
+// own issuer, its callback addresses and its WebAuthn origin are, which is the
+// property a deployed identity provider needs and a mock reached by three
+// container names does not. The realm prefix is still appended.
+// ---------------------------------------------------------------------------
+function pinnedBaseUrl() {
+  const raw = String(config.value('global.publicBaseUrl') || '').trim();
+  return raw ? raw.replace(/\/+$/, '') : '';
+}
+
 function baseUrlOf(req) {
   log.debug("Entering baseUrlOf().");
+  const pinned = pinnedBaseUrl();
+  if (pinned) {
+    const base = pinned + realms.currentPrefix();
+    log.debug("Leaving baseUrlOf(). base=" + base + " (global.publicBaseUrl)");
+    return base;
+  }
   const from = forwardedFrom(req);
   const base = from.proto + '://' + from.host + realms.currentPrefix();
   log.debug("Leaving baseUrlOf(). base=" + base +
             (from.forwarded ? " (from forwarded headers; global.trustProxy is on)" : ""));
   return base;
+}
+
+// ---------------------------------------------------------------------------
+// THE ADDRESS A LISTENER BINDS, AND THE ADDRESS THIS PROCESS DIALS ITSELF ON.
+//
+// Every socket family here used to bind the literal `0.0.0.0` whatever
+// `global.host` said, so `STS_HOST=127.0.0.1` confined the HTTP port and left
+// the KDC, both LDAP ports and 8443/9443 open on every interface — a setting
+// that did half of what it claims is worse than none. `listenHost()` is what
+// they bind now.
+//
+// `loopbackHost()` is its other half: the three places this service makes a
+// request to ITSELF (the OpenID Connect back channel, the Shared Signals push
+// to its own receivers) dialled `127.0.0.1` literally, which reaches nothing
+// when the listener is bound to one interface address or to IPv6 only. A
+// wildcard bind is reachable on loopback, so it answers loopback in the
+// wildcard's own family; a specific address is dialled as itself.
+// ---------------------------------------------------------------------------
+function listenHost() {
+  return String(config.value('global.host') || '0.0.0.0');
+}
+
+function loopbackHost() {
+  const host = listenHost();
+  if (host === '0.0.0.0' || host === '') return '127.0.0.1';
+  if (host === '::' || host === '[::]') return '::1';
+  return host.replace(/^\[|\]$/g, '');
+}
+
+// A host as it goes into a URL: an IPv6 literal needs its brackets there and
+// nowhere else.
+function hostForUrl(host) {
+  const h = String(host);
+  return h.indexOf(':') >= 0 && h[0] !== '[' ? '[' + h + ']' : h;
 }
 
 
@@ -1596,21 +2083,37 @@ function walletBaseUrl() {
   return config.value('oid4vci.walletUrl');
 }
 
-// Whoever signs in at the login screen. No password is ever checked; the
-// username they type is the identity every token then describes.
+// Whoever signs in at the login screen, as the identity every token then
+// describes.
+//
+// **IN DEVELOPMENT MODE IT IS A PERSONA AND SAYS SO**: a family name of `Mock`,
+// an address at `sts.example` and `email_verified: true`, none of which is
+// true of anybody — which is what a client exercising claim handling wants from
+// a server that asks nobody for anything.
+//
+// **IN PRODUCT MODE IT INVENTS NOTHING** (`mode.inventsClaimValues()`). A relying
+// party that links accounts on `email` because `email_verified` said so would
+// be linking on a fact this service made up, and that is not a fidelity problem
+// but an account-takeover one. So the persona fields are OMITTED here and the
+// issuance sites fill them from the person's own directory entry, through the
+// same claim-attribute resolver every other directory attribute reaches a
+// token by. What stays is what this function genuinely knows: the name that
+// authenticated, and the subject derived from it.
 function userFor(username) {
   log.debug("Entering userFor(). username=" + username);
   const name = String(username || 'mock-user');
   const user = {
-    sub: 'urn:sts-mock:user:' + name,
+    sub: 'urn:sts:user:' + name,
     username: name,
-    preferred_username: name,
-    name: name + ' (mock)',
-    given_name: name,
-    family_name: 'Mock',
-    email: name + '@sts-mock.example',
-    email_verified: true
+    preferred_username: name
   };
+  if (mode.inventsClaimValues()) {
+    user.name = name + ' (mock)';
+    user.given_name = name;
+    user.family_name = 'Mock';
+    user.email = name + '@sts.example';
+    user.email_verified = true;
+  }
   log.debug("Leaving userFor(). sub=" + user.sub);
   return user;
 }
@@ -1842,6 +2345,10 @@ module.exports = {
   textByLocal: textByLocal,
   iso: iso,
   baseUrlOf: baseUrlOf,
+  pinnedBaseUrl: pinnedBaseUrl,
+  listenHost: listenHost,
+  loopbackHost: loopbackHost,
+  hostForUrl: hostForUrl,
   forwardedFrom: forwardedFrom,
   trustProxy: trustProxy,
   b64u: b64u,
@@ -1870,6 +2377,15 @@ module.exports = {
   // at. Everything else reads `STS` and gets the ambient realm's, which is what
   // it wanted.
   stsKeysFor: stsKeysFor,
+  // The OpenID4VCI credential request-encryption key, which is a member of the
+  // realm's key set since 2026-09-12 — see makeRequestEncryptionKey(). The
+  // JWK builder is exported for `keystore.js`'s readers and the tests, so that
+  // a key read back from a blob publishes exactly what a generated one does.
+  requestEncryptionKeyFor: requestEncryptionKeyFor,
+  refreshTokenKeysFor: refreshTokenKeysFor,
+  makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,
+  requestEncryptionJwkOf: requestEncryptionJwkOf,
+  VCI_REQUEST_ENC_ALG: VCI_REQUEST_ENC_ALG,
   // The count as a word, for the refusal sentences that name what they
   // know. See the block above it for the two sentences that went stale.
   numberWord: numberWord,

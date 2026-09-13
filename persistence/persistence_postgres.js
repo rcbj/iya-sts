@@ -108,6 +108,11 @@
 //     who exists and disagree about who is signed in.
 // ---------------------------------------------------------------------------
 
+// A LEAF with no requires: the failure codes on the log lines and the startup
+// refusals below. It reaches for no setting and no store, so this driver still
+// reaches for nothing.
+const errorCodes = require('../common/error_codes');
+
 // A CHANNEL NAME AND A SCHEMA VERSION, both spelt once here.
 const CHANNEL = 'sts_ldap_change';
 // 2 SINCE 2026-09-06, when `sts_keys` joined the three tables this driver has
@@ -625,7 +630,8 @@ function create(options) {
     // Thrown from create() rather than open(), so persistence.js's one catch
     // reports it before anything has been restored.
     // ---------------------------------------------------------------------
-    throw new Error('persistence.mode is "postgres" but ' +
+    throw new Error(errorCodes.tag('STS-STORE-0027') +
+                    'persistence.mode is "postgres" but ' +
                     'persistence.databaseUrl is empty — it has been set to ' +
                     'nothing explicitly, since it has a default. Set it, or ' +
                     'STS_DATABASE_URL, to a connection string ' +
@@ -649,7 +655,8 @@ function create(options) {
     // and the same reason.
     Client = require('pg').Client;
   } catch (err) {
-    throw new Error('persistence.mode is "postgres" but the "pg" package is ' +
+    throw new Error(errorCodes.tag('STS-STORE-0028') +
+                    'persistence.mode is "postgres" but the "pg" package is ' +
                     'not installed (' + err.message + '). Run `npm install` ' +
                     'in this package, or use persistence.mode=ldif, which ' +
                     'needs nothing but a directory to write in.');
@@ -754,7 +761,8 @@ function create(options) {
     // A pooled client that died while idle. Logged rather than thrown — an
     // unhandled 'error' on a Pool is a process exit, and a mock identity
     // service must not exit because a database restarted.
-    log.error('persistence: an idle postgres client errored: ' + err.message +
+    log.error(errorCodes.tag('STS-STORE-0030') +
+              'persistence: an idle postgres client errored: ' + err.message +
               '. The pool will make a new one on the next write.');
   });
 
@@ -852,7 +860,8 @@ function create(options) {
   // ---------------------------------------------------------------------------
   function guardClient(client, what) {
     const onError = function (err) {
-      log.error('persistence: the postgres connection held by ' + what +
+      log.error(errorCodes.tag('STS-STORE-0031') +
+                'persistence: the postgres connection held by ' + what +
                 ' errored: ' + err.message + '. It is being discarded; the ' +
                 'pool will make another. This is logged rather than thrown ' +
                 'because an unhandled error on a client is a process exit, ' +
@@ -884,7 +893,8 @@ function create(options) {
           // Logged and swallowed: the original error is the one worth
           // reporting, and releasing the client with an error tells the pool
           // to discard rather than reuse it.
-          log.warn('persistence: a rollback failed (' + rollbackErr.message +
+          log.warn(errorCodes.tag('STS-STORE-0032') +
+                   'persistence: a rollback failed (' + rollbackErr.message +
                    '); the connection is being discarded.');
         }).then(function () {
           unguard();
@@ -969,7 +979,8 @@ function create(options) {
         // is SAID and not what happens.
         // -------------------------------------------------------------
         if (err && (err.code === '42501' || err.code === '42P01')) {
-          throw new Error('persistence: the postgres store could not be ' +
+          throw new Error(errorCodes.tag('STS-STORE-0029') +
+                          'persistence: the postgres store could not be ' +
                           'opened — ' + err.message + '. This role may not ' +
                           'create what is missing, which is how it is meant ' +
                           'to be: build the schema once with ' +
@@ -1129,7 +1140,8 @@ function create(options) {
             // definition of "as we found it" that stays right when somebody
             // changes either.
             return client.query('RESET ALL').catch(function (err) {
-              log.warn('persistence: a metrics connection could not be reset ' +
+              log.warn(errorCodes.tag('STS-STORE-0033') +
+                       'persistence: a metrics connection could not be reset ' +
                        '(' + err.message + '); it is being discarded rather ' +
                        'than returned to the pool with a statement timeout on ' +
                        'it.');
@@ -1153,7 +1165,8 @@ function create(options) {
         out.ok = false;
         out.error = err.message;
         out.tookMs = Date.now() - began;
-        log.warn('persistence: the database metrics could not be collected: ' +
+        log.warn(errorCodes.tag('STS-STORE-0034') +
+                 'persistence: the database metrics could not be collected: ' +
                  err.message);
         return out;
       });
@@ -1838,7 +1851,8 @@ function create(options) {
           // A dropped listener is EXPECTED — a database restart, a failover, a
           // network blip — so this is a warn and a reconnect rather than an
           // error. The poll covers the gap.
-          log.warn('persistence: the change listener dropped (' + err.message +
+          log.warn(errorCodes.tag('STS-STORE-0035') +
+                   'persistence: the change listener dropped (' + err.message +
                    '). Reconnecting; the poll covers the gap in the ' +
                    'meantime, which is why losing this connection costs ' +
                    'latency and not correctness.');
@@ -1870,7 +1884,8 @@ function create(options) {
           // closed by asking rather than by hoping.
           onNudge({ reconnected: true });
         }).catch(function (err) {
-          log.warn('persistence: the change listener could not connect (' +
+          log.warn(errorCodes.tag('STS-STORE-0036') +
+                   'persistence: the change listener could not connect (' +
                    err.message + '). The poll still converges.');
           client = null;
           if (!closed) {

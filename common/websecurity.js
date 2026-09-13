@@ -71,6 +71,11 @@ const stsCrypto = require('./crypto');
 // `sharedMap()`, and it is a LEAF that registers no route, so this cannot
 // move a route or join a cycle.
 const realms = require('./realms');
+// The registry of failure codes, a LEAF. A refusal answered here carries its
+// code NON-ENUMERABLY, so a caller that renders it can mark its response with
+// `errorCodes.codeOf(result)` and nothing about the object serialises
+// differently.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // THE CSRF KEY. Per PROCESS and regenerated on every start, exactly like the
@@ -109,17 +114,19 @@ function checkCsrf(sessionId, body) {
   }
   const presented = String((body || {})[CSRF_FIELD] || '');
   if (!presented) {
-    return { ok: false, reason: 'missing',
+    return errorCodes.mark({ ok: false, reason: 'missing',
              detail: 'this form carried no ' + CSRF_FIELD + '. Every ' +
                      'state-changing form in this service does; a request ' +
-                     'without one did not come from a page this service drew.' };
+                     'without one did not come from a page this service drew.' },
+                           'STS-HTTP-0015');
   }
   const same = stsCrypto.constantTimeEquals(presented, tokenFor(id));
   return same
     ? { ok: true, reason: 'verified' }
-    : { ok: false, reason: 'mismatch',
+    : errorCodes.mark({ ok: false, reason: 'mismatch',
         detail: 'the ' + CSRF_FIELD + ' presented is not this session\'s. It ' +
-                'belongs to a different session, or to one that has ended.' };
+                'belongs to a different session, or to one that has ended.' },
+                      'STS-HTTP-0016');
 }
 
 // ---------------------------------------------------------------------------
@@ -210,17 +217,33 @@ function prune(now) {
 // argument and this behaves exactly as it did, which is what every existing
 // caller does.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND `limit` MAY NAME THE TWO BUCKETS SEPARATELY (2026-09-12).
+//
+// One number for both was right for `POST /xacml/pip`, whose caller is one
+// machine at one address. It was wrong for the portal's signing-key door,
+// which passed five: the IDENTITY bucket was the point (five key generations
+// a minute for one person), and the ADDRESS bucket then meant five for
+// everybody behind one NAT or proxy — an office sharing an allowance a single
+// person could spend. So `{ identity: n, address: m }` is accepted beside a
+// bare number, a member left out falls back to the shared setting for that
+// bucket, and a bare number means exactly what it always did.
+// ---------------------------------------------------------------------------
+function namedLimit(limit, kind) {
+  const raw = (limit && typeof limit === 'object') ? limit[kind] : limit;
+  return Number(raw) > 0 ? Math.floor(Number(raw)) : 0;
+}
+
 function attempt(what, req, identity, limit) {
   log.debug('Entering attempt(). what=' + what);
   const now = Date.now();
   const span = windowMs();
-  const named = Number(limit) > 0 ? Math.floor(Number(limit)) : 0;
   const checks = [
     { kind: 'identity',
       key: what + '|id|' + String(identity || '').toLowerCase(),
-      limit: named || limitFor('identity'), on: !!identity },
+      limit: namedLimit(limit, 'identity') || limitFor('identity'), on: !!identity },
     { kind: 'address', key: what + '|ip|' + addressOf(req),
-      limit: named || limitFor('address'), on: true }
+      limit: namedLimit(limit, 'address') || limitFor('address'), on: true }
   ];
   prune(now);
   let refusal = null;
@@ -238,28 +261,89 @@ function attempt(what, req, identity, limit) {
     }
   });
   if (refusal) {
-    log.warn('websecurity: too many "' + what + '" attempts (' +
+    const code = refusal.kind === 'address' ? 'STS-HTTP-0018' : 'STS-HTTP-0017';
+    log.warn(errorCodes.tag(code) + 'websecurity: too many "' + what + '" attempts (' +
              refusal.kind + ' bucket, limit ' + refusal.limit + ' per ' +
              Math.round(span / 1000) + 's). Refusing for another ' +
              refusal.retryAfterS + 's.');
     log.debug('Leaving attempt(). Refused.');
-    return { ok: false, kind: refusal.kind, limit: refusal.limit,
+    return errorCodes.mark({ ok: false, kind: refusal.kind, limit: refusal.limit,
              retryAfterS: refusal.retryAfterS,
              detail: 'Too many attempts. Wait ' + refusal.retryAfterS +
-                     ' seconds and try again.' };
+                     ' seconds and try again.' }, code);
   }
   log.debug('Leaving attempt(). Allowed.');
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// blocked() — IS THIS CALLER OVER A LIMIT RIGHT NOW, WITHOUT COUNTING ANYTHING
+// (2026-09-12).
+//
+// `attempt()` counts and answers in one call, which is right for a sign-in
+// screen: every POST is somebody trying a password. It is wrong for a door
+// whose SUCCESSES are many and legitimate — an LDAP connection pool binds on
+// every connection it opens, fifty at once from one address, and counting those
+// would lock an application out of its own directory for being busy.
+//
+// So that door asks `blocked()` first, which reads the buckets and changes
+// nothing, counts only a FAILURE with `attempt()`, and clears on success with
+// `succeeded()`. The refusal a blocked caller gets is decided before its
+// password is looked at, so a right guess during a lockout is refused exactly
+// like a wrong one and teaches the guesser nothing. Same buckets, same window,
+// same limits and the same `limit` argument as `attempt()` — one limiter with a
+// read beside its write, not a second limiter.
+// ---------------------------------------------------------------------------
+function blocked(what, req, identity, limit) {
+  log.debug('Entering blocked(). what=' + what);
+  const now = Date.now();
+  const checks = [
+    { kind: 'identity',
+      key: what + '|id|' + String(identity || '').toLowerCase(),
+      limit: namedLimit(limit, 'identity') || limitFor('identity'), on: !!identity },
+    { kind: 'address', key: what + '|ip|' + addressOf(req),
+      limit: namedLimit(limit, 'address') || limitFor('address'), on: true }
+  ];
+  let refusal = null;
+  checks.forEach(function (check) {
+    if (!check.on || refusal) return;
+    const row = buckets.get(check.key);
+    // AT the limit is blocked, where `attempt()` refuses only PAST it: that
+    // call counts the attempt it is deciding about, and this one does not — so
+    // `limit` failures have been spent and the next try is the one over.
+    if (row && row.until > now && row.count >= check.limit) {
+      refusal = { kind: check.kind, limit: check.limit,
+                  retryAfterS: Math.ceil((row.until - now) / 1000) };
+    }
+  });
+  if (!refusal) {
+    log.debug('Leaving blocked(). Not blocked.');
+    return null;
+  }
+  const code = refusal.kind === 'address' ? 'STS-HTTP-0018' : 'STS-HTTP-0017';
+  log.debug('Leaving blocked(). Blocked by the ' + refusal.kind + ' bucket.');
+  return errorCodes.mark({ ok: false, kind: refusal.kind, limit: refusal.limit,
+           retryAfterS: refusal.retryAfterS,
+           detail: 'Too many failed attempts. Wait ' + refusal.retryAfterS +
+                   ' seconds and try again.' }, code);
+}
+
 // Forget the counters for one identity — what a SUCCESSFUL sign-in does, so
 // that somebody who mistyped a password four times is not still near the limit
 // once they get it right.
-function succeeded(what, req, identity) {
+//
+// `options.keepAddress` LEAVES THE ADDRESS BUCKET ALONE (2026-09-12), and a door
+// whose successes are cheap to come by needs it. On an LDAP bind, anybody
+// holding ONE working password could otherwise clear their address's failure
+// count between guesses at every other DN by binding as themselves once — the
+// address limit would never be reached by the one caller it exists for.
+function succeeded(what, req, identity, options) {
   if (identity) {
     buckets.delete(what + '|id|' + String(identity).toLowerCase());
   }
-  buckets.delete(what + '|ip|' + addressOf(req));
+  if (!(options && options.keepAddress)) {
+    buckets.delete(what + '|ip|' + addressOf(req));
+  }
 }
 
 // For the console and the tests.
@@ -291,6 +375,7 @@ module.exports = {
   field: field,
   checkCsrf: checkCsrf,
   attempt: attempt,
+  blocked: blocked,
   succeeded: succeeded,
   addressOf: addressOf,
   report: report,

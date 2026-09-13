@@ -88,7 +88,13 @@
 
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// For `autoCreates()`: whether an entry may be invented for a caller that
+// matches none. A leaf requiring only config.
+const mode = require('../common/mode');
 const audit = require('../common/audit');
+// A LEAF. A handler marks the CALL with the condition before it throws a
+// status, and `spiffe_grpc.js`'s wrapper records it — see that file.
+const errorCodes = require('../common/error_codes');
 const stats = require('../common/admin_stats');
 const spiffeId = require('./spiffe_id');
 const ca = require('./spiffe_ca');
@@ -129,15 +135,29 @@ function entitledEntries(caller) {
     log.debug('Leaving entitledEntries(). ' + rows.length + ' entry/entries.');
     return rows;
   }
-  if (!config.value('spiffe.autoCreateEntries')) {
+  // ---------------------------------------------------------------------
+  // **TWO QUESTIONS, AND BOTH MUST SAY YES (2026-09-12).** The setting is the
+  // operator's; `mode.autoCreates()` is the deployment's, and in product mode
+  // it answers no whatever the setting holds — so `spiffe.autoCreateEntries`
+  // cannot be left on by accident in a deployment and have every workload that
+  // reaches the socket issued `spiffe://<domain>/workload`. That is rule 2 of
+  // `common/mode.js` read for SPIFFE: nothing is created because something
+  // named it, and a caller that matched no entry is an unknown name.
+  // ---------------------------------------------------------------------
+  const settingSays = config.value('spiffe.autoCreateEntries');
+  if (!settingSays || !mode.autoCreates()) {
     // The interesting answer. A real agent says exactly this to an
     // unregistered workload, and a client that has never seen it has never run
     // its own "I have no identity" path.
     log.info('spiffe: a workload asked for an SVID, no registration entry ' +
              (narrow ? 'matched its selectors' : 'exists') +
-             ', and spiffe.autoCreateEntries is off — so it is being ' +
-             'answered with an empty SVID list, which is what a real agent ' +
-             'does for an unregistered workload.');
+             (settingSays
+               ? ', and this realm is in product mode (global.mode), which ' +
+                 'never invents one whatever spiffe.autoCreateEntries says'
+               : ', and spiffe.autoCreateEntries is off') +
+             ' — so it is being answered with an empty SVID list, which is ' +
+             'what a real agent does for an unregistered workload. Register ' +
+             'it on /admin/spiffe/entries or through the SPIRE Server API.');
     log.debug('Leaving entitledEntries(). None, and none will be invented.');
     return [];
   }
@@ -210,11 +230,14 @@ async function federatedBundlesFor(entries) {
 // fields is a string a client will decode as DER and reject as malformed, and
 // the error names neither field.
 // ---------------------------------------------------------------------------
-async function buildX509Response(caller) {
+// `observed`, when given, is told the SHORTEST lifetime among the SVIDs this
+// response carried — see `pushOnRotation()` for why the rotation timer needs it.
+async function buildX509Response(caller, observed) {
   log.debug('Entering buildX509Response().');
   const entries = entitledEntries(caller);
   const bundleDer = await ca.x509BundleDer();
   const svids = [];
+  let shortest = 0;
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const svid = await ca.mintX509Svid(entry.spiffeId, {
@@ -223,6 +246,13 @@ async function buildX509Response(caller) {
       hint: entry.hint
     });
     registry.noteSvidIssued(entry.id);
+    // What the certificate ACTUALLY lives for, read off what was minted rather
+    // than off the entry: `mintX509Svid()` clamps a leaf to its issuer's own
+    // notAfter, so an entry's `x509SvidTtl` is an upper bound and not a fact.
+    const lifetime = svid.expiresAt - Math.floor(Date.now() / 1000);
+    if (lifetime > 0 && (!shortest || lifetime < shortest)) {
+      shortest = lifetime;
+    }
     stats.recordSvid('X.509', {
       subject: entry.spiffeId, entryId: entry.id, serial: svid.serialHex,
       hint: entry.hint, expiresAt: svid.expiresAt,
@@ -257,6 +287,9 @@ async function buildX509Response(caller) {
               selectors: (((caller || {}).selectors) || [])
                 .map(registry.selectorText).join(' ') }
   });
+  if (observed) {
+    observed.shortest = shortest;
+  }
   log.debug('Leaving buildX509Response(). ' + svids.length + ' SVID(s).');
   return {
     svids: svids,
@@ -276,33 +309,64 @@ async function buildX509Response(caller) {
 // a timer that outlived its stream would re-mint SVIDs for a workload that is
 // not there, and grpc-js reports a write to a dead stream as an unhandled
 // server error.
-function pushOnRotation(push, buildResponse, label) {
+//
+// ---------------------------------------------------------------------------
+// **HALF THE SHORTEST LIFETIME ACTUALLY SERVED, SINCE 2026-09-12.** It was
+// `max(30, spiffe.svidTtl / 2)` — the SERVICE default — while a registration
+// entry may carry its own `x509SvidTtl` and that one wins at the mint. So an
+// entry asking for a five-minute SVID was re-sent every half hour: the workload
+// held an expired certificate for twenty-five minutes of every thirty, with
+// nothing anywhere saying why. `lifetimeOf`, where given, answers the shortest
+// lifetime the LAST response carried, and the timer is re-armed after every
+// send so an entry edited mid-stream is followed on the next rotation.
+//
+// **THE 30-SECOND FLOOR IS GONE FOR THE SAME REASON** — below a minute it made
+// the period LONGER than the lifetime. Every lifetime of a minute or more gives
+// exactly the period it gave before; the floor is one second, which is only
+// there so that an SVID clamped to nothing cannot spin the loop.
+// ---------------------------------------------------------------------------
+function rotationPeriod(lifetimeSeconds) {
+  const lifetime = Number(lifetimeSeconds) > 0
+    ? Number(lifetimeSeconds) : config.value('spiffe.svidTtl');
+  return Math.max(1, Math.floor(lifetime / 2));
+}
+
+function pushOnRotation(push, buildResponse, label, lifetimeOf) {
   log.debug('Entering pushOnRotation().');
-  const period = Math.max(30, Math.floor(config.value('spiffe.svidTtl') / 2));
-  log.debug('pushOnRotation(): ' + label + ' will be re-sent every ' + period +
-            ' second(s) while the client is there.');
-  const timer = setInterval(function () {
+  const handle = { timer: null, stopped: false };
+  function arm() {
+    const period = rotationPeriod(lifetimeOf ? lifetimeOf() : 0);
+    log.debug('pushOnRotation(): ' + label + ' will be re-sent in ' + period +
+              ' second(s) while the client is there.');
+    handle.timer = setTimeout(tick, period * 1000);
+    // `unref` so a held-open stream cannot keep the process alive on its own.
+    // Everything else in this service dies with the process and so should this.
+    if (handle.timer.unref) handle.timer.unref();
+  }
+  function tick() {
     Promise.resolve()
       .then(buildResponse)
       .then(function (message) {
         if (!push(message)) {
-          clearInterval(timer);
+          handle.stopped = true;
           log.debug('spiffe: the ' + label + ' rotation timer stopped; the ' +
                     'client has gone.');
+          return;
         }
+        arm();
       })
       .catch(function (err) {
         // A failure to re-mint must not take the stream down: the client is
         // holding a valid SVID until it expires, and an error here is better
-        // reported than fatal.
-        log.error('spiffe: could not re-send ' + label + ': ' + err.message);
+        // reported than fatal. Re-armed, so the next rotation is still tried.
+        log.error(errorCodes.tag('STS-SPIFFE-0030') +
+                  'spiffe: could not re-send ' + label + ': ' + err.message);
+        arm();
       });
-  }, period * 1000);
-  // `unref` so a held-open stream cannot keep the process alive on its own.
-  // Everything else in this service dies with the process and so should this.
-  if (timer.unref) timer.unref();
+  }
+  arm();
   log.debug('Leaving pushOnRotation().');
-  return timer;
+  return handle;
 }
 
 const fetchX509Svid = rpc.serverStream('workload', 'FetchX509SVID',
@@ -315,9 +379,15 @@ const fetchX509Svid = rpc.serverStream('workload', 'FetchX509SVID',
     // client was first answered with would be a rotation that silently changed
     // the workload's identity.
     const caller = call.spiffeCaller;
-    pushOnRotation(push, function () { return buildX509Response(caller); },
-                   'FetchX509SVID');
-    return await buildX509Response(caller);
+    // The shortest lifetime the last response carried, written by every build
+    // and read when the timer re-arms. The first response is built BEFORE the
+    // timer is armed so the first period is already the entry's rather than
+    // the service default.
+    const observed = { shortest: 0 };
+    const first = await buildX509Response(caller, observed);
+    pushOnRotation(push, function () { return buildX509Response(caller, observed); },
+                   'FetchX509SVID', function () { return observed.shortest; });
+    return first;
   });
 
 // ---------------------------------------------------------------------------
@@ -330,11 +400,23 @@ const fetchX509Svid = rpc.serverStream('workload', 'FetchX509SVID',
 async function buildX509BundlesResponse() {
   log.debug('Entering buildX509BundlesResponse().');
   const bundles = {};
-  bundles[ca.trustDomainId()] = await ca.x509BundleDer();
+  const own = ca.trustDomainId();
   ca.federatedBundles().forEach(function (entry) {
+    const key = spiffeId.trustDomainId(entry.trustDomain);
+    // NEVER OVER THE REALM'S OWN KEY. `ca.federatedBundles()` already drops a
+    // row named after a trust domain this service serves; this is the second
+    // lock, and it is the one on the map a client actually reads — a federated
+    // entry written into this key would replace the anchors a workload checks
+    // its own trust domain's SVIDs against with somebody else's.
+    if (key === own) {
+      return;
+    }
     const der = ca.federatedX509BundleDer(entry.trustDomain);
-    if (der && der.length) bundles[spiffeId.trustDomainId(entry.trustDomain)] = der;
+    if (der && der.length) bundles[key] = der;
   });
+  // WRITTEN LAST, so that no ordering of the loop above could leave anything
+  // but this realm's own bundle under its own name.
+  bundles[own] = await ca.x509BundleDer();
   log.debug('Leaving buildX509BundlesResponse(). ' +
             Object.keys(bundles).length + ' bundle(s).');
   return { crl: [], bundles: bundles };
@@ -369,6 +451,7 @@ const fetchJwtSvid = rpc.unary('workload', 'FetchJWTSVID', async function (call)
     return String(a || '').trim();
   }).filter(Boolean);
   if (!audiences.length) {
+    errorCodes.mark(call, 'STS-SPIFFE-0027');
     throw rpc.invalidArgument('FetchJWTSVID requires at least one audience. ' +
                               'A JWT-SVID is a bearer credential — whoever ' +
                               'holds it can present it — so the audience is ' +
@@ -381,6 +464,7 @@ const fetchJwtSvid = rpc.unary('workload', 'FetchJWTSVID', async function (call)
   if (wanted) {
     const parsed = spiffeId.parse(wanted);
     if (!parsed.ok) {
+      errorCodes.mark(call, 'STS-SPIFFE-0028');
       throw rpc.invalidArgument('spiffe_id: ' + parsed.reason);
     }
     entries = entries.filter(function (entry) { return entry.spiffeId === parsed.id; });
@@ -433,12 +517,17 @@ async function jwtBundleFor(document) {
 async function buildJwtBundlesResponse() {
   log.debug('Entering buildJwtBundlesResponse().');
   const bundles = {};
-  bundles[ca.trustDomainId()] = await jwtBundleFor(await ca.bundle());
+  const own = ca.trustDomainId();
   const federated = ca.federatedBundles();
   for (let i = 0; i < federated.length; i++) {
-    bundles[spiffeId.trustDomainId(federated[i].trustDomain)] =
-      await jwtBundleFor(federated[i].document);
+    const key = spiffeId.trustDomainId(federated[i].trustDomain);
+    // Never over the realm's own key — see buildX509BundlesResponse().
+    if (key === own) {
+      continue;
+    }
+    bundles[key] = await jwtBundleFor(federated[i].document);
   }
+  bundles[own] = await jwtBundleFor(await ca.bundle());
   log.debug('Leaving buildJwtBundlesResponse(). ' +
             Object.keys(bundles).length + ' bundle(s).');
   return { bundles: bundles };
@@ -475,7 +564,10 @@ const validateJwtSvid = rpc.unary('workload', 'ValidateJWTSVID', async function 
              ' at the Workload API',
     // The reason is recorded and the SVID is not.
     detail: result.ok ? { audience: String(request.audience || '') }
-                      : { refused: result.reason }
+                      : { refused: result.reason },
+    // THIS ROW carries the refusal's code, so the call is not marked below and
+    // its own row does not count the same refusal twice.
+    errorCode: result.ok ? '' : (result.errorCode || 'STS-SPIFFE-0037')
   });
   if (!result.ok) {
     throw rpc.invalidArgument(result.reason);
@@ -613,12 +705,14 @@ const WIT_MESSAGE =
   'are fully implemented.';
 
 const fetchWitSvid = rpc.serverStream('workload', 'FetchWITSVID',
-  async function () {
+  async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0029');
     throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
   });
 
 const fetchWitBundles = rpc.serverStream('workload', 'FetchWITBundles',
-  async function () {
+  async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0029');
     throw rpc.statusError(rpc.grpc.status.UNIMPLEMENTED, WIT_MESSAGE);
   });
 
@@ -675,5 +769,9 @@ module.exports = {
   // way. Called with NO caller there, which means no selector narrowing — the
   // console is looking at the registry rather than standing on a socket, and
   // "what is in here" is a different question from "what would I get".
-  entitledEntries: entitledEntries
+  entitledEntries: entitledEntries,
+  // For tests/spiffe_hardcoded_values.js, which asserts the rotation period
+  // follows the shortest lifetime served rather than the service default.
+  rotationPeriod: rotationPeriod,
+  buildX509Response: buildX509Response
 };

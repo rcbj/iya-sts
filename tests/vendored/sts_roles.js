@@ -126,10 +126,28 @@ const REALM = ("roles-" + names.runStamp()).toLowerCase()
 
 // THE THREE PARTIES, fixed rather than random, because every refusal sentence
 // below quotes them and a name that changed per run would make a failing log
-// unreadable.
-const HOLDER = "alice";        // holds `staff` directly
-const IN_GROUP = "bob";        // holds it only through a group
-const OUTSIDER = "mallory";    // holds nothing
+// unreadable. They are unique anyway: the realm they live in is this run's.
+//
+// **THEY ARE CREATED BY THIS JOB AND NOT SEEDED (2026-09-12).** The first two
+// were `alice` and `bob`, the people every realm's directory is seeded with in
+// development — and product mode seeds nobody. So all three are made in
+// `createTheRealm()` through the realm's own `/admin-api/users/create`, with
+// the attributes a real account carries, nothing invented, and a password of
+// at least twelve characters that every door below presents (the sign-in
+// screen, the password grant, the WS-Trust UsernameToken). The applications
+// are registered the same way: each with the redirect URI the authorization
+// requests name and a client secret the token requests present, because
+// product mode answers only a registered redirect and holds every OAuth
+// application to a secret.
+const HOLDER = "roles-holder";     // holds `staff` directly
+const IN_GROUP = "roles-grouped";  // holds it only through a group
+const OUTSIDER = "mallory";        // holds nothing
+// The SCIM caller that creates the group, over Basic — a person too, because
+// product mode verifies a SCIM Basic credential against the named person's
+// own password.
+const SCIM_CALLER = "roles-scim-caller";
+const PASSWORD = "roles-job-Passw0rd!-" + names.runStamp();
+const CLIENT_SECRET = "roles-job-client-secret-" + names.runStamp();
 // THE GROUP IS NAMED BY ITS `cn` AND NOT BY ITS DN, because that is what the
 // register compares against: `ldap_server.js` fills `roles.setDirectory()`
 // with a `groupsOfUser()` that answers cns. A DN here would be a value nothing
@@ -225,7 +243,9 @@ async function resetSetting(key) {
 // person and of nothing about a session.
 function tokenFor(username, clientId, scope) {
   const body = "grant_type=password&username=" + encodeURIComponent(username) +
-    "&password=whatever&client_id=" + encodeURIComponent(clientId) +
+    "&password=" + encodeURIComponent(PASSWORD) +
+    "&client_id=" + encodeURIComponent(clientId) +
+    "&client_secret=" + encodeURIComponent(CLIENT_SECRET) +
     "&scope=" + encodeURIComponent(scope || "openid");
   return fetchJson(realmUrl("/oauth2/token"), {
     method: "POST",
@@ -280,6 +300,30 @@ function browser() {
 
 const REDIRECT_URI = "https://example.test/roles-callback";
 
+// What an OAuth application in this job is registered with, beside whatever
+// the section creating it says: the identifier it is asked for by, the one
+// redirect URI every authorization request here names, and the secret every
+// token request here presents.
+function oauthApplication(identifier, name) {
+  return { identifier: identifier, kind: "oauth2-client", name: name,
+           protocols: ["oauth2", "oidc"],
+           fields: { oauthClientId: [identifier],
+                     oauthRedirectUri: [REDIRECT_URI],
+                     oauthClientSecret: CLIENT_SECRET,
+                     oauthTokenEndpointAuthMethod: "client_secret_post" } };
+}
+
+// A person in this realm's directory, with a password and real attributes.
+async function createPerson(username) {
+  await act("users", "create", {
+    username: username, invent: false,
+    attributes: { cn: "Roles " + username, givenName: "Roles", sn: username,
+                  displayName: "Roles " + username,
+                  mail: username + "@roles-job.test" },
+    credential: "password", password: PASSWORD
+  }, "created " + username + " in the realm");
+}
+
 function authorizeUrl(clientId) {
   return "/realm/" + REALM + "/oauth2/authorize?" + form({
     response_type: "code", client_id: clientId, redirect_uri: REDIRECT_URI,
@@ -298,6 +342,11 @@ async function createTheRealm() {
     "creating the realm " + REALM + " should have worked; it answered " +
     r.status + " " + String(r.text).slice(0, 300));
   log.info("Created the throwaway realm " + REALM + ".");
+  for (const who of [HOLDER, IN_GROUP, OUTSIDER, SCIM_CALLER]) {
+    await createPerson(who);
+  }
+  await act("applications", "create", oauthApplication(OPEN, "Open"),
+            "registered the unnarrowed application");
 }
 
 // THE REALM IS LEFT STANDING, DELIBERATELY (2026-09-06), AND THIS FUNCTION IS
@@ -478,9 +527,8 @@ async function theClaim() {
 async function narrowingAnApplication() {
   log.info("=== Narrowing an application ===");
 
-  await act("applications", "create",
-            { identifier: NARROWED, kind: "oauth2-client",
-              name: "Narrowed" }, "created the application");
+  await act("applications", "create", oauthApplication(NARROWED, "Narrowed"),
+            "created the application");
   await act("applications", "add",
             { application: NARROWED, attribute: "appRequiredRole",
               value: ROLE }, "narrowed it to " + ROLE);
@@ -652,7 +700,7 @@ async function theAuthorizationEndpointRefuses() {
 
   const refusedSignIn = await refusedBrowser.go("POST",
     "/realm/" + REALM + "/authn/login",
-    form({ authn_id: authnId, username: OUTSIDER, password: "any",
+    form({ authn_id: authnId, username: OUTSIDER, password: PASSWORD,
            action: "login" }));
   check("the sign-in screen itself refuses somebody who holds no required role",
     function () {
@@ -701,7 +749,7 @@ async function theAuthorizationEndpointRefuses() {
     .match(/name="authn_id" value="([^"]+)"/) || [])[1];
   const signedIn = await holderBrowser.go("POST",
     "/realm/" + REALM + "/authn/login",
-    form({ authn_id: holderAuthn, username: HOLDER, password: "any",
+    form({ authn_id: holderAuthn, username: HOLDER, password: PASSWORD,
            action: "login" }));
   check("somebody who holds the role signs in", function () {
     assert.ok((signedIn.status === 302 || signedIn.status === 303) &&
@@ -722,8 +770,8 @@ async function theAuthorizationEndpointRefuses() {
   // redirect_uri, so the client sees a refusal it can render rather than a
   // page on this service its user has to read.
   await act("applications", "create",
-            { identifier: "roles-second-app", kind: "oauth2-client",
-              name: "Second" }, "created a second application");
+            oauthApplication("roles-second-app", "Second"),
+            "created a second application");
   await act("applications", "add",
             { application: "roles-second-app", attribute: "appRequiredRole",
               value: "nobody-holds-this" }, "narrowed it to nothing");
@@ -807,25 +855,27 @@ async function groupsAndApplicationsHoldRoles() {
   //
   // It is read through SCIM rather than through `/admin-api/users`, which is a
   // different register entirely: that one lists who has AUTHENTICATED and this
-  // needs a directory entry, and `bob` is one of the entries every realm's
-  // directory is SEEDED with and has authenticated nowhere.
+  // needs a directory entry, and IN_GROUP is an entry this job CREATED in
+  // `createTheRealm()` and has authenticated nowhere. (It was `bob`, whom every
+  // realm's directory is seeded with in development and in product nobody.)
+  const scimAuth = "Basic " +
+    Buffer.from(SCIM_CALLER + ":" + PASSWORD).toString("base64");
   const found = await fetchJson(realmUrl(
     "/scim/v2/Users?filter=" + encodeURIComponent('userName eq "' + IN_GROUP + '"')), {
-    headers: { "Authorization": "Basic " +
-                 Buffer.from("tester:whatever").toString("base64") } });
+    headers: { "Authorization": scimAuth } });
   const bob = (found.body && found.body.Resources || [])[0];
   assert.ok(bob && bob.id,
-    IN_GROUP + " should be one of the entries this realm's directory is " +
-    "seeded with; GET /scim/v2/Users answered " + found.status + " " +
+    IN_GROUP + " should be one of the entries this job created in the " +
+    "realm; GET /scim/v2/Users answered " + found.status + " " +
     String(found.text).slice(0, 300));
 
   const group = await fetchJson(realmUrl("/scim/v2/Groups"), {
     method: "POST",
     headers: { "Content-Type": "application/scim+json",
-               // Any password but the reserved one passes; the credential is
-               // a turnstile, which scim/CLAUDE.md argues.
-               "Authorization": "Basic " +
-                 Buffer.from("tester:whatever").toString("base64") },
+               // A person this job created, with the password it set: what
+               // product mode verifies, and what development accepts as it
+               // accepts any pair but the reserved one.
+               "Authorization": scimAuth },
     body: JSON.stringify({
       schemas: ["urn:ietf:params:scim:schemas:core:2.0:Group"],
       displayName: GROUP,
@@ -867,8 +917,7 @@ async function groupsAndApplicationsHoldRoles() {
   // THE APPLICATION HALF, and it is the unusual one: a client_credentials
   // grant has no person in it at all, so until an application could hold a
   // role there was nothing to decide about one.
-  await act("applications", "create",
-            { identifier: ROBOT, kind: "oauth2-client", name: "Robot" },
+  await act("applications", "create", oauthApplication(ROBOT, "Robot"),
             "created the client");
   await act("applications", "add",
             { application: ROBOT, attribute: "appRequiredRole",
@@ -877,7 +926,8 @@ async function groupsAndApplicationsHoldRoles() {
   const beforeRole = await fetchJson(realmUrl("/oauth2/token"), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=client_credentials&client_id=" + ROBOT
+    body: "grant_type=client_credentials&client_id=" + ROBOT +
+          "&client_secret=" + encodeURIComponent(CLIENT_SECRET)
   });
   check("a client_credentials grant is refused when the CLIENT holds no role",
     function () {
@@ -895,7 +945,8 @@ async function groupsAndApplicationsHoldRoles() {
   const afterRole = await fetchJson(realmUrl("/oauth2/token"), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=client_credentials&client_id=" + ROBOT
+    body: "grant_type=client_credentials&client_id=" + ROBOT +
+          "&client_secret=" + encodeURIComponent(CLIENT_SECRET)
   });
   check("and issued once the client itself holds it", function () {
     assert.strictEqual(afterRole.status, 200,
@@ -935,7 +986,7 @@ async function wsTrustWithNoAppliesTo() {
       '<soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/' +
       '2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
       '<wsse:UsernameToken><wsse:Username>' + OUTSIDER + '</wsse:Username>' +
-      '<wsse:Password>whatever</wsse:Password></wsse:UsernameToken>' +
+      '<wsse:Password>' + PASSWORD + '</wsse:Password></wsse:UsernameToken>' +
       '</wsse:Security></soap:Header><soap:Body>' +
       '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/' +
       'ws-trust/200512">' +

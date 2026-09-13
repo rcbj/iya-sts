@@ -352,6 +352,13 @@ COMPOSE_PROJECT="${STS_TEST_COMPOSE_PROJECT:-mock-sts-tests}"
 STS_TEARDOWN_TIMEOUT="${STS_TEARDOWN_TIMEOUT:-300}"
 STS_TEST_CONTAINER="sts-tests"
 STS_TEST_PG_CONTAINER="sts-tests-postgres"
+# THE SECRET STORE AND ITS TWO ONE-SHOT CONTAINERS (2026-09-12). Named here for
+# the reason the block below gives about the other two: `container_name` is
+# machine-wide, so a second run in this tree would take the first run's store —
+# and this one holds the key-encryption key every mode's data is sealed under.
+STS_TEST_BAO_CONTAINER="sts-tests-openbao"
+STS_TEST_BAO_TLS_CONTAINER="sts-tests-openbao-tls"
+STS_TEST_BAO_SEED_CONTAINER="sts-tests-openbao-seed"
 # ---------------------------------------------------------------------------
 # NAMING A PROJECT MUST ISOLATE THE WHOLE RUN, AND UNTIL 2026-09-07 IT DID NOT.
 #
@@ -372,11 +379,23 @@ STS_TEST_PG_CONTAINER="sts-tests-postgres"
 # containers, which is what makes two runs on one machine actually possible:
 #
 #   STS_TEST_COMPOSE_PROJECT=mine ./local-run-tests.sh
+#
+# **AND THE NETWORK WAS THE THIRD THING TO ESCAPE THIS, ON 2026-09-12.** A
+# subnet arrived in docker-compose.yml as a literal, because a realm's SPIFFE
+# listeners need addresses that do not move between starts — and an address
+# space is machine-wide in the same way a `container_name` is. The second run
+# in this tree was then refused outright, with `invalid pool request: Pool
+# overlaps with other one on this address space` and nothing brought up. It is
+# chosen per run now, in composeUp() beside the three ports; the same sentence
+# reaching one more thing.
 # ---------------------------------------------------------------------------
 if [ -n "${STS_TEST_COMPOSE_PROJECT:-}" ];
 then
   STS_TEST_CONTAINER="${COMPOSE_PROJECT}-sts"
   STS_TEST_PG_CONTAINER="${COMPOSE_PROJECT}-postgres"
+  STS_TEST_BAO_CONTAINER="${COMPOSE_PROJECT}-openbao"
+  STS_TEST_BAO_TLS_CONTAINER="${COMPOSE_PROJECT}-openbao-tls"
+  STS_TEST_BAO_SEED_CONTAINER="${COMPOSE_PROJECT}-openbao-seed"
 fi
 # ---------------------------------------------------------------------------
 # THE REMOTE XACML PEP THIS STACK ALSO BRINGS UP (2026-09-06).
@@ -960,6 +979,64 @@ composeUp()
   rm -rf "${XACML_PEP_CERT_DIR}"
   mkdir -p "${XACML_PEP_CERT_DIR}"
 
+  # ---------------------------------------------------------------------------
+  # THE STACK'S OWN SUBNET, PICKED THE WAY THE THREE PORTS ABOVE ARE
+  # (2026-09-12), AND FOR THE REASON THE PROJECT-NAME BLOCK NEAR THE TOP OF
+  # THIS FILE IS A RECORD OF.
+  #
+  # docker-compose.yml names a subnet now rather than letting compose allocate
+  # one, because a realm's SPIFFE listeners need addresses that are the same on
+  # every start — and a network, like a `container_name`, is MACHINE-WIDE. So
+  # the literal `172.29.0.0/24` put every run in this tree back where naming a
+  # project had just got them out of: the second one refused to start at all,
+  #
+  #   invalid pool request: Pool overlaps with other one on this address space
+  #
+  # with nothing brought up and nothing in the tree wrong. It is the same
+  # sentence as the container names — naming a project must isolate the WHOLE
+  # run — reaching one more thing.
+  #
+  # AN IDLE MACHINE IS UNAFFECTED: freeSubnet() offers the compose file's own
+  # default first, so a plain run takes the addresses it always took. The four
+  # variables move TOGETHER because three of them are addresses INSIDE the
+  # first — which is the whole reason they are derived here from one answer
+  # rather than named four times.
+  #
+  # AN OPERATOR'S OWN `STS_NETWORK_SUBNET` IS HONOURED and the addresses are
+  # derived from it, so the one lever docker-compose.yml documents still moves
+  # the whole arrangement in one place.
+  # ---------------------------------------------------------------------------
+  if [ -z "${STS_NETWORK_SUBNET:-}" ];
+  then
+    STS_NETWORK_SUBNET="$(freeSubnet 172.29)"
+    if [ -z "${STS_NETWORK_SUBNET}" ];
+    then
+      echo "No free /24 could be found in 172.29.0.0/16 for the stack's own"
+      echo "network. Every one of the 256 overlaps a docker network or a route"
+      echo "on this machine — \`docker network ls\` and \`ip route\` say which."
+      echo "STS_NETWORK_SUBNET names one explicitly."
+      return 1
+    fi
+  fi
+  # The three addresses inside it. `.10` is the service, and `.11`-`.13` are
+  # what the container adds to its own interface for a realm's SPIFFE
+  # listeners — see the STS_EXTRA_IPS block in docker-compose.yml.
+  #
+  # DERIVED FROM THE SUBNET RATHER THAN FROM THE BASE, which is not the same
+  # thing and was wrong for an edit: the scan hands back `172.29.1.0/24` as
+  # readily as `172.29.0.0/24`, and an address built from the first two octets
+  # would then sit outside the network compose was about to create — which
+  # compose refuses at `up` with a message about an invalid address, one layer
+  # away from the thing that chose it.
+  STS_NETWORK_BITS="${STS_NETWORK_SUBNET##*/}"
+  STS_NETWORK_PREFIX="${STS_NETWORK_SUBNET%/*}"
+  STS_NETWORK_PREFIX="${STS_NETWORK_PREFIX%.*}"
+  STS_SERVICE_ADDRESS="${STS_NETWORK_PREFIX}.10"
+  STS_SERVICE_EXTRA_IPS="${STS_NETWORK_PREFIX}.11/${STS_NETWORK_BITS}"
+  STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.12/${STS_NETWORK_BITS}"
+  STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.13/${STS_NETWORK_BITS}"
+
+
   COMPOSE_ENV=(
     "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
     "STS_HOST_PORT=${STS_HOST_PORT}"
@@ -972,6 +1049,14 @@ composeUp()
     # about.
     "STS_LDAP_HOST_PORT=${STS_LDAP_HOST_PORT}"
     "STS_CONTAINER_NAME=${STS_TEST_CONTAINER}"
+    # THE NETWORK AND THE ADDRESSES IN IT, chosen above. Named here for the
+    # reason every other variable in this array is: a compose file default is
+    # what a run that does not name one gets, and these four defaults are the
+    # same literals for every run in this tree.
+    "STS_NETWORK_SUBNET=${STS_NETWORK_SUBNET}"
+    "STS_ADDRESS=${STS_SERVICE_ADDRESS}"
+    "STS_SPIFFE_GRPC_HOST=${STS_SERVICE_ADDRESS}"
+    "STS_EXTRA_IPS=${STS_SERVICE_EXTRA_IPS}"
     "STS_POSTGRES_CONTAINER_NAME=${STS_TEST_PG_CONTAINER}"
     "CONFIG_FILE=${STS_TEST_CONFIG_FILE}"
     # ---- THE MODE, and this was a hardcoded `memory` until 2026-09-07 -----
@@ -996,6 +1081,24 @@ composeUp()
     "STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}"
     "STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-}"
     "STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-false}"
+    # THE KEYSTORE, AND THEREFORE THE SECRET STORE (2026-09-12). `persisted`
+    # turns the keystore on without product mode, which is what makes the
+    # `dispatch` mode read its key-encryption key out of the OpenBao container
+    # the stack brings up. The other two modes generate a key per start and
+    # never dial it — see tests/tools/modes.sh, which sets this per mode for
+    # the reason that file's header gives about naming every variable.
+    #
+    # The DATABASE PASSWORD is not here because it is not per mode: the compose
+    # file's connection string carries none in any mode, and the store supplies
+    # it every time.
+    "STS_KEYS_SOURCE=${STS_KEYS_SOURCE:-generated}"
+    # The OpenBao containers' names, for the same reason every other container
+    # in this stack has one: two runs in one tree must not collide, and the
+    # compose default (`sts-openbao`) is the name a plain `docker compose up`
+    # in this directory takes.
+    "STS_BAO_CONTAINER_NAME=${STS_TEST_BAO_CONTAINER}"
+    "STS_BAO_TLS_CONTAINER_NAME=${STS_TEST_BAO_TLS_CONTAINER}"
+    "STS_BAO_SEED_CONTAINER_NAME=${STS_TEST_BAO_SEED_CONTAINER}"
     # TLS ON THE MAIN PORT. Named EXPLICITLY rather than left to the compose
     # file's own `${STS_HTTPS:-true}` default, and the reason is the one the
     # header of tests/tools/compose.sh gives: `sudo` empties the environment,

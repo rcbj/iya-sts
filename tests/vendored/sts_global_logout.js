@@ -115,6 +115,42 @@ const KRB_REALM = process.env.KRB5_REALM || "EXAMPLE.COM";
 // on why the KDC's permissiveness lives in its account policy.
 const KRB_PASSWORD = "password!";
 
+// ---------------------------------------------------------------------------
+// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT (2026-09-12).
+//
+// In PRODUCT mode this service invents no persona for a name, creates nobody
+// because a sign-in named them, verifies every presented password, answers
+// only a client that authenticates with a registered secret, and delivers a
+// SAML response, a WS-Federation reply and an authorization code only to an
+// address REGISTERED on the application's entry. The suite runs in
+// development, where each of those is permissive — which is exactly why this
+// job should not be relying on any of them. So the person is created with the
+// attributes a real account carries and a password of at least twelve
+// characters, that password is what every door below presents (the sign-in
+// screen, the WS-Trust UsernameToken and the LDAP bind), and each application
+// is registered with its identifier in every family it declares, the redirect
+// URI, ACS URL and reply URL the requests below will be answered at, and a
+// client secret the token requests present.
+//
+// **KERBEROS IS THE ONE DOOR THAT STILL LEANS ON THE MOCK**: the KDC's account
+// policy is one shared password for any name, and there is no operation on
+// `/admin-api` that provisions a user principal with a key of its own. That is
+// recorded here rather than papered over.
+// ---------------------------------------------------------------------------
+const PERSON_PASSWORD = "global-logout-Passw0rd!-" + String(Date.now()).slice(-6);
+const CLIENT_SECRET = "global-logout-client-secret-" + String(Date.now()).slice(-6);
+const MAIL_DOMAIN = "global-logout.test";
+
+function redirectUriFor(application) {
+  return "http://" + application + ".example.com/cb";
+}
+function acsUrlFor(application) {
+  return "http://" + application + ".example.com/acs";
+}
+function replyUrlFor(application) {
+  return "http://" + application + ".example.com/wsfed";
+}
+
 var checks = 0;
 function check(what, fn) {
   fn();
@@ -150,7 +186,7 @@ function jar() {
         });
     },
     has: function () { return Object.keys(store).length > 0; },
-    value: function () { return store.sts_mock_session || ""; }
+    value: function () { return store.sts_session || ""; }
   };
 }
 
@@ -200,7 +236,7 @@ async function throughTheScreens(cookies, started, username) {
     if (/name="authn_id"/.test(r.body)) {
       const b = hiddenFields(r.body);
       b.set("username", username);
-      b.set("password", "any-password-this-service-checks-none");
+      b.set("password", PERSON_PASSWORD);
       b.set("action", "login");
       ({ r, landed } = await follow(cookies, base + "/authn/login", {
         method: "POST", body: b.toString(),
@@ -231,7 +267,7 @@ async function oidcAuthorizationCode(username, application) {
   const started = await follow(cookies, base + "/oauth2/authorize" +
     "?response_type=code&scope=" + encodeURIComponent("openid profile") +
     "&client_id=" + encodeURIComponent(application) +
-    "&redirect_uri=" + encodeURIComponent("http://" + application + ".example.com/cb") +
+    "&redirect_uri=" + encodeURIComponent(redirectUriFor(application)) +
     "&nonce=n-" + Date.now() + "&state=st");
   const done = await throughTheScreens(cookies, started, username);
   const code = new URL(done.landed).searchParams.get("code");
@@ -242,7 +278,8 @@ async function oidcAuthorizationCode(username, application) {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code", code: code, client_id: application,
-      redirect_uri: "http://" + application + ".example.com/cb" }).toString() });
+      client_secret: CLIENT_SECRET,
+      redirect_uri: redirectUriFor(application) }).toString() });
   const body = await tok.json();
   assert.strictEqual(tok.status, 200,
     "the code should redeem; the token endpoint answered " + tok.status + " " +
@@ -260,7 +297,7 @@ async function oauth2AuthorizationCode(username, application) {
   const started = await follow(cookies, base + "/oauth2/authorize" +
     "?response_type=code&scope=" + encodeURIComponent("api") +
     "&client_id=" + encodeURIComponent(application) +
-    "&redirect_uri=" + encodeURIComponent("http://" + application + ".example.com/cb") +
+    "&redirect_uri=" + encodeURIComponent(redirectUriFor(application)) +
     "&state=st");
   const done = await throughTheScreens(cookies, started, username);
   const code = new URL(done.landed).searchParams.get("code");
@@ -271,7 +308,8 @@ async function oauth2AuthorizationCode(username, application) {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code", code: code, client_id: application,
-      redirect_uri: "http://" + application + ".example.com/cb" }).toString() });
+      client_secret: CLIENT_SECRET,
+      redirect_uri: redirectUriFor(application) }).toString() });
   const body = await tok.json();
   assert.strictEqual(tok.status, 200, "the code should redeem; got " + tok.status);
   return { protocol: "OAuth 2.0 authorization code", cookies: cookies,
@@ -287,7 +325,7 @@ function authnRequest(application) {
     'xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ' +
     'ID="_gl' + Date.now() + '" Version="2.0" ' +
     'IssueInstant="' + new Date().toISOString() + '" ' +
-    'AssertionConsumerServiceURL="http://' + application + '.example.com/acs" ' +
+    'AssertionConsumerServiceURL="' + acsUrlFor(application) + '" ' +
     'ProtocolBinding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST">' +
     '<saml:Issuer>' + application + '</saml:Issuer>' +
     '</samlp:AuthnRequest>';
@@ -345,7 +383,7 @@ async function wsTrust(username, application) {
     '<soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/' +
     '2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">' +
     '<wsse:UsernameToken><wsse:Username>' + username + '</wsse:Username>' +
-    '<wsse:Password>whatever</wsse:Password></wsse:UsernameToken>' +
+    '<wsse:Password>' + PERSON_PASSWORD + '</wsse:Password></wsse:UsernameToken>' +
     '</wsse:Security></soap:Header><soap:Body>' +
     '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/' +
     'ws-trust/200512"><wst:RequestType>http://docs.oasis-open.org/ws-sx/' +
@@ -509,7 +547,7 @@ async function x509(username) {
   assert.strictEqual(reply.status, 200,
     "the mutual-TLS listener should answer a connection carrying a verified " +
     "certificate; it answered " + reply.status);
-  const match = /sts_mock_session=([A-Za-z0-9_-]+)/.exec(reply.cookie || "");
+  const match = /sts_session=([A-Za-z0-9_-]+)/.exec(reply.cookie || "");
   assert.ok(match,
     "A VERIFIED CLIENT CERTIFICATE MUST START A SESSION (2026-09-05). The " +
     "listener answered 200 and set no session cookie, so either the sign-in " +
@@ -547,7 +585,7 @@ function ldapBind(username) {
     client.on("close", function () { closed = true; });
     const dn = "uid=" + username + ",ou=users," +
                (process.env.STS_LDAP_BASE_DN || "dc=example,dc=com");
-    client.bind(dn, "any-password-this-service-checks-none", function (err) {
+    client.bind(dn, PERSON_PASSWORD, function (err) {
       if (err) {
         reject(new Error("the bind was refused, and this directory refuses " +
                          "none: " + err.message));
@@ -586,7 +624,7 @@ async function sessionStillSignsIn(cookies, application) {
   const started = await follow(cookies, base + "/oauth2/authorize" +
     "?response_type=code&scope=" + encodeURIComponent("openid") +
     "&client_id=" + encodeURIComponent(application) +
-    "&redirect_uri=" + encodeURIComponent("http://" + application + ".example.com/cb") +
+    "&redirect_uri=" + encodeURIComponent(redirectUriFor(application)) +
     "&prompt=none&state=probe");
   // `prompt=none` is what makes this a QUESTION rather than a second sign-in:
   // OIDC Core section 3.1.2.1 says the server must not display any
@@ -639,7 +677,12 @@ async function postJson(url, payload) {
 }
 
 async function createUser(username) {
-  const r = await postJson(api("/users/create"), { username: username });
+  const r = await postJson(api("/users/create"), {
+    username: username, invent: false,
+    attributes: { cn: "Global Logout " + username, givenName: "Global",
+                  sn: username, displayName: "Global Logout " + username,
+                  mail: username + "@" + MAIL_DOMAIN },
+    credential: "password", password: PERSON_PASSWORD });
   assert.ok(r.status === 200 || /already/i.test(r.text),
     "the person should be created before anybody signs in; POST /users/create " +
     "answered " + r.status + " " + r.text.slice(0, 200));
@@ -653,21 +696,39 @@ async function createUser(username) {
 // where this one needs the unconfigured default so that a refusal below can
 // only be the sign-out.
 async function createApplication(identifier, protocols) {
-  const r = await postJson(api("/applications/create"),
-    { identifier: identifier, name: identifier, protocols: protocols });
-  assert.ok(r.status === 200 || /already/i.test(r.text),
-    "the application should be created before anybody authenticates against " +
-    "it; POST /applications/create answered " + r.status + " " +
-    r.text.slice(0, 200));
+  // THE FIELDS A DECLARED FAMILY NEEDS, and only those: the identifier each
+  // protocol names this application by, and the address each will deliver to.
   // `oauthRedirectUri`, SINGULAR — the registry's own attribute name, and a
   // plural one is refused as an attribute this registry does not know rather
-  // than being recorded and ignored.
-  const attrs = await postJson(api("/applications/add"),
-    { application: identifier, attribute: "oauthRedirectUri",
-      value: "http://" + identifier + ".example.com/cb" });
-  assert.ok(attrs.status === 200,
-    "and take its redirect URI; POST /applications/add answered " +
-    attrs.status + " " + attrs.text.slice(0, 200));
+  // than being recorded and ignored. The redirect URI is registered on EVERY
+  // entry, as it always was here, because the prompt=none probe after the sweep
+  // asks the authorization endpoint through whichever application the scenario
+  // names for `oidc`.
+  const declares = function (one) { return protocols.indexOf(one) >= 0; };
+  const fields = { oauthRedirectUri: [redirectUriFor(identifier)] };
+  if (declares("oauth2") || declares("oidc")) {
+    fields.oauthClientId = [identifier];
+    fields.oauthClientSecret = CLIENT_SECRET;
+    fields.oauthTokenEndpointAuthMethod = "client_secret_post";
+  }
+  if (declares("saml2") || declares("saml11")) {
+    fields.samlEntityId = [identifier];
+    fields.samlAssertionConsumerService = [acsUrlFor(identifier)];
+  }
+  if (declares("wsfed")) {
+    fields.wsfedRealm = [identifier];
+    fields.wsfedReplyUrl = [replyUrlFor(identifier)];
+  }
+  if (declares("wstrust")) {
+    fields.wstrustAppliesTo = [identifier];
+  }
+  const r = await postJson(api("/applications/create"),
+    { identifier: identifier, name: identifier, protocols: protocols,
+      fields: fields });
+  assert.ok(r.status === 200 && r.body && r.body.ok,
+    "the application should be created, with what its families need, before " +
+    "anybody authenticates against it; POST /applications/create answered " +
+    r.status + " " + r.text.slice(0, 300));
 }
 
 // EVERY PROTOCOL FAMILY THIS SERVICE WILL AUTHENTICATE A PERSON WITH, as the
@@ -815,7 +876,8 @@ async function runScenario(label, username, applicationFor) {
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: "grant_type=refresh_token&refresh_token=" +
               encodeURIComponent(one.refreshToken) + "&client_id=" +
-              encodeURIComponent(applicationFor("oidc")) });
+              encodeURIComponent(applicationFor("oidc")) +
+              "&client_secret=" + encodeURIComponent(CLIENT_SECRET) });
       check(label + ": the " + one.protocol + " refresh token will not refresh",
         function () {
           assert.notStrictEqual(refreshed.status, 200,

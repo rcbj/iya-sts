@@ -151,10 +151,25 @@ than three.
 **`/logout` needs no console role, and that is not an oversight.** Signing
 yourself out must not require a role that signing in did not.
 
-**`logout.anyUser` is on by default** and lets `?username=` name somebody else.
-It grants nothing that was not already true: no sign-in screen here checks a
-password, so anybody who can reach this port can BECOME that person in one
-request and log themselves out. What it buys is a headless test.
+**`logout.anyUser` is on by default** and lets `?username=` name somebody else
+— **in development mode**, where it grants nothing that was not already true: no
+sign-in screen there checks a password, so anybody who can reach this port can
+BECOME that person in one request and log themselves out. What it buys is a
+headless test.
+
+**IN PRODUCT MODE IT IS IGNORED, AND UNTIL 2026-09-12 IT WAS NOT.** The
+paragraph above is a development-mode argument, and product mode verifies a
+password at every door — so what was left was an ANONYMOUS request, holding no
+cookie and no credential, that ended any named person's sessions, revoked their
+refresh tokens and dropped their directory connections. `anyUserAllowed()` is
+`mode.opensTestControls()` AND the setting now. Where naming somebody else is
+closed, a name that IS the signed-in caller's own is still honoured, because
+every form the inventory page draws posts the name it was drawn for; anything
+else is a 403 naming the operator's door. **The choice was "only the signed-in
+caller" rather than "an administrative credential on `/logout`"**, because that
+credential already has a door — `/admin/logout` and `/admin-api/logout` — and a
+second way to present it here would be a second answer to who may end somebody
+else's sessions. `tests/session_clocks.js` section 5 pins it.
 
 ---
 
@@ -229,7 +244,7 @@ outlive every session here, and they are `/admin/tokens`. The three:
 
 | Family | Why it is a session | How its expiry is worked out |
 |---|---|---|
-| `session` | the cookie from `/authn/login`, which every browser family here shares | ABSOLUTE, fixed when it was created, and **not extended by use** — there is no idle timeout in this service |
+| `session` | the cookie from `/authn/login`, which every browser family here shares | ABSOLUTE, fixed when it was created — `authn.sessionLifetimeS` — and **not extended by use**; `authn.sessionIdleTimeoutS` adds an idle timeout, off by default |
 | `krb5` | a TGT IS the Kerberos session; a service ticket is one use of it (`recordTicket()` says so in as many words) | the `endtime` the KDC sealed INTO the ticket, which nothing here can move |
 | `ldap` | RFC 4511 section 4.2 makes a Bind the authorization state of a CONNECTION | **none** — it lasts until the next Bind, an Unbind, or the socket closing |
 
@@ -325,3 +340,20 @@ and the next call authenticates again and brings the row back. It is the same
 distinction this file already draws about a Kerberos service ticket, one surface
 along — and it is why the Revoke button needed the sentence before it is
 pressed rather than after.
+
+## THE EXPIRY RULES ARE BUILT FROM THE SETTINGS, AND WHAT HAS ENDED IS `authn.js`'s ANSWER (2026-09-12)
+
+`SESSION_EXPIRY_RULES.session` said "this service has no idle timeout" and
+`.api` said "an hour after the last call" as literals — true of the defaults and
+false the moment an operator set `authn.sessionLifetimeS` or
+`authn.sessionIdleTimeoutS`, on the one page whose whole subject is how each
+session ends. Both are GETTERS now, so every reader (`admin.js`, the management
+API, a JSON serialisation) sees ordinary properties whose words follow the
+configuration; the Kerberos and LDAP rules are facts about those protocols and
+stay strings.
+
+**`liveSessions()` asks `authn.sessionEnded()`** rather than comparing
+`expires` itself, so a session that has gone idle is off `/admin/sessions`
+exactly when `authn.js` would refuse it. A comparison of its own here would be a
+second answer to *has this ended*, which is the thing this module exists not to
+have.

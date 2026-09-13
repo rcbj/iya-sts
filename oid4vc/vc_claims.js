@@ -76,13 +76,22 @@ const { log } = require('../common/helpers');
 // ldap_server.js uses to build `uid=<name>,ou=users` and that /admin/users files a
 // row under, and using anything else here would be the bug CLAUDE.md's "one row is
 // one local name" rule exists to prevent — see personaFor() for what it looked
-// like: an access token whose sub is `urn:sts-mock:user:alice` inventing a second
+// like: an access token whose sub is `urn:sts:user:alice` inventing a second
 // alice, with her directory entry sitting right there unread.
 //
 // admin_stats.js is a library that requires only helpers.js, so this is no cycle
 // and no ordering constraint. It is also already required by vc_issuer.js and
 // app.js, so nothing is loaded here that was not loaded anyway.
 const stats = require('../common/admin_stats');
+// THE MODE, for one question: may a value be INVENTED where the directory
+// holds none? A LEAF (rule 3) — it requires only `config` — so this require
+// can neither close a cycle nor move a route. See `valueFor()` and
+// `generatedFor()`, the two places the persona reaches anything outside this
+// file.
+const mode = require('../common/mode');
+// The error codes (common/error_codes.js). A LEAF that requires nothing, so it adds
+// nothing to the short list of what this library may require.
+const errorCodes = require('../common/error_codes');
 
 // ---------------------------------------------------------------------------
 // THE CATALOGUE.
@@ -500,7 +509,7 @@ function personaFor(name) {
   log.debug("Entering personaFor(). name=" + name);
   // NORMALISED first, and this line is load-bearing. The three spellings of one
   // person reach this module from three directions — `alice` from the directory
-  // sweep, `urn:sts-mock:user:alice` from an access token's sub,
+  // sweep, `urn:sts:user:alice` from an access token's sub,
   // `alice@EXAMPLE.COM` from a Kerberos-authenticated one — and the seed is the
   // string. Seeding on the raw value invented a different person per spelling and
   // then failed to find the entry any of them had, so a credential for alice
@@ -562,8 +571,21 @@ function personaFor(name) {
 // service already writes on every entry (it records which protocols that person
 // has authenticated through), and inventing a second description would overwrite
 // a fact with a fiction.
+//
+// **NOTHING IN PRODUCT MODE (2026-09-12).** What this returns is written ONTO
+// DIRECTORY ENTRIES by `ldap_server.js`'s populate sweep, and a value written
+// there stops being `generated` and starts being `directory` — so an invented
+// birthdate put on an entry here would come back out of every credential and
+// every claims request as a fact the directory holds. Gating only `valueFor()`
+// below would have left that door open one step earlier.
+// `mode.inventsClaimValues()` is the question, and the sweep then reports that
+// it had nothing to fill rather than filling it.
 function generatedFor(name) {
   log.debug("Entering generatedFor(). name=" + name);
+  if (!mode.inventsClaimValues()) {
+    log.debug("Leaving generatedFor(). This realm invents no claim values.");
+    return {};
+  }
   const persona = personaFor(name);
   const out = {};
   selectedRows().forEach(function (row) {
@@ -619,12 +641,13 @@ function directoryAttributes(name) {
   }
   try {
     // Normalised for the reason personaFor() gives: the directory files a person
-    // under their local name, and an access token's `urn:sts-mock:user:alice`
+    // under their local name, and an access token's `urn:sts:user:alice`
     // would otherwise look up an entry nothing ever created.
     log.debug("Leaving directoryAttributes().");
     return directory.attributesFor(stats.identityKeyOf(name)) || null;
   } catch (e) {
-    log.error('the directory threw while being read for credential claims and ' +
+    log.error(errorCodes.tag('STS-VC-0047') +
+              'the directory threw while being read for credential claims and ' +
               'was ignored; the credential is unaffected: ' + e.message);
     log.debug("Leaving directoryAttributes().");
     return null;
@@ -655,7 +678,8 @@ function populateDirectory() {
     // Reported rather than thrown: this is called from a form handler and from
     // the moment the selection changes, and neither of those is allowed to fail
     // because a directory did.
-    log.error('populating the directory for credential claims threw: ' + e.message);
+    log.error(errorCodes.tag('STS-VC-0048') +
+              'populating the directory for credential claims threw: ' + e.message);
     log.debug("Leaving populateDirectory(). It threw.");
     return { ok: false, loaded: true, examined: 0, changed: 0, values: 0,
              errors: ['The directory threw while being populated: ' + e.message] };
@@ -676,11 +700,16 @@ function populateDirectory() {
 //      operator who does `ldapmodify` on alice's `mail` expects the next
 //      credential to say so, and this is the line that makes that true.
 //   3. the GENERATED persona. Reached when the directory is off, when the person
-//      has no entry yet, or when the entry does not carry that attribute.
+//      has no entry yet, or when the entry does not carry that attribute — and
+//      ONLY IN DEVELOPMENT MODE since 2026-09-12. A product realm
+//      (`mode.inventsClaimValues()` false) stops at the directory, and a claim
+//      neither source above produces is absent; see `valueFor()`.
 //
-// Nothing is ever left absent because a source was missing. A selected claim that
-// silently did not arrive would be indistinguishable, at the wallet, from a
-// selection that never took effect.
+// Nothing is ever left absent because a source was missing — IN DEVELOPMENT. A
+// selected claim that silently did not arrive would be indistinguishable, at the
+// wallet, from a selection that never took effect. Product mode takes the other
+// side of that trade on purpose: an absent claim is a thing a wallet handles,
+// and an invented one in a SIGNED credential is a thing it believes.
 // ---------------------------------------------------------------------------
 function setPath(target, path, value) {
   let node = target;
@@ -718,6 +747,31 @@ function valueFor(row, name, tokenClaims, attributes, persona) {
   }
   if (!row.from) {
     log.debug("Leaving valueFor().");
+    return null;
+  }
+  // ---------------------------------------------------------------------
+  // THE THIRD SOURCE IS A DEVELOPMENT-MODE SOURCE (2026-09-12).
+  //
+  // Until this date an attribute the entry lacked was filled from the persona
+  // in every mode — so a product deployment issued SIGNED credentials carrying
+  // an invented birthdate, a `+1-555-01xx` telephone number and an address in
+  // a town called Placeholder, and a verifier checking the signature had every
+  // reason to believe them. The signature is what makes this worse than an
+  // invented claim in an unsigned response: it is this service vouching for a
+  // fact nobody gave it.
+  //
+  // So `mode.inventsClaimValues()` is asked here, and in product the row is
+  // ABSENT — which is the opposite of this function's header ("nothing is ever
+  // left absent because a source was missing") and is the right opposite: a
+  // wallet or a relying party can handle a claim that is not there, and cannot
+  // handle one that is false. Development is unchanged.
+  //
+  // One place, and it covers every reader: the credential builders, the
+  // console preview, and `common/claim_attributes.js`, whose token attributes
+  // and OIDC Core 5.5 claims requests are all built by this function.
+  // ---------------------------------------------------------------------
+  if (!mode.inventsClaimValues()) {
+    log.debug("Leaving valueFor(). Nothing on the entry, and this realm invents nothing.");
     return null;
   }
   const raw = persona[row.from];

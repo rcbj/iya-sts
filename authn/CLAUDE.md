@@ -119,7 +119,7 @@ and it does not change.
 
 **What changed is that the console asks a different question, and it had to,
 because of a fact about the COOKIE rather than a change of mind about realms.**
-`startSession()` writes `sts_mock_session` at `Path=/` — one name, one path, for
+`startSession()` writes `sts_session` at `Path=/` — one name, one path, for
 every protocol here, deliberately and for a reason that predates realms by
 months. So a browser holds exactly ONE session id for this whole origin whatever
 realm minted it, and the console's realm switcher (a link to the same page in
@@ -376,8 +376,8 @@ authorization server now, so this module holds two kinds of browser row:
 
 | | Created by | Cookie | Read by |
 |---|---|---|---|
-| SIGN-ON | `startSession()`, at the screen or any other credential | `sts_mock_session` | `/oauth2/authorize`, `/wsfed`, both SAML profiles — every protocol family |
-| RELYING PARTY | `startRelyingPartySession()`, from a verified ID Token | `sts_mock_admin`, `sts_mock_portal` | the surface that minted it, and nothing else |
+| SIGN-ON | `startSession()`, at the screen or any other credential | `sts_session` | `/oauth2/authorize`, `/wsfed`, both SAML profiles — every protocol family |
+| RELYING PARTY | `startRelyingPartySession()`, from a verified ID Token | `sts_admin`, `sts_portal` | the surface that minted it, and nothing else |
 
 **They are one store because rule 3m says so** — `logout.js` reads this map,
 `/admin/sessions` draws it, CAEP observes it, and a second register would be a
@@ -1148,3 +1148,68 @@ only this person holds. **A recovery code is a WEAKER second factor than the one
 it stands in for and there is no vocabulary here in which to say so** —
 downgrading to `1` would claim ONE factor when two were checked — so the audit
 row and `/admin/sessions` are where which mechanism it was is recorded.
+
+## THE SESSION CLOCKS ARE SETTINGS, AND ONE FUNCTION SAYS WHETHER A SESSION HAS ENDED (2026-09-12)
+
+`SESSION_TTL_MS` (an hour), `AUTHN_TTL_MS` (ten minutes) and `MFA_TTL_MS` (five)
+were literals, and there was no idle timeout anywhere — the first thing a
+deployment's security review asks for and the one thing nobody could set. They
+are `authn.sessionLifetimeS`, `authn.pendingTtlS` and `authn.mfaStepTtlS` now,
+with `authn.sessionIdleTimeoutS` beside them, and every default is the literal
+it replaced. **The idle timeout's default is ZERO and zero means none**, which
+is why it is read by a function of its own rather than `secondsSetting()`, whose
+fallback would turn a deliberate zero into an hour.
+
+Four things are load-bearing:
+
+* **THE LIFETIME IS STAMPED AT CREATION; THE IDLE TIMEOUT IS CHECKED AT READ.**
+  A lifetime is a property a session was issued with, so a change reaches the
+  next one. An idle timeout is a policy about how long this service goes on
+  honouring a session nobody is using, so `sessionEnded()` — THE ONE PLACE the
+  question is answered — asks it every time a session is looked up
+  (`sessionOf()`, `relyingPartySessionOf()`, `consoleSession()`, the
+  keyed-session lookup) and on every sweep, and `logout/logout.js` asks the same
+  function.
+* **AN IDLE SESSION IS ENDED, NOT MERELY REFUSED.** It goes through
+  `expireSession()` like an absolute expiry, so it writes the `session.end` row
+  and the CAEP `session-revoked` every other ending writes, with a reason that
+  says which limit ran out.
+* **A READ IS NOT A WRITE UNLESS AN IDLE TIMEOUT IS IN FORCE.** `lastSeenAt` is
+  touched by `noteSessionUsed()` only then, and at most once a second, because
+  `sessionOf()` is called several times per request and the store's journal
+  sees `set()`. With no idle timeout — the default — nothing a session carries
+  changes on a read, which is what this service always did.
+* **USE OF THE CONSOLE OR THE PORTAL IS USE OF THE SIGN-ON SESSION BEHIND IT.**
+  Somebody working in the console presents only the console's cookie, so without
+  `relyingPartySessionOf()` touching the parent too, the sweep would idle the
+  sign-on session out underneath them and the cascade would end the console
+  session they are using. An ARRIVAL session is exempt: it has an inactivity
+  window of its own on the screen's clock.
+
+`common/oidc_rp.js`'s flow lifetime reads `authn.pendingTtlS` as well — the two
+were "deliberately the same" as two literals, which is how two numbers come
+apart. `tests/session_clocks.js` pins all of it, mutation-tested against ten.
+
+## THE WEBAUTHN ADDRESS RULES (2026-09-12)
+
+Two changes to what a ceremony is held to, both about the address a request
+arrived at:
+
+* **`webauthn.allowedOrigins`.** `expectedOriginFor()` answers
+  `originOf(base)` when it is empty — what this module always did, and what
+  `global.publicBaseUrl` already pins — and, when it is set, looks the
+  clientDataJSON's claimed origin up in the list. A claim is only ever returned
+  when an operator already listed it, and the verifier still checks the signed
+  bytes against it; a claim off the list is answered with the list's first
+  entry so the verifier refuses it in its own words.
+* **`rpIdProblem()`.** `rpIdOf()`'s fallback — a configured `webauthn.rpId` that
+  does not fit the host is replaced by the host, and the log says why — is a
+  development convenience. The host is read off the request, so in product mode
+  it is a ceremony scoped to whatever Host arrived. `rpIdProblem()` asks
+  `mode.acceptsUnregisteredAddresses()` and the ceremony's POST refuses on it;
+  the GET draws the sentence on the page. `rpIdOf()` itself keeps answering,
+  because a page that says what it would have sent is worth more than one that
+  throws.
+
+**`/portal/keys` asks both functions**, so the two ceremonies cannot accept
+different origins. `tests/webauthn_addresses.js` pins it.

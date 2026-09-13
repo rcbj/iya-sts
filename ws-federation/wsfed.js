@@ -116,6 +116,20 @@ const applications = require('../common/applications');
 // For the two stores below only. `realms.js` requires config.js and nothing
 // else here, so it registers no route and cannot join a cycle — see rule 3m.
 const realms = require('../common/realms');
+// THE MODE, and four libraries in `saml/` (2026-09-12) — the one reading of how a
+// session authenticated, the configured signature algorithms, the rule for where
+// a response may be delivered, and the persona facts a token carries in each
+// mode. A require from here into `saml/` is the direction this module already
+// had for the two builders, so it closes no cycle; each is a leaf and moves no
+// route.
+const mode = require('../common/mode');
+const authnContext = require('../saml/authn_context');
+const documentSettings = require('../saml/document_settings');
+const returnAddress = require('../saml/return_address');
+const personAttributes = require('../saml/person_attributes');
+// The error codes (common/error_codes.js). A LEAF that requires nothing; a code is
+// marked on the response object and never drawn on the error page.
+const errorCodes = require('../common/error_codes');
 
 // --- the vocabulary --------------------------------------------------------
 const WSFED_NS = 'http://docs.oasis-open.org/wsfed/federation/200706';
@@ -215,7 +229,11 @@ const RP_PATH = '/wsfed/rp';
 // identity provider's own stores above — which is why it survived the
 // deletion of SIGNIN_TTL_MS and pendingSignIns and has to be declared here
 // rather than folded into them.
-const RP_CONTEXT_TTL_MS = 30 * 60 * 1000;
+//
+// `wsfed.mockRpContextTtlMin` since 2026-09-12; it was a thirty-minute constant.
+function rpContextTtlMs() {
+  return Number(config.value('wsfed.mockRpContextTtlMin')) * 60 * 1000;
+}
 
 // THIS PROFILE NO LONGER HOLDS AN INTERRUPTED SIGN-IN, and the store that did
 // is worth a line rather than a silent deletion. `pendingSignIns` was a
@@ -314,6 +332,7 @@ function page(title, inner) {
 // and there is nowhere to report to except the screen — so the error IS a page, and
 // it says what to change rather than "invalid request".
 function wsfedError(res, status, title, detail, extra) {
+  // error-code: none — the helper's own trace line; every caller marks its own code
   log.debug("Entering wsfedError(). status=" + status + ", title=" + title);
   const inner = '<h1>' + xmlEscape(title) + '</h1>' +
     '<p class="sub">WS-Federation passive requestor endpoint at <code>' + PASSIVE_PATH + '</code></p>' +
@@ -322,6 +341,7 @@ function wsfedError(res, status, title, detail, extra) {
     'browser navigation, so there is nothing to redirect an error to and this page is the answer. ' +
     'The request is logged in full at debug level.</div></div>';
   res.status(status).type('text/html').set('Cache-Control', 'no-store').send(page(title, inner));
+  // error-code: none — the helper's own trace line; every caller marks its own code
   log.debug("Leaving wsfedError().");
 }
 
@@ -329,9 +349,15 @@ function wsfedError(res, status, title, detail, extra) {
 // The claims, once, in the shape each token type wants. Written from the one user
 // object so the two assertions cannot describe different people — which they did
 // while this was two lists.
-function claimsFor(user, authnMethod, authnInstant) {
-  log.debug("Entering claimsFor(). user=" + user.username);
-  const claims = [
+function claimsFor(sessionUser, authnMethod, authnInstant) {
+  log.debug("Entering claimsFor(). user=" + sessionUser.username);
+  // THE PERSON, with absent facts left OUT (2026-09-12). Development is exactly
+  // the list it always was — userFor() invents all four persona facts there. In
+  // product it invents none, so they come off the directory entry or are
+  // omitted rather than signed as empty claims; see saml/person_attributes.js.
+  // The UPN goes with the mail address, for the reason below.
+  const user = personAttributes.personFor(sessionUser);
+  const claims = personAttributes.withoutAbsent([
     { namespace: CLAIM_NS, name: 'nameidentifier', value: user.sub },
     { namespace: CLAIM_NS, name: 'name', value: user.username },
     { namespace: CLAIM_NS, name: 'givenname', value: user.given_name },
@@ -344,16 +370,14 @@ function claimsFor(user, authnMethod, authnInstant) {
     { namespace: CLAIM_NS, name: 'upn', value: user.email },
     { namespace: MS_CLAIM_NS, name: 'authenticationmethod', value: authnMethod },
     { namespace: MS_CLAIM_NS, name: 'authenticationinstant', value: authnInstant }
-  ];
+  ]);
   log.debug("Leaving claimsFor(). " + claims.length + " claim(s).");
   return claims;
 }
 
 // What the session says actually happened, in each token type's vocabulary.
-// THREE outcomes rather than two, because /authn/login can now use a security
-// key in either of two roles: after a password (two factors) or instead of one
-// (one factor, and a key). Nothing here is configurable by the request, which is
-// the point: `wauth` asks, the session answers.
+// Nothing here is configurable by the request, which is the point: `wauth`
+// asks, the session answers.
 //
 // The multi-factor test is `hwk` AND `pwd`, not `hwk` alone. It used to be the
 // latter, which was right while every session carrying a key had been through a
@@ -361,25 +385,20 @@ function claimsFor(user, authnMethod, authnInstant) {
 // sign-in would have produced `multipleauthn`, which is the one claim this
 // profile refuses to fake — and it would have satisfied a wauth demanding two
 // factors with a session that had one.
+//
+// **SINCE 2026-09-12 THE READING IS `saml/authn_context.js`'s**, shared with
+// both SAML profiles, and it fixed a defect all three copies had: the fall
+// through answered `am:password` / PasswordProtectedTransport for a TLS client
+// certificate, a Kerberos ticket, a federated sign-in and the unauthenticated
+// session alike — so a `wauth` demanding a password was honoured by a session
+// in which nobody typed one. Password, security-key and two-factor sessions
+// produce exactly what they always did.
 function authnMethodsFor(session) {
   log.debug("Entering authnMethodsFor().");
-  const amr = session.amr || [];
-  const hardwareKey = amr.indexOf('hwk') >= 0;
-  const password = amr.indexOf('pwd') >= 0;
-  const mfa = (hardwareKey && password) || session.acr === 'mfa';
-  if (mfa) {
-    log.debug("Leaving authnMethodsFor().");
-    return { saml11: AM_MULTIFACTOR, saml2: AM_MULTIFACTOR,
-             multiFactor: true, hardwareKey: hardwareKey };
-  }
-  if (hardwareKey) {
-    log.debug("Leaving authnMethodsFor().");
-    return { saml11: AM_HARDWARE_SAML11, saml2: AC_UNSPECIFIED_SAML2,
-             multiFactor: false, hardwareKey: true };
-  }
-  log.debug("Leaving authnMethodsFor().");
-  return { saml11: AM_PASSWORD_SAML11, saml2: AC_PASSWORD_SAML2,
-           multiFactor: false, hardwareKey: false };
+  const read = authnContext.forSession(session);
+  log.debug("Leaving authnMethodsFor(). " + read.kind + ".");
+  return { saml11: read.saml11, saml2: read.saml2, kind: read.kind,
+           multiFactor: read.multiFactor, hardwareKey: read.hardwareKey };
 }
 
 // The token type asked for. Three ways, in precedence order, and the first two are
@@ -418,7 +437,8 @@ function tokenTypeFor(params) {
     } catch (e) {
       // Not XML. Reported and ignored rather than fatal — the request can still be
       // answered with the default token, and the log says the wreq was unreadable.
-      log.error('wsfed: the wreq parameter is not readable XML: ' + e.message);
+      log.error(errorCodes.tag('STS-WSFED-0014') +
+                'wsfed: the wreq parameter is not readable XML: ' + e.message);
     }
   }
   if (!asked && params.tokenType) {
@@ -595,6 +615,7 @@ function signIn(req, res, params) {
 
   if (params.wreqptr) {
     log.debug("Leaving signIn(). wreqptr was used.");
+    errorCodes.mark(res, 'STS-WSFED-0001');
     return wsfedError(res, 400, 'wreqptr is not dereferenced',
       'This request carries wreqptr, which names a URL the identity provider is meant to fetch the ' +
       'request from. This service will not fetch an arbitrary URL handed to it in a query parameter — ' +
@@ -605,6 +626,7 @@ function signIn(req, res, params) {
   const realm = String(params.wtrealm || '');
   if (!realm) {
     log.debug("Leaving signIn(). No wtrealm.");
+    errorCodes.mark(res, 'STS-WSFED-0002');
     return wsfedError(res, 400, 'wtrealm is required',
       'A wsignin1.0 request must name the relying party it is for (section 13.2.1). The realm becomes ' +
       'the assertion\'s audience restriction, and an assertion with no audience is one any relying ' +
@@ -617,14 +639,48 @@ function signIn(req, res, params) {
   // mock relying party rather than nowhere: a real IdP would post to the endpoint
   // registered for wtrealm, and there is no registration here to consult.
   //
-  // It is NOT validated against anything, exactly as post_logout_redirect_uri is
-  // not at /oauth2/logout, and for the same stated reason — this mock accepts
-  // arbitrary return URLs on purpose. It must at least be an absolute http(s) URL,
-  // because a form action that is not one posts back to this origin and the failure
-  // reads as the relying party having ignored the response.
-  const wreply = params.wreply ? String(params.wreply) : (base + RP_PATH);
+  // It is NOT validated against anything IN DEVELOPMENT MODE, exactly as
+  // post_logout_redirect_uri is not at /oauth2/logout, and for the same stated
+  // reason — that mode accepts arbitrary return URLs on purpose.
+  //
+  // **IN PRODUCT MODE IT IS (2026-09-12).** `mode.acceptsUnregisteredAddresses()`
+  // false means the wreply must be one of the `wsfedReplyUrl` values on the
+  // wtrealm's own application entry, compared exactly; a request naming none
+  // gets the registered one; and there is no fallback to /wsfed/rp — a real IdP
+  // posts to the endpoint registered for the realm, and in that mode there is a
+  // registration to consult. `saml/return_address.js` is the rule, shared with
+  // both SAML profiles.
+  //
+  // Either way it must be an absolute http(s) URL, because a form action that is
+  // not one posts back to this origin and the failure reads as the relying party
+  // having ignored the response.
+  const realmEntry = applications.get(realm);
+  // WHICH OF THE ENTRY'S wreply VALUES COUNT is `applications.returnAddressesOf()`'s
+  // to say (2026-09-12): in product one a development-mode request recorded is
+  // still marked OBSERVED and is withheld until an operator confirms it.
+  const replyKnown = applications.returnAddressesOf(realmEntry || {}, 'wsfedReplyUrl');
+  const replyTo = returnAddress.resolve({
+    requested: params.wreply ? String(params.wreply) : '',
+    // THE DEVELOPMENT PRECEDENCE IS KEPT BYTE FOR BYTE: a request with no wreply
+    // went to /wsfed/rp even when the entry recorded one, so development passes
+    // no registration here. Product passes the entry's.
+    registered: mode.acceptsUnregisteredAddresses() ? [] : replyKnown.registered,
+    unconfirmed: replyKnown.unconfirmed,
+    fallback: base + RP_PATH,
+    attribute: 'wsfedReplyUrl',
+    parameter: 'wreply',
+    application: realm
+  });
+  if (!replyTo.ok) {
+    log.info('wsfed: refused a wsignin1.0 for "' + realm + '": ' + replyTo.why);
+    log.debug("Leaving signIn(). The wreply is not registered.");
+    errorCodes.mark(res, errorCodes.codeOf(replyTo) || 'STS-WSFED-0003');
+    return wsfedError(res, 400, 'That wreply is not registered', replyTo.why);
+  }
+  const wreply = String(replyTo.url);
   if (!/^https?:\/\//i.test(wreply)) {
     log.debug("Leaving signIn(). wreply is not an absolute http(s) URL.");
+    errorCodes.mark(res, 'STS-WSFED-0004');
     return wsfedError(res, 400, 'wreply must be an absolute URL',
       'wreply is "' + wreply + '". The sign-in response is a form POST to that address, and a ' +
       'relative or non-http(s) value posts back to this service instead — which looks exactly like a ' +
@@ -634,6 +690,7 @@ function signIn(req, res, params) {
   const asked = tokenTypeFor(params);
   if (asked.error) {
     log.debug("Leaving signIn(). An unsupported token type was asked for.");
+    errorCodes.mark(res, 'STS-WSFED-0005');
     return wsfedError(res, 400, 'That token type is not offered',
       'This request asked for "' + asked.error + '" (from ' + asked.from + '). This identity provider ' +
       'issues SAML 1.1 (' + SAML11_TOKEN_TYPE + ') and SAML 2.0 (' + SAML2_TOKEN_TYPE + ') assertions, ' +
@@ -645,6 +702,7 @@ function signIn(req, res, params) {
   if (wauth && WAUTH_PASSWORD.indexOf(wauth) < 0 && WAUTH_MULTIFACTOR.indexOf(wauth) < 0 &&
       WAUTH_HARDWARE.indexOf(wauth) < 0) {
     log.debug("Leaving signIn(). wauth named a method this service cannot perform.");
+    errorCodes.mark(res, 'STS-WSFED-0006');
     return wsfedError(res, 400, 'That authentication method is not available',
       'wauth asked for "' + wauth + '". This identity provider can perform a password sign-in, and it ' +
       'can report a multi-factor one when the browser session was established with a security key.',
@@ -674,6 +732,7 @@ function signIn(req, res, params) {
   // ---------------------------------------------------------------------
   if (params.authn_error) {
     log.debug("Leaving signIn(). The sign-in did not complete: " + params.authn_error);
+    errorCodes.mark(res, 'STS-WSFED-0007');
     return wsfedError(res, 200, 'Sign-in cancelled',
       'The sign-in did not complete — the authentication service reported "' +
       xmlEscape(String(params.authn_error_description || params.authn_error)) +
@@ -690,6 +749,7 @@ function signIn(req, res, params) {
   const fresh = session ? freshEnough(session, params.wfresh) : { ok: true };
   if (fresh.invalid) {
     log.debug("Leaving signIn(). wfresh was not a number.");
+    errorCodes.mark(res, 'STS-WSFED-0008');
     return wsfedError(res, 400, 'wfresh must be a number of minutes',
       'wfresh is "' + params.wfresh + '". Section 13.2.1 makes it the maximum age of the ' +
       'authentication in MINUTES, with 0 meaning "authenticate now" — it is not a number of seconds ' +
@@ -703,6 +763,7 @@ function signIn(req, res, params) {
     // satisfies this one only.
     if (WAUTH_HARDWARE.indexOf(wauth) >= 0 && !authnMethodsFor(session).hardwareKey) {
       log.debug("Leaving signIn(). wauth asked for a hardware token and the session has none.");
+      errorCodes.mark(res, 'STS-WSFED-0009');
       return wsfedError(res, 400, 'This session used no security key',
         'wauth asked for "' + wauth + '", and the browser session here was established with a ' +
         'password alone. This service will not claim a key that was never presented.',
@@ -733,6 +794,7 @@ function signIn(req, res, params) {
       // deployment configures `fedAuthnMechanism: password-mfa` on the
       // relationship and every sign-in for that partner has two.
       log.debug("Leaving signIn(). wauth asked for multi-factor and the session has one factor.");
+      errorCodes.mark(res, 'STS-WSFED-0010');
       return wsfedError(res, 400, 'This session has one factor',
         'wauth asked for "' + wauth + '", and the browser session here was established with ONE ' +
         'factor — a password alone, or a security key alone. This service will not claim a second ' +
@@ -824,9 +886,14 @@ function signIn(req, res, params) {
         note: 'the relying party this token is for, and the assertion\'s ' +
               'audience restriction.' },
       { label: 'wreply', value: wreply,
-        note: params.wreply ? 'where the sign-in response is POSTed.'
-                            : 'none was sent, so the response goes to this ' +
-                              'service\'s own mock relying party.' },
+        note: params.wreply
+          ? 'where the sign-in response is POSTed' +
+            (mode.acceptsUnregisteredAddresses() ? '.' : ', registered on the realm\'s entry.')
+          : (mode.acceptsUnregisteredAddresses()
+              ? 'none was sent, so the response goes to this service\'s own mock ' +
+                'relying party.'
+              : 'none was sent, so the response goes to the address registered on the ' +
+                'realm\'s entry.') },
       { label: 'wctx', value: String(params.wctx || '(none)'),
         note: 'echoed back byte for byte and never interpreted.' }
     ].concat(wauth
@@ -877,6 +944,7 @@ function issueSignInResponse(req, res, params, session, realm, wreply, tokenType
              String((session.user || {}).username) + '" to "' + realm + '". ' +
              roleAnswer.why);
     log.debug("Leaving issueSignInResponse(). The issuance policy refused it.");
+    errorCodes.mark(res, 'STS-WSFED-0011');
     return wsfedError(res, 403, 'Refused by policy', roleAnswer.why,
       '<p>The person is signed in. The XACML issuance policy would not let ' +
       'this relying party have a token for them &mdash; the roles a ' +
@@ -1117,6 +1185,7 @@ function passiveRequestor(req, res) {
   }
   if (wa === 'wattr1.0' || wa === 'wpseudo1.0') {
     log.debug("Leaving the passive requestor endpoint. " + wa + " is not implemented.");
+    errorCodes.mark(res, 'STS-WSFED-0012');
     return wsfedError(res, 501, 'That service is not implemented',
       wa === 'wattr1.0'
         ? 'wattr1.0 is the attribute service (section 3.2/13.3): a relying party asking the identity ' +
@@ -1130,6 +1199,7 @@ function passiveRequestor(req, res) {
           'service authenticates nobody and holds no per-relying-party state to map a pseudonym to.');
   }
   log.debug("Leaving the passive requestor endpoint. An unknown wa: " + wa);
+  errorCodes.mark(res, 'STS-WSFED-0013');
   return wsfedError(res, 400, 'Unknown wa', 'This endpoint does not understand wa="' + wa + '".',
     '<h2>What it understands</h2><ul>' +
     '<li><code>wsignin1.0</code> — sign in, and get a token posted to wreply</li>' +
@@ -1143,12 +1213,45 @@ function passiveRequestor(req, res) {
 // from /admin/sts-metadata does. GET /sts answers the same way for the same
 // reason: an endpoint that 400s at a person who wanted to know what it was is a
 // bad first impression of a service whose entire purpose is to be looked at.
+// ---------------------------------------------------------------------------
+// THE TWO NAMES THIS PROFILE GOES BY, AND WHETHER THEY AGREE (2026-09-12).
+//
+// The federation metadata's entityID is `wsfed.entityId`; the Issuer of every
+// assertion a sign-in response carries is `saml.issuer`, because both builders
+// read it. They were split deliberately (config.js argues it: one names the
+// identity provider, the other whoever signed an assertion) and they default to
+// the same string. A relying party configured from the metadata, though —
+// WIF's and OWIN's issuer name registry is exactly this — trusts the ENTITYID
+// and then reads the assertion's Issuer, so a deployment that changed one and
+// not the other has a relying party refusing every token with a message about
+// an unknown issuer, and nothing here said the two had drifted.
+//
+// So it is SAID, rather than reconciled: in the log once at startup (for the
+// process-wide values), and on this profile's own description page for the
+// realm the request is in. Reconciling silently — making one follow the other —
+// would take away the split the settings exist for. Returns '' when they agree.
+// ---------------------------------------------------------------------------
+function issuerDisagreement() {
+  const entityId = String(config.value('wsfed.entityId') || '');
+  const issuer = String(config.value('saml.issuer') || '');
+  if (entityId === issuer) {
+    return '';
+  }
+  return 'wsfed.entityId ("' + entityId + '") and saml.issuer ("' + issuer + '") differ. ' +
+         'The federation metadata names this identity provider by the first and every ' +
+         'assertion in a sign-in response names its issuer by the second, so a relying party ' +
+         'configured from the metadata will refuse the tokens as coming from an unknown ' +
+         'issuer. Set them to the same value unless that split is what is being tested.';
+}
+
 function descriptionPage(base) {
   log.debug("Entering descriptionPage().");
+  const disagreement = issuerDisagreement();
   const inner = '<h1>WS-Federation 1.2 — passive requestor endpoint</h1>' +
     '<p class="sub">Issuer <code>' + xmlEscape(config.value('saml.issuer')) +
       '</code> at <code>' + xmlEscape(base) +
     PASSIVE_PATH + '</code></p>' +
+    (disagreement ? '<div class="err">' + xmlEscape(disagreement) + '</div>' : '') +
     '<p>This endpoint takes a <code>wa</code> parameter, by GET or by form POST, and signs a browser ' +
     'in to a relying party by POSTing it a token (section 13.2.2). It authenticates nobody: the ' +
     'username typed at the screen becomes the subject of the assertion.</p>' +
@@ -1164,8 +1267,13 @@ function descriptionPage(base) {
             '<code>wsignoutcleanup1.0</code>.'],
      ['wtrealm', 'Required for sign-in. The relying party\'s identifier, and the assertion\'s ' +
                  'audience restriction.'],
-     ['wreply', 'Where the response is POSTed. Optional — with none it goes to <code>' + RP_PATH +
-                '</code>. Not validated against any registration, like every other return URL here.'],
+     ['wreply', mode.acceptsUnregisteredAddresses()
+       ? 'Where the response is POSTed. Optional — with none it goes to <code>' + RP_PATH +
+         '</code>. In development mode, which this realm is in, it is not validated against any ' +
+         'registration, like every other return URL here.'
+       : 'Where the response is POSTed. This realm is in PRODUCT mode, so it must be one of the ' +
+         '<code>wsfedReplyUrl</code> values on the wtrealm\'s application entry, compared ' +
+         'exactly; with none, the registered one is used; there is no mock fallback.'],
      ['wctx', 'Echoed back byte for byte and never interpreted. It is the relying party\'s state.'],
      ['wct', 'The request timestamp. Recorded with its skew from this clock; not enforced.'],
      ['wfresh', 'The maximum age of the authentication, in MINUTES. 0 forces the screen; N re-shows ' +
@@ -1256,13 +1364,29 @@ function federationMetadata(base) {
         '<fed:ClaimTypesOffered>' +
           claim('nameidentifier', CLAIM_NS, 'Name ID', 'The subject identifier this service minted.') +
           claim('name', CLAIM_NS, 'Name', 'The username typed at the sign-in screen.') +
-          claim('givenname', CLAIM_NS, 'Given name', 'Made up from the username.') +
-          claim('surname', CLAIM_NS, 'Surname', 'Always "Mock".') +
-          claim('emailaddress', CLAIM_NS, 'E-mail address', 'username@sts-mock.example.') +
-          claim('upn', CLAIM_NS, 'UPN', 'The same string as the mail address.') +
+          // WHAT IS EMITTED IN THIS REALM'S MODE (2026-09-12). The development
+          // descriptions are the ones this document always carried, and they
+          // describe the persona `userFor()` invents; a product realm invents
+          // none, so the same claims say where the value really comes from. A
+          // signed document describing fake values a product deployment never
+          // issues is a signed falsehood about the deployment.
+          (mode.inventsClaimValues()
+            ? claim('givenname', CLAIM_NS, 'Given name', 'Made up from the username.') +
+              claim('surname', CLAIM_NS, 'Surname', 'Always "Mock".') +
+              claim('emailaddress', CLAIM_NS, 'E-mail address', 'username@sts.example.') +
+              claim('upn', CLAIM_NS, 'UPN', 'The same string as the mail address.')
+            : claim('givenname', CLAIM_NS, 'Given name',
+                    'The givenName on the person\'s directory entry; omitted when it has none.') +
+              claim('surname', CLAIM_NS, 'Surname',
+                    'The sn on the person\'s directory entry; omitted when it has none.') +
+              claim('emailaddress', CLAIM_NS, 'E-mail address',
+                    'The mail on the person\'s directory entry; omitted when it has none.') +
+              claim('upn', CLAIM_NS, 'UPN',
+                    'The same string as the mail address; omitted when there is none.')) +
           claim('authenticationmethod', MS_CLAIM_NS, 'Authentication method',
-                'What the browser session actually did: a password, or multiple factors when a ' +
-                'security key was used.') +
+                'What the browser session actually did: a password, a security key, multiple ' +
+                'factors, a TLS client certificate, a Kerberos ticket, what a federation partner ' +
+                'asserted, or unspecified when it was none of those.') +
           claim('authenticationinstant', MS_CLAIM_NS, 'Authentication instant',
                 'When that session authenticated.') +
         '</fed:ClaimTypesOffered>' +
@@ -1276,9 +1400,16 @@ function federationMetadata(base) {
     // protocol message puts it after <Issuer> and metadata puts it before
     // everything. Both are schema-mandated, and getting either wrong produces a
     // document that verifies and that a strict parser rejects.
+    //
+    // The configured algorithms since 2026-09-12, which are the SAML group's
+    // because the assertions this document describes are SAML's — one answer
+    // for every signature a WS-Federation relying party verifies here.
+    const how = documentSettings.signatureOptions();
     const signed = stsCrypto.signXml(xml, {
       privateKeyPem: STS.privateKeyPem,
       certPem: STS.certPem,
+      sigAlg: how.sigAlg,
+      c14nAlg: how.c14nAlg,
       placement: stsCrypto.PLACEMENT.FIRST,
       refUri: '#' + id,
       what: 'WS-Federation metadata'
@@ -1287,7 +1418,8 @@ function federationMetadata(base) {
     log.debug("Leaving federationMetadata(). Signed.");
     return signed;
   } catch (e) {
-    log.error('the federation metadata could not be signed, serving it unsigned: ' + e.message);
+    log.error(errorCodes.tag('STS-WSFED-0015') +
+              'the federation metadata could not be signed, serving it unsigned: ' + e.message);
     log.debug("Leaving federationMetadata(). Unsigned.");
     return xml;
   }
@@ -1360,7 +1492,8 @@ function verifyAssertionSignature(xml, element) {
     certPem: STS.certPem
   });
   log.debug("Leaving verifyAssertionSignature(). ok=" + result.ok);
-  return { ok: result.ok, why: result.why };
+  return { ok: result.ok, why: result.why, signatureMethod: result.signatureMethod,
+           canonicalization: result.canonicalization };
 }
 
 // Every check, in the order a relying party would apply them, each with its own
@@ -1422,7 +1555,8 @@ function verifySignInResponse(params, realm) {
   // right in opposite directions for the two versions.
   const verdict = verifyAssertionSignature(wresult, 'Assertion');
   add('the assertion signature verifies against /sts/cert', verdict.ok,
-      verdict.ok ? 'RSA-SHA256 over an exclusive canonicalization, resolved through ' +
+      verdict.ok ? (verdict.signatureMethod || 'signed') + ' over ' +
+                   (verdict.canonicalization || 'a canonicalization') + ', resolved through ' +
                    (isSaml11 ? 'AssertionID' : 'ID')
                  : verdict.why);
 
@@ -1498,7 +1632,7 @@ app.get(RP_PATH, function (req, res) {
   // A fresh wctx per attempt, held for half an hour so the round-trip check can be
   // made on the way back. This is the only state this relying party keeps.
   const wctx = 'rp-' + randomId(12);
-  rpContexts.set(wctx, { realm: realm, expires: Date.now() + RP_CONTEXT_TTL_MS });
+  rpContexts.set(wctx, { realm: realm, expires: Date.now() + rpContextTtlMs() });
   rpContexts.forEach(function (v, k) { if (v.expires < Date.now()) rpContexts.delete(k); });
 
   const request = function (extra) {
@@ -1581,12 +1715,26 @@ app.post(RP_PATH, function (req, res) {
   // 200 whatever the verdict: the POST was answered, and the verdict is the
   // document. A 400 here would be this relying party reporting on the identity
   // provider's behaviour with a status code the browser attributes to itself.
+  if (!verdict.ok) {
+    errorCodes.mark(res, 'STS-WSFED-0016');
+  }
   sendPage(res, 200, 'Sign-in response — mock relying party', inner);
   log.debug("Leaving the mock relying party (POST). ok=" + verdict.ok);
 });
 
+// THE STARTUP HALF OF issuerDisagreement(): once, at require time, for the
+// process-wide values. A realm's own overrides are reported on its description
+// page, because at require time no realm is ambient.
+(function warnAtStartup() {
+  const disagreement = issuerDisagreement();
+  if (disagreement) {
+    log.warn('wsfed: ' + disagreement);
+  }
+})();
+
 module.exports = {
   SAML11_TOKEN_TYPE: SAML11_TOKEN_TYPE,
+  issuerDisagreement: issuerDisagreement,
   SAML2_TOKEN_TYPE: SAML2_TOKEN_TYPE,
   federationMetadata: federationMetadata,
   verifySignInResponse: verifySignInResponse,

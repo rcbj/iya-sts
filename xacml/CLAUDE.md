@@ -728,12 +728,12 @@ Both directions are **XACML's own XML**, and the envelope is two elements
 thick:
 
 ```
-REQUEST   <PIPRequest xmlns="urn:sts-mock:xacml:pip:1.0">
+REQUEST   <PIPRequest xmlns="urn:sts:xacml:pip:1.0">
             <Request …/>                  the request being decided — it names the subject
             <AttributeDesignator …/>      one per attribute wanted
           </PIPRequest>
 
-RESPONSE  <PIPResponse xmlns="urn:sts-mock:xacml:pip:1.0">
+RESPONSE  <PIPResponse xmlns="urn:sts:xacml:pip:1.0">
             <Attributes xmlns="…core:schema:wd-17" Category="…">   ← XACML's namespace
               <Attribute AttributeId="mail" IncludeInResult="false">
                 <AttributeValue DataType="…#string">alice@…</AttributeValue>
@@ -1045,7 +1045,7 @@ manifest) and all three of which would have failed the day the defect was made.
    moved the throw eighty lines down.
 2. **The remote PEP asserted attributes under only ONE spelling.** The mock's
    PIP answers both `employeeType` and
-   `urn:sts-mock:xacml:attribute:employeeType` from one directory attribute, so
+   `urn:sts:xacml:attribute:employeeType` from one directory attribute, so
    a policy author may legitimately write either; the container asserted only the
    prefixed form and the seeded RBAC policy names it bare. **Every request was
    denied by a policy that was working perfectly**, which is the worst shape an
@@ -1128,10 +1128,10 @@ routing an internal decision through a policy engine that is already here.
 | Category | Attribute | What it is |
 |---|---|---|
 | access-subject | `subject-id` | who is being authenticated |
-| | `urn:sts-mock:xacml:role` | the roles they hold |
-| | `urn:sts-mock:xacml:role-from-token` | roles read out of a token they PRESENTED |
+| | `urn:sts:xacml:role` | the roles they hold |
+| | `urn:sts:xacml:role-from-token` | roles read out of a token they PRESENTED |
 | resource | `resource-id` | the application |
-| | `urn:sts-mock:xacml:required-role` | what it demands |
+| | `urn:sts:xacml:required-role` | what it demands |
 | action | `action-id` | `issue-access-token`, `start-session`, and the rest of `issuance_gate`'s `ISSUANCE` |
 
 **The subject is the party being authenticated and not always a person.** In a

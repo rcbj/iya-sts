@@ -81,6 +81,11 @@ const crypto = require('crypto');
 const { log, nowSec } = require('../common/helpers');
 const config = require('../common/config');
 const audit = require('../common/audit');
+// THE ERROR CODES. A LEAF. A handler that throws a status marks the CALL with
+// the condition on the line before, and `spiffe_grpc.js`'s wrapper records it on
+// the call's one audit row; a per-item refusal inside a batch, which fails no
+// call, is recorded by `refusedItem()` below.
+const errorCodes = require('../common/error_codes');
 const stats = require('../common/admin_stats');
 const spiffeId = require('./spiffe_id');
 // PER PROCESS AND NOT PER REALM — see the store below. Required only for
@@ -241,6 +246,22 @@ function statusFor(code, message) {
 
 function okStatus() { return statusFor(status.OK, 'OK'); }
 
+// ONE ITEM OF A BATCH, REFUSED. The call itself answers OK — see the header —
+// so the wrapper records a success, and without this row the refusal inside it
+// would be recorded nowhere. One row per refused item, carrying the condition;
+// the status handed back is exactly what `statusFor()` builds. `target` is the
+// item (an entry id, a trust domain), which is a name and never a credential.
+function refusedItem(code, grpcCode, message, target) {
+  audit.failure(code, {
+    protocol: 'SPIRE Server API', channel: 'grpc', target: target || '',
+    // No `outcome`: a row carrying a code is a refusal by default.
+    summary: 'One item of a SPIRE Server API batch call was refused: ' +
+             (message || '')
+  });
+  // error-code: none — the helper's own internals, handed the status as a variable
+  return statusFor(grpcCode, message);
+}
+
 // ---------------------------------------------------------------------------
 // PAGING.
 //
@@ -256,8 +277,14 @@ function okStatus() { return statusFor(status.OK, 'OK'); }
 // size — the alternative, a cursor keyed on the last id, matters when rows are
 // being inserted underneath a paging client, and a mock's registry is not.
 // ---------------------------------------------------------------------------
+//
+// **THE CAP IS `spiffe.maxPageSize` SINCE 2026-09-12** (1000, the old literal,
+// is its default). It bounds what one call may ask for; a request with no
+// page_size still gets every row, which is what it always got and what a
+// client that does not page expects.
 function page(rows, pageSize, pageToken) {
-  const size = Number(pageSize) > 0 ? Math.min(Number(pageSize), 1000) : rows.length;
+  const cap = config.value('spiffe.maxPageSize');
+  const size = Number(pageSize) > 0 ? Math.min(Number(pageSize), cap) : rows.length;
   const start = Math.max(0, parseInt(String(pageToken || '0'), 10) || 0);
   const slice = rows.slice(start, start + size);
   const next = (start + size) < rows.length ? String(start + size) : '';
@@ -445,6 +472,7 @@ const entryHandlers = {
     const request = call.request || {};
     const entry = registry.entryById(request.id);
     if (!entry) {
+      errorCodes.mark(call, 'STS-SPIFFE-0046');
       throw rpc.notFound('No registration entry has the id ' +
                          String(request.id || '(none given)') + '.');
     }
@@ -460,8 +488,9 @@ const entryHandlers = {
         // Per item, never the whole call. See the header: a batch of fifty
         // that fails because the thirteenth had a typo is how a client loses
         // forty-nine entries it correctly submitted.
-        return { status: statusFor(status.INVALID_ARGUMENT,
-                                   created.errors.join(' ')), entry: null };
+        return { status: refusedItem('STS-SPIFFE-0047', status.INVALID_ARGUMENT,
+                                     created.errors.join(' '), record.id),
+                 entry: null };
       }
       return { status: okStatus(),
                entry: entryToProto(created.entry, request.output_mask) };
@@ -474,9 +503,9 @@ const entryHandlers = {
     const results = (request.entries || []).map(function (message) {
       const id = String(message.id || '').trim();
       if (!id) {
-        return { status: statusFor(status.INVALID_ARGUMENT,
-                                   'An update names the entry by its id, and ' +
-                                   'this one has none.'), entry: null };
+        return { status: refusedItem('STS-SPIFFE-0048', status.INVALID_ARGUMENT,
+                                     'An update names the entry by its id, and ' +
+                                     'this one has none.', ''), entry: null };
       }
       // The INPUT mask says which fields of the submitted entry to apply. It is
       // honoured, and it matters more than the output mask does: a client that
@@ -488,10 +517,11 @@ const entryHandlers = {
       const changes = maskedChanges(submitted, request.input_mask);
       const updated = registry.updateEntry(id, changes, trustDomain(), '');
       if (!updated.ok) {
-        return { status: statusFor(
-          /No registration entry has the id/.test(updated.errors[0] || '')
-            ? status.NOT_FOUND : status.INVALID_ARGUMENT,
-          updated.errors.join(' ')), entry: null };
+        const missing = /No registration entry has the id/.test(updated.errors[0] || '');
+        return { status: refusedItem(
+          missing ? 'STS-SPIFFE-0046' : 'STS-SPIFFE-0049',
+          missing ? status.NOT_FOUND : status.INVALID_ARGUMENT,
+          updated.errors.join(' '), id), entry: null };
       }
       return { status: okStatus(),
                entry: entryToProto(updated.entry, request.output_mask) };
@@ -504,7 +534,8 @@ const entryHandlers = {
     const results = (request.ids || []).map(function (id) {
       const deleted = registry.deleteEntry(String(id), '');
       return { status: deleted.ok ? okStatus()
-                 : statusFor(status.NOT_FOUND, deleted.errors.join(' ')),
+                 : refusedItem('STS-SPIFFE-0046', status.NOT_FOUND,
+                               deleted.errors.join(' '), String(id)),
                id: String(id) };
     });
     return { results: results };
@@ -591,17 +622,48 @@ function maskedChanges(submitted, mask) {
 // make `CreateJoinToken` a way of issuing a permanent credential, which is
 // exactly what it exists not to be.
 // -------------------------------------------------------------------------
-// PERSISTED, AND SHARED RATHER THAN PER REALM (2026-09-06). `realms.sharedMap()`
-// is a plain Map that reports its writes so product mode can write them down;
-// `scope: 'shared'` is what says the store deliberately has no realm in it,
-// which is the discriminator `tests/realm_isolation.js` checks against.
+// PERSISTED, AND **PER REALM SINCE 2026-09-12** — it was `sharedMap()` with
+// `scope: 'shared'`, and that was right for exactly as long as there was one
+// trust domain.
+//
+// The old note read: *shared rather than per realm; `scope: 'shared'` is what
+// says the store deliberately has no realm in it, which is the discriminator
+// `tests/realm_isolation.js` checks against.* True when the four gRPC sockets
+// all answered in the default realm, because then there was one agent
+// population and one authority for them to join.
+//
+// **A JOIN TOKEN IS A CREDENTIAL FOR JOINING A TRUST DOMAIN, AND A TRUST
+// DOMAIN IS A REALM'S NOW.** A token minted on acme's SPIRE Server API and
+// redeemed on the default realm's would attest an agent into a trust domain
+// nobody issued it for — and the SVID it then collects is signed by the wrong
+// authority, which is the confused deputy this whole boundary exists to
+// prevent. rcbj's instruction said it in one clause: *issue join tokens that
+// are scoped per realm*.
+//
+// So it is `realms.map()`, and the discriminator is the realm the call arrived
+// in — which, on these sockets, is the realm whose socket it arrived on.
 // -------------------------------------------------------------------------
 // SINGLE-USE SURVIVES THE RESTART NOW, and that is the point rather than a
 // side effect: a join token redeemed before a restart used to become usable
 // again after one, which turned the one property that makes it different
 // from a password into a property it did not have.
-const joinTokens = realms.sharedMap({ persist: 'spiffe.joinTokens',
-                                      scope: 'shared' });
+//
+// **THE STORE IS KEYED BY A DIGEST OF THE TOKEN, NOT BY THE TOKEN (2026-09-12).**
+// It was keyed by the token itself, and a persisted row's KEY is not sealed —
+// `persistence_minted.js` seals the body and writes the key as it is, into
+// `sts_minted` and `sts_changes` — so every unspent join token sat in the
+// database in the clear, one row per token. The body carried a second copy.
+// Membership and the three facts about a held token are the only questions ever
+// asked of this map, and a SHA-256 answers the first as well as the value did:
+// `joinTokenKey()` is the one spelling, and nothing here holds the token after
+// CreateJoinToken has returned it. Same argument, same shape, as
+// `oid4vc/vc_offers.js`'s deferred access tokens.
+const joinTokens = realms.map({ persist: 'spiffe.joinTokens' });
+
+function joinTokenKey(token) {
+  return crypto.createHash('sha256').update(String(token || ''), 'utf8')
+    .digest('base64url');
+}
 
 const agentHandlers = {
   CountAgents: rpc.unary('server', 'Agent.CountAgents', async function (call) {
@@ -626,6 +688,7 @@ const agentHandlers = {
     const id = spiffeId.fromProto(request.id);
     const agent = id ? registry.agentById(id) : null;
     if (!agent) {
+      errorCodes.mark(call, 'STS-SPIFFE-0050');
       throw rpc.notFound('No agent has attested here as ' +
                          (id || '(no id given)') + '.');
     }
@@ -635,14 +698,20 @@ const agentHandlers = {
   DeleteAgent: rpc.unary('server', 'Agent.DeleteAgent', async function (call) {
     const id = spiffeId.fromProto((call.request || {}).id);
     const deleted = registry.deleteAgent(id, '');
-    if (!deleted.ok) throw rpc.notFound(deleted.errors.join(' '));
+    if (!deleted.ok) {
+      errorCodes.mark(call, 'STS-SPIFFE-0050');
+      throw rpc.notFound(deleted.errors.join(' '));
+    }
     return {};
   }),
 
   BanAgent: rpc.unary('server', 'Agent.BanAgent', async function (call) {
     const id = spiffeId.fromProto((call.request || {}).id);
     const banned = registry.setAgentBanned(id, true, '');
-    if (!banned.ok) throw rpc.notFound(banned.errors.join(' '));
+    if (!banned.ok) {
+      errorCodes.mark(call, 'STS-SPIFFE-0050');
+      throw rpc.notFound(banned.errors.join(' '));
+    }
     return {};
   }),
 
@@ -665,6 +734,7 @@ const agentHandlers = {
     // rather than ignored: a client in that state has misread the protocol, and
     // an empty answer would leave it waiting.
     if (request.challenge_response !== undefined && !request.params) {
+      errorCodes.mark(call, 'STS-SPIFFE-0051');
       throw rpc.invalidArgument('This server issues no attestation challenge, ' +
                                 'so there is nothing a challenge_response can ' +
                                 'answer. Send the params step and the SVID ' +
@@ -679,12 +749,14 @@ const agentHandlers = {
       // One of the few refusals in this service, and it earns its place: a ban
       // that did not refuse would make the button on /admin/spiffe/agents a
       // lie. PERMISSION_DENIED with the reason SPIRE uses.
+      errorCodes.mark(call, 'STS-SPIFFE-0052');
       throw rpc.permissionDenied('The agent ' + agentId + ' is banned on this ' +
                                  'server. Unban it from /admin/spiffe/agents ' +
                                  'or with the management API.');
     }
     const csr = (params.params || {}).csr;
     if (!csr || !csr.length) {
+      errorCodes.mark(call, 'STS-SPIFFE-0053');
       throw rpc.invalidArgument('AttestAgent needs a certificate signing ' +
                                 'request in params.params.csr: the agent keeps ' +
                                 'its own private key, so there is nothing to ' +
@@ -710,23 +782,24 @@ const agentHandlers = {
     // ---------------------------------------------------------------------
     if (attestationType === 'join_token' && auth.authRequired()) {
       const presented = String(Buffer.from(data.payload || []).toString('utf8')).trim();
-      const held = joinTokens.get(presented);
+      const held = joinTokens.get(joinTokenKey(presented));
       if (!presented) {
+        errorCodes.mark(call, 'STS-SPIFFE-0054');
         throw rpc.invalidArgument('A join_token attestation carries the token ' +
                                   'as params.data.payload, and this one is ' +
                                   'empty.');
       }
       if (!held) {
+        errorCodes.mark(call, 'STS-SPIFFE-0055');
         throw rpc.permissionDenied('That join token was not issued by this ' +
                                    'server, or it has already been spent — a ' +
                                    'join token is single-use, and the one it ' +
                                    'attested is on /admin/spiffe/agents. Ask ' +
-                                   'for a new one with CreateJoinToken. Note ' +
-                                   'that tokens do not survive a restart: ' +
-                                   'nothing here is persisted.');
+                                   'for a new one with CreateJoinToken.');
       }
       if (held.expiresAt && held.expiresAt < nowSec()) {
-        joinTokens.delete(presented);
+        joinTokens.delete(joinTokenKey(presented));
+        errorCodes.mark(call, 'STS-SPIFFE-0056');
         throw rpc.permissionDenied('That join token expired at ' +
           new Date(held.expiresAt * 1000).toISOString() + '. It has been ' +
           'discarded; ask for another with CreateJoinToken, which takes a ' +
@@ -736,13 +809,16 @@ const agentHandlers = {
         // A token minted FOR a named agent, presented by another. SPIRE binds
         // the two; without this the `agent_id` argument to CreateJoinToken
         // would be a note rather than a constraint.
+        errorCodes.mark(call, 'STS-SPIFFE-0057');
         throw rpc.permissionDenied('That join token was issued for ' +
           held.agentId + ' and this attestation would produce ' + agentId +
           '. A join token created for a named agent may only attest that ' +
           'agent.');
       }
     }
-    const svid = await ca.signCsr(Buffer.from(csr), agentId, { ttl: 0 });
+    // `spiffe.agentSvidTtl`, where 0 — its default, and the literal this was —
+    // means spiffe.svidTtl. See agentSvidTtl().
+    const svid = await ca.signCsr(Buffer.from(csr), agentId, { ttl: agentSvidTtl() });
     const recorded = registry.recordAttestation(agentId, {
       attestationType: attestationType,
       selectors: selectorsFromAttestation(attestationType, data.payload),
@@ -752,6 +828,7 @@ const agentHandlers = {
       expiresAt: svid.expiresAt
     });
     if (recorded && recorded.banned) {
+      errorCodes.mark(call, 'STS-SPIFFE-0052');
       throw rpc.permissionDenied('The agent ' + agentId + ' is banned.');
     }
     // A join token is spent HERE, at the successful attestation, and not when
@@ -760,8 +837,8 @@ const agentHandlers = {
     // top of the endpoint.
     if (attestationType === 'join_token') {
       const token = String(Buffer.from(data.payload || []).toString('utf8')).trim();
-      if (joinTokens.has(token)) {
-        joinTokens.delete(token);
+      if (joinTokens.has(joinTokenKey(token))) {
+        joinTokens.delete(joinTokenKey(token));
         log.info('spiffe: the join token ending ' + token.slice(-6) +
                  ' has been spent and cannot be used again.');
       }
@@ -849,11 +926,13 @@ const agentHandlers = {
     await ca.ready();
     const csr = ((call.request || {}).params || {}).csr;
     if (!csr || !csr.length) {
+      errorCodes.mark(call, 'STS-SPIFFE-0053');
       throw rpc.invalidArgument('RenewAgent needs a certificate signing ' +
                                 'request in params.csr.');
     }
     const caller = call.spiffeCaller || {};
     if (!caller.authenticated || !caller.entities.agent) {
+      errorCodes.mark(call, 'STS-SPIFFE-0058');
       throw rpc.statusError(status.UNIMPLEMENTED,
         'RenewAgent renews the agent on the CONNECTION, and this connection ' +
         'has no agent on it: ' + auth.describeCaller(caller) + '. With ' +
@@ -870,18 +949,21 @@ const agentHandlers = {
       // FOUND rather than an invented re-attestation — a renewal is for an
       // agent that exists, and re-attesting one somebody has just removed
       // would undo the delete from the other end.
+      errorCodes.mark(call, 'STS-SPIFFE-0050');
       throw rpc.notFound('The agent ' + caller.spiffeId + ' is no longer ' +
                          'recorded on this server — it was deleted between ' +
                          'this connection being made and this call. Call ' +
                          'AttestAgent to come back.');
     }
     if (agent.banned) {
+      errorCodes.mark(call, 'STS-SPIFFE-0052');
       throw rpc.permissionDenied('The agent ' + caller.spiffeId + ' is banned ' +
                                  'on this server. Unban it from ' +
                                  '/admin/spiffe/agents or with the ' +
                                  'management API.');
     }
-    const svid = await ca.signCsr(Buffer.from(csr), caller.spiffeId, { ttl: 0 });
+    const svid = await ca.signCsr(Buffer.from(csr), caller.spiffeId,
+                                  { ttl: agentSvidTtl() });
     // The renewal is recorded as an attestation of the SAME kind the agent
     // already had. It is not a new attestation — nothing was attested here,
     // the agent proved possession of an SVID this server issued — so the
@@ -920,18 +1002,45 @@ const agentHandlers = {
   // testing "my token expired" has nothing to test against otherwise.
   CreateJoinToken: rpc.unary('server', 'Agent.CreateJoinToken', async function (call) {
     const request = call.request || {};
-    const ttl = Number(request.ttl) > 0 ? Number(request.ttl) : 600;
+    // `spiffe.joinTokenTtl` when the request names none (600, the old literal,
+    // is its default). A request's own ttl still wins, as it does in SPIRE.
+    const ttl = Number(request.ttl) > 0 ? Number(request.ttl)
+                                        : config.value('spiffe.joinTokenTtl');
     const token = String(request.token || '').trim() ||
                   crypto.randomUUID();
     const expiresAt = nowSec() + ttl;
     const agentId = spiffeId.fromProto(request.agent_id);
-    joinTokens.set(token, { token: token, expiresAt: expiresAt,
-                            agentId: agentId || '' });
-    // Bounded, like everything else held in memory here.
-    if (joinTokens.size > 256) {
-      const oldest = joinTokens.keys().next().value;
-      joinTokens.delete(oldest);
+    // ---------------------------------------------------------------------
+    // **BOUNDED, AND THE BOUND NO LONGER EATS A LIVE TOKEN (2026-09-12).** It
+    // was `if (size > 256) delete the oldest` — so the 257th CreateJoinToken
+    // silently invalidated a token somebody had already handed to an agent that
+    // had not attested yet, and that agent then met "not issued by this server"
+    // about a token this server had issued. Now: expired tokens are swept first,
+    // because forgetting one costs nothing; a token being REPLACED by the same
+    // value does not count against the cap; and if the cap is still reached the
+    // NEW request is refused with RESOURCE_EXHAUSTED naming the setting — the
+    // caller asking now can see the refusal, where the agent holding an evicted
+    // token could not. `spiffe.maxJoinTokens` (256) is per realm, because the
+    // store is.
+    // ---------------------------------------------------------------------
+    const now = nowSec();
+    joinTokens.forEach(function (held, key) {
+      if (held && held.expiresAt && held.expiresAt <= now) {
+        joinTokens.delete(key);
+      }
+    });
+    const cap = config.value('spiffe.maxJoinTokens');
+    if (!joinTokens.has(joinTokenKey(token)) && joinTokens.size >= cap) {
+      errorCodes.mark(call, 'STS-SPIFFE-0059');
+      throw rpc.statusError(status.RESOURCE_EXHAUSTED,
+        'This realm already holds ' + joinTokens.size + ' unexpired join ' +
+        'token(s), which is spiffe.maxJoinTokens. Nothing was evicted — a ' +
+        'token already handed to an agent stays good until it is spent or ' +
+        'expires. Wait for one to expire, create tokens with a shorter ttl, ' +
+        'or raise the setting.');
     }
+    joinTokens.set(joinTokenKey(token), { expiresAt: expiresAt,
+                                          agentId: agentId || '' });
     audit.audit({
       action: 'spiffe.agent.create', actor: '', protocol: 'SPIRE Server API',
       channel: 'grpc', target: agentId || '',
@@ -955,6 +1064,15 @@ const agentHandlers = {
   })
 };
 
+// The lifetime of the SVID an agent is issued at AttestAgent and RenewAgent.
+// `spiffe.agentSvidTtl` since 2026-09-12; its default 0 means "spiffe.svidTtl",
+// which is exactly what the `{ ttl: 0 }` literal it replaced meant — `signCsr()`
+// treats a non-positive ttl as the service default. Stated here because 0 is a
+// legal, meaningful value and must never be read as "unset, use something".
+function agentSvidTtl() {
+  return config.value('spiffe.agentSvidTtl');
+}
+
 // An agent's SPIFFE ID. SPIRE derives it from what the attestor PROVED; nothing
 // is proved here, so it is derived from what was sent — a digest of the
 // attestation payload, so that the same agent attesting twice is one entry
@@ -977,6 +1095,24 @@ function selectorsFromAttestation(attestationType, payload) {
   const out = [{ type: attestationType, value: 'unverified:true' }];
   const text = Buffer.isBuffer(payload) ? payload.toString('utf8')
     : String(payload || '');
+  // **A JOIN TOKEN IS A CREDENTIAL AND NEVER A SELECTOR VALUE (2026-09-12).**
+  // The branch below put every short printable payload on the agent's entry as
+  // `payload:<text>` — and a join token is exactly that, so the token that had
+  // just attested the agent was written into the SPIFFE registry, in the
+  // directory, readable wherever an agent's selectors are drawn. It is spent by
+  // then, which narrows the harm and does not make storing a credential right;
+  // and in development, where tokens are not checked, it is not spent at all.
+  // What goes on the entry is a digest prefix, which still lets somebody holding
+  // the token recognise the agent it attested and lets nobody reconstruct it.
+  if (attestationType === 'join_token') {
+    if (text) {
+      out.push({ type: attestationType,
+                 value: 'token-sha256:' + crypto.createHash('sha256')
+                   .update(text.trim(), 'utf8').digest('hex').slice(0, 16) });
+    }
+    log.debug('Leaving selectorsFromAttestation(). A join token, by digest.');
+    return out;
+  }
   if (text && text.length <= 256 && /^[\x20-\x7e]*$/.test(text)) {
     // A short printable payload is usually a join token or a name, and having
     // it on the entry is what makes the agents page useful. Anything longer or
@@ -1054,7 +1190,8 @@ function derFromJwk(jwk) {
     // A key this node cannot import. Empty rather than fatal: the rest of the
     // bundle is still usable, and a caller sees a key with no material rather
     // than no bundle at all.
-    log.error('spiffe: a JWT authority could not be exported as DER and is ' +
+    log.error(errorCodes.tag('STS-SPIFFE-0068') +
+              'spiffe: a JWT authority could not be exported as DER and is ' +
               'being sent empty: ' + e.message);
     log.debug('Leaving derFromJwk().');
     return Buffer.alloc(0);
@@ -1174,7 +1311,8 @@ const bundleHandlers = {
   // authority nothing here can issue against, which every workload would then
   // trust. Rotation is how a new authority appears, and it is on
   // /admin/spiffe.
-  AppendBundle: rpc.unary('server', 'Bundle.AppendBundle', async function () {
+  AppendBundle: rpc.unary('server', 'Bundle.AppendBundle', async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0060');
     throw rpc.statusError(status.PERMISSION_DENIED,
       'This service will not append an authority to its OWN bundle. An ' +
       'authority in a trust domain\'s bundle is a key permitted to sign ' +
@@ -1187,14 +1325,16 @@ const bundleHandlers = {
       'BatchCreateFederatedBundle.');
   }),
 
-  PublishJWTAuthority: rpc.unary('server', 'Bundle.PublishJWTAuthority', async function () {
+  PublishJWTAuthority: rpc.unary('server', 'Bundle.PublishJWTAuthority', async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0060');
     throw rpc.statusError(status.PERMISSION_DENIED,
       'This service will not publish a JWT authority into its own bundle, for ' +
       'the reason AppendBundle gives: it would advertise a signing key nothing ' +
       'here holds. Rotate instead.');
   }),
 
-  PublishWITAuthority: rpc.unary('server', 'Bundle.PublishWITAuthority', async function () {
+  PublishWITAuthority: rpc.unary('server', 'Bundle.PublishWITAuthority', async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0029');
     throw rpc.statusError(status.UNIMPLEMENTED,
       'This service issues no WIT-SVIDs and holds no WIT authority. See GET ' +
       '/spiffe for why: the Workload Identity Token\'s format is not settled ' +
@@ -1219,6 +1359,7 @@ const bundleHandlers = {
     const name = String(request.trust_domain || '').trim().toLowerCase();
     const entry = ca.federatedBundle(name);
     if (!entry) {
+      errorCodes.mark(call, 'STS-SPIFFE-0061');
       throw rpc.notFound('This service holds no bundle for the trust domain ' +
                          (name || '(none given)') + '.');
     }
@@ -1231,10 +1372,11 @@ const bundleHandlers = {
       return { results: (request.bundle || []).map(function (message) {
         const name = String(message.trust_domain || '').trim().toLowerCase();
         if (ca.federatedBundle(name)) {
-          return { status: statusFor(status.ALREADY_EXISTS,
-                                     'A bundle for ' + name + ' is already ' +
-                                     'held; use BatchUpdateFederatedBundle or ' +
-                                     'BatchSetFederatedBundle.'), bundle: null };
+          return { status: refusedItem('STS-SPIFFE-0062', status.ALREADY_EXISTS,
+                                       'A bundle for ' + name + ' is already ' +
+                                       'held; use BatchUpdateFederatedBundle or ' +
+                                       'BatchSetFederatedBundle.', name),
+                   bundle: null };
         }
         return setFederated(message, request.output_mask);
       }) };
@@ -1246,8 +1388,9 @@ const bundleHandlers = {
       return { results: (request.bundle || []).map(function (message) {
         const name = String(message.trust_domain || '').trim().toLowerCase();
         if (!ca.federatedBundle(name)) {
-          return { status: statusFor(status.NOT_FOUND,
-                                     'No bundle for ' + name + ' is held here.'),
+          return { status: refusedItem('STS-SPIFFE-0061', status.NOT_FOUND,
+                                       'No bundle for ' + name + ' is held here.',
+                                       name),
                    bundle: null };
         }
         return setFederated(message, request.output_mask);
@@ -1279,10 +1422,11 @@ const bundleHandlers = {
           return (entry.federatesWith || []).indexOf(domain) >= 0;
         });
         if (dependents.length && mode === 'RESTRICT') {
-          return { status: statusFor(status.FAILED_PRECONDITION,
+          return { status: refusedItem('STS-SPIFFE-0063', status.FAILED_PRECONDITION,
             dependents.length + ' registration entry/entries federate with ' +
             domain + '. Delete them first, or send mode DELETE to remove them ' +
-            'with it, or DISSOCIATE to keep them and drop the federation.'),
+            'with it, or DISSOCIATE to keep them and drop the federation.',
+            domain),
             trust_domain: domain };
         }
         dependents.forEach(function (entry) {
@@ -1298,8 +1442,9 @@ const bundleHandlers = {
         });
         const removed = ca.deleteFederatedBundle(domain);
         if (!removed) {
-          return { status: statusFor(status.NOT_FOUND,
-                                     'No bundle for ' + domain + ' is held here.'),
+          return { status: refusedItem('STS-SPIFFE-0061', status.NOT_FOUND,
+                                       'No bundle for ' + domain + ' is held here.',
+                                       domain),
                    trust_domain: domain };
         }
         auditBundleChange('a federated bundle for ' + domain + ' was deleted');
@@ -1313,7 +1458,8 @@ function setFederated(message, mask) {
   const document = bundleDocumentFromProto(message);
   const result = ca.setFederatedBundle(name, document, {});
   if (!result.ok) {
-    return { status: statusFor(status.INVALID_ARGUMENT, result.reason),
+    return { status: refusedItem(result.errorCode || 'STS-SPIFFE-0041',
+                                 status.INVALID_ARGUMENT, result.reason, name),
              bundle: null };
   }
   auditBundleChange('a federated bundle for ' + name + ' was set');
@@ -1340,6 +1486,7 @@ const svidHandlers = {
     await ca.ready();
     const request = call.request || {};
     if (!request.csr || !request.csr.length) {
+      errorCodes.mark(call, 'STS-SPIFFE-0053');
       throw rpc.invalidArgument('MintX509SVID takes a certificate signing ' +
                                 'request; the SPIFFE ID is read from its URI ' +
                                 'subjectAltName.');
@@ -1351,6 +1498,7 @@ const svidHandlers = {
     // and only the public key is read out of the CSR.
     const wanted = spiffeIdFromCsr(request.csr);
     if (!wanted) {
+      errorCodes.mark(call, 'STS-SPIFFE-0064');
       throw rpc.invalidArgument('That certificate signing request carries no ' +
                                 'SPIFFE ID in a URI subjectAltName, so there ' +
                                 'is nothing to mint. This is the one method ' +
@@ -1374,11 +1522,13 @@ const svidHandlers = {
     const request = call.request || {};
     const id = spiffeId.fromProto(request.id);
     if (!id) {
+      errorCodes.mark(call, 'STS-SPIFFE-0065');
       throw rpc.invalidArgument('MintJWTSVID needs the SPIFFE ID to mint for, ' +
                                 'as a trust_domain and a path.');
     }
     const audiences = (request.audience || []).map(String).filter(Boolean);
     if (!audiences.length) {
+      errorCodes.mark(call, 'STS-SPIFFE-0027');
       throw rpc.invalidArgument('MintJWTSVID requires at least one audience: a ' +
                                 'JWT-SVID is a bearer credential, and the ' +
                                 'audience is what stops one being replayed ' +
@@ -1394,7 +1544,8 @@ const svidHandlers = {
                      issued_at: String(minted.issuedAt), hint: '' } };
   }),
 
-  MintWITSVID: rpc.unary('server', 'SVID.MintWITSVID', async function () {
+  MintWITSVID: rpc.unary('server', 'SVID.MintWITSVID', async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0029');
     throw rpc.statusError(status.UNIMPLEMENTED,
       'This service issues no WIT-SVIDs; see GET /spiffe for why. X509-SVIDs ' +
       'and JWT-SVIDs are fully implemented.');
@@ -1412,14 +1563,16 @@ const svidHandlers = {
       const params = request.params[i];
       const entry = registry.entryById(String(params.entry_id || ''));
       if (!entry) {
-        results.push({ status: statusFor(status.NOT_FOUND,
-          'No registration entry has the id ' + String(params.entry_id || '') + '.'),
+        results.push({ status: refusedItem('STS-SPIFFE-0046', status.NOT_FOUND,
+          'No registration entry has the id ' + String(params.entry_id || '') + '.',
+          String(params.entry_id || '')),
           svid: null });
         continue;
       }
       if (!params.csr || !params.csr.length) {
-        results.push({ status: statusFor(status.INVALID_ARGUMENT,
-          'Entry ' + entry.id + ' was given no certificate signing request.'),
+        results.push({ status: refusedItem('STS-SPIFFE-0053', status.INVALID_ARGUMENT,
+          'Entry ' + entry.id + ' was given no certificate signing request.',
+          entry.id),
           svid: null });
         continue;
       }
@@ -1439,7 +1592,8 @@ const svidHandlers = {
                                hint: entry.hint || '' } });
       } catch (e) {
         // Per item, like every other batch here.
-        results.push({ status: statusFor(status.INVALID_ARGUMENT, e.message),
+        results.push({ status: refusedItem('STS-SPIFFE-0066', status.INVALID_ARGUMENT,
+                                           e.message, entry.id),
                        svid: null });
       }
     }
@@ -1452,11 +1606,13 @@ const svidHandlers = {
     const request = call.request || {};
     const entry = registry.entryById(String(request.entry_id || ''));
     if (!entry) {
+      errorCodes.mark(call, 'STS-SPIFFE-0046');
       throw rpc.notFound('No registration entry has the id ' +
                          String(request.entry_id || '(none given)') + '.');
     }
     const audiences = (request.audience || []).map(String).filter(Boolean);
     if (!audiences.length) {
+      errorCodes.mark(call, 'STS-SPIFFE-0027');
       throw rpc.invalidArgument('NewJWTSVID requires at least one audience.');
     }
     const minted = await ca.mintJwtSvid(entry.spiffeId, audiences,
@@ -1472,7 +1628,8 @@ const svidHandlers = {
                      hint: entry.hint || '' } };
   }),
 
-  BatchNewWITSVID: rpc.unary('server', 'SVID.BatchNewWITSVID', async function () {
+  BatchNewWITSVID: rpc.unary('server', 'SVID.BatchNewWITSVID', async function (call) {
+    errorCodes.mark(call, 'STS-SPIFFE-0029');
     throw rpc.statusError(status.UNIMPLEMENTED,
       'This service issues no WIT-SVIDs; see GET /spiffe for why.');
   }),
@@ -1608,7 +1765,8 @@ function setRelationship(message, mask) {
   });
   if (!result.ok) {
     log.debug('Leaving setRelationship().');
-    return { status: statusFor(status.INVALID_ARGUMENT, result.reason),
+    return { status: refusedItem(result.errorCode || 'STS-SPIFFE-0041',
+                                 status.INVALID_ARGUMENT, result.reason, name),
              federation_relationship: null };
   }
   auditBundleChange('a federation relationship with ' + name + ' was set');
@@ -1636,6 +1794,7 @@ const trustDomainHandlers = {
       const name = String(request.trust_domain || '').trim().toLowerCase();
       const entry = ca.federatedBundle(name);
       if (!entry) {
+        errorCodes.mark(call, 'STS-SPIFFE-0061');
         throw rpc.notFound('No federation relationship with ' +
                            (name || '(none given)') + ' is configured here.');
       }
@@ -1648,8 +1807,8 @@ const trustDomainHandlers = {
       return { results: (request.federation_relationships || []).map(function (message) {
         const name = String(message.trust_domain || '').trim().toLowerCase();
         if (ca.federatedBundle(name)) {
-          return { status: statusFor(status.ALREADY_EXISTS,
-            'A federation relationship with ' + name + ' is already here.'),
+          return { status: refusedItem('STS-SPIFFE-0062', status.ALREADY_EXISTS,
+            'A federation relationship with ' + name + ' is already here.', name),
             federation_relationship: null };
         }
         return setRelationship(message, request.output_mask);
@@ -1662,8 +1821,8 @@ const trustDomainHandlers = {
       return { results: (request.federation_relationships || []).map(function (message) {
         const name = String(message.trust_domain || '').trim().toLowerCase();
         if (!ca.federatedBundle(name)) {
-          return { status: statusFor(status.NOT_FOUND,
-            'No federation relationship with ' + name + ' is configured here.'),
+          return { status: refusedItem('STS-SPIFFE-0061', status.NOT_FOUND,
+            'No federation relationship with ' + name + ' is configured here.', name),
             federation_relationship: null };
         }
         return setRelationship(message, request.output_mask);
@@ -1678,8 +1837,9 @@ const trustDomainHandlers = {
         const removed = ca.deleteFederatedBundle(domain);
         if (removed) auditBundleChange('a federation relationship with ' + domain + ' was deleted');
         return { status: removed ? okStatus()
-                   : statusFor(status.NOT_FOUND,
-                               'No federation relationship with ' + domain + '.'),
+                   : refusedItem('STS-SPIFFE-0061', status.NOT_FOUND,
+                                 'No federation relationship with ' + domain + '.',
+                                 domain),
                  trust_domain: domain };
       }) };
     }),
@@ -1702,9 +1862,11 @@ const trustDomainHandlers = {
     const name = String((call.request || {}).trust_domain || '').trim().toLowerCase();
     const entry = ca.federatedBundle(name);
     if (!entry) {
+      errorCodes.mark(call, 'STS-SPIFFE-0061');
       throw rpc.notFound('No federation relationship with ' +
                          (name || '(none given)') + ' is configured here.');
     }
+    errorCodes.mark(call, 'STS-SPIFFE-0067');
     throw rpc.statusError(status.UNIMPLEMENTED,
       'This service records a bundle endpoint URL and never fetches it. ' +
       'Fetching a URL somebody registered, to obtain a key that will then ' +

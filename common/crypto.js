@@ -106,6 +106,11 @@ const pqJose = require('./pq_jose');
 // ---------------------------------------------------------------------------
 const workerPool = require('./worker_pool');
 const xmldom = require('@xmldom/xmldom');
+// THE FAILURE CODES. A LEAF with no requires, so this file stays one (rule 3r).
+// A verdict that refuses carries its code NON-ENUMERABLY — `errorCodes.mark()`
+// puts it under a Symbol — so no member a caller compares or serialises moves;
+// a caller that wants the condition's name reads it with `codeOf()`.
+const errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({
   name: 'crypto',
@@ -348,8 +353,9 @@ function verifyXmlSignature(xml, opts) {
     // Not XML at all. The parser's own message is more use than one of ours,
     // and this is somebody else's document being wrong rather than a fault here.
     log.debug('Leaving verifyXmlSignature(). It did not parse: ' + e.message);
-    return { ok: false, present: false,
-             why: 'the document is not well-formed XML: ' + e.message };
+    return errorCodes.mark({ ok: false, present: false,
+             why: 'the document is not well-formed XML: ' + e.message },
+                           'STS-KEYS-0007');
   }
 
   // The target: the first element of that name carrying its OWN signature.
@@ -377,10 +383,11 @@ function verifyXmlSignature(xml, opts) {
       exists = candidates[i].localName === wanted;
     }
     log.debug('Leaving verifyXmlSignature(). No signed <' + wanted + '>.');
-    return { ok: false, present: false,
+    return errorCodes.mark({ ok: false, present: false,
              why: exists
                ? 'the <' + wanted + '> carries no ds:Signature of its own'
-               : 'the document contains no <' + wanted + '> at all' };
+               : 'the document contains no <' + wanted + '> at all' },
+                           'STS-KEYS-0008');
   }
 
   // The reference must name THIS element. A signature whose reference points
@@ -393,11 +400,12 @@ function verifyXmlSignature(xml, opts) {
   const targetId = idOf(target);
   if (referenceUri !== '' && referenceUri.replace(/^#/, '') !== targetId) {
     log.debug('Leaving verifyXmlSignature(). The reference names something else.');
-    return { ok: false, present: true,
+    return errorCodes.mark({ ok: false, present: true,
              why: 'the signature on this <' + wanted + '> references "' + referenceUri +
                   '" rather than the element it is attached to (' +
                   (targetId ? '#' + targetId : 'which carries no id') +
-                  '), so it says nothing about this element' };
+                  '), so it says nothing about this element' },
+                           'STS-KEYS-0009');
   }
 
   // Inclusive canonicalization on a NESTED element: see the note above. Said
@@ -409,13 +417,14 @@ function verifyXmlSignature(xml, opts) {
   const isNested = target !== doc.documentElement;
   if (isNested && c14nAlg && c14nAlg.indexOf('xml-exc-c14n') === -1) {
     log.debug('Leaving verifyXmlSignature(). Inclusive c14n on a nested element.');
-    return { ok: false, present: true,
+    return errorCodes.mark({ ok: false, present: true,
              why: 'this nested <' + wanted + '> is signed with ' + c14nAlg +
                   ', an INCLUSIVE canonicalization whose digest depends on ' +
                   'namespace declarations inherited from its ancestors. This ' +
                   'service verifies a nested element from its own subtree and ' +
                   'cannot reproduce those octets, so it refuses rather than ' +
-                  'reporting a failure it did not really test' };
+                  'reporting a failure it did not really test' },
+                           'STS-KEYS-0010');
   }
 
   const serializer = new xmldom.XMLSerializer();
@@ -437,25 +446,30 @@ function verifyXmlSignature(xml, opts) {
     // and that distinction is the whole diagnosis. This comment used to exist,
     // word for word, in four separate files.
     log.debug('Leaving verifyXmlSignature(). It threw: ' + e.message);
-    return { ok: false, present: true, why: e.message };
+    return errorCodes.mark({ ok: false, present: true, why: e.message },
+                           'STS-KEYS-0011');
   }
 
   const firstRef = (result.references || [])[0] || {};
   let why = '';
+  let whyCode = '';
   if (!result.valid) {
     if (result.signatureValid === false) {
+      whyCode = 'STS-KEYS-0012';
       why = 'the signature value does not verify against the expected ' +
             'certificate' + (result.signatureError ? ': ' + result.signatureError : '');
     } else if (firstRef.ok === false) {
+      whyCode = 'STS-KEYS-0013';
       why = 'the signature value is genuine but the digest does not match, so ' +
             'the <' + wanted + '> was altered after it was signed' +
             (firstRef.reason ? ' (' + firstRef.reason + ')' : '');
     } else {
+      whyCode = 'STS-KEYS-0014';
       why = result.error || 'the signature did not verify';
     }
   }
   log.debug('Leaving verifyXmlSignature(). ok=' + result.valid);
-  return {
+  const verdict = {
     ok: !!result.valid,
     present: true,
     why: why,
@@ -471,6 +485,10 @@ function verifyXmlSignature(xml, opts) {
     signerCertB64: result.signerCertB64 || '',
     referenceUri: firstRef.uri === undefined ? referenceUri : firstRef.uri
   };
+  if (whyCode) {
+    errorCodes.mark(verdict, whyCode);
+  }
+  return verdict;
 }
 
 // ---------------------------------------------------------------------------
@@ -621,7 +639,8 @@ function artifact(opts, what, stage, value) {
   } catch (e) {
     // A logger that throws must not fail the encryption it was describing —
     // the tail wagging the dog, which is the rule signJwt()'s recorder follows.
-    log.error('the artifact logger threw and was ignored: ' + e.message);
+    log.error(errorCodes.tag('STS-KEYS-0001') +
+              'the artifact logger threw and was ignored: ' + e.message);
   }
 }
 
@@ -751,20 +770,23 @@ function decryptElement(xml, privateKeyPem, opts) {
   } catch (e) {
     // Not XML at all. The message is the parser's and is more use than ours.
     log.debug("Leaving decryptElement(). It did not parse.");
-    return { ok: false, why: 'the encrypted element is not well-formed XML: ' + e.message };
+    return errorCodes.mark({ ok: false, why: 'the encrypted element is not well-formed XML: ' +
+                             e.message }, 'STS-KEYS-0015');
   }
   const data = doc.getElementsByTagNameNS('*', 'EncryptedData')[0];
   if (!data) {
     log.debug("Leaving decryptElement(). No EncryptedData.");
-    return { ok: false, why: 'there is no <xenc:EncryptedData> inside it' };
+    return errorCodes.mark({ ok: false, why: 'there is no <xenc:EncryptedData> inside it' },
+                           'STS-KEYS-0016');
   }
   const dataMethod = data.getElementsByTagNameNS('*', 'EncryptionMethod')[0];
   const cipher = cipherByUri(dataMethod ? dataMethod.getAttribute('Algorithm') : '');
   if (!cipher) {
     log.debug("Leaving decryptElement(). Unknown block cipher.");
-    return { ok: false, why: 'the data is encrypted with ' +
+    return errorCodes.mark({ ok: false, why: 'the data is encrypted with ' +
              ((dataMethod && dataMethod.getAttribute('Algorithm')) || '(no algorithm stated)') +
-             ', and this service reads only ' + Object.keys(BLOCK_CIPHERS).join(', ') };
+             ', and this service reads only ' + Object.keys(BLOCK_CIPHERS).join(', ') },
+                           'STS-KEYS-0017');
   }
   const keyEl = data.getElementsByTagNameNS('*', 'EncryptedKey')[0];
   if (!keyEl) {
@@ -772,17 +794,18 @@ function decryptElement(xml, privateKeyPem, opts) {
     // is legal and is not implemented: nothing this service issues produces one,
     // and saying so is more useful than a null dereference three lines down.
     log.debug("Leaving decryptElement(). No EncryptedKey.");
-    return { ok: false, why: 'there is no <xenc:EncryptedKey> inside the KeyInfo. A key ' +
+    return errorCodes.mark({ ok: false, why: 'there is no <xenc:EncryptedKey> inside the KeyInfo. A key ' +
              'carried elsewhere and pointed at with <ds:RetrievalMethod> is legal and is ' +
-             'not implemented here' };
+             'not implemented here' }, 'STS-KEYS-0018');
   }
   const keyMethod = keyEl.getElementsByTagNameNS('*', 'EncryptionMethod')[0];
   const transport = transportByUri(keyMethod ? keyMethod.getAttribute('Algorithm') : '');
   if (!transport) {
     log.debug("Leaving decryptElement(). Unknown key transport.");
-    return { ok: false, why: 'the key is wrapped with ' +
+    return errorCodes.mark({ ok: false, why: 'the key is wrapped with ' +
              ((keyMethod && keyMethod.getAttribute('Algorithm')) || '(no algorithm stated)') +
-             ', and this service unwraps only ' + Object.keys(KEY_TRANSPORTS).join(', ') };
+             ', and this service unwraps only ' + Object.keys(KEY_TRANSPORTS).join(', ') },
+                           'STS-KEYS-0019');
   }
   // Two CipherValues: the wrapped key inside EncryptedKey, and the data. Read
   // the key's from the EncryptedKey subtree rather than from the document, or a
@@ -797,8 +820,8 @@ function decryptElement(xml, privateKeyPem, opts) {
   }
   if (!keyCipher || !dataCipher) {
     log.debug("Leaving decryptElement(). A CipherValue is missing.");
-    return { ok: false, why: 'the element is missing one of its two <xenc:CipherValue>s — ' +
-             'the wrapped key, or the data' };
+    return errorCodes.mark({ ok: false, why: 'the element is missing one of its two <xenc:CipherValue>s — ' +
+             'the wrapped key, or the data' }, 'STS-KEYS-0020');
   }
 
   try {
@@ -813,10 +836,10 @@ function decryptElement(xml, privateKeyPem, opts) {
       // of the wrong length rather than failing, which is the whole reason the
       // length is checked here.
       log.debug("Leaving decryptElement(). The unwrapped key is the wrong size.");
-      return { ok: false, why: 'the wrapped key did not unwrap to a ' + cipher.keyBytes +
+      return errorCodes.mark({ ok: false, why: 'the wrapped key did not unwrap to a ' + cipher.keyBytes +
                '-byte key, so it was encrypted to a different certificate. This service ' +
                'regenerates its key on every start, so a stale copy of its metadata is the ' +
-               'usual cause — fetch /saml2/metadata again' };
+               'usual cause — fetch /saml2/metadata again' }, 'STS-KEYS-0021');
     }
     const raw = forge.util.decode64((dataCipher.textContent || '').trim());
     const iv = raw.slice(0, cipher.ivBytes);
@@ -836,10 +859,11 @@ function decryptElement(xml, privateKeyPem, opts) {
       // facts and the message says which, because "decryption failed" sends
       // somebody looking at their key when the document was edited in transit.
       log.debug("Leaving decryptElement(). The cipher refused.");
-      return { ok: false, why: cipher.tagBytes
+      return errorCodes.mark({ ok: false, why: cipher.tagBytes
         ? 'the AES-GCM authentication tag did not verify, so the ciphertext was altered ' +
           'after it was encrypted'
-        : 'the AES-CBC padding is not valid, so the key or the ciphertext is wrong' };
+        : 'the AES-CBC padding is not valid, so the key or the ciphertext is wrong' },
+                             'STS-KEYS-0022');
     }
     const plain = forge.util.decodeUtf8(decipher.output.getBytes());
     // ---------------------------------------------------------------------
@@ -862,10 +886,10 @@ function decryptElement(xml, privateKeyPem, opts) {
     // whatever they are is not a caller this function has.
     if (!parsesAsFragment(plain)) {
       log.debug("Leaving decryptElement(). The plaintext is not XML.");
-      return { ok: false, why: 'the decryption produced something that is not well-formed ' +
+      return errorCodes.mark({ ok: false, why: 'the decryption produced something that is not well-formed ' +
                'XML' + (cipher.tagBytes ? '' : ', and ' + cipher.name + ' is UNAUTHENTICATED — ' +
                'an altered ciphertext can decrypt to rubbish with valid padding and no error, ' +
-               'which is what a GCM algorithm would have caught') };
+               'which is what a GCM algorithm would have caught') }, 'STS-KEYS-0023');
     }
     artifact(opts, 'SAML 2.0 encrypted element',
              'after decryption (' + cipher.name + ', key unwrapped with ' +
@@ -885,12 +909,13 @@ function decryptElement(xml, privateKeyPem, opts) {
     // parser three lines away.
     const aboutTheKey = /oaep|padding|rsa|decrypt|key/i.test(e.message || '');
     log.debug("Leaving decryptElement(). " + e.message);
-    return { ok: false, why: aboutTheKey
+    return errorCodes.mark({ ok: false, why: aboutTheKey
       ? 'the wrapped key could not be unwrapped with this service\'s private key (' +
         e.message + '). It was encrypted to a different certificate — and this service ' +
         'regenerates its key on every start, so a stale copy of its metadata is the usual ' +
         'cause'
-      : 'the encrypted element could not be read: ' + e.message };
+      : 'the encrypted element could not be read: ' + e.message },
+                           aboutTheKey ? 'STS-KEYS-0024' : 'STS-KEYS-0025');
   }
 }
 
@@ -2226,8 +2251,9 @@ function decryptJweCompact(compact, opts) {
   if (options.expectedKid && header.kid !== options.expectedKid) {
     log.debug('Leaving decryptJweCompact(). Wrong kid.');
     throw new Error('the JWE kid "' + (header.kid || '(absent)') + '" is not this service\'s ' +
-      'current encryption key "' + options.expectedKid + '". Re-read the metadata: this key ' +
-      'is regenerated when the service restarts.');
+      'current encryption key "' + options.expectedKid + '". Re-read the metadata — from ' +
+      'the same trust realm, since each realm has a key of its own: this key is ' +
+      'regenerated when the service restarts in development mode and when it is rotated.');
   }
 
   const spec = JWE_ENCS[header.enc];
@@ -2274,7 +2300,7 @@ function decryptJweCompact(compact, opts) {
 // A CERTIFICATE SERIAL NUMBER, AND WHY IT CANNOT BE THE CONSTANT IT WAS.
 //
 // Every certificate this service mints is self-signed, regenerated on every
-// start, and carries a subject that never varies — `CN=localhost, O=mock-sts`
+// start, and carries a subject that never varies — `CN=localhost, O=sts`
 // for the listeners' one. The serial was a CONSTANT beside all that: '02' for
 // the signing key, '03' for the TLS server certificate, '04' for the ML-DSA
 // one. So two starts of this service produced two DIFFERENT KEYS under one
@@ -2367,7 +2393,7 @@ function selfSignedRsaCertificate(opts) {
   cert.validity.notAfter = new Date();
   cert.validity.notAfter.setFullYear(
     cert.validity.notBefore.getFullYear() + (options.years || 5));
-  const attrs = [{ name: 'commonName', value: options.commonName || 'mock-sts' }];
+  const attrs = [{ name: 'commonName', value: options.commonName || 'sts' }];
   if (options.organizationName) {
     attrs.push({ name: 'organizationName', value: options.organizationName });
   }
@@ -2466,7 +2492,8 @@ function mlDsaAvailable() {
       // is logged once rather than swallowed, because a service that silently
       // stopped offering a configured algorithm would be the worse failure.
       mlDsaProbe = false;
-      log.warn('crypto: this runtime cannot generate ML-DSA keys (' +
+      log.warn(errorCodes.tag('STS-KEYS-0003') +
+               'crypto: this runtime cannot generate ML-DSA keys (' +
                e.message + '). Node ' + process.versions.node +
                ' is linked against OpenSSL ' + process.versions.openssl +
                '; ML-DSA needs OpenSSL 3.5, which is node 24 — this ' +
@@ -2573,7 +2600,7 @@ function selfSignedMlDsaCertificate(opts) {
   }
 
   const attributes = [
-    { name: 'commonName', value: options.commonName || 'mock-sts' }
+    { name: 'commonName', value: options.commonName || 'sts' }
   ];
   if (options.organizationName) {
     attributes.push({ name: 'organizationName',
@@ -2992,10 +3019,57 @@ const SCRYPT_P = 1;
 const SCRYPT_KEYLEN = 32;
 const SCRYPT_SALT_BYTES = 16;
 // scrypt needs memory proportional to 128 * N * r, and node's default limit is
-// below what N=2^15 wants — so it is raised here explicitly rather than left to
-// fail at the first hash with an error about memory that says nothing about
-// passwords.
-const SCRYPT_MAXMEM = 128 * SCRYPT_N * SCRYPT_R * 2;
+// below what N=2^15 wants — so `maxmem` is raised explicitly rather than left
+// to fail at the first hash with an error about memory that says nothing about
+// passwords. It is computed from the parameters in `scryptParameters()` below
+// since those became settings; it was the constant `128 * N * r * 2`.
+
+// ---------------------------------------------------------------------------
+// THE COST OF A NEW HASH IS A SETTING SINCE 2026-09-12, AND THE CONSTANTS ABOVE
+// ARE ITS DEFAULTS AND ITS FLOOR.
+//
+// `security.passwordHashLogN`, `security.passwordHashR` and
+// `security.passwordHashP` decide what the NEXT hash is written under. What is
+// already stored is untouched by construction — `$scrypt$N$r$p$salt$hash`
+// names its own parameters, so `verifySecret()` recomputes against those and
+// never reads these — which is the whole reason the stored form was made
+// self-describing in the first place.
+//
+// **THE FLOOR IS ENFORCED HERE AS WELL AS IN THE TABLE.** `config.js` refuses a
+// logN under 14 from every door it guards, and this still clamps, because the
+// one thing this module must never do is WRITE a hash cheaper than it
+// promises: a value that reached `config.value()` some way the table did not
+// check would otherwise be a credential store quietly getting weaker. N is set
+// as a power of two because scrypt refuses anything else, and a setting that
+// could hold 30000 would be one that fails at the first sign-in.
+//
+// **A LEAF STILL.** `config` is the one module here this file already reads and
+// it requires nothing back, so reading three more rows moves no require.
+// ---------------------------------------------------------------------------
+const SCRYPT_MIN_LOG_N = 14;
+const SCRYPT_MAX_LOG_N = 20;
+
+function clampInt(value, low, high, fallback) {
+  const n = Number(value);
+  if (value === '' || value === null || value === undefined || !isFinite(n)) {
+    return fallback;
+  }
+  return Math.max(low, Math.min(high, Math.floor(n)));
+}
+
+function scryptParameters() {
+  const logN = clampInt(config.value('security.passwordHashLogN'),
+                        SCRYPT_MIN_LOG_N, SCRYPT_MAX_LOG_N,
+                        Math.log2(SCRYPT_N));
+  const r = clampInt(config.value('security.passwordHashR'), 8, 16, SCRYPT_R);
+  const p = clampInt(config.value('security.passwordHashP'), 1, 8, SCRYPT_P);
+  const n = Math.pow(2, logN);
+  return { N: n, r: r, p: p, keylen: SCRYPT_KEYLEN,
+           // RFC 7914's memory is 128 * N * r (plus 128 * r * p for the
+           // parallel blocks); doubled for headroom exactly as the constant
+           // above is, so node never refuses a cost this file chose.
+           maxmem: 2 * 128 * r * (n + p) };
+}
 
 // ---------------------------------------------------------------------------
 // ENCRYPTING KEY MATERIAL AT REST (2026-09-06). AES-256-GCM under a
@@ -3039,9 +3113,19 @@ const SCRYPT_MAXMEM = 128 * SCRYPT_N * SCRYPT_R * 2;
 // version at the front so the scheme can change without a migration that has to
 // guess what it is reading, and every parameter beside the data rather than in
 // a constant somewhere that a later build might disagree about.
+//
+// **THE INFO STRING WAS `mock-sts key material v1` UNTIL 2026-09-12**, when
+// the product name in every identifier this service stores and emits became
+// `sts`. No migration was written, and that is a decision rather than an
+// oversight: development data does not persist between runs, so nothing
+// sealed under the old label ever has to be read back. **A PRODUCT deployment
+// holding records sealed under the old label would need RE-KEYING** — the info
+// is an HKDF input, so a record sealed under `mock-sts key material v1`
+// derives a different subkey and cannot be opened under this one; `open()`
+// would report it as undecryptable exactly as it reports a rotated KEK.
 // ---------------------------------------------------------------------------
 
-const KEK_INFO = 'mock-sts key material v1';
+const KEK_INFO = 'sts key material v1';
 const KEK_SALT_BYTES = 16;
 const KEK_IV_BYTES = 12;      // NIST SP 800-38D's recommended GCM nonce length.
 const KEK_KEY_BYTES = 32;     // AES-256.
@@ -3058,7 +3142,8 @@ function kekBytes(value) {
   log.debug('Entering kekBytes().');
   if (Buffer.isBuffer(value)) {
     if (value.length < KEK_KEY_BYTES) {
-      throw new Error('the key-encryption key is ' + value.length + ' bytes ' +
+      throw new Error(errorCodes.tag('STS-KEYS-0002') +
+                      'the key-encryption key is ' + value.length + ' bytes ' +
                       'and at least ' + KEK_KEY_BYTES + ' are required');
     }
     log.debug('Leaving kekBytes(). Raw bytes.');
@@ -3066,7 +3151,8 @@ function kekBytes(value) {
   }
   const text = String(value == null ? '' : value).trim();
   if (!text) {
-    throw new Error('the key-encryption key is empty');
+    throw new Error(errorCodes.tag('STS-KEYS-0002') +
+                    'the key-encryption key is empty');
   }
   // Hex and base64 are TRIED IN THAT ORDER and only when the whole string is
   // one of them: a 64-character hex string is also valid base64, and reading it
@@ -3085,7 +3171,8 @@ function kekBytes(value) {
   }
   const raw = Buffer.from(text, 'utf8');
   if (raw.length < KEK_KEY_BYTES) {
-    throw new Error('the key-encryption key decodes to ' + raw.length +
+    throw new Error(errorCodes.tag('STS-KEYS-0002') +
+                    'the key-encryption key decodes to ' + raw.length +
                     ' bytes and at least ' + KEK_KEY_BYTES + ' are required. ' +
                     'Generate one with `openssl rand -base64 32`.');
   }
@@ -3401,7 +3488,8 @@ function decodeStoredSecret(stored) {
     expected = Buffer.from(parts[6], 'base64');
   } catch (e) {
     // A stored value that is not base64 where it must be.
-    log.warn('crypto: a stored secret is not decodable and is being treated ' +
+    log.warn(errorCodes.tag('STS-KEYS-0004') +
+             'crypto: a stored secret is not decodable and is being treated ' +
              'as no match: ' + e.message);
     log.debug('Leaving decodeStoredSecret(). Undecodable.');
     return null;
@@ -3418,11 +3506,15 @@ function decodeStoredSecret(stored) {
 function hashSecret(plaintext) {
   log.debug('Entering hashSecret().');
   const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
+  // THE COST IS READ PER HASH — see `scryptParameters()`. The stored form
+  // names what was used, so a change here reaches the next hash and nothing
+  // already written.
+  const cost = scryptParameters();
   const derived = nodeCrypto.scryptSync(String(plaintext == null ? '' : plaintext),
-                                    salt, SCRYPT_KEYLEN,
-                                    { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P,
-                                      maxmem: SCRYPT_MAXMEM });
-  const out = encodeStoredSecret(SCRYPT_N, SCRYPT_R, SCRYPT_P, salt, derived);
+                                    salt, cost.keylen,
+                                    { N: cost.N, r: cost.r, p: cost.p,
+                                      maxmem: cost.maxmem });
+  const out = encodeStoredSecret(cost.N, cost.r, cost.p, salt, derived);
   log.debug('Leaving hashSecret().');
   return out;
 }
@@ -3446,16 +3538,22 @@ function deriveAsync(plaintext, spec, opts) {
 function hashSecretAsync(plaintext, opts) {
   log.debug('Entering hashSecretAsync().');
   const salt = nodeCrypto.randomBytes(SCRYPT_SALT_BYTES);
-  const spec = { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, salt: salt,
-                 keylen: SCRYPT_KEYLEN, maxmem: SCRYPT_MAXMEM };
+  // Read ONCE, here, and carried in the job — the worker holds no policy and
+  // must be handed every parameter, and reading the setting again when the
+  // answer comes back could encode different parameters from the ones the
+  // derivation actually used.
+  const cost = scryptParameters();
+  const spec = { N: cost.N, r: cost.r, p: cost.p, salt: salt,
+                 keylen: cost.keylen, maxmem: cost.maxmem };
   log.debug('Leaving hashSecretAsync(). Handed to the pool.');
   return deriveAsync(plaintext, spec, opts).then(function (derived) {
-    return encodeStoredSecret(SCRYPT_N, SCRYPT_R, SCRYPT_P, salt, derived);
+    return encodeStoredSecret(spec.N, spec.r, spec.p, salt, derived);
   }, function (e) {
     // THE POOL FAILED, SO IT IS COMPUTED HERE INSTEAD — see the block on
     // deriveAsync() below for why that is the right answer rather than a
     // fallback that hides something.
-    log.warn('crypto: the worker pool could not derive a password hash and it ' +
+    log.warn(errorCodes.tag('STS-KEYS-0006') +
+             'crypto: the worker pool could not derive a password hash and it ' +
              'is being computed in this process instead: ' + e.message);
     return hashSecret(plaintext);
   });
@@ -3486,7 +3584,8 @@ function verifySecret(plaintext, stored) {
     // Parameters this node cannot satisfy — a value stored by a build with a
     // higher cost, say. Reported rather than thrown, for decodeStoredSecret()'s
     // reason.
-    log.warn('crypto: a stored secret names scrypt parameters this process ' +
+    log.warn(errorCodes.tag('STS-KEYS-0005') +
+             'crypto: a stored secret names scrypt parameters this process ' +
              'cannot compute and is being treated as no match: ' + e.message);
     log.debug('Leaving verifySecret(). Uncomputable.');
     return false;
@@ -3530,7 +3629,8 @@ function verifySecretAsync(plaintext, stored, opts) {
     // configuration for one job. It blocks for 68ms, which is the cost of
     // being right.
     // ---------------------------------------------------------------------
-    log.warn('crypto: the worker pool could not recompute a stored secret, so ' +
+    log.warn(errorCodes.tag('STS-KEYS-0006') +
+             'crypto: the worker pool could not recompute a stored secret, so ' +
              'the comparison is being made in this process instead: ' +
              e.message);
     return verifySecret(plaintext, stored);
@@ -3619,6 +3719,8 @@ module.exports = {
   hotpSpec: hotpSpec,
   hotpCode: hotpCode,
   hashSecret: hashSecret,
+  // The cost a NEW hash is written under, for the console and the tests.
+  scryptParameters: scryptParameters,
   hashSecretAsync: hashSecretAsync,
   encryptWithKek: encryptWithKek,
   decryptWithKek: decryptWithKek,

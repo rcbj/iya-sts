@@ -64,6 +64,10 @@ const app = require('../common/app');
 const { log, parseBody } = require('../common/helpers');
 const config = require('../common/config');
 const audit = require('../common/audit');
+// The error-code registry (a leaf). An action's refusal carries its code as a
+// NON-ENUMERABLE mark on the result object, so the console handlers below and
+// `/admin-api` mark their response from it and no JSON body can carry it out.
+const errorCodes = require('../common/error_codes');
 const admin = require('../admin-ui/admin');
 const model = require('./xacml_model');
 const xml = require('./xacml_xml');
@@ -1160,15 +1164,17 @@ function pepAction(body) {
   const name = String((body || {}).name || '');
   if (!name) {
     log.debug('Leaving pepAction(). No name.');
-    return { ok: false, why: 'Which registered PEP? Send `name`.' };
+    return errorCodes.mark({ ok: false,
+                             why: 'Which registered PEP? Send `name`.' },
+                           'STS-XACML-0038');
   }
   const row = peps.read(name);
   if (!row) {
     log.debug('Leaving pepAction(). Not registered.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'No Policy Enforcement Point is registered as "' + name +
                   '". The register is ou=peps in the embedded directory and ' +
-                  'GET /admin-api/xacml/peps lists it.' };
+                  'GET /admin-api/xacml/peps lists it.' }, 'STS-XACML-0038');
   }
   if (action === 'forget-pep') {
     const gone = peps.remove(name);
@@ -1182,13 +1188,15 @@ function pepAction(body) {
                 'BE ENFORCING — this removed a row, not a process, and a PEP ' +
                 'that pulls again simply registers again. What has changed ' +
                 'is that this service will not nudge it in the meantime.' }
-      : { ok: false, why: 'The directory would not remove it.' };
+      : errorCodes.mark({ ok: false, why: 'The directory would not remove it.' },
+                        'STS-XACML-0027');
   }
   const on = action === 'enable-pep';
   const written = peps.setEnabled(name, on);
   if (!written) {
     log.debug('Leaving pepAction(). The directory refused it.');
-    return { ok: false, why: 'The directory refused the change.' };
+    return errorCodes.mark({ ok: false, why: 'The directory refused the change.' },
+                           'STS-XACML-0027');
   }
   audit.audit({ action: 'xacml.pep.' + (on ? 'enable' : 'disable'), actor: '',
                 protocol: 'XACML',
@@ -1209,13 +1217,18 @@ app.post('/admin/xacml/peps', function (req, res) {
   log.debug('Entering the admin XACML remote PEPs action.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-XACML-0031');
     admin.respondToAction(req, res, '/admin/xacml/peps',
                           { ok: false, why: 'This console session may read ' +
                                             'but not write.' });
     log.debug('Leaving the admin XACML remote PEPs action. Read-only.');
     return;
   }
-  admin.respondToAction(req, res, '/admin/xacml/peps', pepAction(body));
+  const result = pepAction(body);
+  if (!result.ok) {
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0038');
+  }
+  admin.respondToAction(req, res, '/admin/xacml/peps', result);
   log.debug('Leaving the admin XACML remote PEPs action.');
 });
 
@@ -1237,10 +1250,10 @@ function policyAction(body, req) {
 
   if (POLICY_ACTIONS.indexOf(action) < 0) {
     log.debug('Leaving policyAction(). Unknown action.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'Unknown action "' + action + '". The ' +
                   numberWord(POLICY_ACTIONS.length) + ' are: ' +
-                  POLICY_ACTIONS.join(', ') + '.' };
+                  POLICY_ACTIONS.join(', ') + '.' }, 'STS-XACML-0032');
   }
 
   if (action === 'import-alfa') {
@@ -1253,7 +1266,7 @@ function policyAction(body, req) {
       policy = alfa.parse(String(body.alfa || ''));
     } catch (error) {
       log.debug('Leaving policyAction(). The ALFA would not parse.');
-      return { ok: false, why: error.message };
+      return errorCodes.mark({ ok: false, why: error.message }, 'STS-XACML-0037');
     }
     const document = xml.writePolicy(policy);
     const isRoot = !store.root();
@@ -1285,7 +1298,7 @@ function policyAction(body, req) {
                                   { name: name || body.template });
     if (!built.ok) {
       log.debug('Leaving policyAction(). The template refused.');
-      return built;
+      return errorCodes.mark(built, 'STS-XACML-0036');
     }
     const document = xml.writePolicy(built.policy);
     // The FIRST policy in an empty repository becomes the root, because a
@@ -1312,7 +1325,9 @@ function policyAction(body, req) {
   const existing = store.read(name);
   if (!existing) {
     log.debug('Leaving policyAction(). No such policy.');
-    return { ok: false, why: 'There is no policy called "' + name + '".' };
+    return errorCodes.mark({ ok: false,
+                             why: 'There is no policy called "' + name + '".' },
+                           'STS-XACML-0033');
   }
 
   if (action === 'delete') {
@@ -1367,6 +1382,7 @@ app.post('/admin/xacml/policies', function (req, res) {
   log.debug('Entering the admin XACML policies action endpoint.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-XACML-0031');
     admin.respondToAction(req, res, '/admin/xacml/policies',
                           { ok: false,
                             why: 'This console session holds Admin Read and ' +
@@ -1374,8 +1390,11 @@ app.post('/admin/xacml/policies', function (req, res) {
     log.debug('Leaving the admin XACML policies action endpoint. Read-only.');
     return;
   }
-  admin.respondToAction(req, res, '/admin/xacml/policies',
-                        policyAction(body, req));
+  const result = policyAction(body, req);
+  if (!result.ok) {
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0028');
+  }
+  admin.respondToAction(req, res, '/admin/xacml/policies', result);
   log.debug('Leaving the admin XACML policies action endpoint.');
 });
 
@@ -2024,16 +2043,18 @@ function editorAction(body) {
   const existing = store.read(name);
   if (!existing) {
     log.debug('Leaving editorAction(). No such policy.');
-    return { ok: false, why: 'There is no policy called "' + name + '".' };
+    return errorCodes.mark({ ok: false,
+                             why: 'There is no policy called "' + name + '".' },
+                           'STS-XACML-0033');
   }
   let policy;
   try {
     policy = store.parseDocument(existing.document);
   } catch (error) {
     log.debug('Leaving editorAction(). It will not load.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'That policy does not load, so it cannot be edited here: ' +
-                  error.message };
+                  error.message }, 'STS-XACML-0034');
   }
   // A DEEP COPY, because `applyEdit()` mutates and `parseDocument()` returns
   // the CACHED parse — editing that object in place would leave the cache
@@ -2043,7 +2064,7 @@ function editorAction(body) {
   const applied = editor.applyEdit(policy, path, action, body);
   if (!applied.ok) {
     log.debug('Leaving editorAction(). The edit was refused.');
-    return applied;
+    return errorCodes.mark(applied, 'STS-XACML-0035');
   }
   const document = xml.writePolicy(policy);
   const written = store.write(name, document, {
@@ -2052,10 +2073,10 @@ function editorAction(body) {
   });
   if (!written.ok) {
     log.debug('Leaving editorAction(). The store refused.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'That edit would leave the policy invalid, so it was not ' +
                   'saved and the stored document is unchanged. ' +
-                  written.why };
+                  written.why }, errorCodes.codeOf(written) || 'STS-XACML-0028');
   }
   audit.audit({ action: 'xacml.policy.write', actor: '', protocol: 'XACML',
                 detail: action + ' at "' + (path || '(root)') + '" in "' +
@@ -2068,6 +2089,7 @@ app.post('/admin/xacml/editor', function (req, res) {
   log.debug('Entering the admin XACML editor action endpoint.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-XACML-0031');
     admin.respondToAction(req, res, '/admin/xacml/editor',
                           { ok: false,
                             why: 'This console session holds Admin Read and ' +
@@ -2076,6 +2098,9 @@ app.post('/admin/xacml/editor', function (req, res) {
     return;
   }
   const result = editorAction(body);
+  if (!result.ok) {
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-XACML-0035');
+  }
   admin.respondToAction(req, res, '/admin/xacml/editor?policy=' +
                         encodeURIComponent(String(body.policy || '')), result);
   log.debug('Leaving the admin XACML editor action endpoint.');
@@ -2272,9 +2297,9 @@ function combinedAction(body) {
   // phrased it its own way would turn both checks off with nothing failing.
   const all = actionNames();
   log.debug('Leaving combinedAction(). Unknown action.');
-  return { ok: false,
+  return errorCodes.mark({ ok: false,
            why: 'Unknown action "' + action + '". There are ' + all.length +
-                ': ' + all.join(', ') + '.' };
+                ': ' + all.join(', ') + '.' }, 'STS-XACML-0032');
 }
 
 if (typeof admin.setXacmlPages === 'function') {

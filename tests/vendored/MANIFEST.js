@@ -211,6 +211,16 @@ const JOBS = [
   { file: 'sts_consent.js',              browser: false, local: true },
   { file: 'sts_delegated_permissions_example.js', browser: false, local: true },
   { file: 'sts_dpop.js',                 browser: false },
+  // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
+  // reasons: GNAP exists in this repository and nowhere else, so there is no
+  // copy anywhere to sync from. Three jobs because there are three parties —
+  // the client instance (core), the resource server (rs, RFC 9767) and a
+  // Shared Signals receiver (signals) — and each asserts through its own door.
+  // All three drive `gnap_client.js`, a client written from the RFCs with no
+  // code from `gnap/`, and each runs in a throwaway realm it leaves behind.
+  { file: 'sts_gnap_core.js',            browser: false, local: true },
+  { file: 'sts_gnap_rs.js',              browser: false, local: true },
+  { file: 'sts_gnap_signals.js',         browser: false, local: true },
   { file: 'sts_jws_verification.js',     browser: false },
   { file: 'sts_route_inputs.js',         browser: false, local: true },
   { file: 'sts_global_logout.js',        browser: false, local: true },
@@ -245,6 +255,20 @@ const JOBS = [
   // can make alone: the PEM this page shows once obtains a token as its holder
   // and obtains nothing as anybody else.
   { file: 'sts_portal_signing_key.js',   browser: false, local: true },
+  // THE SECRET STORE (2026-09-12). `local: true`: it drives this repository's
+  // own /admin-api. It asserts the half `openbao/seed.js` cannot — that the
+  // RUNNING SERVICE took the path the store was built for.
+  //
+  // **IT HAS TWO GATES AND THE FIRST VERSION HAD ONE**, which cost two of the
+  // three modes. The DATABASE PASSWORD comes out of the store in EVERY mode,
+  // because the compose file's connection string carries none at all; the
+  // KEY-ENCRYPTION KEY is only read where the keystore is ON. Gating the whole
+  // file on "is anything coming from vault" therefore ran the key half in
+  // `memory` and `postgres` and failed with `no key was read at all` about a
+  // service behaving exactly as those modes define. It skips whole against a
+  // service with no stack behind it, and runs the database half alone where
+  // the keystore is off — saying which it is doing either way.
+  { file: 'sts_secret_store.js',         browser: false, local: true },
   // THE TWO SECOND-FACTOR MECHANISM PAGES AND THE ROSTER THAT ABSORBED
   // /admin/mfa (2026-09-10). `local: true` on sts_portal_totp.js's argument
   // one step further along: every assertion in it is about this service's own
@@ -504,7 +528,12 @@ const LOCAL_HELPERS = [
   // independent XML Signature implementation here on purpose: a second copy
   // would be a second place for exclusive canonicalization to be wrong, which
   // is the one thing a wrong copy would hide.
-  'saml_xmldsig.js'
+  'saml_xmldsig.js',
+  // GNAP's independent client instance (RFC 9421 signatures, RFC 9530 digests,
+  // detached and attached JWS, the interaction hash) and the resource-owner
+  // harness the three GNAP jobs share. Node built-ins only; nothing from gnap/.
+  'gnap_client.js',
+  'gnap_flow.js'
 ];
 
 const CLIENT_MODULES = [

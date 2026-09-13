@@ -69,6 +69,10 @@ const log = bunyan.createLogger({
 });
 
 const pki = require('./pki');
+// The error-code registry (a leaf). A refusal returned to a caller carries its
+// code non-enumerably, so an OCSP answer or a console reply serialised whole
+// never shows it; `pki/pki_service.js` marks its response from `codeOf()`.
+const errorCodes = require('./error_codes');
 const keyMaterial = require('./vendored/key_material');
 const x509 = require('./vendored/x509');
 
@@ -239,27 +243,27 @@ function revoke(scopeId, caId, spec) {
   const authority = authorityFor(id, caId);
   if (!authority) {
     log.debug('Leaving revoke(). No such authority.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['There is no "' + caId + '" certificate authority in ' +
                       'that scope, so nothing it issued can be revoked by ' +
                       'it. A revocation is made BY AN ISSUER — a serial is ' +
-                      'only unique within one.'] };
+                      'only unique within one.'] }, 'STS-PKI-0055');
   }
   const serialHex = normalSerial((spec || {}).serialHex);
   if (!serialHex || serialHex === '0') {
     log.debug('Leaving revoke(). No serial.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['A revocation names a SERIAL NUMBER. It is the only ' +
                       'thing a CRL entry and an OCSP answer have in common ' +
-                      'with the certificate they are about.'] };
+                      'with the certificate they are about.'] }, 'STS-PKI-0056');
   }
   const chosen = reason((spec || {}).reason || 'superseded');
   if (!chosen) {
     log.debug('Leaving revoke(). Unknown reason.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['"' + (spec || {}).reason + '" is not an RFC 5280 ' +
                       'revocation reason. They are ' + REASON_IDS.join(', ') +
-                      '.'] };
+                      '.'] }, 'STS-PKI-0057');
   }
   const already = isRevoked(id, caId, serialHex);
   if (already) {
@@ -282,8 +286,8 @@ function revoke(scopeId, caId, spec) {
   };
   const row = rowFor(id);
   if (!row) {
-    return { ok: false,
-             errors: ['That scope holds no certificate authority.'] };
+    return errorCodes.mark({ ok: false,
+             errors: ['That scope holds no certificate authority.'] }, 'STS-PKI-0055');
   }
   row.revoked = Object.assign({}, row.revoked || {});
   row.revoked[String(caId)] = listFor(id, caId).concat([entry]);
@@ -323,20 +327,20 @@ function release(scopeId, caId, serialHex) {
   const held = isRevoked(id, caId, serialHex);
   if (!held) {
     log.debug('Leaving release(). Not revoked.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['That serial is not on the ' + caId + ' authority\'s ' +
-                      'revocation list.'] };
+                      'revocation list.'] }, 'STS-PKI-0058');
   }
   if (held.reason !== 'certificateHold') {
     log.debug('Leaving release(). Not a hold.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['That certificate was revoked as "' + held.reason +
                       '", which RFC 5280 makes PERMANENT. Only a ' +
                       '`certificateHold` can be released: a validator is ' +
                       'entitled to cache a permanent revocation for as long ' +
                       'as the CRL it read says it is fresh, so undoing one ' +
                       'here would produce a certificate this service calls ' +
-                      'good and half the world still calls revoked.'] };
+                      'good and half the world still calls revoked.'] }, 'STS-PKI-0059');
   }
   const row = rowFor(id);
   row.revoked = Object.assign({}, row.revoked || {});
@@ -474,7 +478,7 @@ function setDirectory(hooks) {
   log.debug('Entering setDirectory().');
   if (!hooks || typeof hooks.publishCrl !== 'function' ||
       typeof hooks.baseDnFor !== 'function') {
-    log.error('pki_revocation: a directory was offered without both ' +
+    log.error(errorCodes.tag('STS-PKI-0060') + 'pki_revocation: a directory was offered without both ' +
               'publishCrl() and baseDnFor(). It was REFUSED WHOLE — a ' +
               'half-filled slot would leave the CRLs published over HTTP and ' +
               'silently absent from LDAP, which is the one failure a reader ' +
@@ -492,7 +496,7 @@ function directoryBaseFor(scopeId) {
     try {
       return directory.baseDnFor(scopeId);
     } catch (e) {
-      log.warn('pki_revocation: the directory could not say where the "' +
+      log.warn(errorCodes.tag('STS-PKI-0061') + 'pki_revocation: the directory could not say where the "' +
                scopeId + '" scope lives: ' + e.message);
     }
   }
@@ -572,7 +576,7 @@ function derFromPem(pem) {
                                                crypto: crypto }));
     }
   } catch (e) {
-    log.error('pki_revocation: the Web Crypto engine could not be installed: ' +
+    log.error(errorCodes.tag('STS-PKI-0062') + 'pki_revocation: the Web Crypto engine could not be installed: ' +
               e.message + '. CRLs and OCSP responses cannot be signed.');
   }
 })();
@@ -614,9 +618,14 @@ async function importSigningKey(tier) {
 // the interesting thing a client author does with this is revoke something and
 // watch their stack notice — and a stack that cached a twenty-four hour list
 // will not notice for twenty-four hours.
+//
+// **THE FLOOR IS THE ROW'S `min: 1` AND NOT A SECOND ONE HERE.** This read
+// `Math.max(60, …)`, which silently turned every value from 1 to 59 — all of
+// them accepted by `config.js` and drawn on the settings form as in force —
+// into an hour. The cases that setting exists for are exactly the short ones.
 function crlLifetimeMs() {
-  return Math.max(60, Number(config.value('pki.crlLifetimeMinutes')) || 60) *
-         60000;
+  const minutes = Number(config.value('pki.crlLifetimeMinutes'));
+  return Math.max(1, Number.isFinite(minutes) ? minutes : 60) * 60000;
 }
 
 async function buildCrl(scopeId, caId) {
@@ -624,9 +633,9 @@ async function buildCrl(scopeId, caId) {
   const authority = authorityFor(scopeId, caId);
   if (!authority) {
     log.debug('Leaving buildCrl(). No such authority.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              errors: ['There is no "' + caId + '" certificate authority in ' +
-                      'that scope.'] };
+                      'that scope.'] }, 'STS-PKI-0055');
   }
   const tier = authority.tier;
   const issuerCert = pkijs.Certificate.fromBER(derFromPem(tier.certificatePem));
@@ -701,12 +710,12 @@ async function buildCrl(scopeId, caId) {
     await crl.sign(key, signingParamsFor(tier).hash
       ? signingParamsFor(tier).hash.name : undefined);
   } catch (e) {
-    log.error('pki_revocation: the "' + caId + '" CRL in "' +
+    log.error(errorCodes.tag('STS-PKI-0063') + 'pki_revocation: the "' + caId + '" CRL in "' +
               (String(scopeId) || 'default') + '" could not be signed: ' +
               e.message);
     log.debug('Leaving buildCrl(). The signature failed.');
-    return { ok: false,
-             errors: ['That CRL could not be signed: ' + e.message] };
+    return errorCodes.mark({ ok: false,
+             errors: ['That CRL could not be signed: ' + e.message] }, 'STS-PKI-0063');
   }
   const der = Buffer.from(crl.toSchema(true).toBER(false));
   log.debug('Leaving buildCrl(). ' + entries.length + ' entry(ies), ' +
@@ -752,7 +761,7 @@ function publishSoon(scopeId, caId) {
         directory.publishCrl(scopeId, caId, made.der);
       }
     }).catch(function (e) {
-      log.error('pki_revocation: the "' + caId + '" CRL could not be ' +
+      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the "' + caId + '" CRL could not be ' +
                 'published into the directory: ' + e.message);
     });
   });
@@ -774,7 +783,7 @@ async function publishAll(scopeIds) {
         done += 1;
       }
     } catch (e) {
-      log.error('pki_revocation: the "' + one.ca + '" CRL of "' +
+      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the "' + one.ca + '" CRL of "' +
                 (one.scope || 'default') + '" could not be published: ' +
                 e.message);
     }
@@ -859,7 +868,7 @@ async function answerOcsp(scopeId, caId, requestDer) {
     // `unauthorized` rather than `unknown`: there is no responder at this
     // address at all, which is a different thing from a responder that has not
     // heard of a certificate.
-    return { ok: true, der: bareResponse(6), status: 'unauthorized' };
+    return errorCodes.mark({ ok: true, der: bareResponse(6), status: 'unauthorized' }, 'STS-PKI-0065');
   }
   let request;
   try {
@@ -868,7 +877,7 @@ async function answerOcsp(scopeId, caId, requestDer) {
                               requestDer.byteOffset + requestDer.byteLength));
   } catch (e) {
     log.debug('Leaving answerOcsp(). Malformed request.');
-    return { ok: true, der: bareResponse(1), status: 'malformedRequest' };
+    return errorCodes.mark({ ok: true, der: bareResponse(1), status: 'malformedRequest' }, 'STS-PKI-0066');
   }
   const tier = authority.tier;
   const issuerCert = pkijs.Certificate.fromBER(derFromPem(tier.certificatePem));
@@ -972,10 +981,10 @@ async function answerOcsp(scopeId, caId, requestDer) {
     const params = signingParamsFor(tier);
     await basic.sign(key, params.hash ? params.hash.name : undefined);
   } catch (e) {
-    log.error('pki_revocation: an OCSP response from the "' + caId +
+    log.error(errorCodes.tag('STS-PKI-0067') + 'pki_revocation: an OCSP response from the "' + caId +
               '" authority could not be signed: ' + e.message);
     log.debug('Leaving answerOcsp(). The signature failed.');
-    return { ok: true, der: bareResponse(2), status: 'internalError' };
+    return errorCodes.mark({ ok: true, der: bareResponse(2), status: 'internalError' }, 'STS-PKI-0067');
   }
   const response = new pkijs.OCSPResponse();
   response.responseStatus.valueBlock.valueDec = 0;         // successful

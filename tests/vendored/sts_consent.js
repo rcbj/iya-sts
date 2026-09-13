@@ -73,6 +73,23 @@ base = String(base).replace(/\/+$/, "");
 var api = base + "/admin-api";
 var REDIRECT_URI = "http://localhost:9999/consent-callback";
 
+// ---------------------------------------------------------------------------
+// WHAT A REAL DEPLOYMENT WOULD HAVE REGISTERED, SUPPLIED UP FRONT (2026-09-12).
+//
+// In PRODUCT mode (`global.mode=product`) this service neither invents a
+// person for a name that signs in nor accepts a password it cannot verify, and
+// it answers only a client whose redirect URI is REGISTERED and which holds a
+// secret. This job runs in development, where all of that is permissive — but
+// a job that worked only because the service made things up would be testing
+// the making-up. So every person signing in here is created first through
+// `/admin-api/users/create` with the attributes a real account carries and a
+// password of at least twelve characters, and both clients are registered with
+// the redirect URI the authorization requests below name and a client secret.
+// ---------------------------------------------------------------------------
+var PASSWORD = "consent-job-Passw0rd!-" + String(Date.now()).slice(-8);
+var CLIENT_SECRET = "consent-client-secret-" + String(Date.now()).slice(-8);
+var MAIL_DOMAIN = "consent-job.test";
+
 // A suffix per run, so that two runs against one long-lived mock cannot see
 // each other's applications, overrides or people. The registry is append-only
 // in practice and the directory entirely so — see the header.
@@ -182,6 +199,13 @@ function authorizeUrl(clientId, scope, extra) {
 // afterwards. Returns the browser and that answer.
 async function signIn(who, clientId, scope, extra) {
   log.debug("Entering signIn(). who=" + who);
+  await ok("/users/create", {
+    username: who, invent: false,
+    attributes: { cn: "Consent Person " + who, givenName: "Consent",
+                  sn: who, displayName: "Consent Person " + who,
+                  mail: who + "@" + MAIL_DOMAIN },
+    credential: "password", password: PASSWORD
+  }, "created " + who + " with a password and real attributes before they sign in");
   const b = browser(who);
   let r = await b.go("GET", authorizeUrl(clientId, scope, extra));
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
@@ -192,7 +216,7 @@ async function signIn(who, clientId, scope, extra) {
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: who,
-                        password: "any-password", action: "login" }));
+                        password: PASSWORD, action: "login" }));
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in form should redirect, got " + r.status);
   assert.ok(b.cookie, "signing in should establish a session.");
@@ -608,12 +632,10 @@ async function theGlobalOverrideWorks() {
     "ever");
 
   // AND IT IS KEYED ON THE PAIR. A second application asking for the same
-  // permission identifier is still asked.
-  await ok("/applications/create", {
-    identifier: OTHER_CLIENT, name: "Consent test other client " + RUN,
-    protocols: ["oauth2", "oidc"],
-    fields: { oauthClientId: OTHER_CLIENT }
-  }, "created the second client").catch(function () { /* may already exist */ });
+  // permission identifier is still asked. It was REGISTERED in test(), with
+  // its redirect URI, before the first request to name it — section 4 signs in
+  // to it too, and a client that exists only because a request named it is the
+  // development-mode auto-creation this job no longer leans on.
   const elsewhere = usernameFor("consent-perm-elsewhere");
   const third = await signIn(elsewhere, OTHER_CLIENT, "openid " + PERMISSION);
   assert.ok(/\/oauth2\/consent\?consent=/.test(third.r.location),
@@ -733,8 +755,18 @@ async function test() {
   await ok("/applications/create", {
     identifier: CLIENT, name: "Consent test client " + RUN,
     protocols: ["oauth2", "oidc"],
-    fields: { oauthClientId: CLIENT, oauthRedirectUri: [REDIRECT_URI] }
+    fields: { oauthClientId: CLIENT, oauthRedirectUri: [REDIRECT_URI],
+              oauthClientSecret: CLIENT_SECRET }
   }, "created the client application");
+  // The second client, registered the same way and BEFORE anything names it:
+  // section 4 signs an interloper in to it and section 5 asks it for a
+  // permission it holds no override for.
+  await ok("/applications/create", {
+    identifier: OTHER_CLIENT, name: "Consent test other client " + RUN,
+    protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: OTHER_CLIENT, oauthRedirectUri: [REDIRECT_URI],
+              oauthClientSecret: CLIENT_SECRET + "-other" }
+  }, "created the second client application");
 
   const first = await theFirstSignInIsAsked();
   await theSecondSignInIsSilent(first);

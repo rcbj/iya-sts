@@ -683,11 +683,35 @@ async function theReadsAgreeWithTheConsole(session) {
 async function revokingHereReachesIntrospection() {
   log.debug("Entering revokingHereReachesIntrospection().");
   log.info("=== A revocation through the API reaches RFC 7662 ===");
+  // THE PERSON AND THE CLIENT ARE REAL (2026-09-12). The person is the console
+  // account `console_signin.js` created with a password before the first
+  // sign-in of this run, and that password is what the grant presents; the
+  // client is REGISTERED here, with a secret the request presents, rather than
+  // created on sight because a token request named it. Product mode does
+  // neither on anybody's behalf, and a job leaning on development's doing both
+  // would be testing that. A second run against a kept stack finds the client
+  // already registered, which is the same state and is accepted.
+  const clientSecret = "admin-api-test-client-secret";
+  const registered = await post("/applications/create", {
+    identifier: CONSOLE_USER, name: "Management API test client",
+    protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [CONSOLE_USER], oauthClientSecret: clientSecret,
+              oauthTokenEndpointAuthMethod: "client_secret_post" }
+  });
+  assert.ok((registered.status === 200 && registered.body &&
+             registered.body.ok) ||
+            /already/i.test(JSON.stringify(registered.body || {})),
+    "registering the client " + CONSOLE_USER + " answered " +
+    registered.status + " " + String(registered.raw).slice(0, 300));
   const minted = await common.httpJson(base + "/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "grant_type=password&username=admin-api-test&password=x" +
-          "&client_id=admin-api-test&scope=openid",
+    body: "grant_type=password&username=" + encodeURIComponent(CONSOLE_USER) +
+          "&password=" +
+          encodeURIComponent(consoleSignIn.consolePasswordFor(CONSOLE_USER)) +
+          "&client_id=" + encodeURIComponent(CONSOLE_USER) +
+          "&client_secret=" + encodeURIComponent(clientSecret) +
+          "&scope=openid",
   });
   assert.ok(minted.ok && minted.body.access_token,
     "the password grant should mint a token to revoke; got " + minted.status);

@@ -122,6 +122,13 @@ var log = {
 };
 
 const VERSION_FILE = 'VERSION';
+
+// THE ERROR CODES BELOW ARE WRITTEN OUT AS `[STS-CORE-nnnn] ` RATHER THAN
+// THROUGH `common/error_codes.js`'s `tag()`, and that is (2) above holding: this
+// file requires nothing from the repository, and it is copied ALONE to the
+// root of the `xacml-pep/` image, where a require of the registry would throw
+// at load. The bracketed prefix is exactly what `tag()` produces, so a search
+// for `[STS-` finds these lines with every other one.
 const STAMP_FILE = 'version.json';
 
 // THE PACKAGE ROOT: the directory the VERSION file is in. Every path below is
@@ -171,7 +178,7 @@ function readMajorMinor() {
     // likeliest way somebody breaks this, and the number would otherwise just
     // be wrong everywhere with nothing to say why.
     if (raw) {
-      console.error('[version] ignoring malformed ' + file + ': "' + raw +
+      console.error('[STS-CORE-0039] [version] ignoring malformed ' + file + ': "' + raw +
                     '" (want M.N)');
     }
   } catch (e) {
@@ -183,7 +190,7 @@ function readMajorMinor() {
   // the repository. Contrast the signing key, which IS fatal to lose: a wrong
   // version misinforms a reader, a wrong key invalidates every token this
   // service ever issued.
-  console.error('[version] no readable ' + VERSION_FILE +
+  console.error('[STS-CORE-0040] [version] no readable ' + VERSION_FILE +
                 '; falling back to 0.0');
   log.debug("Leaving readMajorMinor().");
   return { major: '0', minor: '0' };
@@ -267,7 +274,7 @@ function stamp(dir) {
     fs.writeFileSync(path.join(dir, STAMP_FILE), JSON.stringify(v, null, 2) +
                      '\n');
   } catch (e) {
-    console.error('[version] could not write ' + path.join(dir, STAMP_FILE) +
+    console.error('[STS-CORE-0041] [version] could not write ' + path.join(dir, STAMP_FILE) +
                   ': ' + e.message);
   }
   log.debug("Leaving stamp().");
@@ -343,15 +350,21 @@ function load(dir) {
 // should say what dialled it and which build of it, because the person reading
 // that access log is debugging an integration with a mock they did not install.
 //
-// **RFC 9110 product form**, `mock-sts/<M.N.O> (<component>)`: one product token
+// **RFC 9110 product form**, `sts/<M.N.O> (<component>)`: one product token
 // with a version, and the component in a comment. The version is not decoration
-// there — "mock-sts called my endpoint and sent the wrong thing" is answerable
+// there — "sts called my endpoint and sent the wrong thing" is answerable
 // only if the request said which build did it.
 //
 // It is HERE rather than three strings in three modules for the reason the rest
 // of this file exists: one copy of the product token, so a rename or a version
 // change cannot reach two of the three.
-const PRODUCT = 'mock-sts';
+//
+// **THE TOKEN WAS `mock-sts` UNTIL 2026-09-12**, when the product name in
+// every identifier this service stores and emits became `sts`. That was the
+// rename this constant exists to make a one-line change, and it was. The
+// REPOSITORY and the package are still called mock-sts; this is the name on
+// the wire, which is a different thing.
+const PRODUCT = 'sts';
 
 function userAgent(component) {
   log.debug("Entering userAgent(). component=" + component);

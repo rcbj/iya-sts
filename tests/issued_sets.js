@@ -54,7 +54,7 @@ const stats = require('../common/admin_stats');
 function mint(typ, jti, setId, extra) {
   const now = Math.floor(Date.now() / 1000);
   helpers.signJwt(Object.assign({
-    typ: typ, jti: jti, sub: 'urn:sts-mock:user:alice', username: 'alice',
+    typ: typ, jti: jti, sub: 'urn:sts:user:alice', username: 'alice',
     client_id: 'webapp', scope: 'openid profile',
     iat: now, nbf: now, exp: now + 900
   }, extra || {}), { sessionId: 'sess-1', grant: 'authorization_code',

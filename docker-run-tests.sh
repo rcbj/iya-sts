@@ -130,6 +130,13 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose-run-tests.yml}"
 # so two runs sharing one would tear down each other's stack.
 COMPOSE_PROJECT="${STS_DOCKER_TEST_PROJECT:-mock-sts-docker-tests}"
 STS_CONTAINER_NAME="${STS_CONTAINER_NAME:-sts-docker-tests}"
+# THE SECRET STORE AND ITS TWO ONE-SHOT CONTAINERS (2026-09-12). Named for the
+# reason every other container here is: `container_name` is machine-wide, and
+# this one holds the key-encryption key the `dispatch` mode's data is sealed
+# under.
+STS_BAO_CONTAINER_NAME="${STS_BAO_CONTAINER_NAME:-sts-docker-tests-openbao}"
+STS_BAO_TLS_CONTAINER_NAME="${STS_BAO_TLS_CONTAINER_NAME:-sts-docker-tests-openbao-tls}"
+STS_BAO_SEED_CONTAINER_NAME="${STS_BAO_SEED_CONTAINER_NAME:-sts-docker-tests-openbao-seed}"
 STS_TESTS_CONTAINER_NAME="${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}"
 # The appconfig layer the SERVICE reads. EMPTY here and resolved after the
 # arguments are parsed, by THE SERVICE'S LOG LEVEL below: which file this stack
@@ -354,9 +361,64 @@ ADMIN_API_CLIENT_SECRET="${ADMIN_API_CLIENT_SECRET:-$(head -c 24 /dev/urandom \
   | base64 | tr -d '/+=' | head -c 24)}"
 export ADMIN_API_CLIENT_SECRET
 
+# ---------------------------------------------------------------------------
+# THE STACK'S OWN SUBNET (2026-09-12), chosen exactly as ./local-run-tests.sh
+# chooses its own and for the same reason — see freeSubnet() in
+# tests/tools/compose.sh, which argues it once for both launchers.
+#
+# docker-compose-run-tests.yml names `172.30.0.0/24` because a realm's SPIFFE
+# listeners need addresses that do not move between starts, and a network is
+# MACHINE-WIDE however the project is named. So two runs of this launcher — a
+# CI agent with two workspaces, which is the case STS_DOCKER_TEST_PROJECT
+# exists for — collided on the address space before either brought up a
+# container.
+#
+# THE BASE IS 172.30 AND THE OTHER LAUNCHER'S IS 172.29, which is what keeps
+# one run of each off the scan entirely. Placed after the preflight because
+# freeSubnet() asks docker, and whether that needs `sudo` is what
+# resolveCompose() answers.
+# ---------------------------------------------------------------------------
+if [ -z "${STS_NETWORK_SUBNET:-}" ];
+then
+  STS_NETWORK_SUBNET="$(freeSubnet 172.30)"
+  if [ -z "${STS_NETWORK_SUBNET}" ];
+  then
+    echo "No free /24 could be found in 172.30.0.0/16 for the stack's own" >&2
+    echo "network. Every one of the 256 overlaps a docker network or a route" >&2
+    echo "on this machine — \`docker network ls\` and \`ip route\` say which." >&2
+    echo "STS_NETWORK_SUBNET names one explicitly." >&2
+    exit 1
+  fi
+fi
+# The addresses inside it, derived from the SUBNET and never from the base:
+# the scan hands back `172.30.1.0/24` as readily as `172.30.0.0/24`, and an
+# address built from the first two octets would sit outside the network
+# compose is about to create.
+STS_NETWORK_BITS="${STS_NETWORK_SUBNET##*/}"
+STS_NETWORK_PREFIX="${STS_NETWORK_SUBNET%/*}"
+STS_NETWORK_PREFIX="${STS_NETWORK_PREFIX%.*}"
+STS_SERVICE_ADDRESS="${STS_NETWORK_PREFIX}.10"
+STS_SERVICE_EXTRA_IPS="${STS_NETWORK_PREFIX}.11/${STS_NETWORK_BITS}"
+STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.12/${STS_NETWORK_BITS}"
+STS_SERVICE_EXTRA_IPS="${STS_SERVICE_EXTRA_IPS} ${STS_NETWORK_PREFIX}.13/${STS_NETWORK_BITS}"
+
 COMPOSE_ENV=(
   "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT}"
+  # The network and the three addresses in it, chosen above. Named here for the
+  # reason every other variable in this array is: what a run does not name is
+  # the compose file's default, and that default is the same literal for every
+  # run on this machine.
+  "STS_NETWORK_SUBNET=${STS_NETWORK_SUBNET}"
+  "STS_ADDRESS=${STS_SERVICE_ADDRESS}"
+  "STS_SPIFFE_GRPC_HOST=${STS_SERVICE_ADDRESS}"
+  "STS_EXTRA_IPS=${STS_SERVICE_EXTRA_IPS}"
   "STS_CONTAINER_NAME=${STS_CONTAINER_NAME}"
+  "STS_BAO_CONTAINER_NAME=${STS_BAO_CONTAINER_NAME}"
+  "STS_BAO_TLS_CONTAINER_NAME=${STS_BAO_TLS_CONTAINER_NAME}"
+  "STS_BAO_SEED_CONTAINER_NAME=${STS_BAO_SEED_CONTAINER_NAME}"
+  # The keystore, per mode — see tests/tools/modes.sh. `persisted` in the
+  # `dispatch` mode is what makes the key-encryption key come out of the store.
+  "STS_KEYS_SOURCE=${STS_KEYS_SOURCE:-generated}"
   "STS_TESTS_CONTAINER_NAME=${STS_TESTS_CONTAINER_NAME}"
   "CONFIG_FILE=${CONFIG_FILE}"
   "STS_TEST_ARGS=${STS_TEST_ARGS}"

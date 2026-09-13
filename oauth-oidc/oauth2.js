@@ -72,7 +72,7 @@ const app = require('../common/app');
 const { log, logArtifact, STS, baseUrlOf, b64u, jsonFromB64u, nowSec, randomId,
         xmlEscape, parseBody, bodyValues, oauthError, signJwt, signJwtAs,
         allSigningKeys, allSigningKeysAsync, signJwtAsAsync, userFor,
-        hasScope } = require('../common/helpers');
+        hasScope, signingKeyFor } = require('../common/helpers');
 const dpop = require('./dpop');
 // RFC 8705 — certificate-bound access tokens, the other mechanism RFC 9700
 // section 2.2 names. A library like dpop.js, and read here for one thing: the
@@ -114,7 +114,8 @@ const { VCI_CONFIGS, VCI_CONFIG_ID, VCI_SCOPE, vciFormatOf } = require('../oid4v
 // issuer's metadata advertises for that credential's format. A library that
 // registers no route, so this adds nothing to the require order.
 const vcClaims = require('../oid4vc/vc_claims');
-const { deferredAccessTokens, issuerStates, preAuthorizedCodes } = require('../oid4vc/vc_offers');
+const { deferredAccessTokens, issuerStates, preAuthorizedCodes,
+        checkTxCode } = require('../oid4vc/vc_offers');
 // The issuer identifier and everything else settable at runtime.
 const config = require('../common/config');
 // The authentication service. It requires nothing from this module, which is
@@ -154,6 +155,13 @@ const applications = require('../common/applications');
 // value may BE is refused in both modes, and whether the client is KNOWN stays
 // with `mode.js` and the application registry.
 const validation = require('../common/validation');
+// The registry of error codes, a leaf. Every refusal below is MARKED on the
+// response before it is sent, and a code is never written into one.
+const errorCodes = require('../common/error_codes');
+// EVERY REFRESH TOKEN IS ENCRYPTED TO ITS REALM (2026-09-12). A LIBRARY that
+// registers no route — refreshToken() seals through it, and everything below
+// that reads a refresh token opens through it first.
+const refreshTokenCrypto = require('./refresh_token_crypto');
 const vt = validation.types;
 const vz = validation.z;
 // The delegation register (/admin/delegation). Exactly ONE thing this module
@@ -192,6 +200,14 @@ const claimAttributes = require('../common/claim_attributes');
 // this line, which is exactly why the gate exists rather than this file
 // requiring the PEP. See `common/issuance_gate.js`.
 const gate = require('../common/issuance_gate');
+// THE ONE PLACE A PRESENTED PASSWORD IS CHECKED, for the RFC 6749 section 4.3
+// password grant (2026-09-12). A library (rule 3): it registers no route, and
+// `authn/authn.js` — required at 8, above this module — already requires it,
+// so this is a cache hit that can neither move a route nor close a cycle.
+// `websecurity.js` beside it is the rate limiter the sign-in screen already
+// uses, required for the same grant and on the same argument.
+const credentials = require('../common/credentials');
+const websecurity = require('../common/websecurity');
 // ---------------------------------------------------------------------------
 // RFC 8414 — OAuth 2.0 Authorization Server Metadata
 //
@@ -452,6 +468,15 @@ function asMetadata(req, raw) {
     // signed_metadata is added below — it is a JWT OF this object, so it cannot
     // be one of the claims it signs.
   };
+  // RFC 7591 REGISTRATION IS NOT ADVERTISED WHERE IT IS CLOSED (2026-09-12).
+  // A product realm refuses POST /oauth2/register unless
+  // `oauth2.openRegistration` is on — see registrationOpen() — and a metadata
+  // member is a promise a client acts on: publishing an endpoint that refuses
+  // every caller would send every client that reads this document into a
+  // refusal it could have been spared. Development is unchanged.
+  if (!registrationOpen()) {
+    delete metadata.registration_endpoint;
+  }
   // RFC 9700 mode, when it is on, narrows three of the members above:
   // response_types_supported loses everything that would issue an access token
   // from the authorization endpoint, grant_types_supported loses `implicit`,
@@ -514,6 +539,7 @@ function forProfile(handler) {
                                          AS_PROFILE_PARAMS);
     if (!named.ok) {
       log.debug("Leaving forProfile(). The authorization server name is malformed.");
+      errorCodes.mark(res, 'STS-OAUTH-0186');
       return oauthError(res, 400, 'invalid_request', named.detail);
     }
     const id = String(named.value.as || '').trim();
@@ -606,9 +632,57 @@ function profileFromPath(raw) {
 // includes the base URL, which comes off the Host header, so a caller that
 // varies it could otherwise grow this map without limit.
 // ---------------------------------------------------------------------------
+//
+// BOTH NUMBERS ARE SETTINGS SINCE 2026-09-12 — `oauth2.signedMetadataCacheS`
+// and `oauth2.maxSignedMetadataEntries` — and the constants below are their
+// defaults, kept under their old names. The ceiling on the first is half the
+// signature's own hour, which is the "never hand out one about to expire"
+// rule above written into the row.
 const SIGNED_METADATA_TTL_MS = 60 * 1000;
 
 const MAX_SIGNED_METADATA = 64;
+
+function signedMetadataTtlMs() {
+  const seconds = Number(config.value('oauth2.signedMetadataCacheS'));
+  return isFinite(seconds) && seconds >= 0 ? Math.floor(seconds) * 1000 : SIGNED_METADATA_TTL_MS;
+}
+
+function maxSignedMetadata() {
+  const entries = Number(config.value('oauth2.maxSignedMetadataEntries'));
+  return isFinite(entries) && entries > 0 ? Math.floor(entries) : MAX_SIGNED_METADATA;
+}
+
+// ---------------------------------------------------------------------------
+// SIGN A PUBLISHED DOCUMENT WITH THE CONFIGURED ALGORITHM (2026-09-12).
+//
+// It was RS256 unconditionally. `oauth2.signedMetadataAlgorithm` offers every
+// algorithm this realm holds a SYNCHRONOUS key for — the RSA key and the
+// curve keys — and deliberately none of the post-quantum ones, because
+// discovery is signed on the request thread. RS256 keeps the exact call that
+// was here, so a service with the setting untouched signs byte-for-byte the
+// way it did; any other algorithm takes its key from `helpers.signingKeyFor()`,
+// which is the one answer to "which key signs which algorithm", and puts
+// `iss`, `iat` and `exp` on the claims itself rather than through
+// jsonwebtoken's options, which the two algorithms that library cannot sign
+// (EdDSA, ES256K) do not go through.
+//
+// Exported, because the OID4VCI issuer metadata's `signed_metadata` is the
+// same RFC 8414 construct and must be signed the same way.
+// ---------------------------------------------------------------------------
+function signPublishedDocument(claims, issuer, lifetimeS) {
+  log.debug("Entering signPublishedDocument().");
+  const alg = String(config.value('oauth2.signedMetadataAlgorithm') || 'RS256');
+  if (alg === 'RS256') {
+    log.debug("Leaving signPublishedDocument(). RS256.");
+    return stsCrypto.signJws(claims, STS.privateKey,
+      { algorithm: 'RS256', issuer: issuer, expiresIn: lifetimeS, keyid: STS.kid });
+  }
+  const signer = signingKeyFor(alg);
+  const iat = nowSec();
+  const payload = Object.assign({}, claims, { iss: issuer, iat: iat, exp: iat + lifetimeS });
+  log.debug("Leaving signPublishedDocument(). " + alg + ".");
+  return stsCrypto.signJws(payload, signer.key, { algorithm: alg, keyid: signer.kid });
+}
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -630,7 +704,8 @@ const signedMetadataCache = realms.map();   // the claims, serialised -> { signe
 function signedMetadata(meta) {
   log.debug("Entering signedMetadata().");
   const claims = Object.assign({}, meta, { sub: meta.issuer });
-  const key = JSON.stringify(claims);
+  const key = String(config.value('oauth2.signedMetadataAlgorithm') || 'RS256') + ' ' +
+              JSON.stringify(claims);
   const now = Date.now();
   const held = signedMetadataCache.get(key);
   if (held && held.until > now) {
@@ -643,19 +718,21 @@ function signedMetadata(meta) {
   }
   logArtifact('RFC 8414 signed_metadata', 'before signing', claims);
   try {
-    const signed = stsCrypto.signJws(claims, STS.privateKey,
-      { algorithm: 'RS256', issuer: meta.issuer, expiresIn: 3600, keyid: STS.kid });
+    const signed = signPublishedDocument(claims, meta.issuer, 3600);
     logArtifact('RFC 8414 signed_metadata', 'after signing', signed);
-    if (signedMetadataCache.size >= MAX_SIGNED_METADATA) {
+    // THE ALGORITHM IS PART OF THE KEY, because the claims alone are not what
+    // was signed: a document signed RS256 a moment before the setting moved to
+    // ES256 is the same claims and a different artefact.
+    while (signedMetadataCache.size >= maxSignedMetadata()) {
       // Map iterates in insertion order, so the first key is the oldest.
       signedMetadataCache.delete(signedMetadataCache.keys().next().value);
     }
     signedMetadataCache.set(key, { signed: signed, at: now,
-                                   until: now + SIGNED_METADATA_TTL_MS });
+                                   until: now + signedMetadataTtlMs() });
     log.debug("Leaving signedMetadata().");
     return signed;
   } catch (e) {
-    log.error('signed_metadata: ' + e.message);
+    log.error(errorCodes.tag('STS-OAUTH-0183') + 'signed_metadata: ' + e.message);
     log.debug("Leaving signedMetadata(). Nothing was signed.");
     return undefined;
   }
@@ -766,7 +843,7 @@ function oidcMetadata(req, issuer) {
     userinfo_encryption_alg_values_supported: stsCrypto.JWE_ASYMMETRIC_ALGS,
     userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
     //
-    // `public`: the `sub` userFor() mints is urn:sts-mock:user:<username> and is
+    // `public`: the `sub` userFor() mints is urn:sts:user:<username> and is
     // the same value for every client that asks, which is what public MEANS.
     // Claiming `pairwise` would be a claim about a calculation this server does
     // not perform.
@@ -955,7 +1032,8 @@ function jwksEndpoint(req, res) {
   allSigningKeysAsync().then(function (signingKeys) {
     sendJwks(req, res, signingKeys);
   }).catch(function (e) {
-    log.error('could not publish the JWKS: ' + e.message);
+    log.error(errorCodes.tag('STS-OAUTH-0184') + 'could not publish the JWKS: ' + e.message);
+    errorCodes.mark(res, 'STS-OAUTH-0184');
     res.status(500).type('application/json')
       .send(JSON.stringify({ error: e.message }));
     log.debug("Leaving the JWKS endpoint. The keys could not be made.");
@@ -1031,7 +1109,8 @@ function sendJwks(req, res, signingKeys) {
     }, null, 2));
     log.debug("Leaving sendJwks().");
   } catch (e) {
-    log.error('could not publish the JWKS: ' + e.message);
+    log.error(errorCodes.tag('STS-OAUTH-0184') + 'could not publish the JWKS: ' + e.message);
+    errorCodes.mark(res, 'STS-OAUTH-0184');
     res.status(500).type('application/json').send(JSON.stringify({ error: e.message }));
     log.debug("Leaving sendJwks(). It failed.");
   }
@@ -1128,7 +1207,18 @@ function tokenClockSkew() {
   return config.value('oauth2.clockSkewS');
 }
 
+// THE DEFAULT OF `oauth2.authorizationCodeTtlS` (2026-09-12), kept under its
+// old name because four places below explain themselves in terms of it.
+// `authCodeTtlMs()` is the live value and what every reader uses; a code
+// carries the lifetime it was minted with (`ttlMs`), so a change reaches the
+// next code and never one already issued. `oauth2_bcp.js` reads the SAME
+// setting for its transaction window rather than a comment claiming a match.
 const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
+
+function authCodeTtlMs() {
+  const seconds = Number(config.value('oauth2.authorizationCodeTtlS'));
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 : AUTH_CODE_TTL_MS;
+}
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -1241,7 +1331,7 @@ function clientFrom(req, body) {
       log.debug("Leaving clientFrom(). client_secret_basic named " + client.client_id + ".");
       return client;
     } catch (e) {
-      log.error('could not read the Basic credential: ' + e.message);
+      log.error(errorCodes.tag('STS-OAUTH-0185') + 'could not read the Basic credential: ' + e.message);
       // Fall through to the form parameter.
     }
   }
@@ -1484,7 +1574,10 @@ function refreshToken(base, opts) {
   if (opts.request) {
     payload.cnf = mtls.confirmationFor(opts.request, payload.cnf);
   }
-  const token = signJwt(payload, issuanceContext(opts));
+  // SIGNED, THEN ENCRYPTED (2026-09-12): the JWS is what `signJwt()` records
+  // and what the refresh grant verifies once it has decrypted; the JWE around
+  // it is what leaves this service. See `refresh_token_crypto.js`.
+  const token = refreshTokenCrypto.seal(signJwt(payload, issuanceContext(opts)));
   // RFC 9700 section 2.2.2. `parent_refresh_jti` is set only by the refresh
   // grant, so an empty one means this token is the root of its own family: an
   // authorization code or a pre-authorized code redeemed for the first time.
@@ -1516,15 +1609,19 @@ function halfHash(value) {
 async function idToken(base, opts) {
   log.debug("Entering idToken().");
   const iat = nowSec();
-  const user = opts.user || userFor(opts.username);
-  const payload = {
+  // `personFromDirectory()` is a no-op in development; in a realm that invents
+  // no claim values it fills the profile claims from the person's own entry, and
+  // `definedOnly()` then keeps an absent one ABSENT — see both, beside
+  // PERSONA_CLAIMS.
+  const user = personFromDirectory(opts.user || userFor(opts.username));
+  const payload = definedOnly({
     iss: issuerOf(base), sub: opts.sub || user.sub, aud: opts.client_id, typ: 'ID',
     iat: iat, nbf: iat, exp: iat + idTokenTtl(opts.client_id), auth_time: opts.auth_time || iat,
     azp: opts.client_id, jti: randomId(16),
     name: user.name, given_name: user.given_name, family_name: user.family_name,
     preferred_username: user.preferred_username, email: user.email,
     email_verified: user.email_verified
-  };
+  });
   // How the End-User authenticated, and to what level. RFC 8176 for amr; `hwk`
   // is proof of possession of a hardware key, which is what a WebAuthn
   // assertion demonstrates. A relying party that asked for a second factor
@@ -2087,7 +2184,16 @@ const CLAIMS_REQUEST_MEMBERS = ['userinfo', 'id_token'];
 // is copied into a signed token, and a request naming ten thousand claims would
 // produce a token no HTTP header can carry — which fails somewhere unrelated,
 // at a client, in a way nobody traces back to here.
+//
+// `oauth2.maxRequestedClaims` since 2026-09-12; the constant is its default
+// and the export below reads the setting through a getter, so the console's
+// "at most N" and this refusal cannot disagree.
 const MAX_REQUESTED_CLAIMS = 64;
+
+function maxRequestedClaims() {
+  const count = Number(config.value('oauth2.maxRequestedClaims'));
+  return isFinite(count) && count > 0 ? Math.floor(count) : MAX_REQUESTED_CLAIMS;
+}
 
 // One individual claim request (section 5.5.1). `null` means "asked for, no
 // further constraint", which is by far the common shape; an object may carry
@@ -2184,9 +2290,9 @@ function parseClaimsRequest(raw) {
         return { error: 'claims.' + member + ' has a member with an empty name.' };
       }
       total++;
-      if (total > MAX_REQUESTED_CLAIMS) {
+      if (total > maxRequestedClaims()) {
         log.debug("Leaving parseClaimsRequest(). Over the cap.");
-        return { error: 'a claims request may name at most ' + MAX_REQUESTED_CLAIMS + ' claims ' +
+        return { error: 'a claims request may name at most ' + maxRequestedClaims() + ' claims ' +
                         'here. The parsed request is copied into the access token, and one large ' +
                         'enough to overflow a header would fail at a client in a way nothing ' +
                         'points back here.' };
@@ -2230,6 +2336,107 @@ function requestedClaimNames(request, member) {
 // and `username` is not an OIDC claim at all.
 const PERSONA_CLAIMS = ['name', 'given_name', 'family_name', 'preferred_username',
                         'email', 'email_verified'];
+
+// ---------------------------------------------------------------------------
+// THE PERSON, AS AN ID TOKEN AND A USERINFO RESPONSE DESCRIBE THEM — IN A REALM
+// THAT INVENTS NOTHING (2026-09-12).
+//
+// `helpers.userFor()` stopped inventing `name`, `given_name`, `family_name`,
+// `email` and `email_verified` when `mode.inventsClaimValues()` is false, and
+// that left two readers here holding a person object with four holes in it:
+// the ID Token, which names those claims in its payload whatever they hold,
+// and the UserInfo endpoint's `profile` and `email` scopes. Neither may go back
+// to inventing, and both would otherwise be answering `profile` with nothing
+// while the person's own directory entry holds a real `cn` and `mail`.
+//
+// **SO THE DIRECTORY FILLS THEM, THROUGH THE CATALOGUE EVERY CLAIM SET ALREADY
+// USES** — `cn` is `name`, `givenName` is `given_name`, `sn` is `family_name`
+// and `mail` is `email`, which is the mapping `oid4vc/vc_claims.js` states and
+// `/admin/claims` draws. It is `claimAttributes.requestedClaimsFor()` rather
+// than a read of the entry here, so there is ONE answer to "which attribute is
+// a person's family name" and a directory that renamed one would change both
+// readers together. That function reads the entry ONCE for all four.
+//
+// FOUR RULES, and each is a place this could have gone quietly wrong:
+//
+//   * A value the person object ALREADY carries is kept. A federated sign-in
+//     or a certificate may have put a real `email` on the session's user, and
+//     the directory lookup is a fallback beneath it rather than a second
+//     opinion over it.
+//   * A claim the entry does not hold is ABSENT — never an empty string and
+//     never `undefined` on an object that a later `Object.assign` could use to
+//     clobber a configured claim of the same name. `definedOnly()` below is
+//     what the payloads go through.
+//   * **`email_verified` IS NEVER SET HERE.** Nothing in a directory entry says
+//     a mailbox was verified, and the invented `true` this replaced was the
+//     single most harmful claim in the persona: relying parties link accounts
+//     on a verified email. An absent claim is what OIDC Core 5.1 permits for a
+//     value the provider cannot vouch for.
+//   * DEVELOPMENT IS UNTOUCHED — `userFor()` filled all six there, so this
+//     function finds nothing undefined and returns the object as it was given.
+//
+// `sub` is not touched, and that is worth saying because it is the claim a
+// reader might expect a directory-backed person to take from the entry: it is
+// `urn:sts:user:<username>`, derived from the NAME, so a person deleted
+// and re-created under the same username is the same subject to every relying
+// party that ever saw the first one. That is a property of the identifier
+// scheme rather than of this function, and changing it is a migration.
+// ---------------------------------------------------------------------------
+const DIRECTORY_PERSONA_CLAIMS = ['name', 'given_name', 'family_name', 'email'];
+
+function personFromDirectory(user) {
+  log.debug("Entering personFromDirectory().");
+  if (!user || mode.inventsClaimValues()) {
+    log.debug("Leaving personFromDirectory(). Nothing to fill.");
+    return user;
+  }
+  const missing = DIRECTORY_PERSONA_CLAIMS.filter(function (name) {
+    return user[name] === undefined || user[name] === null || user[name] === '';
+  });
+  if (!missing.length || !user.username) {
+    log.debug("Leaving personFromDirectory(). The person object is already complete.");
+    return user;
+  }
+  const out = Object.assign({}, user);
+  let built = { claims: {} };
+  try {
+    built = claimAttributes.requestedClaimsFor(user.username, missing);
+  } catch (e) {
+    // A directory that threw must not fail an issuance — the rule
+    // `vc_claims.js`'s directory reader follows for the same reason. The
+    // claims are simply absent, which is the honest answer in a realm that
+    // invents nothing.
+    log.error(errorCodes.tag('STS-OAUTH-0181') + 'personFromDirectory(): the directory threw while being read for ' +
+              user.username + '\'s profile claims and they are omitted: ' + e.message);
+  }
+  missing.forEach(function (name) {
+    const value = built.claims[name];
+    if (typeof value === 'string' && value !== '') {
+      out[name] = value;
+    } else {
+      delete out[name];
+    }
+  });
+  log.debug("Leaving personFromDirectory(). " +
+            DIRECTORY_PERSONA_CLAIMS.filter(function (n) { return out[n] !== undefined; }).length +
+            " of " + DIRECTORY_PERSONA_CLAIMS.length + " profile claim(s) from the directory.");
+  return out;
+}
+
+// A copy of an object with every `undefined` member removed. JSON drops them on
+// the way out anyway; the reason for doing it BEFORE a merge is that
+// `Object.assign(configured, payload)` copies an undefined member too, and a
+// protocol claim that is merely absent would erase a configured claim of the
+// same name that should have survived.
+function definedOnly(object) {
+  const out = {};
+  Object.keys(object || {}).forEach(function (key) {
+    if (object[key] !== undefined) {
+      out[key] = object[key];
+    }
+  });
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // WHAT A CLAIMS REQUEST ACTUALLY PRODUCES FOR ONE PERSON.
@@ -2747,10 +2954,21 @@ function permissionRefusal(scope, clientId) {
 function jtiOf(token) {
   log.debug("Entering jtiOf().");
   try {
+    // An encrypted refresh token is opened first; every other token this
+    // service issues is a JWS and is read as it always was.
+    if (refreshTokenCrypto.isEncrypted(token)) {
+      const opened = refreshTokenCrypto.claimsOfIssued(token);
+      if (!opened) {
+        throw new Error('an encrypted refresh token just issued could not be opened');
+      }
+      log.debug("Leaving jtiOf(). Opened.");
+      return opened.jti || '';
+    }
     log.debug("Leaving jtiOf().");
     return (jsonFromB64u(String(token || '').split('.')[1]) || {}).jti || '';
   } catch (e) {
-    log.error('a token just issued could not be re-read for its jti: ' + e.message);
+    log.error(errorCodes.tag('STS-OAUTH-0182') + 'a token just issued could not be re-read for its jti: ' +
+              e.message);
     log.debug("Leaving jtiOf(). It could not be read.");
     return '';
   }
@@ -2839,6 +3057,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   if (parsedDetails.error) {
     log.debug("Leaving issueAuthorizationResponse(). " + parsedDetails.error);
     log.debug("Leaving issueAuthorizationResponse().");
+    errorCodes.mark(res, 'STS-OAUTH-0153');
     return redirectBack(res, base, redirectUri, query.state,
       { error: 'invalid_authorization_details', error_description: parsedDetails.error },
       types.length > 1 || types.indexOf('code') < 0, query.response_mode);
@@ -2856,6 +3075,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   if (parsedResources.error) {
     log.debug("Leaving issueAuthorizationResponse(). " + parsedResources.error);
     log.debug("Leaving issueAuthorizationResponse().");
+    errorCodes.mark(res, 'STS-OAUTH-0154');
     return redirectBack(res, base, redirectUri, query.state,
       { error: 'invalid_target', error_description: parsedResources.error },
       types.length > 1 || types.indexOf('code') < 0, query.response_mode);
@@ -2877,6 +3097,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   const permissionProblem = permissionRefusal(scope, query.client_id);
   if (permissionProblem) {
     log.debug("Leaving issueAuthorizationResponse(). An ungranted permission was asked for.");
+    errorCodes.mark(res, 'STS-OAUTH-0155');
     return redirectBack(res, base, redirectUri, query.state,
       { error: 'invalid_scope', error_description: permissionProblem },
       types.length > 1 || types.indexOf('code') < 0, query.response_mode);
@@ -2916,6 +3137,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   });
   if (!roleAnswer.allowed) {
     log.debug("Leaving issueAuthorizationResponse(). The issuance policy refused it.");
+    errorCodes.mark(res, 'STS-OAUTH-0156');
     return redirectBack(res, base, redirectUri, query.state,
       { error: 'access_denied', error_description: roleAnswer.why },
       types.length > 1 || types.indexOf('code') < 0, query.response_mode);
@@ -2932,6 +3154,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
   if (parsedClaims.error) {
     log.debug("Leaving issueAuthorizationResponse(). " + parsedClaims.error);
     log.debug("Leaving issueAuthorizationResponse().");
+    errorCodes.mark(res, 'STS-OAUTH-0157');
     return redirectBack(res, base, redirectUri, query.state,
       { error: 'invalid_request', error_description: parsedClaims.error },
       types.length > 1 || types.indexOf('code') < 0, query.response_mode);
@@ -2955,6 +3178,7 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
     log.debug("Leaving issueAuthorizationResponse(). RFC 9700 mode refused a reused " +
               "transaction value (" + transactionCheck.requirement + ").");
     log.debug("Leaving issueAuthorizationResponse().");
+    errorCodes.mark(res, transactionCheck.errorCode || 'STS-OAUTH-0158');
     return redirectBack(res, base, redirectUri, query.state,
       { error: transactionCheck.error, error_description: transactionCheck.description },
       types.length > 1 || types.indexOf('code') < 0, query.response_mode);
@@ -3053,7 +3277,8 @@ async function issueAuthorizationResponse(req, res, query, user, authTime,
       // browser, so this is the only route between the request that was made
       // and the tokens it is redeemed for.
       claims: claimsRequest,
-      expires: Date.now() + AUTH_CODE_TTL_MS
+      ttlMs: authCodeTtlMs(),
+      expires: Date.now() + authCodeTtlMs()
     });
     out.code = code;
   }
@@ -3283,6 +3508,7 @@ function sendRedirectInterstitial(res, info) {
     'above to the application, which is what would have happened automatically if you were ' +
     'signed in here.</p>' +
     '</body></html>';
+  // error-code: none — every caller of fail() marks its own condition before this is reached
   res.status(400).type('text/html').set('Cache-Control', 'no-store').send(html);
   log.debug("Leaving sendRedirectInterstitial().");
 }
@@ -3410,6 +3636,7 @@ function authorizeEndpoint(req, res) {
   if (!asked.ok) {
     log.debug("Leaving the authorization endpoint. The request is malformed: " +
               asked.code + " on \"" + asked.field + "\".");
+    errorCodes.mark(res, 'STS-OAUTH-0159');
     return oauthError(res, 400, 'invalid_request', asked.detail);
   }
   const q = asked.value;
@@ -3419,6 +3646,7 @@ function authorizeEndpoint(req, res) {
   // is reported here instead (OAuth 2.0 section 4.1.2.1).
   if (!redirectUri || !/^https?:\/\//i.test(redirectUri)) {
     log.debug("Leaving the authorization endpoint. There is no usable redirect_uri to report to.");
+    errorCodes.mark(res, 'STS-OAUTH-0160');
     return oauthError(res, 400, 'invalid_request', 'A valid absolute redirect_uri is required.');
   }
 
@@ -3449,6 +3677,7 @@ function authorizeEndpoint(req, res) {
   if (!redirectCheck.ok) {
     log.debug("Leaving the authorization endpoint. RFC 9700 mode refused the redirect_uri (" +
               redirectCheck.requirement + "), so nothing is redirected anywhere.");
+    errorCodes.mark(res, redirectCheck.errorCode || 'STS-OAUTH-0158');
     return oauthError(res, 400, redirectCheck.error, redirectCheck.description);
   }
   if (redirectCheck.how) {
@@ -3503,12 +3732,17 @@ function authorizeEndpoint(req, res) {
   const clientIdCheck = bcp.checkClientIdPresent(q.client_id);
   if (!clientIdCheck.ok) {
     log.debug("Leaving the authorization endpoint. " + clientIdCheck.requirement + ".");
+    errorCodes.mark(res, clientIdCheck.errorCode || 'STS-OAUTH-0158');
     return oauthError(res, 400, clientIdCheck.error, clientIdCheck.description);
   }
-  if (!q.client_id) return fail('invalid_request', 'client_id is required.');
+  if (!q.client_id) {
+    errorCodes.mark(res, 'STS-OAUTH-0161');
+    return fail('invalid_request', 'client_id is required.');
+  }
   const types = String(q.response_type || '').split(/\s+/).filter(Boolean);
   const known = ['code', 'token', 'id_token'];
   if (!types.length || types.some(function (t) { return known.indexOf(t) < 0; })) {
+    errorCodes.mark(res, 'STS-OAUTH-0162');
     return fail('unsupported_response_type', 'response_type "' + (q.response_type || '') + '" is not supported.');
   }
   // WHAT THIS AUTHORIZATION SERVER SAYS IT DOES. `response_types_supported` in
@@ -3526,6 +3760,7 @@ function authorizeEndpoint(req, res) {
     if (!offered) {
       log.debug("Leaving the authorization endpoint. " + profileOf(req) +
                 " does not advertise that response type.");
+      errorCodes.mark(res, 'STS-OAUTH-0163');
       return fail('unsupported_response_type',
         'The "' + profileOf(req) + '" authorization server advertises ' +
         'response_types_supported ' + JSON.stringify(advertisedTypes) + ' and this request ' +
@@ -3558,6 +3793,7 @@ function authorizeEndpoint(req, res) {
     if (advertisedModes && advertisedModes.indexOf(String(q.response_mode)) < 0) {
       log.debug("Leaving the authorization endpoint. response_mode " + q.response_mode +
                 " is not one " + profileOf(req) + " advertises.");
+      errorCodes.mark(res, 'STS-OAUTH-0164');
       return fail('invalid_request',
         'The "' + profileOf(req) + '" authorization server advertises ' +
         'response_modes_supported ' + JSON.stringify(advertisedModes) + ' and this request ' +
@@ -3580,6 +3816,7 @@ function authorizeEndpoint(req, res) {
     if (advertisedPkce && advertisedPkce.indexOf(String(q.code_challenge_method)) < 0) {
       log.debug("Leaving the authorization endpoint. " + profileOf(req) +
                 " does not advertise that code_challenge_method.");
+      errorCodes.mark(res, 'STS-OAUTH-0165');
       return fail('invalid_request',
         'The "' + profileOf(req) + '" authorization server advertises ' +
         'code_challenge_methods_supported ' + JSON.stringify(advertisedPkce) + ' and this ' +
@@ -3603,6 +3840,7 @@ function authorizeEndpoint(req, res) {
                                                        client: registeredClient });
   if (!requestCheck.ok) {
     log.debug("RFC 9700 mode refused the authorization request (" + requestCheck.requirement + ").");
+    errorCodes.mark(res, requestCheck.errorCode || 'STS-OAUTH-0158');
     return fail(requestCheck.error, requestCheck.description);
   }
 
@@ -3632,6 +3870,7 @@ function authorizeEndpoint(req, res) {
   if (q.authn_error) {
     log.debug("Leaving the authorization endpoint. The authentication service reported " +
               q.authn_error + ".");
+    errorCodes.mark(res, 'STS-OAUTH-0166');
     return fail(String(q.authn_error),
                 String(q.authn_error_description || 'Authentication did not complete.'));
   }
@@ -3655,6 +3894,7 @@ function authorizeEndpoint(req, res) {
   if (q.consent_error) {
     log.debug("Leaving the authorization endpoint. The consent screen reported " +
               q.consent_error + ".");
+    errorCodes.mark(res, 'STS-OAUTH-0167');
     return fail(String(q.consent_error),
                 String(q.consent_error_description || 'Consent was not given.'));
   }
@@ -3720,6 +3960,7 @@ function authorizeEndpoint(req, res) {
       if (String(q.prompt || '').split(/\s+/).indexOf('none') >= 0) {
         log.debug("Leaving the authorization endpoint. Consent is outstanding and " +
                   "prompt=none forbids showing the screen.");
+        errorCodes.mark(res, 'STS-OAUTH-0168');
         return fail('consent_required',
           '"' + ((session.user || {}).username || '') + '" has not consented ' +
           decision.names.map(function (one) { return '"' + one + '"'; }).join(', ') +
@@ -3803,13 +4044,15 @@ function authorizeEndpoint(req, res) {
     return issueAuthorizationResponse(req, res, q, session.user,
                                       session.authTime, session)
       .catch(function (e) {
-        log.error('the authorization response could not be issued: ' +
+        log.error(errorCodes.tag('STS-OAUTH-0169') + 'the authorization response could not be issued: ' +
                   e.message);
+        errorCodes.mark(res, 'STS-OAUTH-0169');
         return fail('server_error', e.message);
       });
   }
   if (String(q.prompt || '').split(/\s+/).indexOf('none') >= 0) {
     // OIDC: prompt=none must not show any UI.
+    errorCodes.mark(res, 'STS-OAUTH-0170');
     return fail('login_required', 'No session, and prompt=none forbids showing the login screen.');
   }
 
@@ -3941,6 +4184,7 @@ function logoutEndpoint(req, res) {
   if (!askedLogout.ok) {
     log.debug("Leaving the logout endpoint. The request is malformed: " +
               askedLogout.code + " on \"" + askedLogout.field + "\".");
+    errorCodes.mark(res, 'STS-OAUTH-0171');
     return oauthError(res, 400, 'invalid_request', askedLogout.detail);
   }
   const target = askedLogout.value.post_logout_redirect_uri;
@@ -3991,6 +4235,7 @@ function logoutEndpoint(req, res) {
     });
     if (!check.ok) {
       log.debug("Leaving the logout endpoint. RFC 9700 mode refused the post_logout_redirect_uri.");
+      errorCodes.mark(res, check.errorCode || 'STS-OAUTH-0158');
       return oauthError(res, 400, check.error, check.description);
     }
     log.debug("Leaving the logout endpoint. Redirecting to " + target + ".");
@@ -4042,7 +4287,7 @@ function outstandingCodesFor(key) {
       scope: record.scope || '',
       username: username,
       sessionId: record.session_id || '',
-      issuedAt: record.expires ? record.expires - AUTH_CODE_TTL_MS : 0,
+      issuedAt: record.expires ? record.expires - (record.ttlMs || AUTH_CODE_TTL_MS) : 0,
       expiresAt: record.expires || 0
     });
   });
@@ -4511,26 +4756,31 @@ function userinfoResponse(req, res) {
     res.set('WWW-Authenticate', scheme + ' error="' + error + '", error_description="' +
             headerSafe(description) + '"' + (extra || ''));
     log.debug("Leaving userinfoResponse(). " + error + ".");
+    // error-code: none — each caller of challenge() marks its own condition first
     return oauthError(res, status, error, description);
   };
 
   if (!presented.verified) {
+    errorCodes.mark(res, 'STS-OAUTH-0172');
     return challenge(401, 'invalid_token', tokenFailure(presented.accessToken));
   }
   const claims = presented.claims || {};
   if (claims.typ !== 'Bearer') {
+    errorCodes.mark(res, 'STS-OAUTH-0173');
     return challenge(401, 'invalid_token',
       'This is a "' + (claims.typ || 'unknown') + '" token, not an access token. Every token this ' +
       'server issues is an RS256 JWT signed with the same key, so the typ claim is the only thing ' +
       'that tells a refresh token or an id_token apart from the access token UserInfo needs.');
   }
   if (stats.isRevoked(claims.jti)) {
+    errorCodes.mark(res, 'STS-OAUTH-0174');
     return challenge(401, 'invalid_token',
       'This access token was revoked at /oauth2/revoke. Introspection reports it inactive, and ' +
       'UserInfo answers the same way — a revocation that only some endpoints honoured would be ' +
       'worse than none.');
   }
   if (!hasScope(claims.scope, 'openid')) {
+    errorCodes.mark(res, 'STS-OAUTH-0175');
     return challenge(403, 'insufficient_scope',
       'UserInfo needs an access token issued with the "openid" scope; this one was issued with ' +
       (claims.scope ? '"' + claims.scope + '"' : 'no scope at all') + '. A client_credentials or ' +
@@ -4544,6 +4794,7 @@ function userinfoResponse(req, res) {
   // response as one that was never sent. See directClaimsRequest().
   const direct = directClaimsRequest(req);
   if (direct.error) {
+    errorCodes.mark(res, 'STS-OAUTH-0176');
     return challenge(400, 'invalid_request', direct.error);
   }
 
@@ -4551,7 +4802,9 @@ function userinfoResponse(req, res) {
   // userFor(), because section 5.3.2 requires the sub here to be the one the
   // client saw in the id_token and the token is the record of what that was; the
   // rest is rebuilt from the username that travels with it.
-  const user = userFor(claims.username);
+  // In a realm that invents no claim values, the profile claims come off the
+  // person's directory entry instead — see personFromDirectory().
+  const user = personFromDirectory(userFor(claims.username));
   const username = String(claims.username || user.username || '');
 
   // -----------------------------------------------------------------------
@@ -4576,7 +4829,7 @@ function userinfoResponse(req, res) {
   //      precedence decision here that is not obvious, so it is written down
   //      rather than left in the code: a scope asks for a category and a claims
   //      request names a claim, and answering `{"email":null}` with the persona
-  //      value `alice@sts-mock.example` while the entry holds a real `mail`
+  //      value `alice@sts.example` while the entry holds a real `mail`
   //      would defeat the only reason the feature is worth having. Nothing in
   //      layer 3 can name a structural claim — see requestedClaimsOf().
   //
@@ -4597,7 +4850,13 @@ function userinfoResponse(req, res) {
 
   Object.keys(USERINFO_SCOPE_CLAIMS).forEach(function (scope) {
     if (!hasScope(claims.scope, scope)) return;
-    USERINFO_SCOPE_CLAIMS[scope].forEach(function (name) { body[name] = user[name]; });
+    // A claim the person object does not hold is SKIPPED rather than assigned
+    // `undefined`, which would erase a layer-1 claim of the same name. In
+    // development every one of these is defined and nothing changes; in a
+    // realm that invents nothing, `email_verified` is the one that never is.
+    USERINFO_SCOPE_CLAIMS[scope].forEach(function (name) {
+      if (user[name] !== undefined) body[name] = user[name];
+    });
   });
 
   const request = mergedUserinfoRequest(claims.claims, direct.request);
@@ -4647,9 +4906,11 @@ function userinfoResponse(req, res) {
     // being collapsed into "server_error" with the reason in a log the client
     // cannot read. It is a 500 because the registration was accepted and cannot
     // now be honoured, which is this service's fault and not this request's.
-    log.error('userinfoResponse(): the registered response protection could not be ' +
+    log.error(errorCodes.tag('STS-OAUTH-0177') +
+              'userinfoResponse(): the registered response protection could not be ' +
               'applied: ' + e.message);
     log.debug("Leaving userinfoResponse(). The registered protection could not be applied.");
+    errorCodes.mark(res, 'STS-OAUTH-0177');
     oauthError(res, 500, 'server_error', e.message);
   });
   log.debug("Leaving userinfoResponse(). Answering.");
@@ -4681,8 +4942,35 @@ app.get('/dpop/nonce-mode', function (req, res) {
   log.debug("Leaving the DPoP nonce-mode endpoint (read).");
 });
 
+// ---------------------------------------------------------------------------
+// TWO THINGS CHANGED ABOUT THE WRITE ON 2026-09-12.
+//
+// **IT IS PER TRUST REALM.** It set one switch for the whole process, so a
+// test turning nonces on at /realm/acme/dpop/nonce-mode demanded them of every
+// client of every other realm. It writes `oauth2.dpopNonceRequired` now, which
+// lands on the realm it is reached in — see `dpop.setNonceMode()`.
+//
+// **IT IS A TEST CONTROL AND PRODUCT MODE REFUSES IT.** Anybody who can reach
+// the port could change a security policy of the authorization server and
+// empty its replay cache in the same call. In product the setting is still
+// changeable, through the two doors that already require a credential —
+// /admin/oauth2 and POST /admin-api/config/set — and this endpoint says so.
+// The READ above stays open in both modes: it reports a policy a client needs
+// to know to talk to this server at all.
+// ---------------------------------------------------------------------------
 app.post('/dpop/nonce-mode', function (req, res) {
   log.debug("Entering the DPoP nonce-mode endpoint (write).");
+  if (!mode.opensTestControls()) {
+    log.warn('oauth2: POST /dpop/nonce-mode was refused — product mode does not ' +
+             'open test controls.');
+    log.debug("Leaving the DPoP nonce-mode endpoint. Refused in product mode.");
+    errorCodes.mark(res, 'STS-OAUTH-0178');
+    return oauthError(res, 403, 'access_denied',
+      'POST /dpop/nonce-mode is a test control and this realm is in product mode, ' +
+      'where test controls are closed. Set oauth2.dpopNonceRequired instead — on ' +
+      '/admin/oauth2 or with POST /admin-api/config/set, both of which require a ' +
+      'credential.');
+  }
   const body = parseBody(req);
   // Only an explicit boolean, so a typo cannot silently leave the switch in a
   // state nobody chose: a test that means to turn nonces OFF and leaves them on
@@ -4690,13 +4978,22 @@ app.post('/dpop/nonce-mode', function (req, res) {
   const wanted = body.required;
   if (wanted !== true && wanted !== false && wanted !== 'true' && wanted !== 'false') {
     log.debug("Leaving the DPoP nonce-mode endpoint. Refused.");
+    errorCodes.mark(res, 'STS-OAUTH-0179');
     return oauthError(res, 400, 'invalid_request',
       'Send {"required": true} or {"required": false}.');
   }
-  dpop.setNonceMode(wanted === true || wanted === 'true');
+  try {
+    dpop.setNonceMode(wanted === true || wanted === 'true');
+  } catch (e) {
+    log.error(errorCodes.tag('STS-OAUTH-0180') + 'oauth2: the DPoP nonce switch could not be written: ' +
+              e.message);
+    log.debug("Leaving the DPoP nonce-mode endpoint. The setting refused it.");
+    errorCodes.mark(res, 'STS-OAUTH-0180');
+    return oauthError(res, 500, 'server_error', e.message);
+  }
   // A change of policy invalidates nothing already issued, but the replay cache
-  // is process-wide and a test that has just been refusing proofs on purpose
-  // wants a clean slate for the next section.
+  // holds this realm's proofs and a test that has just been refusing proofs on
+  // purpose wants a clean slate for the next section.
   dpop.forgetProofs();
   res.status(200).type('application/json').set('Cache-Control', 'no-store')
     .send(JSON.stringify(dpop.state(), null, 2));
@@ -4759,7 +5056,8 @@ function rememberRedemption(code, record, fingerprint, issued) {
     // the life the code already had, so this relaxation cannot outlive the
     // rule it relaxes.
     expires: record.expires,
-    forget: record.expires + AUTH_CODE_TTL_MS,
+    forget: record.expires + (record.ttlMs || AUTH_CODE_TTL_MS),
+    ttlMs: record.ttlMs || AUTH_CODE_TTL_MS,
     client_id: fingerprint.client_id,
     fingerprint: fingerprint,
     response: issued
@@ -4798,6 +5096,7 @@ function replayOrRefuseRedemption(res, code, fingerprint, respond) {
   if (!done) {
     log.debug("Leaving replayOrRefuseRedemption(). This server has no record " +
               "of that code at all.");
+    errorCodes.mark(res, 'STS-OAUTH-0187');
     return oauthError(res, 400, 'invalid_grant',
       'Unknown or already-used authorization code. Nothing is held here ' +
       'under that value and nothing was redeemed under it recently: this ' +
@@ -4811,6 +5110,7 @@ function replayOrRefuseRedemption(res, code, fingerprint, respond) {
   if (differs) {
     log.debug("Leaving replayOrRefuseRedemption(). The " + differs +
               " differs from the request this code was redeemed with.");
+    errorCodes.mark(res, 'STS-OAUTH-0188');
     return oauthError(res, 400, 'invalid_grant',
       'This authorization code was redeemed ' + ago + ' second(s) ago by ' +
       'client "' + (done.client_id || '(none)') + '". A repeat of that same ' +
@@ -4821,10 +5121,11 @@ function replayOrRefuseRedemption(res, code, fingerprint, respond) {
   if (done.expires < Date.now()) {
     log.debug("Leaving replayOrRefuseRedemption(). The code was redeemed and " +
               "its own lifetime has since run out.");
+    errorCodes.mark(res, 'STS-OAUTH-0189');
     return oauthError(res, 400, 'invalid_grant',
       'This authorization code was redeemed ' + ago + ' second(s) ago by ' +
       'client "' + (done.client_id || '(none)') + '", and the ' +
-      Math.round(AUTH_CODE_TTL_MS / 60000) + ' minute lifetime it was issued ' +
+      Math.round((done.ttlMs || AUTH_CODE_TTL_MS) / 1000) + ' second lifetime it was issued ' +
       'with has since run out, so the tokens it bought are no longer ' +
       'replayed here. Start a new authorization request; the refresh token ' +
       'from the first redemption is still good.');
@@ -4848,13 +5149,17 @@ function replayOrRefuseRedemption(res, code, fingerprint, respond) {
         return '';
       }
       try {
-        const claims = jwt.decode(token);
+        // The refresh token in the set is ENCRYPTED; `claimsOfIssued()` opens
+        // it and reads a JWS unchanged.
+        const claims = refreshTokenCrypto.isEncrypted(token)
+          ? refreshTokenCrypto.claimsOfIssued(token)
+          : jwt.decode(token);
         return (claims && claims.jti) || '';
       } catch (e) {
         // Not decodable, which cannot happen for a token this service minted —
         // but a jti that cannot be read is a token that cannot be revoked, and
         // silently revoking nothing would be worse than saying so.
-        log.error('could not read the jti of the ' + name + ' issued for this code: ' + e.message);
+        log.error(errorCodes.tag('STS-OAUTH-0190') + 'could not read the jti of the ' + name + ' issued for this code: ' + e.message);
         return '';
       }
     })
@@ -4864,6 +5169,7 @@ function replayOrRefuseRedemption(res, code, fingerprint, respond) {
       stats.revoke(jti, 'RFC 9700 section 4.5: an authorization code was presented twice');
     });
     log.debug("Leaving replayOrRefuseRedemption(). RFC 9700 mode refused the replay.");
+    errorCodes.mark(res, replay.errorCode || 'STS-OAUTH-0158');
     return oauthError(res, 400, replay.error, replay.description);
   }
 
@@ -4917,6 +5223,7 @@ async function tokenEndpoint(req, res) {
     if (e && e.name === 'IssuanceRefused') {
       log.debug("Leaving the token endpoint's refusal wrapper. The issuance " +
                 "policy refused " + e.kind + ".");
+      errorCodes.mark(res, 'STS-OAUTH-0191');
       return oauthError(res, 400, 'access_denied', e.message);
     }
     log.debug("Leaving the token endpoint's refusal wrapper. Rethrowing.");
@@ -5016,6 +5323,7 @@ async function tokenGrant(req, res) {
     res.set('Cache-Control', 'no-store');
     log.debug("Leaving the token endpoint. The request is malformed: " +
               posted.code + " on \"" + posted.field + "\".");
+    errorCodes.mark(res, 'STS-OAUTH-0196');
     return oauthError(res, 400, 'invalid_request', posted.detail);
   }
   const body = posted.value;
@@ -5043,10 +5351,12 @@ async function tokenGrant(req, res) {
       if (checked.needNonce) {
         res.set('DPoP-Nonce', dpop.issueNonce());
         log.debug("Leaving the token endpoint. Asking the client for a DPoP nonce.");
+        errorCodes.mark(res, checked.errorCode || 'STS-OAUTH-0108');
         return oauthError(res, 400, 'use_dpop_nonce',
           'Authorization server requires nonce in DPoP proof');
       }
       log.debug("Leaving the token endpoint. The DPoP proof was refused.");
+      errorCodes.mark(res, checked.errorCode || 'STS-OAUTH-0118');
       return oauthError(res, 400, 'invalid_dpop_proof', checked.description);
     }
     dpopJkt = checked.jkt;
@@ -5068,6 +5378,7 @@ async function tokenGrant(req, res) {
   const advertisedGrants = capabilityFor(req, 'grant_types_supported');
   if (grant && advertisedGrants && advertisedGrants.indexOf(grant) < 0) {
     log.debug("Leaving the token endpoint. " + profileOf(req) + " does not advertise " + grant + ".");
+    errorCodes.mark(res, 'STS-OAUTH-0197');
     return oauthError(res, 400, 'unsupported_grant_type',
       'The "' + profileOf(req) + '" authorization server advertises grant_types_supported ' +
       JSON.stringify(advertisedGrants) + ' and this request asks for "' + grant + '". What its ' +
@@ -5083,6 +5394,7 @@ async function tokenGrant(req, res) {
   if (declaredMethod && advertisedAuth && advertisedAuth.indexOf(String(declaredMethod)) < 0) {
     log.debug("Leaving the token endpoint. " + profileOf(req) +
               " does not advertise " + declaredMethod + ".");
+    errorCodes.mark(res, 'STS-OAUTH-0198');
     return oauthError(res, 400, 'invalid_client',
       'The "' + profileOf(req) + '" authorization server advertises ' +
       'token_endpoint_auth_methods_supported ' + JSON.stringify(advertisedAuth) + ', and this ' +
@@ -5094,6 +5406,7 @@ async function tokenGrant(req, res) {
   if (!grantCheck.ok) {
     log.debug("Leaving the token endpoint. RFC 9700 mode refused the grant type (" +
               grantCheck.requirement + ").");
+    errorCodes.mark(res, grantCheck.errorCode || 'STS-OAUTH-0158');
     return oauthError(res, 400, grantCheck.error, grantCheck.description);
   }
 
@@ -5122,10 +5435,16 @@ async function tokenGrant(req, res) {
   });
   if (!clientAuth.ok) {
     if (/^Basic\s+/i.test(req.headers['authorization'] || '')) {
-      res.set('WWW-Authenticate', 'Basic realm="sts-mock"');
+      // The realm is `oauth2.basicAuthRealm` (2026-09-12), for
+      // `scim.authRealm`'s reason: it is what a browser prints in its
+      // credential prompt, and a deployment names itself there. Quotes and
+      // backslashes are escaped per RFC 7230's quoted-string.
+      res.set('WWW-Authenticate', 'Basic realm="' +
+        String(config.value('oauth2.basicAuthRealm') || '').replace(/(["\\])/g, '\\$1') + '"');
     }
     log.debug("Leaving the token endpoint. RFC 9700 mode refused the client (" +
               clientAuth.requirement + ").");
+    errorCodes.mark(res, clientAuth.errorCode || 'STS-OAUTH-0137');
     return oauthError(res, 401, clientAuth.error, clientAuth.description);
   }
 
@@ -5211,6 +5530,7 @@ async function tokenGrant(req, res) {
   const askedResources = parseResourceIndicators(bodyValues(req, body, 'resource'));
   if (askedResources.error) {
     log.debug("Leaving the token endpoint. " + askedResources.error);
+    errorCodes.mark(res, 'STS-OAUTH-0154');
     return oauthError(res, 400, 'invalid_target', askedResources.error);
   }
   const requestedResources = askedResources.resources;
@@ -5237,6 +5557,7 @@ async function tokenGrant(req, res) {
       (client && client.client_id) || body.client_id);
     if (permissionProblem) {
       log.debug("Leaving the token endpoint. An ungranted permission was asked for.");
+      errorCodes.mark(res, 'STS-OAUTH-0155');
       return oauthError(res, 400, 'invalid_scope', permissionProblem);
     }
   }
@@ -5288,6 +5609,7 @@ async function tokenGrant(req, res) {
     log.info('oauth2: product mode refused the token request from "' +
              String(client.client_id || '(unnamed)') + '": ' +
              clientObservation.why);
+    errorCodes.mark(res, clientObservation.errorCode || 'STS-OAUTH-0192');
     res.status(401).type('application/json').send(JSON.stringify({
       error: 'invalid_client',
       error_description: 'This service is in product mode, where every ' +
@@ -5371,6 +5693,7 @@ async function tokenGrant(req, res) {
     if (record.expires < Date.now()) {
       authzCodes.delete(code);
       log.debug("Leaving the token endpoint. The code had expired.");
+      errorCodes.mark(res, 'STS-OAUTH-0199');
       return oauthError(res, 400, 'invalid_grant',
         'The authorization code has expired.');
     }
@@ -5387,6 +5710,7 @@ async function tokenGrant(req, res) {
     const codeServer = record.authorization_server || authorizationServers.DEFAULT_ID;
     if (codeServer !== profileOf(req)) {
       log.debug("Leaving the token endpoint. The code belongs to " + codeServer + ".");
+      errorCodes.mark(res, 'STS-OAUTH-0200');
       return oauthError(res, 400, 'invalid_grant',
         'This authorization code was issued by the "' + codeServer + '" authorization server ' +
         'and is being redeemed at the "' + profileOf(req) + '" one. They are separate ' +
@@ -5397,6 +5721,7 @@ async function tokenGrant(req, res) {
     }
     if (body.redirect_uri && body.redirect_uri !== record.redirect_uri) {
       log.debug("Leaving the token endpoint. The grant was refused.");
+      errorCodes.mark(res, 'STS-OAUTH-0201');
       return oauthError(res, 400, 'invalid_grant', 'redirect_uri does not match the authorization request.');
     }
     // RFC 9700 mode: the PKCE downgrade refusal (section 4.8.2 — a code_verifier
@@ -5410,6 +5735,7 @@ async function tokenGrant(req, res) {
     if (!bcpCheck.ok) {
       log.debug("Leaving the token endpoint. RFC 9700 mode refused the Token Request (" +
                 bcpCheck.requirement + ").");
+      errorCodes.mark(res, bcpCheck.errorCode || 'STS-OAUTH-0158');
       return oauthError(res, 400, bcpCheck.error, bcpCheck.description);
     }
     if (record.code_challenge) {
@@ -5417,6 +5743,7 @@ async function tokenGrant(req, res) {
       if (!verifier) {
         log.debug("Leaving the token endpoint. PKCE was used and no " +
                   "code_verifier came with the code.");
+        errorCodes.mark(res, 'STS-OAUTH-0202');
         return oauthError(res, 400, 'invalid_grant',
           'PKCE was used, so code_verifier is required.');
       }
@@ -5425,6 +5752,7 @@ async function tokenGrant(req, res) {
         : verifier;
       if (computed !== record.code_challenge) {
         log.debug("Leaving the token endpoint. The grant was refused.");
+        errorCodes.mark(res, 'STS-OAUTH-0203');
         return oauthError(res, 400, 'invalid_grant', 'The code_verifier does not match the code_challenge.');
       }
     }
@@ -5435,12 +5763,14 @@ async function tokenGrant(req, res) {
     if (record.dpop_jkt) {
       if (!dpopJkt) {
         log.debug("Leaving the token endpoint. The code is DPoP-bound and no proof came with it.");
+        errorCodes.mark(res, 'STS-OAUTH-0204');
         return oauthError(res, 400, 'invalid_grant',
           'The authorization request bound this code to a DPoP key (dpop_jkt), so the Token ' +
           'Request must carry a DPoP proof from that key.');
       }
       if (record.dpop_jkt !== dpopJkt) {
         log.debug("Leaving the token endpoint. The code's dpop_jkt does not match the proof.");
+        errorCodes.mark(res, 'STS-OAUTH-0205');
         return oauthError(res, 400, 'invalid_grant',
           'This authorization code is bound to DPoP key ' + record.dpop_jkt +
           ', but the proof was signed by ' + dpopJkt + '.');
@@ -5463,6 +5793,7 @@ async function tokenGrant(req, res) {
       });
       log.debug("Leaving the token endpoint. The Token Request asked for a resource the code " +
                 "does not carry.");
+      errorCodes.mark(res, 'STS-OAUTH-0206');
       return oauthError(res, 400, 'invalid_target',
         'RFC 8707 section 2.2: a Token Request may narrow the resources the authorization ' +
         'request asked for and may not add to them. This authorization code carries ' +
@@ -5525,24 +5856,41 @@ async function tokenGrant(req, res) {
     const record = preAuthorizedCodes.get(code);
     if (!record) {
       log.debug("Leaving the token endpoint. The grant was refused.");
+      errorCodes.mark(res, 'STS-OAUTH-0207');
       return oauthError(res, 400, 'invalid_grant', 'Unknown or already-used pre-authorized code.');
     }
     if (record.expires < Date.now()) {
       preAuthorizedCodes.delete(code);
       log.debug("Leaving the token endpoint. The grant was refused.");
+      errorCodes.mark(res, 'STS-OAUTH-0208');
       return oauthError(res, 400, 'invalid_grant', 'The pre-authorized code has expired.');
     }
-    const presented = String(body.tx_code || '');
-    if (record.txCode) {
-      if (!presented) {
+    // THE COMPARISON AND THE ATTEMPT COUNT ARE `vc_offers.js`'s (2026-09-12),
+    // because that module owns the record they write to: constant time in both
+    // modes, and in product the wrong code that reaches
+    // `oid4vci.txCodeMaxAttempts` spends the pre-authorized code. What a
+    // refusal says stays here, where the response is.
+    const tx = checkTxCode(code, record, body.tx_code);
+    if (!tx.ok) {
+      if (tx.missing) {
         log.debug("Leaving the token endpoint. The grant was refused: no tx_code.");
+        errorCodes.mark(res, 'STS-OAUTH-0209');
         return oauthError(res, 400, 'invalid_grant',
           'This pre-authorized code requires the Transaction Code shown by the issuer (tx_code).');
       }
-      if (presented !== record.txCode) {
-        log.debug("Leaving the token endpoint. The grant was refused: the tx_code is wrong.");
-        return oauthError(res, 400, 'invalid_grant', 'The Transaction Code is not correct.');
+      log.debug("Leaving the token endpoint. The grant was refused: the tx_code is wrong.");
+      if (tx.spent) {
+        errorCodes.mark(res, 'STS-OAUTH-0210');
+        return oauthError(res, 400, 'invalid_grant',
+          'The Transaction Code is not correct, and that was the last attempt this ' +
+          'pre-authorized code allowed (oid4vci.txCodeMaxAttempts), so the code has been ' +
+          'spent. Ask the issuer for a new Credential Offer.');
       }
+      errorCodes.mark(res, 'STS-OAUTH-0211');
+      return oauthError(res, 400, 'invalid_grant', 'The Transaction Code is not correct.' +
+        (tx.attemptsLeft !== undefined
+          ? ' ' + tx.attemptsLeft + ' attempt(s) remain before this pre-authorized code is spent.'
+          : ''));
     }
     // Single use, like an authorization code.
     preAuthorizedCodes.delete(code);
@@ -5563,6 +5911,7 @@ async function tokenGrant(req, res) {
     const askedFor = parseAuthorizationDetails(body.authorization_details);
     if (askedFor.error) {
       log.debug("Leaving the token endpoint. " + askedFor.error);
+      errorCodes.mark(res, 'STS-OAUTH-0153');
       return oauthError(res, 400, 'invalid_authorization_details', askedFor.error);
     }
     // What the OFFER was for bounds what the Token Request may ask for: the
@@ -5575,6 +5924,7 @@ async function tokenGrant(req, res) {
     });
     if (notOffered.length) {
       log.debug("Leaving the token endpoint. The details name a configuration the offer did not.");
+      errorCodes.mark(res, 'STS-OAUTH-0212');
       return oauthError(res, 400, 'invalid_authorization_details',
         'this Credential Offer is for ' + offered.join(', ') + ', so ' +
         notOffered.map(function (d) { return '"' + d.credential_configuration_id + '"'; }).join(', ') +
@@ -5606,10 +5956,16 @@ async function tokenGrant(req, res) {
   if (grant === 'refresh_token') {
     let claims;
     try {
-      claims = stsCrypto.verifyJws(String(body.refresh_token || ''), STS.certPem);
+      // DECRYPTED FIRST, then verified exactly as it always was. `open()`
+      // refuses an unencrypted refresh token outright — this service no longer
+      // issues one — and names the condition in its message.
+      claims = stsCrypto.verifyJws(refreshTokenCrypto.open(String(body.refresh_token || '')),
+                                   STS.certPem);
     } catch (e) {
-      log.error('the refresh token is not valid: ' + e.message);
+      const refreshCode = errorCodes.codeOf(e) || 'STS-OAUTH-0213';
+      log.error(errorCodes.tag(refreshCode) + 'the refresh token is not valid: ' + e.message);
       log.debug("Leaving the token endpoint. The grant was refused.");
+      errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-OAUTH-0213');
       return oauthError(res, 400, 'invalid_grant', 'The refresh token is not valid: ' + e.message);
     }
     // RFC 9700 section 2.2.2, ABOVE the revocation check and deliberately so.
@@ -5634,9 +5990,13 @@ async function tokenGrant(req, res) {
       });
       log.debug("Leaving the token endpoint. RFC 9700 mode refused the refresh (" +
                 refreshCheck.requirement + ").");
+      errorCodes.mark(res, refreshCheck.errorCode || 'STS-OAUTH-0158');
       return oauthError(res, 400, refreshCheck.error, refreshCheck.description);
     }
-    if (stats.isRevoked(claims.jti)) return oauthError(res, 400, 'invalid_grant', 'The refresh token was revoked.');
+    if (stats.isRevoked(claims.jti)) {
+      errorCodes.mark(res, 'STS-OAUTH-0214');
+      return oauthError(res, 400, 'invalid_grant', 'The refresh token was revoked.');
+    }
     // RFC 9449 section 5: a bound refresh token may only be redeemed by its own
     // key. Without this the refresh token would be a bearer credential that
     // mints bound access tokens for whoever holds it — which is worse than not
@@ -5646,12 +6006,14 @@ async function tokenGrant(req, res) {
     if (boundTo) {
       if (!dpopJkt) {
         log.debug("Leaving the token endpoint. The refresh token is bound and no proof came.");
+        errorCodes.mark(res, 'STS-OAUTH-0215');
         return oauthError(res, 400, 'invalid_grant',
           'This refresh token is bound to a DPoP key, so the Token Request must carry a DPoP ' +
           'proof from that key.');
       }
       if (boundTo !== dpopJkt) {
         log.debug("Leaving the token endpoint. The refresh token's cnf.jkt does not match.");
+        errorCodes.mark(res, 'STS-OAUTH-0216');
         return oauthError(res, 400, 'invalid_grant',
           'This refresh token is bound to DPoP key ' + boundTo + ', but the proof was signed ' +
           'by ' + dpopJkt + '.');
@@ -5667,6 +6029,7 @@ async function tokenGrant(req, res) {
     const certificateProblem = mtls.checkBinding(claims, req, true, 'refresh token');
     if (certificateProblem) {
       log.debug("Leaving the token endpoint. The refresh token's certificate binding did not hold.");
+      errorCodes.mark(res, certificateProblem.errorCode || 'STS-OAUTH-0092');
       return oauthError(res, 400, 'invalid_grant', certificateProblem.description);
     }
     // RFC 8707 again, one grant later: a refresh may NARROW the resources the
@@ -5681,6 +6044,7 @@ async function tokenGrant(req, res) {
     if (extraResources.length) {
       log.debug("Leaving the token endpoint. The refresh asked for a resource the grant " +
                 "does not carry.");
+      errorCodes.mark(res, 'STS-OAUTH-0217');
       return oauthError(res, 400, 'invalid_target',
         'RFC 9700 section 2.2.2: a refresh token is bound to the resource servers its grant ' +
         'was authorized for, and this one carries ' +
@@ -5771,7 +6135,7 @@ async function tokenGrant(req, res) {
     // has to let a resource server tell them apart.
     //
     // The `sub` of a client_credentials token was the bare client_id while a
-    // person's is `urn:sts-mock:user:<name>`. Different in practice and not by
+    // person's is `urn:sts:user:<name>`. Different in practice and not by
     // any rule: nothing stopped a client registering an id that looked like a
     // subject, and a resource server keying on `sub` alone had no way to know
     // which kind of thing it was holding. That is the collision the section is
@@ -5782,8 +6146,8 @@ async function tokenGrant(req, res) {
     // In RFC 9700 mode there are TWO such mechanisms and they are different in
     // kind, which is why both are here:
     //
-    //   * A SEPARATE NAMESPACE. `urn:sts-mock:client:<id>` beside
-    //     `urn:sts-mock:user:<name>` — two prefixes that cannot collide however
+    //   * A SEPARATE NAMESPACE. `urn:sts:client:<id>` beside
+    //     `urn:sts:user:<name>` — two prefixes that cannot collide however
     //     a client is named, so the ids no longer share a namespace at all,
     //     which is what the SHOULD asks for.
     //   * `sub` EQUALS `client_id`. True of a client_credentials token and of
@@ -5797,7 +6161,7 @@ async function tokenGrant(req, res) {
     // key on. The comparison costs nothing and is always available.
     // ---------------------------------------------------------------------
     const clientSubject = bcp.enabled()
-      ? 'urn:sts-mock:client:' + (client.client_id || 'unknown-client')
+      ? 'urn:sts:client:' + (client.client_id || 'unknown-client')
       : (client.client_id || 'unknown-client');
     return respond(await issue({
       jkt: dpopJkt,
@@ -5818,13 +6182,84 @@ async function tokenGrant(req, res) {
     const username = String(body.username || '');
     if (!username || !body.password) {
       log.debug("Leaving the token endpoint. The grant was refused.");
+      errorCodes.mark(res, 'STS-OAUTH-0218');
       return oauthError(res, 400, 'invalid_request', 'username and password are required.');
     }
-    // The one credential this mock rejects, so a negative test has something to
-    // fail on (the WS-Trust side of this service does the same).
-    if (body.password === 'invalid') {
+    // -----------------------------------------------------------------------
+    // THE PASSWORD IS VERIFIED THROUGH `common/credentials.js` (2026-09-12),
+    // AND UNTIL THEN IT WAS NOT VERIFIED AT ALL, IN EITHER MODE.
+    //
+    // This branch refused the literal string `invalid` and accepted everything
+    // else — which was the development-mode contract written out by hand, and
+    // product mode inherited it unchanged. So a product deployment that
+    // verified every password at the sign-in screen, the LDAP bind, WS-Trust
+    // and SCIM Basic handed an access token and a refresh token to ANYBODY who
+    // named a person at this endpoint. It was the one door onto an account that
+    // `mode.verifiesCredentials()` did not reach.
+    //
+    // **DEVELOPMENT IS UNCHANGED BY CONSTRUCTION RATHER THAN BY A BRANCH.**
+    // `verifyAsync()` refuses the reserved password `invalid` in both modes and
+    // answers yes to everything else while nothing is verified, which is
+    // exactly what the two lines this replaced did — so there is one statement
+    // of "when does this service say no" rather than a second copy here.
+    //
+    // THE ASYNC DOOR, because this handler already awaits and a scrypt
+    // comparison is 68ms on the only thread this process has.
+    //
+    // THREE PRODUCT-MODE REFUSALS SIT AROUND IT, all behind the predicate that
+    // names the question (`verifiesCredentials()`) and none of them reachable in
+    // development:
+    //
+    //   * THE RATE LIMIT the sign-in screen applies, in the SAME bucket, keyed
+    //     on the same identity. A limit on the screen and none here would be a
+    //     brute-force door that happened to speak JSON.
+    //   * A PERSON WHO HOLDS A SECOND FACTOR IS REFUSED. The grant has nowhere
+    //     to carry one — RFC 6749 section 4.3 is a username and a password and
+    //     nothing else — so issuing would sign them in with one factor while
+    //     their account says two, which is `mfaRequired` meaning nothing at the
+    //     one endpoint nobody thinks to look at. The refusal says which door to
+    //     use instead.
+    //   * Every refusal is the ONE protocol answer — `invalid_grant`,
+    //     "Authentication failed for user X." — whatever the reason, because
+    //     telling a caller that a person exists but the password is wrong is the
+    //     account-enumeration answer. The reason goes to the log, which is
+    //     `credentials.js`'s own rule about its `detail`.
+    // -----------------------------------------------------------------------
+    if (mode.verifiesCredentials()) {
+      const allowed = websecurity.attempt('sign-in', req, username);
+      if (!allowed.ok) {
+        log.warn('oauth2: too many password-grant attempts for "' + username +
+                 '" (' + allowed.kind + ' bucket). Refusing for ' +
+                 allowed.retryAfterS + 's.');
+        res.set('Retry-After', String(allowed.retryAfterS));
+        log.debug("Leaving the token endpoint. The password grant was rate limited.");
+        errorCodes.mark(res, 'STS-OAUTH-0219');
+        return oauthError(res, 400, 'invalid_grant', allowed.detail);
+      }
+    }
+    const credential = await credentials.verifyAsync(username, String(body.password),
+      { via: 'the OAuth 2.0 password grant' });
+    if (!credential.ok) {
+      log.info('oauth2: the password grant for "' + username + '" was refused (' +
+               credential.reason + '): ' + credential.detail);
       log.debug("Leaving the token endpoint. The grant was refused.");
+      errorCodes.mark(res, 'STS-OAUTH-0220');
       return oauthError(res, 400, 'invalid_grant', 'Authentication failed for user ' + username + '.');
+    }
+    if (mode.verifiesCredentials()) {
+      const held = credentials.mechanismsFor(username);
+      if (held.mfaRequired) {
+        log.warn('oauth2: the password grant for "' + username + '" was refused: ' +
+                 'that person holds a second factor (' + held.secondFactor + ') and ' +
+                 'the password grant cannot carry one.');
+        log.debug("Leaving the token endpoint. A second factor is required.");
+        errorCodes.mark(res, 'STS-OAUTH-0221');
+        return oauthError(res, 400, 'invalid_grant',
+          'Authentication failed for user ' + username + '. This account requires ' +
+          'a second factor, which the password grant cannot carry; use the ' +
+          'authorization code flow, whose sign-in screen asks for it.');
+      }
+      websecurity.succeeded('sign-in', req, username);
     }
     // A password grant is an authentication: the credential was presented here, to
     // this endpoint, and this is where it succeeded. No session is created — the
@@ -5833,8 +6268,11 @@ async function tokenGrant(req, res) {
     stats.recordAuthentication({
       presented: username, protocol: 'OAuth 2.0', method: 'password grant (RFC 6749 section 4.3)',
       sub: userFor(username).sub, client_id: client.client_id,
-      note: 'No password is checked here either, except the reserved string "invalid". ' +
-            'A password grant creates no browser session.'
+      note: credential.reason === 'verified'
+        ? 'The password was verified against the stored userPassword. ' +
+          'A password grant creates no browser session.'
+        : 'No password is checked here either, except the reserved string "invalid". ' +
+          'A password grant creates no browser session.'
     });
     return respond(await issue({
       jkt: dpopJkt,
@@ -5888,6 +6326,7 @@ async function tokenGrant(req, res) {
     });
     if (!checked.ok) {
       log.debug("Leaving the token endpoint. The assertion was refused.");
+      errorCodes.mark(res, checked.errorCode || 'STS-OAUTH-0222');
       return oauthError(res, 400, checked.error, checked.description);
     }
     // The subject is a PERSON, named by somebody this service trusts, and need
@@ -6051,6 +6490,7 @@ async function tokenGrant(req, res) {
     });
     if (!checked.ok) {
       log.debug("Leaving the token endpoint. The SAML assertion was refused.");
+      errorCodes.mark(res, checked.errorCode || 'STS-OAUTH-0223');
       return oauthError(res, 400, checked.error, checked.description);
     }
     // The subject is a PERSON, named by somebody this service trusts, and need
@@ -6171,7 +6611,10 @@ async function tokenGrant(req, res) {
 
   if (grant === 'urn:ietf:params:oauth:grant-type:token-exchange') {
     const subjectToken = String(body.subject_token || '');
-    if (!subjectToken) return oauthError(res, 400, 'invalid_request', 'subject_token is required.');
+    if (!subjectToken) {
+      errorCodes.mark(res, 'STS-OAUTH-0224');
+      return oauthError(res, 400, 'invalid_request', 'subject_token is required.');
+    }
     let subject = {};
     // Whether this service is the one that authenticated the subject, or is merely
     // reading a name off somebody else's token. The users page has to say which: a
@@ -6179,17 +6622,29 @@ async function tokenGrant(req, res) {
     // a console that listed the two the same way would be claiming an authentication
     // that never happened.
     let subjectVerified = true;
+    // A refresh token presented as the subject is ENCRYPTED; open it first so
+    // it is verified like any other token this service issued. One that will
+    // not open falls to the unverified branch below, and reads as nothing.
+    let subjectJws = subjectToken;
+    if (refreshTokenCrypto.isEncrypted(subjectToken)) {
+      try {
+        subjectJws = refreshTokenCrypto.open(subjectToken);
+      } catch (e) {
+        log.debug("The subject_token is a JWE this realm cannot open: " + e.message);
+      }
+    }
     try {
-      subject = stsCrypto.verifyJws(subjectToken, STS.certPem);
+      subject = stsCrypto.verifyJws(subjectJws, STS.certPem);
     } catch (e) {
       // A token from somewhere else: exchange it anyway, but say who it was for
       // as best it can be read.
       subjectVerified = false;
       log.debug("The subject_token was not signed by this server; reading it without verifying.");
       try {
-        subject = jsonFromB64u(subjectToken.split('.')[1]) || {};
+        subject = jsonFromB64u(subjectJws.split('.')[1]) || {};
       } catch (e2) {
-        log.error('the subject_token could not be read at all: ' + e2.message);
+        log.error(errorCodes.tag('STS-OAUTH-0225') + 'the subject_token could not be read at all: ' +
+                  e2.message);
         subject = {};
       }
     }
@@ -6198,12 +6653,12 @@ async function tokenGrant(req, res) {
       try {
         act = { sub: (jsonFromB64u(String(body.actor_token).split('.')[1]) || {}).sub };
       } catch (e) {
-        log.error('the actor_token could not be read: ' + e.message);
+        log.error(errorCodes.tag('STS-OAUTH-0226') + 'the actor_token could not be read: ' + e.message);
         act = undefined;
       }
     }
     stats.recordAuthentication({
-      presented: subject.username || subject.sub || 'urn:sts-mock:exchanged',
+      presented: subject.username || subject.sub || 'urn:sts:exchanged',
       protocol: 'OAuth 2.0', method: 'token exchange (RFC 8693)',
       sub: subject.sub || '', client_id: client.client_id,
       note: subjectVerified
@@ -6328,7 +6783,7 @@ async function tokenGrant(req, res) {
     }
     const exchanged = await issue({
       jkt: dpopJkt,
-      sub: subject.sub || 'urn:sts-mock:exchanged',
+      sub: subject.sub || 'urn:sts:exchanged',
       user: Object.assign(userFor(subject.username), subject.sub ? { sub: subject.sub } : {}),
       client_id: client.client_id, scope: String(body.scope || subject.scope || ''),
       audience: audienceClaim(exchangeAudiences), act: act,
@@ -6453,7 +6908,7 @@ async function tokenGrant(req, res) {
       type: act ? 'oauth-delegation' : 'oauth-impersonation',
       outcome: 'issued',
       initial: {
-        presented: subject.username || subject.sub || 'urn:sts-mock:exchanged',
+        presented: subject.username || subject.sub || 'urn:sts:exchanged',
         what: subjectVerified
           ? 'the subject of the token presented, which this service signed and ' +
             'verified — so they were authenticated here, earlier, by whatever ' +
@@ -6538,6 +6993,7 @@ async function tokenGrant(req, res) {
 
   log.debug("Leaving the token endpoint.");
   log.debug("Leaving the token endpoint. The grant type is not supported.");
+  errorCodes.mark(res, 'STS-OAUTH-0227');
   return oauthError(res, 400, 'unsupported_grant_type', 'grant_type "' + grant + '" is not supported.');
 }
 
@@ -6557,8 +7013,10 @@ async function tokenGrant(req, res) {
 app.post('/oauth2/token', function (req, res) {
   log.debug("Entering the token endpoint wrapper.");
   tokenEndpoint(req, res).catch(function (e) {
-    log.error('the token endpoint failed: ' + (e && e.stack ? e.stack : e));
+    log.error(errorCodes.tag('STS-OAUTH-0228') + 'the token endpoint failed: ' +
+              (e && e.stack ? e.stack : e));
     if (!res.headersSent) {
+      errorCodes.mark(res, 'STS-OAUTH-0228');
       oauthError(res, 500, 'server_error', e.message);
     }
   });
@@ -6598,6 +7056,7 @@ function introspectEndpoint(req, res) {
   res.set('Cache-Control', 'no-store');
   if (!posted.ok) {
     log.debug("Leaving the introspection endpoint. The request is malformed.");
+    errorCodes.mark(res, 'STS-OAUTH-0229');
     return oauthError(res, 400, 'invalid_request', posted.detail);
   }
   const body = posted.value;
@@ -6607,12 +7066,31 @@ function introspectEndpoint(req, res) {
   };
   const token = String(body.token || '');
   if (!token) return inactive();
+  // An encrypted token is a refresh token: opened first, then verified like
+  // everything else. One that will not open is simply not active — RFC 7662
+  // section 2.2 says nothing more than that to anybody.
+  let jws = token;
+  if (refreshTokenCrypto.isEncrypted(token)) {
+    try {
+      jws = refreshTokenCrypto.open(token);
+    } catch (e) {
+      log.debug("Introspection: the token does not open (" + e.message + "), so it is inactive.");
+      return inactive();
+    }
+  }
   let claims;
   try {
-    claims = stsCrypto.verifyJws(token, STS.certPem);
+    claims = stsCrypto.verifyJws(jws, STS.certPem);
   } catch (e) {
     // Expired, forged, or simply not one of ours.
     log.debug("Introspection: the token does not verify (" + e.message + "), so it is inactive.");
+    return inactive();
+  }
+  // AN UNENCRYPTED REFRESH TOKEN IS NOT ACTIVE, and neither is a JWE that
+  // opened to anything but one: the refresh grant refuses both, and an
+  // introspection that called one active would contradict the grant.
+  if ((claims.typ === 'Refresh') !== (jws !== token)) {
+    log.debug("Introspection: a refresh token that is not encrypted, or a JWE that is not a refresh token.");
     return inactive();
   }
   if (stats.isRevoked(claims.jti)) return inactive();
@@ -6645,13 +7123,17 @@ function revokeEndpoint(req, res) {
   const posted = validation.checkParsed(parseBody(req), 'body', TOKEN_QUERY_FORM);
   if (!posted.ok) {
     log.debug("Leaving the revocation endpoint. The request is malformed.");
+    errorCodes.mark(res, 'STS-OAUTH-0230');
     return oauthError(res, 400, 'invalid_request', posted.detail);
   }
   const body = posted.value;
   const token = String(body.token || '');
   if (token) {
     try {
-      const claims = stsCrypto.verifyJws(token, STS.certPem);
+      // An encrypted refresh token is opened first; `open()` throws for one this
+      // realm cannot open, which RFC 7009 answers exactly as an invalid token.
+      const claims = stsCrypto.verifyJws(refreshTokenCrypto.isEncrypted(token)
+        ? refreshTokenCrypto.open(token) : token, STS.certPem);
       if (claims.jti) stats.revoke(claims.jti, 'the RFC 7009 revocation endpoint');
     } catch (e) {
       // RFC 7009: an invalid token is still a successful revocation.
@@ -6665,13 +7147,43 @@ function revokeEndpoint(req, res) {
 app.post('/oauth2/revoke', revokeEndpoint);
 
 // --- dynamic client registration (RFC 7591) + management (RFC 7592) ----------
+// ---------------------------------------------------------------------------
+// IS RFC 7591 REGISTRATION OPEN TO ANYBODY WHO CAN REACH THIS PORT?
+//
+// In development, always: it is how a client under test registers itself, and
+// it is on `mode.js`'s list of test controls by name. In a product realm only
+// when `oauth2.openRegistration` says so, because an open registration endpoint
+// is a door through which anybody mints a CONFIDENTIAL client of this
+// authorization server — and product mode's third requirement is that every
+// application holds a secret somebody administering the service gave it.
+// RFC 7591 section 3 anticipates exactly this with the initial access token;
+// this service issues none, so the product-mode answer is the setting, and the
+// way to create an application there is the console or /admin-api.
+//
+// One function, read by the endpoint AND by the metadata, so the two cannot
+// disagree about whether the endpoint exists.
+// ---------------------------------------------------------------------------
+function registrationOpen() {
+  return mode.opensTestControls() || config.value('oauth2.openRegistration') === true;
+}
+
+// The lifetime `client_secret_expires_at` publishes, as an absolute time or 0.
+// RFC 7591 section 3.2.1: 0 means the secret does not expire, which is the
+// default and what this service always said.
+function registeredSecretExpiry(issuedAt) {
+  const seconds = Number(config.value('oauth2.registeredSecretLifetimeS'));
+  return isFinite(seconds) && seconds > 0 ? issuedAt + Math.floor(seconds) : 0;
+}
+
 function clientRecord(base, metadata, clientId, secret, token) {
   log.debug("Entering clientRecord(). client_id=" + clientId);
+  const issuedAt = nowSec();
   const record = Object.assign({}, metadata, {
     client_id: clientId,
-    client_id_issued_at: nowSec(),
+    client_id_issued_at: issuedAt,
     client_secret: secret,
-    client_secret_expires_at: 0,               // 0 = never
+    // `oauth2.registeredSecretLifetimeS`; 0 = never, the default.
+    client_secret_expires_at: registeredSecretExpiry(issuedAt),
     registration_access_token: token,
     registration_client_uri: base + '/oauth2/register/' + clientId
   });
@@ -6682,6 +7194,17 @@ function clientRecord(base, metadata, clientId, secret, token) {
 function registerEndpoint(req, res) {
   log.debug("Entering the client registration endpoint.");
   const base = baseUrlOf(req);
+  if (!registrationOpen()) {
+    log.warn('oauth2: a dynamic client registration was refused — this realm is ' +
+             'in product mode and oauth2.openRegistration is off.');
+    log.debug("Leaving the client registration endpoint. Registration is closed.");
+    errorCodes.mark(res, 'STS-OAUTH-0231');
+    return oauthError(res, 403, 'access_denied',
+      'Dynamic client registration is closed: this realm is in product mode, where ' +
+      'an application is created by an administrator — on /admin/applications/new ' +
+      'or with POST /admin-api/applications/create. Set oauth2.openRegistration to ' +
+      'let anybody who can reach this endpoint register a client.');
+  }
   // ---------------------------------------------------------------------
   // `checkDocument()` AND NOT A SCHEMA, AND THIS IS THE ENDPOINT THAT
   // ARGUMENT WAS WRITTEN FOR.
@@ -6704,10 +7227,12 @@ function registerEndpoint(req, res) {
   if (!document.ok) {
     log.debug("Leaving the client registration endpoint. The document is refused: " +
               document.code + ".");
+    errorCodes.mark(res, 'STS-OAUTH-0232');
     return oauthError(res, 400, 'invalid_client_metadata', document.detail);
   }
   const metadata = document.value;
   if (metadata.redirect_uris && !Array.isArray(metadata.redirect_uris)) {
+    errorCodes.mark(res, 'STS-OAUTH-0233');
     return oauthError(res, 400, 'invalid_redirect_uri', 'redirect_uris must be an array.');
   }
   // RFC 9700 mode: this endpoint will not register a client for something the
@@ -6720,10 +7245,17 @@ function registerEndpoint(req, res) {
   if (!registrationCheck.ok) {
     log.debug("Leaving the client registration endpoint. RFC 9700 mode refused the metadata (" +
               registrationCheck.requirement + ").");
+    errorCodes.mark(res, registrationCheck.errorCode || 'STS-OAUTH-0158');
     return oauthError(res, 400, registrationCheck.error, registrationCheck.description);
   }
-  const clientId = 'sts-mock-client-' + randomId(8);
-  const record = clientRecord(base, metadata, clientId, randomId(24), randomId(24));
+  // The prefix and both sizes are settings since 2026-09-12; the defaults are
+  // the literals that were here. The secret and the registration access token
+  // share a size because both ARE secrets and neither is weaker than the other.
+  const secretBytes = Number(config.value('oauth2.registeredSecretBytes')) || 24;
+  const clientId = String(config.value('oauth2.registeredClientIdPrefix') || '') +
+                   randomId(Number(config.value('oauth2.registeredClientIdBytes')) || 8);
+  const record = clientRecord(base, metadata, clientId, randomId(secretBytes),
+                              randomId(secretBytes));
   // Into the directory, under ou=applications. The response below is composed
   // from `record` rather than read back, because the two are the same object
   // and a read-back would only be able to differ.
@@ -6750,18 +7282,30 @@ function withRegisteredClient(req, res, handler) {
                                        'params', REGISTERED_CLIENT_PARAMS);
   if (!named.ok) {
     log.debug("Leaving withRegisteredClient(). The client_id is malformed.");
+    errorCodes.mark(res, 'STS-OAUTH-0234');
     return oauthError(res, 400, 'invalid_request', named.detail);
   }
   log.debug("Entering withRegisteredClient(). client_id=" + named.value.client_id);
   const record = applications.registrationOf(named.value.client_id);
   if (!record) {
     log.debug("Leaving withRegisteredClient(). No such client.");
+    errorCodes.mark(res, 'STS-OAUTH-0235');
     return oauthError(res, 404, 'invalid_client', 'No such registered client.');
   }
   const auth = (req.headers['authorization'] || '').replace(/^Bearer\s+/i, '');
-  if (auth !== record.registration_access_token) {
+  // CONSTANT TIME, AND NEVER AGAINST AN EMPTY TOKEN (2026-09-12, in every
+  // mode). This was `auth !== record.registration_access_token`: a comparison
+  // whose running time leaks how much of a guess was right, and — the sharper
+  // half — one that matched an ABSENT header against a record whose token was
+  // absent too, which is what an entry edited by `ldapmodify` or carried
+  // across from an older build can hold. An RFC 7592 read hands back the
+  // client secret, so both are refusals of a credential disclosure rather than
+  // tidiness.
+  const expected = String(record.registration_access_token || '');
+  if (!expected || !stsCrypto.constantTimeEquals(auth, expected)) {
     res.set('WWW-Authenticate', 'Bearer');
     log.debug("Leaving withRegisteredClient(). The registration access token did not match.");
+    errorCodes.mark(res, 'STS-OAUTH-0236');
     return oauthError(res, 401, 'invalid_token', 'The registration access token does not match.');
   }
   const result = handler(record);
@@ -6845,6 +7389,14 @@ module.exports = {
   USERINFO_SIGNING_ALGS: USERINFO_SIGNING_ALGS,
   accessToken: accessToken,
   tokenSet: tokenSet,
+  // THE ID TOKEN BUILDER, for GNAP (2026-09-12). RFC 9635 section 3.4.1 lets a
+  // grant response carry an OpenID Connect ID Token as a SUBJECT ASSERTION, and
+  // a second builder in `gnap/` would be a second answer to what an ID Token
+  // from this realm contains — claims layers, persona values, the directory's
+  // facts, the registered signing algorithm — that would disagree with this one
+  // the first time either grew a claim. `gnap/gnap.js` is required long after
+  // this module, so the require runs in the ordinary direction.
+  idToken: idToken,
   // The outstanding authorization codes, for the protocol-independent logout.
   // Functions rather than the Map, and both stores behind them — see the block
   // above outstandingCodesFor(). `logout/logout.js` requires this module in the
@@ -6876,8 +7428,15 @@ module.exports = {
   requestedClaimsOf: requestedClaimsOf,
   requestedClaimNames: requestedClaimNames,
   CLAIMS_REQUEST_MEMBERS: CLAIMS_REQUEST_MEMBERS,
-  MAX_REQUESTED_CLAIMS: MAX_REQUESTED_CLAIMS,
-  PERSONA_CLAIMS: PERSONA_CLAIMS
+  // A GETTER, so a reader holding this module sees `oauth2.maxRequestedClaims`
+  // as it is now rather than the default it was at require time.
+  get MAX_REQUESTED_CLAIMS() { return maxRequestedClaims(); },
+  PERSONA_CLAIMS: PERSONA_CLAIMS,
+  // The RFC 8414 `signed_metadata` signer, for the OID4VCI issuer metadata's
+  // copy of the same construct. See its header.
+  signPublishedDocument: signPublishedDocument,
+  authCodeTtlMs: authCodeTtlMs,
+  registrationOpen: registrationOpen
   // `registeredClients` used to be exported from here. It is not a Map in this
   // module any more — the registrations are entries under ou=applications, and
   // `applications.registrationOf()` is how anything reads one. Re-exporting a

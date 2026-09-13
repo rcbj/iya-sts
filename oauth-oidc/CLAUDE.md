@@ -376,6 +376,17 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    that a CA vouched for it. Requiring verification would make the feature
    unreachable, since `/tls/trust` starts empty by design.
 
+   **A REVOKED certificate is NOT verified, since 2026-09-12**, and it still
+   binds. `peerVerified()` reads `req.certificateRevocation` — which
+   `common/app.js` computes before any route through
+   `common/revocation_status.js` — and answers `verified: false` with
+   `CERT_REVOKED` (or `REVOCATION_STATUS_UNKNOWN` under hard-fail) for a chain
+   the policy refused, so every caller resolving a certificate to an identity
+   refuses it. `client_auth.js`'s `verifyCertificate()` refuses the same
+   verdict for both RFC 8705 section 2 methods, BEFORE the subject or thumbprint
+   match — a revoked certificate is a client secret its issuer withdrew. RFC
+   8705 section 3 BINDING is deliberately untouched: it authenticates nobody.
+
    **The confirmation is MERGED with the DPoP one, never replaces it.** A client
    that presented a certificate AND sent a proof demonstrated both, and a token
    recording one would discard a check somebody performed. The REFRESH token is
@@ -406,7 +417,8 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    nobody has configured is CREATED on first sight — by an endpoint or by a
    metadata fetch, since reading the document is accessing the server. It is
    marked `autoCreated` so the console can tell the two apart. Bounded at
-   `MAX_PROFILES`, past which a name is still SERVED with the defaults and
+   `oauth2.maxAuthorizationServerProfiles` (200, `MAX_PROFILES` until
+   2026-09-12), past which a name is still SERVED with the defaults and
    simply not recorded: the id comes off a URL path, so any caller can invent
    one, and a load generator must not take the feature away from the names that
    matter.
@@ -546,7 +558,7 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    on the entry and for a certificate presented in an `x5c` that this service
    can see it issued to a person — that second path does not consult the
    registry at all, which is the point of it, so `common/pki.js` puts the answer
-   in the certificate as a `urn:sts-mock:person:<name>` subjectAltName. That
+   in the certificate as a `urn:sts:person:<name>` subjectAltName. That
    file argues the whole thing; what belongs here is that `keysForParty()` is
    told which KIND of party it is reading rather than trying every attribute
    name it knows, because the store is schemaless and a function that read both
@@ -559,6 +571,14 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    nothing; every check below it runs on claims a signature has already vouched
    for. Do not read anything else out of an unverified assertion — the same rule
    `client_auth.js` states about the unverified `sub`.
+
+   **A REGISTERED KEY'S CERTIFICATE IS CHECKED FOR REVOCATION ONCE IT HAS
+   VERIFIED THE ASSERTION (2026-09-12)** — here, in `client_auth.js` and in 3z's
+   file alike: the `x5c` of the JWK that verified (or the RFC 7522 certificate) goes
+   to `common/revocation_status.js`'s `registeredVerdictFor()` before any claim is
+   believed and before the jti is spent, and a revoked one is `STS-PKI-0129` with
+   the protocol's own error. A JWK with no `x5c` is a bare key: nothing is looked
+   up and `keyRevocation.bare` says so rather than calling it good.
 
    **AN `x5c` IS CHECKED RATHER THAN READ.** Taking a public key out of one and
    verifying with it would be verifying a signature against a key the signature
@@ -672,6 +692,45 @@ are facts about `server.js`: `ws-federation/wsfed.js` must be required AFTER
    a multi-valued one stays a list — `"department": ["engineering"]` in a token
    reads as a bug to every relying party that meets it.
 
+## EVERY REFRESH TOKEN IS ENCRYPTED TO ITS OWN REALM (2026-09-12)
+
+`refresh_token_crypto.js` is a library (rule 3) and `refreshToken()` is the one
+place it seals. A refresh token is a **nested JWT**: the JWS this file always
+minted, encrypted as a compact JWE with `cty: "JWT"` to the realm's own keys.
+Three decisions, each asked of the user before it was built:
+
+* **SIGNED, THEN ENCRYPTED.** `open()` hands back the same JWS the refresh grant
+  always verified, so the signature, `exp`, revocation, RFC 9700 rotation, the
+  DPoP and certificate bindings and the client check are untouched, and
+  `signJwt()` still records the jti before anything is sealed.
+* **AN UNENCRYPTED REFRESH TOKEN IS REFUSED** — `invalid_grant` at the grant
+  (`STS-OAUTH-0237`), `active: false` at introspection. A client holding one
+  from before the change signs in again.
+* **EVERY JWE ALGORITHM `common/crypto.js` IMPLEMENTS**, chosen by
+  `oauth2.refreshTokenEncryptionAlg` / `…Enc`. Each realm holds an RSA pair, an
+  EC pair and a 64-byte secret (`helpers.js`'s makeRefreshTokenEncryptionKeys())
+  and `open()` picks the key off the token's own header, so changing the setting
+  strands nothing. The symmetric algorithms get an HKDF-derived key per
+  (alg, enc) — `info` names the pair, because HKDF at 16 bytes is the prefix of
+  HKDF at 32 under the same info.
+
+**EVERY READER OPENS FIRST, AND THERE ARE SIX**: the refresh grant,
+introspection, revocation, token exchange's `subject_token`, `jtiOf()` and the
+code-replay jti reader — plus `admin-core/admin_actions.js`'s `jtiFrom()`, so a
+pasted refresh token can still be revoked on the console. **A new reader of a
+refresh token must go through `refresh_token_crypto.open()`**; a `split('.')[1]`
+on one reads the JWE's encrypted key and throws somewhere unhelpful.
+
+**THE KEYS ARE NEVER PUBLISHED AND ARE NOT PKI LEAVES**: nobody but this service
+encrypts to or decrypts with them. They travel with the key set exactly as the
+OpenID4VCI request-encryption key does — sealed in `sts_keys` in product mode,
+shared over the request pool's key channel, counted by `keystore.enriches()`,
+backfilled into a set written before them, private halves and the secret behind
+getters — and they rotate with the set. A token minted in one realm does not open
+in another. `tests/refresh_token_encryption.js` pins it; the parent project's
+`oauth2_sts_endpoints.js` and `sts_dpop.js` stopped decoding the refresh token
+the same day and read it at introspection instead.
+
 ## `signed_metadata` is signed once a minute, not once a request
 
 `signedMetadata()` in `oauth2.js` caches, and both discovery documents go
@@ -692,7 +751,13 @@ document differing by one member is a different key and is signed afresh.
 The entry is held for a minute against a token that lives an hour, and that gap
 is the point — a caller must never be handed a signature about to expire. The
 map is capped because the key includes a base URL that comes off the Host
-header.
+header. **Both are settings since 2026-09-12** — `oauth2.signedMetadataCacheS`
+(ceiling 1800, half the signature's hour, which is that rule written into the
+row) and `oauth2.maxSignedMetadataEntries` — and so is the ALGORITHM,
+`oauth2.signedMetadataAlgorithm`, which is part of the cache key: the same
+claims signed RS256 and then ES256 are two artefacts. `signPublishedDocument()`
+is the signer, and the OID4VCI issuer metadata's `signed_metadata` calls it
+rather than keeping a copy.
 
 ## The three lifetimes and the skew are SETTINGS now, and one default changed
 
@@ -885,7 +950,10 @@ names every claim a request may ask for.
   declaring `private_key_jwt` is ACCEPTED AND NOT VERIFIED (reported as such,
   because an unverified assertion that is accepted looks exactly like a verified
   one from the client's side). **No end user's password is checked in that mode
-  or any other**, which is the next bullet and is not affected by this one.
+  or any other IN DEVELOPMENT**, which is the next bullet and is not affected
+  by this one. Product mode (`global.mode`) is a different axis from RFC 9700
+  mode and does check it — at the sign-in screen and, since 2026-09-12, at the
+  password grant; see the sweep section at the end of this file.
 * **It does not verify access tokens it did not issue — except at UserInfo.**
   OID4VCI lets the authorization server be somebody else, so at the three
   credential endpoints a foreign token is accepted as-is. The consequence for DPoP
@@ -1400,3 +1468,83 @@ different relation and is already drawn as one at `/admin/tokens/credential`.
 conditional would be a second rule about when a set exists, and the one rule — a
 set is a response — is what makes "a set of one" mean the same thing on every row
 of that table.
+
+## THE 2026-09-12 HARD-CODED-VALUE SWEEP, AND WHAT IN IT IS MORE THAN A NUMBER
+
+An audit for literals product mode shipped unchanged. Most of what it found
+became a `config.js` row whose `dflt` is the literal, read per use — the
+authorization code's life (`oauth2.authorizationCodeTtlS`, which
+`oauth2_bcp.js`'s transaction window now READS rather than a comment claiming
+twice it), the DPoP windows, the caps, the Basic realm, the registration shapes.
+Those need no argument beyond `common/CLAUDE.md`'s. Six things do, and
+`tests/oauth_oid4vc_hardcoded.js` pins every one.
+
+**THE PASSWORD GRANT VERIFIES THE PASSWORD.** It refused the literal `invalid`
+and accepted everything else in BOTH modes, so a product deployment that checked
+a password at every other door issued tokens to anybody naming a person at the
+token endpoint. It goes through `credentials.verifyAsync()` now — which refuses
+`invalid` in both modes and says yes to everything else in development, so
+development is unchanged by construction rather than by a branch. In product it
+is also rate-limited in the sign-in screen's bucket, and **a person holding a
+second factor is refused**, because RFC 6749 section 4.3 has nowhere to carry
+one and issuing would make `mfaRequired` mean nothing at the one endpoint nobody
+looks at. Every refusal is the one protocol answer; the reason goes to the log.
+
+**THE ID TOKEN AND USERINFO FILL PROFILE CLAIMS FROM THE DIRECTORY WHERE NOTHING
+IS INVENTED.** `helpers.userFor()` stopped inventing `name`, `given_name`,
+`family_name`, `email` and `email_verified` in product mode.
+`personFromDirectory()` fills the first four from `cn`, `givenName`, `sn` and
+`mail` through `claimAttributes.requestedClaimsFor()` — the catalogue every claim
+set already uses, so there is one answer to which attribute is a family name —
+and **never sets `email_verified`**, because no directory attribute says a
+mailbox was verified. `definedOnly()` keeps an absent claim ABSENT: an
+`undefined` member in a payload is dropped by JSON, but `Object.assign` copies it
+first and would erase a configured claim of the same name. `sub` is NOT touched
+and is worth knowing about: it is derived from the username, so an account
+deleted and re-created under the same name is the same subject everywhere.
+
+**THE THREE ASSERTION REPLAY CACHES REFUSE WHEN FULL; THEY NO LONGER FORGET.**
+`client_auth.js`, `assertion_grant.js` and `saml_assertion_grant.js` each
+dropped their oldest entry at a thousand whether or not it had expired — "a
+forgotten jti is a check not made", which is the right trade for a cache that
+guards against a client bug and the wrong one for a cache that guards against a
+CAPTURED CREDENTIAL. The cap is `oauth2.assertionReplayCacheSize`, expired
+entries are swept first, and a cache full of live ones refuses the next
+assertion. `oauth2_bcp.js`'s refresh bookkeeping could not take that rule word
+for word — it runs after a token is signed, and refusing to issue would turn a
+busy service into one that signs nobody in — so it forgets expired, then ROTATED
+(already revoked), then only as a last resort a live record, with a warning. Its
+header states the trade.
+
+**CLIENT ASSERTIONS, AND THE GRANT'S `iat` HOLE.** RFC 7523 section 3 claim 4
+makes `exp` REQUIRED, and a client assertion without one was accepted with its
+jti remembered for sixty seconds while the assertion itself never expired. In
+product it is refused and `oauth2.jwtBearerMaxLifetimeS` caps a client
+assertion's lifetime too; development keeps both permissive (the parent suite
+signs post-quantum client assertions for an hour) and now remembers a no-`exp`
+jti for the ceiling rather than a minute. The GRANT had the ceiling in both
+modes and skipped it for an assertion with no `iat` — so leaving out an optional
+claim was the way round it. It measures from now in that case, in every mode,
+and so does the SAML profile for an assertion with no `IssueInstant`.
+
+**`POST /dpop/nonce-mode` IS PER REALM AND A TEST CONTROL.** It flipped one
+`realms.sharedMap` row for the process, so a realm turning nonces on turned them
+on everywhere, and it answered anybody. The state is `oauth2.dpopNonceRequired`
+now — per realm by construction, replicated like any setting, and changeable
+through `/admin/oauth2` and `/admin-api/config/set` behind a credential — the
+endpoint writes it in development and `mode.opensTestControls()` refuses it in
+product. Writing the value the setting would have anyway CLEARS the override,
+so a test that turns nonces on and off leaves no `source: override` row behind.
+
+**RFC 7591 REGISTRATION IS CLOSED IN PRODUCT** unless `oauth2.openRegistration`
+is on, and `registrationOpen()` is read by the endpoint AND the metadata so that
+`registration_endpoint` is not advertised where it refuses. The RFC 7592
+management calls compare the registration access token in constant time and
+never match an empty one — in every mode, because a read hands back the client
+secret.
+
+**WHAT DID NOT CHANGE, AND SAYS SO.** `urn:sts:client:` (the RFC 9700
+client subject) and the `urn:sts:application:` / `urn:sts:person:`
+certificate SANs are identifiers already inside issued tokens and certificates;
+renaming them is a migration, not a setting.
+

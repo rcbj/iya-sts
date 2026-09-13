@@ -63,8 +63,8 @@
 // loopback address it computes, on a port it is listening on.** Nothing about
 // it is influenced by a caller. `DIALLABLE` in `federation_http.js` exists to
 // stop a URL from a request becoming a URL this service fetches; here there is
-// no URL at all — the address is `127.0.0.1` and `helpers.PORT`, and the paths
-// are this service's own, three constants below.
+// no URL at all — the address is `helpers.loopbackHost()` and `helpers.PORT`,
+// and the paths are this service's own, three constants below.
 //
 // **IT IS AN HTTP REQUEST RATHER THAN A FUNCTION CALL ON PURPOSE.** Redeeming
 // the code in process would be a client that skips client authentication, skips
@@ -77,8 +77,13 @@
 // Four things bound it, and each is `federation_http.js`'s rule made again:
 //
 //   * **THE HOST HEADER IS THE BROWSER'S, THE ADDRESS IS LOOPBACK.** The
-//     connection goes to 127.0.0.1 because that is reachable from inside this
-//     process whatever DNS says outside it; the `Host` header carries the name
+//     connection goes to the loopback address of the interface this service
+//     LISTENS on — `helpers.loopbackHost()`, which is 127.0.0.1 for a wildcard
+//     bind, ::1 for an IPv6 one, and the address itself where `global.host`
+//     names one — because that is reachable from inside this process whatever
+//     DNS says outside it. It was the literal `127.0.0.1` until 2026-09-12,
+//     which reaches nothing when the listener is bound to one interface
+//     address or to IPv6 only. The `Host` header carries the name
 //     the BROWSER used, because `issuerOf()` builds the `iss` claim from the
 //     request when `oauth2.issuer` is not pinned. Dial loopback and say
 //     loopback, and the ID Token comes back issued by `https://127.0.0.1:8081`
@@ -126,11 +131,28 @@ const nodeCrypto = require('crypto');
 const helpers = require('./helpers');
 const { log, PORT, baseUrlOf } = helpers;
 const config = require('./config');
+// Whether a redirect URI a request's address produced may be written onto one
+// of these two entries — see `ensureRedirectUri()`. A LEAF (rule 3): it
+// requires only `config`.
+const mode = require('./mode');
 const realms = require('./realms');
 const applications = require('./applications');
 const stsCrypto = require('./crypto');
 const audit = require('./audit');
 const authn = require('../authn/authn');
+// The error codes (common/error_codes.js). Every refusal below answers
+// `{ ok: false, why }` to the console or the portal, which draws the page — so
+// the code rides on that answer non-enumerably (`codeOf()` reads it) AND is
+// marked on the response where this file holds one, so the call-log row
+// carries the specific reason whichever of the two callers forgets.
+const errorCodes = require('./error_codes');
+
+function coded(code, answer, res) {
+  if (res) {
+    errorCodes.mark(res, code);
+  }
+  return errorCodes.mark(answer, code);
+}
 
 // ---------------------------------------------------------------------------
 // THE TWO SURFACES.
@@ -184,7 +206,7 @@ const SURFACES = {
     clientId: 'sts-admin-console',
     label: 'Admin console',
     callbackPath: '/admin/callback',
-    cookie: 'sts_mock_admin',
+    cookie: 'sts_admin',
     flowRealm: 'ambient',
     sessionRealm: 'default',
     scopes: ['openid', 'profile', 'email']
@@ -194,7 +216,7 @@ const SURFACES = {
     clientId: 'sts-user-portal',
     label: 'User portal',
     callbackPath: '/portal/callback',
-    cookie: 'sts_mock_portal',
+    cookie: 'sts_portal',
     flowRealm: 'ambient',
     sessionRealm: 'ambient',
     scopes: ['openid', 'profile', 'email']
@@ -215,18 +237,50 @@ const JWKS_PATH = '/oauth2/jwks';
 const flows = realms.map({ persist: 'oidc_rp.flows' });
 // In flight at once, per realm rather than per process, for the reason
 // `federation_sp.js` gives about a shared cap: one realm's flood would otherwise
-// evict another realm's in-flight sign-ins.
+// evict another realm's in-flight sign-ins. `oidcRp.maxFlows` since
+// 2026-09-12; this is its default.
 const MAX_FLOWS = 200;
-// How long somebody has to get through the sign-in screen. Ten minutes is the
+// How long somebody has to get through the sign-in screen. It is the
 // pending-authentication record's own lifetime over in `authn.js`, and the two
 // are deliberately the same: a flow that outlived the screen it is waiting on
 // would be a state this service accepts and an authorization endpoint that no
 // longer has anything to answer with.
+//
+// **THEY WERE "THE SAME" AS TWO LITERALS UNTIL 2026-09-12**, which is the one
+// way that sentence can quietly stop being true. Both read `authn.pendingTtlS`
+// now, so they cannot differ.
 const FLOW_TTL_MS = 10 * 60 * 1000;
 // The back channel's bounds. Both are `federation_http.js`'s and are set to the
-// same values for the same reasons.
+// same values for the same reasons. The timeout is `oidcRp.backChannelTimeoutS`
+// since 2026-09-12; the body cap is not a deployment decision.
 const BACK_CHANNEL_TIMEOUT_MS = 10 * 1000;
 const MAX_BODY_BYTES = 256 * 1024;
+// How many redirect URIs the two entries may carry before learning stops —
+// `oidcRp.maxRedirectUris`. See `ensureRedirectUri()`.
+const MAX_REDIRECT_URIS = 20;
+
+// A positive-integer setting, or its default where the store holds none.
+function positiveSetting(key, fallback) {
+  const n = Number(config.value(key));
+  return isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+function maxFlows() {
+  return positiveSetting('oidcRp.maxFlows', MAX_FLOWS);
+}
+
+function flowTtlMs() {
+  return positiveSetting('authn.pendingTtlS', FLOW_TTL_MS / 1000) * 1000;
+}
+
+function backChannelTimeoutMs() {
+  return positiveSetting('oidcRp.backChannelTimeoutS',
+                         BACK_CHANNEL_TIMEOUT_MS / 1000) * 1000;
+}
+
+function maxRedirectUris() {
+  return positiveSetting('oidcRp.maxRedirectUris', MAX_REDIRECT_URIS);
+}
 
 // ---------------------------------------------------------------------------
 // The surface, by id. A caller naming one that does not exist is a bug in this
@@ -285,10 +339,12 @@ function publicBaseOf(req) {
 
 function loopbackOrigin() {
   const scheme = config.value('global.https') ? 'https' : 'http';
-  // 127.0.0.1 rather than `localhost`, which resolves to ::1 first on some
+  // An ADDRESS rather than `localhost`, which resolves to ::1 first on some
   // hosts while this service binds 0.0.0.0 — a connection refused on a name
-  // that pings, which is among the least obvious failures available.
-  return scheme + '://127.0.0.1:' + PORT;
+  // that pings, which is among the least obvious failures available. Which
+  // address is `helpers.loopbackHost()`'s answer about the interface this
+  // service is bound to; `hostForUrl()` brackets it when it is IPv6.
+  return scheme + '://' + helpers.hostForUrl(helpers.loopbackHost()) + ':' + PORT;
 }
 
 // The Host header the loopback request carries: the authority the browser used,
@@ -319,80 +375,184 @@ function clientOf(surface) {
   const entry = applications.clientConfigOf(surface.clientId);
   if (!entry || !entry.registered) {
     log.debug('Leaving clientOf(). It is not registered.');
-    return { ok: false,
+    return coded('STS-AUTHN-0112', { ok: false,
              why: 'the application "' + surface.clientId + '" is not in this ' +
                   'realm\'s registry. It is seeded at startup ' +
                   '(applications.seedInternal) and something has deleted it, ' +
                   'or seeding is off. Recreate it on /admin/applications, or ' +
-                  'restart this service.' };
+                  'restart this service.' });
   }
   if (!entry.client_secret) {
     log.debug('Leaving clientOf(). It has no secret.');
-    return { ok: false,
+    return coded('STS-AUTHN-0113', { ok: false,
              why: 'the application "' + surface.clientId + '" carries no ' +
                   'oauthClientSecret, so this surface cannot authenticate at ' +
                   'the token endpoint. The secret is minted at startup; an ' +
-                  'entry without one has had it removed.' };
+                  'entry without one has had it removed.' });
   }
   log.debug('Leaving clientOf(). Registered.');
   return { ok: true, client: entry };
 }
 
 // ---------------------------------------------------------------------------
-// THE REDIRECT URI THE ENTRY LEARNS.
+// THE REDIRECT URI THE ENTRY LEARNS — IN DEVELOPMENT, FROM AN ADDRESS NOBODY
+// PINNED.
 //
-// The seeded entry carries `http(s)://localhost:<port>/admin/callback`, because
-// it is written before any request exists and `localhost` is the only address
-// this service can name without one. The BROWSER reaches this service at
-// whatever address it was given — a container name, a proxy's hostname, an IP —
-// and RFC 9700 mode matches `redirect_uri` by exact string, so the address
-// actually in use has to be ON the entry or the first sign-in in that mode is
-// refused by this service against itself.
+// The seeded entry carries a callback built before any request exists. The
+// BROWSER reaches this service at whatever address it was given — a container
+// name, a proxy's hostname, an IP — and RFC 9700 mode matches `redirect_uri`
+// by exact string, so the address actually in use has to be ON the entry or
+// the first sign-in in that mode is refused by this service against itself.
 //
-// So the entry LEARNS it: the first flow through a given base adds that base's
-// callback to `oauthRedirectUri`, which is multi-valued precisely so a client
-// can have several. It is added and never replaced — a deployment reached at two
-// names has two, both legitimate — and it is written through
-// `applications.updateApplication()` like every other change to an entry, so it
-// is audited and an operator can take it off again.
+// So in DEVELOPMENT the entry LEARNS it: the first flow through a given base
+// adds that base's callback to `oauthRedirectUri`, which is multi-valued
+// precisely so a client can have several. It is added and never replaced — a
+// deployment reached at two names has two, both legitimate — and it is written
+// through `applications.updateApplication()` like every other change to an
+// entry, so it is audited and an operator can take it off again.
 //
-// **IT IS NOT A URL FROM A REQUEST BEING TRUSTED.** What is written is this
-// service's OWN base, as `baseUrlOf()` computes it, with a path constant from
-// the table above appended — the same string this module is about to send as
-// `redirect_uri` and the same one the browser will come back to. A `Host` header
-// a caller invented reaches `baseUrlOf()` only when `global.trustProxy` is on,
-// which is the setting that already says this service believes what a proxy in
-// front of it says.
+// ---------------------------------------------------------------------------
+// **THIS COMMENT SAID LEARNING WAS "NOT A URL FROM A REQUEST BEING TRUSTED",
+// AND IT WAS (corrected 2026-09-12).** It argued that a `Host` header a caller
+// invented reaches `baseUrlOf()` only when `global.trustProxy` is on. That is
+// false: `helpers.forwardedFrom()` reads the forwarded headers only with that
+// setting on and reads the request's own `Host` header ALWAYS — so an
+// anonymous `GET /admin` carrying `Host: evil.example` wrote
+// `https://evil.example/admin/callback` PERMANENTLY onto `sts-admin-console`,
+// with nothing typed and nobody signed in. A registered redirect URI is the
+// thing an authorization server hands a code to; planting one is the first
+// half of stealing the console's.
+//
+// **THREE ANSWERS NOW, AND THE MODE ASKS `acceptsUnregisteredAddresses()`**,
+// which is the question exactly — may a response go to an address the request
+// named and no registration did:
+//
+//   * `global.publicBaseUrl` SET → the base is pinned, whatever Host a request
+//     carried, and NOTHING IS LEARNT. The callback is the pinned one; an entry
+//     that does not carry it is used anyway in development and refused in
+//     product, where the entry is a statement about the deployment.
+//   * not set, DEVELOPMENT → learnt as before, up to `oidcRp.maxRedirectUris`
+//     values on the entry. The cap is what keeps a service reached under many
+//     names — or asked with many invented Host headers — from growing an entry
+//     without bound; past it the flow still runs and nothing is written.
+//   * not set, PRODUCT → nothing is written, and a flow at an address the entry
+//     does not carry is REFUSED before a browser is sent anywhere, with a
+//     sentence naming `global.publicBaseUrl` and the entry.
+//
+// It answers `{ ok, why }` and `beginSignIn()` refuses on `ok: false`. A write
+// the registry refuses is still only a warning, as it always was.
 // ---------------------------------------------------------------------------
 function ensureRedirectUri(surface, client, uri) {
   log.debug('Entering ensureRedirectUri(). uri=' + uri);
   const held = [].concat(client.redirect_uris || []);
   if (held.indexOf(uri) >= 0) {
     log.debug('Leaving ensureRedirectUri(). Already registered.');
-    return true;
+    return { ok: true, learnt: false };
   }
-  const answer = applications.updateApplication({
-    application: surface.clientId,
-    action: 'add',
+  const pinned = !!helpers.pinnedBaseUrl();
+  // -------------------------------------------------------------------------
+  // AN ADDRESS DEVELOPMENT LEARNT IS NOT A REGISTERED ONE (2026-09-12).
+  // `client.redirect_uris` comes from `applications.clientConfigOf()`, which
+  // asks `returnAddressesOf()` — so in product a callback this function taught
+  // the entry while the realm was in development is not in `held` above, it is
+  // in `unconfirmed_redirect_uris`, still marked OBSERVED. It is refused like
+  // any unregistered address, with a sentence that says it IS on the entry and
+  // how to confirm it rather than one sending the operator to add a value they
+  // can already see there.
+  // -------------------------------------------------------------------------
+  if (!mode.acceptsUnregisteredAddresses() &&
+      [].concat(client.unconfirmed_redirect_uris || []).indexOf(uri) >= 0) {
+    const why = uri + ' is on the oauthRedirectUri of "' + surface.clientId +
+                '", but this service LEARNT it from a request while the realm ' +
+                'was in development mode and nobody has confirmed it, so in ' +
+                'product mode it is not a registered redirect URI. Confirm it ' +
+                'on that application\'s page under /admin/applications, or ' +
+                'with POST /admin-api/applications/confirm-address, if people ' +
+                'really reach this service at that address.';
+    log.warn('oidc_rp: the ' + surface.label + ' refused to start a sign-in. ' +
+             why);
+    log.debug('Leaving ensureRedirectUri(). Refused: still marked observed.');
+    return coded('STS-REG-0049', { ok: false, why: why });
+  }
+  if (!mode.acceptsUnregisteredAddresses()) {
+    const why = 'this service is being reached at an address that is not a ' +
+                'redirect URI of "' + surface.clientId + '" (' + uri + '), and ' +
+                'in product mode that entry is not taught new addresses by ' +
+                'the requests that arrive at them — an invented Host header ' +
+                'would otherwise plant a callback on this service\'s own ' +
+                'client. ' +
+                (pinned
+                  ? 'global.publicBaseUrl is set, so add ' + uri + ' to that ' +
+                    'entry\'s oauthRedirectUri on /admin/applications or ' +
+                    'through POST /admin-api/applications/add.'
+                  : 'Set global.publicBaseUrl to the address people reach this ' +
+                    'service at, and register its ' + surface.callbackPath +
+                    ' on that entry\'s oauthRedirectUri.');
+    log.warn('oidc_rp: the ' + surface.label + ' refused to start a sign-in. ' +
+             why);
+    log.debug('Leaving ensureRedirectUri(). Refused in product mode.');
+    return coded('STS-AUTHN-0114', { ok: false, why: why });
+  }
+  if (pinned) {
+    log.info('oidc_rp: "' + surface.clientId + '" does not carry the pinned ' +
+             'callback ' + uri + '. It is used without being written, because ' +
+             'global.publicBaseUrl is set and a pinned address is never ' +
+             'learnt; register it on the entry if oauth2.rfc9700 is on, where ' +
+             'a redirect URI is matched by exact string.');
+    log.debug('Leaving ensureRedirectUri(). Pinned; not learnt.');
+    return { ok: true, learnt: false };
+  }
+  const cap = maxRedirectUris();
+  if (held.length >= cap) {
+    log.warn('oidc_rp: "' + surface.clientId + '" already carries ' +
+             held.length + ' redirect URI(s), the most oidcRp.maxRedirectUris ' +
+             'allows (' + cap + '), so ' + uri + ' was NOT added. The sign-in ' +
+             'goes ahead; it will be refused only where oauth2.rfc9700 matches ' +
+             'redirect URIs by exact string. Set global.publicBaseUrl rather ' +
+             'than raising the cap.');
+    log.debug('Leaving ensureRedirectUri(). At the cap.');
+    return { ok: true, learnt: false, capped: true };
+  }
+  // -------------------------------------------------------------------------
+  // **THIS CALL NEVER WORKED UNTIL 2026-09-12, AND THE LOG SAID "no reason
+  // given".** It passed ONE object — `{ application, action, attribute, … }` —
+  // to a function whose signature is `(identifier, change)` with the verb in
+  // `change.mode`, so the registry looked up an application called
+  // "[object Object]", refused, and this function read `answer.error` where
+  // the refusal is `answer.errors`. So the entry had never learnt anything:
+  // the documented behaviour above, and the self-refusal in RFC 9700 mode it
+  // exists to prevent, were both a comment. Found by the test written for the
+  // Host-header finding, which asserted a learnt address and got none.
+  // -------------------------------------------------------------------------
+  const answer = applications.updateApplication(surface.clientId, {
     attribute: 'oauthRedirectUri',
+    mode: 'add',
     value: uri,
-    actor: 'the ' + surface.label,
-    note: 'the address this service is being reached at'
+    // A SIGHTING WEARING AN UPDATE'S SHAPE (2026-09-12): the address came off
+    // a request's Host header, so it is marked OBSERVED on the entry and a
+    // realm later switched to product does not believe it until somebody
+    // confirms it. Without the flag this call would be an operator's explicit
+    // registration, which is exactly what it is not.
+    observed: true,
+    actor: 'the ' + surface.label
   });
   if (!answer || answer.ok === false) {
-    log.warn('oidc_rp: ' + uri + ' could not be added to "' + surface.clientId +
-             '" (' + ((answer && answer.error) || 'no reason given') + '). The ' +
+    log.warn(errorCodes.tag('STS-AUTHN-0115') +
+             'oidc_rp: ' + uri + ' could not be added to "' + surface.clientId +
+             '" (' + ((answer && (answer.errors || []).join(' ')) ||
+                      'no reason given') + '). The ' +
              'sign-in will still work unless oauth2.rfc9700 is on, where the ' +
              'redirect URI is matched by exact string.');
     log.debug('Leaving ensureRedirectUri(). The write was refused.');
-    return false;
+    return { ok: true, learnt: false };
   }
   log.info('oidc_rp: "' + surface.clientId + '" learnt the redirect URI ' + uri +
            '. This service is being reached at an address the seeded entry did ' +
            'not name, which is the ordinary case behind a proxy or in a ' +
-           'container. It is ADDED rather than replacing what was there.');
+           'container. It is ADDED rather than replacing what was there. ' +
+           'Development mode only; set global.publicBaseUrl to stop it.');
   log.debug('Leaving ensureRedirectUri(). Added.');
-  return true;
+  return { ok: true, learnt: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -483,9 +643,9 @@ function backChannel(options) {
         anchor = require('../tls/tls_server').serverCertificate().trustAnchorPem;
       } catch (e) {
         log.debug('Leaving backChannel(). No server certificate: ' + e.message);
-        resolve({ ok: false,
+        resolve(coded('STS-AUTHN-0116', { ok: false,
                   why: 'this service could not read its own TLS certificate to ' +
-                       'verify the loopback connection against: ' + e.message });
+                       'verify the loopback connection against: ' + e.message }));
         return;
       }
     }
@@ -527,7 +687,10 @@ function backChannel(options) {
       headers['content-type'] = 'application/x-www-form-urlencoded';
     }
     const request = (useHttps ? https : http).request({
-      host: '127.0.0.1',
+      // THE INTERFACE THIS SERVICE LISTENS ON — see the header. Node takes an
+      // IPv6 literal here without brackets, which is why this is
+      // `loopbackHost()` and not `hostForUrl()`.
+      host: helpers.loopbackHost(),
       port: PORT,
       method: options.method,
       path: options.path,
@@ -543,11 +706,11 @@ function backChannel(options) {
       // Basic credential to whatever Location said.
       if (response.statusCode >= 300 && response.statusCode < 400) {
         response.resume();
-        resolve({ ok: false,
+        resolve(coded('STS-AUTHN-0117', { ok: false,
                   why: 'the token endpoint answered ' + response.statusCode +
                        ' with a redirect, which this client does not follow — ' +
                        'a redirect from a credentialed request is how the ' +
-                       'credential ends up somewhere else' });
+                       'credential ends up somewhere else' }));
         return;
       }
       let text = '';
@@ -565,8 +728,8 @@ function backChannel(options) {
       });
       response.on('end', function () {
         if (over) {
-          resolve({ ok: false, why: 'the answer was larger than ' +
-                                    MAX_BODY_BYTES + ' bytes' });
+          resolve(coded('STS-AUTHN-0118', { ok: false, why: 'the answer was larger than ' +
+                                    MAX_BODY_BYTES + ' bytes' }));
           return;
         }
         let json = null;
@@ -582,17 +745,19 @@ function backChannel(options) {
                   text: text.slice(0, 2000) });
       });
     });
-    request.setTimeout(BACK_CHANNEL_TIMEOUT_MS, function () {
+    const timeoutMs = backChannelTimeoutMs();
+    request.setTimeout(timeoutMs, function () {
       request.destroy();
-      resolve({ ok: false,
+      resolve(coded('STS-AUTHN-0119', { ok: false,
                 why: 'this service did not answer its own ' + options.path +
-                     ' within ' + (BACK_CHANNEL_TIMEOUT_MS / 1000) + 's' });
+                     ' within ' + (timeoutMs / 1000) + 's ' +
+                     '(oidcRp.backChannelTimeoutS)' }));
     });
     request.on('error', function (e) {
       log.debug('Leaving backChannel(). error=' + e.message);
-      resolve({ ok: false,
+      resolve(coded('STS-AUTHN-0120', { ok: false,
                 why: 'the loopback request to ' + options.path + ' failed: ' +
-                     e.message });
+                     e.message }));
     });
     if (body) {
       request.write(body);
@@ -623,15 +788,15 @@ function verifyIdToken(token, keys, expected) {
     header = jsonFromB64u(String(token).split('.')[0]);
   } catch (e) {
     log.debug('Leaving verifyIdToken(). The header will not decode.');
-    return { ok: false, why: 'its header is not base64url JSON: ' + e.message };
+    return coded('STS-AUTHN-0129', { ok: false, why: 'its header is not base64url JSON: ' + e.message });
   }
   if (!header || !header.alg) {
-    return { ok: false, why: 'it has no alg in its header' };
+    return coded('STS-AUTHN-0130', { ok: false, why: 'it has no alg in its header' });
   }
   if (String(header.alg).toLowerCase() === 'none') {
-    return { ok: false,
+    return coded('STS-AUTHN-0131', { ok: false,
              why: 'its header says alg=none, which is an unsigned token ' +
-                  'presented as a signed one' };
+                  'presented as a signed one' });
   }
   const kid = header.kid || '';
   const candidates = keys.filter(function (key) {
@@ -641,11 +806,11 @@ function verifyIdToken(token, keys, expected) {
     return true;
   });
   if (!candidates.length) {
-    return { ok: false,
+    return coded('STS-AUTHN-0132', { ok: false,
              why: kid
                ? 'its header names kid "' + kid + '" and ' + JWKS_PATH +
                  ' publishes no such key'
-               : 'this service publishes no keys at ' + JWKS_PATH };
+               : 'this service publishes no keys at ' + JWKS_PATH });
   }
   let lastWhy = '';
   for (let i = 0; i < candidates.length; i++) {
@@ -672,11 +837,11 @@ function verifyIdToken(token, keys, expected) {
       // service IS the client, so it does it.
       if (String(payload.nonce || '') !== String(expected.nonce)) {
         log.debug('Leaving verifyIdToken(). The nonce does not match.');
-        return { ok: false,
+        return coded('STS-AUTHN-0134', { ok: false,
                  why: 'its nonce is not the one this sign-in sent, which is ' +
                       'what OpenID Connect Core section 3.1.3.7 step 11 is ' +
                       'for: the token is genuine and belongs to a different ' +
-                      'request' };
+                      'request' });
       }
       log.debug('Leaving verifyIdToken(). Verified.');
       return { ok: true, claims: payload };
@@ -685,7 +850,7 @@ function verifyIdToken(token, keys, expected) {
     }
   }
   log.debug('Leaving verifyIdToken(). Nothing verified it: ' + lastWhy);
-  return { ok: false, why: lastWhy || 'no published key verified it' };
+  return coded('STS-AUTHN-0133', { ok: false, why: lastWhy || 'no published key verified it' });
 }
 
 // ---------------------------------------------------------------------------
@@ -702,17 +867,25 @@ function beginSignIn(req, res, surfaceId, options) {
   return inFlowRealm(surface, function () {
     const found = clientOf(surface);
     if (!found.ok) {
-      log.error('oidc_rp: the ' + surface.label + ' cannot start a sign-in. ' +
+      log.error(errorCodes.tag(errorCodes.codeOf(found) || 'STS-AUTHN-0112') +
+                'oidc_rp: the ' + surface.label + ' cannot start a sign-in. ' +
                 found.why);
       log.debug('Leaving beginSignIn(). There is no client.');
-      return { ok: false, why: found.why };
+      return coded(errorCodes.codeOf(found) || 'STS-AUTHN-0112',
+                   { ok: false, why: found.why, reason: 'no-client' }, res);
     }
     const publicBase = publicBaseOf(req);
     const redirectUri = publicBase + surface.callbackPath;
-    ensureRedirectUri(surface, found.client, redirectUri);
+    const registered = ensureRedirectUri(surface, found.client, redirectUri);
+    if (!registered.ok) {
+      log.debug('Leaving beginSignIn(). The address is not registered.');
+      return coded(errorCodes.codeOf(registered) || 'STS-AUTHN-0114',
+                   { ok: false, why: registered.why, reason: 'unregistered-address' }, res);
+    }
 
     const store = flows;
-    if (store.size >= MAX_FLOWS) {
+    const cap = maxFlows();
+    if (store.size >= cap) {
       // The oldest goes, exactly as `federation_sp.js` does it: the cap bounds
       // memory and the eviction has to fall on the flow least likely to still
       // be wanted.
@@ -725,7 +898,7 @@ function beginSignIn(req, res, surfaceId, options) {
         }
       });
       if (oldestKey) {
-        log.warn('oidc_rp: ' + MAX_FLOWS + ' sign-ins are in flight in this ' +
+        log.warn('oidc_rp: ' + cap + ' sign-ins are in flight in this ' +
                  'realm, so the oldest is being dropped. Somebody who was part ' +
                  'way through will be sent round again.');
         store.delete(oldestKey);
@@ -802,17 +975,17 @@ async function handleCallback(req, res, surfaceId) {
                 (query.error_description ? ' — ' + String(query.error_description) : '');
     log.info('oidc_rp: the ' + surface.label + ' sign-in was refused. ' + why);
     log.debug('Leaving handleCallback(). The AS refused.');
-    return { ok: false, why: why, refusedByAs: true };
+    return coded('STS-AUTHN-0121', { ok: false, why: why, refusedByAs: true }, res);
   }
 
   const state = String(query.state || '');
   const code = String(query.code || '');
   if (!state || !code) {
     log.debug('Leaving handleCallback(). No code or no state.');
-    return { ok: false,
+    return coded('STS-AUTHN-0122', { ok: false,
              why: 'the callback carried no ' + (state ? 'code' : 'state') +
                   '. It is reached by the authorization endpoint sending a ' +
-                  'browser here and not by being opened directly.' };
+                  'browser here and not by being opened directly.' }, res);
   }
 
   return inFlowRealm(surface, async function () {
@@ -825,10 +998,10 @@ async function handleCallback(req, res, surfaceId) {
     flows.delete(state);
     if (!flow) {
       log.debug('Leaving handleCallback(). No such flow.');
-      return { ok: false,
+      return coded('STS-AUTHN-0123', { ok: false,
                why: 'this sign-in is not one this service started, or it has ' +
                     'already been completed, or it took longer than ' +
-                    (FLOW_TTL_MS / 60000) + ' minutes. Start again.' };
+                    Math.round(flowTtlMs() / 1000) + ' seconds. Start again.' }, res);
     }
     if (flow.surface !== surface.id) {
       // The state belongs to the OTHER surface. Refused rather than honoured,
@@ -836,18 +1009,21 @@ async function handleCallback(req, res, surfaceId) {
       // session behind the console's cookie or the other way round.
       log.warn('oidc_rp: a ' + flow.surface + ' state was presented at the ' +
                surface.id + ' callback. Refused.');
-      return { ok: false, why: 'this sign-in belongs to a different surface' };
+      return coded('STS-AUTHN-0124',
+                   { ok: false, why: 'this sign-in belongs to a different surface' }, res);
     }
-    if (Date.now() - flow.startedAt > FLOW_TTL_MS) {
+    const ttlMs = flowTtlMs();
+    if (Date.now() - flow.startedAt > ttlMs) {
       log.debug('Leaving handleCallback(). The flow expired.');
-      return { ok: false,
-               why: 'this sign-in took longer than ' + (FLOW_TTL_MS / 60000) +
-                    ' minutes and has expired. Start again.' };
+      return coded('STS-AUTHN-0125', { ok: false,
+               why: 'this sign-in took longer than ' + Math.round(ttlMs / 1000) +
+                    ' seconds (authn.pendingTtlS) and has expired. Start again.' }, res);
     }
 
     const found = clientOf(surface);
     if (!found.ok) {
-      return { ok: false, why: found.why };
+      return coded(errorCodes.codeOf(found) || 'STS-AUTHN-0112',
+                   { ok: false, why: found.why }, res);
     }
     const client = found.client;
     const publicBase = publicBaseOf(req);
@@ -884,9 +1060,11 @@ async function handleCallback(req, res, surfaceId) {
       body: form.toString()
     });
     if (!tokenAnswer.ok) {
-      log.error('oidc_rp: the ' + surface.label + ' could not redeem its code. ' +
+      log.error(errorCodes.tag(errorCodes.codeOf(tokenAnswer) || 'STS-AUTHN-0120') +
+                'oidc_rp: the ' + surface.label + ' could not redeem its code. ' +
                 tokenAnswer.why);
-      return { ok: false, why: tokenAnswer.why };
+      return coded(errorCodes.codeOf(tokenAnswer) || 'STS-AUTHN-0120',
+                   { ok: false, why: tokenAnswer.why }, res);
     }
     if (tokenAnswer.status !== 200 || !tokenAnswer.json) {
       const detail = (tokenAnswer.json && tokenAnswer.json.error)
@@ -894,9 +1072,9 @@ async function handleCallback(req, res, surfaceId) {
           (tokenAnswer.json.error_description
             ? ' — ' + tokenAnswer.json.error_description : '')
         : tokenAnswer.text;
-      return { ok: false,
+      return coded('STS-AUTHN-0126', { ok: false,
                why: 'the token endpoint answered ' + tokenAnswer.status + ': ' +
-                    detail };
+                    detail }, res);
     }
     const idToken = String(tokenAnswer.json.id_token || '');
     if (!idToken) {
@@ -905,10 +1083,10 @@ async function handleCallback(req, res, surfaceId) {
       // in, which is the distinction `federation_sp.js` warns about on every
       // OAuth-shaped federated sign-in. Signing somebody in on it would be
       // signing in as nobody.
-      return { ok: false,
+      return coded('STS-AUTHN-0127', { ok: false,
                why: 'the token response carried no id_token, so nothing in it ' +
                     'says who signed in. An access token means a client was ' +
-                    'authorized, not that a person authenticated.' };
+                    'authorized, not that a person authenticated.' }, res);
     }
 
     // ---------------------------------------------------------------------
@@ -921,10 +1099,10 @@ async function handleCallback(req, res, surfaceId) {
       host: host
     });
     if (!jwksAnswer.ok || jwksAnswer.status !== 200 || !jwksAnswer.json) {
-      return { ok: false,
+      return coded('STS-AUTHN-0128', { ok: false,
                why: 'this service\'s own JWKS at ' + JWKS_PATH +
                     ' could not be read: ' +
-                    (jwksAnswer.why || ('it answered ' + jwksAnswer.status)) };
+                    (jwksAnswer.why || ('it answered ' + jwksAnswer.status)) }, res);
     }
     const keys = Array.isArray(jwksAnswer.json.keys) ? jwksAnswer.json.keys : [];
 
@@ -937,10 +1115,13 @@ async function handleCallback(req, res, surfaceId) {
       nonce: flow.nonce
     });
     if (!verified.ok) {
-      log.error('oidc_rp: the ' + surface.label + ' refused the ID Token it ' +
+      const idTokenCode = errorCodes.codeOf(verified) || 'STS-AUTHN-0133';
+      log.error(errorCodes.tag(idTokenCode) +
+                'oidc_rp: the ' + surface.label + ' refused the ID Token it ' +
                 'was issued. ' + verified.why);
       audit.audit({
         action: 'session.refused',
+        errorCode: idTokenCode,
         actor: '',
         protocol: 'OAuth 2.0 / OIDC',
         channel: 'http',
@@ -951,17 +1132,17 @@ async function handleCallback(req, res, surfaceId) {
         detail: { surface: surface.id, client_id: surface.clientId,
                   why: verified.why }
       });
-      return { ok: false,
+      return coded(idTokenCode, { ok: false,
                why: 'the ID Token this service issued did not verify: ' +
-                    verified.why };
+                    verified.why }, res);
     }
 
     const claims = verified.claims || {};
     const username = String(claims.preferred_username || claims.sub || '');
     if (!username) {
-      return { ok: false,
+      return coded('STS-AUTHN-0135', { ok: false,
                why: 'the ID Token names nobody: it carries neither ' +
-                    'preferred_username nor sub' };
+                    'preferred_username nor sub' }, res);
     }
 
     // ---------------------------------------------------------------------
@@ -1049,5 +1230,12 @@ module.exports = {
   // For the two surfaces' own metadata pages and for the tests: which client a
   // surface is, so that nothing has to write the identifier down twice.
   clientIdFor: function (surfaceId) { return surfaceOf(surfaceId).clientId; },
-  cookieFor: function (surfaceId) { return surfaceOf(surfaceId).cookie; }
+  cookieFor: function (surfaceId) { return surfaceOf(surfaceId).cookie; },
+  // For `tests/oidc_rp_addresses.js` (2026-09-12): the address rule and the
+  // loopback origin are the two halves of this file no request can see
+  // directly — one decides what is written onto an entry, the other where a
+  // socket is opened.
+  ensureRedirectUri: ensureRedirectUri,
+  loopbackOrigin: loopbackOrigin,
+  flowTtlMs: flowTtlMs
 };

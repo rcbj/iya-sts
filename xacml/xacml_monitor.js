@@ -121,6 +121,9 @@
 
 const { log } = require('../common/helpers');
 const config = require('../common/config');
+// The error-code registry (a leaf). Tagged log lines only: an audit row per
+// failed counter would be a second record on the path of every decision.
+const errorCodes = require('../common/error_codes');
 const realms = require('../common/realms');
 // WHAT OTHER PROCESSES DECIDED. A LIBRARY (rule 3) requiring only `config` and
 // `realms`, which is what keeps this file's require list to leaves — the
@@ -268,7 +271,8 @@ function record(id, outcome) {
       // would otherwise appear as a row on a page whose whole claim is that it
       // lists every asker of the PDP in this process, and a row nothing
       // describes is worse than a missing one.
-      log.warn('xacml: a decision was recorded against "' + id + '", which is ' +
+      log.warn(errorCodes.tag('STS-XACML-0063') +
+               'xacml: a decision was recorded against "' + id + '", which is ' +
                'not one of the ' + PEPS.length + ' askers xacml_monitor.js ' +
                'knows about. It is NOT counted — /admin/xacml/monitor claims ' +
                'to list every one of them, and a row with no description ' +
@@ -323,7 +327,8 @@ function record(id, outcome) {
   } catch (error) {
     // SWALLOWED, and the comment is the reason rather than an apology: this is
     // on the path of every issuance and every gated request in the service.
-    log.error('xacml: a decision counter threw and was ignored; the decision ' +
+    log.error(errorCodes.tag('STS-XACML-0062') +
+              'xacml: a decision counter threw and was ignored; the decision ' +
               'itself is unaffected: ' + error.message);
   }
 }
@@ -424,7 +429,8 @@ function snapshot(policies) {
     // half of this snapshot is this process's own memory and is always
     // answerable; the remote half needs the directory, and a build with no
     // `ldap_server.js` has none.
-    log.warn('xacml: the remote PEP register could not be read for the ' +
+    log.warn(errorCodes.tag('STS-XACML-0064') +
+             'xacml: the remote PEP register could not be read for the ' +
              'monitor, so only the embedded half is reported: ' +
              error.message);
     remoteRows = [];

@@ -66,14 +66,29 @@
 // across families — but a logout endpoint whose default was partial would be a
 // logout endpoint that quietly left something behind.
 //
-// **NO PASSWORD IS CHECKED AND `?username=` IS HONOURED.** With no parameter
-// this endpoint acts on whoever the session cookie names, and a browser with no
-// session is sent to the sign-in screen and returned here. `username=` names
-// somebody else, and it grants nothing that was not already true: no sign-in
-// screen in this service checks a password, so anybody who can reach this port
-// can already BECOME that person in one request. What it buys is a headless
-// test. `logout.anyUser` turns it off for a deployment that wants the tighter
-// story, and the page says which of the two it is running under.
+// **IN DEVELOPMENT MODE NO PASSWORD IS CHECKED AND `?username=` IS HONOURED.**
+// With no parameter this endpoint acts on whoever the session cookie names, and
+// a browser with no session is sent to the sign-in screen and returned here.
+// `username=` names somebody else, and in development it grants nothing that
+// was not already true: no sign-in screen there checks a password, so anybody
+// who can reach this port can already BECOME that person in one request. What
+// it buys is a headless test. `logout.anyUser` turns it off for a deployment
+// that wants the tighter story, and the page says which of the two it is
+// running under.
+//
+// **THAT ARGUMENT IS FALSE IN PRODUCT MODE, AND UNTIL 2026-09-12 THE ENDPOINT
+// BEHAVED AS IF IT WERE NOT.** Product mode verifies a password at every door,
+// so "anybody can already become that person" stops being true — and what was
+// left was an ANONYMOUS request, holding no cookie and no credential, that
+// ended any named person's sessions, revoked their refresh tokens and dropped
+// their directory connections. It is `mode.opensTestControls()` now, AND the
+// setting: in product a name is honoured only when it names the person the
+// session cookie already names, and anything else is refused with the
+// operator's door in the sentence. **The operator's door is the answer to
+// "sign somebody else out", not a weaker version of this one**: `/admin/logout`
+// and `/admin-api/logout` require the console's roles or an access token
+// carrying `admin:write`, which is the credential an act on somebody else's
+// account needs.
 //
 // **THE OPERATOR'S DOOR IS `/admin/logout`, AND IT IS A DIFFERENT SURFACE.**
 // This page is a person signing themselves out. The console's is an operator
@@ -91,11 +106,17 @@ const { log, xmlEscape, baseUrlOf, parseBody, nowSec } = require('../common/help
 // The input validator. A LEAF (rule 3): it registers no route and closes no cycle.
 const validation = require('../common/validation');
 const config = require('../common/config');
+// Whether the TEST CONTROLS are open — `?username=` naming somebody else is one
+// of them. A LEAF (rule 3): it requires only `config`.
+const mode = require('../common/mode');
 // The token registry, its ONE revocation set, and identityKeyOf() — which is
-// what makes `alice`, `alice@STS.MOCK` and `urn:sts-mock:user:alice` one person
+// what makes `alice`, `alice@STS.MOCK` and `urn:sts:user:alice` one person
 // here rather than three, exactly as it does on /admin/users.
 const stats = require('../common/admin_stats');
 const audit = require('../common/audit');
+// The error-code registry, a LEAF. A refused request is marked on its
+// response; a family that could not be read or ended is an audit row.
+const errorCodes = require('../common/error_codes');
 // The session store. Everything about ending one — the RFC 9700 refresh
 // revocation and the single `session.end` audit row — is behind
 // endSessionById(), which is why this module never touches the map itself.
@@ -137,8 +158,11 @@ function maxRows() {
   return config.value('logout.maxRows');
 }
 
+// May a request name somebody OTHER than the person its session cookie names?
+// Only where the test controls are open AND the setting allows it — see the
+// header for why product mode is not an "and the setting" but a "no".
 function anyUserAllowed() {
-  return !!config.value('logout.anyUser');
+  return mode.opensTestControls() && !!config.value('logout.anyUser');
 }
 
 // ---------------------------------------------------------------------------
@@ -891,9 +915,13 @@ function contextFor(key, issuer, by) {
 // with no explanation is the thing that gets misread:
 //
 //   * a browser session expires at an ABSOLUTE instant fixed when it was
-//     created — an hour after the sign-in — and USING IT DOES NOT EXTEND IT.
-//     There is no idle timeout here at all, so a session in constant use dies
-//     at the same moment as one nobody touched;
+//     created — `authn.sessionLifetimeS` after the sign-in, an hour by default
+//     — and USING IT DOES NOT EXTEND IT. An idle timeout is
+//     `authn.sessionIdleTimeoutS` and is OFF by default, in which case a
+//     session in constant use dies at the same moment as one nobody touched;
+//     the sentence each row carries is BUILT from the two settings, because it
+//     said "an hour" and "no idle timeout" as literals until 2026-09-12 and
+//     would have gone on saying them after an operator changed both;
 //   * a TGT expires at the `endtime` the KDC sealed INTO the ticket. Nothing
 //     here can move it: the ticket is in somebody's cache and is valid because
 //     it decrypts and its endtime has not passed. That is the whole of
@@ -918,10 +946,50 @@ function contextFor(key, issuer, by) {
 // every one of those rows, because a button that quietly did more than it said
 // would be worse than no button.
 // ---------------------------------------------------------------------------
+// A duration in the words a reader uses, for the two rules below.
+function durationWords(ms) {
+  const seconds = Math.round(ms / 1000);
+  if (seconds % 3600 === 0) {
+    const hours = seconds / 3600;
+    return hours === 1 ? 'an hour' : hours + ' hours';
+  }
+  if (seconds % 60 === 0) {
+    const minutes = seconds / 60;
+    return minutes === 1 ? 'a minute' : minutes + ' minutes';
+  }
+  return seconds + ' seconds';
+}
+
+// The idle clause both session rules share, built from the setting.
+function idleClause() {
+  const idle = authn.sessionIdleTimeoutMs();
+  return idle
+    ? ' It also ends after ' + durationWords(idle) + ' unused ' +
+      '(authn.sessionIdleTimeoutS), whichever comes first.'
+    : '';
+}
+
+// ---------------------------------------------------------------------------
+// **THE TWO SESSION RULES ARE GETTERS SINCE 2026-09-12**, because both are
+// sentences about two settings and were written as literals — "this service
+// has no idle timeout", "an hour after the last call". A getter keeps the
+// object's shape for every reader (`admin.js`, the management API, JSON
+// serialisation all see ordinary properties) while the words follow the
+// configuration. The Kerberos and LDAP rules are facts about those protocols
+// and stay strings.
+// ---------------------------------------------------------------------------
 const SESSION_EXPIRY_RULES = {
-  session: 'Absolute, fixed when the session was created and NOT extended by ' +
-           'use: this service has no idle timeout, so a session somebody is ' +
-           'using ends at the same instant as one nobody has touched.',
+  get session() {
+    return authn.sessionIdleTimeoutMs()
+      ? 'Absolute, fixed when the session was created — ' +
+        durationWords(authn.sessionLifetimeMs()) + ' after the sign-in ' +
+        '(authn.sessionLifetimeS) — and NOT extended by use.' + idleClause()
+      : 'Absolute, fixed when the session was created — ' +
+        durationWords(authn.sessionLifetimeMs()) + ' after the sign-in ' +
+        '(authn.sessionLifetimeS) — and NOT extended by use: this service has ' +
+        'no idle timeout configured, so a session somebody is using ends at ' +
+        'the same instant as one nobody has touched.';
+  },
   krb5: 'The endtime the KDC sealed into the ticket. Nothing here can move ' +
         'it or take it back — a TGT is valid because it decrypts and its ' +
         'endtime has not passed, and short lifetimes ARE Kerberos\'s ' +
@@ -935,12 +1003,16 @@ const SESSION_EXPIRY_RULES = {
   // request, so the session exists only while a client is actually calling and
   // an idle one genuinely is finished; a browser holds a cookie that outlives
   // its own use, which is why that one is absolute.
-  api: 'Extended by use. These surfaces authenticate on every request, so the ' +
-       'session is touched each time and expires an hour after the last call ' +
-       'rather than an hour after the first. Ending it revokes NOTHING: the ' +
-       'token, password or certificate behind it is accepted without ' +
-       'consulting any register, so the next call authenticates again and the ' +
-       'row comes back.'
+  get api() {
+    const life = durationWords(authn.sessionLifetimeMs());
+    return 'Extended by use. These surfaces authenticate on every request, so ' +
+           'the session is touched each time and expires ' + life + ' after the ' +
+           'last call rather than ' + life + ' after the first ' +
+           '(authn.sessionLifetimeS).' + idleClause() + ' Ending it revokes ' +
+           'NOTHING: the token, password or certificate behind it is accepted ' +
+           'without consulting any register, so the next call authenticates ' +
+           'again and the row comes back.';
+  }
 };
 
 function liveSessions() {
@@ -975,7 +1047,12 @@ function liveSessions() {
     if (session.chosen === false) {
       return;
     }
-    if (session.expires && session.expires <= nowMs) {
+    // `authn.sessionEnded()` rather than a comparison of `expires` here, so an
+    // idle-timed-out session is off this list exactly when `authn.js` would
+    // refuse it — two answers to *has this ended* is the thing this module
+    // exists to prevent. The sweep's `<=` at the boundary is kept.
+    if ((session.expires && session.expires <= nowMs) ||
+        authn.sessionEnded(session, nowMs)) {
       return;
     }
     const username = (session.user && session.user.username) || '';
@@ -1213,7 +1290,7 @@ function liveSessions() {
 // `key` is the console's identity key — `stats.identityKeyOf()` applied to
 // whatever was presented — so that a person who signed in as `alice`, holds a
 // Kerberos principal `alice@STS.MOCK` and has a token with `sub`
-// `urn:sts-mock:user:alice` is ONE row set rather than three.
+// `urn:sts:user:alice` is ONE row set rather than three.
 //
 // A COLLECTOR THAT THROWS DOES NOT TAKE THE PAGE DOWN. Nine modules are read
 // here and one of them being mid-change is exactly when somebody needs this
@@ -1236,7 +1313,12 @@ function inventoryFor(key, issuer) {
     } catch (e) {
       // Reported and not thrown. See the block above.
       failure = e.message;
-      log.warn('logout: the ' + family.id + ' family could not be read: ' + e.message);
+      log.warn(errorCodes.tag('STS-LOGOUT-0004') +
+               'logout: the ' + family.id + ' family could not be read: ' + e.message);
+      audit.failure('STS-LOGOUT-0004', {
+        protocol: 'Logout', channel: 'internal', target: ctx.key, outcome: 'error',
+        summary: 'The ' + family.id + ' family could not be read for a sign-out inventory',
+        detail: { family: family.id, why: e.message } });
     }
     total += rows.length;
     // The cap is on what is DRAWN. A global logout still reaches everything —
@@ -1288,8 +1370,13 @@ function allRows(ctx) {
       // Same rule as inventoryFor(): a family that cannot be read must not stop
       // the rest being ended. Logged, and the caller's report says how many
       // rows it acted on, so a short answer is visible rather than silent.
-      log.warn('logout: the ' + family.id + ' family could not be read while terminating: ' +
+      log.warn(errorCodes.tag('STS-LOGOUT-0005') +
+               'logout: the ' + family.id + ' family could not be read while terminating: ' +
                e.message);
+      audit.failure('STS-LOGOUT-0005', {
+        protocol: 'Logout', channel: 'internal', target: ctx.key, outcome: 'error',
+        summary: 'The ' + family.id + ' family could not be read while signing out',
+        detail: { family: family.id, why: e.message } });
     }
   });
   log.debug("Leaving allRows().");
@@ -1348,8 +1435,14 @@ function terminate(key, selection, opts) {
     try {
       rows = family.collect(ctx) || [];
     } catch (e) {
-      log.warn('logout: the ' + family.id + ' family could not be read while terminating: ' +
+      log.warn(errorCodes.tag('STS-LOGOUT-0005') +
+               'logout: the ' + family.id + ' family could not be read while terminating: ' +
                e.message);
+      audit.failure('STS-LOGOUT-0005', {
+        protocol: 'Logout', channel: options.channel || 'http', target: ctx.key,
+        outcome: 'error',
+        summary: 'The ' + family.id + ' family could not be read while signing out',
+        detail: { family: family.id, why: e.message } });
       skipped.push({ id: family.id + ':*', family: family.id,
                      message: 'this family could not be read: ' + e.message });
       return;
@@ -1370,7 +1463,13 @@ function terminate(key, selection, opts) {
       try {
         outcome = family.terminate(r, ctx) || { ok: false, message: 'no answer' };
       } catch (e) {
-        log.warn('logout: ending ' + r.id + ' failed: ' + e.message);
+        log.warn(errorCodes.tag('STS-LOGOUT-0006') +
+                 'logout: ending ' + r.id + ' failed: ' + e.message);
+        audit.failure('STS-LOGOUT-0006', {
+          protocol: 'Logout', channel: options.channel || 'http', target: ctx.key,
+          outcome: 'error',
+          summary: 'Ending one ' + family.id + ' item during a sign-out failed',
+          detail: { family: family.id, kind: String(r.kind || ''), why: e.message } });
         outcome = { ok: false, message: 'ending this failed: ' + e.message };
       }
       (outcome.ok ? done : skipped).push({
@@ -1390,6 +1489,9 @@ function terminate(key, selection, opts) {
   audit.audit({
     action: global ? 'logout.global' : 'logout.selective',
     outcome: done.length ? 'success' : 'refused',
+    // A sign-out that ended nothing at all names that condition; one that
+    // ended anything is the success it always was.
+    errorCode: done.length ? '' : 'STS-LOGOUT-0007',
     actor: options.actor || ctx.key,
     protocol: 'Logout',
     channel: options.channel || 'http',
@@ -1552,12 +1654,18 @@ function inventoryPage(base, inventory, username, message, error) {
     '<span class="sub">The default. A POST to <code>/logout</code> with nothing selected does ' +
     'exactly this.</span>' +
     '</div></form>' +
-    '<p class="sub">This service checks no password anywhere' +
+    // BUILT FROM THE MODE, because "this service checks no password anywhere"
+    // was printed on a product-mode page for as long as that mode existed.
+    '<p class="sub">' +
     (anyUserAllowed()
-      ? ', so <code>?username=</code> names anybody and grants nothing that was not already ' +
-        'true — signing in as them takes one request. <code>logout.anyUser</code> turns that off.'
-      : '. <code>logout.anyUser</code> is off, so this endpoint acts only on the session you ' +
-        'are holding.') +
+      ? 'This service checks no password anywhere, so <code>?username=</code> names anybody ' +
+        'and grants nothing that was not already true — signing in as them takes one ' +
+        'request. <code>logout.anyUser</code> turns that off.'
+      : (mode.opensTestControls()
+          ? '<code>logout.anyUser</code> is off, so this endpoint acts only on the session ' +
+            'you are holding.'
+          : 'This service is in product mode, so this endpoint acts only on the session you ' +
+            'are holding.')) +
     ' The operator\'s view of the same lists, with an undo, is <code>/admin/logout</code>.</p>';
   log.debug("Leaving inventoryPage().");
   return page('Sign out', inner);
@@ -1660,9 +1768,12 @@ function send(res, built, status) {
 //
 // Three answers and the order matters:
 //
-//   1. an explicit `username`, when `logout.anyUser` allows one. It is checked
-//      FIRST so that a person holding a session can still look at somebody
-//      else's list — which is what a test driving this endpoint does.
+//   1. an explicit `username`, when `logout.anyUser` allows one AND the test
+//      controls are open (development mode). It is checked FIRST so that a
+//      person holding a session can still look at somebody else's list —
+//      which is what a test driving this endpoint does. Where naming another
+//      person is closed, a name that IS the caller's own is still honoured,
+//      because the page's own forms post it.
 //   2. the session cookie.
 //   3. nobody, which is not an error: it means "sign in first", and the caller
 //      is sent to the authentication service and returned here.
@@ -1677,7 +1788,21 @@ function subjectOf(req, body) {
   const asked = String((body && body.username) || req.query.username || '').trim();
   if (asked) {
     if (!anyUserAllowed()) {
-      log.debug("Leaving subjectOf(). A name was given and logout.anyUser is off.");
+      // A NAME THAT IS THE CALLER'S OWN IS NOT SOMEBODY ELSE, and refusing it
+      // would break the page's own forms: every one of them posts the name it
+      // was drawn for as a hidden field. So where naming another person is
+      // closed, the name is compared with the session's identity — by the same
+      // `identityKeyOf()` normalisation everything downstream uses — and
+      // honoured when it is the same person.
+      const own = authn.sessionOf(req);
+      const ownName = own && own.user ? own.user.username : '';
+      if (ownName && stats.identityKeyOf(ownName) === stats.identityKeyOf(asked)) {
+        log.debug("Leaving subjectOf(). A name was given and it is the caller's own.");
+        return { username: ownName, key: stats.identityKeyOf(ownName), session: own };
+      }
+      log.debug("Leaving subjectOf(). A name was given and naming somebody else " +
+                "is closed (" + (mode.opensTestControls()
+                  ? 'logout.anyUser is off' : 'product mode') + ").");
       return { refused: true, asked: asked };
     }
     log.debug("Leaving subjectOf(). Named: " + asked);
@@ -1707,8 +1832,17 @@ function wantsJson(req) {
 
 function refusedNamedUser(req, res, asked) {
   log.debug("Entering refusedNamedUser().");
-  const message = 'logout.anyUser is off on this instance, so /logout acts only on the session ' +
-                  'you are holding. It was asked about "' + asked + '".';
+  // THE REASON NAMES WHICH OF THE TWO CLOSED IT, because the fixes differ: a
+  // setting somebody can turn back on, or a mode in which it is not offered.
+  const message = (mode.opensTestControls()
+      ? 'logout.anyUser is off on this instance'
+      : 'This service is in product mode, where a sign-out cannot name ' +
+        'somebody else whatever logout.anyUser says') +
+    ', so /logout acts only on the session you are holding. It was asked about "' +
+    asked + '". To sign another person out, use /admin/logout (the console\'s ' +
+    'Admin Write role) or POST /admin-api/logout (an access token carrying ' +
+    'admin:write).';
+  errorCodes.mark(res, 'STS-LOGOUT-0001');
   if (wantsJson(req)) {
     res.status(403).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify({ error: 'forbidden', error_description: message }, null, 2));
@@ -1716,9 +1850,14 @@ function refusedNamedUser(req, res, asked) {
     return;
   }
   send(res, page('Sign out', '<h1>Sign out</h1><div class="err">' + xmlEscape(message) +
-                 '</div><p class="sub">Sign in as that person at <code>/authn/login</code> — ' +
-                 'no password is checked — or use <code>/admin/logout</code>, which is the ' +
-                 'operator\'s door and is behind the console\'s two roles.</p>'), 403);
+                 '</div><p class="sub">' +
+                 (mode.verifiesCredentials()
+                   ? 'Signing yourself out needs no role; signing somebody else out is an ' +
+                     'act on their account and needs the operator\'s door.'
+                   : 'Sign in as that person at <code>/authn/login</code> — no password is ' +
+                     'checked in development mode') +
+                 ' <code>/admin/logout</code> is the operator\'s door and is behind the ' +
+                 'console\'s two roles.</p>'), 403);
   log.debug("Leaving refusedNamedUser().");
 }
 
@@ -1761,14 +1900,17 @@ app.get(LOGOUT_PATH, function (req, res) {
       // A program is told to name somebody rather than redirected to a screen
       // it cannot read — the distinction admin.js's gate makes, for the same
       // reason: a 302 to HTML arrives as a 200 full of markup.
+      errorCodes.mark(res, 'STS-LOGOUT-0002');
       res.status(401).type('application/json').set('Cache-Control', 'no-store')
          .send(JSON.stringify({
            error: 'no_subject',
            error_description: anyUserAllowed()
              ? 'There is no session cookie on this request. Name somebody with ?username=, or ' +
                'sign in at /authn/login first.'
-             : 'There is no session cookie on this request, and logout.anyUser is off, so ' +
-               'there is nobody for this endpoint to act on. Sign in at /authn/login first.'
+             : 'There is no session cookie on this request, and naming somebody is closed (' +
+               (mode.opensTestControls() ? 'logout.anyUser is off' : 'product mode') +
+               '), so there is nobody for this endpoint to act on. Sign in at /authn/login ' +
+               'first.'
          }, null, 2));
       log.debug("Leaving the logout endpoint. No subject, answered 401.");
       return;
@@ -1822,8 +1964,10 @@ app.post(LOGOUT_PATH, function (req, res) {
       ? 'There is nobody to sign out: this request carries no session cookie and named no ' +
         'username. A POST is never redirected to the sign-in screen — a 303 would make it a ' +
         'GET and the fields would be gone.'
-      : 'There is nobody to sign out: this request carries no session cookie, and ' +
-        'logout.anyUser is off.';
+      : 'There is nobody to sign out: this request carries no session cookie, and naming ' +
+        'somebody is closed (' +
+        (mode.opensTestControls() ? 'logout.anyUser is off' : 'product mode') + ').';
+    errorCodes.mark(res, 'STS-LOGOUT-0002');
     if (wantsJson(req)) {
       res.status(401).type('application/json').set('Cache-Control', 'no-store')
          .send(JSON.stringify({ error: 'no_subject', error_description: message }, null, 2));
@@ -1862,6 +2006,7 @@ app.post(LOGOUT_PATH, function (req, res) {
   const asked = validation.checkParsed(body, 'body', LOGOUT_FORM);
   if (!asked.ok) {
     log.debug('Leaving the sign-out endpoint. ' + asked.detail);
+    errorCodes.mark(res, 'STS-LOGOUT-0003');
     return send(res, page('Sign out',
       '<h1>Sign out</h1><div class="err">' + xmlEscape(asked.detail) +
       '</div>'), 400);
@@ -1958,5 +2103,10 @@ module.exports = {
   // reader that installed the inventory and not this would leave that page
   // saying no reader is loaded on a service that plainly has one.
   liveSessions: liveSessions,
-  SESSION_EXPIRY_RULES: SESSION_EXPIRY_RULES
+  SESSION_EXPIRY_RULES: SESSION_EXPIRY_RULES,
+  // WHO A /logout REQUEST IS ABOUT, exported for `tests/session_clocks.js`
+  // (2026-09-12) and for no caller. Whether an anonymous `?username=` may name
+  // somebody else is a decision about two settings and a mode, and it is the
+  // one piece of this endpoint a test can ask without a listener.
+  subjectOf: subjectOf
 };

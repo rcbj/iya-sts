@@ -16,7 +16,21 @@ RUN apt-get -y install curl \
         wget \
         unzip \
         util-linux \
-        bsdextrautils
+        bsdextrautils \
+        # SECONDARY IP ADDRESSES FOR THE PER-REALM SPIFFE LISTENERS (2026-09-12).
+        #
+        # A realm with SPIFFE turned on binds a Workload API and a SPIRE
+        # Server API of its own, and what keeps two realms apart is the
+        # ADDRESS rather than the port — a SPIFFE client has nowhere else to
+        # name a tenant, because the gRPC method name is fixed by the
+        # specification. So a container running two realms needs two
+        # addresses, and `ip addr add` is how it gets them.
+        #
+        # ONE PACKAGE, and it is in the image rather than installed at start
+        # for the ordinary reason: a container that apt-gets on the way up
+        # fails to start when the network it is being given is the thing that
+        # is broken.
+        iproute2
 
 # Install NVM
 ENV NVM_DIR /usr/local/nvm
@@ -66,6 +80,7 @@ COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs
 RUN npm install --omit=dev && npm cache clean --force
 
+
 # THE WHOLE SOURCE TREE IN ONE LINE, and that is deliberate rather than lazy.
 #
 # The service is a shell: server.js requires the other modules and listens, so a
@@ -105,6 +120,48 @@ RUN npm install --omit=dev && npm cache clean --force
 # .dockerignore; node-ldapjs is copied above, ahead of the install, and copying
 # it again here is a no-op on identical content.
 COPY . ./
+
+# ---------------------------------------------------------------------------
+# THE SECRET-STORE SDK, AND WHY IT IS INSTALLED HERE RATHER THAN DECLARED AS A
+# DEPENDENCY (2026-09-12).
+#
+# `common/secrets.js` reads the key-encryption key and the database password
+# from one of five places, and four of them need somebody else's SDK. Those are
+# OPTIONAL PEER dependencies on purpose — that file's header argues it at
+# length: this package is installed by the debugger's suite and by CI, and
+# carrying four cloud SDKs to use none of them would be a cost every one of
+# those installs pays.
+#
+# **THE IMAGE IS THE OTHER CASE.** The stack this repository ships now brings up
+# an OpenBao container and points the service at it, so the image REQUIRES the
+# Vault SDK to start. It is installed here, with `--no-save`, so that the
+# container has it and a checkout still does not — which is exactly the split
+# the peer declaration describes.
+#
+# **IT IS AFTER `COPY . ./` AND THAT IS NOT A STYLE CHOICE.** Installed
+# before it, the package is there at that step and GONE from the finished
+# image: the copy brings the build context's own `node_modules` over the
+# top of the one npm just wrote into. `.dockerignore` carries
+# `**/node_modules`, which reads as though it prevents exactly that and does
+# not for the tree's own top-level directory. Installing after the copy is
+# the fix that does not depend on reading that pattern correctly.
+#
+# The three cloud SDKs are deliberately NOT installed: nothing in this stack
+# dials AWS, GCP or Azure, and a deployment that does runs one `npm install` in
+# its own image. `secrets.js` names the package to install when one is missing.
+# **AND IT GOES IN A PREFIX OF ITS OWN, WHICH IS npm's DOING.** `npm install
+# node-vault` inside this tree does NOTHING and says "up to date": the package
+# is declared here as an OPTIONAL PEER, and npm treats an absent optional peer
+# as a satisfied one — an explicit install request included. Every spelling of
+# `--include=optional`, `--no-save` and `--force` answers the same way. So the
+# SDK is installed into a prefix that has no opinion about this package.json,
+# and `NODE_PATH` is what makes `require('node-vault')` find it.
+RUN mkdir -p /opt/sts-sdk \
+    && cd /opt/sts-sdk \
+    && npm init -y > /dev/null \
+    && npm install --omit=dev node-vault \
+    && npm cache clean --force
+ENV NODE_PATH=/opt/sts-sdk/node_modules
 # ---------------------------------------------------------------------------
 # AND THE SUITE BACK OUT AGAIN, WHICH .dockerignore USED TO DO.
 #

@@ -90,6 +90,12 @@
 
 const { log } = require('./helpers');
 const config = require('./config');
+// The error-code registry. A LEAF that requires nothing here, so this file stays
+// one (the header argues why that matters). A refusal's code is marked on the
+// RESULT OBJECT as a non-enumerable property — the caller that answers the
+// request reads it back with `errorCodes.codeOf()`, and no serialisation of the
+// result can carry it to a client.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // THE SCHEMA. Published on `/admin/ldap/roles` the way every other container's
@@ -492,13 +498,14 @@ function write(name, record) {
   const problem = checkName(name);
   if (problem) {
     log.debug('Leaving write(). ' + problem);
-    return { ok: false, why: problem };
+    return errorCodes.mark({ ok: false, why: problem }, 'STS-XACML-0055');
   }
   if (!haveDirectory()) {
     log.debug('Leaving write(). No directory.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'There is no embedded directory in this process, so there ' +
-                  'is nowhere to keep a role. ou=roles IS the register.' };
+                  'is nowhere to keep a role. ou=roles IS the register.' },
+             'STS-XACML-0026');
   }
   const given = record || {};
   const attributes = {
@@ -511,9 +518,9 @@ function write(name, record) {
   const written = directory.writeRole(String(name), attributes);
   if (!written) {
     log.debug('Leaving write(). The directory refused.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: 'The directory would not store the role — it is at its ' +
-                  'maximum number of entries.' };
+                  'maximum number of entries.' }, 'STS-XACML-0027');
   }
   log.debug('Leaving write(). Stored.');
   return { ok: true, name: String(name) };
@@ -523,15 +530,16 @@ function remove(name) {
   log.debug('Entering remove(). name=' + name);
   if (isBuiltIn(name)) {
     log.debug('Leaving remove(). Built in.');
-    return { ok: false,
+    return errorCodes.mark({ ok: false,
              why: '"' + name + '" is a built-in role. It is computed rather ' +
                   'than stored, so there is nothing to delete — and an ' +
                   'application requiring it would be requiring something ' +
-                  'that no longer existed.' };
+                  'that no longer existed.' }, 'STS-XACML-0056');
   }
   if (!haveDirectory() || !directory.deleteRole(String(name))) {
     log.debug('Leaving remove(). Not here.');
-    return { ok: false, why: 'There is no role called "' + name + '".' };
+    return errorCodes.mark({ ok: false,
+             why: 'There is no role called "' + name + '".' }, 'STS-XACML-0057');
   }
   log.debug('Leaving remove(). Gone.');
   return { ok: true };
@@ -583,7 +591,8 @@ function rolesOf(who) {
     // should have carried is a defect; an issuance that FAILED because the
     // role register threw would be a worse one, and this service's whole job
     // is to keep answering.
-    log.error('roles: the register threw while resolving roles for "' +
+    log.error(errorCodes.tag('STS-XACML-0053') +
+              'roles: the register threw while resolving roles for "' +
               context.name + '" and was ignored; only the built-in roles ' +
               'were used. ' + error.message);
   }
@@ -687,7 +696,8 @@ function claimFor(who) {
   try {
     names = configuredRolesOf(context);
   } catch (error) {
-    log.error('roles: the register threw while building the roles claim and ' +
+    log.error(errorCodes.tag('STS-XACML-0054') +
+              'roles: the register threw while building the roles claim and ' +
               'was ignored; the token is issued without it. ' + error.message);
     return null;
   }

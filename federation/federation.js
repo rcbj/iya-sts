@@ -157,7 +157,13 @@
 const crypto = require('crypto');
 const config = require('./../common/config');
 const { log, nowSec, randomId } = require('./../common/helpers');
+// The release index below is per trust realm. A LEAF requiring only `config`,
+// so rule 3o's "requires nothing heavier" stays true.
+const realms = require('./../common/realms');
 const audit = require('./../common/audit');
+// The error-code registry, a leaf. See actionRefused() below for why a refused
+// change to the register carries its code on an audit row and not on its result.
+const errorCodes = require('./../common/error_codes');
 // ---------------------------------------------------------------------------
 // THE APPLICATIONS REGISTRY, AND WHY THIS MODULE MAY REQUIRE IT (rule 3o, read
 // the other way round).
@@ -242,13 +248,25 @@ const ROLE_IDS = ROLES.map(function (one) { return one.role; });
 // must carry before it can be enabled. It is read by `readyFor()` below and by
 // nothing else, so the rule a form enforces and the rule the endpoint enforces
 // are one list rather than two.
+//
+// **`fedPeer` IS IN EVERY ROW SINCE 2026-09-12, AND IT WAS IN NONE.** It is the
+// partner's own identifier — the issuer an assertion or an ID Token must name —
+// and `federation_sp.js` skipped the issuer check whenever it was empty, with a
+// warning. So a relationship with no peer accepted an assertion from ANY issuer
+// its configured key had signed for: one certificate shared by two identity
+// providers, or one identity provider hosting several tenants under one key,
+// and either could assert for the other here. That is the surface this
+// directory says cannot be made permissive, so it is fixed in every mode by
+// making the relationship NOT FULLY CONFIGURED without it — refused at the read
+// and named by readinessOf() like every other missing field — rather than by a
+// check that quietly lapses.
 // ---------------------------------------------------------------------------
 const PROTOCOLS = [
   { protocol: 'saml2', label: 'SAML 2.0', family: 'SAML 2.0',
     what: 'The Web Browser SSO profile. This service sends an <AuthnRequest> ' +
           'to the partner and consumes the <Response> at its assertion ' +
           'consumer service, or issues one to the partner from /saml2.',
-    needs: ['fedSsoUrl', 'fedSigningCertificate'],
+    needs: ['fedSsoUrl', 'fedSigningCertificate', 'fedPeer'],
     spec: 'saml-profiles-2.0-os section 4.1' },
   { protocol: 'saml11', label: 'SAML 1.1', family: 'SAML 1.1',
     what: 'The Browser/POST profile. THERE IS NO REQUEST MESSAGE — a SAML 1.1 ' +
@@ -256,20 +274,20 @@ const PROTOCOLS = [
           'browser to is an inter-site transfer URL carrying a TARGET, and what ' +
           'comes back is a <Response> with no InResponseTo to match. See the ' +
           'note about replay on fedNonce below.',
-    needs: ['fedSsoUrl', 'fedSigningCertificate'],
+    needs: ['fedSsoUrl', 'fedSigningCertificate', 'fedPeer'],
     spec: 'saml-profiles-1.1 section 4.1' },
   { protocol: 'wsfed', label: 'WS-Federation 1.2', family: 'WS-Federation',
     what: 'The passive requestor profile. This service sends wa=wsignin1.0 ' +
           'with its own wtrealm and consumes the wresult, which carries a ' +
           'SAML 1.1 or SAML 2.0 assertion inside an RSTR.',
-    needs: ['fedSsoUrl', 'fedSigningCertificate'],
+    needs: ['fedSsoUrl', 'fedSigningCertificate', 'fedPeer'],
     spec: 'WS-Federation 1.2 section 13' },
   { protocol: 'oidc', label: 'OpenID Connect', family: 'OAuth 2.0 / OIDC',
     what: 'The authorization code flow by default, and response_type=id_token ' +
           'with response_mode=form_post where there is to be no back channel ' +
           'at all. The attributes come off the ID Token, and off UserInfo ' +
           'where one is configured.',
-    needs: ['fedSsoUrl', 'fedClientId'],
+    needs: ['fedSsoUrl', 'fedClientId', 'fedPeer'],
     spec: 'OpenID Connect Core 1.0 section 3' },
   { protocol: 'oauth2', label: 'OAuth 2.0', family: 'OAuth 2.0 / OIDC',
     what: 'The authorization code flow with NO ID Token — the attributes come ' +
@@ -278,7 +296,7 @@ const PROTOCOLS = [
           'rather than OIDC with a flag because what identifies the person is ' +
           'a different artifact, and getting that wrong is the whole of what ' +
           'goes wrong when people use OAuth 2.0 for authentication.',
-    needs: ['fedSsoUrl', 'fedTokenUrl', 'fedClientId'],
+    needs: ['fedSsoUrl', 'fedTokenUrl', 'fedClientId', 'fedPeer'],
     spec: 'RFC 6749 section 4.1' }
 ];
 
@@ -461,7 +479,21 @@ const SCHEMA = {
             'a SAML entityID, an OpenID Connect issuer, a WS-Federation ' +
             'wtrealm. On a service-provider-side relationship it is CHECKED — ' +
             'an assertion whose Issuer is not this string is refused — which ' +
-            'is why it is not merely documentation.' },
+            'is why it is not merely documentation, and since 2026-09-12 it is ' +
+            'REQUIRED there: a relationship without it is not fully configured.' },
+    { name: 'fedLocalEntityId', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'WHAT THIS SERVICE IS CALLED TO THIS PARTNER, when that is not the ' +
+            'name this service derives. Empty — the default — derives it from ' +
+            'the base URL the browser reached this service at ' +
+            '(<base>/federation/acs/<id>, which global.publicBaseUrl pins). Set ' +
+            'it to the entityID the partner was configured with: it becomes the ' +
+            'Issuer of the outbound AuthnRequest, the WS-Federation wtrealm, ' +
+            'the SAML 1.1 providerId, this relationship\'s SP metadata ' +
+            'entityID, and the audience an inbound assertion must name — which ' +
+            'is a REFUSAL since 2026-09-12, so a partner that knows this service ' +
+            'by another name needs this set. The assertion consumer URL stays ' +
+            'derived, because it is an address a browser must be able to reach.' },
     { name: 'fedEnabled', kind: 'single', role: 'both', from: 'this register',
       what: 'TRUE/FALSE. A relationship is created DISABLED and nothing about ' +
             'it does anything until it is turned on: a half-configured ' +
@@ -714,6 +746,7 @@ const SCHEMA = {
 const EDITABLE = {
   fedName: 'set',
   fedPeer: 'set',
+  fedLocalEntityId: 'set',
   fedEnabled: 'set',
   fedSsoUrl: 'set',
   fedTokenUrl: 'set',
@@ -1363,8 +1396,30 @@ function authenticationFor(record) {
 // assertion this service issues, so the early return for an empty register is
 // the ordinary path and is deliberately the first line.
 // ---------------------------------------------------------------------------
-let releaseIndex = null;
-let releaseIndexAt = 0;
+//
+// **PER TRUST REALM SINCE 2026-09-12.** It was two `let`s for the process, and
+// the register it indexes is not: `inRole()` reads the AMBIENT realm's
+// `ou=federations`, so the index was built out of whichever realm issued the
+// first token in a five-second window and then applied to every token in every
+// realm for the rest of it — a partner's release list in `acme` filtering the
+// claims of an unrelated application in the default realm, or a default-realm
+// partner's list not being applied at all because acme had built the index.
+// `realms.keyed()` is one index per realm, built out of that realm's register.
+//
+// Invalidation clears EVERY realm's, which is broader than it needs to be and
+// is the right trade: the four writers below are inside a request whose realm
+// they could name, and `recordUse()` is too, but an index that is rebuilt a
+// little early costs one walk of a small register while one that is not
+// invalidated is a release policy that lags an edit.
+const releaseIndexes = realms.keyed(function () {
+  return { index: null, at: 0 };
+});
+
+function forgetReleaseIndexes() {
+  releaseIndexes.existing().forEach(function (held) {
+    held.index = null;
+  });
+}
 
 // The index is rebuilt rather than kept up to date, on a short timer, and both
 // halves of that are deliberate. Rebuilt, because there are four doors onto
@@ -1375,14 +1430,21 @@ let releaseIndexAt = 0;
 // every token issued. Five seconds is short enough that nobody testing a
 // release list notices and long enough that a load test does not walk a
 // directory per token.
-const RELEASE_INDEX_TTL_MS = 5000;
+//
+// `federation.releaseIndexTtlMs` since 2026-09-12; it was the constant 5000.
+// Read per call, so 0 — rebuild on every token — is a value somebody can set
+// while watching a release list take effect.
+function releaseIndexTtlMs() {
+  return Number(config.value('federation.releaseIndexTtlMs'));
+}
 
 function releaseIndexNow() {
   log.debug('Entering releaseIndexNow().');
   const now = Date.now();
-  if (releaseIndex && now - releaseIndexAt < RELEASE_INDEX_TTL_MS) {
+  const held = releaseIndexes();
+  if (held.index && now - held.at < releaseIndexTtlMs()) {
     log.debug('Leaving releaseIndexNow().');
-    return releaseIndex;
+    return held.index;
   }
   const index = new Map();
   inRole('identity-provider').forEach(function (record) {
@@ -1395,8 +1457,8 @@ function releaseIndexNow() {
     if (!application || !names.length) return;
     index.set(application, { id: record.fedId, names: new Set(names) });
   });
-  releaseIndex = index;
-  releaseIndexAt = now;
+  held.index = index;
+  held.at = now;
   log.debug('Leaving releaseIndexNow().');
   return index;
 }
@@ -1482,6 +1544,24 @@ function recordChange(action, record, summary, detail) {
   log.debug('Leaving recordChange().');
 }
 
+// A REFUSED CHANGE TO THE REGISTER, as an audit row carrying its error code.
+//
+// The result of create(), update() and remove() is what the console and the
+// management API send back as it is — `/admin-api` serialises it whole — so a
+// code on that object would reach the caller, which no code may. The row names
+// the relationship and the reason, and never a value: fedClientSecret is among
+// the fields an update names.
+function actionRefused(code, id, why) {
+  audit.failure(code, {
+    protocol: 'Federation', channel: 'internal',
+    target: String(id || ''),
+    summary: 'a change to the federation relationship ' + String(id || '(unnamed)') +
+             ' was refused: ' + why,
+    // error-code: none — the helper's own row; every caller passes its code
+    outcome: 'refused'
+  });
+}
+
 // ---------------------------------------------------------------------------
 // CREATE.
 //
@@ -1519,16 +1599,19 @@ function create(spec) {
   }
   if (errors.length) {
     log.debug('Leaving create(). Refused: ' + errors.join(' '));
+    actionRefused('STS-FED-0061', id, 'the id, role or protocol is not valid');
     return { ok: false, errors: errors };
   }
   if (!haveDirectory()) {
     log.debug('Leaving create(). There is no directory to write into.');
+    actionRefused('STS-FED-0062', id, 'there is no embedded directory to hold it');
     return { ok: false,
              errors: ['There is no embedded directory loaded, so there is no ' +
                       'ou=federations to hold a relationship.'] };
   }
   if (get(id)) {
     log.debug('Leaving create(). It is already here.');
+    actionRefused('STS-FED-0063', id, 'a relationship with that id already exists');
     return { ok: false,
              errors: ['A relationship called "' + id + '" is already registered. An id ' +
                       'names ONE relationship here, so the answer to "it is already ' +
@@ -1581,12 +1664,13 @@ function create(spec) {
   record.description = [note];
   if (!persist(record)) {
     log.debug('Leaving create(). The directory refused it.');
+    actionRefused('STS-FED-0064', id, 'the directory would not hold another relationship');
     return { ok: false,
              errors: ['The directory would not hold another relationship: ' +
                       'ou=federations is at its maximum of ' + maxRelationships() +
                       ' (federation.max), or the directory itself is full.'] };
   }
-  releaseIndex = null;
+  forgetReleaseIndexes();
   recordChange('federation.create', record,
                'the federation relationship ' + id + ' was registered (' + note + ')',
                { enabled: false,
@@ -1613,6 +1697,7 @@ function update(id, change) {
   const record = get(id);
   if (!record) {
     log.debug('Leaving update(). No such relationship.');
+    actionRefused('STS-FED-0065', id, 'there is no such relationship to update');
     return { ok: false, errors: ['There is no federation relationship called "' + id + '".'] };
   }
   const info = change || {};
@@ -1620,12 +1705,14 @@ function update(id, change) {
   const row = ATTRIBUTE_BY_NAME[field];
   if (!row) {
     log.debug('Leaving update(). Unknown field.');
+    actionRefused('STS-FED-0066', id, '"' + field + '" is not an attribute of a relationship');
     return { ok: false,
              errors: ['"' + field + '" is not an attribute of a federation relationship. ' +
                       'GET /admin/ldap/federations publishes the whole schema.'] };
   }
   if (!row.editable) {
     log.debug('Leaving update(). Not editable.');
+    actionRefused('STS-FED-0067', id, '"' + field + '" is not editable');
     return { ok: false,
              errors: ['"' + field + '" is not editable here. ' +
                       (row.name === 'fedId' || row.name === 'fedRole' || row.name === 'fedProtocol'
@@ -1637,6 +1724,7 @@ function update(id, change) {
   }
   if (row.role !== 'both' && row.role !== record.fedRole) {
     log.debug('Leaving update(). Wrong role for this field.');
+    actionRefused('STS-FED-0068', id, '"' + field + '" belongs to the other direction');
     return { ok: false,
              errors: ['"' + field + '" applies to a ' + row.role + '-side relationship, and ' +
                       id + ' is ' + record.fedRole + '-side. Nothing was changed.'] };
@@ -1650,16 +1738,19 @@ function update(id, change) {
       const at = values.indexOf(value);
       if (at === -1) {
         log.debug('Leaving update(). There was no such value to remove.');
+        actionRefused('STS-FED-0069', id, 'the value to remove from ' + field + ' is not there');
         return { ok: false, errors: ['"' + value + '" is not one of ' + field + '\'s values.'] };
       }
       values.splice(at, 1);
     } else {
       if (!value) {
         log.debug('Leaving update(). Nothing to add.');
+        actionRefused('STS-FED-0070', id, 'no value was given to add to ' + field);
         return { ok: false, errors: ['Give a value to add to ' + field + '.'] };
       }
       if (values.indexOf(value) !== -1) {
         log.debug('Leaving update(). It is already a value.');
+        actionRefused('STS-FED-0071', id, field + ' already carries that value');
         return { ok: false, errors: [field + ' already carries "' + value + '".'] };
       }
       values.push(value);
@@ -1685,9 +1776,10 @@ function update(id, change) {
   }
   if (!persist(record)) {
     log.debug('Leaving update(). The directory refused the write.');
+    actionRefused('STS-FED-0072', id, 'the directory refused the write to ' + field);
     return { ok: false, errors: ['The directory refused the write.'] };
   }
-  releaseIndex = null;
+  forgetReleaseIndexes();
   const stored = get(id);
   const readiness = readinessOf(stored);
   recordChange('federation.update', stored,
@@ -1720,13 +1812,15 @@ function remove(id) {
   const record = get(id);
   if (!record) {
     log.debug('Leaving remove(). No such relationship.');
+    actionRefused('STS-FED-0065', id, 'there is no such relationship to delete');
     return { ok: false, errors: ['There is no federation relationship called "' + id + '".'] };
   }
   if (!directory.deleteFederation(record.fedId)) {
     log.debug('Leaving remove(). The directory would not delete it.');
+    actionRefused('STS-FED-0073', id, 'the directory would not delete it');
     return { ok: false, errors: ['The directory would not delete ' + record.dn + '.'] };
   }
-  releaseIndex = null;
+  forgetReleaseIndexes();
   recordChange('federation.delete', record,
                'the federation relationship ' + id + ' was deleted',
                { dn: record.dn,
@@ -1801,7 +1895,7 @@ function applicationConfiguredFor(applicationId, relationshipId) {
       return { configured: true, source: 'application' };
     }
   } catch (e) {
-    log.error('federation: the applications registry threw while checking whether "' +
+    log.error(errorCodes.tag('STS-FED-0057') + 'federation: the applications registry threw while checking whether "' +
               wantedApp + '" is configured for "' + wantedFed + '"; the per-application ' +
               'count is skipped and the sign-in itself stands: ' + e.message);
     log.debug('Leaving applicationConfiguredFor(). The registry threw.');
@@ -1888,7 +1982,13 @@ function applicationUse(record) {
 // and `ldapsearch` cannot read. Past it the busiest rows are kept and the rest
 // are dropped, which is stated on the page rather than left to be inferred from
 // a number that stopped moving.
-const MAX_APPLICATION_USE = 64;
+//
+// `federation.maxApplicationUse` since 2026-09-12; it was the constant 64, and
+// the export is the function now (nothing outside this file read the constant),
+// so a reader sees the value in force rather than the number it once was.
+function maxApplicationUse() {
+  return Number(config.value('federation.maxApplicationUse'));
+}
 
 // WHICH APPLICATIONS ARE CONFIGURED TO USE THIS RELATIONSHIP, which is a
 // question about CONFIGURATION and not about what has happened — so it is
@@ -1929,7 +2029,7 @@ function applicationsUsing(relationshipId) {
     // Swallowed with a reason: this builds a picture on a console page, and a
     // registry that throws must cost the picture's completeness rather than the
     // page. The brokered half below is still worth having.
-    log.error('federation: the applications registry threw while listing what uses "' +
+    log.error(errorCodes.tag('STS-FED-0058') + 'federation: the applications registry threw while listing what uses "' +
               wanted + '"; the map is drawn without that half: ' + e.message);
   }
   inRole('identity-provider').forEach(function (record) {
@@ -1964,13 +2064,14 @@ function recordApplicationUse(record, application, user, now, how) {
     if (rows[i].application === key) { row = rows[i]; break; }
   }
   if (!row) {
-    if (rows.length >= MAX_APPLICATION_USE) {
-      // The busiest are kept. See MAX_APPLICATION_USE: past the cap this stops
+    if (rows.length >= maxApplicationUse()) {
+      // The busiest are kept. See maxApplicationUse(): past the cap this stops
       // being a picture and becomes an entry nothing can read, and dropping the
       // quietest row is the one choice that leaves the picture saying the same
       // thing it said before.
       log.warn('federation: ' + record.fedId + ' already carries ' + rows.length +
-               ' per-application counts, which is the cap (' + MAX_APPLICATION_USE +
+               ' per-application counts, which is the cap (federation.maxApplicationUse, ' +
+               maxApplicationUse() +
                '), so "' + application + '" is not being counted separately. The ' +
                'relationship\'s own totals still include it.');
       log.debug('Leaving recordApplicationUse(). At the cap.');
@@ -2068,11 +2169,11 @@ function recordUse(id, detail) {
     record.fedLastError = '';
     record.fedLastErrorAt = '';
     persist(record);
-    releaseIndex = null;
+    forgetReleaseIndexes();
     log.debug('Leaving recordUse(). ' + record.fedAuthentications + ' so far.');
     return get(id);
   } catch (e) {
-    log.error('federation: the register threw while recording a use of ' + id +
+    log.error(errorCodes.tag('STS-FED-0059') + 'federation: the register threw while recording a use of ' + id +
               ' and was ignored; the sign-in itself stands: ' + e.message);
     log.debug('Leaving recordUse(). It threw.');
     return null;
@@ -2093,7 +2194,7 @@ function recordFailure(id, why) {
     record.fedLastError = String(why || 'refused, with no reason recorded');
     record.fedLastErrorAt = generalizedTime();
     persist(record);
-    releaseIndex = null;
+    forgetReleaseIndexes();
     // An audit row as well as the attribute, because the attribute holds ONE
     // failure and somebody debugging a partner that intermittently fails needs
     // the sequence. The audit log is the only place here that answers "when,
@@ -2105,7 +2206,7 @@ function recordFailure(id, why) {
     log.debug('Leaving recordFailure(). Recorded.');
     return get(id);
   } catch (e) {
-    log.error('federation: the register threw while recording a failure of ' + id +
+    log.error(errorCodes.tag('STS-FED-0060') + 'federation: the register threw while recording a failure of ' + id +
               ' and was ignored: ' + e.message);
     log.debug('Leaving recordFailure(). It threw.');
     return null;
@@ -2181,5 +2282,5 @@ module.exports = {
   // implementation of "is this application configured for that relationship"
   // would be the one that disagreed on the broker case.
   applicationConfiguredFor: applicationConfiguredFor,
-  MAX_APPLICATION_USE: MAX_APPLICATION_USE
+  maxApplicationUse: maxApplicationUse
 };

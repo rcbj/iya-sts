@@ -203,6 +203,9 @@ const scimAuth = require('./scim_auth');
 // already has it in hand.
 const adminConsole = require('../admin-ui/admin');
 const scimMap = require('./scim_map');
+// Every SCIM error this module sends carries an STS-SCIM-* code on the
+// response — see common/error_codes.js. A leaf.
+const errorCodes = require('../common/error_codes');
 
 // The base path. NOT a setting: it is baked into every `meta.location` and every
 // Location header, a client stores those, and a base path that could move at
@@ -327,10 +330,19 @@ function elapsedFor(req) {
 // than at each handler, which is the reasoning that keeps signJwt() the single
 // token counter.
 // ---------------------------------------------------------------------------
+// The code for the condition a SCIM error below was thrown for, carried on the
+// Types.Error itself under the non-enumerable Symbol errorCodes.mark() uses.
+// scimmy rethrows a Types.Error untouched and ErrorResponse serialises only
+// schemas, status, scimType and detail, so the body is unchanged.
+function coded(code, error) {
+  return errorCodes.mark(error, code);
+}
+
 function sendScimError(req, res, info, ex) {
   log.debug("Entering sendScimError(). status=" + (ex && ex.status));
   const error = (ex instanceof SCIMMY.Types.Error) ? ex
-    : new SCIMMY.Types.Error(500, null, String((ex && ex.message) || ex));
+    : coded('STS-SCIM-0020',
+            new SCIMMY.Types.Error(500, null, String((ex && ex.message) || ex)));
   const body = new SCIMMY.Messages.ErrorResponse(error);
   const text = JSON.stringify(body, null, 2);
   stats.recordScim({ operation: info.operation, resourceType: info.resourceType,
@@ -354,6 +366,10 @@ function sendScimError(req, res, info, ex) {
                                   req.scimAuth.isClient),
                      ms: elapsedFor(req), bytes: Buffer.byteLength(text),
                      method: req.method, path: req.path });
+  // The code the throw site named. A Types.Error with none was raised inside
+  // scimmy itself — its own schema coercion, filter parser or Bulk limits.
+  errorCodes.mark(res, errorCodes.codeOf(error) ||
+    (error.status >= 500 ? 'STS-SCIM-0022' : 'STS-SCIM-0021'));
   // end() rather than send() — see the note on sendScim().
   res.status(error.status)
      .type('application/scim+json')
@@ -448,10 +464,10 @@ function handle(info, fn) {
     // look healthy.
     req.scimStartedAt = Date.now();
     if (!enabled()) {
-      sendScimError(req, res, info, new SCIMMY.Types.Error(501, null,
+      sendScimError(req, res, info, coded('STS-SCIM-0001', new SCIMMY.Types.Error(501, null,
         'SCIM is turned off on this service (scim.enabled). The routes are ' +
         'registered, which is why this is a 501 and not a 404. Turn it back on ' +
-        'at /admin/scim or with SCIM_ENABLED=true.'));
+        'at /admin/scim or with SCIM_ENABLED=true.')));
       log.debug("Leaving the SCIM handler. It is turned off.");
       return;
     }
@@ -475,8 +491,9 @@ function handle(info, fn) {
     // actor) and by /Me (for the subject).
     req.scimAuth = decision;
     if (!decision.ok) {
-      sendScimError(req, res, info,
-        new SCIMMY.Types.Error(decision.status, decision.scimType, decision.detail));
+      // scim_auth.js names the condition on the decision it refused with.
+      sendScimError(req, res, info, coded(errorCodes.codeOf(decision) || 'STS-SCIM-0029',
+        new SCIMMY.Types.Error(decision.status, decision.scimType, decision.detail)));
       log.debug("Leaving the SCIM handler. The caller was refused with " + decision.status + ".");
       return;
     }
@@ -488,7 +505,8 @@ function handle(info, fn) {
           // Logged whole, because scimmy will already have flattened anything
           // that reached it into a 404 and the real message is the only way to
           // tell a genuine "no such user" from a defect in this file.
-          log.error('scim: the ' + info.operation + ' handler for ' +
+          log.error(errorCodes.tag('STS-SCIM-0020') +
+                    'scim: the ' + info.operation + ' handler for ' +
                     info.resourceType + ' threw: ' + (ex && ex.stack ? ex.stack : ex));
         }
         sendScimError(req, res, info, ex);
@@ -515,8 +533,8 @@ function scimBody(req) {
     parsed = JSON.parse(raw);
   } catch (e) {
     log.debug("Leaving scimBody(). It was not JSON.");
-    throw new SCIMMY.Types.Error(400, 'invalidSyntax',
-      'The request body is not JSON: ' + e.message);
+    throw coded('STS-SCIM-0002', new SCIMMY.Types.Error(400, 'invalidSyntax',
+      'The request body is not JSON: ' + e.message));
   }
   // ---------------------------------------------------------------------
   // **A `__proto__` AT ANY DEPTH IS REFUSED BEFORE scimmy COERCES IT.**
@@ -538,7 +556,8 @@ function scimBody(req) {
   const safe = validation.checkDocument(parsed, 'SCIM document');
   if (!safe.ok) {
     log.debug("Leaving scimBody(). " + safe.code + ".");
-    throw new SCIMMY.Types.Error(400, 'invalidSyntax', safe.detail);
+    throw coded(errorCodes.codeOf(safe) || 'STS-SCIM-0003',
+      new SCIMMY.Types.Error(400, 'invalidSyntax', safe.detail));
   }
   log.debug("Leaving scimBody(). Parsed " + raw.length + " byte(s).");
   return parsed;
@@ -586,11 +605,11 @@ function queryParams(req) {
     if (value !== undefined && String(value) !== '') {
       const text = String(value);
       if (text.length > SCIM_QUERY_MAX) {
-        throw new SCIMMY.Types.Error(400, 'invalidFilter',
+        throw coded('STS-SCIM-0004', new SCIMMY.Types.Error(400, 'invalidFilter',
           'The "' + name + '" parameter is ' + text.length + ' characters and ' +
           'the limit is ' + SCIM_QUERY_MAX + '. A filter is an expression this ' +
           'service parses rather than a value it compares, so its cost is a ' +
-          'property of its length.');
+          'property of its length.'));
       }
       params[name] = text;
     }
@@ -603,8 +622,8 @@ function queryParams(req) {
     }
     const parsed = Number(value);
     if (!Number.isInteger(parsed)) {
-      throw new SCIMMY.Types.Error(400, 'invalidValue',
-        'Expected ' + name + ' to be an integer; got "' + String(value) + '".');
+      throw coded('STS-SCIM-0005', new SCIMMY.Types.Error(400, 'invalidValue',
+        'Expected ' + name + ' to be an integer; got "' + String(value) + '".'));
     }
     params[name] = parsed;
   });
@@ -644,8 +663,8 @@ function searchParams(body) {
     }
     const parsed = Number(source[name]);
     if (!Number.isInteger(parsed)) {
-      throw new SCIMMY.Types.Error(400, 'invalidValue',
-        'Expected ' + name + ' to be an integer; got "' + String(source[name]) + '".');
+      throw coded('STS-SCIM-0005', new SCIMMY.Types.Error(400, 'invalidValue',
+        'Expected ' + name + ' to be an integer; got "' + String(source[name]) + '".'));
     }
     params[name] = parsed;
   });
@@ -699,12 +718,13 @@ function applyFilter(filter, values) {
     log.debug("Leaving applyFilter(). " + matched.length + " matched.");
     return matched;
   } catch (ex) {
-    log.warn('scim: a filter could not be evaluated (' + ex.message + '). ' +
+    log.warn(errorCodes.tag('STS-SCIM-0006') +
+             'scim: a filter could not be evaluated (' + ex.message + '). ' +
              'This is refused rather than answered with an empty list, because ' +
              '"no results" and "I could not read your filter" are different ' +
              'answers and a client can only act on the second.');
-    throw new SCIMMY.Types.Error(400, 'invalidFilter',
-      'This filter could not be evaluated against the resources here: ' + ex.message);
+    throw coded('STS-SCIM-0006', new SCIMMY.Types.Error(400, 'invalidFilter',
+      'This filter could not be evaluated against the resources here: ' + ex.message));
   }
 }
 
@@ -767,8 +787,8 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
         // Thrown as a Types.Error rather than returned as null, because
         // Resource#read() turns a null into "Unexpected empty value returned by
         // egress handler" — a 500 — where this is a perfectly ordinary 404.
-        throw new SCIMMY.Types.Error(404, null,
-          'There is no entry at ' + resource.id + ' under ' + directory.usersDn() + '.');
+        throw coded('STS-SCIM-0007', new SCIMMY.Types.Error(404, null,
+          'There is no entry at ' + resource.id + ' under ' + directory.usersDn() + '.'));
       }
       log.debug("Leaving the SCIM User egress handler. One resource.");
       return userResourceFor(entry, req);
@@ -805,17 +825,17 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
     if (userName.toLowerCase() === REFUSED_USERNAME) {
       // The reachable negative. See the header: a SCIM client's error handling
       // is built around scimType codes that a permissive server never produces.
-      throw new SCIMMY.Types.Error(400, 'invalidValue',
+      throw coded('STS-SCIM-0008', new SCIMMY.Types.Error(400, 'invalidValue',
         'The userName "' + REFUSED_USERNAME + '" is refused on purpose, so that ' +
         'a negative test has something to fail on — the same reserved value the ' +
         'password grant, WS-Trust, the WS-Federation sign-in screen and every ' +
-        'LDAP bind here refuse. Nothing else about this request was wrong.');
+        'LDAP bind here refuse. Nothing else about this request was wrong.'));
     }
 
     const existing = resource.id ? directory.readPerson(resource.id) : null;
     if (resource.id && !existing) {
-      throw new SCIMMY.Types.Error(404, null,
-        'There is no entry at ' + resource.id + ' under ' + directory.usersDn() + '.');
+      throw coded('STS-SCIM-0007', new SCIMMY.Types.Error(404, null,
+        'There is no entry at ' + resource.id + ' under ' + directory.usersDn() + '.'));
     }
 
     // -----------------------------------------------------------------------
@@ -864,10 +884,10 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
       // userName as it was is not a conflict with themselves.
       const clash = directory.existingUserEntry(userName);
       if (clash && directory.normalizeDn(clash.dn) !== directory.normalizeDn(existing.dn)) {
-        throw new SCIMMY.Types.Error(409, 'uniqueness',
+        throw coded('STS-LDAP-0005', new SCIMMY.Types.Error(409, 'uniqueness',
           'There is already a user called "' + userName + '" here, at ' + clash.dn +
           '. RFC 7643 section 4.1.1 makes userName unique, and this directory ' +
-          'keeps one entry per person at every door.');
+          'keeps one entry per person at every door.'));
       }
     } else {
       const made = directory.createUser(userName, {
@@ -890,9 +910,11 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
         // taken, and it is the only one of its refusals that is a 409 rather
         // than a 400 — a client retries a conflict differently from the way it
         // retries a bad value.
-        throw new SCIMMY.Types.Error(made.existing ? 409 : 400,
-          made.existing ? 'uniqueness' : 'invalidValue',
-          (made.errors || []).join(' '));
+        // The directory's own code for which refusal it was, or this one.
+        throw coded(errorCodes.codeOf(made) || 'STS-SCIM-0009',
+          new SCIMMY.Types.Error(made.existing ? 409 : 400,
+            made.existing ? 'uniqueness' : 'invalidValue',
+            (made.errors || []).join(' ')));
       }
       dn = made.dn;
     }
@@ -905,17 +927,19 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
     const before = directory.readPerson(dn);
     const converted = scimMap.fromScimUser(data, before ? before.attributes : {});
     if (converted.errors.length) {
-      throw new SCIMMY.Types.Error(400, 'invalidValue', converted.errors.join(' '));
+      throw coded('STS-SCIM-0010',
+        new SCIMMY.Types.Error(400, 'invalidValue', converted.errors.join(' ')));
     }
 
     const written = directory.writePerson(dn, converted.attributes);
     if (!written.ok) {
-      throw new SCIMMY.Types.Error(written.reason === 'full' ? 507 : 400,
-        written.reason === 'full' ? null : 'invalidValue',
-        written.reason === 'full'
-          ? 'The directory holds its maximum of ' + directory.maxEntries() +
-            ' entries (ldap.maxEntries). Nothing was written.'
-          : 'The entry could not be written at ' + dn + ' (' + written.reason + ').');
+      throw coded(errorCodes.codeOf(written) || 'STS-SCIM-0011',
+        new SCIMMY.Types.Error(written.reason === 'full' ? 507 : 400,
+          written.reason === 'full' ? null : 'invalidValue',
+          written.reason === 'full'
+            ? 'The directory holds its maximum of ' + directory.maxEntries() +
+              ' entries (ldap.maxEntries). Nothing was written.'
+            : 'The entry could not be written at ' + dn + ' (' + written.reason + ').'));
     }
 
     // The credential-claim fill, FOR THE PERSON THIS REQUEST CREATED.
@@ -959,13 +983,14 @@ SCIMMY.Resources.declare(SCIMMY.Resources.User)
     log.debug("Entering the SCIM User degress handler. id=" + resource.id);
     const removed = directory.deletePerson(resource.id);
     if (!removed.ok) {
-      throw new SCIMMY.Types.Error(removed.reason === 'notLeaf' ? 400 : 404,
+      throw coded(errorCodes.codeOf(removed) || 'STS-SCIM-0012',
+        new SCIMMY.Types.Error(removed.reason === 'notLeaf' ? 400 : 404,
         removed.reason === 'notLeaf' ? 'invalidValue' : null,
         removed.reason === 'notLeaf'
           ? 'The entry at ' + resource.id + ' has children, and this directory ' +
             'refuses a delete of anything that is not a leaf (RFC 4511 section ' +
             '4.8). Delete what is under it first.'
-          : 'There is no entry at ' + resource.id + ' under ' + directory.usersDn() + '.');
+          : 'There is no entry at ' + resource.id + ' under ' + directory.usersDn() + '.'));
     }
     // The dangling memberships this delete just created, logged rather than
     // repaired: referential integrity is a directory feature and not a protocol
@@ -1006,9 +1031,9 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
     if (resource.id) {
       const entry = directory.readGroupEntry(resource.id);
       if (!entry) {
-        throw new SCIMMY.Types.Error(404, null,
+        throw coded('STS-SCIM-0013', new SCIMMY.Types.Error(404, null,
           'There is no group at ' + resource.id + '. An entry that exists and is ' +
-          'not a group answers the same way: it is not a Group resource either.');
+          'not a group answers the same way: it is not a Group resource either.'));
       }
       log.debug("Leaving the SCIM Group egress handler. One resource.");
       return groupResourceFor(entry, req);
@@ -1033,12 +1058,14 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
     }
     const existing = resource.id ? directory.readGroupEntry(resource.id) : null;
     if (resource.id && !existing) {
-      throw new SCIMMY.Types.Error(404, null, 'There is no group at ' + resource.id + '.');
+      throw coded('STS-SCIM-0013',
+        new SCIMMY.Types.Error(404, null, 'There is no group at ' + resource.id + '.'));
     }
 
     const converted = scimMap.fromScimGroup(data, existing ? existing.attributes : {});
     if (converted.errors.length) {
-      throw new SCIMMY.Types.Error(400, 'invalidValue', converted.errors.join(' '));
+      throw coded('STS-SCIM-0014',
+        new SCIMMY.Types.Error(400, 'invalidValue', converted.errors.join(' ')));
     }
 
     // The same DN-syntax rule createUser() applies to a username, read from the
@@ -1049,19 +1076,19 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
     // could not have been an RDN moves nothing, and refusing it would make a
     // group an `ldapadd` put there with an awkward name un-editable over SCIM.
     if (!existing && !directory.nameUsableInDn(displayName)) {
-      throw new SCIMMY.Types.Error(400, 'invalidValue',
+      throw coded('STS-LDAP-0046', new SCIMMY.Types.Error(400, 'invalidValue',
         'This displayName carries a character RFC 4514 section 2.4 reserves in ' +
         'a DN (one of , = + < > # ; " \\). The SCIM id of a group here IS its ' +
         'entry\'s DN, so such a name would produce a group that cannot be read ' +
         'back. Refused rather than escaped, for the reason createUser() refuses ' +
         'the same characters in a username: an `ldapadd` can still create it, ' +
-        'with the escaping written out by the client.');
+        'with the escaping written out by the client.'));
     }
 
     const dn = existing ? existing.dn : directory.groupDnFor(displayName);
     if (!existing && directory.readGroupEntry(dn)) {
-      throw new SCIMMY.Types.Error(409, 'uniqueness',
-        'There is already a group at ' + dn + '.');
+      throw coded('STS-LDAP-0004', new SCIMMY.Types.Error(409, 'uniqueness',
+        'There is already a group at ' + dn + '.'));
     }
 
     // A MEMBER THAT NAMES NOTHING IS NOT REFUSED, and that is deliberate rather
@@ -1082,12 +1109,13 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
 
     const written = directory.writeGroupEntry(dn, converted.attributes);
     if (!written.ok) {
-      throw new SCIMMY.Types.Error(written.reason === 'full' ? 507 : 400,
-        written.reason === 'full' ? null : 'invalidValue',
-        written.reason === 'full'
-          ? 'The directory holds its maximum of ' + directory.maxEntries() +
-            ' entries (ldap.maxEntries). Nothing was written.'
-          : 'The entry could not be written at ' + dn + ' (' + written.reason + ').');
+      throw coded(errorCodes.codeOf(written) || 'STS-SCIM-0011',
+        new SCIMMY.Types.Error(written.reason === 'full' ? 507 : 400,
+          written.reason === 'full' ? null : 'invalidValue',
+          written.reason === 'full'
+            ? 'The directory holds its maximum of ' + directory.maxEntries() +
+              ' entries (ldap.maxEntries). Nothing was written.'
+            : 'The entry could not be written at ' + dn + ' (' + written.reason + ').'));
     }
 
     auditScim(written.created ? 'group.create' : 'group.update', dn,
@@ -1101,12 +1129,13 @@ SCIMMY.Resources.declare(SCIMMY.Resources.Group)
     log.debug("Entering the SCIM Group degress handler. id=" + resource.id);
     const removed = directory.deleteGroupEntry(resource.id);
     if (!removed.ok) {
-      throw new SCIMMY.Types.Error(removed.reason === 'notLeaf' ? 400 : 404,
+      throw coded(errorCodes.codeOf(removed) || 'STS-SCIM-0012',
+        new SCIMMY.Types.Error(removed.reason === 'notLeaf' ? 400 : 404,
         removed.reason === 'notLeaf' ? 'invalidValue' : null,
         removed.reason === 'notLeaf'
           ? 'The entry at ' + resource.id + ' has children and this directory ' +
             'refuses a delete of anything that is not a leaf.'
-          : 'There is no group at ' + resource.id + '.');
+          : 'There is no group at ' + resource.id + '.'));
     }
     auditScim('group.delete', resource.id, {}, (ctx || {}).req);
     log.debug("Leaving the SCIM Group degress handler.");
@@ -1279,15 +1308,15 @@ function meSubject(req) {
   const decision = req.scimAuth || {};
   if (!decision.ok || decision.anonymous || !decision.principal) {
     log.debug("Leaving meSubject(). Nobody authenticated.");
-    throw new SCIMMY.Types.Error(501, null,
+    throw coded('STS-SCIM-0015', new SCIMMY.Types.Error(501, null,
       '/Me is an alias for the subject the request authenticated as (RFC 7644 section 3.11), ' +
       'and this request authenticated as nobody — authentication is turned off here, ' +
       'so there is no subject to alias. Present a credential, or ask for ' +
       'the user by id. This is a 501 rather than a 404 because the alias is unavailable, not ' +
-      'because the resource is missing.');
+      'because the resource is missing.'));
   }
   // Through the identity normalisation every other reader of this directory
-  // uses, so that `alice`, `urn:sts-mock:user:alice` and `alice@REALM` reach
+  // uses, so that `alice`, `urn:sts:user:alice` and `alice@REALM` reach
   // ONE entry — the same fold recordAuthentication() applies, and the reason
   // this is not a lookup by the raw principal. objectFor() then handles all
   // three identity shapes, including the DN of a client certificate and a DID,
@@ -1296,12 +1325,12 @@ function meSubject(req) {
   const located = directory.objectFor(key);
   if (!located || !located.found) {
     log.debug("Leaving meSubject(). " + key + " has no entry.");
-    throw new SCIMMY.Types.Error(404, null,
+    throw coded('STS-SCIM-0016', new SCIMMY.Types.Error(404, null,
       'This request authenticated as "' + decision.principal + '", and there is no entry for ' +
       'them under ' + directory.usersDn() + ' — so the alias resolves to nothing. That is the ' +
       'ordinary answer for a client_credentials token or a client certificate, neither of ' +
       'which has a person behind it: both are good credentials for provisioning somebody ' +
-      'else, and neither is anybody /Me could be. Create the entry first, or use /Users.');
+      'else, and neither is anybody /Me could be. Create the entry first, or use /Users.'));
   }
   log.debug("Leaving meSubject(). " + located.dn);
   return located.dn;
@@ -1356,10 +1385,10 @@ app.post(BASE + '/Me', handle(
     // with the reason rather than aliased onto a create, which would put the
     // caller's own name on somebody else's body.
     meSubject(req);
-    throw new SCIMMY.Types.Error(501, null,
+    throw coded('STS-SCIM-0017', new SCIMMY.Types.Error(501, null,
       'POST /Me would create the subject this request authenticated as, and that subject ' +
       'already exists — it is what the credential named. Create somebody with ' +
-      'POST ' + BASE + '/Users. The other four methods on /Me do work.');
+      'POST ' + BASE + '/Users. The other four methods on /Me do work.'));
   }));
 
 // ---------------------------------------------------------------------------
@@ -1422,6 +1451,7 @@ app.get(HOBA_REGISTER_PATH, function (req, res) {
 app.post(HOBA_REGISTER_PATH, function (req, res) {
   log.debug("Entering POST " + HOBA_REGISTER_PATH + ".");
   if (!enabled()) {
+    errorCodes.mark(res, 'STS-SCIM-0001');
     res.status(501).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify({ error: 'SCIM is turned off on this service (scim.enabled), and ' +
                                      'HOBA registration is part of its authentication ' +
@@ -1435,6 +1465,7 @@ app.post(HOBA_REGISTER_PATH, function (req, res) {
     res.set(name, result.headers[name]);
   });
   if (!result.ok) {
+    errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-SCIM-0023');
     res.status(result.status).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify({ error: result.detail }, null, 2));
     log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". " + result.status + ".");
@@ -1474,9 +1505,9 @@ function searchHandler(type, Resource) {
     // as an empty search would be the most confusing possible reply.
     const schemas = Array.isArray(body.schemas) ? body.schemas : [];
     if (schemas.indexOf(SEARCH_REQUEST_URN) < 0) {
-      throw new SCIMMY.Types.Error(400, 'invalidSyntax',
+      throw coded('STS-SCIM-0018', new SCIMMY.Types.Error(400, 'invalidSyntax',
         'A .search body must carry schemas: ["' + SEARCH_REQUEST_URN + '"] ' +
-        '(RFC 7644 section 3.4.3).');
+        '(RFC 7644 section 3.4.3).'));
     }
     const list = await new Resource(searchParams(body)).read({ req: req });
     sendScim(req, res, { operation: 'search', resourceType: type }, 200, list);
@@ -1574,9 +1605,9 @@ app.post(BASE + '/.search', handle(
     const body = scimBody(req) || {};
     const schemas = Array.isArray(body.schemas) ? body.schemas : [];
     if (schemas.indexOf(SEARCH_REQUEST_URN) < 0) {
-      throw new SCIMMY.Types.Error(400, 'invalidSyntax',
+      throw coded('STS-SCIM-0018', new SCIMMY.Types.Error(400, 'invalidSyntax',
         'A .search body must carry schemas: ["' + SEARCH_REQUEST_URN + '"] ' +
-        '(RFC 7644 section 3.4.3).');
+        '(RFC 7644 section 3.4.3).'));
     }
     // ACROSS BOTH RESOURCE TYPES, which is what the root .search means and is
     // the one thing it does that the per-type one cannot. scimmy's
@@ -1620,10 +1651,10 @@ app.post(BASE + '/Bulk', handle(
     // says is the drift this arrangement exists to prevent.
     const size = Buffer.byteLength(typeof req.body === 'string' ? req.body : '', 'utf8');
     if (size > bulkMaxPayloadSize()) {
-      throw new SCIMMY.Types.Error(413, null,
+      throw coded('STS-SCIM-0019', new SCIMMY.Types.Error(413, null,
         'This BulkRequest is ' + size + ' bytes and the advertised maximum is ' +
         bulkMaxPayloadSize() + ' (scim.bulkMaxPayloadSize, published as ' +
-        'bulk.maxPayloadSize in the ServiceProviderConfig).');
+        'bulk.maxPayloadSize in the ServiceProviderConfig).'));
     }
     const result = await new SCIMMY.Messages.BulkRequest(body, bulkMaxOperations())
       .apply([SCIMMY.Resources.User, SCIMMY.Resources.Group], { req: req });

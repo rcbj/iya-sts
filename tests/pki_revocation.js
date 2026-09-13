@@ -582,6 +582,33 @@ async function run(t) {
           'what a Root rotation does');
   t.check(pki.hasRoot() && pki.trustAnchorsFor(REALM).length > 0,
           'with the Root and every anchor still there afterwards');
+  // **AND THEN THE ENTRY IS TAKEN BACK OFF, BY HAND, WHICH NOTHING IN THE
+  // SERVICE CAN DO (2026-09-12).** The Intermediate revoked above is a LIVE
+  // one — the default realm's, or the process branch's — and since
+  // `common/revocation_status.js` consults the register for a presented
+  // certificate, leaving it `superseded` refuses every x5c assertion and every
+  // X509-SVID under it for the rest of this process. `run.js` runs every file
+  // in one process, so that was `tests/rfc7523_person_issuer.js` failing on a
+  // revocation this file made. A permanent revocation cannot be released
+  // through the API, which is the point of it, so the row is restored the way
+  // `tests/CLAUDE.md` asks for any process-wide state a test touched: put back
+  // exactly what was there.
+  (function restoreRootList() {
+    const row = pki.rawRowFor(rootScope);
+    if (row && row.revoked && Array.isArray(row.revoked.root)) {
+      row.revoked = Object.assign({}, row.revoked, {
+        root: row.revoked.root.filter(function (one) {
+          return revocation.normalSerial(one.serialHex) !==
+                 revocation.normalSerial(intermediates[0].serialHex);
+        })
+      });
+      pki.saveRow(rootScope, row);
+    }
+  })();
+  t.check(!revocation.isRevoked(rootScope, 'root', intermediates[0].serialHex),
+          'and the live Intermediate this section revoked is off the Root\'s ' +
+          'list again, so no later file in this process inherits a revoked ' +
+          'branch');
 
   const joseBefore = revocation.listFor(REALM, 'jose').length;
   const intermediateBefore = revocation.listFor(REALM, 'intermediate').length;

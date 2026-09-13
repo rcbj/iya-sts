@@ -99,6 +99,20 @@ COPY xacml-pep/pep.js ./pep.js
 COPY VERSION ./VERSION
 COPY common/version.js ./version.js
 
+# THE ERROR-CODE REGISTRY, for the same reasons and to the same place.
+# `common/error_codes.js` is the one table of `STS-<SUBSYSTEM>-<NNNN>` codes,
+# and every failure this container logs leads with one of its `STS-XPEP-` rows
+# — so it is copied out of the tree at BUILD TIME rather than checked in twice.
+#
+# **TO THE CONTAINER ROOT AND NOT INTO `./common/`, ON `version.js`'S ARGUMENT
+# ABOVE.** `./common/` is the shim and exactly one COPY may write into it; a
+# registry beside `helpers.js` would be a second file in the one directory
+# whose emptiness is the evidence. It requires nothing at module load, so it is
+# safe anywhere — which is not the question. `pep.js` resolves it across both
+# layouts (`./error_codes` here, `../common/error_codes` in a checkout) and a
+# container missing it still starts, with a tagged line saying so.
+COPY common/error_codes.js ./error_codes.js
+
 # AND THE STAMP, for the reason the mock's own Dockerfile gives at length: the
 # build number is fixed when the artifact is BUILT, so restarting this
 # container does not renumber it.

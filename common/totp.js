@@ -96,6 +96,11 @@ const { log } = require('./helpers');
 const config = require('./config');
 const crypto = require('./crypto');
 const realms = require('./realms');
+// The error codes. A LEAF that requires nothing, so it cannot close a cycle
+// from here. A refusal this module RETURNS carries its code non-enumerably,
+// under the Symbol `mark()` uses, so a caller reads it with `codeOf()` and
+// nothing that serialises the answer can send it anywhere.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // RFC 4648 SECTION 6 BASE32, WRITTEN OUT HERE.
@@ -191,6 +196,14 @@ function grouped(secret) {
 // after somebody enrolled must not silently invalidate the authenticator they
 // already configured.
 // ---------------------------------------------------------------------------
+// A setting as a number, or the fallback where it is not one. NOT `|| fallback`,
+// which is wrong for the one row here whose documented range starts at zero.
+function numberOr(value, fallback) {
+  const n = Number(value);
+  return (value === '' || value === null || value === undefined || !isFinite(n))
+    ? fallback : n;
+}
+
 function settings() {
   const algorithm = String(config.value('totp.algorithm') || 'SHA1').toUpperCase();
   return {
@@ -199,7 +212,12 @@ function settings() {
     algorithm: crypto.HOTP_ALGS[algorithm] ? algorithm : 'SHA1',
     digits: Math.max(6, Math.min(8, Number(config.value('totp.digits') || 6))),
     period: Math.max(15, Math.min(300, Number(config.value('totp.period') || 30))),
-    window: Math.max(0, Math.min(10, Number(config.value('totp.window') || 1))),
+    // **ZERO IS A LEGAL WINDOW AND `|| 1` TURNED IT INTO ONE** (fixed
+    // 2026-09-12). The row's own description names zero as the setting to
+    // reach for when demonstrating a perfectly synchronised clock, and this line
+    // quietly forgave a step either side instead. `numberOr()` falls back only
+    // where there is no number at all.
+    window: Math.max(0, Math.min(10, numberOr(config.value('totp.window'), 1))),
     secretBytes: Math.max(16, Math.min(64,
       Number(config.value('totp.secretBytes') || 20))),
     enrolmentTtlMs: Math.max(1, Number(config.value('totp.enrolmentTtlMinutes') || 10)) *
@@ -306,17 +324,18 @@ function verify(record, presented, opts) {
   const code = String(presented == null ? '' : presented).replace(/[\s-]/g, '');
   if (!/^[0-9]+$/.test(code) || code.length !== digits) {
     log.debug('Leaving verify(). Not ' + digits + ' digits.');
-    return { ok: false, reason: 'shape',
-             detail: 'A code is ' + digits + ' digits.' };
+    return errorCodes.mark({ ok: false, reason: 'shape',
+             detail: 'A code is ' + digits + ' digits.' }, 'STS-AUTHN-0103');
   }
   let secret;
   try {
     secret = base32Decode(record && record.secret);
   } catch (e) {
-    log.error('totp: the stored secret could not be decoded: ' + e.message);
+    log.error(errorCodes.tag('STS-AUTHN-0104') +
+              'totp: the stored secret could not be decoded: ' + e.message);
     log.debug('Leaving verify(). The stored secret is unusable.');
-    return { ok: false, reason: 'store',
-             detail: 'The stored shared secret could not be read.' };
+    return errorCodes.mark({ ok: false, reason: 'store',
+             detail: 'The stored shared secret could not be read.' }, 'STS-AUTHN-0104');
   }
   const centre = counterAt(now, period);
   // EVERY STEP IN THE WINDOW IS TRIED EVEN AFTER A MATCH, deliberately. An
@@ -336,8 +355,8 @@ function verify(record, presented, opts) {
   }
   if (matched === null) {
     log.debug('Leaving verify(). No step in the window produced that code.');
-    return { ok: false, reason: 'mismatch',
-             detail: 'That code is not right, or it has expired.' };
+    return errorCodes.mark({ ok: false, reason: 'mismatch',
+             detail: 'That code is not right, or it has expired.' }, 'STS-AUTHN-0105');
   }
   // RFC 6238 SECTION 5.2: ONCE. The counter this service last accepted is on
   // the record, and anything at or below it has already been spent — which
@@ -354,9 +373,9 @@ function verify(record, presented, opts) {
     log.info('totp: a code was refused as already spent (step ' +
              matched.counter + ', last accepted ' + spent + ').');
     log.debug('Leaving verify(). Already spent.');
-    return { ok: false, reason: 'replay', counter: matched.counter,
+    return errorCodes.mark({ ok: false, reason: 'replay', counter: matched.counter,
              detail: 'That code has already been used. Wait for your ' +
-                     'authenticator to show the next one.' };
+                     'authenticator to show the next one.' }, 'STS-AUTHN-0106');
   }
   log.debug('Leaving verify(). Accepted at step ' + matched.counter +
             ' (drift ' + matched.drift + ').');

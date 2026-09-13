@@ -157,7 +157,7 @@ async function run(t) {
           (issued.errors || []).join(' '));
   const record = issued.issued;
 
-  t.equal(record.subjectUri, 'urn:sts-mock:person:' + ALICE,
+  t.equal(record.subjectUri, 'urn:sts:person:' + ALICE,
           'and the certificate says WHO it is for in a URI subjectAltName. ' +
           'This is the fact section D rests on: a certificate read out of ' +
           'context says whether it belongs to a person or an application, ' +
@@ -169,7 +169,7 @@ async function run(t) {
   const appIssued = await pki.issueSigningKeyPair(undefined, {
     identifier: 'pa-app', purpose: 'jwt'
   });
-  t.equal((appIssued.issued || {}).subjectUri, 'urn:sts-mock:application:pa-app',
+  t.equal((appIssued.issued || {}).subjectUri, 'urn:sts:application:pa-app',
           'and an issue that names no subject kind is an APPLICATION\'s, ' +
           'byte-for-byte what this function produced before people could hold ' +
           'a key pair — a default that changed the shape of a certificate ' +

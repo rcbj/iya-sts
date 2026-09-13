@@ -126,7 +126,19 @@ function start() {
         // at load time would put a certificate authority in front of every
         // in-process caller of helpers. This is the one place that knows both,
         // so this is where they meet.
-        keySetFor: function (realmId) { return helpers.stsKeysFor.of(realmId); }
+        keySetFor: function (realmId) { return helpers.stsKeysFor.of(realmId); },
+        // **AND THE ASK-DO-NOT-TAKE HALF OF IT (2026-09-12).** `.of()` MAKES
+        // a key set when this process has none, so the realm watcher in
+        // `pki.js` was creating a realm's signing keys in every process that
+        // saw the realm appear rather than certifying keys that existed —
+        // four processes, four key sets, arbitrated away afterwards. `.existing()`
+        // is the cache itself, so this answers the question without filling
+        // it. `pki.js`'s watcher carries the measurement.
+        keySetHeldFor: function (realmId) {
+          const held = helpers.stsKeysFor.existing();
+          return !!(held && typeof held.has === 'function' &&
+                    held.has(String(realmId || '')));
+        }
       })
           .then(function (pkiResult) {
         return { started: started, keys: keys, minted: mintedResult,

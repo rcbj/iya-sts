@@ -104,6 +104,9 @@ const vcClaims = require('../oid4vc/vc_claims');
 // app.js records for the same POST says that a claims page was posted to and not
 // WHICH set gained WHICH attribute — see recordChange() below.
 const audit = require('./audit');
+// The registry of failure codes, a LEAF. A refused change carries its code on
+// the audit row and, NON-ENUMERABLY, on the result a caller serialises.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // The catalogue, indexed.
@@ -274,7 +277,7 @@ function allNames() {
 // a person would be the tail wagging the dog. The HTTP row for the same POST is
 // one row away and carries the signed-in username.
 // ---------------------------------------------------------------------------
-function recordChange(setId, how, added, removed, count, ok, errors) {
+function recordChange(setId, how, added, removed, count, ok, errors, code) {
   log.debug("Entering recordChange(). setId=" + setId + ", how=" + how);
   // audit.audit() cannot throw — it is wrapped over there — so there is no guard
   // here and there must not be one: a guard would suggest to the next reader
@@ -282,6 +285,8 @@ function recordChange(setId, how, added, removed, count, ok, errors) {
   audit.audit({
     action: 'claims.change',
     outcome: ok ? 'success' : 'refused',
+    // The condition a refusal was for; '' on a change that was made.
+    errorCode: ok ? '' : (code || ''),
     actor: '',
     target: setId,
     channel: 'http',
@@ -329,8 +334,9 @@ function setSelection(setId, names, how) {
   const id = String(setId || '');
   if (!isKnownSet(id)) {
     log.debug("Leaving setSelection(). No such set.");
-    return { ok: false, errors: ['There is no claim set called "' + id + '". The ' +
-                                 SET_IDS.length + ' are: ' + SET_IDS.join(', ') + '.'] };
+    return errorCodes.mark({ ok: false, errors: ['There is no claim set called "' + id + '". The ' +
+                                 SET_IDS.length + ' are: ' + SET_IDS.join(', ') + '.'] },
+                           'STS-REG-0034');
   }
   const errors = [];
   const wanted = new Set();
@@ -347,9 +353,10 @@ function setSelection(setId, names, how) {
     wanted.add(key);
   });
   if (errors.length) {
-    recordChange(id, how || 'select', [], [], selections[id].length, false, errors);
+    recordChange(id, how || 'select', [], [], selections[id].length, false, errors,
+                 'STS-REG-0035');
     log.debug("Leaving setSelection(). " + errors.length + " error(s); nothing changed.");
-    return { ok: false, errors: errors };
+    return errorCodes.mark({ ok: false, errors: errors }, 'STS-REG-0035');
   }
 
   // A Set for the difference below; the stored form is the list.

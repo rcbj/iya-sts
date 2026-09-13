@@ -85,6 +85,8 @@ const personAssertions = require('../common/person_assertions');
 const config = require('../common/config');
 const realms = require('../common/realms');
 const { log, parseBody, stsKeysFor } = require('../common/helpers');
+// The error-code registry (a leaf). See `refuse()` below for where a code goes.
+const errorCodes = require('../common/error_codes');
 
 // RFC 4517 GeneralizedTime, which is how every timestamp in this directory is
 // spelled. Written here rather than imported because `applications.js` keeps
@@ -264,8 +266,30 @@ function realmLabel() {
 // `why` is kept beside it because this page's own POST handler prints it and
 // because a caller reading one field should not have to know which. One
 // string, so the two can never disagree.
-function refuse(sentence) {
-  return { ok: false, errors: [sentence], why: sentence };
+//
+// **AND THE CONDITION'S ERROR CODE, WHICH IS ON THE RESULT AND NOT IN IT.**
+// `mark()` puts it under a non-enumerable Symbol, so `JSON.stringify(result)`
+// — which is what `/admin-api` sends — cannot carry it, and the routes below
+// and the management API read it back with `errorCodes.codeOf()` to mark the
+// response they send.
+function refuse(sentence, code) {
+  const refused = { ok: false, errors: [sentence], why: sentence };
+  return code ? errorCodes.mark(refused, code) : refused;
+}
+
+// A module's refusal passed on in this file's shape, keeping the module's own
+// code where it set one and naming the fallback where it did not.
+function refusedBy(result, fallback) {
+  return refuse(((result && result.errors) || []).join(' '),
+                errorCodes.codeOf(result) || fallback);
+}
+
+// Mark the response a PKI route is about to send with the code its result
+// carries. A result that succeeded carries none and marks nothing.
+function markRefusal(res, result, fallback) {
+  if (result && result.ok === false) {
+    errorCodes.mark(res, errorCodes.codeOf(result) || fallback);
+  }
 }
 
 // WHICH STORED OBJECT AN ACTION IS ABOUT. `/admin-api` names it as `objectId`;
@@ -306,7 +330,7 @@ async function rebuildEveryScope() {
       done += 1;
       await recertifyScope(scopes[i]);
     } else {
-      log.error('pki_admin: the "' + scopes[i] + '" branch could not be ' +
+      log.error(errorCodes.tag('STS-PKI-0104') + 'pki_admin: the "' + scopes[i] + '" branch could not be ' +
                 'rebuilt under the new Root: ' +
                 (built.errors || []).join(' '));
     }
@@ -624,19 +648,19 @@ async function issueToPerson(identifier, body) {
   log.debug('Entering issueToPerson(). identifier=' + identifier);
   if (!identifier) {
     log.debug('Leaving issueToPerson(). No name.');
-    return refuse('Name the person the key pair is for.');
+    return refuse('Name the person the key pair is for.', 'STS-PKI-0106');
   }
   if (!personAssertions.storable()) {
     log.debug('Leaving issueToPerson(). No directory.');
     return refuse('This process has no directory, so there is nowhere to put ' +
                   'a person\'s assertion key pair and nothing that could read ' +
-                  'one back. `ldap/ldap_server.js` is what fills that slot.');
+                  'one back. `ldap/ldap_server.js` is what fills that slot.', 'STS-PKI-0107');
   }
   const purpose = purposeOf(body);
   if (!purpose) {
     return refuse('"' + body.purpose + '" is not a profile this service ' +
                   'issues a signing key pair for. It issues ' +
-                  pki.PURPOSE_IDS.join(' and ') + '.');
+                  pki.PURPOSE_IDS.join(' and ') + '.', 'STS-PKI-0011');
   }
   if (purpose !== 'jwt') {
     log.debug('Leaving issueToPerson(). The wrong profile.');
@@ -646,7 +670,7 @@ async function issueToPerson(identifier, body) {
                   'nothing off a person, so issuing one here would write a ' +
                   'key pair nothing in this service can ever use — a control ' +
                   'that looks as though it worked. Issue the SAML key pair to ' +
-                  'an application, which is the party RFC 7522 has in mind.');
+                  'an application, which is the party RFC 7522 has in mind.', 'STS-PKI-0108');
   }
   const held = personAssertions.recordFor(identifier);
   if (!held) {
@@ -660,13 +684,13 @@ async function issueToPerson(identifier, body) {
                   '— issuing a signing key to somebody who does not exist ' +
                   'would be this page inventing a person in order to give ' +
                   'them a credential, which is the one thing product mode ' +
-                  'refuses outright.');
+                  'refuses outright.', 'STS-PKI-0109');
   }
   const days = Number(body.days);
   const issued = await pki.issueSigningKeyPair(undefined, {
     identifier: identifier,
     purpose: purpose,
-    // WHAT PUTS `urn:sts-mock:person:<name>` IN THE CERTIFICATE, which is what
+    // WHAT PUTS `urn:sts:person:<name>` IN THE CERTIFICATE, which is what
     // `assertion_grant.js` reads off a presented x5c to hold the person to
     // asserting about themselves. A leaf issued here without it would be
     // indistinguishable from an application's.
@@ -678,7 +702,7 @@ async function issueToPerson(identifier, body) {
   });
   if (!issued.ok) {
     log.debug('Leaving issueToPerson(). The issue failed.');
-    return refuse(issued.errors.join(' '));
+    return refusedBy(issued, 'STS-PKI-0105');
   }
   const record = issued.issued;
   const declared = String(body.issuer || '').trim();
@@ -686,7 +710,7 @@ async function issueToPerson(identifier, body) {
                                          declared ? { issuer: declared } : {});
   if (!written.ok) {
     log.debug('Leaving issueToPerson(). The write failed.');
-    return refuse(written.errors.join(' '));
+    return refusedBy(written, 'STS-PKI-0110');
   }
   log.debug('Leaving issueToPerson(). Issued.');
   return {
@@ -733,23 +757,23 @@ function clearPerson(identifier) {
   log.debug('Entering clearPerson(). identifier=' + identifier);
   if (!identifier) {
     log.debug('Leaving clearPerson(). No name.');
-    return refuse('Name the person to take the key pair off.');
+    return refuse('Name the person to take the key pair off.', 'STS-PKI-0106');
   }
   if (!personAssertions.storable()) {
     log.debug('Leaving clearPerson(). No directory.');
     return refuse('This process has no directory, so nobody holds a key pair ' +
-                  'to take off.');
+                  'to take off.', 'STS-PKI-0107');
   }
   const done = personAssertions.clear(identifier);
   if (done.unknown) {
     log.debug('Leaving clearPerson(). Nobody by that name.');
     return refuse('There is nobody called "' + identifier + '" in the "' +
-                  realmLabel() + '" realm.');
+                  realmLabel() + '" realm.', 'STS-PKI-0109');
   }
   if (!done.ok) {
     log.debug('Leaving clearPerson(). Nothing to take off.');
     return refuse('Nothing was taken off "' + identifier + '" — they hold no ' +
-                  'assertion key pair and declare no issuer.');
+                  'assertion key pair and declare no issuer.', 'STS-PKI-0111');
   }
   log.debug('Leaving clearPerson(). Cleared.');
   return { ok: true, target: 'person', person: identifier,
@@ -796,7 +820,7 @@ async function pkiAction(body) {
                   'realm\'s certificate authority is edited in that realm: ' +
                   'switch to it with the realm switcher and try again. The ' +
                   'Root and the process branch are the exception and may be ' +
-                  'edited from any realm, because they belong to none.');
+                  'edited from any realm, because they belong to none.', 'STS-PKI-0112');
   }
 
   if (action === 'build') {
@@ -831,7 +855,7 @@ async function pkiAction(body) {
     });
     if (!built.ok) {
       log.debug('Leaving pkiAction(). The build failed.');
-      return refuse(built.errors.join(' '));
+      return refusedBy(built, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). Built.');
     return { ok: true,
@@ -846,7 +870,7 @@ async function pkiAction(body) {
     const cleared = pki.clearChain();
     if (!cleared.ok) {
       log.debug('Leaving pkiAction(). Nothing to clear.');
-      return refuse(cleared.errors.join(' '));
+      return refusedBy(cleared, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). Cleared.');
     return { ok: true,
@@ -867,13 +891,13 @@ async function pkiAction(body) {
                     pki.SUBJECT_KIND_IDS.join(' and ') + ' — an application, ' +
                     'which may then assert about anybody it is trusted to ' +
                     'assert about, and a person, whose key may only assert ' +
-                    'about themselves.');
+                    'about themselves.', 'STS-PKI-0012');
     }
     if (target === 'person') {
       return await issueToPerson(identifier, body);
     }
     if (!identifier) {
-      return refuse('Name the application the key pair is for.');
+      return refuse('Name the application the key pair is for.', 'STS-PKI-0113');
     }
     const entry = applications.get(identifier);
     if (!entry) {
@@ -885,7 +909,7 @@ async function pkiAction(body) {
                     'realm. Create it on /admin/applications first — issuing ' +
                     'a signing key to an application nobody has registered ' +
                     'would be this page inventing one in order to give it a ' +
-                    'credential.');
+                    'credential.', 'STS-PKI-0114');
     }
     const purpose = purposeOf(body);
     if (!purpose) {
@@ -893,7 +917,7 @@ async function pkiAction(body) {
                     'issues a signing key pair for. It issues ' +
                     pki.PURPOSE_IDS.join(' and ') + ' — RFC 7523\'s JWT ' +
                     'assertion and RFC 7522\'s SAML 2.0 assertion, which are ' +
-                    'separate key pairs on purpose.');
+                    'separate key pairs on purpose.', 'STS-PKI-0011');
     }
     const days = Number(body.days);
     const issued = await pki.issueSigningKeyPair(undefined, {
@@ -906,7 +930,7 @@ async function pkiAction(body) {
     });
     if (!issued.ok) {
       log.debug('Leaving pkiAction(). The issue failed.');
-      return refuse(issued.errors.join(' '));
+      return refusedBy(issued, 'STS-PKI-0105');
     }
     const record = issued.issued;
     // ---------------------------------------------------------------------
@@ -923,7 +947,7 @@ async function pkiAction(body) {
         attribute: writes[i][0], mode: 'set', value: writes[i][1]
       });
       if (!done || done.ok === false) {
-        log.error('pki_admin: a signing key pair was issued for "' +
+        log.error(errorCodes.tag('STS-PKI-0115') + 'pki_admin: a signing key pair was issued for "' +
                   identifier + '" and ' + writes[i][0] + ' could not be ' +
                   'written: ' + ((done && done.errors) || []).join(' ') +
                   '. The private key is not stored anywhere else and is now ' +
@@ -932,7 +956,7 @@ async function pkiAction(body) {
                       'could not be written to the application entry: ' +
                       ((done && done.errors) || []).join(' ') + ' This ' +
                       'service keeps no second copy of a private key, so ' +
-                      'that key pair is gone. Issue again.');
+                      'that key pair is gone. Issue again.', 'STS-PKI-0115');
       }
     }
     log.debug('Leaving pkiAction(). Issued.');
@@ -965,19 +989,19 @@ async function pkiAction(body) {
       return refuse('"' + body.target + '" is not a kind of subject this ' +
                     'service issues a signing key pair to, so there is none ' +
                     'of that kind to take off. It issues to ' +
-                    pki.SUBJECT_KIND_IDS.join(' and ') + '.');
+                    pki.SUBJECT_KIND_IDS.join(' and ') + '.', 'STS-PKI-0012');
     }
     if (target === 'person') {
       return clearPerson(identifier);
     }
     if (!identifier) {
-      return refuse('Name the application to take the key pair off.');
+      return refuse('Name the application to take the key pair off.', 'STS-PKI-0113');
     }
     const purpose = purposeOf(body);
     if (!purpose) {
       return refuse('"' + body.purpose + '" is not a profile this service ' +
                     'issues a signing key pair for. It issues ' +
-                    pki.PURPOSE_IDS.join(' and ') + '.');
+                    pki.PURPOSE_IDS.join(' and ') + '.', 'STS-PKI-0011');
     }
     // ONE PROFILE'S ATTRIBUTES AND NOT THE OTHER'S. An application commonly
     // holds both key pairs and this control takes ONE off; clearing both
@@ -995,7 +1019,7 @@ async function pkiAction(body) {
       return refuse('Nothing was taken off "' + identifier + '" — it has no ' +
                     'key pair issued for that profile, or there is no such ' +
                     'application. The other profile\'s key pair, if it holds ' +
-                    'one, is untouched either way.');
+                    'one, is untouched either way.', 'STS-PKI-0116');
     }
     log.debug('Leaving pkiAction(). Revoked.');
     return { ok: true,
@@ -1037,7 +1061,7 @@ async function pkiAction(body) {
     });
     if (!built.ok) {
       log.debug('Leaving pkiAction(). The Root failed.');
-      return refuse(built.errors.join(' '));
+      return refusedBy(built, 'STS-PKI-0105');
     }
     // **AND EVERY BRANCH IS REBUILT UNDER IT, IN THE SAME ACT.** A new Root
     // with the old Intermediates still hanging from the old one is a service
@@ -1067,7 +1091,7 @@ async function pkiAction(body) {
     });
     if (!built.ok) {
       log.debug('Leaving pkiAction(). The branch failed.');
-      return refuse(built.errors.join(' '));
+      return refusedBy(built, 'STS-PKI-0105');
     }
     const again = await recertifyScope(scope);
     log.debug('Leaving pkiAction(). A branch was built.');
@@ -1085,7 +1109,7 @@ async function pkiAction(body) {
     const done = await pki.reissueUseCase(scope, useCaseId);
     if (!done.ok) {
       log.debug('Leaving pkiAction(). The reissue failed.');
-      return refuse(done.errors.join(' '));
+      return refusedBy(done, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). Reissued.');
     return { ok: true,
@@ -1102,7 +1126,7 @@ async function pkiAction(body) {
     const done = await pki.recertifyUseCase(scope, useCaseId);
     if (!done.ok) {
       log.debug('Leaving pkiAction(). The renewal failed.');
-      return refuse(done.errors.join(' '));
+      return refusedBy(done, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). Renewed.');
     return { ok: true,
@@ -1122,7 +1146,7 @@ async function pkiAction(body) {
     });
     if (!done.ok) {
       log.debug('Leaving pkiAction(). The import was refused.');
-      return refuse(done.errors.join(' '));
+      return refusedBy(done, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). Imported.');
     return { ok: true, why: done.why };
@@ -1137,7 +1161,7 @@ async function pkiAction(body) {
     });
     if (!done.ok) {
       log.debug('Leaving pkiAction(). The pin was refused.');
-      return refuse(done.errors.join(' '));
+      return refusedBy(done, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). Pinned.');
     return { ok: true, why: done.why };
@@ -1178,7 +1202,7 @@ async function pkiAction(body) {
     });
     if (!done.ok) {
       log.debug('Leaving pkiAction(). The revocation was refused.');
-      return refuse(done.errors.join(' '));
+      return refusedBy(done, 'STS-PKI-0105');
     }
     // **PUBLISHED TO THE DIRECTORY IMMEDIATELY, AND THE HTTP SIDE NEEDS
     // NOTHING.** A CRL is built and signed on demand at
@@ -1213,7 +1237,7 @@ async function pkiAction(body) {
                                        String(body.serialHex || '').trim());
     if (!done.ok) {
       log.debug('Leaving pkiAction(). The release was refused.');
-      return refuse(done.errors.join(' '));
+      return refusedBy(done, 'STS-PKI-0105');
     }
     pkiRevocation.publishSoon(scope, String(body.ca || '').trim());
     log.debug('Leaving pkiAction(). Released.');
@@ -1263,7 +1287,7 @@ async function pkiAction(body) {
       action === 'generate-alt-keys' ? 'alt' : 'main');
     if (!made.ok) {
       log.debug('Leaving pkiAction(). The generation failed.');
-      return refuse(made.errors.join(' '));
+      return refusedBy(made, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). A key pair was generated.');
     return made;
@@ -1277,8 +1301,10 @@ async function pkiAction(body) {
       // page answers with a page: a form of a hundred and fifteen fields
       // redrawn empty because one line of a subjectAltName would not parse is
       // a page somebody would rather not have pressed the button on.
-      return { ok: false, errors: issued.errors, why: issued.errors.join(' '),
-               draft: authoring.draftFrom(body) };
+      return errorCodes.mark({ ok: false, errors: issued.errors,
+                               why: issued.errors.join(' '),
+                               draft: authoring.draftFrom(body) },
+                             errorCodes.codeOf(issued) || 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). Issued ' + issued.object.id + '.');
     return issued;
@@ -1289,7 +1315,7 @@ async function pkiAction(body) {
       undefined, authoring.draftFrom(body), objectIdOf(body));
     if (!loaded.ok) {
       log.debug('Leaving pkiAction(). No such key pair.');
-      return refuse(loaded.errors.join(' '));
+      return refusedBy(loaded, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). A stored key pair was loaded.');
     return loaded;
@@ -1299,7 +1325,7 @@ async function pkiAction(body) {
     const removed = pki.removeObject(undefined, objectIdOf(body));
     if (!removed.ok) {
       log.debug('Leaving pkiAction(). Nothing was removed.');
-      return refuse(removed.errors.join(' '));
+      return refusedBy(removed, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). Removed.');
     return { ok: true, draft: authoring.draftFrom(body),
@@ -1312,7 +1338,7 @@ async function pkiAction(body) {
     const cleared = pki.clearObjects();
     if (!cleared.ok) {
       log.debug('Leaving pkiAction(). Nothing to clear.');
-      return refuse(cleared.errors.join(' '));
+      return refusedBy(cleared, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). The store was emptied.');
     return { ok: true, draft: authoring.draftFrom(body),
@@ -1332,7 +1358,7 @@ async function pkiAction(body) {
                                                objectIdOf(body));
     if (!written.ok) {
       log.debug('Leaving pkiAction(). The export was refused.');
-      return refuse(written.errors.join(' '));
+      return refusedBy(written, 'STS-PKI-0105');
     }
     log.debug('Leaving pkiAction(). ' + written.files.length + ' file(s).');
     return { ok: true, why: written.status,
@@ -1364,7 +1390,7 @@ async function pkiAction(body) {
   log.debug('Leaving pkiAction(). Unknown action.');
   return refuse('Unknown action "' + action + '". The ' +
                 countWord(PKI_ACTIONS.length) + ' are: ' +
-                PKI_ACTIONS.join(', ') + '.');
+                PKI_ACTIONS.join(', ') + '.', 'STS-PKI-0117');
 }
 
 // ---------------------------------------------------------------------------
@@ -2111,7 +2137,7 @@ function subjectColumn(json, draft) {
     pki_dn_o: 'organizationName (2.5.4.10) — who the subject belongs to. It ' +
               'is filled from pki.organisation, which is what the hierarchy ' +
               'above carries, because two certificates from one realm ' +
-              'reading O=Example and O=mock-sts are two organisations as far ' +
+              'reading O=Example and O=sts are two organisations as far ' +
               'as a path validator is concerned.',
     pki_dn_ou: 'organizationalUnitName (2.5.4.11) — the division within the ' +
                'organization. Repeat it by adding OU=… lines to Further ' +
@@ -3419,9 +3445,10 @@ app.post('/admin/pki/certificate', function (req, res) {
   log.debug('Entering the admin PKI pane action.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-PKI-0101');
     admin.respondToAction(req, res, '/admin/pki',
                           refuse('This console session may read but not ' +
-                                 'write.'));
+                                 'write.', 'STS-PKI-0101'));
     log.debug('Leaving the admin PKI pane action. Read-only.');
     return;
   }
@@ -3433,6 +3460,7 @@ app.post('/admin/pki/certificate', function (req, res) {
                               pressed.objectId
                                 ? { objectId: pressed.objectId } : {});
   pkiAction(asked).then(function (result) {
+    markRefusal(res, result, 'STS-PKI-0105');
     if (/json/i.test(String(req.headers['content-type'] || ''))) {
       res.status(result.ok ? 200 : 400).type('application/json')
          .set('Cache-Control', 'no-store')
@@ -3450,8 +3478,9 @@ app.post('/admin/pki/certificate', function (req, res) {
     renderPki(req, res, result.draft || authoring.draftFrom(body), banner);
     log.debug('Leaving the admin PKI pane action. ' + pressed.action + '.');
   }).catch(function (e) {
-    log.error('pki_admin: the pane\'s ' + pressed.action + ' action threw: ' +
+    log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the pane\'s ' + pressed.action + ' action threw: ' +
               (e && e.stack ? e.stack : e));
+    errorCodes.mark(res, 'STS-PKI-0102');
     renderPki(req, res, authoring.draftFrom(body),
               admin.warn(esc('That action failed: ' +
                              (e && e.message ? e.message : e)),
@@ -3482,6 +3511,7 @@ app.post('/admin/pki/export', function (req, res) {
   log.debug('Entering the admin PKI export.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-PKI-0101');
     res.status(403).type('text/plain').set('Cache-Control', 'no-store')
        .send('Exporting a key pair needs the Admin Write role. Reading this ' +
              'console needs Admin Read; taking a private key out of it needs ' +
@@ -3493,6 +3523,7 @@ app.post('/admin/pki/export', function (req, res) {
   authoring.exportKeys(undefined, draft, objectIdOf(body))
     .then(function (written) {
       if (!written.ok) {
+        markRefusal(res, written, 'STS-PKI-0100');
         renderPki(req, res, draft,
                   admin.warn(esc(written.errors.join(' ')),
                              'That export was refused'));
@@ -3512,7 +3543,8 @@ app.post('/admin/pki/export', function (req, res) {
       log.debug('Leaving the admin PKI export. Sent ' + file.name + ', ' +
                 data.length + ' bytes.');
     }).catch(function (e) {
-      log.error('pki_admin: the export threw: ' + (e && e.stack ? e.stack : e));
+      log.error(errorCodes.tag('STS-PKI-0103') + 'pki_admin: the export threw: ' + (e && e.stack ? e.stack : e));
+      errorCodes.mark(res, 'STS-PKI-0103');
       renderPki(req, res, draft,
                 admin.warn(esc('That export failed: ' +
                                (e && e.message ? e.message : e)),
@@ -3525,9 +3557,10 @@ app.post('/admin/pki', function (req, res) {
   log.debug('Entering the admin PKI action.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-PKI-0101');
     admin.respondToAction(req, res, '/admin/pki',
                           refuse('This console session may read but not ' +
-                                 'write.'));
+                                 'write.', 'STS-PKI-0101'));
     log.debug('Leaving the admin PKI action. Read-only.');
     return;
   }
@@ -3537,14 +3570,17 @@ app.post('/admin/pki', function (req, res) {
   // token endpoint's wrapper exists for, met again by the second asynchronous
   // action function in this console.
   pkiAction(body).then(function (result) {
+    markRefusal(res, result, 'STS-PKI-0105');
     admin.respondToAction(req, res, '/admin/pki', result);
     log.debug('Leaving the admin PKI action.');
   }).catch(function (e) {
-    log.error('pki_admin: the ' + String(body && body.action) + ' action ' +
+    log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the ' + String(body && body.action) + ' action ' +
               'threw: ' + (e && e.stack ? e.stack : e));
+    errorCodes.mark(res, 'STS-PKI-0102');
     admin.respondToAction(req, res, '/admin/pki',
                           refuse('That action failed: ' +
-                                 (e && e.message ? e.message : e)));
+                                 (e && e.message ? e.message : e),
+                                 'STS-PKI-0102'));
     log.debug('Leaving the admin PKI action. It threw.');
   });
 });
@@ -3568,9 +3604,10 @@ app.post('/admin/pki/person', function (req, res) {
   log.debug('Entering the admin PKI person action.');
   const body = parseBody(req);
   if (!admin.mayWrite(req)) {
+    errorCodes.mark(res, 'STS-PKI-0101');
     admin.respondToAction(req, res, '/admin/pki',
                           refuse('This console session may read but not ' +
-                                 'write.'));
+                                 'write.', 'STS-PKI-0101'));
     log.debug('Leaving the admin PKI person action. Read-only.');
     return;
   }
@@ -3582,6 +3619,7 @@ app.post('/admin/pki/person', function (req, res) {
   // off a query string and is no better on this page.
   const asked = Object.assign({}, body, { action: 'issue', target: 'person' });
   pkiAction(asked).then(function (result) {
+    markRefusal(res, result, 'STS-PKI-0105');
     if (/json/i.test(String(req.headers['content-type'] || ''))) {
       res.status(result.ok ? 200 : 400).type('application/json')
          .set('Cache-Control', 'no-store')
@@ -3623,8 +3661,9 @@ app.post('/admin/pki/person', function (req, res) {
     log.debug('Leaving the admin PKI person action. ' +
               (result.ok ? 'Issued.' : 'Refused.'));
   }).catch(function (e) {
-    log.error('pki_admin: the person issue action threw: ' +
+    log.error(errorCodes.tag('STS-PKI-0102') + 'pki_admin: the person issue action threw: ' +
               (e && e.stack ? e.stack : e));
+    errorCodes.mark(res, 'STS-PKI-0102');
     renderPki(req, res, authoring.draftFrom(body),
               admin.warn(esc('That action failed: ' +
                              (e && e.message ? e.message : e)),

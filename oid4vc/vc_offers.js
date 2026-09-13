@@ -34,6 +34,7 @@
 // putting it in either of them would make those two require each other.
 // ---------------------------------------------------------------------------
 
+const crypto = require('crypto');
 const qrcode = require('qrcode');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and nothing else here, so it cannot join a cycle and it registers
@@ -43,6 +44,15 @@ const app = require('../common/app');
 const { log, logArtifact, baseUrlOf, randomId, xmlEscape, vciError, userFor,
         walletBaseUrl } = require('../common/helpers');
 const config = require('../common/config');
+// THE MODE (2026-09-12), for two questions only — are the test controls open
+// (an anonymous offer page), and may a response go to an address the request
+// named (the `wallet` parameter). A LEAF requiring only `config`.
+const mode = require('../common/mode');
+// Constant-time comparison, for the Transaction Code. A leaf.
+const stsCrypto = require('../common/crypto');
+// The error codes (common/error_codes.js). A LEAF that requires nothing; a code is
+// marked on the response object and never written into a response.
+const errorCodes = require('../common/error_codes');
 const { VCI_CONFIG_ID, vciConfigIds } = require('./vc_configs');
 
 // The input validator. A LEAF (rule 3): registers no route, closes no cycle.
@@ -90,7 +100,48 @@ const deferredTransactions = realms.map({ persist: 'vc_offers.deferredTransactio
 
 // Access tokens minted from a deferred offer: the credential endpoint answers
 // 202 for these instead of issuing straight away.
-const deferredAccessTokens = new Set();
+//
+// **PER TRUST REALM AND PERSISTED SINCE 2026-09-12, AND IT WAS NEITHER.** It
+// was the one store in this file declared `new Set()` beside four that were
+// `realms.map()` — so a deferred access token minted at
+// `/realm/acme/oauth2/token` was honoured as deferred at the DEFAULT realm's
+// credential endpoint too, and in a dispatched service a token minted on one
+// worker was an ordinary token on every other one, which is the deferred flow
+// silently not being deferred. `vc_offers.deferredTransactions`, the other half
+// of the same flow, has been declared since the day minted state persisted.
+//
+// **THE KEY IS A DIGEST OF THE TOKEN AND NOT THE TOKEN.** An access token is a
+// bearer credential, and a declared store is journalled, replicated to every
+// process and written to `sts_minted` in product mode — sealed there, but a
+// credential this service does not need to hold is better never held at all.
+// Membership is the only question ever asked, and SHA-256 answers it.
+//
+// Kept a SET-SHAPED FACADE (`add`, `has`, `delete`, `size`, `clear`) because
+// `oauth-oidc/oauth2.js` adds and `vc_issuer.js` asks and spends, and neither
+// has any reason to learn that the store underneath changed.
+const deferredAccessTokenStore = realms.map({ persist: 'vc_offers.deferredAccessTokens' });
+
+function deferredTokenKey(token) {
+  return crypto.createHash('sha256').update(String(token || ''), 'utf8')
+    .digest('base64url');
+}
+
+const deferredAccessTokens = {
+  add: function (token) {
+    deferredAccessTokenStore.set(deferredTokenKey(token), { at: Date.now() });
+    return deferredAccessTokens;
+  },
+  has: function (token) {
+    return deferredAccessTokenStore.has(deferredTokenKey(token));
+  },
+  delete: function (token) {
+    return deferredAccessTokenStore.delete(deferredTokenKey(token));
+  },
+  clear: function () {
+    return deferredAccessTokenStore.clear();
+  },
+  get size() { return deferredAccessTokenStore.size; }
+};
 
 // How long a deferred issuance "takes". Short enough for a test to wait for it,
 // long enough that the first poll genuinely comes back still-pending.
@@ -102,7 +153,139 @@ function deferredIntervalS() {
   return config.value('oid4vci.deferredIntervalS');
 }
 
+// `oid4vci.offerTtlS` since 2026-09-12. The constant is the default and keeps
+// its name because `vc_issuer.js` imports it; `offerTtlMs()` is the live value
+// and what every reader here uses.
 const OFFER_TTL_MS = 10 * 60 * 1000;
+
+function offerTtlMs() {
+  const seconds = Number(config.value('oid4vci.offerTtlS'));
+  return isFinite(seconds) && seconds > 0 ? Math.floor(seconds) * 1000 : OFFER_TTL_MS;
+}
+
+// ---------------------------------------------------------------------------
+// THE TRANSACTION CODE (2026-09-12), and three things about it that were wrong
+// in every mode or missing in product.
+//
+// **IT IS DRAWN FROM A CSPRNG.** It was `Math.random()`, whose V8
+// implementation (xorshift128+) is recoverable from a handful of its outputs —
+// and this service hands its outputs to anybody who loads an offer page. The
+// Transaction Code is the only thing binding a pre-authorized code to the
+// person standing at the issuer's screen, so a predictable one is no binding.
+// `crypto.randomInt()` is uniform over the range, which a modulo of random
+// bytes is not. BOTH MODES: a guessable code is a defect a mock should not
+// teach anybody to expect.
+//
+// **ITS LENGTH IS `oid4vci.txCodeLength`** — five digits by default, the value
+// the page has always shown — and the leading digit is never zero, which is
+// what `Math.floor(Math.random() * 90000) + 10000` produced and what a wallet
+// that renders the input as a number relies on.
+//
+// **COMPARISON AND ATTEMPTS ARE THE TOKEN ENDPOINT'S** — `checkTxCode()` below,
+// which `oauth2.js` calls — because that is where the code is presented.
+// ---------------------------------------------------------------------------
+function txCodeLength() {
+  const digits = Number(config.value('oid4vci.txCodeLength'));
+  return isFinite(digits) && digits >= 4 ? Math.floor(digits) : 5;
+}
+
+function newTxCode() {
+  const length = txCodeLength();
+  const low = Math.pow(10, length - 1);
+  return String(crypto.randomInt(low, low * 10));
+}
+
+// ---------------------------------------------------------------------------
+// CHECK A PRESENTED TRANSACTION CODE AGAINST A PRE-AUTHORIZED CODE'S RECORD.
+//
+// CONSTANT-TIME IN BOTH MODES — a `!==` on a short numeric string leaks how
+// many leading digits a guess got right, which turns a hundred thousand guesses
+// into fifty.
+//
+// **THE ATTEMPT LIMIT IS PRODUCT MODE'S**, asked through
+// `mode.verifiesCredentials()`: a Transaction Code is a credential this service
+// verifies, and five digits inside a ten-minute offer are guessable at the
+// token endpoint by anybody holding the offer. So in product each wrong code
+// is counted ON THE RECORD, through the store (a request worker that counted in
+// its own memory would give every worker its own five), and the one that
+// reaches `oid4vci.txCodeMaxAttempts` SPENDS the pre-authorized code. The
+// End-User asks for a new offer. Development counts nothing, so a wallet's
+// wrong-code path can be driven as often as a test likes — which is what that
+// mode is for.
+//
+// Returns `{ ok }`, or `{ ok: false, missing | spent, attemptsLeft }`, and
+// writes to `preAuthorizedCodes` itself so the caller cannot forget either the
+// count or the spending.
+// ---------------------------------------------------------------------------
+function checkTxCode(code, record, presented) {
+  log.debug("Entering checkTxCode().");
+  if (!record.txCode) {
+    log.debug("Leaving checkTxCode(). This offer carries no Transaction Code.");
+    return { ok: true };
+  }
+  const given = String(presented || '');
+  if (!given) {
+    log.debug("Leaving checkTxCode(). None was presented.");
+    return { ok: false, missing: true };
+  }
+  if (stsCrypto.constantTimeEquals(given, record.txCode)) {
+    log.debug("Leaving checkTxCode(). It matches.");
+    return { ok: true };
+  }
+  if (!mode.verifiesCredentials()) {
+    log.debug("Leaving checkTxCode(). Wrong, and development counts nothing.");
+    return { ok: false };
+  }
+  const limit = Math.max(1, Number(config.value('oid4vci.txCodeMaxAttempts')) || 5);
+  const failures = (Number(record.txCodeFailures) || 0) + 1;
+  if (failures >= limit) {
+    preAuthorizedCodes.delete(code);
+    log.warn(errorCodes.tag('STS-VC-0030') +
+             'vc_offers: a pre-authorized code was SPENT after ' + failures +
+             ' wrong Transaction Code(s) (oid4vci.txCodeMaxAttempts = ' + limit + ').');
+    log.debug("Leaving checkTxCode(). Spent.");
+    return { ok: false, spent: true, attemptsLeft: 0 };
+  }
+  preAuthorizedCodes.set(code, Object.assign({}, record, { txCodeFailures: failures }));
+  log.debug("Leaving checkTxCode(). Wrong; " + (limit - failures) + " attempt(s) left.");
+  return { ok: false, attemptsLeft: limit - failures };
+}
+
+// ---------------------------------------------------------------------------
+// WHERE THE END-USER IS SENT: the wallet URL and the page under it.
+//
+// The page is `oid4vci.walletIssuancePath` (2026-09-12). The `wallet` query
+// parameter overrides the configured URL — which is how a wallet on a laptop
+// is pointed at this service without reconfiguring it, and in DEVELOPMENT that
+// stays true for any absolute URL. In a realm that accepts only registered
+// addresses (`mode.acceptsUnregisteredAddresses()` false) it is AN OPEN
+// REDIRECT carrying a pre-authorized code or an issuer_state, so it must name
+// the configured wallet or one listed in `oid4vci.allowedWalletUrls`, and
+// anything else is refused by name rather than silently replaced.
+//
+// Compared with trailing slashes removed, which is the only normalisation the
+// URL gets before it is used, so what is compared is what is dialled.
+// ---------------------------------------------------------------------------
+function walletFor(req) {
+  log.debug("Entering walletFor().");
+  const configured = String(walletBaseUrl() || '').replace(/\/+$/, '');
+  const asked = req.query.wallet ? String(req.query.wallet).replace(/\/+$/, '') : '';
+  if (asked && asked !== configured && !mode.acceptsUnregisteredAddresses()) {
+    const allowed = (config.value('oid4vci.allowedWalletUrls') || []).map(function (one) {
+      return String(one).replace(/\/+$/, '');
+    });
+    if (allowed.indexOf(asked) < 0) {
+      log.debug("Leaving walletFor(). An unregistered wallet URL was refused.");
+      return { error: 'The wallet URL "' + asked + '" is neither oid4vci.walletUrl nor one ' +
+                      'listed in oid4vci.allowedWalletUrls, and this realm does not send an ' +
+                      'offer to an address the request named. Add it to that setting, or ' +
+                      'leave the wallet parameter off.' };
+    }
+  }
+  const path = String(config.value('oid4vci.walletIssuancePath') || '');
+  log.debug("Leaving walletFor().");
+  return { url: (asked || configured) + path };
+}
 
 // A pre-authorized offer is made to an End-User the issuer has ALREADY
 // identified (H.2: they uploaded documents to an employee portal days before),
@@ -123,10 +306,17 @@ function vciOfferUsername() {
 //   deferred     (H.3) the same pre-authorized offer, but flagged so the
 //                      credential endpoint answers 202 with a transaction_id
 //                      instead of a credential.
-function buildCredentialOffer(req, configurationIds, mode) {
+//
+// `options.user` (2026-09-12) is WHO a pre-authorized offer is for. Absent,
+// it is `oid4vci.offerUsername` — the H.2 story, where the issuer identified the
+// End-User out of band — which is what this function always did and what
+// development still does. The offer page passes the signed-in person in a realm
+// whose test controls are closed; see that route.
+function buildCredentialOffer(req, configurationIds, mode, options) {
   log.debug("Entering buildCredentialOffer(). mode=" + mode);
   const base = baseUrlOf(req);
-  const expires = Date.now() + OFFER_TTL_MS;
+  const expires = Date.now() + offerTtlMs();
+  const opts = options || {};
   const offer = {
     credential_issuer: base,
     credential_configuration_ids: configurationIds
@@ -137,14 +327,16 @@ function buildCredentialOffer(req, configurationIds, mode) {
 
   if (mode === 'cross-device' || mode === 'deferred') {
     preAuthorizedCode = randomId(24);
-    // Five numeric digits, which is what the issuer's page displays. The value
-    // never travels in the offer — only its shape does — because the whole
-    // point is that it reaches the End-User by a different channel.
-    txCodeValue = String(Math.floor(Math.random() * 90000) + 10000);
+    // Numeric digits, which is what the issuer's page displays — see
+    // newTxCode() for the length and the generator. The value never travels in
+    // the offer — only its shape does — because the whole point is that it
+    // reaches the End-User by a different channel.
+    txCodeValue = newTxCode();
     preAuthorizedCodes.set(preAuthorizedCode, {
       configurationIds: configurationIds,
       txCode: txCodeValue,
-      user: userFor(vciOfferUsername()),
+      txCodeFailures: 0,
+      user: opts.user || userFor(vciOfferUsername()),
       deferred: mode === 'deferred',
       expires: expires
     });
@@ -160,7 +352,8 @@ function buildCredentialOffer(req, configurationIds, mode) {
           // parameter into two for anything reading it off the page.
           description: 'Type the ' + txCodeValue.length + '-digit code shown by the issuer.'
         },
-        interval: 5
+        // `oid4vci.preAuthorizedPollIntervalS`, 5 by default (2026-09-12).
+        interval: Number(config.value('oid4vci.preAuthorizedPollIntervalS')) || 5
       }
     };
   } else {
@@ -251,12 +444,71 @@ app.get('/issuer/offer', function (req, res) {
   const askedOffer = validation.check(req, 'query', OID4VC_QUERY);
   if (!askedOffer.ok) {
     log.debug('Leaving the offer page. ' + askedOffer.detail);
+    errorCodes.mark(res, 'STS-VC-0025');
     return res.status(400).type('text/plain').send(askedOffer.detail + '\n');
   }
-  const mode = String(req.query.mode || 'same-device');
-  const built = buildCredentialOffer(req, configurationIds, mode);
-  const wallet = String(req.query.wallet || walletBaseUrl()).replace(/\/+$/, '') +
-                 '/vc-issuance-1.html';
+  const offerMode = String(req.query.mode || 'same-device');
+  const walletChoice = walletFor(req);
+  if (walletChoice.error) {
+    log.debug("Leaving the credential offer endpoint. " + walletChoice.error);
+    errorCodes.mark(res, 'STS-VC-0026');
+    return res.status(400).type('text/plain').send(walletChoice.error + '\n');
+  }
+  // -------------------------------------------------------------------------
+  // WHO A PRE-AUTHORIZED OFFER IS FOR (2026-09-12).
+  //
+  // A cross-device or deferred offer carries a pre-authorized code, and that
+  // code IS the authorization: whoever redeems it is issued a credential about
+  // the person it names. This page minted one for `oid4vci.offerUsername` for
+  // anybody who loaded it and printed the Transaction Code beside it — a
+  // credential about a fixed person, for the asking. That is H.2's DEMO
+  // ("they uploaded documents to an employee portal days before") and it is a
+  // test control.
+  //
+  // So where the test controls are closed the page requires a SIGN-ON SESSION
+  // and mints the offer for the person signed in: the issuer's screen is then
+  // what H.2 says it is, a page the End-User reached after identifying
+  // themselves to the issuer. With no session the browser is sent through the
+  // sign-in screen and comes back here. An unauthenticated ("continue without
+  // signing in") session is not an identification and is refused by name.
+  //
+  // A SAME-DEVICE offer is not gated. It carries an issuer_state and no
+  // authorization at all — the wallet still takes the End-User through
+  // /oauth2/authorize, which authenticates them there — so there is nothing to
+  // mint for anybody.
+  //
+  // `authn.js` is required HERE rather than at the top of this file: this
+  // module is required by `oauth2.js` for its stores, and a top-level require
+  // of the authentication service from a store module is a cycle waiting for
+  // the load order to change. Inside the handler it is always a cache hit.
+  // -------------------------------------------------------------------------
+  let offerUser = null;
+  const preAuthorized = offerMode === 'cross-device' || offerMode === 'deferred';
+  if (preAuthorized && !mode.opensTestControls()) {
+    const authn = require('../authn/authn');
+    const session = authn.sessionOf(req);
+    if (!session || !session.user || !session.user.username) {
+      log.debug("Leaving the credential offer endpoint. A sign-in is needed first.");
+      return res.redirect(302, authn.beginAuthentication({
+        returnTo: req.originalUrl && req.originalUrl.charAt(0) === '/' &&
+                  req.originalUrl.charAt(1) !== '/' ? req.originalUrl : '/issuer/offer',
+        protocol: 'OpenID4VCI'
+      }));
+    }
+    if (session.authenticated === false) {
+      log.debug("Leaving the credential offer endpoint. The session is not authenticated.");
+      errorCodes.mark(res, 'STS-VC-0027');
+      return res.status(403).type('text/plain').send(
+        'A pre-authorized Credential Offer is a credential about the person it is made ' +
+        'for, and this browser has not signed in — it chose to continue without doing so. ' +
+        'Sign in as the person the credential should describe and load this page again.\n');
+    }
+    offerUser = Object.assign({}, userFor(session.user.username),
+                              session.user.sub ? { sub: session.user.sub } : {});
+  }
+  const built = buildCredentialOffer(req, configurationIds, offerMode,
+                                     { user: offerUser });
+  const wallet = walletChoice.url;
 
   // Sweep expired offers/states/codes while we are here.
   const now = Date.now();
@@ -269,7 +521,7 @@ app.get('/issuer/offer', function (req, res) {
   let offerQuery;
   if (String(req.query.by || '') === 'reference') {
     const id = randomId(12);
-    credentialOffers.set(id, { offer: built.offer, expires: now + OFFER_TTL_MS });
+    credentialOffers.set(id, { offer: built.offer, expires: now + offerTtlMs() });
     const offerUri = base + '/oid4vci/credential-offer/' + id;
     offerQuery = 'credential_offer_uri=' + encodeURIComponent(offerUri);
     log.debug("The offer is passed by reference: " + offerUri);
@@ -341,7 +593,9 @@ function renderOfferQrPage(res, opts) {
       log.debug("Leaving renderOfferQrPage(). Rendered a QR code.");
     })
     .catch(function (e) {
-      log.error("could not render the offer QR code: " + e.message);
+      log.error(errorCodes.tag('STS-VC-0028') +
+                "could not render the offer QR code: " + e.message);
+      errorCodes.mark(res, 'STS-VC-0028');
       res.status(500).type('text/plain').send('Could not render the Credential Offer QR code: ' + e.message);
     });
 }
@@ -352,6 +606,7 @@ app.get('/oid4vci/credential-offer/:id', function (req, res) {
   if (!record || record.expires < Date.now()) {
     credentialOffers.delete(req.params.id);
     log.debug("Leaving the credential offer retrieval endpoint. No such offer.");
+    errorCodes.mark(res, 'STS-VC-0029');
     return vciError(res, 404, 'invalid_request', 'No such Credential Offer, or it has expired.');
   }
   res.status(200).type('application/json').set('Cache-Control', 'no-store')
@@ -368,6 +623,9 @@ module.exports = {
   deferredReadyMs: deferredReadyMs,
   deferredIntervalS: deferredIntervalS,
   OFFER_TTL_MS: OFFER_TTL_MS,
+  offerTtlMs: offerTtlMs,
+  checkTxCode: checkTxCode,
+  walletFor: walletFor,
   vciOfferUsername: vciOfferUsername,
   buildCredentialOffer: buildCredentialOffer,
   renderOfferQrPage: renderOfferQrPage

@@ -53,7 +53,7 @@ this module registers rather than being required, for the ordinary reason:
 ## The serial number is random, and a constant one was a browser-only bug
 
 The self-signed certificate this module mints is regenerated at every start,
-its subject never varies (`CN=localhost, O=mock-sts`), and it is the one a
+its subject never varies (`CN=localhost, O=sts`), and it is the one a
 PERSON is asked to trust in a browser. Its serial was the constant `'03'` until
 2026-09-01 — chosen so that two of this service's certificates could be told
 apart in a packet capture — and NSS files a certificate under **(issuer,
@@ -141,7 +141,7 @@ the one place a reader goes when a handshake is failing.
 
 ---
 
-## A verified client certificate IS a login now, and no revocation is checked
+## A verified client certificate IS a login now, and its revocation is checked first
 
 **THIS SECTION SAID THE OPPOSITE UNTIL 2026-09-05 AND ITS HEADING WAS "A
 verified client certificate is not a login".** The old text is below, kept
@@ -154,13 +154,13 @@ protected is how to avoid losing that.
   not port-scoped, so a browser that presents a certificate to 9443 comes away
   signed in on the main port too, which is single sign-on and is the same thing
   every other family here already gives it.
-* **What did NOT change is the strength of the claim.** Verification still means
-  one thing exactly: OpenSSL built a chain from what the client sent to an anchor
-  somebody POSTed to `/tls/trust`. **No revocation is checked**, so a revoked
-  certificate verifies here and would not verify anywhere that matters. Every
-  report this module emits says so in the same breath as the session —
-  `authentication.revocationChecked` is `false` beside `authentication.authenticated`
-  being `true`, in one object, so neither can be read alone.
+* **What did NOT change is the strength of the CHAIN claim.** Verification still
+  means one thing exactly: OpenSSL built a chain from what the client sent to an
+  anchor in the truststore. ~~**No revocation is checked**~~ — **since
+  2026-09-12 it is**, before the session starts and before the authentication is
+  recorded; see the section below. `authentication.revocationChecked` used to be
+  the constant `false` beside `authenticated: true`, and is now what the check
+  did.
 * **Why it changed.** PKI client-certificate authentication is a real, deployed
   way for a person to sign in to a web application, and this service exists to
   exercise clients of exactly that kind. Every other family here resolves the
@@ -234,6 +234,66 @@ protected is how to avoid losing that.
   `applySpiffeCertificate()` in `ldap/ldap_server.js`, which says so beside
   `certificatePlan()` for exactly this reason: the two functions look alike
   enough to be "fixed" into agreement by somebody reading only one.
+
+## A PRESENTED CERTIFICATE'S REVOCATION IS CONSULTED (2026-09-12)
+
+`common/revocation_status.js` is the check and `common/CLAUDE.md` 3ad argues it.
+What is this directory's:
+
+* **8443 AND 9443 CHECK BEFORE THEY ACT.** The handler awaits the verdict
+  (`checkedSocket()`) and then answers (`answer()`); `secureConnection` awaits it
+  before `recordClientCertificate()`. A certificate the policy refuses starts
+  **no session**, is **not recorded** as an authentication (it gets a refusal
+  audit row with `STS-PKI-0118` or `-0119` instead), and on the **required
+  listener answers 403** with the report as its body. The optional listener still
+  answers 200 — reporting is what it is for — and its `authentication` block says
+  `refusedOnRevocation: true`. `/tls/whoami` carries the whole verdict at
+  `clientCertificate.revocation`; `GET /tls` carries the policy at `revocation`.
+* **NOT AT THE HANDSHAKE, AND THAT WAS MEASURED RATHER THAN ASSUMED.** Node's
+  `crl` secure-context option turns on OpenSSL's CRL check for the leaf, which
+  then REQUIRES a CRL for every issuer: a client from an authority with no list
+  loaded fails with `UNABLE_TO_GET_CRL` (two CAs, a CRL for one — the other's
+  client was refused). It is also static, leaf-only and fetches nothing. So the
+  handshake completes and the request, the session and the recorded identity are
+  what get refused.
+* **THE MAIN PORT IS `common/app.js`'s ANNOTATION**, read by
+  `oauth-oidc/mtls.js`'s `peerVerified()` — which answers `verified: false` with
+  `error: 'CERT_REVOKED'` for a refused chain, so every caller that resolves a
+  certificate to an identity refuses it — and by SCIM's and RFC 8705's
+  client-certificate doors. With request workers the check runs in the worker,
+  which sees the chain because `common/request_pool.js`'s `peerOf()` forwards
+  `issuerChain` beside the leaf now.
+* **LDAPS 636 IS NOT A DOOR**: it asks for no client certificate.
+* **A FOREIGN CLIENT CERTIFICATE IS ASKED ABOUT BY OCSP TOO, THE SAME DAY**, and
+  its delta and indirect CRLs are read — which matters here more than anywhere,
+  because these two listeners are where a certificate from somebody else's CA
+  most often arrives. Two consequences for this directory. **A first request can
+  wait on two fetches**, the responder and then the CRL when the responder fails,
+  each bounded by `pki.revocationFetchTimeoutMs`; the answers are cached, so the
+  second request with the same certificate waits on neither. **And the 403 on
+  9443 now also means "the issuer's own responder does not know this
+  certificate"** under hard-fail — `unknownKind: 'responder-unknown'` on the
+  link in `clientCertificate.revocation`, which is where to look before reading
+  a 403 as a revocation.
+* **AND SINCE THE THIRD PASS THE FIRST REQUEST CAN WAIT ON MORE THAN TWO.** A
+  delegated responder's own CRL is fetched before its answer is used; a list whose
+  signer nothing here holds has that signer fetched from the list's caIssuers
+  address; a distribution point may be `ldaps:` (or `ldap:`, where
+  `pki.revocationLdap` allows it). Each is bounded by the same timeout and cached.
+  **Under hard-fail a 403 can therefore also mean** a delegated responder whose own
+  status could not be established (`STS-PKI-0127` in the log), a caIssuers address
+  that did not answer (`STS-PKI-0126`), or a directory that answered unusably
+  (`STS-PKI-0128`) — each named in `clientCertificate.revocation`'s `why`.
+  **A presented chain whose issuer the client did not send is not path-built**
+  from caIssuers: the handshake could not have verified without it, so the case
+  does not reach these listeners.
+
+`tests/revocation_status.js` binds both listeners on port 0 in a child process
+and asserts the 403, the 200 and the absent session over a real handshake. Its
+OpenSSL child (sections 8 to 11) holds OCSP, delta and indirect CRLs against a
+real `openssl ocsp` responder and `openssl ca` lists; it calls `verdictFor()`
+directly, because what those sections vary is the documents, and the listener
+half already shows that a refused verdict reaches both ports.
 
 ## Post-quantum certificates
 
@@ -599,3 +659,148 @@ anchor**: twenty-nine failures per mode in `memory` and `postgres`, each naming
 a certificate and none naming a cause, on a service that was answering
 perfectly throughout. `tests/tools/run-report.js` re-reads it before every
 protocol job now; `tests/CLAUDE.md` carries that half.
+
+## THE TRUSTSTORE IS A TEST CONTROL ONLY IN DEVELOPMENT MODE (2026-09-12)
+
+`POST /tls/trust` and `POST /tls/trust/clear` answered anybody who could reach the port,
+and since 2026-09-06 an anchor decides whose client certificate becomes an IDENTITY — a
+directory entry, a group, a role, and for a remote XACML PEP the documents this service
+enforces its own access with. **In product mode both answer 403**, naming
+`tls.trustAnchorsFile`: a PEM file read at require time, before 8443 and 9443 are created
+from `secureContextOptions()` (which is why it pushes into `anchors` directly — `addAnchors()`
+re-applies the context to listeners that do not exist yet). A file that cannot be read, or
+holds no certificate, is FATAL.
+
+**The mode is asked in the DEFAULT realm** (`truststoreOpenToAnybody()`): the anchors are
+one array for every listener in the process, so a realm left in development inside a
+product process must not be a way to add one.
+
+**REFUSED RATHER THAN GATED, AND THAT IS A STRUCTURAL CHOICE.** The natural gate is
+`/admin-api`'s access token with `admin:write`, and that verification is middleware inside
+`mgmt-api/admin_api.js`, exported as nothing — a copy here would be a second answer to who
+may administer this service. **That argument still holds for these two routes and they are
+unchanged**; what it no longer implies is that product mode has no runtime door. It read
+*"there is no management-API truststore operation either … the runtime door still to
+build"*, and the next section is that door.
+
+## THE GATED DOORS: `/admin/tls/trust` AND `/admin-api/tls/trust` (2026-09-12)
+
+The runtime door the section above was missing, built the way that section said it had to
+be: behind the gates that already exist rather than a copy of one here. The console page
+lists every anchor — subject, issuer, serial, validity, SHA-256 fingerprint and **source**
+(`file` for one read from `tls.trustAnchorsFile`, `runtime` otherwise), paged — with an add
+form and a Remove button per row; `GET /admin-api/tls/trust` and `POST
+/admin-api/tls/trust/{add,remove}` are its twins (rule 7). Both answer in both modes.
+
+**THIS MODULE OWNS WHAT A CERTIFICATE IS AND NOTHING ELSE.** `truststore` — `list`, `add`,
+`remove` — is the whole interface: `describePem()` now also reads the issuer, serial,
+validity and `ca` off OpenSSL (it reads the ML-DSA anchors forge cannot), each anchor
+carries `source` and `addedAt`, and `removeAnchor()` takes ONE fingerprint in either the
+colon or the plain-hex spelling. The vocabulary, the audit row (`admin.truststore.change`)
+and the sentences are `admin-core/admin_actions.js`'s `truststoreAction()`; the reply is
+`admin-core/admin_views.js`'s `truststoreJson()`.
+
+Four things about it are decisions:
+
+* **`add` IS STRICT AND `POST /tls/trust` IS NOT.** Through the gated doors a bundle with
+  one block OpenSSL cannot read is refused WHOLE, checked before anything is pushed — an
+  unparseable `ca` entry makes the next `setSecureContext()` throw on every listener, which
+  `applyAnchors()` logs while the listeners keep their old context and the page says
+  otherwise. The test control keeps accepting what it is given, because development-mode
+  behaviour is not this change's to alter.
+* **THERE IS NO BULK CLEAR ON EITHER GATED DOOR.** `clearAnchors()` stays behind
+  `POST /tls/trust/clear` only. A clear's reach is every client certificate every other
+  caller relies on, and `tests/CLAUDE.md` records one unguarded clear costing a remote PEP
+  its identity for the rest of a run. Removing a `file` anchor IS allowed, and both the
+  page and the reply say it comes back at the next start.
+* **NOTHING IS PERSISTED**, which is the rule this array already follows (the note above
+  `anchors`). The durable door is still `tls.trustAnchorsFile`.
+* **THE SLOT IS FILLED BY `common/protocol_stack.js`, NOT BY THIS MODULE, AND THAT IS
+  FORCED.** This module is really first loaded from INSIDE `admin-ui/admin.js`'s require —
+  `admin.js` → `admin-core/admin_views.js` → `spiffe/spiffe_auth.js` → here — so a
+  `require('../admin-ui/admin')` at its top level would be a cycle and would find no
+  `setTruststore` on that module's half-built exports. The stack fills it on the line after
+  it requires this module, where both are whole. **That load order is itself worth
+  knowing**: the documented position of this module is 20, and its routes are in fact
+  registered during 18.
+
+**BOTH DOORS ARE PINNED TO THE FRONT PROCESS** with request workers
+(`common/request_pool.js`'s `NEVER_DISPATCHED`, beside `/tls`). The array is the
+configuration of listeners only that process holds, so a worker changing its own copy
+changes nothing a handshake reads — the socket argument the listener certificate made on
+the same day, read a third time. `tests/truststore_admin.js` pins the primitives, the slot,
+the layer, the pin and the product refusal, the last three in a child process, and asserts
+the add and the remove as a REAL HANDSHAKE on a registered listener; `sts_admin_api_operations`
+and `sts_admin_console` drive both doors over HTTP with a CA they mint and remove.
+
+## THE PROTOCOL POLICY, AND THE BIND ADDRESS
+
+**`protocolOptions()` is where `tls.minVersion` and `tls.ciphers` are stated for every TLS
+socket this process owns** — it rides in `secureContextOptions()`, so 8443 and 9443 are
+created with it AND every truststore change re-applies it to every registered listener
+(the main port among them), `server.js` passes it when creating the main port, and
+`ldap_server.js` asks for it for LDAPS. The defaults are node's own written down, so an
+unedited service negotiates exactly what it did. **A cipher list that builds no context is
+FATAL at require time**: found later it would be a TypeError from `createServer()`, or a
+listener silently keeping its old context after a `setSecureContext()` throws.
+
+Both listeners bind `global.host` (`helpers.listenHost()`), which they ignored for the
+literal `'0.0.0.0'`. The self-signed fallback certificate's three literals are
+`tls.selfSignedKeyBits`, `tls.selfSignedValidityYears` and `tls.selfSignedOrganization`,
+defaults unchanged; the CN is still the first of `tls.hostnames`.
+
+`tests/ldap_tls_product_mode.js` asserts the 403, the anchors file (and its fatal
+refusal), the fatal cipher list, and — as a real handshake — that `tls.minVersion=TLSv1.3`
+refuses a TLS 1.2 client on 8443. Mutation-tested against the product refusal removed.
+
+## A RUNTIME ANCHOR SURVIVES A RESTART (2026-09-12)
+
+The gated doors above said *nothing is persisted*, and the durable door was
+`tls.trustAnchorsFile` alone. A product deployment that added its remote PEP's
+CA through `/admin/tls/trust` lost it at the next restart, and every PEP then
+failed to authenticate with nothing on any page saying why.
+
+**THE STORE IS THE DIRECTORY**: `ou=trustAnchors` in the DEFAULT realm, one
+`stsTrustAnchor` entry per anchor (RDN `cn=<SHA-256 fingerprint, upper hex>`,
+the PEM, the fingerprint, who added it), seeded as a structural container and
+owned by `ldap/ldap_server.js`. It was chosen over the keystore's row family
+(product-only, never adopted across processes) and over an appconfig override
+(a PEM bundle is not a setting and would be drawn as a text box): the directory
+is the one thing persisted in every store mode and replicated between processes,
+so an anchor added in one front process survives a restart and reaches another
+with no mechanism of its own.
+
+Four rules:
+
+* **WRITTEN AS IT IS ADDED, REMOVED AS IT IS REMOVED** — `addAnchors()`,
+  `removeAnchor()` and `clearAnchors()` go through the store; an anchor from
+  `tls.trustAnchorsFile` is never written, because the file brings it back.
+* **RESTORED BEFORE ANYTHING BINDS** — `listen()` calls `reloadStoredAnchors()`,
+  which is after `persistence.start()` restored the directory.
+* **ANOTHER PROCESS'S CHANGE IS RE-APPLIED** — the directory's replication
+  appliers call `reloadStoredAnchors()` for any key under the container. It adds
+  what the store has and the array lacks, removes a STORED anchor the store no
+  longer has, leaves an anchor the store refused (a full directory) and every
+  `file` anchor alone, and writes nothing — so it cannot echo a change back.
+  A store that cannot be read changes nothing: that is not evidence of a removal.
+* **A SLOT, FILLED BY THE DIRECTORY** — `setTrustAnchorStore({list, write,
+  remove})`, validated whole. `ldap_server.js` already requires this module for
+  its LDAPS certificate, so the fill is a call in the ordinary direction; a
+  require from here would register every `/ldap` route ahead of the console's.
+  With nothing installed (`npm test`, the parent project's in-process Kerberos
+  jobs) the truststore behaves exactly as before.
+
+Every anchor row carries `persisted`, and the list carries `stored`. In
+`memory` persistence mode an anchor is still written to the directory and the
+directory itself is not kept — `stored: true` means *written down*, and
+`/admin/persistence` says whether anything written down survives.
+
+**WHAT IT DOES NOT CLOSE**: anybody the directory lets write
+`ou=trustAnchors` over LDAP can add an anchor. That is the directory's
+authorization gap, which covers `ou=federations`, `ou=policies` and every other
+container equally, and is recorded in `common/mode.js`.
+
+`tests/truststore_persistence.js` pins the reload rules against a store it
+controls and a real restart against an `ldif` store, in child processes. It
+found a pre-existing defect in `persistence/persistence.js` on its first run —
+see that directory's `CLAUDE.md`.

@@ -337,14 +337,14 @@ function flatten(bag) {
 //
 // **STEP 2 WAS MISSING AND IT WAS A REAL DEFECT**, found the first time this
 // was pointed at another instance of this service. A foreign `sub` is an opaque
-// string, and that partner's happened to be `urn:sts-mock:user:alice` — this
+// string, and that partner's happened to be `urn:sts:user:alice` — this
 // service's OWN subject format, because the partner IS this service. The raw
 // value went to `startSession()`, `userFor()` put the prefix on again, and every
-// downstream token carried `sub: urn:sts-mock:user:urn:sts-mock:user:alice`.
+// downstream token carried `sub: urn:sts:user:urn:sts:user:alice`.
 //
 // The doubling is the symptom and not the bug. The bug is that the identity
 // funnel ALREADY normalises — `recordAuthentication()` runs `presented` through
-// `identityOf()`, which is what makes `alice`, `urn:sts-mock:user:alice` and
+// `identityOf()`, which is what makes `alice`, `urn:sts:user:alice` and
 // `alice@REALM` one person and one directory entry — so an unnormalised name
 // reaching the SESSION means the session and the directory disagree about who
 // signed in. `/admin/users` said `alice` while the tokens said something else,
@@ -354,7 +354,7 @@ function flatten(bag) {
 //
 // **THE PREFIX IS APPLIED AFTER NORMALISATION**, which is what makes it work at
 // all: `fed-alice` separates a federated person from a local one, and
-// `fed-urn:sts-mock:user:alice` would separate them from everybody including
+// `fed-urn:sts:user:alice` would separate them from everybody including
 // themselves on their next sign-in. It cannot change WHICH incoming value was
 // picked, only what it is called here.
 // ---------------------------------------------------------------------------

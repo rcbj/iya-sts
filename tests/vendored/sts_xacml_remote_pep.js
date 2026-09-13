@@ -170,7 +170,7 @@
 //      cannot reach.
 //   5. The remote PEP and the PDP disagreeing about an attribute SPELLING.
 //      `xacml_pip.js` answers both the bare name and the
-//      `urn:sts-mock:xacml:attribute:` form; `pep.js` asserts both. A change to
+//      `urn:sts:xacml:attribute:` form; `pep.js` asserts both. A change to
 //      either side that dropped one would deny everything under a policy that
 //      is working perfectly — which `xacml-pep/CLAUDE.md` records as having
 //      cost a run already.
@@ -270,6 +270,19 @@ const PEP_NAME = (LAUNCHER_STARTED_IT
   : "pep-" + names.runStamp()).toLowerCase()
     .replace(/[^a-z0-9-]/g, "").slice(0, 40);
 
+// THE TWO PEOPLE THE POLICY DECIDES ABOUT, created by `createThePeople()` in
+// this realm rather than seeded (2026-09-12) — see that function.
+//
+// **THE LAUNCHERS' PEP IDENTITY IS STILL A SEED**, and that is recorded rather
+// than changed: when a launcher owns the container, PEP_NAME is the seeded
+// `remote-pep-1` in the seeded `remote-peps` group, and product mode seeds
+// neither. The self-started path already creates both, in
+// `provisionTheContainersIdentity()`; the launcher path would need the same two
+// writes made before the container's first registration attempt, which is the
+// launcher's to arrange.
+const ADMIN_PERSON = "pep-admin-person";
+const STAFF_PERSON = "pep-staff-person";
+
 const POLICY_A = "remote-pep-baseline";
 const POLICY_B = "remote-pep-widened";
 // `xacml_templates.js` builds every policy id as this prefix plus the slug of
@@ -277,8 +290,8 @@ const POLICY_B = "remote-pep-widened";
 // service, so that the assertions below say WHICH document the PEP is starting
 // from and not merely that it changed.
 const ID_OF = {};
-ID_OF[POLICY_A] = "urn:sts-mock:xacml:policy:" + POLICY_A;
-ID_OF[POLICY_B] = "urn:sts-mock:xacml:policy:" + POLICY_B;
+ID_OF[POLICY_A] = "urn:sts:xacml:policy:" + POLICY_A;
+ID_OF[POLICY_B] = "urn:sts:xacml:policy:" + POLICY_B;
 
 // THE POLL INTERVAL IS THE MEASUREMENT INSTRUMENT of sections 4, 5, 6 and 9,
 // which is why it is here rather than left at the image's fifteen seconds.
@@ -774,7 +787,14 @@ function containerSubject() {
 // the PDP will read when it resolves this certificate.
 async function provisionTheContainersIdentity() {
   log.debug("Entering provisionTheContainersIdentity().");
-  const made = await postJson(api("/users/create"), { username: PEP_NAME });
+  // With the attributes a real entry carries and nothing invented — product
+  // mode invents no persona onto an entry, and a directory entry for an
+  // enforcement point is a record somebody reads.
+  const made = await postJson(api("/users/create"), {
+    username: PEP_NAME, invent: false,
+    attributes: { cn: PEP_NAME, sn: "Remote PEP", displayName: PEP_NAME,
+                  description: "the remote XACML PEP container this job drives" }
+  });
   assert.ok(made.status === 200,
     "POST /admin-api/users/create should put " + PEP_NAME + " in " + REALM +
     "'s directory; it answered " + made.status + ". A client certificate " +
@@ -1436,13 +1456,13 @@ async function itDecidesInItsOwnProcess() {
 
   const cases = [
     { what: "an admin may do anything",
-      query: { subject: "carol", employeeType: "admin", action: "DELETE" },
+      query: { subject: ADMIN_PERSON, employeeType: "admin", action: "DELETE" },
       allowed: true, decision: "Permit" },
     { what: "staff may GET",
-      query: { subject: "alice", employeeType: "staff", action: "GET" },
+      query: { subject: STAFF_PERSON, employeeType: "staff", action: "GET" },
       allowed: true, decision: "Permit" },
     { what: "staff may NOT DELETE",
-      query: { subject: "alice", employeeType: "staff", action: "DELETE" },
+      query: { subject: STAFF_PERSON, employeeType: "staff", action: "DELETE" },
       allowed: false, decision: "Deny" },
     { what: "a role nobody granted anything to is denied",
       query: { subject: "mallory", employeeType: "contractor", action: "GET" },
@@ -1465,7 +1485,7 @@ async function itDecidesInItsOwnProcess() {
     });
   }
 
-  const decided = await askThePep({ subject: "carol", employeeType: "admin",
+  const decided = await askThePep({ subject: ADMIN_PERSON, employeeType: "admin",
                                     action: "GET" });
   check("the answer names the PEP that decided and the policy it applied",
         function () {
@@ -1522,11 +1542,13 @@ async function itDecidesInItsOwnProcess() {
 // ---------------------------------------------------------------------------
 // WHAT IS ACTUALLY BEING PROVED, AND WHY EACH STEP IS NEEDED.
 //
-// The policy is the `rbac` template over `employeeType`, and **carol carries
-// `employeeType: admin` on her entry under `ou=users` in the embedded
-// directory** — put there by `ldap_server.js`'s seed, in every realm, and by
-// nothing this job did. Nothing about carol travels in the request below: the
-// query names a subject and an action and asserts NO attribute at all.
+// The policy is the `rbac` template over `employeeType`, and **ADMIN_PERSON
+// carries `employeeType: admin` on their entry under `ou=users` in the
+// embedded directory** — put there by THIS JOB, in `createThePeople()`, through
+// the realm's own `/admin-api/users/create`. (Until 2026-09-12 it was `carol`,
+// put there by `ldap_server.js`'s development-mode seed; product mode seeds
+// nobody.) Nothing about them travels in the request below: the query names a
+// subject and an action and asserts NO attribute at all.
 //
 // So a Permit can only have come from one place. Four checks, and each rules
 // out a different way of being right by accident:
@@ -1565,48 +1587,48 @@ async function thePipReachesTheDirectory() {
   // NOTHING IS ASSERTED ABOUT HER. No employeeType, no role, no attribute of
   // any kind — only a name and an action. Every attribute the policy reads has
   // to come from the directory, through the PIP, or the request is refused.
-  const carol = await askThePep({ subject: "carol", action: "DELETE" });
-  check("the PEP PERMITS carol on an attribute it pulled from the PDP's " +
+  const adminAsked = await askThePep({ subject: ADMIN_PERSON, action: "DELETE" });
+  check("the PEP PERMITS " + ADMIN_PERSON + " on an attribute it pulled from the PDP's " +
         "directory, with the request asserting nothing", function () {
-    assert.strictEqual(carol.body.decision, "Permit",
-      "carol carries employeeType=admin on her entry under ou=users in the " +
+    assert.strictEqual(adminAsked.body.decision, "Permit",
+      ADMIN_PERSON + " carries employeeType=admin on their entry under ou=users in the " +
       "embedded directory and NOTHING in this request says so. The policy " +
       "is the rbac template over employeeType, so a Permit can only have " +
       "come from POST /xacml/pip resolving that designator against her " +
-      "entry. The PEP said " + carol.body.decision + " — " +
-      String(carol.body.why).slice(0, 300));
-    assert.strictEqual(carol.status, 200,
-      "and the access is allowed; it answered " + carol.status);
+      "entry. The PEP said " + adminAsked.body.decision + " — " +
+      String(adminAsked.body.why).slice(0, 300));
+    assert.strictEqual(adminAsked.status, 200,
+      "and the access is allowed; it answered " + adminAsked.status);
   });
 
   check("and it SAYS the PIP answered, rather than leaving it to be inferred",
         function () {
-    assert.ok(carol.body.pip && carol.body.pip.used === true,
+    assert.ok(adminAsked.body.pip && adminAsked.body.pip.used === true,
       "the answer should carry a pip block saying the query was made — two " +
       "decisions that differ only because one had an attribute the other did " +
       "not are otherwise identical on the wire. It carries " +
-      JSON.stringify(carol.body.pip));
-    assert.strictEqual(carol.body.pip.subject, "carol",
-      "naming the subject it asked about; it says " + carol.body.pip.subject);
-    assert.ok(carol.body.pip.resolved >= 1,
+      JSON.stringify(adminAsked.body.pip));
+    assert.strictEqual(adminAsked.body.pip.subject, ADMIN_PERSON,
+      "naming the subject it asked about; it says " + adminAsked.body.pip.subject);
+    assert.ok(adminAsked.body.pip.resolved >= 1,
       "and how many designators came back with values. A Permit with ZERO " +
       "resolved would mean the attribute arrived some other way, which is " +
       "the one reading this whole section exists to rule out. It resolved " +
-      carol.body.pip.resolved + " of " + carol.body.pip.designators + ".");
+      adminAsked.body.pip.resolved + " of " + adminAsked.body.pip.designators + ".");
   });
 
   // THE SAME QUESTION AT THE PDP. Two enforcement points, one policy, one
   // directory — and now one answer.
-  const pdpOnCarol = await askThePdp("carol", "DELETE");
+  const pdpOnAdmin = await askThePdp(ADMIN_PERSON, "DELETE");
   check("AND THE PDP AGREES WITH IT, which is the whole point", function () {
-    assert.strictEqual(pdpOnCarol.Decision, "Permit",
+    assert.strictEqual(pdpOnAdmin.Decision, "Permit",
       "the PDP resolves the same attribute through its own embedded PIP and " +
-      "said " + pdpOnCarol.Decision);
-    assert.strictEqual(pdpOnCarol.Decision, carol.body.decision,
+      "said " + pdpOnAdmin.Decision);
+    assert.strictEqual(pdpOnAdmin.Decision, adminAsked.body.decision,
       "the two enforcement points must reach the SAME decision about the " +
       "same person under the same policy. The PDP said " +
-      pdpOnCarol.Decision + " and the remote PEP said " +
-      carol.body.decision + ". This assertion is the inversion of what this " +
+      pdpOnAdmin.Decision + " and the remote PEP said " +
+      adminAsked.body.decision + ". This assertion is the inversion of what this " +
       "section used to hold: before POST /xacml/pip existed these two " +
       "disagreed BY DESIGN, and the disagreement was the drift a shared " +
       "policy repository is supposed to prevent.");
@@ -1728,7 +1750,7 @@ async function aDeployedPolicyConverges() {
   log.debug("Entering aDeployedPolicyConverges().");
   log.info("=== A new policy, deployed at the PAP, reaching the container ===");
 
-  const before = await askThePep({ subject: "alice", employeeType: "staff",
+  const before = await askThePep({ subject: STAFF_PERSON, employeeType: "staff",
                                    action: "DELETE" });
   check("before the change, staff may not DELETE", function () {
     assert.strictEqual(before.status, 403,
@@ -1753,7 +1775,7 @@ async function aDeployedPolicyConverges() {
   const arrived = await until(
     "the remote PEP to enforce the policy deployed a moment ago",
     async function () {
-      const r = await askThePep({ subject: "alice", employeeType: "staff",
+      const r = await askThePep({ subject: STAFF_PERSON, employeeType: "staff",
                                   action: "DELETE" });
       return { ok: r.status === 200,
                note: "the PEP still answers " + r.status + " (" +
@@ -1778,7 +1800,7 @@ async function aDeployedPolicyConverges() {
              "interval is " + POLL_MS + "ms and no nudge was delivered.");
   });
 
-  const both = await askThePep({ subject: "carol", employeeType: "admin",
+  const both = await askThePep({ subject: ADMIN_PERSON, employeeType: "admin",
                                  action: "DELETE" });
   check("and the rule the old policy already granted still holds", function () {
     assert.strictEqual(both.status, 200,
@@ -1820,7 +1842,7 @@ async function aDisabledPolicyStopsBeingEnforced() {
   await act("disable", { name: POLICY_B }, "disabled the widened policy");
   await until("the PEP to stop enforcing the disabled policy",
               async function () {
-    const r = await askThePep({ subject: "alice", employeeType: "staff",
+    const r = await askThePep({ subject: STAFF_PERSON, employeeType: "staff",
                                 action: "DELETE" });
     return { ok: r.status === 403,
              note: "staff DELETE still answers " + r.status };
@@ -1842,7 +1864,7 @@ async function aDisabledPolicyStopsBeingEnforced() {
       fellBack.holding.root);
   });
 
-  const stillAllowed = await askThePep({ subject: "carol",
+  const stillAllowed = await askThePep({ subject: ADMIN_PERSON,
                                          employeeType: "admin",
                                          action: "DELETE" });
   check("the fallback policy is really being evaluated, not just held",
@@ -1857,14 +1879,14 @@ async function aDisabledPolicyStopsBeingEnforced() {
   // AND NOW THE STATE WHERE THE BIAS IS WHAT DECIDES.
   await act("disable", { name: POLICY_A }, "disabled the baseline policy too");
   await until("the PEP to be holding no policy at all", async function () {
-    const r = await askThePep({ subject: "carol", employeeType: "admin",
+    const r = await askThePep({ subject: ADMIN_PERSON, employeeType: "admin",
                                 action: "DELETE" });
     return { ok: r.status === 403,
              note: "the admin is still allowed (" + r.status + ")" };
   });
 
   const empty = await pepOverview();
-  const refused = await askThePep({ subject: "carol", employeeType: "admin",
+  const refused = await askThePep({ subject: ADMIN_PERSON, employeeType: "admin",
                                     action: "DELETE" });
   check("with nothing to enforce, the deny-biased PEP refuses everything — " +
         "and says so", function () {
@@ -1892,7 +1914,7 @@ async function aDisabledPolicyStopsBeingEnforced() {
   await act("enable", { name: POLICY_A }, "re-enabled the baseline policy");
   await until("the PEP to recover when the policy comes back",
               async function () {
-    const r = await askThePep({ subject: "carol", employeeType: "admin",
+    const r = await askThePep({ subject: ADMIN_PERSON, employeeType: "admin",
                                 action: "DELETE" });
     return { ok: r.status === 200,
              note: "the admin is still refused (" + r.status + ")" };
@@ -1963,7 +1985,7 @@ async function theNudgeIsDelivered(polledMs) {
   const arrived = await until(
     "the nudged PEP to enforce the change",
     async function () {
-      const r = await askThePep({ subject: "alice", employeeType: "staff",
+      const r = await askThePep({ subject: STAFF_PERSON, employeeType: "staff",
                                   action: "DELETE" });
       return { ok: r.status === 200,
                note: "the PEP still answers " + r.status };
@@ -2303,7 +2325,7 @@ async function itKeepsEnforcingWhenThePdpIsGone() {
       "would be the dangerous half. It says: " + stranded.holding.lastPullWhy);
   });
 
-  const allowed = await askThePep({ subject: "alice", employeeType: "staff",
+  const allowed = await askThePep({ subject: STAFF_PERSON, employeeType: "staff",
                                     action: "DELETE" });
   const denied = await askThePep({ subject: "mallory",
                                    employeeType: "contractor",
@@ -2384,6 +2406,29 @@ async function createTheRealm() {
   log.debug("Leaving createTheRealm().");
 }
 
+// THE TWO PEOPLE THE RBAC POLICY DECIDES ABOUT, created in this run's realm
+// (2026-09-12). They were the seeded `carol` (admin) and `alice` (staff); the
+// requests that assert an `employeeType` still assert the same one, and the PIP
+// section now resolves ADMIN_PERSON's from an entry this job wrote.
+async function createThePeople() {
+  log.debug("Entering createThePeople().");
+  for (const one of [[ADMIN_PERSON, "admin", "Admin"],
+                     [STAFF_PERSON, "staff", "Staff"]]) {
+    const r = await postJson(api("/users/create"), {
+      username: one[0], invent: false,
+      attributes: { cn: "Remote PEP " + one[2] + " Person", givenName: "Remote",
+                    sn: one[2] + " Person", displayName: "Remote PEP " + one[2],
+                    mail: one[0] + "@xacml-remote-pep.test",
+                    employeeType: one[1] }
+    });
+    assert.ok(r.status === 200 && r.body && r.body.ok,
+      "POST /admin-api/users/create should put " + one[0] + " (employeeType=" +
+      one[1] + ") in " + REALM + "; it answered " + r.status + " " +
+      String(r.text).slice(0, 300));
+  }
+  log.debug("Leaving createThePeople().");
+}
+
 function theRealmIsLeftBehind() {
   log.info("The realm " + REALM + " is LEFT IN PLACE on purpose. It holds " +
            "the policy documents this run deployed, the PEP's row in " +
@@ -2461,6 +2506,7 @@ async function test() {
   await mintTheCredential();
   await createTheRealm();
   try {
+    await createThePeople();
     // THE TWO THINGS THE CONTAINER NEEDS BEFORE IT CAN SETTLE, in this order
     // and both before anything is asserted about it.
     //

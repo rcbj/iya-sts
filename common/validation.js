@@ -130,6 +130,10 @@ const { z } = require('zod');
 const config = require('./config');
 const { DOMParser } = require('@xmldom/xmldom');
 const zlib = require('zlib');
+// The registry of failure codes. A LEAF that requires nothing, so this closes no
+// cycle. The guard below marks its refusals with one, on the RESPONSE OBJECT and
+// never in the body — see common/error_codes.js.
+const errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({
   name: 'sts-validation',
@@ -643,7 +647,9 @@ function guard() {
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
       let why = null;
+      let code = '';
       if (POLLUTING_KEYS.indexOf(key) >= 0) {
+        code = 'STS-HTTP-0010';
         why = refusal('polluting-key', key,
                       'the parameter name "' + key + '" is refused everywhere ' +
                       'in this service.');
@@ -655,6 +661,7 @@ function guard() {
         for (let j = 0; j < values.length && !why; j++) {
           const value = values[j];
           if (typeof value === 'string' && CONTROL_STRICT.test(value)) {
+            code = 'STS-HTTP-0011';
             why = refusal('control-character', key,
                           'the value of "' + key + '" contains a control ' +
                           'character. A carriage return or newline in a query ' +
@@ -667,6 +674,7 @@ function guard() {
       if (why) {
         log.warn('validation: refused a request to ' + req.method + ' ' +
                  (req.path || req.url) + ' — ' + why.code + ' on "' + why.field + '".');
+        errorCodes.mark(res, code === 'STS-HTTP-0010' ? 'STS-HTTP-0010' : 'STS-HTTP-0011');
         res.status(400).type('text/plain').send(
           'Bad Request: ' + why.detail + '\n\n' +
           'This is refused before any endpoint sees it, in development mode ' +

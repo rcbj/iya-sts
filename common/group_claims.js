@@ -106,6 +106,8 @@ const config = require('./config');
 // overrides the functions below resolve.
 const applications = require('./applications');
 const stats = require('./admin_stats');
+// The registry of failure codes, a LEAF — see common/error_codes.js.
+const errorCodes = require('./error_codes');
 
 // ---------------------------------------------------------------------------
 // The settings, read PER TOKEN rather than captured here.
@@ -202,14 +204,15 @@ function readGroups(username) {
   try {
     // Normalised for the reason vc_claims.js's directoryAttributes() gives: the
     // directory files a person under their local name, so an access token's
-    // `urn:sts-mock:user:alice` and a Kerberos `alice@REALM` would otherwise
+    // `urn:sts:user:alice` and a Kerberos `alice@REALM` would otherwise
     // look up an entry nothing ever created. identityKeyOf() is the one place
     // that mapping is made, which is what keeps `alice` one person here and one
     // person on /admin/users.
     log.debug("Leaving readGroups().");
     return directory.groupsOfUser(stats.identityKeyOf(username)) || null;
   } catch (e) {
-    log.error('the directory threw while being read for the groups claim and ' +
+    log.error(errorCodes.tag('STS-REG-0045') +
+              'the directory threw while being read for the groups claim and ' +
               'was ignored; the token is issued without it: ' + e.message);
     log.debug("Leaving readGroups().");
     return null;
@@ -319,7 +322,9 @@ function groupsOf(username, app) {
   out.reason = nameProblem(app);
   if (out.reason) {
     log.debug("Leaving groupsOf(). The configured name is unusable.");
-    return out;
+    // A token is issued WITHOUT the claim somebody switched on. Carried
+    // non-enumerably, so the report `/admin/groups` serialises is unchanged.
+    return errorCodes.mark(out, 'STS-REG-0046');
   }
   if (!out.loaded) {
     out.reason = 'The embedded LDAP directory is not loaded in this process, ' +
@@ -333,7 +338,7 @@ function groupsOf(username, app) {
     out.reason = 'The directory could not be read; the token is issued ' +
                  'without a groups claim.';
     log.debug("Leaving groupsOf(). The directory read failed.");
-    return out;
+    return errorCodes.mark(out, 'STS-REG-0045');
   }
   out.dn = read.dn;
   out.entryFound = !!read.entryFound;

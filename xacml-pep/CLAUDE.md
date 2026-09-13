@@ -251,7 +251,7 @@ remove the ones that come from a caller asserting something about itself. The
 test asserts that too.
 
 **EACH ONE IS ASSERTED UNDER BOTH SPELLINGS**, the bare name and
-`urn:sts-mock:xacml:attribute:<name>`, and that is not belt and braces. The
+`urn:sts:xacml:attribute:<name>`, and that is not belt and braces. The
 mock's `xacml_pip.js` answers BOTH from one directory attribute, so a policy
 author over there may legitimately write either and the PDP decides identically.
 A remote PEP asserting only one would decide differently for every policy that
@@ -528,3 +528,35 @@ survives a registration, mutual TLS, a lower-cased directory attribute and a
 read-back, and that the two containers report the same release. Every step in
 that chain can drop a field in a way that renders as an empty column rather
 than as an error.
+
+
+## ERROR CODES IN A CONTAINER WITH NO AUDIT LOG (2026-09-12)
+
+Every failure this container can hit has a code in the SAME table as the mock's
+— `common/error_codes.js`, subsystem `XPEP` — and it is recorded at the front of
+the container's log line (`[STS-XPEP-0017] …`). That is the only place it can
+be: there is no audit log and no call-log funnel here, so `mark()` would record
+nothing. A plain Deny, and a refusal decided by the bias alone, carry no code;
+they are the answer.
+
+**THE REGISTRY GOES TO THE CONTAINER ROOT, ON `version.js`'s ARGUMENT.**
+`COPY common/error_codes.js ./error_codes.js` sits beside the version COPY,
+because `./common/` is the shim and exactly one COPY may write into it.
+`tests/xacml_pep.js` pins the line, and its existing one-COPY-into-`./common/`
+assertion now guards this file as well.
+
+**`pep.js` RESOLVES IT ACROSS BOTH LAYOUTS** — `./error_codes` in the image,
+`../common/error_codes` in a checkout — exactly as it resolves the version, and
+a missing registry never stops the container: it falls back to a local tag and
+logs `STS-XPEP-0001` once. `sync.js` and `pip.js` are handed `tag` on
+`options`, the way they are handed everything else `pep.js` decides at start.
+
+**IT IS RESOLVED IN `pep.js` AND NOT IN `engine.js`**, because
+`tests/xacml_pep.js` loads the engine alone in a child and asserts none of the
+mock's modules is in its `require.cache` — and in a checkout the registry is
+one of them. `engine.js`'s one code (`STS-XPEP-0014`, its modules not found) is
+written into the thrown message as a literal for that reason.
+
+**ONE CODE IS SHARED ACROSS BOTH CONTAINERS BY CONSTRUCTION**, which is why
+there is one table and not two: an operator searching two containers' logs for
+a code must never meet one number meaning two things.

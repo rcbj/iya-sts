@@ -96,6 +96,15 @@ const config = require('../common/config');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config`.
 const mode = require('../common/mode');
 const audit = require('../common/audit');
+// THE ERROR CODES (common/error_codes.js, a leaf). A refusal here is a RESULT
+// that `/admin/rbac` redirects with and `/admin-api/rbac` sends as JSON, so its
+// code rides on the object under the non-enumerable Symbol `mark()` uses —
+// invisible to JSON.stringify, read back with `errorCodes.codeOf(result)`.
+const errorCodes = require('../common/error_codes');
+
+function refused(code, result) {
+  return errorCodes.mark(result, code);
+}
 
 // The two roles. An array rather than two constants because everything below
 // walks it — the screen, the API, the JSON view, the decision — and a third
@@ -157,7 +166,8 @@ function setDirectory(fns) {
     // Refused rather than half-installed, which is the whole argument for a
     // single slot being safe here: the failure is one loud line at startup
     // instead of a grant button that answers 200 and writes nothing.
-    log.error('admin_rbac: the directory slot was offered an object missing ' +
+    log.error(errorCodes.tag('STS-ADMIN-0587') +
+              'admin_rbac: the directory slot was offered an object missing ' +
               missing.join(', ') + '. It is NOT installed — the console roles ' +
               'will read as "no directory is loaded", which is the same ' +
               'answer a build without ldap_server.js gives.');
@@ -541,17 +551,17 @@ function grant(username, roleId, context) {
 
   if (!directory) {
     log.debug("Leaving grant(). No directory is loaded.");
-    return { ok: false, errors: [NO_DIRECTORY] };
+    return refused('STS-ADMIN-0501', { ok: false, errors: [NO_DIRECTORY] });
   }
   if (!role) {
     log.debug("Leaving grant(). No such role.");
-    return { ok: false, errors: ['Unknown role "' + roleId + '". There are two: ' +
-                                 ROLE_IDS.join(' and ') + '.'] };
+    return refused('STS-ADMIN-0582', { ok: false, errors: ['Unknown role "' + roleId + '". There are two: ' +
+                                 ROLE_IDS.join(' and ') + '.'] });
   }
   const problem = nameProblem(name);
   if (problem) {
     log.debug("Leaving grant(). " + problem);
-    return { ok: false, errors: [problem] };
+    return refused('STS-ADMIN-0583', { ok: false, errors: [problem] });
   }
 
   const dn = dnForRole(role);
@@ -593,7 +603,7 @@ function grant(username, roleId, context) {
   const written = directory.writeGroupEntry(dn, attributes, 'console');
   if (!written.ok) {
     log.debug("Leaving grant(). The directory refused: " + written.reason);
-    return { ok: false, errors: [refusalText(written, dn)], reason: written.reason };
+    return refused('STS-ADMIN-0585', { ok: false, errors: [refusalText(written, dn)], reason: written.reason });
   }
 
   audit.record({
@@ -633,16 +643,16 @@ function revoke(username, roleId, context) {
 
   if (!directory) {
     log.debug("Leaving revoke(). No directory is loaded.");
-    return { ok: false, errors: [NO_DIRECTORY] };
+    return refused('STS-ADMIN-0501', { ok: false, errors: [NO_DIRECTORY] });
   }
   if (!role) {
     log.debug("Leaving revoke(). No such role.");
-    return { ok: false, errors: ['Unknown role "' + roleId + '". There are two: ' +
-                                 ROLE_IDS.join(' and ') + '.'] };
+    return refused('STS-ADMIN-0582', { ok: false, errors: ['Unknown role "' + roleId + '". There are two: ' +
+                                 ROLE_IDS.join(' and ') + '.'] });
   }
   if (!name) {
     log.debug("Leaving revoke(). No name.");
-    return { ok: false, errors: ['No name was given.'] };
+    return refused('STS-ADMIN-0584', { ok: false, errors: ['No name was given.'] });
   }
 
   const dn = dnForRole(role);
@@ -669,14 +679,14 @@ function revoke(username, roleId, context) {
     });
     if (claimed.length) {
       log.debug("Leaving revoke(). Claimed through memberOf; refused.");
-      return { ok: false, reason: 'claimed', role: role.id, username: name, dn: dn,
+      return refused('STS-ADMIN-0586', { ok: false, reason: 'claimed', role: role.id, username: name, dn: dn,
                errors: [name + ' holds ' + role.label + ' through a memberOf value on ' +
                         'THEIR OWN entry (' + target.dn + ') rather than through a member ' +
                         'value on ' + dn + ', so there is nothing in the group to remove. ' +
                         'Nothing here maintains memberOf — a client wrote it — and this ' +
                         'console writes only to groups, deliberately. Delete that value with ' +
                         'an ldapmodify or a SCIM PATCH of the person and the role goes with ' +
-                        'it.'] };
+                        'it.'] });
     }
     log.debug("Leaving revoke(). Not a member.");
     return { ok: true, changed: false, role: role.id, username: name, dn: dn,
@@ -708,7 +718,7 @@ function revoke(username, roleId, context) {
   const written = directory.writeGroupEntry(dn, attributes, 'console');
   if (!written.ok) {
     log.debug("Leaving revoke(). The directory refused: " + written.reason);
-    return { ok: false, errors: [refusalText(written, dn)], reason: written.reason };
+    return refused('STS-ADMIN-0585', { ok: false, errors: [refusalText(written, dn)], reason: written.reason });
   }
 
   const nowEmpty = rosterEmpty();

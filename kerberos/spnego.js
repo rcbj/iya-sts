@@ -95,6 +95,9 @@ const config = require('../common/config');
 const spnego = require('./krb5_spnego.js');
 const principals = require('./krb5_principals.js');
 const exchange = require('./spnego_exchange.js');
+// ERROR CODES, a leaf. A refusal's code is marked by exchange.applyVerdict();
+// what is marked here is the one failure that is this page's own.
+const errorCodes = require('../common/error_codes');
 
 // Re-exported from the library, because this page names them in its
 // advertisement and a second list would be a page describing an acceptor that
@@ -511,6 +514,7 @@ app.get('/spnego/protected', function (req, res) {
     // service rather than as a fault here.
     log.error('krb5-spnego: unhandled failure: ' + (e.stack || e.message));
     if (!res.headersSent) {
+      errorCodes.mark(res, 'STS-KRB-0096');
       res.status(500).type('html').send(page('Failed',
         '<h1>500</h1><div class="err">' + xmlEscape(e.message) + '</div>'));
     }

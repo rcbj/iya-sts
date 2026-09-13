@@ -127,6 +127,15 @@ const CA_CN = "Workbench Root";
 const LEAF_CN = "leaf.pane.example.test";
 const P12_PASSWORD = "changeit";
 
+// THE OPERATOR WHO SIGNS IN, created by this job in its realm with a password
+// (2026-09-12). It was the seeded `alice` with the password `x`, which works
+// only because development mode seeds her and checks no password. The code
+// flow authenticates in the realm the console is reached in, so that is where
+// the account is made; the roster that decides what it may do is the default
+// realm's, unchanged.
+const OPERATOR = "pki-workbench-operator";
+const OPERATOR_PASSWORD = "pki-workbench-Passw0rd!-" + names.runStamp();
+
 var checks = 0;
 function check(what, fn) {
   fn();
@@ -323,13 +332,24 @@ function ticked(page, name) {
 // ---------------------------------------------------------------------------
 async function signIn() {
   log.debug("Entering signIn().");
+  const account = await postJson(api("/users/create"), {
+    username: OPERATOR, invent: false,
+    attributes: { cn: "PKI Workbench Operator", givenName: "PKI",
+                  sn: "Workbench Operator", displayName: "PKI Workbench Operator",
+                  mail: OPERATOR + "@pki-workbench.test" },
+    credential: "password", password: OPERATOR_PASSWORD
+  });
+  assert.ok(account.status === 200 && account.body && account.body.ok,
+            "creating the operator " + OPERATOR + " in " + REALM + " answered " +
+            account.status + " " + String(account.text).slice(0, 300));
   const screen = await browse(realmUrl("/admin/pki"));
   assert.ok(/name="authn_id"/.test(screen.text),
             "the console did not send the browser to a sign-in screen; it " +
             "answered " + screen.status + " at " + screen.url);
   const id = valueOf(screen.text, "authn_id");
   const landed = await press(screen.url.replace(/\?.*$/, ""),
-    bodyOf([["authn_id", id], ["username", "alice"], ["password", "x"],
+    bodyOf([["authn_id", id], ["username", OPERATOR],
+            ["password", OPERATOR_PASSWORD],
             ["action", "login"]]));
   assert.ok(/<h1[^>]*>PKI/.test(landed.text),
             "signing in did not land on the PKI page; it landed on " +

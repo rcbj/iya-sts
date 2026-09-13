@@ -441,6 +441,30 @@ const DOCUMENTS = [
       return bad;
     } },
 
+  // -- GNAP (2026-09-12) ----------------------------------------------------
+  // RFC 9767 section 3.1: what a RESOURCE SERVER reads before it can call
+  // introspection or registration — both of which it must then proof with its
+  // own key, which is exactly the bootstrap order this file exists to protect.
+  // The grant endpoint's own discovery is OPTIONS /gnap, which is not a GET and
+  // is driven by tests/vendored/sts_gnap_core.js.
+  { family: "GNAP", spec: "RFC 9767", path: "/.well-known/gnap-as-rs",
+    type: JSON_TYPE, json: true, badCredential: "ignored",
+    must: function (d) {
+      const bad = [];
+      if (d.grant_request_endpoint !== base + "/gnap") {
+        bad.push("grant_request_endpoint is " + d.grant_request_endpoint);
+      }
+      if (!d.introspection_endpoint) { bad.push("no introspection_endpoint"); }
+      if (!Array.isArray(d.key_proofs_supported) || !d.key_proofs_supported.length) {
+        bad.push("no key_proofs_supported, so a resource server cannot know " +
+                 "how to sign its introspection call");
+      }
+      if (!Array.isArray(d.token_formats_supported) || !d.token_formats_supported.length) {
+        bad.push("no token_formats_supported");
+      }
+      return bad;
+    } },
+
   // -- The two SAML profiles, which are two implementations ----------------
   { family: "SAML 2.0", spec: "SAML 2.0 metadata", path: "/saml2/metadata",
     type: SAML_TYPE, json: false, badCredential: "ignored",
@@ -723,6 +747,10 @@ const WELL_KNOWN_ELSEWHERE = {
   "/*/.well-known/openid-configuration": "the issuer-path form, section 4",
   "/.well-known/openid-credential-issuer/*": "the inserted-path form, section 4",
   "/.well-known/jwt-vc-issuer/*": "the inserted-path form, section 4",
+  "/.well-known/gnap-as-rs/:as":
+    "the same handler as /.well-known/gnap-as-rs for a NAMED authorization " +
+    "server profile, which only exists once somebody creates one; the " +
+    "unnamed form is the row in DOCUMENTS.",
   "/.well-known/hoba/register":
     "NOT a document — it is where a client REGISTERS a HOBA key, and it is a " +
     "POST that changes state. sts_admin_console.js and the SCIM jobs are " +

@@ -169,6 +169,8 @@ const mode = require('../common/mode');
 const { log, baseUrlOf, parseBody, hasScope, capturingResponse,
         capturedDescription } = require('../common/helpers');
 const config = require('../common/config');
+// The challenge and replay stores below are per trust realm. A LEAF.
+const realms = require('../common/realms');
 const dpop = require('../oauth-oidc/dpop');
 const mtls = require('../oauth-oidc/mtls');
 const stats = require('../common/admin_stats');
@@ -181,6 +183,15 @@ const authn = require('../authn/authn');
 const accessGate = require('../common/access_gate');
 const tlsServer = require('../tls/tls_server');
 const directory = require('../ldap/ldap_server');
+// Every refusal below carries an STS-SCIM-* code, attached to the refusal value
+// under the non-enumerable Symbol errorCodes.mark() uses; scim.js marks the
+// response with it. See common/error_codes.js. A leaf.
+const errorCodes = require('../common/error_codes');
+// For the one refusal here that is not a refusal of the REQUEST — a verified
+// client certificate the revocation policy will not accept as a credential —
+// which has no response of its own to be marked on. `audit.js` requires only
+// `helpers`, `config` and the registry, so it closes no cycle.
+const audit = require('../common/audit');
 
 // ---------------------------------------------------------------------------
 // THE SETTINGS, READ WHERE THEY ARE USED.
@@ -223,16 +234,52 @@ function digestPassword() {
   return String(config.value('scim.digestPassword') || '');
 }
 
+// Read straight through since 2026-09-12. They were `Number(...) || 300` and
+// `|| 600`, which turned a configured value the table accepted into a
+// different one without saying so; the rows carry `min: 1` now, so config.js
+// refuses the one value that fallback was quietly rewriting.
 function digestNonceSeconds() {
-  return Number(config.value('scim.digestNonceSeconds')) || 300;
+  return config.value('scim.digestNonceSeconds');
 }
 
 function hobaMaxAgeSeconds() {
-  return Number(config.value('scim.hobaMaxAgeSeconds')) || 600;
+  return config.value('scim.hobaMaxAgeSeconds');
 }
 
 function schemeOn(key) {
   return config.value(key) !== false;
+}
+
+// ---------------------------------------------------------------------------
+// **HTTP DIGEST IS NOT OFFERED IN PRODUCT MODE (2026-09-12), WHATEVER
+// `scim.authDigest` SAYS.** The reason is arithmetic rather than policy: an RFC
+// 7616 response is a hash over `username:realm:password`, so the SERVER must
+// hold either the password or that exact hash (H(A1)) to check one. Product mode
+// stores a person's password as a salted scrypt hash in `userPassword`, from
+// which neither can be computed — which is the point of storing it that way. So
+// the only Digest this service can perform is the one it has: every user
+// sharing `scim.digestPassword`, which is a password printed in this
+// repository's configuration table and would authenticate ANY name to an
+// endpoint that creates and deletes accounts.
+//
+// Storing H(A1) per person beside the scrypt hash was considered and not done:
+// it is a password-equivalent (whoever reads it authenticates as the person),
+// it is MD5 or SHA-256 without a work factor, and it is bound to one realm
+// string so changing `scim.authRealm` would invalidate every one. That is a
+// weaker store than the one product mode exists to have.
+// ---------------------------------------------------------------------------
+function digestAllowedByMode() {
+  return !mode.verifiesCredentials();
+}
+
+function schemeAvailable(row) {
+  if (!schemeOn(row.setting)) {
+    return false;
+  }
+  if (row.id === 'digest' && !digestAllowedByMode()) {
+    return false;
+  }
+  return true;
 }
 
 // The one refused password, exactly as the password grant, WS-Trust, the
@@ -422,7 +469,7 @@ function schemeById(id) {
 }
 
 function enabledSchemes() {
-  return SCHEMES.filter(function (row) { return schemeOn(row.setting); });
+  return SCHEMES.filter(schemeAvailable);
 }
 
 // ---------------------------------------------------------------------------
@@ -463,7 +510,7 @@ function digestChallenge(req, opts) {
   const stale = !!(opts && opts.stale);
   const nonce = issueDigestNonce();
   const opaque = crypto.randomBytes(8).toString('hex');
-  const out = DIGEST_ALGORITHMS.map(function (row) {
+  const out = digestAlgorithms().map(function (row) {
     return 'Digest realm="' + realm() + '", qop="auth", algorithm=' + row.token +
       ', nonce="' + nonce + '", opaque="' + opaque + '", charset=UTF-8' +
       (stale ? ', stale=true' : '');
@@ -506,6 +553,12 @@ function challenges(req, opts) {
 // object, because what a refusal LOOKS like is protocol knowledge and stays in
 // the protocol module.
 // ---------------------------------------------------------------------------
+// The code for the condition a refusal below records. Non-enumerable, so the
+// refusal object is exactly what it was to anything that reads its members.
+function coded(code, result) {
+  return errorCodes.mark(result, code);
+}
+
 function refusal(status, detail, headers) {
   return { ok: false, status: status, scimType: null, detail: detail,
            headers: headers || {} };
@@ -514,6 +567,7 @@ function refusal(status, detail, headers) {
 function unauthenticated(req, detail, extra) {
   const headers = Object.assign({ 'WWW-Authenticate': challenges(req, extra) },
                                 (extra && extra.headers) || {});
+  // error-code: none — the helper itself; every caller wraps it in coded()
   return refusal(401, detail, headers);
 }
 
@@ -567,9 +621,12 @@ function attemptBearer(req, ctx) {
   const presented = dpop.presentedAccessToken(req, shim.res, 'the SCIM endpoints');
   if (!presented) {
     log.debug("Leaving attemptBearer(). The shared access token check refused it.");
-    return refusal(shim.captured.status || 401,
+    // The shared check marks its own code on the stand-in it answered; that is
+    // the specific condition, and this one is only the fallback.
+    return coded(errorCodes.codeOf(shim.res) || 'STS-SCIM-0030',
+      refusal(shim.captured.status || 401,
       capturedDescription(shim.captured) ||
-      'This access token could not be accepted.', shim.captured.headers);
+      'This access token could not be accepted.', shim.captured.headers));
   }
 
   // The row it counts as. One credential, two ways of holding it: the DPoP row
@@ -586,29 +643,29 @@ function attemptBearer(req, ctx) {
   // wrote for themselves.
   if (!presented.verified) {
     log.debug("Leaving attemptBearer(). The token is not one this service signed.");
-    return refusal(401,
+    return coded('STS-SCIM-0031', refusal(401,
       'This access token was not issued by this service, or its signature does not verify ' +
       'against the key at /oauth2/jwks. Unlike the OID4VCI credential endpoints, which accept ' +
       'a token from a separate authorization server, these endpoints cannot: the scope on a ' +
       'token nobody verified is a permission its holder wrote for themselves. Get a token from ' +
       'this service\'s token endpoint with any grant.',
-      { 'WWW-Authenticate': challenges(req) });
+      { 'WWW-Authenticate': challenges(req) }));
   }
   if (claims.typ !== 'Bearer') {
     log.debug("Leaving attemptBearer(). That is a " + claims.typ + " token.");
-    return refusal(401,
+    return coded('STS-SCIM-0032', refusal(401,
       'This is a "' + (claims.typ || 'unknown') + '" token, not an access token. Every token ' +
       'this service issues is signed with the same key, so the typ claim is the only thing that ' +
       'tells a refresh token or an ID Token apart from the access token these endpoints need.',
-      { 'WWW-Authenticate': challenges(req) });
+      { 'WWW-Authenticate': challenges(req) }));
   }
   if (stats.isRevoked(claims.jti)) {
     log.debug("Leaving attemptBearer(). The token was revoked.");
-    return refusal(401,
+    return coded('STS-SCIM-0033', refusal(401,
       'This access token was revoked — at /oauth2/revoke, from the admin console, or by being ' +
       'rotated. Introspection reports it inactive and these endpoints answer the same way; a ' +
       'revocation only some endpoints honoured would be worse than none.',
-      { 'WWW-Authenticate': challenges(req) });
+      { 'WWW-Authenticate': challenges(req) }));
   }
 
   // WHOSE token it is. A client_credentials token has no user behind it, which
@@ -661,23 +718,23 @@ function attemptBasic(req, ctx) {
     // because the client did present one and the difference is what it has to
     // fix.
     log.debug("Leaving attemptBasic(). The credential is not base64.");
-    return unauthenticated(req,
-      'The Basic credential is not base64 (RFC 7617 section 2): ' + e.message);
+    return coded('STS-SCIM-0034', unauthenticated(req,
+      'The Basic credential is not base64 (RFC 7617 section 2): ' + e.message));
   }
   const cut = decoded.indexOf(':');
   if (cut < 0) {
     log.debug("Leaving attemptBasic(). There is no colon in it.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0035', unauthenticated(req,
       'A Basic credential is base64(user-id ":" password) — RFC 7617 section 2. What arrived ' +
-      'carries no colon, so there is no way to tell where the username ends.');
+      'carries no colon, so there is no way to tell where the username ends.'));
   }
   const username = decoded.slice(0, cut).trim();
   const password = decoded.slice(cut + 1);
   if (!username) {
     log.debug("Leaving attemptBasic(). The username is empty.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0036', unauthenticated(req,
       'The Basic credential names nobody. This service checks no password, so the username is ' +
-      'the whole of what it authenticates and an empty one authenticates nothing.');
+      'the whole of what it authenticates and an empty one authenticates nothing.'));
   }
   // THE CREDENTIAL (2026-09-06). One call, both modes. In development this is
   // exactly what the branch it replaced did — refuse the reserved string,
@@ -688,7 +745,9 @@ function attemptBasic(req, ctx) {
   if (!checked.ok) {
     log.debug("Leaving attemptBasic(). The credential was refused: " +
               checked.reason);
-    return unauthenticated(req, checked.reason === 'reserved-refusal'
+    // The verifier's own code for WHY (common/credentials.js), or this one.
+    return coded(errorCodes.codeOf(checked) || 'STS-SCIM-0037',
+      unauthenticated(req, checked.reason === 'reserved-refusal'
       ? 'The password "' + REFUSED_PASSWORD + '" is refused on purpose — the same reserved ' +
         'value the OAuth password grant, WS-Trust, the WS-Federation sign-in screen and every ' +
         'LDAP bind here refuse. In development mode every other password is accepted, ' +
@@ -698,7 +757,7 @@ function attemptBasic(req, ctx) {
       // distinguishable to a caller. The reason is in the log.
       : 'Authentication failed. In product mode a Basic credential is verified against the ' +
         'hashed userPassword on the person\'s directory entry, and a person with none cannot ' +
-        'authenticate at all.');
+        'authenticate at all.'));
   }
   log.debug("Leaving attemptBasic(). " + username + " is accepted.");
   return {
@@ -752,11 +811,50 @@ const DIGEST_ALGORITHMS = [
   return available;
 });
 
+// ---------------------------------------------------------------------------
+// WHAT IS OFFERED, WHICH IS WHAT THIS BUILD CAN COMPUTE LESS WHAT A DEPLOYMENT
+// HAS TURNED OFF (2026-09-12). `scim.digestMd5` drops MD5: RFC 7616 section 3.7
+// keeps it for backward compatibility and says nothing in favour of it, and a
+// deployment whose clients speak SHA-256 has no reason to leave a collision-
+// broken hash on offer. On by default, because the installed base of Digest
+// clients is mostly MD5 and that is what this service always offered.
+// `DIGEST_ALGORITHMS` stays the table of what this BUILD can compute, for
+// `admin-ui/crypto_metadata.js`; this is what a challenge carries and a
+// credential may use.
+// ---------------------------------------------------------------------------
+function digestAlgorithms() {
+  const md5 = config.value('scim.digestMd5') !== false;
+  return DIGEST_ALGORITHMS.filter(function (row) {
+    return md5 || row.token !== 'MD5';
+  });
+}
+
 // The nonces this server has issued. In memory and dying with the process like
 // every other store here; bounded, because the value comes off a challenge
 // anybody can ask for by making an unauthenticated request.
-const digestNonces = new Map();
-const MAX_DIGEST_NONCES = 2000;
+//
+// **THE BOUND IS `scim.maxDigestNonces` SINCE 2026-09-12** (2000, the old
+// constant, is its default). Evicting a nonce that has not expired does NOT
+// re-open a replay: its nonce-count record goes with it, so the next credential
+// naming that nonce is refused as one this server never issued (with
+// stale=true, so a conforming client simply retries). What a low bound costs is
+// a legitimate client's nonce vanishing under load, which is a retry and never
+// an acceptance.
+//
+// **PER TRUST REALM SINCE 2026-09-12.** `/scim/v2` is realm-prefixed and each
+// realm's directory is its own, and this was one Map for the process: a nonce
+// issued in one realm was accepted as one this server issued in every other,
+// and — the half with a consequence — one realm's unauthenticated challenges
+// counted against the SAME cap, so a caller hammering `/realm/acme/scim/v2`
+// could evict the nonce a client of the default realm was about to answer.
+// In memory and NOT persisted: a record carries a `Set` of nonce-counts, which
+// does not survive JSON, and a nonce outliving the process that issued it buys
+// a Digest client nothing — it is sent a fresh one with `stale=true`.
+const digestNonces = realms.map();
+
+function maxDigestNonces() {
+  return config.value('scim.maxDigestNonces');
+}
 
 function issueDigestNonce() {
   log.debug("Entering issueDigestNonce().");
@@ -767,7 +865,7 @@ function issueDigestNonce() {
       digestNonces.delete(key);
     }
   });
-  while (digestNonces.size >= MAX_DIGEST_NONCES) {
+  while (digestNonces.size >= maxDigestNonces()) {
     // The oldest first. A Map iterates in insertion order, so the first key is
     // the least recently issued.
     digestNonces.delete(digestNonces.keys().next().value);
@@ -804,7 +902,7 @@ function authParams(header) {
 
 function digestHash(algorithmToken, text) {
   const base = String(algorithmToken || 'MD5').replace(/-sess$/i, '').toUpperCase();
-  const row = DIGEST_ALGORITHMS.filter(function (candidate) {
+  const row = digestAlgorithms().filter(function (candidate) {
     return candidate.token === base;
   })[0];
   if (!row) {
@@ -831,18 +929,20 @@ function attemptDigest(req, ctx) {
   // a client that sends it anyway is told so.
   if (String(params.userhash || '').toLowerCase() === 'true') {
     log.debug("Leaving attemptDigest(). userhash was asked for.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0038', unauthenticated(req,
       'This credential sets userhash=true (RFC 7616 section 3.4.4), and this server does not ' +
       'support it — which is why its challenges never carry userhash=true. It would have to ' +
       'find the user by the hash of their name, and a directory that creates every name it is ' +
-      'shown has nothing to search. Send the username in the clear.');
+      'shown has nothing to search. Send the username in the clear.'));
   }
   if (digestHash(algorithm, '') === null) {
     log.debug("Leaving attemptDigest(). Unknown algorithm " + algorithm + ".");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0039', unauthenticated(req,
       'This credential names algorithm=' + algorithm + ' and this server offers ' +
-      DIGEST_ALGORITHMS.map(function (row) { return row.token; }).join(', ') +
-      ' (each also with the -sess variant). The challenge lists what it will accept.');
+      digestAlgorithms().map(function (row) { return row.token; }).join(', ') +
+      ' (each also with the -sess variant). The challenge lists what it will accept.' +
+      (config.value('scim.digestMd5') === false && /^md5/i.test(algorithm)
+        ? ' MD5 is turned off on this service (scim.digestMd5).' : '')));
   }
   const qop = String(params.qop || '').toLowerCase();
   if (qop && qop !== 'auth') {
@@ -853,37 +953,37 @@ function attemptDigest(req, ctx) {
     // have nothing to do with the credential. A check that is wrong occasionally
     // and silently is worse than one that is absent and says so.
     log.debug("Leaving attemptDigest(). qop=" + qop + " is not offered.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0040', unauthenticated(req,
       'This credential asks for qop=' + qop + ' and this server offers qop="auth" only. ' +
       'auth-int hashes the entity body, and the body this service sees has already been ' +
       'decoded and re-encoded by its own parser — an integrity check computed over that could ' +
-      'disagree with what was sent, which is a worse answer than not offering it.');
+      'disagree with what was sent, which is a worse answer than not offering it.'));
   }
   const username = String(params.username || '').trim();
   if (!username || !params.nonce || !params.response) {
     log.debug("Leaving attemptDigest(). It is missing a required parameter.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0041', unauthenticated(req,
       'A Digest credential needs at least username, realm, nonce, uri and response (RFC 7616 ' +
       'section 3.4), and with qop=auth it needs cnonce and nc as well. What arrived is missing ' +
-      'one of them.');
+      'one of them.'));
   }
 
   const record = digestNonces.get(String(params.nonce));
   if (!record) {
     log.debug("Leaving attemptDigest(). The nonce is not one this server issued.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0042', unauthenticated(req,
       'This nonce is not one this server issued, or it has already been forgotten. A fresh ' +
       'challenge is on this response with stale=true, which RFC 7616 section 3.3 says a client ' +
       'should retry with the same credentials rather than asking a person again.',
-      { stale: true });
+      { stale: true }));
   }
   if (Date.now() - record.at > digestNonceSeconds() * 1000) {
     digestNonces.delete(String(params.nonce));
     log.debug("Leaving attemptDigest(). The nonce is stale.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0043', unauthenticated(req,
       'This nonce is older than ' + digestNonceSeconds() + ' seconds (scim.digestNonceSeconds). ' +
       'The challenge on this response carries stale=true, so retry it with the same credentials.',
-      { stale: true });
+      { stale: true }));
   }
 
   // qop=auth requires a nonce count, and the count is what makes a Digest
@@ -895,17 +995,17 @@ function attemptDigest(req, ctx) {
     const cnonce = String(params.cnonce || '');
     if (!nc || !cnonce) {
       log.debug("Leaving attemptDigest(). qop=auth with no nc or cnonce.");
-      return unauthenticated(req,
+      return coded('STS-SCIM-0044', unauthenticated(req,
         'With qop=auth a credential must carry both cnonce and nc (RFC 7616 section 3.4). ' +
         'Without the nonce count there is nothing to stop the same credential being replayed, ' +
-        'which is most of what the nonce is for.');
+        'which is most of what the nonce is for.'));
     }
     if (record.counts.has(nc)) {
       log.debug("Leaving attemptDigest(). nc=" + nc + " has been used already.");
-      return unauthenticated(req,
+      return coded('STS-SCIM-0045', unauthenticated(req,
         'This nonce count (nc=' + nc + ') has been used with this nonce already. That is a ' +
         'replay, and it is refused WITHOUT stale=true — stale would mean the credential was ' +
-        'fine and should be retried, and this one has been seen before. Increment nc.');
+        'fine and should be retried, and this one has been seen before. Increment nc.'));
     }
   }
 
@@ -918,11 +1018,11 @@ function attemptDigest(req, ctx) {
   const target = String(req.originalUrl || req.url || '');
   if (uri && uri !== target) {
     log.debug("Leaving attemptDigest(). The uri does not match the request.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0046', unauthenticated(req,
       'The uri in this credential is "' + uri + '" and this request was for "' + target +
       '". RFC 7616 section 3.4.6 hashes the request-target into the response, so the two have ' +
       'to be the same string — a credential computed over a different URI was minted for a ' +
-      'different request.');
+      'different request.'));
   }
 
   const password = digestPassword();
@@ -943,11 +1043,17 @@ function attemptDigest(req, ctx) {
   const same = stsCrypto.constantTimeEquals(given, expected);
   if (!same) {
     log.debug("Leaving attemptDigest(). The response hash does not match.");
-    return unauthenticated(req,
+    // **THE PASSWORD IS NAMED ONLY WHERE THE TEST CONTROLS ARE OPEN
+    // (2026-09-12).** It was printed in every 401, which on a development
+    // service is the point — a tester has one fact to remember — and on any
+    // other is a shared credential handed to whoever sends a wrong one.
+    return coded('STS-SCIM-0047', unauthenticated(req,
       'The digest response does not match. This is the one scheme here where the password is ' +
       'really checked — it has to be, since the response IS a hash over it — so every user ' +
-      'shares one password, which is "' + (password ? password : '(empty)') + '" unless ' +
-      'scim.digestPassword has been changed. Any username works with it.');
+      'shares one password' + (mode.opensTestControls()
+        ? ', which is "' + (password ? password : '(empty)') + '" unless ' +
+          'scim.digestPassword has been changed. Any username works with it.'
+        : ' (scim.digestPassword). It is not repeated here.')));
   }
   if (qop === 'auth') {
     record.counts.add(String(params.nc));
@@ -1006,10 +1112,35 @@ const HOBA_ALG_RSA_SHA256 = '0';
 // The challenges this server has issued, and the (kid, challenge, nonce)
 // triples it has already seen. Both bounded and both in memory: a challenge is
 // something anybody can ask for by making an unauthenticated request.
-const hobaChallenges = new Map();
-const hobaSeen = new Set();
-const MAX_HOBA_CHALLENGES = 2000;
-const MAX_HOBA_SEEN = 5000;
+//
+// **BOTH BOUNDS ARE SETTINGS SINCE 2026-09-12** — `scim.maxHobaChallenges`
+// (2000) and `scim.maxHobaSeen` (5000), the old constants as their defaults —
+// and the second is the one where a bound can re-open a replay, so it is no
+// longer a Set. Forgetting a (kid, challenge, nonce) triple while its challenge
+// is still live would accept that exact signature a second time. So the seen
+// store maps each triple to its CHALLENGE, and evicting a triple also forgets
+// the challenge: the copied credential is then refused as naming a challenge
+// this server did not issue. The cost is that a client legitimately reusing
+// that challenge is sent a fresh one, which RFC 7486 clients already handle.
+// Expired triples go first, because forgetting one of those costs nothing.
+//
+// **BOTH PER TRUST REALM SINCE 2026-09-12**, for the digest nonces' reason and
+// with one more that is HOBA's own: the replay set is the thing that must not
+// be evictable by somebody else, and a process-wide one let a second realm's
+// traffic push a live (kid, challenge, nonce) triple out — at which point this
+// file's own rule forgets the challenge too, so the harm is a refusal rather
+// than a replay, but it is a refusal one realm inflicted on another. Not
+// persisted, for `digestNonces`'s reason.
+const hobaChallenges = realms.map();
+const hobaSeen = realms.map();
+
+function maxHobaChallenges() {
+  return config.value('scim.maxHobaChallenges');
+}
+
+function maxHobaSeen() {
+  return config.value('scim.maxHobaSeen');
+}
 
 function issueHobaChallenge() {
   log.debug("Entering issueHobaChallenge().");
@@ -1020,7 +1151,7 @@ function issueHobaChallenge() {
       hobaChallenges.delete(key);
     }
   });
-  while (hobaChallenges.size >= MAX_HOBA_CHALLENGES) {
+  while (hobaChallenges.size >= maxHobaChallenges()) {
     hobaChallenges.delete(hobaChallenges.keys().next().value);
   }
   const challenge = crypto.randomBytes(16).toString('base64url');
@@ -1150,9 +1281,9 @@ function attemptHoba(req, ctx) {
   const parts = String(params.result || '').split('.');
   if (parts.length !== 4) {
     log.debug("Leaving attemptHoba(). The result is not four fields.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0048', unauthenticated(req,
       'A HOBA credential is result="kid.challenge.nonce.sig", four base64url fields separated ' +
-      'by full stops (RFC 7486 section 6). What arrived has ' + parts.length + '.');
+      'by full stops (RFC 7486 section 6). What arrived has ' + parts.length + '.'));
   }
   const kid = parts[0];
   const challenge = parts[1];
@@ -1164,23 +1295,24 @@ function attemptHoba(req, ctx) {
     // Not base64url. Named as such rather than reported as a bad signature,
     // which would send somebody looking at their key.
     log.debug("Leaving attemptHoba(). The signature is not base64url.");
-    return unauthenticated(req, 'The signature field is not base64url: ' + e.message);
+    return coded('STS-SCIM-0049',
+      unauthenticated(req, 'The signature field is not base64url: ' + e.message));
   }
 
   const issuedAt = hobaChallenges.get(challenge);
   if (issuedAt === undefined) {
     log.debug("Leaving attemptHoba(). The challenge is not one this server issued.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0050', unauthenticated(req,
       'This challenge is not one this server issued, or it has been forgotten. A fresh one is ' +
       'in the WWW-Authenticate header on this response; RFC 7486 section 5 lets a client reuse ' +
-      'a challenge until its max-age runs out, which here is ' + hobaMaxAgeSeconds() + ' seconds.');
+      'a challenge until its max-age runs out, which here is ' + hobaMaxAgeSeconds() + ' seconds.'));
   }
   if (Date.now() - issuedAt > hobaMaxAgeSeconds() * 1000) {
     hobaChallenges.delete(challenge);
     log.debug("Leaving attemptHoba(). The challenge has expired.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0051', unauthenticated(req,
       'This challenge is older than its max-age of ' + hobaMaxAgeSeconds() +
-      ' seconds (scim.hobaMaxAgeSeconds). A fresh one is on this response.');
+      ' seconds (scim.hobaMaxAgeSeconds). A fresh one is on this response.'));
   }
 
   // The replay check, and it is on the CLIENT's nonce rather than on the
@@ -1191,20 +1323,20 @@ function attemptHoba(req, ctx) {
   const triple = kid + '.' + challenge + '.' + nonce;
   if (hobaSeen.has(triple)) {
     log.debug("Leaving attemptHoba(). That signature has been seen before.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0052', unauthenticated(req,
       'This exact credential has been presented before (same key id, challenge and nonce). ' +
       'The challenge may be reused until its max-age runs out, but the nonce is what makes ' +
-      'each signature single-use — generate a fresh one per request.');
+      'each signature single-use — generate a fresh one per request.'));
   }
 
   const registered = entryForHobaKid(kid);
   if (!registered) {
     log.debug("Leaving attemptHoba(). No key is registered under that kid.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0053', unauthenticated(req,
       'No public key is registered here under the key id "' + kid + '". Register one with a ' +
       'form-encoded POST to /.well-known/hoba/register carrying pub=<PEM public key> and ' +
       'username=<who it is for> (RFC 7486 section 7). Anybody may register any key for any ' +
-      'name, exactly as any name authenticates everywhere else in this service.');
+      'name, exactly as any name authenticates everywhere else in this service.'));
   }
 
   let key = null;
@@ -1216,12 +1348,13 @@ function attemptHoba(req, ctx) {
     // The stored key cannot be read. That is this service's fault rather than
     // the caller's, and saying so is what stops somebody debugging their client
     // over a broken registration.
-    log.error('scim: the HOBA key stored on ' + registered.entry.dn + ' under kid ' + kid +
+    log.error(errorCodes.tag('STS-SCIM-0054') +
+              'scim: the HOBA key stored on ' + registered.entry.dn + ' under kid ' + kid +
               ' could not be read back: ' + e.message);
     log.debug("Leaving attemptHoba(). The stored key is unreadable.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0054', unauthenticated(req,
       'The key registered under that id cannot be read back by this server (' + e.message +
-      '). Register it again.');
+      '). Register it again.'));
   }
 
   const tbs = hobaTbs([nonce, HOBA_ALG_RSA_SHA256, hobaOrigin(req), realm(), kid, challenge]);
@@ -1237,19 +1370,30 @@ function attemptHoba(req, ctx) {
   }
   if (!verified) {
     log.debug("Leaving attemptHoba(). The signature does not verify.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0055', unauthenticated(req,
       'This HOBA signature does not verify against the key registered under "' + kid + '". ' +
       'The to-be-signed blob is RFC 7486 section 5\'s: each field prefixed with its length in ' +
       'octets and a colon, concatenated with nothing between them, in the order nonce, ' +
       'algorithm, origin, realm, kid, challenge. This server computed it over origin "' +
       hobaOrigin(req) + '" and realm "' + realm() + '" — note that the origin carries an ' +
-      'explicit port even when it is the default, because RFC 7486 gives it none.');
+      'explicit port even when it is the default, because RFC 7486 gives it none.'));
   }
 
-  while (hobaSeen.size >= MAX_HOBA_SEEN) {
-    hobaSeen.delete(hobaSeen.values().next().value);
+  if (hobaSeen.size >= maxHobaSeen()) {
+    // Expired challenges first: their triples can never be presented again.
+    hobaSeen.forEach(function (seenChallenge, seenTriple) {
+      if (!hobaChallenges.has(seenChallenge)) {
+        hobaSeen.delete(seenTriple);
+      }
+    });
   }
-  hobaSeen.add(triple);
+  while (hobaSeen.size >= maxHobaSeen()) {
+    const oldest = hobaSeen.keys().next().value;
+    // The challenge dies with the triple — see the declaration above.
+    hobaChallenges.delete(hobaSeen.get(oldest));
+    hobaSeen.delete(oldest);
+  }
+  hobaSeen.set(triple, challenge);
 
   const username = usernameOfEntry(registered.entry);
   log.debug("Leaving attemptHoba(). " + username + " is accepted.");
@@ -1337,6 +1481,23 @@ function attemptClientCertificate(req, ctx) {
     log.debug("Leaving attemptClientCertificate(). No certificate verified on this connection.");
     return null;
   }
+  // REVOCATION, CONSULTED (2026-09-12). `common/app.js` computed the verdict
+  // before any route; a certificate the policy refuses is NOT THIS CREDENTIAL,
+  // for exactly the reason an unverified one above is not — the request may
+  // still authenticate under another scheme, and if nothing does, the gate's
+  // own refusal answers it. The refusal of the CERTIFICATE is recorded here so
+  // an operator finds it beside its code rather than inferring it from a 401.
+  const revocation = req.certificateRevocation || null;
+  if (revocation && revocation.refused) {
+    audit.failure(errorCodes.codeOf(revocation) || 'STS-PKI-0118', {
+      protocol: 'SCIM', channel: 'http', target: req.originalUrl || req.url,
+      summary: 'a verified client certificate was not accepted as a SCIM ' +
+               'credential: ' + revocation.why,
+      outcome: 'refused'
+    });
+    log.debug("Leaving attemptClientCertificate(). Refused on revocation.");
+    return null;
+  }
   const certificate = socket.getPeerCertificate();
   if (!certificate || !certificate.subject) {
     log.debug("Leaving attemptClientCertificate(). There is no peer certificate.");
@@ -1381,17 +1542,17 @@ function registerHobaKey(req) {
   log.debug("Entering registerHobaKey().");
   if (!schemeOn('scim.authHoba')) {
     log.debug("Leaving registerHobaKey(). HOBA is turned off.");
-    return { ok: false, status: 501,
+    return coded('STS-SCIM-0063', { ok: false, status: 501,
       detail: 'HOBA is turned off on this service (scim.authHoba). The route is registered, ' +
-              'which is why this is a 501 and not a 404.' };
+              'which is why this is a 501 and not a 404.' });
   }
   const body = parseBody(req) || {};
   const pem = String(body.pub || '').trim();
   if (!pem) {
     log.debug("Leaving registerHobaKey(). There was no key.");
-    return { ok: false, status: 400,
+    return coded('STS-SCIM-0064', { ok: false, status: 400,
       detail: 'A registration carries pub=<PEM public key> (RFC 7486 section 7), ' +
-              'form-encoded. Nothing else in the body is required by this service.' };
+              'form-encoded. Nothing else in the body is required by this service.' });
   }
   let key = null;
   try {
@@ -1400,19 +1561,19 @@ function registerHobaKey(req) {
     // Not a key. The message from openssl is passed through, because it is
     // usually specific enough to fix the request in one go.
     log.debug("Leaving registerHobaKey(). The key could not be read.");
-    return { ok: false, status: 400,
+    return coded('STS-SCIM-0065', { ok: false, status: 400,
       detail: 'That public key could not be read: ' + e.message + '. It should be a PEM ' +
               'SubjectPublicKeyInfo block — the "-----BEGIN PUBLIC KEY-----" one, not a ' +
-              'certificate and not a private key.' };
+              'certificate and not a private key.' });
   }
   if (key.asymmetricKeyType !== 'rsa') {
     log.debug("Leaving registerHobaKey(). It is a " + key.asymmetricKeyType + " key.");
-    return { ok: false, status: 400,
+    return coded('STS-SCIM-0066', { ok: false, status: 400,
       detail: 'That is a ' + key.asymmetricKeyType + ' key, and RFC 7486 registers two ' +
               'signature algorithms — 0 (RSA-SHA256) and 1 (RSA-SHA1) — so there is no ' +
               'algorithm number for anything else. This service accepts 0 only: SHA-1 is not ' +
               'something to be building a client around, and publishing that refusal is ' +
-              'better than leaving it to be discovered.' };
+              'better than leaving it to be discovered.' });
   }
 
   const der = key.export({ format: 'der', type: 'spki' });
@@ -1424,25 +1585,88 @@ function registerHobaKey(req) {
     stsCrypto.certificateThumbprint(der, { truncate: 22 });
   if (/[.\s]/.test(kid)) {
     log.debug("Leaving registerHobaKey(). The kid carries a separator.");
-    return { ok: false, status: 400,
+    return coded('STS-SCIM-0067', { ok: false, status: 400,
       detail: 'A key id cannot contain a full stop or whitespace: the credential is ' +
               '"kid.challenge.nonce.sig" and a kid carrying a full stop could not be read ' +
-              'back out of it.' };
+              'back out of it.' });
   }
 
   const session = authn.sessionOf(req);
   const username = String(body.username ||
     (session && session.user && session.user.username) || '').trim();
+  // WHO IS ASKING, which the rest of this function decides nothing on in
+  // development and everything on in product. A session somebody DECLINED to
+  // authenticate in (`authenticated: false`) is nobody, for this purpose.
+  const signedInAs = (session && session.user && session.authenticated !== false)
+    ? String(session.user.username || '').trim() : '';
   if (!username) {
     log.debug("Leaving registerHobaKey(). Nobody was named.");
-    return { ok: false, status: 400,
+    return coded('STS-SCIM-0068', { ok: false, status: 400,
       detail: 'This registration names nobody. RFC 7486 registers a key against an ' +
               'already-authenticated account; there is rarely one here, so send ' +
               'username=<who this key is for>, or register from a browser that has signed ' +
-              'in at /authn/login.' };
+              'in at /authn/login.' });
   }
 
   let entry = directory.existingUserEntry(username);
+
+  // ---------------------------------------------------------------------
+  // **ADDING A KEY TO SOMEBODY'S ACCOUNT IS SIGNING IN AS THEM (2026-09-12).**
+  // Registration was open to anybody for any name, and a registered HOBA key
+  // authenticates at /scim/v2 as that person — so in any deployment where a
+  // person's account is worth anything, this endpoint was account takeover in
+  // one unauthenticated POST. RFC 7486 section 7 registers a key INSIDE an
+  // already-authenticated context; this service had no such context and made
+  // the name a parameter. Two refusals, each through the predicate that names
+  // its question:
+  //
+  //   * `mode.opensTestControls()` — outside development, a key may be added
+  //     to an EXISTING account only by somebody whose sign-on session is that
+  //     account. Development keeps the open registration, on purpose: it is
+  //     how a client's HOBA code is exercised without a sign-in flow first.
+  //   * `mode.autoCreates()` — outside development, a registration never
+  //     CREATES an account. A name nobody provisioned is an unknown name, which
+  //     is rule 2 of common/mode.js; the refusal says where accounts come from.
+  // ---------------------------------------------------------------------
+  if (entry && !mode.opensTestControls() &&
+      signedInAs.toLowerCase() !== username.toLowerCase()) {
+    log.debug("Leaving registerHobaKey(). " + username + " exists and the caller is " +
+              (signedInAs ? signedInAs : 'not signed in') + ".");
+    return coded('STS-SCIM-0069', { ok: false, status: 403,
+      detail: 'A HOBA key authenticates as the account it is registered to, so a key may be ' +
+              'added to an existing account only by that account\'s owner. Sign in as ' +
+              username + ' at /authn/login and register from that browser session, or have ' +
+              'an administrator provision the credential. This is refused outside ' +
+              'development mode (global.mode).' });
+  }
+  if (!entry && !mode.autoCreates()) {
+    log.debug("Leaving registerHobaKey(). No such account, and none is created.");
+    return coded('STS-SCIM-0070', { ok: false, status: 404,
+      detail: 'There is no account named ' + username + ', and in product mode a key ' +
+              'registration does not create one (global.mode). Provision the person first — ' +
+              'the console, /admin-api/users, SCIM or an LDAP add — and register the key while ' +
+              'signed in as them.' });
+  }
+
+  // ---------------------------------------------------------------------
+  // **ONE KEY ID, ONE ACCOUNT, IN EVERY MODE (2026-09-12).** The lookup that
+  // authenticates a HOBA credential (`entryForHobaKid()`) takes the FIRST entry
+  // holding a kid, so a kid registered on a second account made authentication
+  // depend on directory order — and let one registration shadow another
+  // person's key, or be shadowed by it. A kid is caller-chosen, which is why
+  // this is a refusal rather than a thing that cannot happen; the derived
+  // default already could not collide.
+  // ---------------------------------------------------------------------
+  const holder = entryForHobaKid(kid);
+  if (holder && (!entry || holder.entry.dn !== entry.dn)) {
+    log.debug("Leaving registerHobaKey(). The kid is registered to " + holder.entry.dn + ".");
+    return coded('STS-SCIM-0071', { ok: false, status: 409,
+      detail: 'The key id "' + kid + '" is already registered to another account, and a ' +
+              'HOBA credential names its key by id alone — two accounts under one id would ' +
+              'make which of them a signature authenticates depend on directory order. ' +
+              'Choose another kid, or omit it and one is derived from the key.' });
+  }
+
   if (!entry) {
     const made = directory.createUser(username, {
       origin: 'hoba', channel: 'http', protocol: 'SCIM',
@@ -1450,15 +1674,16 @@ function registerHobaKey(req) {
     });
     if (!made.ok) {
       log.debug("Leaving registerHobaKey(). The entry could not be created.");
-      return { ok: false, status: made.existing ? 409 : 400,
-        detail: (made.errors || []).join(' ') };
+      return coded(errorCodes.codeOf(made) || 'STS-SCIM-0072',
+        { ok: false, status: made.existing ? 409 : 400,
+        detail: (made.errors || []).join(' ') });
     }
     entry = directory.readPerson(made.dn);
   }
   if (!entry) {
     log.debug("Leaving registerHobaKey(). The entry vanished between two reads.");
-    return { ok: false, status: 500,
-      detail: 'The directory entry for ' + username + ' could not be read back.' };
+    return coded('STS-SCIM-0073', { ok: false, status: 500,
+      detail: 'The directory entry for ' + username + ' could not be read back.' });
   }
 
   const attributes = mergeableAttributes(entry);
@@ -1478,13 +1703,15 @@ function registerHobaKey(req) {
   const written = directory.writePerson(entry.dn, attributes);
   if (!written.ok) {
     log.debug("Leaving registerHobaKey(). The write failed: " + written.reason);
-    return { ok: false, status: written.reason === 'full' ? 507 : 400,
-      detail: 'The key could not be written to ' + entry.dn + ' (' + written.reason + ').' };
+    return coded(errorCodes.codeOf(written) || 'STS-SCIM-0074',
+      { ok: false, status: written.reason === 'full' ? 507 : 400,
+      detail: 'The key could not be written to ' + entry.dn + ' (' + written.reason + ').' });
   }
 
   log.info('scim: a HOBA public key was registered for ' + username + ' at ' + entry.dn +
-           ' under kid ' + kid + '. Nothing was checked about who registered it — see ' +
-           'GET /scim.');
+           ' under kid ' + kid + '. ' + (mode.opensTestControls()
+             ? 'Nothing was checked about who registered it — see GET /scim.'
+             : 'It was registered by ' + (signedInAs || username) + ', signed in.'));
   log.debug("Leaving registerHobaKey(). kid=" + kid);
   return {
     ok: true, status: 201,
@@ -1495,7 +1722,9 @@ function registerHobaKey(req) {
     body: {
       kid: kid, username: username, dn: entry.dn, algorithm: HOBA_ALG_RSA_SHA256,
       attribute: HOBA_ATTRIBUTE,
-      note: 'Registered. Nothing about this registration was authenticated, and the key is ' +
+      note: 'Registered. ' + (mode.opensTestControls()
+              ? 'Nothing about this registration was authenticated, and the key is '
+              : 'The registration was made from ' + username + '\'s own session, and the key is ') +
             'on the directory entry — an ldapsearch and /admin/users show it. Authenticate ' +
             'with Authorization: HOBA result="kid.challenge.nonce.sig".'
     }
@@ -1553,22 +1782,37 @@ function authenticate(req, need) {
                  ? 'a discovery endpoint, which is open (scim.authDiscovery)'
                  : 'authentication is turned off' };
     }
+    if (scheme === 'digest' && schemeOn('scim.authDigest') && !digestAllowedByMode()) {
+      log.debug("Leaving authenticate(). Digest is not offered in product mode.");
+      return coded('STS-SCIM-0056', unauthenticated(req,
+        'HTTP Digest is not offered in product mode. RFC 7616 requires the server to hold ' +
+        'each password or its digest hash, and this service holds a person\'s password only ' +
+        'as a salted scrypt hash, from which neither can be computed; the one Digest it could ' +
+        'perform would share scim.digestPassword across every user. Use a Bearer token, HTTP ' +
+        'Basic over TLS, HOBA or a client certificate — the WWW-Authenticate headers list them.'));
+    }
     if (scheme) {
       log.debug("Leaving authenticate(). The scheme " + scheme + " is not offered here.");
-      return unauthenticated(req,
+      return coded('STS-SCIM-0057', unauthenticated(req,
         'This request carries an "' + scheme + '" credential and this service offers ' +
         enabledSchemes().map(function (row) { return row.name; }).join(', ') +
-        '. The WWW-Authenticate headers on this response say what to send.');
+        '. The WWW-Authenticate headers on this response say what to send.'));
     }
     log.debug("Leaving authenticate(). Nothing was presented.");
-    return unauthenticated(req,
+    return coded('STS-SCIM-0058', unauthenticated(req,
       'These endpoints create, change and delete accounts, and they now require a credential. ' +
-      'Any of the schemes in the WWW-Authenticate headers will do, and every one of them is ' +
-      'permissive: an access token from this service\'s own token endpoint with the "' +
-      scopeRead() + '" or "' + scopeWrite() + '" scope, any username with any password but ' +
-      'one over Basic, any username over Digest with the shared password, or a HOBA key ' +
-      'anybody may register. The ServiceProviderConfig at /scim/v2/ServiceProviderConfig ' +
-      'lists them, and it is readable without a credential for that reason.');
+      (mode.verifiesCredentials()
+        ? 'Any of the schemes in the WWW-Authenticate headers will do: an access token from ' +
+          'this service\'s own token endpoint with the "' + scopeRead() + '" or "' +
+          scopeWrite() + '" scope, a directory person\'s username and password over Basic, ' +
+          'a HOBA key registered by its signed-in owner, or a verified client certificate. '
+        : 'Any of the schemes in the WWW-Authenticate headers will do, and every one of them ' +
+          'is permissive: an access token from this service\'s own token endpoint with the "' +
+          scopeRead() + '" or "' + scopeWrite() + '" scope, any username with any password ' +
+          'but one over Basic, any username over Digest with the shared password, or a HOBA ' +
+          'key anybody may register. ') +
+      'The ServiceProviderConfig at /scim/v2/ServiceProviderConfig ' +
+      'lists them, and it is readable without a credential for that reason.'));
   }
 
   // Accepted. The access control policy, which is two lines and is published in
@@ -1584,7 +1828,7 @@ function authenticate(req, need) {
       const challenge = (decision.scheme === 'dpop' ? 'DPoP' : 'Bearer') +
         ' realm="' + realm() + '", error="insufficient_scope", error_description="' +
         'this operation needs the ' + required + ' scope", scope="' + required + '"';
-      return {
+      return coded('STS-SCIM-0059', {
         ok: false, status: 403, scimType: null,
         detail: 'This operation needs the "' + required + '" scope and the access token was ' +
                 'issued with ' + (decision.scopes ? '"' + decision.scopes + '"' : 'no scope ' +
@@ -1594,7 +1838,7 @@ function authenticate(req, need) {
                 'not imply the other, deliberately, so that a client\'s handling of a ' +
                 'read-only credential is something you can actually produce here.',
         headers: { 'WWW-Authenticate': [challenge] }
-      };
+      });
     }
   }
 
@@ -1651,13 +1895,13 @@ function authenticate(req, need) {
     log.info('scim: the access policy refused ' + req.method + ' ' +
              (req.originalUrl || req.url) + ' for ' +
              (decision.principal || '(nobody)') + '. ' + answer.why);
-    return {
+    return coded(errorCodes.codeOf(answer) || 'STS-SCIM-0060', {
       ok: false, status: 403, scimType: null,
       detail: 'The access policy refused this request. ' + answer.why +
               ' This is a POLICY decision rather than a missing credential: ' +
               'the credential presented was accepted. The document is on ' +
               '/admin/xacml and xacml.enforceAccess turns the whole layer off.'
-    };
+    });
   }
 
   log.debug("Leaving authenticate(). " + decision.scheme + " for " +
@@ -1713,7 +1957,8 @@ function sessionFor(decision) {
   } catch (error) {
     // Nothing about recording a session may be able to fail an authentication
     // — the same guarantee recordAuthentication() gives one line up.
-    log.error('scim: a session could not be recorded and the request is ' +
+    log.error(errorCodes.tag('STS-SCIM-0061') +
+              'scim: a session could not be recorded and the request is ' +
               'unaffected: ' + error.message);
     log.debug("Leaving sessionFor(). It threw.");
     return null;
@@ -1739,7 +1984,8 @@ function recordAuthentication(decision, row) {
       note: decision.note || ''
     });
   } catch (e) {
-    log.warn('scim: an accepted credential could not be recorded: ' + e.message);
+    log.warn(errorCodes.tag('STS-SCIM-0062') +
+             'scim: an accepted credential could not be recorded: ' + e.message);
   }
   log.debug("Leaving recordAuthentication() for SCIM.");
 }
@@ -1837,14 +2083,22 @@ function describe(req) {
     realm: realm(),
     scopes: { read: scopeRead(), write: scopeWrite() },
     hobaRegistration: '/.well-known/hoba/register',
-    digestAlgorithms: DIGEST_ALGORITHMS.map(function (row) { return row.token; }),
+    digestAlgorithms: digestAlgorithms().map(function (row) { return row.token; }),
     schemes: SCHEMES.map(function (row) {
       return {
         id: row.id,
         type: row.type,
         canonical: !!row.canonical,
         name: row.name,
-        enabled: schemeOn(row.setting),
+        enabled: schemeAvailable(row),
+        // Why an ON setting is not an offered scheme, where that is the case.
+        refusedByMode: row.id === 'digest' && schemeOn(row.setting) &&
+                       !digestAllowedByMode()
+          ? 'HTTP Digest needs the server to hold each password or its RFC ' +
+            '7616 hash, and product mode holds only a scrypt hash; the ' +
+            'shared scim.digestPassword is not a credential a deployment ' +
+            'can offer.'
+          : '',
         setting: row.setting,
         primary: !!row.primary,
         scoped: !!row.scoped,

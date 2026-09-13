@@ -94,18 +94,25 @@
 // ===========================================================================
 
 const nodeCrypto = require('crypto');
-const { log, randomId, iso, baseUrlOf } = require('../common/helpers');
+const { log, randomId, iso } = require('../common/helpers');
 // For `deriveSharedCredential()` alone — see `receiverToken()`. A LIBRARY
 // (rule 3): it registers no route, so requiring it here moves nothing and it
 // cannot join a cycle.
 const stsCrypto = require('../common/crypto');
 const config = require('../common/config');
+// For `inventsClaimValues()` in `namesPerson()`. A leaf requiring only config.
+const mode = require('../common/mode');
 const realms = require('../common/realms');
 const audit = require('../common/audit');
 const subjects = require('./ssf_subjects');
 const events = require('./ssf_events');
 const streams = require('./ssf_streams');
 const transport = require('./ssf_http');
+// The error-code registry, a LEAF. accept() is handed the request and not the
+// response — the surfaces send their own — so a refusal is marked on
+// `req.res`, the response express attaches to every request, which is the
+// object the call-log funnel reads the code from. It is never serialised.
+const errorCodes = require('../common/error_codes');
 
 // ---------------------------------------------------------------------------
 // THE TWO SURFACES. This table is the whole register — there is no second list
@@ -189,10 +196,25 @@ function inboxLimit() {
 // the seeding below — and a remembered id would be the copy that is wrong
 // exactly when somebody has just deleted one.
 // ---------------------------------------------------------------------------
+// THE DERIVED ID FIRST, THE MARKER SECOND, AND THE ORDER IS THE POINT
+// (2026-09-12). `internalSurface` is set on the record after `createStream()`
+// returns and is not an SSF member, so it is the half of this lookup that can
+// go missing across a persisted round-trip — and a lookup that missed would
+// seed again, which with a derived id means OVERWRITING the stream that is
+// already there. That would quietly undo a pause, and "an existing stream is
+// left exactly as it is" is this function's whole job. The id is computed from
+// the realm and the surface, so it cannot be lost.
 function streamFor(surfaceId) {
   log.debug('Entering streamFor(). ' + surfaceId);
   const id = String(surfaceId || '');
-  const found = streams.listStreams().filter(function (record) {
+  const surface = SURFACES.filter(function (one) { return one.id === id; })[0];
+  const all = streams.listStreams();
+  const byId = surface
+    ? all.filter(function (record) {
+        return record.stream_id === internalStreamId(surface);
+      })[0]
+    : null;
+  const found = byId || all.filter(function (record) {
     return record.internalSurface === id;
   })[0] || null;
   log.debug('Leaving streamFor(). ' + (found ? found.stream_id : '(none)'));
@@ -272,6 +294,51 @@ function receiverToken(surface) {
 }
 
 // ---------------------------------------------------------------------------
+// THE STREAM'S ID, DERIVED — AND THE SECOND HALF OF THE FIX THE TOKEN GOT ON
+// 2026-09-11 (2026-09-12).
+//
+// That day made the TOKEN the same in every process, because each process
+// seeded its own and every loopback push was refused. What it left alone was
+// the stream's IDENTITY: `createStream()` minted `'ssf-' + randomId(12)`, so
+// each process still created a stream OF ITS OWN. In development mode that is
+// invisible — minted state is per process and nothing reconciles it — but with
+// a persisted, coordinated store the duplicates are shared and they SURVIVE,
+// so they accumulate: the front process and each request worker seed a pair
+// per start, and every start adds more.
+//
+// **AND EVERY EVENT IS PUSHED TO ALL OF THEM.** `emitProtocolEvent()` fans out
+// to every stream that asks for the type, so the cost of one session event
+// grows with how many times this service has ever started. Measured on a
+// four-hour test stack: FOURTEEN streams in the default realm where two are
+// intended — seven pairs, at seven timestamps — and a bulk load logging `went
+// to 12 of 12 stream(s)` for 16,421 events, which is close to two hundred
+// thousand loopback pushes. The front process pinned at a full core and the
+// worker sockets answered EAGAIN 19,737 times.
+//
+// So the id is derived, and the two rules it has to satisfy are different from
+// the token's:
+//
+//   * **IT MUST NOT USE `internalSecret()`.** That secret is per RUN — it is
+//     generated at startup and put in the environment so a forked worker
+//     inherits it — which is exactly right for a credential and exactly wrong
+//     here: an id derived from it agrees across the processes of ONE run and
+//     changes on the next start, which is the accumulation this exists to
+//     stop, moved one level along.
+//   * **IT IS NOT A SECRET AND MUST NOT LOOK LIKE ONE.** A stream id is
+//     published on /admin/ssf and in every stream configuration. So it is the
+//     realm and the surface, written out, rather than a hash of them: a reader
+//     who sees `ssf-internal-default-admin-console` knows what it is, and a
+//     hash would only have hidden which of fourteen streams was which.
+//
+// Both components are already constrained to the charset: a realm id is
+// `common/realms.js`'s `/^[a-z0-9][a-z0-9-]{0,30}$/` and the two surface ids
+// are written out in SURFACES above.
+// ---------------------------------------------------------------------------
+function internalStreamId(surface) {
+  return 'ssf-internal-' + realms.currentId() + '-' + surface.id;
+}
+
+// ---------------------------------------------------------------------------
 // SEED THE TWO STREAMS INTO THE REALM THAT IS AMBIENT.
 //
 // Called once for the default realm and again from `realms.onCreate()` for
@@ -284,6 +351,66 @@ function receiverToken(surface) {
 // signals away until a restart, and the inbox page says so rather than
 // silently seeding another.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE ONES THAT ACCUMULATED BEFORE THE ID WAS DERIVED (2026-09-12).
+//
+// The fix above stops new duplicates: the id is the same in every process, and
+// `createStream()` writes with `store.set(stream_id, …)`, so a second seeder
+// overwrites rather than adds. It does nothing about the ones already in a
+// persisted store, and those are the expensive ones — a test stack four hours
+// old held fourteen where two belong, and every event was pushed to all of
+// them.
+//
+// **IT IDENTIFIES THEM BY WHERE THEY DELIVER, NOT BY THE MARKER.**
+// `streamFor()` reads `internalSurface`, which is set on the record AFTER
+// `createStream()` returns and is not an SSF member — and a marker is exactly
+// what may not have survived the round-trip that produced the duplicates in
+// the first place. The delivery endpoint is a core member of every stream
+// configuration, it is this realm's own loopback receive path, and it is
+// therefore the thing that cannot have been lost.
+//
+// **IT REFUSES TO TOUCH ANYTHING WITH THE DERIVED ID**, which is what keeps
+// this from eating the stream it is about to seed — and it says out loud what
+// it removed, because a stream disappearing is otherwise indistinguishable
+// from a receiver that was never registered.
+//
+// It runs in every process, which is harmless: deleting an id twice is a
+// no-op, and the alternative is a sweep that only happens in whichever process
+// somebody decided was special.
+// ---------------------------------------------------------------------------
+function sweepDuplicates(surface) {
+  log.debug('Entering sweepDuplicates(). ' + surface.id);
+  const keep = internalStreamId(surface);
+  const endpoint = endpointFor(surface);
+  const stale = streams.listStreams().filter(function (record) {
+    return record.stream_id !== keep &&
+           record.delivery &&
+           record.delivery.method === streams.DELIVERY_PUSH &&
+           String(record.delivery.endpoint_url || '') === endpoint;
+  });
+  stale.forEach(function (record) {
+    streams.removeStream(record.stream_id);
+    log.warn('ssf: removed ' + record.stream_id + ' (created ' +
+             record.createdAt + '), a DUPLICATE of this service\'s own ' +
+             surface.label + ' receiver in the "' + realms.currentId() +
+             '" realm. Before the stream id was derived, every process of ' +
+             'this service seeded one of these per start and a persisted ' +
+             'store kept them all — so one event was pushed to every copy. ' +
+             'The surviving stream is ' + keep + '.');
+  });
+  if (stale.length) {
+    audit.audit({ action: 'ssf.stream.swept', category: 'signals',
+      protocol: 'SSF', channel: 'internal', outcome: 'success',
+      target: surface.id,
+      summary: 'Removed ' + stale.length + ' duplicate ' + surface.label +
+        ' receiver stream(s) in the "' + realms.currentId() + '" realm',
+      detail: { kept: keep,
+                removed: stale.map(function (one) { return one.stream_id; }) } });
+  }
+  log.debug('Leaving sweepDuplicates(). ' + stale.length + ' removed.');
+  return stale.length;
+}
+
 function seedStreams() {
   log.debug('Entering seedStreams(). realm=' + realms.currentId());
   if (!enabled()) {
@@ -314,6 +441,9 @@ function seedStreams() {
 
   let made = 0;
   SURFACES.forEach(function (surface) {
+    // Before anything is looked for: a store carried over from before the
+    // id was derived may hold several of these. See sweepDuplicates().
+    sweepDuplicates(surface);
     if (streamFor(surface.id)) {
       log.debug('seedStreams(): ' + surface.id + ' already has a stream in ' +
                 'this realm and it was left alone.');
@@ -342,8 +472,18 @@ function seedStreams() {
         // one cost.
         authorization_header: receiverToken(surface)
       }
-    }, { issuer: issuerForSeeding(), principal: 'internal' });
+    }, { issuer: issuerForSeeding(), principal: 'internal',
+         // ON THE CONTEXT AND NOT IN THE BODY ABOVE — see createStream(). The
+         // body is what a remote receiver sends at POST /ssf/streams, so an id
+         // read from there would let one name another's stream.
+         streamId: internalStreamId(surface) });
     if (!created.ok) {
+      audit.failure('STS-SSF-0072', {
+        action: 'service.failure', protocol: 'SSF', channel: 'internal',
+        target: surface.id, outcome: 'error',
+        summary: 'The ' + surface.label + ' could not be registered as a ' +
+          'Shared Signals receiver in the "' + realms.currentId() + '" realm',
+        detail: { why: created.errors.join(' ') } });
       log.warn('ssf: the ' + surface.label + ' was not registered as a ' +
                'receiver in the "' + realms.currentId() + '" realm: ' +
                created.errors.join(' ') + ' Nothing else is affected; that ' +
@@ -377,15 +517,20 @@ function seedStreams() {
 
 // The issuer a seeded stream carries. There is no request to read a Host header
 // from at startup, which is the same wall `applications.js`'s
-// `internalBaseUrl()` and `helpers.js` meet — `baseUrlOf(null)` falls back to
-// localhost and the port, and `issuerFor()` in `ssf.js` computes the same
-// string from the same two pieces. It is a starting value and not a fact: a
-// deployment behind a proxy that pins `ssf.issuer` gets that instead, here as
-// everywhere else.
+// `internalBaseUrl()` and `helpers.js` meet. It is a starting value and not a
+// fact: a deployment behind a proxy that pins `ssf.issuer` or
+// `global.publicBaseUrl` gets that instead, here as everywhere else.
+//
+// **IT WAS `baseUrlOf(null) + realms.currentPrefix()` UNTIL 2026-09-12, AND
+// BOTH HALVES WERE WRONG.** `baseUrlOf()` already carries the prefix, so a
+// seeded stream in `acme` named `…/realm/acme/realm/acme`; and with no request
+// it answers `http://localhost:<port>` even on an HTTPS listener. It is now the
+// function `ssf.js`'s `issuerFor(null)` is, so the two cannot disagree — which
+// they did about the prefix, too, because a configured `ssf.issuer` was used
+// verbatim here and in every realm. Both call `transport.transmitterIssuer()`.
 function issuerForSeeding() {
   log.debug('Entering issuerForSeeding().');
-  const configured = String(config.value('ssf.issuer') || '').trim();
-  const out = configured || (baseUrlOf(null) + realms.currentPrefix());
+  const out = transport.transmitterIssuer(null);
   log.debug('Leaving issuerForSeeding(). ' + out);
   return out;
 }
@@ -412,9 +557,11 @@ function accept(surfaceId, req) {
     // Only this file's own two routes call this, so a bad id is a programming
     // error rather than a caller's — reported rather than thrown, because the
     // route it came from is answering an HTTP request.
-    log.error('ssf: accept() was called for "' + String(surfaceId) + '", ' +
+    log.error(errorCodes.tag('STS-SSF-0064') +
+              'ssf: accept() was called for "' + String(surfaceId) + '", ' +
               'which is not one of this service\'s receivers.');
     log.debug('Leaving accept(). No such surface.');
+    errorCodes.mark(req && req.res, 'STS-SSF-0064');
     return { status: 500, entry: null,
       body: { err: 'invalid_request',
         description: 'There is no internal receiver called "' +
@@ -422,6 +569,7 @@ function accept(surfaceId, req) {
   }
   if (!enabled()) {
     log.debug('Leaving accept(). Off.');
+    errorCodes.mark(req && req.res, 'STS-SSF-0065');
     return { status: 501, entry: null,
       body: { err: 'invalid_request',
         description: 'This service is not running its own receivers (' +
@@ -433,6 +581,7 @@ function accept(surfaceId, req) {
   const record = streamFor(surface.id);
   if (!record) {
     log.debug('Leaving accept(). No stream.');
+    errorCodes.mark(req && req.res, 'STS-SSF-0066');
     return { status: 404, entry: null,
       body: { err: 'invalid_request',
         description: 'The ' + surface.label + ' has no stream in the "' +
@@ -464,11 +613,13 @@ function accept(surfaceId, req) {
                         : 'no authorization header') + ' and was refused.');
     audit.audit({ action: 'ssf.event.receive', category: 'signals',
       protocol: 'SSF', channel: 'http', outcome: 'failure',
+      errorCode: 'STS-SSF-0067',
       target: record.stream_id,
       summary: 'A push at the ' + surface.label + '\'s receive endpoint was ' +
                'refused: the authorization header did not match the stream',
       detail: { surface: surface.id, presented: presented ? 'yes' : 'no' } });
     log.debug('Leaving accept(). Refused on the credential.');
+    errorCodes.mark(req.res, 'STS-SSF-0067');
     return { status: 401, entry: null,
       body: { err: 'access_denied',
         // WHICH OF THE TWO IT WAS, and it is deliberately said out loud.
@@ -497,6 +648,7 @@ function accept(surfaceId, req) {
   const token = raw.trim();
   if (!token) {
     log.debug('Leaving accept(). Empty body.');
+    errorCodes.mark(req.res, 'STS-SSF-0068');
     return { status: 400, entry: null,
       body: { err: 'invalid_request',
         description: 'The body is empty. RFC 8935 section 2.1 puts the ' +
@@ -550,6 +702,8 @@ function accept(surfaceId, req) {
   audit.audit({ action: 'ssf.event.receive', category: 'signals',
     protocol: 'SSF', channel: 'http',
     outcome: (read.problem || !entry.audienceOk) ? 'failure' : 'success',
+    errorCode: read.problem ? 'STS-SSF-0069'
+      : (entry.audienceOk ? '' : 'STS-SSF-0070'),
     target: entry.jti,
     summary: 'A Security Event Token was delivered to the ' + surface.label +
              (entry.verified ? ' and verified' : ''),
@@ -559,6 +713,7 @@ function accept(surfaceId, req) {
 
   if (read.problem) {
     log.debug('Leaving accept(). Malformed.');
+    errorCodes.mark(req.res, 'STS-SSF-0069');
     return { status: 400, entry: entry,
       body: { err: 'invalid_request',
         description: read.problem + ' It has been recorded anyway and is on ' +
@@ -571,6 +726,7 @@ function accept(surfaceId, req) {
              'answers to "' + surface.audience + '". It is recorded and ' +
              'refused.');
     log.debug('Leaving accept(). Wrong audience.');
+    errorCodes.mark(req.res, 'STS-SSF-0070');
     return { status: 400, entry: entry,
       body: { err: 'invalid_audience',
         description: 'This receiver is "' + surface.audience + '" and that ' +
@@ -579,6 +735,7 @@ function accept(surfaceId, req) {
   }
   if (!entry.verified && config.value('ssf.receiveRequireSignature')) {
     log.debug('Leaving accept(). Signature required.');
+    errorCodes.mark(req.res, 'STS-SSF-0071');
     return { status: 400, entry: entry,
       body: { err: 'invalid_key', description: entry.verificationNote } };
   }
@@ -828,6 +985,16 @@ function namesPerson(value, person) {
   // `defaultEmailFor()`. It is a fact about those two functions rather than
   // about the person, which is why it is matched here and not added to the
   // list above as though it were an identifier they hold.
+  //
+  // **ONLY WHERE THOSE FUNCTIONS INVENT ONE (2026-09-12).** In product mode
+  // they do not, so an `@example.com` address on an event did not come from
+  // this service — and matching it to a person who never held it would be the
+  // disclosure this function's header says to fail closed on.
+  if (!mode.inventsClaimValues()) {
+    log.debug('Leaving namesPerson(). No exact name, and nothing is invented ' +
+              'in product mode.');
+    return false;
+  }
   const invented = names.map(function (one) {
     return one.indexOf('@') > 0 ? one : one + '@example.com';
   });

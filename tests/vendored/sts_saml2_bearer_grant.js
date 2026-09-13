@@ -93,6 +93,24 @@ var AUTH_CLIENT = "saml-auth-client-1";
 var ISS = "https://issuer.example.test/saml2bearer";
 var OTHER_ISS = "https://other-issuer.example.test/saml2bearer";
 
+// ---------------------------------------------------------------------------
+// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT (2026-09-12).
+//
+// Product mode seeds no `alice`, invents no persona onto an entry, and holds
+// every OAuth application to a client credential. So the asserting
+// application is created with a client secret (the SAML-authenticating one
+// already holds an asymmetric credential, issued in section 8), and the person
+// every assertion below is ABOUT is a directory entry this job makes, with the
+// attributes a real account carries, rather than a seeded name.
+//
+// **WHAT IS NOT SUPPLIED**: product mode also refuses a token request that
+// authenticates no client, and the grant requests here carry none. RFC 7521
+// section 4.2 makes client authentication OPTIONAL for an authorization grant,
+// and adding it would change the grant under test — the same decision
+// `sts_jwt_bearer_grant.js` records.
+// ---------------------------------------------------------------------------
+var ASSERTED_PERSON = usernameFor("samlasserted");
+
 var GRANT = "urn:ietf:params:oauth:grant-type:saml2-bearer";
 var JWT_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer";
 var CLIENT_TYPE = "urn:ietf:params:oauth:client-assertion-type:saml2-bearer";
@@ -223,8 +241,17 @@ async function test() {
   });
   await ok(realmApi + "/applications/create",
            { identifier: CLIENT, protocols: ["oauth2"],
-             fields: { oauthClientId: CLIENT } },
+             fields: { oauthClientId: CLIENT,
+                       oauthClientSecret: CLIENT + "-secret-" + REALM,
+                       oauthTokenEndpointAuthMethod: "client_secret_post" } },
            "created the asserting application");
+  await ok(realmApi + "/users/create",
+           { username: ASSERTED_PERSON, invent: false,
+             attributes: { cn: "SAML Asserted " + ASSERTED_PERSON,
+                           givenName: "SAML", sn: ASSERTED_PERSON,
+                           displayName: "SAML Asserted " + ASSERTED_PERSON,
+                           mail: ASSERTED_PERSON + "@saml2-bearer-grant.test" } },
+           "created the person the assertions are about");
   await ok(realmApi + "/applications/create",
            { identifier: AUTH_CLIENT, protocols: ["oauth2"],
              fields: { oauthClientId: AUTH_CLIENT,
@@ -299,7 +326,7 @@ async function test() {
   function assertionFor(o) {
     const options = o || {};
     const doc = saml.buildAssertion(Object.assign(
-      { issuer: ISS, subject: options.person || "alice",
+      { issuer: ISS, subject: options.person || ASSERTED_PERSON,
         audience: TOKEN_ENDPOINT, recipient: TOKEN_ENDPOINT }, options.build || {}));
     const xml = saml.sign(doc, options.key || samlKey,
                           options.cert === null ? "" : (options.cert || samlCert),
@@ -389,7 +416,7 @@ async function test() {
   // 4. THE GRANT.
   // -------------------------------------------------------------------------
   log.info("=== 4. the grant itself ===");
-  const person = usernameFor("samlasserted");
+  const person = ASSERTED_PERSON;
   const granted = await tokenRequest({
     grant_type: GRANT, scope: "openid profile",
     assertion: assertionFor({ person: person,

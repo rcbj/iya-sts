@@ -142,7 +142,7 @@ ldapjs implements none, and this repository does not patch that submodule.
    own DID, and an entry for it would file the issuer among the people.
 
    But this module requires `admin_stats.js` (it needs
-   `identityOf`'s normalisation, so `alice`, `urn:sts-mock:user:alice` and
+   `identityOf`'s normalisation, so `alice`, `urn:sts:user:alice` and
    `alice@REALM` seed ONE entry), which means `admin_stats.js` cannot require it
    back: that is the cycle rule 2 exists for. So `admin_stats.js` offers
    `setUserObserver()` and this module fills it at require time. The observer's
@@ -179,7 +179,7 @@ ldapjs implements none, and this repository does not patch that submodule.
 
    **ONE ENTRY PER PERSON, AND IT IS ENFORCED AT FOUR DOORS RATHER THAN ASSUMED
    AT ONE.** Most of it was already true by accident: `identityOf()` normalises
-   `rcbj`, `urn:sts-mock:user:rcbj` and `rcbj@STS.MOCK` to one key, so every
+   `rcbj`, `urn:sts:user:rcbj` and `rcbj@STS.MOCK` to one key, so every
    name-shaped family folds onto `uid=rcbj,ou=users` before this module sees
    them. What did not fold was the identity that is a DN — a certificate saying
    `CN=rcbj` became a SECOND object beside the entry `rcbj` already had, in
@@ -1285,6 +1285,178 @@ process this service ran in until dispatching was turned on.
 `tests/ldap_logout.js` holds all of it in process, and `sts_global_logout`
 drives a real bind over 389 in the containerized stack.
 
+## AND SINCE 2026-09-12 THE WORK ITSELF GOES TO A WORKER, AS AN OPERATION
+
+The section above is about a sign-out reaching a socket a worker does not hold.
+This is the other direction: **the seven directory operations now RUN in a
+request worker**, with the front process keeping the socket and the framing.
+`workers.dispatch` names which — empty by default, `ldap` for all of them,
+`ldap.search` for one, `*` for everything. **It is the same setting that names
+the dispatched HTTP paths**, and an entry says which it is by its shape: a
+leading slash is a path prefix and anything else is an operation kind. It was a
+second setting, `workers.operations`, for three days; the distinction was
+artificial and the merge is argued in `common/request_pool.js`'s
+`dispatchList()`.
+
+**THE CHANNEL HAD EXISTED SINCE 2026-09-09 AND NOTHING FILLED IT.**
+`common/request_pool.js` offered `runOperation()`, `common/request_worker.js`
+offered `register()`, the root `CLAUDE.md` said the LDAP protocol fanned out —
+and no module in the tree called either function. Naming `ldap` in that setting
+dispatched nothing at all. The prose described a mechanism and there was no
+caller anywhere; this file is the caller.
+
+**WHAT THE OLD PROSE GAVE AS THE REASON WAS ALSO STALE**, and it is worth
+knowing which argument to stop repeating. `request_pool.js` said `ldap.*` must
+not be dispatched "until the store behind them is shared", because a worker's
+directory is its own and an add would fork it N ways. That was the
+pre-coordination state. Directory changes are rows in `sts_changes` —
+`persistence.js` registers `applyDirectoryChange`, which calls
+`directory.applyEntry()` in every other process — and `request_pool.start()`
+REFUSES to bring the pool up unless the store coordinates, with
+the operation kinds inside the same list it checks. The configuration that
+argument warned about stops the service rather than forking the directory. And
+`/scim/v2` is already a dispatched HTTP prefix writing this same store, entry
+for entry, through this same module's functions.
+
+### A fake `req`/`res` here is not the thing `request_worker.js` refused
+
+That file's header spends a page rejecting a fake `req`/`res` pair for HTTP:
+`http.ServerResponse` has an enormous surface, the handlers use most of it, and
+`app.js`'s response-flush CSP re-check hangs off the real object. **Every one of
+those arguments is about HTTP.**
+
+An LDAP response, as these seven handlers use it, is **three methods and one
+property** — `res.send(entry)`, `res.end()`, `res.end(matched)` and
+`res.messageId`. A request is a DN, a filter, a list of attributes and a handful
+of scalars. No chunking, no content type, no header, no middleware rewriting the
+body on the way out. So the pair is reproduced rather than proxied, and what
+makes it faithful is not care: **a DN and a filter travel as the STRINGS they
+arrived as and are re-parsed at the far end by the same ldapjs submodule**
+(`ldap.parseDN()`, `ldap.parseFilter()`). That is the HTTP path's "node's own
+parser at both ends" argument, transposed.
+
+### Four things deliberately do not cross, and each is a different reason
+
+* **`unbind`.** It ends the connection (RFC 4511 section 4.3), and a connection
+  is a file descriptor the front process holds. There is nothing in it for a
+  worker to do, and it is named in `DISPATCHABLE_OPERATIONS`'s absence rather
+  than left to be inferred — `tests/ldap_operations.js` asserts it is not
+  registered.
+* **The bind's effect on the SOCKET.** The DECISION crosses — the refused
+  password, the credential check, both audit rows — and
+  `req.connection.stsBoundAt` and `publishConnectionsSoon()` stay in the front
+  process, applied by `applyOperationResult()` when the worker says the bind
+  succeeded. **This is the mirror of the bug the section above documents,
+  pointing the other way**: a worker stamping its own copy of a socket it does
+  not hold would leave `/admin/sessions` unable to date the session and every
+  other worker's mirror showing the socket as unbound — so a global sign-out
+  would find nobody to sign out.
+* **The search is COLLECTED, not streamed.** The worker fills an array and the
+  front process sends it. That cost is bounded by the thing that already bounds
+  it: `maxSearchResults()` caps a search at `ldap.sizeLimit` whether it ran here
+  or in a worker, so the array is never larger than an answer this service was
+  already willing to build.
+* **The `SearchEntry` message itself.** `toSearchEntry()` decides WHICH
+  attributes go back — requested, operational, canonically spelled — and that is
+  store logic, so it runs in the worker. What crosses is the plain
+  `{ objectName, attributes }` inside it, and the front process builds the
+  message with ITS OWN `res.messageId`. Sending the worker's would be exactly
+  the "SearchEntry messageId mismatch" that function's header records having
+  cost an afternoon.
+
+### An error crosses as its NAME, and never as a hand-written code table
+
+A worker cannot send an ldapjs error object. The first implementation mapped
+result codes to constructors in a table here, which is a second copy of
+something the submodule already states — right on the day it is written and
+wrong about the tenth error somebody adds. `ldapErrorNamed()` looks the name up
+on ldapjs's own exports instead and **checks what it finds**: it must be a
+constructor whose instances carry a numeric `code`. A name that fails becomes
+`OperationsError` (result code 1) with the original wording, logged loudly.
+
+The check is not paranoia about our own worker. `createServer` is a real,
+callable export of that module, so a lookup that asked only "is this a function"
+would hand a client an ldapjs Server where an error belongs.
+`tests/ldap_operations.js` probes exactly that.
+
+### The result code is the whole of what a client acts on
+
+Which is why the test compares a rebuilt refusal's `code` and `name` against the
+same handler's refusal called directly, rather than checking that something went
+wrong. An LDAP client's error handling is built around 32 and 68, not around the
+sentence — a codec that rebuilt every refusal as a generic failure would change
+every negative path in every client while a search test went on passing.
+
+### A rejection is a refusal and never a second attempt
+
+If a worker dies part way through an add it may already have written. Running
+the handler in the front process as well would then refuse with
+`LDAP_ENTRY_ALREADY_EXISTS` for an entry the client had just successfully
+created — or, on a modify, apply the change twice. So a worker that fails
+answers `LDAP_UNAVAILABLE` (52), which says what is true. **The fallback to
+running here is only for the paths where nothing ran anywhere**: no pool, the
+operation not named in `workers.dispatch`, no worker to take it — all three
+resolve `{ dispatched: false }`, which is what `workers.requestCount = 0` means
+and is a supported configuration rather than a degraded one.
+
+### The wrapper goes on at REGISTRATION, beside the realm wrapper
+
+For that wrapper's reason, stated one section up: seven bodies each remembering
+to offer themselves to the pool is seven chances to forget, and **what was
+forgotten would be invisible** — the operation would simply run in the front
+process and everything would work, slightly slower, for ever.
+
+The order of the two is load-bearing. The realm wrapper goes on FIRST, so
+`LOCAL_HANDLERS` holds the realm-entering function and a worker enters the realm
+of the DN it was handed exactly as the socket does. Wrapped the other way round,
+a worker would run the raw handler with no realm ambient — which answers "no
+such object" for entries that plainly exist, the failure that registration point
+exists to prevent, reintroduced one layer out.
+
+`registerWorkerOperations()` is called AFTER the seven `server.*` calls, for the
+reason `sts_metadata.js` is required last: it reads what everything above it
+registered. Called before them it would register seven operations resolving to
+nothing, and every one would throw in the worker, where the failure reaches a
+client as `LDAP_OPERATIONS_ERROR` and reaches a reader as nothing at all.
+
+### They hold affinity to the CONNECTION, where the setting used to say they fan out
+
+The setting's own description said a directory operation "carries its own DN
+and credential and nothing about one has to be remembered to answer the next". True of one operation read alone; not the whole of it. RFC 4511 section
+4.2 makes the connection the unit of authorization state and a client may have
+several operations outstanding on one, so two consequences neither the change
+log nor a credential-per-call covers:
+
+* **A client reads its own writes on its own connection.** Over HTTP a caller is
+  a series of independent requests; on one socket an `ldapadd` and the
+  `ldapsearch` after it are one conversation.
+* **Order within a connection is the client's to rely on.** Fanned out, two
+  operations sent back to back can be answered by two workers in either order.
+
+**Affinity is still a locality measure and never a correctness one.** What makes
+a dispatched write visible is the read barrier — `runOperation()` takes a ticket
+and waits on the generation exactly as a dispatched path does, which it did not
+until 2026-09-12: the barrier was built for HTTP and nothing took an operation
+through it, so a dispatched operation was outside read-your-write entirely.
+
+### What is asserted, and what is not
+
+`tests/ldap_operations.js` is the in-process half: it drives both sides of the
+codec against each other and against the seven handlers, with no port, no fork
+and no container. Ten mutants, nine caught; the survivor is recorded there.
+
+**The section it needed a second pass to get right is worth knowing about.** The
+first version drove only `performOperation()` — the worker's half — so a
+mutation in `applyOperationResult()`, which runs in the front process, passed
+all 25 assertions. **The two halves are two functions in two processes and each
+has to be driven**, which is the thing to remember when the KDC or the gRPC
+surfaces are wired up.
+
+What it does not do is bind 389 or fork a worker. The first is
+`tests/vendored/sts_directory_bulk_load_ldap.js`'s, over a real socket, in three
+stacks — and it remains the only job in either suite that touches this
+directory's own socket at all.
+
 ---
 
 ## THREE ATTRIBUTES UNDER `ou=applications` NOW MEAN SOMETHING ONLY IN PAIRS (2026-09-01)
@@ -1414,7 +1586,7 @@ somebody in the directory that `autoCreateUsers` had just been set to keep out.
 **THE IDENTITY ARRIVES NORMALISED.** `consent.js` runs it through
 `admin_stats.js`'s `identityKeyOf()` first, which is the same normalisation
 `autoCreateUser()` used to place the entry — so `alice`, `alice@EXAMPLE.COM` and
-`urn:sts-mock:user:alice` reach `locateEntry()` as one key and find one entry. A
+`urn:sts:user:alice` reach `locateEntry()` as one key and find one entry. A
 second normalisation here would be a second opinion about who somebody is.
 
 **A REMOVE THAT EMPTIES THE ATTRIBUTE DELETES IT.** LDAP has no empty attribute
@@ -1667,3 +1839,266 @@ seven failed. Single-valued and assigned, like every other attribute this
 service writes here: two JWKS values would be two public keys under one
 `stsAssertionKid`, and a verifier reading the second would be checking a
 signature against a key nobody meant.
+
+## `stsKrb5Keys`: THE FOURTH, AND THE FIRST THIS DIRECTORY WITHHOLDS FROM ITS OWN DUMP (2026-09-12)
+
+A person's Kerberos long-term keys, derived from their password by
+`kerberos/krb5_person_keys.js` so a product-mode KDC can authenticate them —
+`stsKrb5Keys` (one sealed value: name, realm, kvno, salt, a stamp of the password hash,
+every enctype's key) and `stsKrb5KeyInfo` (the public half). A service principal's
+random keys are the same pair under `ou=applications`, `krb5ServiceKeys` and
+`krb5ServiceKeyInfo`, which are rows in `applications.js`'s schema.
+`kerberos/CLAUDE.md` argues the design; three things are this file's.
+
+* **THE SLOT IS PINNED TO THE DEFAULT REALM**, with `inDefaultRealm()`, for a reason
+  that is not the console roster's: the KDC's sockets and `krb5.realm` are the
+  process's, so its people are the default realm's people. Six functions, validated
+  whole — the person read and write, the service read and write, and the two lists.
+* **THE WRITES GO STRAIGHT ONTO THE STORED ENTRY**, both halves of a pair in one
+  `touchDirectory(dn)`, so the public half never describes keys the secret half does
+  not hold. For an application entry that bypasses `updateApplication()` on purpose:
+  that function quotes the value it wrote in its audit summary and its reply.
+* **THE DIRECTORY DUMP AND AN LDAP SEARCH WITHHOLD BOTH KEY ATTRIBUTES, CIPHERTEXT
+  INCLUDED.** That is one step further than `stsTotpCredential` goes, and the
+  difference is the reader: a TOTP secret is read back by the service that verifies
+  a code, while nothing ever reads a Kerberos key back out of a page or a search — the
+  KDC reads the store. So `/admin/ldap/directory` draws a sentence naming the length,
+  and `toSearchEntry()` sends the same sentence. **An `ldapmodify` replace that writes
+  that sentence back destroys the keys**, which the KDC then reports as unreadable; the
+  next password set or verified sign-in makes new ones.
+
+## PRODUCT MODE SEEDS THE TREE AND NOTHING ELSE (2026-09-12)
+
+**`seed()` builds two things and only the first is structural.** The base and the
+containers — `ou=users`, `ou=groups`, `ou=applications`, `ou=federations`,
+`ou=policies`, `ou=roles`, `ou=peps` and the SPIFFE pair — are what every door that
+provisions somebody writes UNDER, and they are seeded in both modes. Everything below
+them is demonstration data and `mode.seedsDemoData()` decides it: `cn=admin`, alice, bob
+and carol (carol's `employeeType: admin` is read by the seeded XACML policy),
+`cn=developers` and `cn=directory-admins`, and the two PRIVILEGED identities
+`cn=remote-pep-1` and `cn=xacml-user-1`.
+
+**The two role GROUPS are seeded in product mode, EMPTY.** A predictable common name
+printed in this repository, pre-admitted to the documents this service enforces its own
+access with, is not a grant a deployment should inherit; an empty group is one member
+away from admitting the real one. **And they are named by `roles.remotePepGroup` and
+`roles.xacmlUserGroup` now, in every mode** — the seed wrote the literals `cn=remote-peps`
+and `cn=xacml-users` while `common/roles.js` read the settings, so a renamed group was a
+gate reading a group nobody seeded beside a seeded one granting nothing. An empty setting
+(NOBODY holds the role) seeds no group; a name carrying DN syntax is warned about and
+skipped. **`DN_RESERVED` moved to the top of this file for it**: `seed()` runs at require
+time, and a `const` declared four thousand lines down does not exist yet when it does.
+
+**The mode is read in the realm being seeded** — the process's at require time, and a
+realm's own inside `realms.onCreate()`'s `realms.run()` — so a product realm created at
+runtime gets a product tree.
+
+## AND NOTHING GENERATED LANDS ON A PERSON
+
+`mode.inventsClaimValues()` false stops all of it, at the choke points rather than at the
+callers:
+
+* **`applyVcAttributes()` returns false** — the one function the startup sweep, a realm's
+  creation, Populate on `/admin/vc`, a SCIM create and a returning person's sign-in all go
+  through.
+* **`populateVcAttributes()` does not walk** and says so in its result (`skipped`), so the
+  page behind Populate reports it rather than "0 entries changed".
+* **`namePlan()` omits the five persona attributes** (`cn`, `sn`, `givenName`,
+  `displayName` ending "(mock)", `mail`), and **`createUser()`'s `invent` is a ceiling**
+  the mode imposes and no caller can raise — SCIM calls it with the default `true`.
+
+## THE BIND AUDIT ROW SAYS WHAT HAPPENED
+
+It said "no password was checked" on every successful bind, including every bind product
+mode verified. It reads `credentials.verify()`'s own `reason === 'verified'` now, carries
+`passwordVerified`, and words an ANONYMOUS bind as RFC 4511 section 5.1.1's unauthenticated
+bind — unverified in both modes, which is the specification rather than a permission.
+**`REFUSED_PASSWORD` stays refused in BOTH modes, deliberately**: it can only turn a bind
+that would have been verified into a refusal, never the reverse, and `common/credentials.js`
+refuses the same literal first at every door.
+
+## THE SOCKETS
+
+Both bind `global.host` (the literal `'0.0.0.0'` until 2026-09-12 — wrong in every mode).
+**`ldap.plainListener`** (default on) leaves 389 unbound when off: `whenReady` RESOLVES
+with `port: null`, `listenError` records that it was switched off rather than failed, and
+LDAPS is the only way in. Product mode with it on is WARNED about at startup, because a
+verified simple bind on 389 is a real password in the clear. **LDAPS takes `tls.minVersion`
+and `tls.ciphers`** from `tls_server.js`'s `protocolOptions()`, at construction and again
+in the `setSecureContext()` re-key.
+
+`tests/ldap_tls_product_mode.js` holds all of it in child processes (the directory is
+seeded at require time in the mode the process starts in); mutation-tested against the
+demo gate forced on.
+
+## `ou=passwordPolicies`, `pwdHistory`, AND THE ONE DOOR THAT WROTE A PASSWORD IN THE CLEAR (2026-09-12)
+
+**A NINTH CONTAINER**, seeded in both modes beside `ou=roles`, holding the
+password policy's profiles — `cn=default` only, and only once somebody saves it.
+`common/password_policy.js` owns the schema and fills nothing here but a slot:
+`allPasswordPolicies`, `writePasswordPolicy` (REPLACES, and puts the container
+back if a restored directory predates it) and `deletePasswordPolicy`. Its
+attribute spellings — both the profile's and the two it maintains on a person —
+are merged into `learnName()`, which a mutation run showed is what makes the
+entry come back as `pwdMinLength` rather than `pwdminlength`; the policy's own
+reader looks both ways and would not have noticed.
+
+**`pwdHistory` AND `pwdChangedTime` ON A PERSON**, in draft-behera's
+`time#syntaxOID#length#data` form holding the previous scrypt HASH. The values
+are built by that module and chosen by `credentials.js`; `writeStoredPassword()`
+takes `options.history` as the whole history to leave (an empty array removes the
+attribute, since LDAP has no empty one), stamps `pwdChangedTime`, and touches the
+directory once for both. `readPasswordHistory` is a new member of the credential
+slot, checked where it is used like the TOTP pair.
+
+**AN LDAP ADD OR MODIFY OF `userPassword` STORED THE VALUE AS SENT**, in the
+clear and past every rule the other four doors apply. `passwordWriteRefusal()` is
+called by both handlers on the WORKING COPY, before anything is committed, so a
+refusal leaves a modify atomic (RFC 4511 section 4.6). It runs the value through
+`credentials.preparePassword()` and stores the hash, in BOTH modes — storing a
+password in the clear is a storage defect, not a permissiveness. What differs by
+mode: in product a pre-hashed `$scrypt$` value is REFUSED (a hash cannot be held
+to a policy) and a change naming `pwdHistory` or `pwdChangedTime` is refused (a
+history anybody can empty is not one); in development a pre-hashed value is kept
+as given, which is how a directory moves between two instances. Two values, and
+an unchanged hash written back, are handled before any of that. A refusal is
+**LDAP_CONSTRAINT_VIOLATION (19)**, what a ppolicy server answers.
+`tests/password_policy.js` drives both handlers in process.
+
+## WHO MAY WRITE THIS DIRECTORY OVER THE SOCKET, IN PRODUCT MODE (2026-09-12)
+
+**Nothing did until this date.** Product mode verified a bind, and the connection
+that had proved who it was could then add, modify, rename or delete any entry in
+any realm — `ou=trustAnchors` (the client-certificate truststore),
+`ou=federations` (whose signing certificates decide whose assertions this service
+believes), `ou=policies`, `ou=roles` and every person. **One write was an
+escalation rather than vandalism**: `admin-ui/admin_rbac.js` reads a person's OWN
+`memberOf` when it decides whether they hold a console role, so
+`memberOf: cn=admin-write,…` written on your own entry made you an administrator
+of the service.
+
+`directoryWriteRefusal()` is called at the top of the add, delete, modify and
+modifyDN handlers — BEFORE the target's existence is checked, so a refusal teaches
+nothing about what is there — and `mode.authorizesDirectoryWrites()` decides
+whether it asks at all. Three lines:
+
+* **an anonymous connection writes nothing** (`STS-LDAP-0052`);
+* **an administrator writes anything** — somebody whose bound DN names an entry in
+  the DEFAULT realm's directory whose identity holds **Admin Write**
+  (`STS-LDAP-0053` otherwise);
+* **anybody else may MODIFY THEIR OWN ENTRY, and only the attributes
+  `ldap.selfWritableAttributes` names** (`STS-LDAP-0054`). No add, no delete, no
+  rename.
+
+Every refusal is `insufficientAccessRights` (50). Four decisions are in it:
+
+* **ADMIN WRITE, NOT A GROUP OF THE DIRECTORY'S OWN.** The console, the management
+  API and SCIM's write scope already answer *who may change what this service
+  holds*; a second roster for the socket would drift from the first the day
+  somebody was granted one and not the other.
+* **THE DEFAULT REALM, AND NO SEPARATE CHECK FOR IT.** The lookup runs in the
+  default realm's STORE, and a DN under another realm's base is never an entry
+  there. An explicit realm test was written first, mutation-tested, could change
+  no answer, and was removed rather than left looking like the thing that decides.
+* **THE CONSOLE'S EMPTY-ROSTER RULE DOES NOT COUNT.** While no role group has a
+  member `rolesOf()` answers `open` and everybody holds both roles, which is what
+  makes a fresh console reachable at all. Carried over, it would make every bound
+  connection an administrator of the directory on exactly the deployment nobody
+  has set up.
+* **AN ALLOWLIST, BECAUSE THE DIRECTORY IS SCHEMALESS** and the names that matter
+  look ordinary: `memberOf` grants the console roles, `employeeType` is what the
+  seeded XACML policy decides on, `mail` and `cn` are asserted in tokens, and every
+  `sts*` attribute is a credential. The default is contact details plus
+  `userPassword`, which still meets the password policy in
+  `passwordWriteRefusal()` — so a weak self-service password is 19 and not 50.
+  A modify naming one allowlisted and one other attribute is refused WHOLE, which
+  is RFC 4511's atomicity rather than an extra rule.
+
+**DEVELOPMENT AUTHORIZES NOTHING**, on purpose: every bind succeeds there, so the
+bound DN proves nothing and a check keyed on it would refuse the suite while
+protecting nothing.
+
+**AND A PASSWORD CHANGED OVER THE SOCKET DERIVES KERBEROS KEYS NOW.**
+`passwordWriteRefusal()` hands back what it accepted and both handlers call
+`credentials.passwordWritten()` once they have COMMITTED — before this, the only
+doors that told the Kerberos key register about a new password were
+`setPassword()` and a verified sign-in, so a password set with `ldapmodify` left
+the person without usable keys until they signed in somewhere else.
+
+**WHAT IT DOES NOT COVER IS READING**, which is the next section. That paragraph
+read *search and compare are unauthorized in both modes* until the same day.
+`tests/directory_write_authorization.js` holds the rule in process.
+
+## HOW A CONNECTION BINDS AND WHAT IT MAY READ, IN PRODUCT MODE (2026-09-12)
+
+**node-ldapjs decides nothing about security**, and that is the fact to start
+from: it records the DN a successful bind handler named on the connection
+(`conn.ldap.bindDN`, `cn=anonymous` until then) and leaves every rule after that
+to these handlers. It has no access control, no attribute visibility, no StartTLS
+on the server side, no SASL and no limit on guesses. The section above is the
+write half; this is the rest, and the block headed *THE DIRECTORY'S READ AND BIND
+SECURITY* in `ldap_server.js` argues each rule where it is enforced. Five
+`common/mode.js` predicates decide whether each asks at all, and all five are
+product mode only, for the write half's reason.
+
+**THE BIND** — four refusals that come BEFORE the password is read, in this
+order, because none of them should cost a guesser anything or count against a
+caller refused for another reason:
+
+| Refused | Result code | Code |
+|---|---|---|
+| an anonymous bind | 48 `inappropriateAuthentication` (RFC 4513 §5.1.1) | `STS-LDAP-0070` |
+| any bind on the plain listener | 13 `confidentialityRequired` | `STS-LDAP-0071` |
+| a DN with an empty password | 53 `unwillingToPerform` (RFC 4513 §5.1.2) | `STS-LDAP-0072` |
+| a DN or address past its failed-bind limit | 53 `unwillingToPerform` | `STS-LDAP-0073` |
+
+**THE RATE LIMIT COUNTS FAILURES ONLY**, which is why `websecurity.blocked()`
+exists beside `attempt()`: a connection pool binds on every connection it opens,
+fifty at once from one address, and counting successes would lock an application
+out of its own directory for being busy. A caller over a limit is refused before
+its password is checked, so a right guess during a lockout teaches nothing. **A
+success clears its own DN's counter and NEVER its address's** (`keepAddress`) —
+otherwise anybody holding one working password could bind as themselves between
+guesses and never reach the address limit. The limits are the sign-in screen's
+settings, `security.rateLimitPerIdentity` and `security.rateLimitPerAddress`.
+**The client's address travels in the dispatched operation** (`remoteAddress`),
+because a request worker has no socket to read it off and a stub without it
+would put every dispatched bind in one bucket — which is one attacker locking
+out everybody.
+
+**THE PLAIN LISTENER STILL BINDS**, and answers the root DSE and nothing else in
+product mode. Refusing a bind there cannot protect the password that was just
+sent in the clear; what it does is make 389 a port where a correct password
+never works, so no client gets configured to send one. `ldap.plainListener` off
+is still the right production setting, and the startup warning says so.
+
+**A READ REQUIRES A BIND** (`STS-LDAP-0074`, 50) — asked before whether the
+target exists, so the refusal says nothing about the tree. **The root DSE is the
+one read allowed first**: a client reads it to find the naming contexts before it
+knows where to bind.
+
+**CREDENTIALS NEVER LEAVE ON THE WIRE, THROUGH THREE DOORS.** `SECRET_ATTRIBUTES`
+is a list, for the allowlist's reason read the other way. A search never RETURNS
+one (`toSearchEntry()`); a search FILTER cannot SEE one (`matchableForReader()`),
+which is the door a naive version misses — `(oauthClientSecret=a*)`, then `ab*`,
+reads a secret out one character at a time off whether an entry came back; and a
+COMPARE against one is refused (`STS-LDAP-0075`), because a compare is a password
+check with no bind and no rate limit. **An administrator is not excepted**: every
+reader that needs a credential goes through this module's functions, and a socket
+that handed an administrator every client secret would make one stolen
+administrator password every application's. The compare handler also stopped
+logging the compared VALUE, which had been writing passwords to the info log.
+
+**OPERATIONAL ATTRIBUTES ARE READ-ONLY** — `createTimestamp`, `modifyTimestamp`
+and `entryDN` on an add or modify, administrator included (`STS-LDAP-0076`, 19,
+RFC 4512 §3.3.1's NO-USER-MODIFICATION).
+
+**WHAT IS STILL OPEN** is narrower and is `common/mode.js`'s
+`directory-read-authorization` row: a connection that has bound as ANYBODY may
+read every non-credential attribute of every entry in the realm its base names.
+Deciding what a person, an administrator and an application may each read is a
+design question rather than a hole.
+
+`tests/directory_read_security.js` holds all of it in process, including the
+filter oracle asked in both modes so the product-mode zero is a refusal, and was
+mutation-tested against thirteen mutants, all caught.

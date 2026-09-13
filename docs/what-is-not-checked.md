@@ -21,16 +21,24 @@ service can be told to be strict, it can.
 |---|---|
 | Check any end user's password | The username typed at `/authn/login` becomes the identity in every token and every assertion. **THREE credentials ARE checked and none of them is a password** — a Kerberos ticket, an RFC 6238 one-time code, and a single-use RECOVERY CODE, which is checked for the same reason the other two are: there is nothing left of a one-time credential once the comparison goes, and a client author would have no artifact to test against. The first two have sections of their own below |
 | ISSUE WITHOUT ASKING — **this row runs the other way, and it is the only one here that does.** Since 2026-09-01 the authorization endpoint asks: the first time a given username signs in to a given `client_id` for a given scope, `/oauth2/consent` is drawn and nothing is issued until they answer. `oauth2.consentRequired` is ON by default, which no other policy here is, because consent is not a refusal — it is the screen every real authorization server draws on a first sign-in, and a client that has never met one has never run the code that survives it. **It still checks nothing**: the person was let in under any name they typed, one row above. See below |
-| Refuse any LDAP bind | Any DN, any password, anonymous included — on 389 and on LDAPS 636 alike |
+| Refuse any LDAP bind — **in development mode** | Any DN, any password, anonymous included — on 389 and on LDAPS 636 alike. **Product mode refuses four kinds before a password is read**: an anonymous bind (result code 48, `inappropriateAuthentication`), a bind on the plain listener on 389 (13, `confidentialityRequired` — use LDAPS), a DN with an empty password (53, `unwillingToPerform`), and any bind from a DN or an address that has had too many FAILED binds within `security.rateLimitWindowS` (53) — a correct password during a lockout is refused like a wrong one, and a successful bind never counts. Then it verifies the password |
+| Require a bind to READ the directory, or withhold a credential from a search — **in development mode** | Any connection may search and compare every entry and read every attribute but a Kerberos key. **Product mode requires a bind before a search or compare** (50, `insufficientAccessRights`; the root DSE is the exception), **never returns a credential attribute** — `userPassword`, `pwdHistory`, client secrets, registration access tokens, private keys, TOTP secrets, recovery codes, activation tokens, Kerberos keys — to anybody, administrators included, **hides them from search filters** so a filter cannot be used to guess one, and **refuses a compare against one**. It also refuses a write of `createTimestamp`, `modifyTimestamp` or `entryDN` by anybody (19, `constraintViolation`). What a bound connection may read beyond that is not yet narrowed per identity |
+| Authorize an LDAP write — **in development mode** | Any connection, anonymous included, may add, modify, rename or delete any entry in any realm. **Product mode authorizes every write against the identity that bound**: an anonymous connection writes nothing, a connection bound as somebody holding Admin Write (in the default realm's directory) writes anything, and anybody else may modify only the attributes `ldap.selfWritableAttributes` names on their own entry — contact details and `userPassword` by default. A refusal is result code 50, `insufficientAccessRights`. Reads are the row above |
 | Verify an access token it did not issue | Except at `/oauth2/userinfo`, which answers "who did *you* authenticate" and so must |
-| Require DPoP | Nonce mode makes proofs fresher, not mandatory. A request with no `DPoP` header is a Bearer request |
+| Require DPoP | Nonce mode makes proofs fresher, not mandatory. A request with no `DPoP` header is a Bearer request. Nonce mode is `oauth2.dpopNonceRequired`, **per trust realm**; `POST /dpop/nonce-mode` writes it in development and is refused in product |
+| Register a client only for an administrator — **in development mode** | `POST /oauth2/register` (RFC 7591) answers anybody. **Product mode closes it** — 403, and `registration_endpoint` leaves the discovery documents — unless `oauth2.openRegistration` is on |
+| Check the password on the OAuth 2.0 password grant — **in development mode** | Any password but `invalid` is accepted, exactly as at the sign-in screen. **Product mode verifies it** against the stored `userPassword`, rate-limits it with the sign-in screen, and refuses a person who holds a second factor, because the grant has nowhere to carry one |
+| Hold a new password to a policy — **in development mode** | Any password is SET, at every door. **Product mode enforces the realm's password policy** (Directory → Policies, `/admin/policies`): a minimum length, a symbol count, an uppercase letter, a number, and none of the current password or the last five — on the console, `/admin-api`, `/portal/password`, `/portal/activate` and an LDAP modify of `userPassword` alike. The history is recorded in both modes, and a generated password meets the policy in both. Passwords already stored are not re-checked |
 | Turn a verified client certificate into a login | No session, no token, no privilege. It *is* recorded — see below |
 | Turn a verified presentation into a sign-on | The OID4VP Verifier checks properly and then says yes on a web page and stops |
-| Verify anything in an issued credential's values | They come off the directory entry, and what the entry lacks is *invented* from the username |
+| Verify anything in an issued credential's values | They come off the directory entry, and — **in development mode** — what the entry lacks is *invented* from the username. **In product mode nothing is invented**: an attribute the entry does not hold is absent from the credential, from a claims request and from the ID Token and UserInfo profile claims, and `email_verified` is never asserted |
 | Deactivate anybody on SCIM `active: false` | Stored as `scimActive` and read by nothing |
 | Restrict WHICH people a federation partner may assert | Any username in a verified assertion is accepted, and an entry is created for them. What IS checked is the partner's signature — see below, where that inversion is argued |
 | Verify a SAML `AuthnRequest`'s signature | Whether it was signed, and the certificate off its `ds:KeyInfo`, are both **recorded** on the service provider's directory entry and neither is checked. That is why `/saml2/metadata` advertises `WantAuthnRequestsSigned="false"`: asking service providers to sign something nothing verifies is worse than not asking |
 | Check which entityID a SAML service provider claims | **Any entityID is accepted**, and the first valid `AuthnRequest` from one creates its application entry. Asking for its metadata does the same — the document is minted for anything asked for |
+| Check where a SAML response or a WS-Federation token is delivered — **in development mode** | The `AssertionConsumerServiceURL`, SAML 1.1 `shire` or `wreply` a request names is used as it stands, and with none the response goes to the registered address or to a built-in mock. **In product mode it must be registered** on the application entry (`samlAssertionConsumerService`, `wsfedReplyUrl`), compared exactly, with no mock fallback. **An address development RECORDED does not count as registered**: every address a development-mode request writes onto an entry — and every callback the console and portal learn from a Host header — is marked *observed* (`appReturnAddressObserved`), and product refuses a marked address exactly as it refuses one that is not there, with a page saying how to confirm it. Before switching a realm to product, open each application under **Applications** and press **Confirm** on the addresses that really are that application's and **Discard** on the rest — or use `POST /admin-api/applications/confirm-address` and `/discard-address`, which list them as `returnAddressesObserved`. Adding the address by hand confirms it too. **Addresses recorded before this marking existed carry no mark and cannot be told apart from registered ones** — review those by hand |
+| Authenticate a caller at the SAML 1.1 attribute authority — **in development mode** | Anybody may send an `AttributeQuery` about anybody. **Product mode refuses both query types.** In both modes an `AuthenticationQuery` is answered only from a live session, and an attribute answer carries no invented `AuthenticationStatement` |
+| Require a credential at the WS-Trust STS — **in development mode** | A request with no credential gets a token for `anonymous`, an unsigned SAML assertion is believed, and an `OnBehalfOf` needs no requester. **Product mode refuses all three**, accepting only a directory-verified UsernameToken or an assertion this STS signed. A requested lifetime is clamped to `wstrust.maxTokenLifetimeMin` in both modes |
 | Attest a workload or a node | See SPIFFE, below |
 | Let a group grant anything, bar two | A token now *carries* one; no endpoint reads it. `cn=admin-read` and `cn=admin-write` are the exception and grant the admin console, nothing else |
 | Decide who may delegate to whom IN THE ACT, in two of the three families that can | The KDC polices S4U properly, off the same two attributes a real domain uses, on every request and whatever anything is set to. WS-Trust `OnBehalfOf`/`ActAs` is unpoliced: anybody may ask for a token about anybody. **RFC 8693 and the OAuth families are the qualified case since 2026-09-01**: a DELEGATED PERMISSION can be configured between two application entries — a resource exposes permissions, a client is granted them, and a client asks for one as an ordinary scope — and `oauth2.delegatedPermissionsEnforced` turns an ungranted ask into `invalid_scope`. It is OFF by default, so an unconfigured service behaves exactly as this row always described. Every act says which — see below |
@@ -130,6 +138,21 @@ Three things stay refusals on purpose, so the corresponding error codes are
 reachable: a service-shaped name for a host this service is not willing to *be*
 (`KDC_ERR_S_PRINCIPAL_UNKNOWN`), the names in `KRB5_UNKNOWN_USERS`
 (`KDC_ERR_C_PRINCIPAL_UNKNOWN`), and a wrong password (`KDC_ERR_PREAUTH_FAILED`).
+
+**That is development mode.** In product mode none of the fixture accounts exist,
+nobody is created on first sight, no password is published, and the KDC holds only
+`krbtgt` and the account `krb5.servicePrincipal` names — each only when its password
+setting is not the default this repository publishes. **People in the directory DO
+authenticate there since 2026-09-12**, with their own passwords: a person's Kerberos
+keys are derived when their password is set or a sign-in verifies it, stored sealed on
+their entry, and checked for real — a wrong password is `KDC_ERR_PREAUTH_FAILED`, and
+somebody whose keys have not been derived yet is told to sign in once. Service
+principals an operator creates at `/admin/kerberos/principals` get a random key and a
+keytab. The acceptor still verifies tickets a real KDC issued to its service principal.
+**A password change or a rotation keeps the previous key version for a bounded window**
+(`krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`) so a ticket already issued under it is
+still accepted; the old PASSWORD is not — pre-authentication checks the current key only.
+The `krbtgt` key is not rotated here and keeps no previous version.
 
 
 ## A one-time code is the other exception, for the same reason
@@ -268,10 +291,16 @@ anything**:
 * an assertion is refused unless it verifies against the certificate configured
   on that relationship — **not** against a certificate the document brought with
   it, which is the difference between a signature check and a decoration;
-* the assertion's issuer must be the partner the relationship names, and the
-  response must answer a request this service sent (unless
+* the assertion's issuer must be the partner the relationship names — and since
+  2026-09-12 `fedPeer` is required, so there is always one to compare against —
+  and the response must answer a request this service sent (unless
   `fedAllowUnsolicited` says otherwise, which is what
-  identity-provider-initiated sign-on is).
+  identity-provider-initiated sign-on is);
+* **since 2026-09-12, the assertion must be addressed to this service**: an
+  `<Audience>` naming a different service provider is refused (it was a warning),
+  on every protocol including WS-Federation, and a SAML 2.0 assertion with no
+  audience restriction is refused. `fedLocalEntityId` says what this service is
+  called to a partner that knows it by another name.
 
 **The gate is on the SIGNER, not on the subject.** Past it, everything is as
 permissive as the rest of this service: any username in a verified assertion is
@@ -328,7 +357,7 @@ first. `oauth2.jwtBearerGrant` is the switch that removes the grant altogether,
 and the metadata stops advertising it in the same breath — a
 `grant_types_supported` member is a promise.
 
-## The certificate authority publishes revocation and consults none
+## The certificate authority publishes revocation, and consults it — with a few limits
 
 **This heading reversed on 2026-09-11 and half of it stayed.** It read *the
 certificate authority revokes nothing, ever — this service publishes no CRL and
@@ -341,18 +370,39 @@ certificate this service issues names its own in three schemes; a pane on that
 page revokes one by hand; and anything replaced or rotated goes on its issuer's
 list as `superseded` with nobody asking.
 
-**What this service does NOT do is CONSULT one — its own included.** When a
-client presents a certificate to it, on 8443, 9443, the main port or LDAPS 636,
-nothing fetches a CRL and nothing asks a responder. So:
+**AND SINCE 2026-09-12 IT CONSULTS THEM.** This read *what this service does
+NOT do is CONSULT one — its own included … a certificate revoked on this
+service's own `/admin/pki` still authenticates to this service*. A certificate
+presented on 8443, 9443, the main port (XACML, SCIM, RFC 8705 client
+authentication), at the SPIRE Server API or in an assertion's `x5c` is now
+checked under `pki.revocationCheck` — the register for one this service issued,
+the OCSP responder and the CRL it names for one from anybody else, with delta
+CRLs merged and indirect CRLs read per issuer — and `auto` is **hard-fail in
+product mode and soft-fail in development**. See [the PKI page](pki.md).
 
-> a certificate revoked on this service's own `/admin/pki` still authenticates
-> to this service, and would not verify anywhere that checks.
+What is still not checked:
 
-Running those two sentences together is the dangerous reading and it is the
-reason they are always written next to each other. Checking is real work — a
-fetch with a timeout, a cache, and a decision about what to do when the
-responder is unreachable — and none of it is mock behaviour, which is why
-`common/mode.js` carries it as an outstanding item rather than a done one.
+* **A delegated OCSP responder carrying `id-pkix-ocsp-nocheck`** is not asked
+  about, because its issuer said not to. Every other responder's own status is
+  looked up on the CRL its certificate names; under soft-fail one whose status
+  could not be established is believed, and the verdict says so.
+* **An OCSP response that echoes no nonce** is believed unless
+  `pki.revocationOcspRequireNonce` is on; its freshness window is then the
+  replay bound.
+* **A plain `ldap:` distribution point** is not dialled unless
+  `pki.revocationLdap` is `ldaps-and-ldap`, and an OCSP responder is asked over
+  http(s) only. A distribution point named relative to its CRL issuer is used only
+  with `pki.revocationLdapDirectory` set and every RDN single-valued.
+* **A certificate naming no CRL and no responder, under hard-fail**, is accepted
+  unless `pki.revocationRequireDistributionPoint` is on.
+* **A BARE registered key** — a JWK with no `x5c` in `jwks`, `fedJwks` or a
+  SPIFFE bundle — names no issuer and no list, so nothing can be looked up; only
+  taking it off the entry stops it verifying. A registered key that DOES carry a
+  certificate is checked when it verifies something (`STS-PKI-0129`).
+* **LDAPS 636** asks for no client certificate, so there is nothing to check.
+* **Under soft-fail — development's default — a foreign CRL that cannot be
+  fetched is accepted.** That is what an attacker who can block the fetch
+  exploits, and why product mode hard-fails.
 
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
 control labelled *Take the key pair off*, and it is not revocation either:
@@ -446,7 +496,9 @@ person, being driven through a 302 to a sign-in screen, a 401 with no session, a
 **The roles are two ordinary groups in the embedded directory** — `cn=admin-read`
 and `cn=admin-write` by default (`admin.readGroup`, `admin.writeGroup`) — so
 `/admin/rbac`, `POST /admin-api/rbac/grant`, an `ldapmodify` and a SCIM `PATCH`
-are four doors onto one membership. A role no test can grant would be a role no
+are four doors onto one membership. (In product mode the `ldapmodify` has to be
+bound as somebody who already holds Admin Write, and a person cannot write
+`memberOf` onto their own entry.) A role no test can grant would be a role no
 test can exercise.
 
 **While neither group has a member, anybody who signs in holds both roles**, and
@@ -468,6 +520,26 @@ with no secret to hold, and it is the way back in when nobody holds a console
 role. What it also means is that anybody who can reach the port can grant
 themselves both roles through it. Do not put this service on a public address
 either way.
+
+## GNAP proves the key, and that is not a turnstile
+
+Every GNAP request is proofed by the key the client instance presented — an
+HTTP message signature, mutual TLS, or a detached or attached JWS — and there is
+no setting that accepts one without its proof, because in GNAP the key IS the
+client. What stays permissive is around it, and it is the usual list:
+
+* **In development mode an unknown key is welcome.** A key this service has
+  never seen gets an application entry on first sight (`mode.autoCreates()`).
+  Product mode refuses it `invalid_client` until the key is registered.
+* **The resource owner is whoever the authentication service let in**, which in
+  development mode checks no password.
+* **A self-signed client certificate proves itself.** Mutual TLS binds to the
+  certificate the handshake completed with, as RFC 8705 does, and no chain or
+  revocation is consulted.
+* **A push finish may dial `http`** only with `gnap.pushAllowInsecure` on, and
+  only hosts in `gnap.pushAllowedHosts` when that list is set.
+* **Macaroon third-party caveats, Biscuit third-party blocks and ZCAP
+  invocation proofs are not implemented**; a token that needs one is refused.
 
 ## A logout cannot recall what has already been issued
 

@@ -870,9 +870,14 @@ async function theTokenSaysBothHalves() {
   const wanted = PERMISSIONS.map(function (one) {
     return permissionId(SPENT_ON, one.name);
   });
+  // THE CLIENT AUTHENTICATES WITH THE SECRET ITS ENTRY HOLDS (2026-09-12),
+  // by the method the entry declares. Development checks it nowhere outside
+  // RFC 9700 mode; product mode has no public clients and refuses this request
+  // without it — and this example is meant to be copied.
   const body = "grant_type=client_credentials&client_id=" +
-      encodeURIComponent(SPENDER.id) + "&scope=" +
-      encodeURIComponent(wanted.join(" "));
+      encodeURIComponent(SPENDER.id) +
+      "&client_secret=" + encodeURIComponent(SPENDER.id + "-not-a-real-secret") +
+      "&scope=" + encodeURIComponent(wanted.join(" "));
   const reply = await common.httpJson(tokenEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },

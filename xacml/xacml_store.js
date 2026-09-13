@@ -56,6 +56,12 @@
 
 const crypto = require('crypto');
 const { log } = require('../common/helpers');
+// The error-code registry (a leaf). A refused write's code is marked on the
+// RESULT as a non-enumerable property, so the console and `/admin-api` can mark
+// their response with it and no serialisation of the result carries it out.
+// This module is not one the remote PEP container copies, so the require costs
+// that image nothing.
+const errorCodes = require('../common/error_codes');
 const model = require('./xacml_model');
 const xml = require('./xacml_xml');
 
@@ -154,7 +160,8 @@ function changed(what) {
     // Swallowed on purpose and logged: the observer's whole job is to dial
     // somebody else, and a failure there must not turn a successful policy
     // write into a 500 for the person who made it.
-    log.warn('xacml: the repository change observer threw and the change ' +
+    log.warn(errorCodes.tag('STS-XACML-0060') +
+             'xacml: the repository change observer threw and the change ' +
              'itself was fine: ' + error.message);
   }
   log.debug('Leaving changed().');
@@ -366,7 +373,8 @@ function repository() {
       // then unresolvable, which `xacml_pdp.js` reports as Indeterminate
       // naming the reference — and the console shows the parse error on the
       // policy itself.
-      log.warn('xacml: policy "' + row.name + '" is in the repository and ' +
+      log.warn(errorCodes.tag('STS-XACML-0058') +
+               'xacml: policy "' + row.name + '" is in the repository and ' +
                'does not parse, so nothing can reference it: ' +
                error.message);
     }
@@ -389,25 +397,28 @@ function write(name, document, options) {
   const settings = options || {};
   if (!haveDirectory()) {
     log.debug('Leaving write(). No directory.');
-    return { ok: false, why: 'There is no embedded directory, so there is ' +
-                             'nowhere to put a policy.' };
+    return errorCodes.mark({ ok: false,
+                             why: 'There is no embedded directory, so there ' +
+                                  'is nowhere to put a policy.' },
+                           'STS-XACML-0026');
   }
   if (!name || !/^[A-Za-z0-9._-]{1,128}$/.test(name)) {
     log.debug('Leaving write(). Bad name.');
-    return { ok: false, why: 'A policy name is 1 to 128 characters of ' +
+    return errorCodes.mark({ ok: false,
+                             why: 'A policy name is 1 to 128 characters of ' +
                              'letters, digits, dot, dash or underscore. It ' +
                              'names the DIRECTORY ENTRY; the PolicyId inside ' +
                              'the document is a separate thing and may be ' +
-                             'any URI.' };
+                             'any URI.' }, 'STS-XACML-0029');
   }
   let described;
   try {
     described = describe(document);
   } catch (error) {
     log.debug('Leaving write(). The document was refused.');
-    return { ok: false, why: error.message,
+    return errorCodes.mark({ ok: false, why: error.message,
              problems: (error.xacmlDetail && error.xacmlDetail.problems) ||
-                       null };
+                       null }, 'STS-XACML-0028');
   }
   // TWO ROOTS IS REFUSED AT WRITE TIME rather than reported at decision time,
   // for the reason `root()` gives: a repository with two roots answers
@@ -418,11 +429,12 @@ function write(name, document, options) {
     })[0];
     if (clash) {
       log.debug('Leaving write(). A root already exists.');
-      return { ok: false,
+      return errorCodes.mark({ ok: false,
                why: 'Policy "' + clash.name + '" is already the root of ' +
                     'this repository. A PDP evaluates one document and ' +
                     'reaches the rest through PolicyIdReference, so there is ' +
-                    'exactly one root. Clear the flag there first.' };
+                    'exactly one root. Clear the flag there first.' },
+               'STS-XACML-0030');
     }
   }
   const attributes = {
@@ -444,8 +456,10 @@ function write(name, document, options) {
   }
   log.debug('Leaving write(). ' + (written ? 'Written.' : 'Refused.'));
   return written ? { ok: true, id: described.id, kind: described.kind }
-                 : { ok: false, why: 'The directory refused the entry. The ' +
-                                     'container may be at its maximum.' };
+                 : errorCodes.mark({ ok: false,
+                                     why: 'The directory refused the entry. ' +
+                                          'The container may be at its ' +
+                                          'maximum.' }, 'STS-XACML-0027');
 }
 
 function remove(name) {
@@ -492,7 +506,7 @@ const SEED_NAME = 'seeded-rbac';
 const SEED_DOCUMENT = [
   '<?xml version="1.0" encoding="UTF-8"?>',
   '<Policy xmlns="urn:oasis:names:tc:xacml:3.0:core:schema:wd-17"',
-  '        PolicyId="urn:sts-mock:xacml:policy:seeded-rbac"',
+  '        PolicyId="urn:sts:xacml:policy:seeded-rbac"',
   '        Version="1.0"',
   '        RuleCombiningAlgId="urn:oasis:names:tc:xacml:3.0:' +
     'rule-combining-algorithm:deny-unless-permit">',
@@ -504,7 +518,7 @@ const SEED_DOCUMENT = [
   '    return NotApplicable. Replace it rather than editing it.',
   '  </Description>',
   '  <Target/>',
-  '  <Rule RuleId="urn:sts-mock:xacml:rule:admin-anything" Effect="Permit">',
+  '  <Rule RuleId="urn:sts:xacml:rule:admin-anything" Effect="Permit">',
   '    <Description>An admin may do anything.</Description>',
   '    <Target>',
   '      <AnyOf><AllOf>',
@@ -523,7 +537,7 @@ const SEED_DOCUMENT = [
   '      </AllOf></AnyOf>',
   '    </Target>',
   '  </Rule>',
-  '  <Rule RuleId="urn:sts-mock:xacml:rule:staff-read" Effect="Permit">',
+  '  <Rule RuleId="urn:sts:xacml:rule:staff-read" Effect="Permit">',
   '    <Description>Staff may GET.</Description>',
   '    <Target>',
   '      <AnyOf><AllOf>',
@@ -572,7 +586,8 @@ function seed() {
                           description: 'Seeded role-based policy. Replace ' +
                                        'it rather than editing it.' });
   if (!written.ok) {
-    log.warn('xacml: the seeded policy was refused: ' + written.why);
+    log.warn(errorCodes.tag('STS-XACML-0059') +
+             'xacml: the seeded policy was refused: ' + written.why);
   }
   log.debug('Leaving seed(). ' + (written.ok ? 'Seeded.' : 'Refused.'));
   return written.ok;

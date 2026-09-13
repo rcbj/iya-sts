@@ -58,6 +58,9 @@ const gate = require('../common/access_gate');
 // from a module reached through `common/access_gate.js` without moving a route
 // or closing a cycle.
 const audit = require('../common/audit');
+// The error-code registry (a leaf): a refusal's code rides on the audit row and
+// on the log line, never on anything a caller of a gated surface receives.
+const errorCodes = require('../common/error_codes');
 const roles = require('../common/roles');
 const applications = require('../common/applications');
 const templates = require('./xacml_templates');
@@ -89,7 +92,8 @@ function builtInPolicy() {
     // no required parameter, so it cannot fail for anything an administrator
     // did.
     log.debug('Leaving builtInPolicy(). The template would not build.');
-    return { why: 'the built-in access policy could not be built from the ' +
+    return { errorCode: 'STS-XACML-0049',
+             why: 'the built-in access policy could not be built from the ' +
                   '`access-control` template, which is a defect in this ' +
                   'service rather than a configuration: ' + built.why };
   }
@@ -140,7 +144,8 @@ function accessPolicy() {
   }
   if (!row.enabled) {
     log.debug('Leaving accessPolicy(). It is disabled.');
-    return { why: 'the policy "' + name + '" is DISABLED, so it is not ' +
+    return { errorCode: 'STS-XACML-0047',
+             why: 'the policy "' + name + '" is DISABLED, so it is not ' +
                   'evaluated — and this does NOT fall back to the built-in ' +
                   'one, because disabling it is a deliberate act and a ' +
                   'button that quietly evaluated something else instead ' +
@@ -153,7 +158,8 @@ function accessPolicy() {
     return { policy: policy, name: name, builtIn: false };
   } catch (error) {
     log.debug('Leaving accessPolicy(). It will not load.');
-    return { why: 'the policy "' + name + '" does not load: ' +
+    return { errorCode: 'STS-XACML-0048',
+             why: 'the policy "' + name + '" does not load: ' +
                   error.message };
   }
 }
@@ -327,7 +333,8 @@ function decide(asked) {
     // Here, refusing would lock every operator out of the console that is the
     // only place to fix the policy, and the management API with it. A
     // deployment cannot be recovered from a fully closed door.
-    log.error('xacml: ' + loaded.why + '. Access is NOT being gated by ' +
+    log.error(errorCodes.tag(loaded.errorCode || 'STS-XACML-0048') +
+              'xacml: ' + loaded.why + '. Access is NOT being gated by ' +
               'policy; every surface behaves as it did before the policy ' +
               'existed. The roles the console and SCIM already enforce are ' +
               'unaffected — this is the POLICY layer above them.');
@@ -358,16 +365,20 @@ function decide(asked) {
   const what = asked.action + ' on ' + asked.resource +
                (asked.owner ? ', owned by "' + asked.owner + '"' : '');
   let why;
+  let refusalCode;
   if (answer.decision === model.DECISION.DENY) {
+    refusalCode = 'STS-XACML-0044';
     why = 'The access policy denied ' + what + ' for ' + who + '. They hold ' +
           (held.length ? held.join(', ') : 'no role') + '; it requires ' +
           (required.length ? required.join(' or ') : 'nothing') + '.';
   } else if (answer.decision === model.DECISION.INDETERMINATE) {
+    refusalCode = 'STS-XACML-0045';
     why = 'The access policy could not be evaluated for ' + what + ' (' +
           ((answer.status && answer.status.message) || 'no reason given') +
           '), which is a fault in the policy rather than a decision about ' +
           who + '.';
   } else {
+    refusalCode = 'STS-XACML-0046';
     why = 'The access policy did not cover ' + what + ', and its combining ' +
           'algorithm is deny-unless-permit — so a question it does not answer ' +
           'is a refusal rather than a permission.';
@@ -392,6 +403,7 @@ function decide(asked) {
   // ---------------------------------------------------------------------
   audit.audit({
     action: 'xacml.access.refused',
+    errorCode: refusalCode,
     actor: subject.name || '',
     protocol: 'XACML',
     detail: answer.decision + ' for ' + what + ': ' + why

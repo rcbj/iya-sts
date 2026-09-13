@@ -73,6 +73,9 @@ const child_process = require('child_process');
 const bunyan = require('bunyan');
 const config = require('./config');
 const worker = require('./worker');
+// A LEAF with no requires — the failure codes in the log lines below. See
+// common/error_codes.js.
+const errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({
   name: 'worker_pool',
@@ -193,7 +196,8 @@ function fork() {
     // An error on the channel is not necessarily fatal to the child, but it is
     // fatal to anything this process is waiting on: it means a message did not
     // get there or did not come back.
-    log.warn('worker_pool: the channel to worker ' + entry.pid +
+    log.warn(errorCodes.tag('STS-WORKER-0001') +
+             'worker_pool: the channel to worker ' + entry.pid +
              ' failed: ' + err.message);
   });
   child.on('exit', function (code, signal) {
@@ -259,14 +263,16 @@ function reap(entry, code, signal) {
       'again.'));
   });
   if (lost.length) {
-    log.warn('worker_pool: worker ' + entry.pid + ' ' + how + ' with ' +
+    log.warn(errorCodes.tag('STS-WORKER-0002') +
+             'worker_pool: worker ' + entry.pid + ' ' + how + ' with ' +
              lost.length + ' job(s) in flight; all of them were failed.');
   } else {
     log.info('worker_pool: worker ' + entry.pid + ' ' + how + '.');
   }
   if (quickExits >= QUICK_EXIT_LIMIT && !givenUpOnChildren) {
     givenUpOnChildren = true;
-    log.error('worker_pool: ' + quickExits + ' worker processes in a row ' +
+    log.error(errorCodes.tag('STS-WORKER-0003') +
+      'worker_pool: ' + quickExits + ' worker processes in a row ' +
       'exited within ' + QUICK_EXIT_MS + 'ms without finishing a job, so ' +
       'this service has STOPPED FORKING THEM and is computing post-quantum ' +
       'signatures in the process that holds the sockets — which is what ' +
@@ -472,7 +478,8 @@ function run(kind, job, opts) {
         }
         entry.inFlight.delete(id);
         unrefIfIdle(entry);
-        log.error('worker_pool: worker ' + entry.pid + ' has not answered a ' +
+        log.error(errorCodes.tag('STS-WORKER-0004') +
+                  'worker_pool: worker ' + entry.pid + ' has not answered a ' +
                   kind + ' job in ' + limit + 'ms, so the request waiting on ' +
                   'it is being failed rather than left to hang. The worker is ' +
                   'left alone — it is alive, and it holds no state, so it is ' +
@@ -548,7 +555,8 @@ function stop(timeoutMs) {
       going.forEach(function (entry) {
         if (entry.child.exitCode === null && entry.child.signalCode === null) {
           killed++;
-          log.warn('worker_pool: worker ' + entry.pid + ' did not finish ' +
+          log.warn(errorCodes.tag('STS-WORKER-0005') +
+                   'worker_pool: worker ' + entry.pid + ' did not finish ' +
                    'within ' + limit + 'ms and was killed. Whatever it was ' +
                    'computing is lost, which costs nothing: a worker holds ' +
                    'no state.');

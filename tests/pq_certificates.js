@@ -152,7 +152,7 @@ module.exports = {
     const built = crypto.selfSignedMlDsaCertificate({
       algorithm: 'ml-dsa-65',
       commonName: 'localhost',
-      organizationName: 'mock-sts',
+      organizationName: 'sts',
       serialNumber: '04',
       dnsNames: ['localhost', 'sts'],
       ipAddresses: ['127.0.0.1']
@@ -219,7 +219,7 @@ module.exports = {
     t.log.info('C. two certificates on one port: the CLIENT decides which');
     // -----------------------------------------------------------------------
     const rsa = crypto.selfSignedRsaCertificate({
-      commonName: 'localhost', organizationName: 'mock-sts',
+      commonName: 'localhost', organizationName: 'sts',
       serialNumber: '03',
       extensions: [
         { name: 'basicConstraints', cA: false, critical: true },

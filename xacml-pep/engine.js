@@ -119,7 +119,15 @@ function engineDir() {
   // the failure mode to avoid is one that starts, answers, and refuses
   // everything on its bias — which from outside looks exactly like a policy
   // that denies.
+  //
+  // THE CODE IS WRITTEN INTO THE MESSAGE rather than put there by `tag()`,
+  // because this throws while `pep.js` is still requiring this file — before
+  // it has resolved the registry — and this file may not resolve it itself:
+  // `tests/xacml_pep.js` loads it alone and asserts not one of the mock's own
+  // modules is in that process. The uncaught throw is this container's log
+  // line; the prefix is the registry's format.
   throw new Error(
+    '[STS-XPEP-0014] ' +
     'The XACML engine is not here. Looked in ' + here + ' and ' + repo +
     '. In the image the Dockerfile copies ' + MODULES.length + ' modules ' +
     'from xacml/ into ./xacml; on a developer machine this file expects to ' +

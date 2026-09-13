@@ -205,6 +205,87 @@ const CONSOLE_USER = "console-test-" + names.runStamp();
 const REALM = ("console-" + names.runStamp()).toLowerCase()
     .replace(/[^a-z0-9-]/g, "").slice(0, 40);
 
+// ---------------------------------------------------------------------------
+// WHAT A REAL DEPLOYMENT WOULD HAVE PROVISIONED, SUPPLIED UP FRONT (2026-09-12).
+//
+// Product mode creates nobody because a sign-in or a token request named them,
+// invents no persona onto an entry, verifies every password, seeds no `alice`
+// or `bob`, and holds every OAuth client to a secret. This job runs in
+// development, where each of those is permissive — which is exactly why it
+// should not be relying on them. So the console account is created with a
+// password before it signs in and that password is typed on the screen; every
+// person a token is minted for, and the client it is minted by, is created
+// through `/admin-api` first (`ensurePerson()`, `ensureClient()`); and the group
+// members the Groups page adds are two people this job made in its realm
+// rather than the seeded two.
+//
+// **ONE SIGN-IN STILL NAMES SOMEBODY THIS JOB DID NOT CREATE**: the reader in
+// the roles section is chosen from what the console's picker OFFERS, from the
+// default realm's directory, on purpose. That person's password is not this
+// job's to set, so it is typed as-is — which development accepts and product
+// would not.
+// ---------------------------------------------------------------------------
+const CONSOLE_PASSWORD = "console-job-Passw0rd!-" + names.runStamp();
+const CONSOLE_CLIENT_SECRET = "console-job-client-secret-" + names.runStamp();
+const GROUP_MEMBER_A = "console-member-a";
+const GROUP_MEMBER_B = "console-member-b";
+const ensured = {};
+
+async function apiPostJson(url, payload) {
+  return common.httpJson(url, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {})
+  });
+}
+
+// A person, created in the scope `apiBase` names (the default realm's
+// `/admin-api` or this realm's) with real attributes and CONSOLE_PASSWORD.
+// Answers true when this call created them and false when somebody already
+// had — a name the directory already holds is left exactly as it was.
+async function ensurePerson(apiBase, username) {
+  log.debug("Entering ensurePerson(). username=" + username);
+  const key = apiBase + " user " + username;
+  if (ensured[key] !== undefined) {
+    log.debug("Leaving ensurePerson(). Already handled.");
+    return ensured[key];
+  }
+  const r = await apiPostJson(apiBase + "/users/create", {
+    username: username, invent: false,
+    attributes: { cn: "Console " + username, givenName: "Console",
+                  sn: username, displayName: "Console " + username,
+                  mail: username + "@admin-console-job.test" },
+    credential: "password", password: CONSOLE_PASSWORD
+  });
+  const made = r.status === 200 && !!r.body && r.body.ok === true;
+  assert.ok(made || (r.body && r.body.existing),
+    "POST " + apiBase + "/users/create should create " + username + " or say " +
+    "they already exist; it answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  ensured[key] = made;
+  log.debug("Leaving ensurePerson(). " + (made ? "Created." : "Already there."));
+  return made;
+}
+
+// An OAuth client in this realm, with the secret its token requests present.
+async function ensureClient(client) {
+  log.debug("Entering ensureClient(). client=" + client);
+  const key = "client " + client;
+  if (ensured[key] !== undefined) {
+    log.debug("Leaving ensureClient(). Already handled.");
+    return;
+  }
+  const r = await apiPostJson(realm("/admin-api/applications/create"), {
+    identifier: client, name: client, protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [client], oauthClientSecret: CONSOLE_CLIENT_SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_post" }
+  });
+  assert.ok(r.status === 200 && r.body && r.body.ok,
+    "registering " + client + " in " + REALM + " answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  ensured[key] = true;
+  log.debug("Leaving ensureClient().");
+}
+
 var gateIsOn = false;    // what the service actually did, rather than assumed
 var screenshotDir = "";  // --screenshot-dir, for a person debugging a failure
 
@@ -700,6 +781,9 @@ async function signIn(driver, username) {
   // assertions are made as the writer. That failure reads as the console
   // letting a reader post a form, which is the most alarming possible way to
   // be told about a bug in the test.
+  // The account exists, with CONSOLE_PASSWORD, before the screen is reached —
+  // in the DEFAULT realm, where the console's session and its roster live.
+  await ensurePerson(root("/admin-api"), username);
   await clearSession(driver);
   await go(driver, root("/admin"));
   const url = await driver.getCurrentUrl();
@@ -712,6 +796,9 @@ async function signIn(driver, username) {
   const field = await driver.findElement(By.css("input[name='username']"));
   await field.clear();
   await field.sendKeys(username);
+  const secret = await driver.findElement(By.css("input[name='password']"));
+  await secret.clear();
+  await secret.sendKeys(CONSOLE_PASSWORD);
   const button = await driver.findElement(
       By.xpath("//button[@type='submit'] | //input[@type='submit'] | //button"));
   await button.click();
@@ -2732,7 +2819,8 @@ async function theTokensPageRevokesWhatItDraws(driver) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: "grant_type=refresh_token&refresh_token=" +
             encodeURIComponent(second.refresh || "") +
-            "&client_id=" + encodeURIComponent("console-client-" + REALM)
+            "&client_id=" + encodeURIComponent("console-client-" + REALM) +
+            "&client_secret=" + encodeURIComponent(CONSOLE_CLIENT_SECRET)
     });
   check("THE REFRESH TOKEN IS DEAD TOO, which is the whole point of the button",
     function () {
@@ -2836,12 +2924,16 @@ async function theTokensPageRevokesWhatItDraws(driver) {
 
 async function mintTokens(username, client) {
   log.debug("Entering mintTokens(). username=" + username);
+  await ensurePerson(realm("/admin-api"), username);
+  await ensureClient(client);
   const reply = await common.httpJson(realm("/oauth2/token"), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: "grant_type=password&username=" + encodeURIComponent(username) +
-          "&password=" + encodeURIComponent(username) +
-          "&client_id=" + encodeURIComponent(client) + "&scope=openid"
+          "&password=" + encodeURIComponent(CONSOLE_PASSWORD) +
+          "&client_id=" + encodeURIComponent(client) +
+          "&client_secret=" + encodeURIComponent(CONSOLE_CLIENT_SECRET) +
+          "&scope=openid"
   });
   assert.strictEqual(reply.status, 200,
     "the realm's token endpoint should mint a token for " + username +
@@ -2948,9 +3040,25 @@ function writeForms(stamp) {
     { path: "/admin/vc-verifier-config", button: "Add",
       values: { claim: "given_name" },
       expect: {} },
+    // **THE TRUST DOMAIN IS THE REALM'S, AND HARDCODING `example.org` HERE
+    // STOPPED WORKING ON 2026-09-12.** Every row in this table runs in the
+    // THROWAWAY REALM, and a realm is created with a trust domain of its own
+    // now — `<realm>.example.org` — so a registration entry naming the
+    // service's own domain is refused by the handler with a message that says
+    // exactly that. The refusal is correct: an authority that signed an SVID
+    // in somebody else's trust domain would be issuing a credential nothing
+    // in that domain's bundle verifies.
+    //
+    // It is BUILT from REALM rather than read back from the page, because
+    // what this row is for is the CONTROL — every value here is one the page
+    // accepts, and a refusal means the page and the handler disagree. Reading
+    // the domain off the page would make that assertion vacuous in the one
+    // case it exists to catch.
     { path: "/admin/spiffe/entries", button: "Create",
-      values: { spiffeId: "spiffe://example.org/console/" + stamp.slice(0, 8),
-                parentId: "spiffe://example.org/spire/agent/console",
+      values: { spiffeId: "spiffe://" + REALM + ".example.org/console/" +
+                          stamp.slice(0, 8),
+                parentId: "spiffe://" + REALM +
+                          ".example.org/spire/agent/console",
                 selectors: "unix:uid:1000" },
       expect: { text: "console/" + stamp.slice(0, 8) } },
     // NEW ON 2026-09-06, WITH THE CONTROL IT PRESSES. /admin/groups was a READ
@@ -2963,7 +3071,7 @@ function writeForms(stamp) {
     { path: "/admin/groups", button: "Create",
       values: { group: "console-group-" + stamp.slice(0, 8),
                 note: "Created by the console UI test.",
-                members: "alice, bob" },
+                members: GROUP_MEMBER_A + ", " + GROUP_MEMBER_B },
       expect: { text: "console-group-" + stamp.slice(0, 8),
                 api: "/admin-api/groups" } }
   ];
@@ -3097,9 +3205,261 @@ async function theHandlersNothingEverPressed(driver) {
   await theSpiffePageRotatesAndFederates(driver);
   await theLifetimesPageSaves(driver);
   await theDelegationPageDefinesAndGrants(driver);
+  await theObservedAddressesArePressed(driver);
   await theGroupPageAddsAMember(driver);
+  await theTruststorePageAddsAndRemoves(driver);
+  await theKerberosPrincipalsPageCreatesAndDeletes(driver);
 
   log.debug("Leaving theHandlersNothingEverPressed().");
+}
+
+// ---------------------------------------------------------------------------
+// /admin/kerberos/principals: A SERVICE PRINCIPAL CREATED ON THE FORM, ITS KEYTAB
+// SHOWN ONCE, AND ITS KEY DELETED BY ITS OWN ROW BUTTON (2026-09-12).
+//
+// **THE KDC IS THE PROCESS'S, NOT THE THROWAWAY REALM'S**, so this is the second
+// write in this file the realm does not contain, and it follows the
+// truststore's three rules for the same reason: an SPN carrying this run's
+// stamp, the only Delete pressed is the one on that SPN's row, and a `finally`
+// deletes it through the API if anything above failed with it still there.
+//
+// **THE CREATE ANSWERS WITH A PAGE AND NOT A REDIRECT**, which is the one thing
+// about this form a hand-built submission would not notice: the keytab has to
+// arrive in the body of the response to the POST, marked shown once, carrying a
+// `data:` link a browser saves with no script — and the page the reader goes
+// back to afterwards must carry no part of it.
+// ---------------------------------------------------------------------------
+async function theKerberosPrincipalsPageCreatesAndDeletes(driver) {
+  log.debug("Entering theKerberosPrincipalsPageCreatesAndDeletes().");
+  log.info("=== /admin/kerberos/principals: create a service key, delete it by its row ===");
+  const host = "console-krb5-" + names.runStamp().toLowerCase()
+      .replace(/[^a-z0-9]/g, "").slice(0, 12);
+  const spn = "HTTP/" + host + ".example.com";
+  const held = async function () {
+    const reply = await apiJson("/admin-api/kerberos/principals?per=100");
+    assert.strictEqual(reply.status, 200,
+      "GET /admin-api/kerberos/principals answered " + reply.status);
+    return reply.body.services.filter(function (one) { return one.spn === spn; })[0] || null;
+  };
+
+  try {
+    const page = await open(driver, root("/admin/kerberos/principals"));
+    check("the Kerberos principals page draws, with no key on it", function () {
+      assert.strictEqual(page.status, 200,
+        "/admin/kerberos/principals should answer 200; it answered " + page.status);
+      assert.ok(page.text.indexOf("Kerberos principals") >= 0,
+        "the page should be titled Kerberos principals");
+      assert.ok(page.text.indexOf("$aesgcm$") < 0,
+        "no sealed value may be drawn on the page");
+    });
+
+    const form = await formIndexFilling(driver, ["spn"]);
+    check("the create form is on the page", function () {
+      assert.ok(form >= 0,
+        "no form on /admin/kerberos/principals draws an `spn` box, so the create " +
+        "control this suite presses has been renamed or has gone");
+    });
+    await fillAndPress(driver, form, { spn: spn },
+                       { buttonText: "Create and show the keytab" });
+    const shown = await driver.executeScript(
+      "const a = document.querySelector('a[download]');" +
+      "const t = document.querySelector('textarea[name=\"keytab-base64\"]');" +
+      "return { text: document.body.innerText, download: a ? a.getAttribute('download') : '', " +
+      "href: a ? a.getAttribute('href').slice(0, 40) : '', keytab: t ? t.value : '' };");
+    check("the create answered with the keytab, shown once", function () {
+      assert.ok(/This keytab is shown once/.test(shown.text),
+        "the answer to the create should be a page saying the keytab is shown once; " +
+        "it said: " + String(shown.text).slice(0, 300));
+      assert.ok(/\.keytab$/.test(shown.download) &&
+                shown.href.indexOf("data:application/octet-stream;base64,") === 0,
+        "the page should carry a download link for the keytab: " + JSON.stringify(
+          { download: shown.download, href: shown.href }));
+      const bytes = Buffer.from(shown.keytab, "base64");
+      assert.ok(bytes.length > 50 && bytes[0] === 0x05 && bytes[1] === 0x02,
+        "the keytab on the page should be MIT's version 0x0502");
+    });
+
+    const listed = await held();
+    const redrawn = await open(driver, root("/admin/kerberos/principals"));
+    check("the principal is listed on the page AND through the API, with no keytab", function () {
+      assert.ok(listed && listed.held === true,
+        "GET /admin-api/kerberos/principals must list " + spn);
+      assert.ok(redrawn.text.indexOf(spn) >= 0,
+        "the page must draw the principal it just created");
+      assert.ok(redrawn.text.indexOf(shown.keytab.slice(0, 40)) < 0,
+        "and must not draw any part of the keytab it showed once");
+    });
+
+    // PREVIOUS KEY VERSIONS (2026-09-12): the row's Rotate keeps the version it
+    // replaces and says so on the keytab page, and the row's "Drop previous
+    // versions" — drawn only while one is kept — ends that window.
+    const rotatePressed = await pressTheRowButton(driver, spn, ["Rotate and show the keytab"]);
+    const rotatedText = await driver.executeScript("return document.body.innerText;");
+    const afterRotate = await held();
+    check("the row's Rotate shows a keytab carrying the previous version too", function () {
+      assert.ok(rotatePressed, "the row drawing " + spn + " has no Rotate button to press");
+      assert.ok(/This keytab is shown once/.test(rotatedText) &&
+                /Versions in the keytab/.test(rotatedText),
+        "the answer to the rotate should be the keytab page naming both versions in it: " +
+        String(rotatedText).slice(0, 300));
+      assert.ok(afterRotate && afterRotate.kvno === listed.kvno + 1 &&
+                Array.isArray(afterRotate.retained) && afterRotate.retained.length === 1 &&
+                afterRotate.retained[0].kvno === listed.kvno,
+        "GET /admin-api/kerberos/principals must list the previous kvno as kept after the " +
+        "rotate: " + JSON.stringify(afterRotate));
+    });
+    await open(driver, root("/admin/kerberos/principals"));
+    const dropPressed = await pressTheRowButton(driver, spn, ["Drop previous versions"]);
+    const droppedAt = await driver.getCurrentUrl();
+    const afterDrop = await held();
+    check("the row's Drop previous versions ends the window and keeps the current key", function () {
+      assert.ok(dropPressed, "the row drawing " + spn + " has no Drop previous versions " +
+        "button, although a previous version is kept");
+      assert.strictEqual(outcomeOf(droppedAt, "error"), "",
+        "the drop was refused: " + outcomeOf(droppedAt, "error"));
+      assert.ok(afterDrop && afterDrop.kvno === afterRotate.kvno &&
+                Array.isArray(afterDrop.retained) && afterDrop.retained.length === 0,
+        "after the drop the principal must keep its current kvno and list nothing kept: " +
+        JSON.stringify(afterDrop));
+    });
+
+    const pressed = await pressTheRowButton(driver, spn, ["Delete the key"]);
+    check("the principal's own row carries a Delete button", function () {
+      assert.ok(pressed, "the row drawing " + spn + " has no Delete button to press");
+    });
+    const removedAt = await driver.getCurrentUrl();
+    const afterDelete = await held();
+    check("the row button deleted exactly that principal's key", function () {
+      assert.strictEqual(outcomeOf(removedAt, "error"), "",
+        "the delete was refused: " + outcomeOf(removedAt, "error"));
+      assert.strictEqual(afterDelete, null,
+        "after pressing its Delete button the principal must be gone from GET " +
+        "/admin-api/kerberos/principals");
+    });
+  } finally {
+    const still = await held().catch(function () { return null; });
+    if (still) {
+      // Only ours, by the SPN stamped above.
+      await apiPostJson(base + "/admin-api/kerberos/principals/delete-service",
+                        { spn: spn });
+    }
+  }
+  log.info("[kerberos] OK — a service principal created on /admin/kerberos/principals, " +
+           "its keytab shown once on the answer to the POST, listed on the page and " +
+           "through the API with no key material, rotated with the previous version " +
+           "kept and then dropped by its row buttons, and its key deleted by the " +
+           "button on its own row.");
+  log.debug("Leaving theKerberosPrincipalsPageCreatesAndDeletes().");
+}
+
+// ---------------------------------------------------------------------------
+// /admin/tls/trust: A CA ADDED ON THE FORM AND REMOVED BY ITS OWN ROW BUTTON
+// (2026-09-12).
+//
+// **THE TRUSTSTORE IS THE PROCESS'S, NOT THE THROWAWAY REALM'S**, so this is
+// the one write in this file that the realm does not contain — every later
+// job's client certificates, the remote PEP's among them, are judged against
+// the same array. Three rules follow and each is why this is a section of its
+// own rather than a row in writeForms():
+//
+//   * the CA is minted HERE, a moment before it is added, so its fingerprint is
+//     one nobody else can hold;
+//   * the only Remove button pressed is the one on the row carrying THAT CA's
+//     subject — found by its text, which is what catches a page rendering the
+//     wrong fingerprint into the button beside a row;
+//   * and a `finally` takes it out through the API if anything above failed
+//     with it still in, and touches no other anchor.
+//
+// The page has NO clear button, and that is asserted rather than assumed: a
+// control that emptied the truststore is the one this walk must never find.
+// ---------------------------------------------------------------------------
+async function theTruststorePageAddsAndRemoves(driver) {
+  log.debug("Entering theTruststorePageAddsAndRemoves().");
+  log.info("=== /admin/tls/trust: add a minted CA, remove it by its row ===");
+  const credentials = require("../tools/pep-credential.js");
+  const label = "console-truststore-" + names.runStamp().toLowerCase()
+      .replace(/[^a-z0-9]/g, "").slice(0, 12);
+  const minted = await credentials.mint({
+    rootSubject: "CN=" + label + ",O=mock-sts tests",
+    subject: "CN=" + label + "-leaf,O=mock-sts tests" });
+  const fingerprint = new (require("crypto").X509Certificate)(
+    minted.anchorPem).fingerprint256;
+  const held = async function () {
+    const reply = await apiJson("/admin-api/tls/trust?per=100");
+    assert.strictEqual(reply.status, 200,
+      "GET /admin-api/tls/trust answered " + reply.status);
+    return reply.body.anchors.map(function (one) { return one.fingerprint256; });
+  };
+  const before = await held();
+
+  try {
+    const page = await open(driver, root("/admin/tls/trust"));
+    check("the truststore page draws, with no control that empties it", function () {
+      assert.strictEqual(page.status, 200,
+        "/admin/tls/trust should answer 200; it answered " + page.status);
+      assert.ok(page.text.indexOf("Client-certificate truststore") >= 0,
+        "the page should be titled Client-certificate truststore");
+      assert.ok(!/Empty the truststore|Clear the truststore/i.test(page.text),
+        "the console's truststore page must not offer a clear");
+    });
+
+    const form = await formIndexFilling(driver, ["certificates"]);
+    check("the add form is on the page", function () {
+      assert.ok(form >= 0,
+        "no form on /admin/tls/trust draws a `certificates` box, so the add " +
+        "control this suite presses has been renamed or has gone");
+    });
+    await fillAndPress(driver, form, { certificates: minted.anchorPem },
+                       { buttonText: "Trust these", noTyping: true });
+    const landed = await driver.getCurrentUrl();
+    check("the add was accepted", function () {
+      assert.strictEqual(outcomeOf(landed, "error"), "",
+        "adding a freshly minted CA on the page was refused: " +
+        outcomeOf(landed, "error"));
+    });
+
+    const redrawn = await open(driver, root("/admin/tls/trust"));
+    const afterAdd = await held();
+    check("the CA comes back on the page AND through the API", function () {
+      assert.ok(redrawn.text.indexOf(label) >= 0 &&
+                redrawn.text.indexOf(fingerprint) >= 0,
+        "after the add the page must draw the CA's subject and fingerprint");
+      assert.ok(afterAdd.indexOf(fingerprint) >= 0,
+        "and GET /admin-api/tls/trust must list it — a write the page redraws " +
+        "and the API cannot see is two truststores");
+    });
+
+    const pressed = await pressTheRowButton(driver, label, ["Remove"]);
+    check("the CA's own row carries a Remove button", function () {
+      assert.ok(pressed,
+        "the row drawing " + label + " has no Remove button to press");
+    });
+    const removedAt = await driver.getCurrentUrl();
+    const afterRemove = await held();
+    const removedPage = await open(driver, root("/admin/tls/trust"));
+    check("the row button removed exactly that CA and nothing else", function () {
+      assert.strictEqual(outcomeOf(removedAt, "error"), "",
+        "the remove was refused: " + outcomeOf(removedAt, "error"));
+      assert.ok(afterRemove.indexOf(fingerprint) < 0 &&
+                removedPage.text.indexOf(fingerprint) < 0,
+        "after pressing its Remove button the CA must be gone from the page " +
+        "and from GET /admin-api/tls/trust");
+      assert.deepStrictEqual(afterRemove.slice().sort(), before.slice().sort(),
+        "the truststore must be exactly what it was before this section — " +
+        "the button beside one row must never take away a different anchor");
+    });
+  } finally {
+    const still = await held().catch(function () { return []; });
+    if (still.indexOf(fingerprint) >= 0) {
+      // Only ours, by the fingerprint minted above.
+      await apiPostJson(base + "/admin-api/tls/trust/remove",
+                        { fingerprint: fingerprint });
+    }
+  }
+  log.info("[truststore] OK — a minted CA added on /admin/tls/trust, read back " +
+           "on the page and through the API, removed by the button on its own " +
+           "row, and every other anchor left where it was.");
+  log.debug("Leaving theTruststorePageAddsAndRemoves().");
 }
 
 // ---------------------------------------------------------------------------
@@ -3293,6 +3653,115 @@ async function theDelegationPageDefinesAndGrants(driver) {
            "the pages that drew the controls, the register agreed, and revoke " +
            "and remove took them away again.");
   log.debug("Leaving theDelegationPageDefinesAndGrants().");
+}
+
+// ---------------------------------------------------------------------------
+// CONFIRM AND DISCARD, ON THE APPLICATION'S OWN PAGE (2026-09-12).
+//
+// A development-mode request writes the return address it named onto the
+// application entry and marks it OBSERVED; product refuses a marked address
+// until an operator confirms it. The two buttons are drawn only on a row the
+// marks produce, and no console or API write can make a mark — it is DERIVED —
+// so the operands come from a PROTOCOL: two SAML 1.1 inter-site transfer POSTs
+// naming two `shire` values, which records the relying party before it needs a
+// session. `sts_admin_api_operations.js` drives the same two actions through
+// `/admin-api`, including the product-mode refusal; what is here is that the
+// BUTTONS reach them, each from its own form, and that the page that drew them
+// stops drawing the row afterwards.
+// ---------------------------------------------------------------------------
+async function theObservedAddressesArePressed(driver) {
+  log.debug("Entering theObservedAddressesArePressed().");
+  const stamp = names.runStamp().toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
+  const rpId = "urn:test:console-observed-" + stamp;
+  const ONE = "https://console-observed-one-" + stamp + ".example.test/acs";
+  const TWO = "https://console-observed-two-" + stamp + ".example.test/acs";
+  for (const shire of [ONE, TWO]) {
+    const r = await fetch(realm("/saml11/sso"), {
+      method: "POST", redirect: "manual",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ providerId: rpId, shire: shire,
+                                  TARGET: "https://console-observed.example.test/" }).toString()
+    });
+    await r.text();
+    check("a development SAML 1.1 flow naming " + shire + " is accepted", function () {
+      assert.ok(r.status < 400,
+        "POST /saml11/sso in a development realm should record the relying party and send " +
+        "the browser to sign in; it answered " + r.status);
+    });
+  }
+  // Polled, because in `dispatch` mode the flow and the read are answered by
+  // different workers and the replication poll is what joins them.
+  let listed = [];
+  for (let i = 0; i < 40; i++) {
+    const reply = await apiJson("/realm/" + REALM + "/admin-api/applications?application=" +
+                                encodeURIComponent(rpId));
+    listed = ((reply.body && reply.body.returnAddressesObserved) || [])
+      .map(function (row) { return row.value; });
+    if (listed.indexOf(ONE) >= 0 && listed.indexOf(TWO) >= 0) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 250); });
+  }
+  check("both shires are marked observed on the entry", function () {
+    assert.ok(listed.indexOf(ONE) >= 0 && listed.indexOf(TWO) >= 0,
+      "GET /admin-api/applications?application=" + rpId + " should list both sighted " +
+      "addresses under returnAddressesObserved; it listed " + JSON.stringify(listed));
+  });
+
+  const pageUrl = realm("/admin/applications?application=" + encodeURIComponent(rpId));
+  const drawn = await open(driver, pageUrl);
+  check("the application page draws the observed addresses with both buttons", function () {
+    assert.ok(/Return addresses nobody registered/.test(drawn.text) &&
+              drawn.text.indexOf(ONE) >= 0 && drawn.text.indexOf(TWO) >= 0,
+      "the drill-down should draw a section listing both observed addresses; it says " +
+      drawn.text.slice(0, 500));
+  });
+
+  // WHICH ROW A BUTTON IS ON is read off its own hidden `value`, rather than
+  // assumed from the order: the page draws the marks in the order the entry
+  // holds them, which is a fact about the store and not about this test.
+  async function pressFor(action, address) {
+    const index = await driver.executeScript(`
+      const forms = Array.from(document.forms);
+      for (let i = 0; i < forms.length; i++) {
+        const a = forms[i].elements['action'];
+        const v = forms[i].elements['value'];
+        if (a && v && a.value === arguments[0] && v.value === arguments[1]) { return i; }
+      }
+      return -1;
+    `, action, address);
+    check("the page draws a " + action + " button for " + address, function () {
+      assert.ok(index >= 0, "no form posting action=" + action + " with value=" + address +
+                            " on " + pageUrl);
+    });
+    await fillAndPress(driver, index, {});
+  }
+
+  await pressFor("confirm-address", ONE);
+  await open(driver, pageUrl);
+  await pressFor("discard-address", TWO);
+  const after = await open(driver, pageUrl);
+  const entry = (await apiJson("/realm/" + REALM + "/admin-api/applications?application=" +
+                               encodeURIComponent(rpId))).body || {};
+  const acs = [].concat(((entry.fields || {}).samlAssertionConsumerService) || []);
+  const still = (entry.returnAddressesObserved || []).map(function (row) { return row.value; });
+  check("Confirm kept its address and Discard removed its own", function () {
+    assert.ok(still.indexOf(ONE) < 0 && acs.indexOf(ONE) >= 0,
+      "after Confirm the address must be REGISTERED — on the entry with no mark; the entry " +
+      "holds " + JSON.stringify({ acs: acs, observed: still }));
+    assert.ok(still.indexOf(TWO) < 0 && acs.indexOf(TWO) < 0,
+      "after Discard the address must be gone, mark and value; the entry holds " +
+      JSON.stringify({ acs: acs, observed: still }));
+  });
+  check("and the page that drew the buttons no longer offers them", function () {
+    assert.ok(/Nothing on this entry is marked as observed/.test(after.text),
+      "with both decided, the section should say nothing is marked; it says " +
+      after.text.slice(0, 500));
+  });
+  log.info("[observed addresses] OK — two shires sighted in development were drawn with " +
+           "Confirm and Discard, each button reached its own action, and the entry and " +
+           "the page agreed afterwards.");
+  log.debug("Leaving theObservedAddressesArePressed().");
 }
 
 // The index of the first POST form on the page whose hidden `action` holds a
@@ -3555,14 +4024,16 @@ async function theGroupPageAddsAMember(driver) {
     assert.ok(memberForm >= 0,
       "the drill-down for " + dn + " should draw a form carrying `member`.");
   });
-  // A BARE NAME, deliberately — see the header. `alice` is seeded in every
-  // realm's directory, so this membership must RESOLVE.
-  await fillAndPress(driver, memberForm, { member: "alice" },
+  // A BARE NAME, deliberately — see the header. GROUP_MEMBER_A is a person
+  // this job created in its realm (it was the seeded `alice`, and product mode
+  // seeds nobody), so this membership must RESOLVE.
+  await fillAndPress(driver, memberForm, { member: GROUP_MEMBER_A },
                      { buttonText: "Add" });
   const after = await driver.getCurrentUrl();
   check("the Add member control was accepted", function () {
     assert.strictEqual(outcomeOf(after, "error"), "",
-      "adding alice to " + dn + " was refused: " + outcomeOf(after, "error"));
+      "adding " + GROUP_MEMBER_A + " to " + dn + " was refused: " +
+      outcomeOf(after, "error"));
   });
 
   const reply = await apiJson("/realm/" + REALM + "/admin-api/groups?group=" +
@@ -3580,8 +4051,10 @@ async function theGroupPageAddsAMember(driver) {
       group.danglingCount + " dangle(s), which is what typing a bare name " +
       "and storing it verbatim produces — the page says success either way, " +
       "and these two counts are the only thing that tells them apart.");
-    assert.ok(String(JSON.stringify(group.members)).indexOf("uid=alice") >= 0,
-      "and it should be alice's own entry DN rather than the string that was " +
+    assert.ok(String(JSON.stringify(group.members))
+                .indexOf("uid=" + GROUP_MEMBER_A) >= 0,
+      "and it should be " + GROUP_MEMBER_A + "'s own entry DN rather than the " +
+      "string that was " +
       "typed. It holds " + JSON.stringify(group.members));
   });
 
@@ -3591,7 +4064,7 @@ async function theGroupPageAddsAMember(driver) {
   // that fixes up memberships fail on its second run.
   await open(driver, realm("/admin/groups?group=" + encodeURIComponent(dn)));
   const again = await formIndexFilling(driver, ["member"]);
-  await fillAndPress(driver, again, { member: "alice" },
+  await fillAndPress(driver, again, { member: GROUP_MEMBER_A },
                      { buttonText: "Add" });
   const twice = await driver.getCurrentUrl();
   const stillOne = await apiJson("/realm/" + REALM + "/admin-api/groups?group=" +
@@ -3599,7 +4072,7 @@ async function theGroupPageAddsAMember(driver) {
   check("adding the same person again changes nothing and is not an error",
         function () {
     assert.strictEqual(outcomeOf(twice, "error"), "",
-      "adding alice to " + dn + " a second time was REFUSED: " +
+      "adding " + GROUP_MEMBER_A + " to " + dn + " a second time was REFUSED: " +
       outcomeOf(twice, "error") + ". It is documented as ok with " +
       "changed:false, so that a script adding on every run does not fail on " +
       "its second one.");
@@ -5166,6 +5639,9 @@ async function test() {
     await everyControlReachesSomething(driver, pages);
 
     await theRealmIsCreatedOnTheForm(driver);
+    // THE TWO PEOPLE THE GROUPS PAGE ADDS, in the realm just created.
+    await ensurePerson(realm("/admin-api"), GROUP_MEMBER_A);
+    await ensurePerson(realm("/admin-api"), GROUP_MEMBER_B);
     try {
       await everyGetFormSubmits(driver, pages);
       const created = await theDirectoryPagesWork(driver);

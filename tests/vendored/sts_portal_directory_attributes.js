@@ -181,17 +181,23 @@ function browser(name) {
   return self;
 }
 
-const SCIM_AUTH = "Basic " +
-  Buffer.from("portal-directory-probe:not-checked-in-development")
-        .toString("base64");
+// THE SCIM CALLER IS A PERSON THIS JOB CREATES, and its Basic credential is
+// that person's username and password (2026-09-12). Product mode verifies a
+// SCIM Basic credential against the named person's own `userPassword`, so a
+// made-up name with a word nothing checks is a credential only development
+// accepts. The account is made on first use, by `ensurePerson()` below.
+const SCIM_CALLER = usernameFor("dir-scim-caller");
 const ENTERPRISE = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 
 async function scim(method, path, payload) {
+  await ensurePerson(SCIM_CALLER);
+  const auth = "Basic " +
+    Buffer.from(SCIM_CALLER + ":" + PASSWORD).toString("base64");
   const r = await fetch(base + "/scim/v2" + path, {
     method: method,
     headers: { "Content-Type": "application/scim+json",
                "Accept": "application/scim+json",
-               "Authorization": SCIM_AUTH },
+               "Authorization": auth },
     body: payload === undefined ? undefined : JSON.stringify(payload)
   });
   const raw = await r.text();
@@ -210,12 +216,76 @@ function csrfOf(text) {
   return (String(text).match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
 }
 
+// The management API taking JSON, for creating the person before they sign in.
+async function apiPost(path, payload) {
+  const r = await fetch(api + path, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const raw = await r.text();
+  let body;
+  try {
+    body = JSON.parse(raw);
+  } catch (e) {
+    // An HTML page from a door that answers JSON is worth quoting whole.
+    body = raw;
+  }
+  return { status: r.status, body: body, raw: raw };
+}
+
+// ---------------------------------------------------------------------------
+// EVERY PERSON THIS JOB SIGNS IN IS CREATED FIRST, WITH A PASSWORD AND THE
+// ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12).
+//
+// In product mode this service invents no persona for a name that signs in,
+// creates nobody because a sign-in named them, and verifies the password
+// against the person's own entry. The suite runs in development, where none of
+// that is enforced — which is why a job leaning on it would go on passing
+// while testing the invention. So `ensurePerson()` makes each account through
+// `/admin-api/users/create` with `invent: false`, its own `cn`, `sn`,
+// `givenName`, `displayName` and `mail`, and a password of at least twelve
+// characters, and that password is what the sign-in screen is sent.
+//
+// **IT ALSO MAKES CLAIM 1 SHARPER.** The entry now holds exactly what was
+// typed here, so an attribute that SCIM writes afterwards is the only way it
+// can arrive on the page — nothing a sign-in invented is there to be mistaken
+// for it.
+// ---------------------------------------------------------------------------
+var PASSWORD = "portal-directory-Passw0rd!-" + String(Date.now()).slice(-6);
+var MAIL_DOMAIN = "portal-directory.test";
+
+function personAttributes(who) {
+  return { cn: "Directory Person " + who, givenName: "Directory", sn: who,
+           displayName: "Directory Person " + who, mail: who + "@" + MAIL_DOMAIN };
+}
+
+// Create `who` with a password and real attributes, once per run.
+var createdPeople = {};
+async function ensurePerson(who) {
+  log.debug("Entering ensurePerson(). who=" + who);
+  if (createdPeople[who]) {
+    log.debug("Leaving ensurePerson(). Already created by this run.");
+    return;
+  }
+  const r = await apiPost("/users/create", {
+    username: who, invent: false, attributes: personAttributes(who),
+    credential: "password", password: PASSWORD
+  });
+  assert.ok(r.status === 200 && r.body && r.body.ok && r.body.passwordSet,
+    "POST /admin-api/users/create should create " + who + " with a password " +
+    "before they sign in; it answered " + r.status + " " +
+    String(r.raw).slice(0, 300));
+  createdPeople[who] = true;
+  log.debug("Leaving ensurePerson(). Created " + who + ".");
+}
+
 // ---------------------------------------------------------------------------
 // SIGN IN AT `/portal`, which is an OpenID Connect relying party of this
 // service's own authorization server — so this is a code flow.
 // ---------------------------------------------------------------------------
 async function signIn(who) {
   log.debug("Entering signIn(). who=" + who);
+  await ensurePerson(who);
   const b = browser(who);
   let r = await b.go("GET", "/portal");
   assert.ok(/\/oauth2\/authorize\?/.test(r.location),
@@ -231,7 +301,7 @@ async function signIn(who) {
   assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
   r = await b.go("POST", "/authn/login",
                  form({ authn_id: authnId, username: who,
-                        password: "any-password", action: "login",
+                        password: PASSWORD, action: "login",
                         csrf_token: csrfOf(r.text) }));
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
@@ -435,7 +505,7 @@ async function theRefusalsHold(b) {
   // `userPassword` to refuse to print.
   const set = await fetch(api + "/users/set-password", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user: OWNER, password: "a-probe-password" })
+    body: JSON.stringify({ user: OWNER, password: "A-probe-Passw0rd!" })
   });
   assert.ok(set.status === 200,
     "setting a password answered " + set.status);
@@ -459,7 +529,7 @@ async function theRefusalsHold(b) {
   });
 
   check("and the password itself is nowhere in the HTML", function () {
-    assert.ok(String(page.text).indexOf("a-probe-password") < 0,
+    assert.ok(String(page.text).indexOf("A-probe-Passw0rd!") < 0,
       "the page carries the password that was just set.");
   });
 

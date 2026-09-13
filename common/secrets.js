@@ -62,6 +62,39 @@
 // long as the process runs. `describe()` says WHERE a provider reads from and
 // never what it read.
 //
+// ---------------------------------------------------------------------------
+// TWO SECRETS SINCE 2026-09-12, AND ONE MECHANISM.
+//
+// The KEK was the only thing here for six days. The second is **the database
+// password**, and it arrived for the reason the first did: it was in a
+// configuration string in plain text, which is fine for a throwaway database
+// of mock identities and is not a deployment.
+//
+// **A SECRET IS A DESCRIPTOR AND THE PROVIDERS TAKE ONE.** `read(spec)` rather
+// than `read()`: the spec names which settings hold the provider and the
+// location, what the secret is called in a message, and which FIELD to take
+// when the value turns out to be JSON. `readKek()` is `read(KEK)` and its
+// behaviour is unchanged in every respect — a deployment reading a raw key out
+// of a mounted file sees exactly what it saw before.
+//
+// **THE TWO SECRETS CAN LIVE IN ONE PLACE, WHICH IS THE POINT.** A deployment
+// already mounts one file, or already keeps one secret in AWS; making it keep
+// a second in a second place would be this service inventing operational work.
+// So the database password's location DEFAULTS TO THE KEK'S, and what tells
+// them apart inside it is the field: a JSON object with `kek` and
+// `databasePassword` members serves both. A file holding raw bytes is still a
+// KEK and says so when asked for a password.
+//
+// **WHAT IS SHARED IS THE STORE AND WHAT IS NOT IS THE SECRET — BY DEFAULT.**
+// `keys.kekVault`, `keys.kekRegion` and `keys.kekToken` describe how to REACH
+// Vault, AWS or Key Vault, and a deployment usually has one of those, so the
+// database password reads them too. The provider and the location are per
+// secret, because that is what ordinarily differs. **Since 2026-09-12 the
+// database password MAY override all three** (`persistence.databasePassword
+// Vault`, `…Region`, `…Token`), empty by default and empty meaning the key's,
+// for the deployment whose database credential lives in somebody else's store.
+// `reachOf()` is the one place that decision is made.
+//
 // A LIBRARY (rule 3): it registers no route. It requires only `config` and
 // `helpers` for the log.
 // ---------------------------------------------------------------------------
@@ -75,7 +108,20 @@ const fs = require('fs');
 // function (rule 2). `crypto.js` and `config.js` make their own for the same
 // reason.
 const bunyan = require('bunyan');
+// NODE'S OWN `crypto`, and not this repository's `common/crypto.js`. It is
+// here for `X509Certificate` alone — the client certificate this service
+// presents to a secret store is reported as facts rather than as a PEM — and
+// requiring the module beside this one would close a cycle, because that one
+// is where the signing keys are built.
+const nodeCrypto = require('crypto');
 const config = require('./config');
+// THE FAILURE CODES. A LEAF with no requires, and NOT audit.js, which requires
+// helpers.js, which requires keystore.js, which requires this. A provider's
+// error is marked with its condition NON-ENUMERABLY (the message is left alone,
+// because it is what `/admin/secrets` shows), and `read()` puts the code at the
+// front of the message only once the ledger has the untagged one — what leaves
+// `read()` is a startup refusal, and its message is the fatal log line.
+const errorCodes = require('./error_codes');
 
 const log = bunyan.createLogger({
   name: 'secrets',
@@ -84,13 +130,13 @@ const log = bunyan.createLogger({
 
 // One sentence for a missing SDK, so all four say the same thing the same way.
 function missingModule(pkg, provider, err) {
-  return new Error(
+  return errorCodes.mark(new Error(
     'the "' + provider + '" key-encryption-key provider needs the ' + pkg +
     ' package and it is not installed. It is deliberately NOT a dependency of ' +
     'this service — it is a mock first, and four cloud SDKs nobody uses would ' +
     'be carried by every install. Run `npm install ' + pkg + '` in this ' +
     'deployment, or use keys.kekProvider=file, which needs nothing. The ' +
-    'underlying error was: ' + err.message);
+    'underlying error was: ' + err.message), 'STS-KEYS-0045');
 }
 
 // ---------------------------------------------------------------------------
@@ -107,41 +153,228 @@ function missingModule(pkg, provider, err) {
 // operator does not control, and a service that will not start is a service
 // somebody works around by putting the key in an environment variable.
 // ---------------------------------------------------------------------------
+// ===========================================================================
+// WHAT A SECRET IS, HERE: a descriptor naming where its location is
+// configured (2026-09-12).
+//
+// `provider` / `ref` / `field` are SETTING KEYS and not values, because a
+// setting is read where it is used — a descriptor holding values would be the
+// values this process started with, and every row here is runtime-readable.
+//
+// `fallbackRef` is what makes one place serve both secrets: an empty location
+// means *wherever the key-encryption key is*, which is the case a deployment
+// with one mounted file or one cloud secret is already in.
+//
+// `field` is what tells two secrets apart INSIDE one value, and it applies to
+// every provider rather than to Vault alone — a JSON object is how AWS Secrets
+// Manager stores a database credential, how a mounted file can hold two
+// things, and what `node-vault` already hands back. See `pick()`.
+// ===========================================================================
+const KEK = {
+  id: 'kek',
+  label: 'the key-encryption key',
+  provider: 'keys.kekProvider',
+  file: 'keys.kekFile',
+  ref: 'keys.kekRef',
+  field: 'keys.kekField',
+  // **EMPTY, AND THAT IS THE COMPATIBILITY GUARANTEE.** With no field the
+  // value is taken WHOLE, which is what this module did before there was a
+  // second secret: a mounted file holding 32 random bytes reads exactly as it
+  // always has. Vault is the one provider that has always had a field of its
+  // own, and `keys.kekField` still defaults it to `value` in its own read.
+  defaultField: '',
+  // The KEK falls back to nothing: it is the one every other secret falls
+  // back TO.
+  fallbackRef: null,
+  // HOW TO REACH THE STORE. The KEK's rows are the only ones there are for it;
+  // see `reachOf()`.
+  vault: 'keys.kekVault',
+  region: 'keys.kekRegion',
+  token: 'keys.kekToken'
+};
+
+const DATABASE_PASSWORD = {
+  id: 'database-password',
+  label: 'the database password',
+  provider: 'persistence.databasePasswordProvider',
+  // ONE ROW FOR THE LOCATION, whichever provider is chosen: a path for `file`,
+  // a name or ARN for `aws`, a resource name for `gcp`, a secret name for
+  // `azure`, a read path for `vault`. The KEK has two (`kekFile` and `kekRef`)
+  // because it was written before there was a second secret to notice the
+  // duplication; there is no reason to repeat it.
+  file: 'persistence.databasePasswordRef',
+  ref: 'persistence.databasePasswordRef',
+  field: 'persistence.databasePasswordField',
+  defaultField: 'databasePassword',
+  fallbackRef: KEK,
+  // OVERRIDES OF THE KEY'S, empty by default and empty meaning the key's —
+  // see `reachOf()` for why they exist at all given the paragraph above.
+  vault: 'persistence.databasePasswordVault',
+  region: 'persistence.databasePasswordRegion',
+  token: 'persistence.databasePasswordToken'
+};
+
+// ---------------------------------------------------------------------------
+// HOW A SECRET REACHES ITS STORE: the Vault or Key Vault endpoint, the AWS
+// region and the Vault token (2026-09-12).
+//
+// **THE HEADER SAYS THESE ARE SHARED AND THAT THERE IS DELIBERATELY NO SECOND
+// COPY OF THEM PER SECRET**, and for the deployment it describes — one store
+// holding both secrets — that is still exactly what happens: the database
+// password's three rows are EMPTY BY DEFAULT and an empty one means the KEK's.
+// What that paragraph did not allow for is the database credential being owned
+// by somebody else, in a different Vault, region or Key Vault, which could not
+// be configured at all. So a secret MAY override how the store is reached and
+// the shared store stays the answer nobody has to type.
+//
+// `which` is 'vault', 'region' or 'token'. A secret with no row of its own for
+// it — the KEK is the one every other secret falls back to — reads the KEK's.
+// ---------------------------------------------------------------------------
+function reachOf(spec, which) {
+  const secret = spec || KEK;
+  const own = secret[which]
+    ? String(config.value(secret[which]) || '').trim() : '';
+  if (own || secret === KEK || !secret.fallbackRef) {
+    return own;
+  }
+  return reachOf(secret.fallbackRef, which);
+}
+
+// The location this secret is read from, falling back to the secret it names
+// as its fallback. `which` is 'file' or 'ref' — the same question asked of a
+// path-shaped provider and a name-shaped one.
+function locationOf(spec, which) {
+  const own = String(config.value(spec[which]) || '').trim();
+  if (own) {
+    return { where: own, borrowed: false };
+  }
+  if (!spec.fallbackRef) {
+    return { where: '', borrowed: false };
+  }
+  const lent = String(config.value(spec.fallbackRef[which]) || '').trim();
+  return { where: lent, borrowed: !!lent };
+}
+
+// The field to take out of a JSON value, where the secret names one.
+function fieldOf(spec) {
+  const named = String(config.value(spec.field) || '').trim();
+  return named || spec.defaultField || '';
+}
+
+// ---------------------------------------------------------------------------
+// ONE VALUE, TWO SECRETS: `pick()` IS WHAT MAKES A SHARED LOCATION WORK.
+//
+// A provider answers whatever is stored. When the secret names a FIELD and
+// what came back parses as a JSON OBJECT, the field is taken; anything else is
+// returned whole. Both halves of that sentence matter:
+//
+//   * **A raw value is never treated as JSON**, so a file holding 32 random
+//     bytes, a base64 key or a bare password behaves exactly as it did.
+//   * **A JSON object and a named field that is not in it is a REFUSAL rather
+//     than a silent empty string**, and the message lists the keys that ARE
+//     there — the same shape `vaultProvider` already used, because the mistake
+//     it catches (a secret written with `password` where the setting says
+//     `databasePassword`) is the one everybody makes once.
+//
+// A Buffer is decoded as UTF-8 before the parse is tried and returned as the
+// Buffer when it is not JSON, so `crypto.kekBytes()` still sees bytes.
+// ---------------------------------------------------------------------------
+function pick(raw, spec, borrowed) {
+  log.debug('Entering pick(). secret=' + spec.id +
+            (borrowed ? ' (sharing a location)' : ''));
+  const field = fieldOf(spec);
+  if (!field) {
+    log.debug('Leaving pick(). No field; the value is taken whole.');
+    return raw;
+  }
+  const text = Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw == null ? '' : raw);
+  let parsed = null;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    // NOT JSON, which is the ordinary case for a key file and for a secret
+    // holding one value. The caller asked for a field and there is no object
+    // to take one from, so what is stored IS the secret — unless it was asked
+    // for by a secret that cannot use the whole value, which is the branch
+    // below.
+    parsed = null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    // **BORROWED IS WHAT MAKES THIS A REFUSAL RATHER THAN A FALLBACK**, and
+    // it is the most important branch in this file. A secret of its OWN that
+    // is not JSON is the whole password, which is what an operator who put a
+    // password in a secret meant. A SHARED one that is not JSON is the
+    // key-encryption key — and returning it here would hand this service's
+    // master key to a database server as a password, in the clear, on the
+    // wire, and log a failed connection as the only symptom.
+    if (borrowed) {
+      throw errorCodes.mark(new Error('what is stored for ' + spec.label + ' is not a JSON ' +
+                      'object, and it is the same place ' +
+                      spec.fallbackRef.label + ' is read from — so what is ' +
+                      'there is that key rather than a password, and this ' +
+                      'service will not hand it to a database. Store {"' +
+                      field + '": "…"} there beside the key, or point ' +
+                      spec.ref + ' at a secret of its own.'), 'STS-KEYS-0049');
+    }
+    log.debug('Leaving pick(). Not JSON; the value is taken whole.');
+    return raw;
+  }
+  const value = parsed[field];
+  if (value === undefined || value === null || value === '') {
+    throw errorCodes.mark(new Error('what is stored for ' + spec.label + ' is a JSON object ' +
+                    'with no "' + field + '" in it. It holds: ' +
+                    Object.keys(parsed).join(', ') + '. Set ' + spec.field +
+                    ' to one of those.'), 'STS-KEYS-0048');
+  }
+  log.debug('Leaving pick(). Took the "' + field + '" field.');
+  return String(value);
+}
+
 const fileProvider = {
   id: 'file',
   label: 'A file mounted into the container',
-  describe: function () {
-    return { from: config.value('keys.kekFile') || '(no path configured)' };
+  describe: function (spec) {
+    const at = locationOf(spec || KEK, 'file');
+    return { from: at.where || '(no path configured)',
+             shared: at.borrowed || undefined };
   },
-  read: function () {
+  read: function (spec) {
     log.debug('Entering fileProvider.read().');
-    const path = String(config.value('keys.kekFile') || '').trim();
+    const secret = spec || KEK;
+    const at = locationOf(secret, 'file');
+    const path = at.where;
     if (!path) {
-      throw new Error('keys.kekProvider is "file" and keys.kekFile names no ' +
-                      'path. Set it (STS_KEYS_KEK_FILE) to a file holding at ' +
-                      'least 32 bytes — `openssl rand -base64 32 > /run/secrets/sts-kek`.');
+      throw errorCodes.mark(new Error(secret.provider + ' is "file" and ' + secret.file +
+                      ' names no path. Set it to a file holding ' + secret.label +
+                      ' — for a key-encryption key, `openssl rand -base64 32 ' +
+                      '> /run/secrets/sts-kek`.'), 'STS-KEYS-0046');
     }
     let stat = null;
     try {
       stat = fs.statSync(path);
     } catch (e) {
-      throw new Error('the key-encryption key file "' + path + '" could not ' +
-                      'be read: ' + e.message + '. In product mode this ' +
-                      'service will not start without it, because the ' +
+      throw errorCodes.mark(new Error('the file "' + path + '" holding ' + secret.label +
+                      ' could not be read: ' + e.message + '. In product mode ' +
+                      'this service will not start without it, because the ' +
                       'alternative is generating a new signing key and ' +
-                      'silently invalidating every token it ever issued.');
+                      'silently invalidating every token it ever issued.'),
+                            'STS-KEYS-0047');
     }
     // Reported, not refused — see the header.
     if ((stat.mode & 0o077) !== 0) {
-      log.warn('secrets: the key-encryption key file "' + path + '" is ' +
-               'readable by group or other (mode ' +
-               (stat.mode & 0o777).toString(8) + '). Every signing key this ' +
-               'service holds is protected by it. `chmod 600` it.');
+      log.warn(errorCodes.tag('STS-KEYS-0054') +
+               'secrets: the file "' + path + '" holding ' + secret.label +
+               ' is readable by group or other (mode ' +
+               (stat.mode & 0o777).toString(8) + '). ' +
+               (secret === KEK
+                 ? 'Every signing key this service holds is protected by it.'
+                 : 'It is a credential for this service\'s store.') +
+               ' `chmod 600` it.');
     }
     const body = fs.readFileSync(path);
-    log.info('secrets: the key-encryption key was read from ' + path + '.');
+    log.info('secrets: ' + secret.label + ' was read from ' + path + '.');
     log.debug('Leaving fileProvider.read().');
-    return body.toString('utf8').trim() || body;
+    return pick(body.toString('utf8').trim() || body, secret, at.borrowed);
   }
 };
 
@@ -156,24 +389,29 @@ const fileProvider = {
 const awsProvider = {
   id: 'aws',
   label: 'AWS Secrets Manager',
-  describe: function () {
-    return { from: config.value('keys.kekRef') || '(no secret id configured)',
-             region: config.value('keys.kekRegion') || '(the SDK default)' };
+  describe: function (spec) {
+    const at = locationOf(spec || KEK, 'ref');
+    return { from: at.where || '(no secret id configured)',
+             shared: at.borrowed || undefined,
+             region: reachOf(spec || KEK, 'region') || '(the SDK default)' };
   },
-  read: async function () {
+  read: async function (spec) {
     log.debug('Entering awsProvider.read().');
+    const secret = spec || KEK;
+    const at = locationOf(secret, 'ref');
     let sdk;
     try {
       sdk = require('@aws-sdk/client-secrets-manager');
     } catch (e) {
       throw missingModule('@aws-sdk/client-secrets-manager', 'aws', e);
     }
-    const secretId = String(config.value('keys.kekRef') || '').trim();
+    const secretId = at.where;
     if (!secretId) {
-      throw new Error('keys.kekProvider is "aws" and keys.kekRef names no ' +
-                      'secret. Set it to the secret\'s name or ARN.');
+      throw errorCodes.mark(new Error(secret.provider + ' is "aws" and ' + secret.ref +
+                      ' names no secret. Set it to the secret\'s name or ARN.'),
+                            'STS-KEYS-0046');
     }
-    const region = String(config.value('keys.kekRegion') || '').trim();
+    const region = reachOf(secret, 'region');
     const client = new sdk.SecretsManagerClient(region ? { region: region } : {});
     const answer = await client.send(
       new sdk.GetSecretValueCommand({ SecretId: secretId }));
@@ -183,10 +421,10 @@ const awsProvider = {
     const value = answer.SecretString !== undefined && answer.SecretString !== null
       ? answer.SecretString
       : Buffer.from(answer.SecretBinary || [], 'base64');
-    log.info('secrets: the key-encryption key was read from AWS Secrets ' +
+    log.info('secrets: ' + secret.label + ' was read from AWS Secrets ' +
              'Manager (' + secretId + ').');
     log.debug('Leaving awsProvider.read().');
-    return value;
+    return pick(value, secret, at.borrowed);
   }
 };
 
@@ -201,22 +439,26 @@ const awsProvider = {
 const gcpProvider = {
   id: 'gcp',
   label: 'Google Cloud Secret Manager',
-  describe: function () {
-    return { from: config.value('keys.kekRef') || '(no resource name configured)' };
+  describe: function (spec) {
+    const at = locationOf(spec || KEK, 'ref');
+    return { from: at.where || '(no resource name configured)',
+             shared: at.borrowed || undefined };
   },
-  read: async function () {
+  read: async function (spec) {
     log.debug('Entering gcpProvider.read().');
+    const secret = spec || KEK;
+    const at = locationOf(secret, 'ref');
     let sdk;
     try {
       sdk = require('@google-cloud/secret-manager');
     } catch (e) {
       throw missingModule('@google-cloud/secret-manager', 'gcp', e);
     }
-    let name = String(config.value('keys.kekRef') || '').trim();
+    let name = at.where;
     if (!name) {
-      throw new Error('keys.kekProvider is "gcp" and keys.kekRef names no ' +
+      throw errorCodes.mark(new Error(secret.provider + ' is "gcp" and ' + secret.ref + ' names no ' +
                       'secret. Set it to projects/<project>/secrets/<name> ' +
-                      '(a /versions/<n> suffix is optional).');
+                      '(a /versions/<n> suffix is optional).'), 'STS-KEYS-0046');
     }
     if (name.indexOf('/versions/') < 0) {
       name = name.replace(/\/+$/, '') + '/versions/latest';
@@ -225,12 +467,14 @@ const gcpProvider = {
     const [answer] = await client.accessSecretVersion({ name: name });
     const payload = answer && answer.payload && answer.payload.data;
     if (!payload) {
-      throw new Error('the secret version "' + name + '" carries no payload');
+      throw errorCodes.mark(new Error('the secret version "' + name + '" carries no payload'),
+                            'STS-KEYS-0048');
     }
-    log.info('secrets: the key-encryption key was read from Google Cloud ' +
+    log.info('secrets: ' + secret.label + ' was read from Google Cloud ' +
              'Secret Manager (' + name + ').');
     log.debug('Leaving gcpProvider.read().');
-    return Buffer.from(payload).toString('utf8').trim();
+    return pick(Buffer.from(payload).toString('utf8').trim(), secret,
+                at.borrowed);
   }
 };
 
@@ -245,12 +489,16 @@ const gcpProvider = {
 const azureProvider = {
   id: 'azure',
   label: 'Azure Key Vault',
-  describe: function () {
-    return { from: config.value('keys.kekRef') || '(no secret name configured)',
-             vault: config.value('keys.kekVault') || '(no vault url configured)' };
+  describe: function (spec) {
+    const at = locationOf(spec || KEK, 'ref');
+    return { from: at.where || '(no secret name configured)',
+             shared: at.borrowed || undefined,
+             vault: reachOf(spec || KEK, 'vault') || '(no vault url configured)' };
   },
-  read: async function () {
+  read: async function (spec) {
     log.debug('Entering azureProvider.read().');
+    const secret = spec || KEK;
+    const at = locationOf(secret, 'ref');
     let secretsSdk;
     let identitySdk;
     try {
@@ -263,23 +511,25 @@ const azureProvider = {
     } catch (e) {
       throw missingModule('@azure/identity', 'azure', e);
     }
-    const vault = String(config.value('keys.kekVault') || '').trim();
-    const name = String(config.value('keys.kekRef') || '').trim();
+    const vault = reachOf(secret, 'vault');
+    const name = at.where;
     if (!vault || !name) {
-      throw new Error('keys.kekProvider is "azure" and it needs both ' +
-                      'keys.kekVault (https://<name>.vault.azure.net) and ' +
-                      'keys.kekRef (the secret name).');
+      throw errorCodes.mark(new Error(secret.provider + ' is "azure" and it needs both ' +
+                      (secret.vault || 'keys.kekVault') +
+                      ' (https://<name>.vault.azure.net) and ' +
+                      secret.ref + ' (the secret name).'), 'STS-KEYS-0046');
     }
     const client = new secretsSdk.SecretClient(
       vault, new identitySdk.DefaultAzureCredential());
     const answer = await client.getSecret(name);
     if (!answer || !answer.value) {
-      throw new Error('the secret "' + name + '" in ' + vault + ' has no value');
+      throw errorCodes.mark(new Error('the secret "' + name + '" in ' + vault + ' has no value'),
+                            'STS-KEYS-0048');
     }
-    log.info('secrets: the key-encryption key was read from Azure Key Vault (' +
+    log.info('secrets: ' + secret.label + ' was read from Azure Key Vault (' +
              vault + ', ' + name + ').');
     log.debug('Leaving azureProvider.read().');
-    return String(answer.value).trim();
+    return pick(String(answer.value).trim(), secret, at.borrowed);
   }
 };
 
@@ -293,50 +543,190 @@ const azureProvider = {
 // answer is unwrapped by shape rather than by a setting nobody can fill in
 // correctly.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// HOW THIS SERVICE PROVES WHO IT IS TO A VAULT (2026-09-12).
+//
+// A TOKEN in a configuration file is a bearer credential: whoever reads the
+// file is the identity, it does not expire and rotating it is an outage. A
+// CLIENT CERTIFICATE is the other answer — the store's own `auth/cert` method,
+// where the certificate is issued BY the store, bound to a policy BY the
+// store, and the private key never leaves this container. `openbao/` is the
+// stack that demonstrates it end to end.
+//
+// **BOTH ARE SUPPORTED AND THE CERTIFICATE WINS WHERE ONE IS CONFIGURED**,
+// because a deployment that mounted a certificate meant to use it — and a
+// token left in a file beside it is the leftover, not the intent.
+//
+// **THE TLS MATERIAL IS PASSED TWICE, AND IT HAS TO BE.** `node-vault` merges
+// `requestOptions` into the calls its own helpers make (`read`, `write`) and
+// merges `rpDefaults` into the request library's defaults, which is what
+// `client.request()` — the escape hatch below — uses. Passing only one of them
+// gives a login that works and a read that does not, or the reverse.
+// ---------------------------------------------------------------------------
+function vaultTls() {
+  const certPath = String(config.value('keys.vaultClientCert') || '').trim();
+  const keyPath = String(config.value('keys.vaultClientKey') || '').trim();
+  const caPath = String(config.value('keys.vaultCaCert') || '').trim();
+  const out = {};
+  if (certPath && keyPath) {
+    out.cert = fs.readFileSync(certPath);
+    out.key = fs.readFileSync(keyPath);
+  }
+  if (caPath) {
+    out.ca = fs.readFileSync(caPath);
+  }
+  return { options: out, authenticates: !!(certPath && keyPath),
+           where: { cert: certPath, key: keyPath, ca: caPath } };
+}
+
+// Where the `cert` auth method is mounted, as a path segment. Leading and
+// trailing slashes are forgiven because `-path=cert/` is how the CLI prints
+// one; anything outside a path's own alphabet — `..`, a query, a space — is
+// refused by name rather than put into a request line.
+function certAuthMount() {
+  const raw = String(config.value('keys.vaultCertAuthMount') || 'cert').trim()
+    .replace(/^\/+|\/+$/g, '');
+  if (!raw || !/^[A-Za-z0-9._\-\/]+$/.test(raw) || /(^|\/)\.\.?(\/|$)/.test(raw)) {
+    throw errorCodes.mark(new Error('keys.vaultCertAuthMount is "' + raw + '", which is not a ' +
+                    'mount path this service will put into a request. Use ' +
+                    'letters, digits, "-", "_", "." and "/" only — the path ' +
+                    'the cert auth method was enabled at, `cert` by default.'),
+                          'STS-KEYS-0052');
+  }
+  return raw;
+}
+
+// ---------------------------------------------------------------------------
+// ONE ANSWER TO *HOW THIS SERVICE PROVES WHO IT IS TO THE STORE* (2026-09-12).
+//
+// This was inline in `vaultProvider.read()` until the secret-store report
+// (`/admin/secrets`) needed to ask the same store the same question — and a
+// second copy of the login would have been a second answer: a page reporting
+// the policies of a token obtained differently from the one the READ uses is
+// a page that is right about something nobody is running.
+//
+// It returns the CLIENT and the login answer. The token it obtained is on the
+// client and is deliberately not returned beside it: the only thing that needs
+// the string is the client, and a caller holding it is a caller that can log
+// it.
+// ---------------------------------------------------------------------------
+async function vaultConnect(spec) {
+  log.debug('Entering vaultConnect().');
+  let sdk;
+  try {
+    sdk = require('node-vault');
+  } catch (e) {
+    throw missingModule('node-vault', 'vault', e);
+  }
+  // THE SECRET BEING READ decides the endpoint and the token — the key's by
+  // default, a secret's own where it names one. See `reachOf()`.
+  const endpoint = reachOf(spec, 'vault');
+  const token = reachOf(spec, 'token');
+  const tls = vaultTls();
+  const client = sdk(Object.assign(
+    { apiVersion: 'v1' },
+    endpoint ? { endpoint: endpoint } : {},
+    // The token falls back to the SDK's own VAULT_TOKEN handling, which is
+    // what a deployment using an agent sidecar or an auth method relies on.
+    // A certificate identity needs none of it and overrides it below.
+    token ? { token: token } : {},
+    Object.keys(tls.options).length
+      ? { requestOptions: tls.options, rpDefaults: tls.options } : {}));
+  const role = String(config.value('keys.vaultCertRole') || '').trim();
+  if (!tls.authenticates) {
+    log.debug('Leaving vaultConnect(). No client certificate; a token, or ' +
+              'the SDK\'s own VAULT_TOKEN handling, is the identity.');
+    return { client: client, login: null, tls: tls, role: role,
+             endpoint: endpoint || '(VAULT_ADDR)',
+             how: token ? 'a configured token' : 'the SDK\'s VAULT_TOKEN' };
+  }
+  // **`client.request()` RATHER THAN `client.certLogin()`, AND THAT IS A
+  // BUG IN THE SDK RATHER THAN A PREFERENCE.** node-vault 0.10.2 declares
+  // `certLogin` with `schema.req = { type: 'object' }` and NO `properties`,
+  // and its `extendOptions()` does `Object.keys(reqSchema.properties)` the
+  // moment any argument is passed — so `certLogin({ name })` throws "Cannot
+  // convert undefined or null to object" before a request is made, and
+  // `certLogin()` with no argument cannot name a role. Going through
+  // `request()` sends the role and keeps the SDK's TLS and error handling.
+  // THE MOUNT IS A SETTING SINCE 2026-09-12 — it was the literal `cert`, so a
+  // store that enabled the method at another path could not be logged in to by
+  // certificate at all. Refused rather than spliced when it is not a path, for
+  // the same reason a URL from a request is never dialled: this string goes
+  // into a request line.
+  const mount = certAuthMount();
+  const login = await client.request({
+    path: '/auth/' + mount + '/login', method: 'POST',
+    json: role ? { name: role } : {}
+  });
+  const issued = login && login.auth && login.auth.client_token;
+  if (!issued) {
+    throw errorCodes.mark(new Error('the secret store accepted the client certificate ' +
+                    'and returned no token, which is a store with the ' +
+                    '`cert` auth method enabled at auth/' + mount + ' and no ' +
+                    'certificate bound to a policy.'), 'STS-KEYS-0051');
+  }
+  client.token = issued;
+  log.info('secrets: authenticated to the secret store with a CLIENT ' +
+           'CERTIFICATE (' + tls.where.cert + ')' +
+           (role ? ', role "' + role + '"' : '') + '. The token it ' +
+           'returned carries ' +
+           ((login.auth.policies || []).join(', ') || 'no policies') +
+           ' and lives ' + (login.auth.lease_duration || 0) + 's.');
+  log.debug('Leaving vaultConnect(). Authenticated with a certificate.');
+  return { client: client, login: login, tls: tls, role: role,
+           endpoint: endpoint || '(VAULT_ADDR)',
+           how: 'a client certificate' };
+}
+
 const vaultProvider = {
   id: 'vault',
   label: 'HashiCorp Vault',
-  describe: function () {
-    return { from: config.value('keys.kekRef') || '(no path configured)',
-             endpoint: config.value('keys.kekVault') || '(VAULT_ADDR)',
-             field: config.value('keys.kekField') || 'value' };
+  describe: function (spec) {
+    const at = locationOf(spec || KEK, 'ref');
+    const cert = String(config.value('keys.vaultClientCert') || '').trim();
+    return { from: at.where || '(no path configured)',
+             shared: at.borrowed || undefined,
+             endpoint: reachOf(spec || KEK, 'vault') || '(VAULT_ADDR)',
+             field: fieldOf(spec || KEK) || 'value',
+             // HOW, and never WITH WHAT: the path to a certificate is a fact
+             // about the deployment and the certificate is public anyway; a
+             // token would be neither and is reported as its presence only.
+             authenticates: cert ? 'a client certificate (' + cert + ')'
+                                 : (reachOf(spec || KEK, 'token')
+                                     ? 'a token' : 'the SDK\'s VAULT_TOKEN') };
   },
-  read: async function () {
+  read: async function (spec) {
     log.debug('Entering vaultProvider.read().');
-    let sdk;
-    try {
-      sdk = require('node-vault');
-    } catch (e) {
-      throw missingModule('node-vault', 'vault', e);
-    }
-    const path = String(config.value('keys.kekRef') || '').trim();
+    const secret = spec || KEK;
+    const at = locationOf(secret, 'ref');
+    const path = at.where;
     if (!path) {
-      throw new Error('keys.kekProvider is "vault" and keys.kekRef names no ' +
-                      'path. Set it to the read path, e.g. secret/data/sts-kek.');
+      throw errorCodes.mark(new Error(secret.provider + ' is "vault" and ' + secret.ref +
+                      ' names no path. Set it to the read path, e.g. ' +
+                      'secret/data/sts-kek.'), 'STS-KEYS-0046');
     }
-    const endpoint = String(config.value('keys.kekVault') || '').trim();
-    const token = String(config.value('keys.kekToken') || '').trim();
-    const client = sdk(Object.assign(
-      { apiVersion: 'v1' },
-      endpoint ? { endpoint: endpoint } : {},
-      // The token falls back to the SDK's own VAULT_TOKEN handling, which is
-      // what a deployment using an agent sidecar or an auth method relies on.
-      token ? { token: token } : {}));
+    const connected = await vaultConnect(secret);
+    const client = connected.client;
     const answer = await client.read(path);
-    const field = String(config.value('keys.kekField') || 'value');
+    // THE FIELD IS THE SECRET'S OWN, defaulting to `value` for the KEK exactly
+    // as it always has. Vault is the one provider whose answer was ALWAYS a
+    // map, which is why it had a field before the others did — `pick()` is
+    // that idea generalised, and the two agree here rather than fighting.
+    const field = fieldOf(secret) || 'value';
     const data = answer && answer.data;
     if (!data) {
-      throw new Error('the Vault path "' + path + '" returned no data');
+      throw errorCodes.mark(new Error('the Vault path "' + path + '" returned no data'),
+                            'STS-KEYS-0048');
     }
     // KV v2 nests: { data: { data: { value: ... } } }. KV v1 does not.
     const holder = (data.data && typeof data.data === 'object') ? data.data : data;
     const value = holder[field];
     if (value === undefined || value === null || value === '') {
-      throw new Error('the Vault path "' + path + '" has no "' + field + '" ' +
+      throw errorCodes.mark(new Error('the Vault path "' + path + '" has no "' + field + '" ' +
                       'field. It holds: ' + Object.keys(holder).join(', ') +
-                      '. Set keys.kekField to one of those.');
+                      '. Set ' + secret.field + ' to one of those.'), 'STS-KEYS-0048');
     }
-    log.info('secrets: the key-encryption key was read from HashiCorp Vault (' +
+    log.info('secrets: ' + secret.label + ' was read from HashiCorp Vault (' +
              path + ').');
     log.debug('Leaving vaultProvider.read().');
     return String(value).trim();
@@ -352,41 +742,1269 @@ function providerFor(id) {
   return PROVIDERS.filter(function (one) { return one.id === wanted; })[0] || null;
 }
 
-// The configured one, read fresh each time because `keys.kekProvider` is a
-// setting and a cached provider would be the one this process started with.
-function current() {
-  return providerFor(config.value('keys.kekProvider'));
+// The configured one FOR A SECRET, read fresh each time because the provider
+// is a setting and a cached one would be what this process started with.
+//
+// `current()` keeps its old shape — no argument means the KEK — because eight
+// call sites read it that way and none of them is about the second secret.
+function current(spec) {
+  return providerFor(config.value((spec || KEK).provider));
+}
+
+// Is a secret configured to come from a provider at all? Only the database
+// password can answer no: its provider row offers `none`, which is the
+// default and means *the password is where it always was, in the connection
+// string*. The KEK has no such state — product mode cannot start without one.
+function configuredFor(spec) {
+  const named = String(config.value(spec.provider) || '').trim();
+  return !!named && named !== 'none';
 }
 
 // THE KEK. Asynchronous because four of the five providers are — a network
 // call to somebody else's secret store — and the file one is made to look the
 // same so that no caller has to know which is configured.
+async function read(spec) {
+  log.debug('Entering read(). secret=' + spec.id);
+  const provider = current(spec);
+  if (!provider) {
+    const bad = errorCodes.mark(new Error(spec.provider + ' is "' +
+                          config.value(spec.provider) +
+                          '", which is not one of: ' + PROVIDER_IDS.join(', ') +
+                          '.'), 'STS-KEYS-0050');
+    recordRead(spec, null, 0, bad);
+    throw tagReadFailure(spec, bad);
+  }
+  const began = Date.now();
+  let value;
+  try {
+    value = await provider.read(spec);
+  } catch (e) {
+    // RECORDED AND RE-THROWN, which is the only thing this catch does. A read
+    // that failed is the single most useful row on `/admin/secrets` and the
+    // one a service that did not start cannot show anybody — so it is written
+    // down here, where both the success and the failure pass, rather than at
+    // the eight call sites.
+    recordRead(spec, provider, Date.now() - began, e);
+    throw tagReadFailure(spec, e);
+  }
+  recordRead(spec, provider, Date.now() - began, null);
+  log.debug('Leaving read(). Provider: ' + provider.id + '.');
+  return value;
+}
+
+// A READ THAT FAILED, NAMED — AFTER the ledger has its own copy of the message,
+// which is what `/admin/secrets` draws and must carry no code. What leaves
+// `read()` is a refusal to start (`keystore.start()`, `persistence.start()`),
+// so the message is the fatal log line, and it leads with which secret failed
+// and then, where the provider said, why.
+function tagReadFailure(spec, err) {
+  log.debug('Entering tagReadFailure(). secret=' + spec.id);
+  const which = spec === KEK ? 'STS-KEYS-0043' : 'STS-KEYS-0044';
+  const why = errorCodes.codeOf(err);
+  const prefix = errorCodes.tag(which) + (why ? errorCodes.tag(why) : '');
+  try {
+    if (err && typeof err.message === 'string' &&
+        err.message.indexOf(prefix) !== 0) {
+      err.message = prefix + err.message;
+    }
+  } catch (e) {
+    // Swallowed with a reason: an error object whose message cannot be
+    // written is not a reason to lose the error. It is rethrown untagged.
+    log.debug('tagReadFailure(): the message could not be tagged: ' + e.message);
+  }
+  log.debug('Leaving tagReadFailure().');
+  return err;
+}
+
 async function readKek() {
   log.debug('Entering readKek().');
-  const provider = current();
-  if (!provider) {
-    throw new Error('keys.kekProvider is "' + config.value('keys.kekProvider') +
-                    '", which is not one of: ' + PROVIDER_IDS.join(', ') + '.');
-  }
-  const value = await provider.read();
-  log.debug('Leaving readKek(). Provider: ' + provider.id + '.');
+  const value = await read(KEK);
+  log.debug('Leaving readKek().');
   return value;
+}
+
+// ---------------------------------------------------------------------------
+// THE DATABASE PASSWORD (2026-09-12). `null` when nothing is configured, which
+// is the default and is not a failure: the password is then wherever it has
+// always been, in `persistence.databaseUrl`.
+//
+// **IT IS A STRING AND NEVER BYTES.** A password is typed, stored and compared
+// as text, and a Buffer here would reach the connection string as
+// `[object Object]` — so whatever a provider hands back is decoded and
+// trimmed. The trim matters more than it looks: `echo hunter2 > secret` writes
+// a newline, and a password with a trailing newline fails to authenticate with
+// a message about the password being wrong.
+// ---------------------------------------------------------------------------
+async function readDatabasePassword() {
+  log.debug('Entering readDatabasePassword().');
+  if (!configuredFor(DATABASE_PASSWORD)) {
+    log.debug('Leaving readDatabasePassword(). Not configured.');
+    return null;
+  }
+  const value = await read(DATABASE_PASSWORD);
+  const text = (Buffer.isBuffer(value) ? value.toString('utf8')
+                                       : String(value == null ? '' : value)).trim();
+  if (!text) {
+    throw new Error(errorCodes.tag('STS-KEYS-0053') +
+                    DATABASE_PASSWORD.provider + ' is "' +
+                    config.value(DATABASE_PASSWORD.provider) + '" and what it ' +
+                    'read is empty. An empty password is not a password, and ' +
+                    'this service will not dial a database with one rather ' +
+                    'than tell you the secret is blank.');
+  }
+  log.debug('Leaving readDatabasePassword(). ' + text.length + ' character(s).');
+  return text;
 }
 
 // WHERE THE KEY COMES FROM, for the console and the metadata report. It says
 // WHERE and never WHAT: a page that printed the key-encryption key would be the
 // single worst thing this service could draw.
-function describe() {
-  const provider = current();
+function describeSecret(spec) {
+  const named = String(config.value(spec.provider) || '');
+  const provider = current(spec);
+  const configured = configuredFor(spec);
   return {
-    provider: provider ? provider.id : String(config.value('keys.kekProvider')),
-    label: provider ? provider.label : 'unknown',
-    known: !!provider,
-    where: provider ? provider.describe() : {},
+    secret: spec.id,
+    configured: configured,
+    provider: configured ? (provider ? provider.id : named) : 'none',
+    label: configured ? (provider ? provider.label : 'unknown')
+                      : 'not configured',
+    known: configured ? !!provider : true,
+    where: (configured && provider) ? provider.describe(spec) : {},
+    // WHETHER IT IS SHARING THE KEK'S LOCATION, which is the one fact an
+    // operator reading this cannot work out from the settings: an empty
+    // location row means *wherever the key is*, and a page that printed the
+    // empty row would be reporting that nothing is configured.
+    shared: configured && !!spec.fallbackRef &&
+            !String(config.value(spec.ref) || '').trim(),
+    field: fieldOf(spec) || undefined,
     providers: PROVIDERS.map(function (one) {
       return { id: one.id, label: one.label };
     })
   };
+}
+
+function describe() {
+  return describeSecret(KEK);
+}
+
+// WHERE THE DATABASE PASSWORD COMES FROM, for `/admin/persistence` and
+// `GET /admin-api/persistence`. It says WHERE and never WHAT, which is the
+// rule `describe()` above states for the key and is the same rule.
+function describeDatabasePassword() {
+  return describeSecret(DATABASE_PASSWORD);
+}
+
+// ===========================================================================
+// ===========================================================================
+// THE SECRET-STORE REPORT (2026-09-12), FOR `Monitoring > Secret store`.
+//
+// **`describe()` ABOVE SAYS WHERE A SECRET IS CONFIGURED TO COME FROM. EVERY
+// LINE BELOW IS ABOUT WHETHER IT ACTUALLY DID, AND WHAT THE THING AT THE
+// OTHER END IS DOING.** Those are different questions and the console files
+// them differently: the provider rows are drawn on `/admin/config` under Key
+// material and read identically on a service that started a second ago, and
+// this is a MONITORING page whose subject is a store somebody else is running.
+//
+// Three rules hold everything here together.
+//
+//   1. **NO SECRET EVER LEAVES THIS MODULE.** Not the key-encryption key, not
+//      the database password, not a Vault token. Every probe below names the
+//      fields it returns rather than handing back a provider's answer, and
+//      `scrub()` then deletes a deny-list of member names from whatever came
+//      out. **That is the same fact asserted twice on purpose**: this is the
+//      one page in this service where being wrong is unrecoverable — a
+//      key-encryption key drawn once on a console is a key that has to be
+//      rotated, and rotating it means everything sealed under it is gone.
+//   2. **A PROBE THAT FAILED IS A ROW AND NOT AN ABSENCE.** This is
+//      `/admin/database`'s rule and it matters more here: the identity this
+//      service holds is DELIBERATELY allowed to read two paths and nothing
+//      else, so a probe refused with 403 is the policy working. A page that
+//      hid it would be hiding the evidence that the store is configured the
+//      way `openbao/read-only.hcl` claims.
+//   3. **NOTHING HERE READS A SECRET.** No probe calls `read()`, and none of
+//      them takes a value out of the store — the Vault one reads the KV
+//      METADATA path, AWS is asked to DESCRIBE rather than to get, Azure is
+//      asked for version PROPERTIES, and the file one stats the file and
+//      parses it only far enough to list which members are in it. Opening a
+//      console page must not be a reason for this service to have the key in
+//      memory again.
+//
+// **THE BOUND IS A TIMER HERE AND `/admin/database` ARGUES AGAINST ONE**,
+// which is worth stating because the two pages look alike. There the bound had
+// to be the server's `statement_timeout`, because abandoning the promise left
+// a statement running and a CONNECTION PINNED out of a pool every protocol
+// endpoint writes through. Nothing here is pooled: an abandoned HTTPS request
+// to somebody else's secret store closes its own socket and costs this service
+// nothing, and there is no equivalent of `statement_timeout` to ask for.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// THE READ LEDGER: DID THIS PROCESS ACTUALLY READ THE SECRET, AND WHEN.
+//
+// **IT IS THE FACT AN OPERATOR CANNOT GET ANY OTHER WAY.** A deployment in
+// development mode on a memory store never reads the key-encryption key at
+// all — `keystore.js` asks for it only when it persists — so a perfectly
+// configured provider and a completely broken one look identical on a
+// settings page. This says which.
+//
+// It holds no value, and it holds the ERROR for a failed read: a service that
+// is running has by definition not failed to read anything fatally, so the
+// rows that matter most here are the ones where something optional went
+// wrong.
+// ---------------------------------------------------------------------------
+const ledger = new Map();
+
+function recordRead(spec, provider, tookMs, error) {
+  ledger.set(spec.id, {
+    secret: spec.id,
+    label: spec.label,
+    at: new Date().toISOString(),
+    provider: provider ? provider.id : String(config.value(spec.provider) || ''),
+    tookMs: tookMs,
+    ok: !error,
+    error: error ? String(error.message || error) : undefined
+  });
+}
+
+// What the ledger holds, for a secret or for all of them. A secret never read
+// is ABSENT rather than false, because "not yet" and "failed" are the two
+// things this page exists to tell apart.
+function readLedger(spec) {
+  if (spec) {
+    return ledger.get(spec.id) || null;
+  }
+  const out = {};
+  ledger.forEach(function (row, id) {
+    out[id] = row;
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT MAY NEVER BE REPORTED.
+//
+// The second half of rule 1. Every probe below already picks its fields by
+// name, so in a correct build this deletes nothing — which is exactly why it
+// is here: the failure it catches is a future probe that hands back a
+// provider's answer whole, and that mistake is silent, one-way and fatal.
+//
+// `id` is on the list because `auth/token/lookup-self` answers the TOKEN
+// ITSELF in a member called `id`, which is the single most plausible way a
+// credential would end up on this page.
+// ---------------------------------------------------------------------------
+const NEVER_REPORTED = ['value', 'values', 'data', 'token', 'client_token',
+                        'id', 'password', 'passphrase', 'secret', 'secret_id',
+                        'private_key', 'privateKey', 'accessor', 'wrap_info',
+                        'auth', 'unseal_key', 'root_token', 'keys',
+                        'keys_base64', 'recovery_keys', 'recovery_keys_base64',
+                        'SecretString', 'SecretBinary', 'payload'];
+
+// **IT DOES NOT LOG, WHICH IS THE ONE PLACE IN THIS FILE THAT RULE IS
+// BROKEN ON PURPOSE.** It recurses over every member of every probe's
+// answer, so an `Entering`/`Leaving` pair would be some hundreds of lines
+// per render — and it is the function whose whole job is to handle values
+// nobody should see, so a debug line about what it is looking at is the
+// last thing this module should be able to emit.
+function scrub(what, depth) {
+  const level = depth || 0;
+  if (what === null || what === undefined || level > 6) {
+    return (level > 6) ? '(nested too deeply to report)' : what;
+  }
+  if (Array.isArray(what)) {
+    // CAPPED, because a probe against a store with a thousand secret versions
+    // in it would otherwise put a thousand rows on a console page.
+    return what.slice(0, 50).map(function (one) {
+      return scrub(one, level + 1);
+    });
+  }
+  if (what instanceof Date) {
+    return what.toISOString();
+  }
+  if (typeof what === 'object') {
+    const out = {};
+    Object.keys(what).forEach(function (key) {
+      if (NEVER_REPORTED.indexOf(key) >= 0) {
+        return;
+      }
+      out[key] = scrub(what[key], level + 1);
+    });
+    return out;
+  }
+  return what;
+}
+
+function probeTimeoutMs() {
+  const ms = Number(config.value('keys.storeProbeTimeoutMs'));
+  return (ms > 0) ? ms : 5000;
+}
+
+// ---------------------------------------------------------------------------
+// ONE PROBE: run it, time it, bound it, and never let it throw.
+//
+// The shape is `/admin/database`'s deliberately — `{ id, what, ok, tookMs,
+// data | error }` — because the two pages answer the same kind of question
+// about two different things somebody else is running, and a reader who has
+// read one should not have to learn a second vocabulary.
+//
+// **THE ERROR CARRIES A STATUS WHERE THERE IS ONE.** node-vault rejects a
+// non-200 with an error holding `response.statusCode`, and 403 against these
+// paths is not a fault at all: it is the read-only policy refusing something
+// this service is not supposed to be able to do. A probe that reported only
+// the message would have thrown that distinction away.
+// ---------------------------------------------------------------------------
+async function runProbe(id, what, fn) {
+  log.debug('Entering runProbe(). id=' + id);
+  const began = Date.now();
+  const bound = probeTimeoutMs();
+  let timer = null;
+  const deadline = new Promise(function (_resolve, reject) {
+    timer = setTimeout(function () {
+      reject(new Error('the store did not answer within ' + bound + 'ms'));
+    }, bound);
+  });
+  try {
+    const data = await Promise.race([Promise.resolve().then(fn), deadline]);
+    log.debug('Leaving runProbe(). id=' + id + ' answered.');
+    return { id: id, what: what, ok: true, tookMs: Date.now() - began,
+             data: scrub(data) };
+  } catch (e) {
+    const status = e && e.response && e.response.statusCode;
+    log.debug('Leaving runProbe(). id=' + id + ' failed: ' +
+              String(e && e.message || e));
+    return { id: id, what: what, ok: false, tookMs: Date.now() - began,
+             status: status || undefined,
+             error: String((e && e.message) || e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A CERTIFICATE THIS SERVICE PRESENTS, AS FACTS RATHER THAN AS A PEM.
+//
+// **THE MOST OPERATIONALLY USEFUL THING ON THE WHOLE PAGE**, and the one
+// nothing else in this service could show: the client certificate that
+// authenticates to the store expires, and when it does this service stops
+// being able to read its own key-encryption key — which in product mode is a
+// service that will not start, with a TLS handshake failure as the only
+// symptom. A date and a day count turn that into a thing somebody can see
+// coming.
+// ---------------------------------------------------------------------------
+function certificateFacts(pemPath) {
+  log.debug('Entering certificateFacts(). path=' + pemPath);
+  const pem = fs.readFileSync(pemPath);
+  const x509 = new nodeCrypto.X509Certificate(pem);
+  const notAfter = new Date(x509.validTo);
+  const days = Math.floor((notAfter.getTime() - Date.now()) / 86400000);
+  log.debug('Leaving certificateFacts().');
+  return {
+    file: pemPath,
+    subject: String(x509.subject || '').replace(/\n/g, ', '),
+    issuer: String(x509.issuer || '').replace(/\n/g, ', '),
+    serialNumber: x509.serialNumber,
+    validFrom: x509.validFrom,
+    validTo: x509.validTo,
+    daysRemaining: days,
+    expired: days < 0,
+    subjectAltName: x509.subjectAltName || null,
+    fingerprintSha256: x509.fingerprint256
+  };
+}
+
+// ===========================================================================
+// THE PROBES, ONE SET PER PROVIDER.
+//
+// **A TABLE RATHER THAN MEMBERS ON THE FIVE PROVIDER OBJECTS, AND THE REASON
+// IS A SEPARATION RATHER THAN TIDINESS.** A provider's `read()` is on the path
+// this service STARTS on: it runs before the listener binds, and in product
+// mode a throw there is a service that does not come up. A probe is on the
+// path a console page is drawn on. Keeping them in two places is what makes it
+// impossible for somebody adding a probe to break a read — and every probe
+// below is new code against somebody else's SDK, which is exactly the code
+// that breaks.
+//
+// `store` is asked ONCE PER STORE and `secret` once per LOCATION. Two secrets
+// that share one Vault do not ask it twice whether it is sealed, and two that
+// share one PATH in it do not ask it twice for the same version history.
+//
+// **EVERY PROBE IS HANDED A `session` AND THAT IS NOT A DETAIL.** Without it
+// each of the eight Vault probes made its own certificate login — measured:
+// eight round trips and eight service tokens minted in the store, each with an
+// hour to live, every time somebody opened the page. The session memoizes the
+// connection for the life of one report, so a render costs ONE login, which is
+// also the one the startup read makes.
+// ===========================================================================
+const PROBES = {};
+
+// ---------------------------------------------------------------------------
+// file — the default, and the one whose whole state is a stat(2).
+// ---------------------------------------------------------------------------
+PROBES.file = {
+  // **THE FIELD IS PART OF THE SCOPE HERE AND OF NOTHING ELSE'S.** The file
+  // probe below asks whether the member THIS secret takes is in the file, so
+  // two secrets sharing one file still have two questions. Every other
+  // provider's secret probe is about the stored object and not about which
+  // member of it is wanted, so its scope is the location alone.
+  scope: function (spec) {
+    return locationOf(spec, 'file').where + '|' + fieldOf(spec);
+  },
+  store: function (spec) {
+    const at = locationOf(spec, 'file');
+    return [
+      runProbe('file', 'The file itself: whether it is there, who can read ' +
+               'it, and when it last changed.', function () {
+        const path = at.where;
+        if (!path) {
+          throw new Error('no path is configured');
+        }
+        const link = fs.lstatSync(path);
+        const stat = fs.statSync(path);
+        const out = {
+          path: path,
+          exists: true,
+          bytes: stat.size,
+          mode: (stat.mode & 0o777).toString(8),
+          uid: stat.uid,
+          gid: stat.gid,
+          modified: stat.mtime.toISOString(),
+          // REPORTED AND NOT REFUSED, which is what `fileProvider.read()`
+          // does about it and this is the surface that makes the warning it
+          // logs once at startup readable afterwards.
+          groupOrOtherReadable: (stat.mode & 0o077) !== 0
+        };
+        if (link.isSymbolicLink()) {
+          // A Kubernetes Secret mount is a symlink into a `..data` directory
+          // that is REPLACED on update, so the link target is how an operator
+          // sees that a rotation landed.
+          out.symlink = fs.readlinkSync(path);
+        }
+        return out;
+      }),
+      runProbe('members', 'Whether the file holds a JSON object, and which ' +
+               'members are in it — the NAMES and never the values.',
+               function () {
+        const path = at.where;
+        if (!path) {
+          throw new Error('no path is configured');
+        }
+        const text = fs.readFileSync(path).toString('utf8');
+        let parsed = null;
+        try {
+          parsed = JSON.parse(text.trim());
+        } catch (e) {
+          // NOT JSON, which is the ordinary case and the one `pick()` treats
+          // as "the whole file is the secret". It is an ANSWER here rather
+          // than an error: a raw 32-byte key file is exactly right.
+          parsed = null;
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          return { json: false,
+                   note: 'The file is not a JSON object, so whatever is in ' +
+                         'it is taken whole. That is what a raw key file is.' };
+        }
+        return { json: true, members: Object.keys(parsed),
+                 note: 'Member NAMES only. Which one a secret takes is its ' +
+                       'own field setting.' };
+      })
+    ];
+  },
+  secret: function (spec) {
+    const at = locationOf(spec, 'file');
+    const field = fieldOf(spec);
+    return [
+      runProbe('field', 'Whether the member this secret is configured to ' +
+               'take is actually in the file.', function () {
+        if (!field) {
+          return { field: null,
+                   note: 'No field is configured, so the whole file is this ' +
+                         'secret.' };
+        }
+        const text = fs.readFileSync(at.where).toString('utf8');
+        let parsed = null;
+        try {
+          parsed = JSON.parse(text.trim());
+        } catch (e) {
+          // Not JSON — see above. The interesting case is the BORROWED one,
+          // which `pick()` refuses outright, and that is what this reports.
+          parsed = null;
+        }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          if (at.borrowed) {
+            return { field: field, present: false, wouldRefuse: true,
+                     note: 'This secret shares the key-encryption key\'s ' +
+                           'file and that file is not a JSON object — so ' +
+                           'what is in it is the KEY, and reading this ' +
+                           'secret is REFUSED rather than handing that key ' +
+                           'to a database.' };
+          }
+          return { field: field, present: false,
+                   note: 'The file is not JSON, so the whole of it is this ' +
+                         'secret and the field is not used.' };
+        }
+        return { field: field,
+                 present: Object.keys(parsed).indexOf(field) >= 0,
+                 members: Object.keys(parsed) };
+      })
+    ];
+  }
+};
+
+// ---------------------------------------------------------------------------
+// vault — the one with a STATE worth a page.
+//
+// Everything here is a read of a `sys` endpoint or of the KV METADATA path,
+// and not one of them can return a stored value.
+// ---------------------------------------------------------------------------
+PROBES.vault = {
+  // The version history, the description and the properties are facts
+  // about the STORED OBJECT. Two secrets taking two fields out of one of
+  // them get one answer between them.
+  scope: function (spec) {
+    // The STORE as well as the path since 2026-09-12: one path in two
+    // Vaults is two secrets, and deduplicating them would ask one about the
+    // other. See `reachOf()`.
+    return connectionKey(spec) + '|' + locationOf(spec, 'ref').where;
+  },
+  store: function (spec, session) {
+    const certPath = String(config.value('keys.vaultClientCert') || '').trim();
+    const caPath = String(config.value('keys.vaultCaCert') || '').trim();
+    const rows = [];
+
+    // THE IDENTITY THIS SERVICE PRESENTS, read off the PEM on disk. It needs
+    // no store at all, so it answers even when the store is down — which is
+    // the case where it is most worth having, because an expired client
+    // certificate is why the store is "down".
+    if (certPath) {
+      rows.push(runProbe('client-certificate',
+                         'The certificate this service presents to the ' +
+                         'store, and when it expires.', function () {
+        return certificateFacts(certPath);
+      }));
+    }
+    if (caPath) {
+      rows.push(runProbe('store-ca',
+                         'The anchor this service verifies the store\'s own ' +
+                         'listener against.', function () {
+        return certificateFacts(caPath);
+      }));
+    }
+
+    // **THE UNAUTHENTICATED TRUTH ABOUT THE STORE**, which is deliberately
+    // first among the calls: `sys/seal-status` answers before any identity is
+    // established, so a store that is up and SEALED is reported as exactly
+    // that rather than as a login failure.
+    rows.push(runProbe('seal-status',
+                       'Whether the store is initialised, whether it is ' +
+                       'sealed, what kind of seal it has, and which build ' +
+                       'it is.', async function () {
+      const client = (await connectUnauthenticated(session, spec)).client;
+      const answer = await client.request({ path: '/sys/seal-status',
+                                            method: 'GET' });
+      return answer;
+    }));
+
+    // `sys/health` with every status code forced to 200. Without the query
+    // parameters this endpoint answers 429 for a standby, 501 uninitialised
+    // and 503 sealed — status codes that are the ANSWER rather than an error,
+    // which is why node-vault special-cases this one path and resolves it
+    // anyway. Forcing them makes the reply unambiguous either way.
+    rows.push(runProbe('health',
+                       'The store\'s own health summary: its clock, its ' +
+                       'cluster, and whether this node is the active one.',
+                       async function () {
+      const client = (await connectUnauthenticated(session, spec)).client;
+      const answer = await client.request({
+        path: '/sys/health?standbyok=true&perfstandbyok=true&sealedcode=200' +
+              '&uninitcode=200&standbycode=200&drsecondarycode=200',
+        method: 'GET'
+      });
+      // **THE STORE'S CLOCK AGAINST THIS PROCESS'S, WHICH IS THE ONE THING
+      // HERE WORTH COMPUTING RATHER THAN PRINTING.** `server_time_utc` is a
+      // unix epoch and unreadable as one; what somebody actually wants from
+      // it is the SKEW, because every token lease and every certificate
+      // validity window in this arrangement is a pair of clocks agreeing. A
+      // store minutes ahead hands out tokens this service thinks have
+      // already expired, and nothing else in this repository can see it.
+      const out = Object.assign({}, answer);
+      if (answer && answer.server_time_utc) {
+        out.serverTime = new Date(answer.server_time_utc * 1000).toISOString();
+        out.clockSkewSeconds =
+          Math.round(Date.now() / 1000) - Number(answer.server_time_utc);
+      }
+      return out;
+    }));
+
+    rows.push(runProbe('leader',
+                       'High availability: whether this node is the leader, ' +
+                       'and where the leader is.', async function () {
+      const client = (await connectUnauthenticated(session, spec)).client;
+      return client.request({ path: '/sys/leader', method: 'GET' });
+    }));
+
+    // FROM HERE DOWN EVERYTHING NEEDS THE IDENTITY, and it is the same login
+    // `read()` makes — `vaultConnect()` is shared for exactly that reason. A
+    // failure here is the most important row on the page: it is this service
+    // saying it could not prove who it is to the store it keeps its master
+    // key in.
+    rows.push(runProbe('authentication',
+                       'Logging in the way a startup read does, and what ' +
+                       'the store handed back.', async function () {
+      const connected = await connect(session, spec);
+      if (!connected.login) {
+        return { how: connected.how, endpoint: connected.endpoint,
+                 note: 'No client certificate is configured, so no login was ' +
+                       'made: the token is whatever ' +
+                       ((spec && spec.token) || 'keys.kekToken') +
+                       ' or the SDK\'s VAULT_TOKEN supplies.' };
+      }
+      const auth = connected.login.auth || {};
+      return {
+        how: connected.how,
+        endpoint: connected.endpoint,
+        role: connected.role || '(none named)',
+        policies: auth.policies || [],
+        tokenPolicies: auth.token_policies || [],
+        leaseDurationS: auth.lease_duration,
+        renewable: auth.renewable,
+        tokenType: auth.token_type,
+        orphan: auth.orphan,
+        metadata: auth.metadata || {},
+        entityId: auth.entity_id
+      };
+    }));
+
+    rows.push(runProbe('token',
+                       'What the store says about the token that login ' +
+                       'produced, asked of the store rather than read off ' +
+                       'the login reply.', async function () {
+      const client = (await connect(session, spec)).client;
+      const answer = await client.request({ path: '/auth/token/lookup-self',
+                                            method: 'GET' });
+      const d = (answer && answer.data) || {};
+      // PICKED BY NAME, and `d.id` — which is the token itself — is not among
+      // them. `scrub()` would delete it too; both are deliberate.
+      return {
+        displayName: d.display_name,
+        policies: d.policies,
+        identityPolicies: d.identity_policies,
+        type: d.type,
+        renewable: d.renewable,
+        ttlS: d.ttl,
+        creationTtlS: d.creation_ttl,
+        explicitMaxTtlS: d.explicit_max_ttl,
+        numUses: d.num_uses,
+        orphan: d.orphan,
+        path: d.path,
+        issued: d.issue_time,
+        expires: d.expire_time,
+        meta: d.meta || {}
+      };
+    }));
+
+    // **THE POLICY, PROVED RATHER THAN QUOTED.** `openbao/seed.js` checks this
+    // once, at seeding, and refuses to finish if the write it must not be
+    // able to make is accepted. This is the same claim asked of the RUNNING
+    // store by the RUNNING service: capabilities on the two paths it reads,
+    // and on a path it must never be able to write.
+    rows.push(runProbe('capabilities',
+                       'What this identity may actually do, asked of the ' +
+                       'store: the paths it reads, and a write it must not ' +
+                       'be able to make.', async function () {
+      const client = (await connect(session, spec)).client;
+      const paths = [];
+      [KEK, DATABASE_PASSWORD].filter(function (one) {
+        // Only the secrets read through THIS store's login: a secret that
+        // names an endpoint of its own is asked about on its own store's row.
+        return connectionKey(one) === connectionKey(spec);
+      }).forEach(function (one) {
+        const at = locationOf(one, 'ref');
+        if (at.where && paths.indexOf(at.where) < 0) {
+          paths.push(at.where);
+        }
+        const meta = metadataPathFor(at.where);
+        if (meta && paths.indexOf(meta) < 0) {
+          paths.push(meta);
+        }
+      });
+      if (!paths.length) {
+        throw new Error('no read path is configured for either secret');
+      }
+      const answer = await client.request({
+        path: '/sys/capabilities-self', method: 'POST',
+        json: { paths: paths }
+      });
+      const out = { paths: {} };
+      paths.forEach(function (one) {
+        out.paths[one] = answer[one] || answer.capabilities || null;
+      });
+      // **THE ASSERTION, MADE HERE AND NOT LEFT TO A READER'S EYE.** A
+      // capability list is a list of words, and "create" among them is the
+      // whole difference between an identity that can read its key and one
+      // that can rotate the key out from under everything sealed with it.
+      //
+      // **THREE ANSWERS AND NOT ONE BOOLEAN.** A first version reported
+      // `readOnly: true` for an identity whose every path answered `deny` —
+      // true as written and read by a person as "it can read these", which
+      // is the opposite of what was measured. So what it may READ, what it
+      // may WRITE and what is DENIED are three lists, and the summary word
+      // is only claimed when there is something in the first.
+      const writes = ['create', 'update', 'patch', 'delete', 'sudo', 'root'];
+      const has = function (one, words) {
+        return (out.paths[one] || []).some(function (word) {
+          return words.indexOf(word) >= 0;
+        });
+      };
+      out.canRead = Object.keys(out.paths).filter(function (one) {
+        return has(one, ['read', 'list']);
+      });
+      out.canWrite = Object.keys(out.paths).filter(function (one) {
+        return has(one, writes);
+      });
+      out.denied = Object.keys(out.paths).filter(function (one) {
+        return has(one, ['deny']);
+      });
+      out.verdict = out.canWrite.length
+        ? 'THIS IDENTITY CAN WRITE. It could replace the key-encryption key, ' +
+          'and everything sealed under the old one would be unreadable.'
+        : (out.canRead.length
+            ? 'Read-only on every path it was asked about, which is what the ' +
+              'policy is supposed to say.'
+            : 'This identity may not reach any of the paths it is configured ' +
+              'to read. A read at startup would be refused.');
+      return out;
+    }));
+
+    // WHICH ENGINES THIS IDENTITY CAN SEE. `sys/mounts` is denied to
+    // anything but a privileged token; `sys/internal/ui/mounts` is in
+    // Vault's own `default` policy and answers only what this token may
+    // reach, which is the honest list for an identity that holds two paths.
+    rows.push(runProbe('mounts',
+                       'The secret engines this identity can see — which is ' +
+                       'fewer than the store has, and should be.',
+                       async function () {
+      const client = (await connect(session, spec)).client;
+      const answer = await client.request({ path: '/sys/internal/ui/mounts',
+                                            method: 'GET' });
+      const d = (answer && answer.data) || {};
+      // **NAMED `secretEngines` AND `authMethods` RATHER THAN `secret` AND
+      // `auth`, WHICH IS WHAT VAULT CALLS THEM — because both of those are on
+      // the deny list and `scrub()` DELETED THEM.** Measured: this probe
+      // answered `{}` against a store with two engines mounted, which is the
+      // guard working exactly as intended and is worth keeping as the record
+      // of what it feels like from the other side. The rule that comes out of
+      // it is that a probe names its OWN members and never echoes a
+      // provider's.
+      return { secretEngines: Object.keys(d.secret || {}),
+               authMethods: Object.keys(d.auth || {}) };
+    }));
+    return rows;
+  },
+  secret: function (spec, session) {
+    const at = locationOf(spec, 'ref');
+    return [
+      runProbe('versions',
+               'The KV metadata for this secret: when it was written, how ' +
+               'many versions there are, and which one a read gets.',
+               async function () {
+        const meta = metadataPathFor(at.where);
+        if (!meta) {
+          throw new Error('the path "' + at.where + '" is not a KV version 2 ' +
+                          'read path (it has no /data/ segment), so there is ' +
+                          'no metadata path to ask about. KV version 1 keeps ' +
+                          'no version history.');
+        }
+        const client = (await connect(session, spec)).client;
+        const answer = await client.request({ path: '/' + meta, method: 'GET' });
+        const d = (answer && answer.data) || {};
+        return {
+          metadataPath: meta,
+          created: d.created_time,
+          updated: d.updated_time,
+          currentVersion: d.current_version,
+          oldestVersion: d.oldest_version,
+          maxVersions: d.max_versions,
+          casRequired: d.cas_required,
+          deleteVersionAfter: d.delete_version_after,
+          customMetadata: d.custom_metadata || null,
+          // THE PER-VERSION ROWS carry created/deleted/destroyed and nothing
+          // else; KV metadata never holds the value, which is the whole
+          // reason this is the path that gets asked.
+          versions: Object.keys(d.versions || {}).map(function (n) {
+            const v = d.versions[n] || {};
+            return { version: Number(n), created: v.created_time,
+                     deleted: v.deletion_time || null,
+                     destroyed: !!v.destroyed };
+          })
+        };
+      })
+    ];
+  }
+};
+
+// KV VERSION 2 PUTS THE METADATA SOMEWHERE ELSE, and the rule is a path
+// rewrite rather than a setting: `secret/data/sts` reads the value and
+// `secret/metadata/sts` reads the history. Only the FIRST `/data/` is
+// replaced — a secret genuinely named `data` under it would otherwise have
+// its own name rewritten.
+function metadataPathFor(readPath) {
+  const path = String(readPath || '');
+  if (path.indexOf('/data/') < 0) {
+    return null;
+  }
+  return path.replace('/data/', '/metadata/');
+}
+
+// ONE CONNECTION PER REPORT. The session is an ordinary object created by
+// `storeReport()` and threaded through; what is memoized is the PROMISE, so
+// probes running in parallel share one login rather than racing to make
+// several.
+//
+// **KEYED BY HOW THE STORE IS REACHED SINCE 2026-09-12**, because a secret may
+// name an endpoint and a token of its own (`reachOf()`): two secrets in one
+// store still share one login, and two stores get one each rather than the
+// second being asked with the first one's token.
+function connectionKey(spec) {
+  return reachOf(spec, 'vault') + '|' +
+         (reachOf(spec, 'token') ? 'token' : 'no-token');
+}
+
+function connect(session, spec) {
+  const key = connectionKey(spec);
+  session.vaults = session.vaults || {};
+  if (!session.vaults[key]) {
+    session.vaults[key] = vaultConnect(spec);
+  }
+  return session.vaults[key];
+}
+
+function connectUnauthenticated(session, spec) {
+  const key = reachOf(spec, 'vault');
+  session.vaultsAnonymous = session.vaultsAnonymous || {};
+  if (!session.vaultsAnonymous[key]) {
+    session.vaultsAnonymous[key] = vaultConnectUnauthenticated(spec);
+  }
+  return session.vaultsAnonymous[key];
+}
+
+// A CLIENT WITH NO IDENTITY ON IT, for the three `sys` endpoints that answer
+// without one. It is a separate function rather than `vaultConnect()` with a
+// flag because the point of it is what it does NOT do: a store that is sealed
+// or uninitialised cannot log anybody in, and those are precisely the states
+// `sys/seal-status` exists to report.
+async function vaultConnectUnauthenticated(spec) {
+  log.debug('Entering vaultConnectUnauthenticated().');
+  let sdk;
+  try {
+    sdk = require('node-vault');
+  } catch (e) {
+    throw missingModule('node-vault', 'vault', e);
+  }
+  const endpoint = reachOf(spec, 'vault');
+  const tls = vaultTls();
+  const client = sdk(Object.assign(
+    { apiVersion: 'v1' },
+    endpoint ? { endpoint: endpoint } : {},
+    Object.keys(tls.options).length
+      ? { requestOptions: tls.options, rpDefaults: tls.options } : {}));
+  log.debug('Leaving vaultConnectUnauthenticated().');
+  return { client: client };
+}
+
+// ---------------------------------------------------------------------------
+// aws — DESCRIBE and never GET, which is the whole of the design here.
+//
+// `DescribeSecret` answers everything AWS knows about the secret except its
+// value: the ARN, the KMS key protecting it, whether rotation is configured
+// and when it last happened, which versions carry which staging labels, the
+// tags and the replicas. `GetSecretValue` is the call this page must never
+// make and does not.
+// ---------------------------------------------------------------------------
+PROBES.aws = {
+  // The version history, the description and the properties are facts
+  // about the STORED OBJECT. Two secrets taking two fields out of one of
+  // them get one answer between them.
+  scope: function (spec) {
+    return reachOf(spec, 'region') + '|' + locationOf(spec, 'ref').where;
+  },
+  store: function () {
+    return [];
+  },
+  secret: function (spec) {
+    const at = locationOf(spec, 'ref');
+    return [
+      runProbe('describe',
+               'Everything AWS Secrets Manager knows about this secret ' +
+               'EXCEPT its value: rotation, the KMS key, the versions and ' +
+               'their staging labels.', async function () {
+        let sdk;
+        try {
+          sdk = require('@aws-sdk/client-secrets-manager');
+        } catch (e) {
+          throw missingModule('@aws-sdk/client-secrets-manager', 'aws', e);
+        }
+        if (!at.where) {
+          throw new Error('no secret id or ARN is configured');
+        }
+        const region = reachOf(spec, 'region');
+        const client = new sdk.SecretsManagerClient(
+          region ? { region: region } : {});
+        const answer = await client.send(
+          new sdk.DescribeSecretCommand({ SecretId: at.where }));
+        return {
+          arn: answer.ARN,
+          name: answer.Name,
+          description: answer.Description,
+          kmsKeyId: answer.KmsKeyId || '(the account default AWS managed key)',
+          rotationEnabled: !!answer.RotationEnabled,
+          rotationLambda: answer.RotationLambdaARN,
+          rotationRules: answer.RotationRules,
+          lastRotated: answer.LastRotatedDate,
+          lastChanged: answer.LastChangedDate,
+          lastAccessed: answer.LastAccessedDate,
+          nextRotation: answer.NextRotationDate,
+          created: answer.CreatedDate,
+          deleted: answer.DeletedDate,
+          primaryRegion: answer.PrimaryRegion,
+          replication: answer.ReplicationStatus,
+          tags: answer.Tags,
+          // THE STAGING LABELS ARE THE STATE HERE: AWSCURRENT is what a read
+          // gets, AWSPREVIOUS is what a rotation left behind, and the version
+          // ids are identifiers rather than material.
+          versions: Object.keys(answer.VersionIdsToStages || {})
+            .map(function (v) {
+              return { version: v, stages: answer.VersionIdsToStages[v] };
+            })
+        };
+      })
+    ];
+  }
+};
+
+// ---------------------------------------------------------------------------
+// gcp — the SECRET and the VERSION, both metadata calls.
+//
+// `accessSecretVersion` is the one that returns the payload and is what
+// `read()` uses; `getSecret` and `getSecretVersion` return everything else.
+// ---------------------------------------------------------------------------
+PROBES.gcp = {
+  // The version history, the description and the properties are facts
+  // about the STORED OBJECT. Two secrets taking two fields out of one of
+  // them get one answer between them.
+  scope: function (spec) {
+    return locationOf(spec, 'ref').where;
+  },
+  store: function () {
+    return [];
+  },
+  secret: function (spec) {
+    const at = locationOf(spec, 'ref');
+    return [
+      runProbe('secret',
+               'The secret\'s own metadata: replication, labels, rotation ' +
+               'and expiry.', async function () {
+        const client = gcpClient();
+        const name = String(at.where || '').replace(/\/versions\/.*$/, '');
+        if (!name) {
+          throw new Error('no resource name is configured');
+        }
+        const [answer] = await client.getSecret({ name: name });
+        return {
+          name: answer.name,
+          created: answer.createTime,
+          labels: answer.labels || {},
+          annotations: answer.annotations || {},
+          replication: answer.replication,
+          rotation: answer.rotation || null,
+          expires: answer.expireTime || null,
+          versionAliases: answer.versionAliases || {},
+          etag: answer.etag
+        };
+      }),
+      runProbe('version',
+               'The version a read would get: whether it is enabled, ' +
+               'disabled or destroyed.', async function () {
+        const client = gcpClient();
+        let name = String(at.where || '');
+        if (!name) {
+          throw new Error('no resource name is configured');
+        }
+        if (name.indexOf('/versions/') < 0) {
+          name = name.replace(/\/+$/, '') + '/versions/latest';
+        }
+        const [answer] = await client.getSecretVersion({ name: name });
+        return {
+          name: answer.name,
+          state: answer.state,
+          created: answer.createTime,
+          destroyed: answer.destroyTime || null,
+          replicationStatus: answer.replicationStatus,
+          etag: answer.etag
+        };
+      })
+    ];
+  }
+};
+
+function gcpClient() {
+  let sdk;
+  try {
+    sdk = require('@google-cloud/secret-manager');
+  } catch (e) {
+    throw missingModule('@google-cloud/secret-manager', 'gcp', e);
+  }
+  return new sdk.SecretManagerServiceClient();
+}
+
+// ---------------------------------------------------------------------------
+// azure — the VERSION PROPERTIES, which is the one listing in that SDK that
+// does not hand back a value.
+//
+// `getSecret(name)` returns the value with the properties attached, so it is
+// deliberately not used here: `listPropertiesOfSecretVersions()` answers the
+// same properties for every version and never the secret.
+// ---------------------------------------------------------------------------
+PROBES.azure = {
+  // The version history, the description and the properties are facts
+  // about the STORED OBJECT. Two secrets taking two fields out of one of
+  // them get one answer between them.
+  scope: function (spec) {
+    return reachOf(spec, 'vault') + '|' + locationOf(spec, 'ref').where;
+  },
+  store: function () {
+    return [];
+  },
+  secret: function (spec, session) {
+    const at = locationOf(spec, 'ref');
+    return [
+      runProbe('versions',
+               'Every version of this secret and its properties — enabled, ' +
+               'created, updated, expiry — and never the value.',
+               async function () {
+        let secretsSdk;
+        let identitySdk;
+        try {
+          secretsSdk = require('@azure/keyvault-secrets');
+        } catch (e) {
+          throw missingModule('@azure/keyvault-secrets', 'azure', e);
+        }
+        try {
+          identitySdk = require('@azure/identity');
+        } catch (e) {
+          throw missingModule('@azure/identity', 'azure', e);
+        }
+        const vault = reachOf(spec, 'vault');
+        if (!vault || !at.where) {
+          throw new Error('the azure provider needs both ' +
+                          (spec.vault || 'keys.kekVault') + ' and a ' +
+                          'secret name');
+        }
+        const client = new secretsSdk.SecretClient(
+          vault, new identitySdk.DefaultAzureCredential());
+        const versions = [];
+        for await (const one of
+                   client.listPropertiesOfSecretVersions(at.where)) {
+          versions.push({
+            version: one.version,
+            enabled: one.enabled,
+            created: one.createdOn,
+            updated: one.updatedOn,
+            expires: one.expiresOn || null,
+            notBefore: one.notBefore || null,
+            contentType: one.contentType || null,
+            tags: one.tags || {},
+            recoveryLevel: one.recoveryLevel
+          });
+          // BOUNDED IN THE LOOP AND NOT AFTERWARDS: this is a paged listing
+          // over the network, so stopping at fifty is what makes the page
+          // cheap rather than what makes it short.
+          if (versions.length >= 50) {
+            break;
+          }
+        }
+        return { vault: vault, name: at.where, versions: versions };
+      })
+    ];
+  }
+};
+
+// ===========================================================================
+// THE MODEL. One object, rendered twice — `/admin/secrets` and
+// `GET /admin-api/secrets` (rule 7).
+//
+// **A STORE IS A THING AND A SECRET IS A ROW IN IT**, and keeping the two
+// apart is what stops this page asking one Vault twice whether it is sealed.
+// Two secrets in one store share a store row; two secrets in two stores get
+// one each.
+// ===========================================================================
+const SECRETS = [KEK, DATABASE_PASSWORD];
+
+// Which store a secret lives in, as a key that is equal for two secrets in the
+// same place. The location is part of it for `file` — two mounted files are
+// two stores — and is NOT for the cloud providers, where what identifies the
+// store is the endpoint and the secret is a name inside it.
+function storeKeyFor(spec, provider) {
+  if (provider.id === 'file') {
+    return 'file:' + locationOf(spec, 'file').where;
+  }
+  if (provider.id === 'vault') {
+    // The TOKEN is part of a Vault store's identity here as well as the
+    // endpoint, because two secrets reached with two tokens are two logins and
+    // two answers to every identity probe on the row.
+    return 'vault:' + (connectionKey(spec) || '(default)');
+  }
+  if (provider.id === 'azure') {
+    return 'azure:' + (reachOf(spec, 'vault') || '(default)');
+  }
+  if (provider.id === 'aws') {
+    return 'aws:' + (reachOf(spec, 'region') || '(SDK default)');
+  }
+  return provider.id;
+}
+
+function storeLabelFor(spec, provider) {
+  if (provider.id === 'file') {
+    return locationOf(spec, 'file').where || '(no path configured)';
+  }
+  if (provider.id === 'vault' || provider.id === 'azure') {
+    return reachOf(spec, 'vault') || '(the SDK default endpoint)';
+  }
+  if (provider.id === 'aws') {
+    return 'region ' + (reachOf(spec, 'region') || '(the SDK default)');
+  }
+  return provider.label;
+}
+
+async function storeReport() {
+  log.debug('Entering storeReport().');
+  const out = {
+    what: 'Where this service reads its primordial secrets from — the ' +
+          'key-encryption key everything it seals is sealed under, and the ' +
+          'database password — whether it actually read them, and what the ' +
+          'store at the other end is doing.',
+    timeoutMs: probeTimeoutMs(),
+    providers: PROVIDERS.map(function (one) {
+      return { id: one.id, label: one.label };
+    }),
+    stores: [],
+    secrets: []
+  };
+
+  // EVERY SECRET, CONFIGURED OR NOT. A secret with no provider is a ROW
+  // saying so rather than an absence: `persistence.databasePasswordProvider`
+  // defaults to `none`, and a page that simply did not mention the database
+  // password would read as a page that does not know about it.
+  const byStore = new Map();
+  SECRETS.forEach(function (spec) {
+    const described = describeSecret(spec);
+    // THE PROVIDER INVENTORY IS THE REPORT'S AND NOT EVERY ROW'S.
+    // `describeSecret()` carries it because its other callers draw one secret
+    // on a page of their own; here it would be the same five-member list
+    // repeated once per secret, which is a reply twice the size saying one
+    // thing.
+    delete described.providers;
+    const row = Object.assign({}, described, {
+      settings: { provider: spec.provider, location: spec.ref,
+                  field: spec.field },
+      lastRead: readLedger(spec),
+      store: null,
+      probes: []
+    });
+    out.secrets.push(row);
+    if (!described.configured || !described.known) {
+      return;
+    }
+    const provider = current(spec);
+    const key = storeKeyFor(spec, provider);
+    row.store = key;
+    if (!byStore.has(key)) {
+      byStore.set(key, { key: key, provider: provider.id,
+                         label: provider.label,
+                         where: storeLabelFor(spec, provider),
+                         secrets: [], probes: [], spec: spec });
+    }
+    byStore.get(key).secrets.push(spec.id);
+  });
+
+  // **RUN IN PARALLEL AND EACH ONE CAUGHT SEPARATELY.** Serially this page
+  // would cost the sum of every timeout — five stores that are all down is
+  // five times the bound — and the probes have nothing to do with each
+  // other.
+  //
+  // ONE SESSION for the whole report, so a store is logged into once however
+  // many probes ask it something.
+  const session = {};
+  const work = [];
+  byStore.forEach(function (store) {
+    const table = PROBES[store.provider];
+    if (!table) {
+      return;
+    }
+    work.push(Promise.all(table.store(store.spec, session))
+      .then(function (rows) {
+        store.probes = rows;
+      }));
+  });
+  // **SECRET PROBES ARE DEDUPED BY LOCATION AND NOT BY SECRET.** The two
+  // secrets share one place in the commonest configuration there is — the
+  // compose stack keeps both at `secret/data/sts` — and the version history
+  // of that path is one answer, not two. Asking twice was two round trips
+  // for one fact. Each secret still gets the rows, because a reader looking
+  // at the database password wants them under the database password.
+  const byLocation = new Map();
+  out.secrets.forEach(function (row) {
+    if (!row.store) {
+      return;
+    }
+    const table = PROBES[row.provider];
+    if (!table) {
+      return;
+    }
+    const spec = SECRETS.filter(function (one) {
+      return one.id === row.secret;
+    })[0];
+    // **THE SCOPE IS THE PROVIDER'S TO DECLARE.** The report cannot know
+    // what a probe's answer depends on: the file one is per member and every
+    // other is per stored object, and a key guessed here would silently
+    // either ask twice or answer the wrong question once.
+    const key = row.provider + '|' + table.scope(spec);
+    if (!byLocation.has(key)) {
+      byLocation.set(key, Promise.all(table.secret(spec, session)));
+    }
+    work.push(byLocation.get(key).then(function (rows) {
+      row.probes = rows;
+    }));
+  });
+  await Promise.all(work);
+
+  byStore.forEach(function (store) {
+    out.stores.push({ key: store.key, provider: store.provider,
+                      label: store.label, where: store.where,
+                      secrets: store.secrets, probes: store.probes });
+  });
+
+  // WHAT FAILED, COUNTED ONCE. A reader wants to know whether to read the
+  // rest of the page, and counting it here is what lets the renderer say so
+  // in a tile rather than by scanning every table.
+  out.failed = [];
+  out.stores.forEach(function (store) {
+    store.probes.forEach(function (probe) {
+      if (!probe.ok) {
+        out.failed.push(store.key + '/' + probe.id);
+      }
+    });
+  });
+  out.secrets.forEach(function (row) {
+    row.probes.forEach(function (probe) {
+      if (!probe.ok) {
+        out.failed.push(row.secret + '/' + probe.id);
+      }
+    });
+  });
+  log.debug('Leaving storeReport(). ' + out.stores.length + ' store(s), ' +
+            out.secrets.length + ' secret(s), ' + out.failed.length +
+            ' probe(s) unavailable.');
+  return out;
 }
 
 module.exports = {
@@ -394,5 +2012,36 @@ module.exports = {
   providerFor: providerFor,
   current: current,
   readKek: readKek,
-  describe: describe
+  describe: describe,
+  // The second secret (2026-09-12). The descriptors are exported for
+  // `tests/database_password.js`, which asserts the fallback and the field
+  // rules directly — they are the part of this file with no other way in.
+  KEK: KEK,
+  DATABASE_PASSWORD: DATABASE_PASSWORD,
+  readDatabasePassword: readDatabasePassword,
+  describeDatabasePassword: describeDatabasePassword,
+  configuredFor: configuredFor,
+  // How a secret reaches its store, and where the cert auth method is mounted
+  // (both 2026-09-12). Exported for `tests/database_password.js`: they decide
+  // a URL and a request line, and no read without a real store reaches either.
+  reachOf: reachOf,
+  certAuthMount: certAuthMount,
+  // ---------------------------------------------------------------------
+  // THE SECRET-STORE REPORT (2026-09-12), for `/admin/secrets` and
+  // `GET /admin-api/secrets`. ONE function behind the page and the
+  // operation, which is rule 7 read the strict way: the two must not be
+  // able to report different states of the same store.
+  //
+  // `readLedger` and `scrub` are exported for
+  // `tests/secret_store_report.js` and for nothing else — the first is the
+  // only way to assert that a failed read is written down, and the second
+  // is the guard that must be tested directly, because in a correct build
+  // it never fires.
+  // ---------------------------------------------------------------------
+  storeReport: storeReport,
+  readLedger: readLedger,
+  scrub: scrub,
+  NEVER_REPORTED: NEVER_REPORTED,
+  SECRETS: SECRETS,
+  PROBES: PROBES
 };
